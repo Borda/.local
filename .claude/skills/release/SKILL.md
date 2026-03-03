@@ -242,6 +242,8 @@ Write the user-facing release notes (Step 3 "Release Notes" format) to `RELEASE_
 4. On merge: create GitHub release from RELEASE_NOTES.md
 ```
 
+End your response with a `## Confidence` block per CLAUDE.md output standards.
+
 </workflow>
 
 <notes>

@@ -219,5 +219,6 @@ Print a `### Codex Delegation` section to the terminal summarizing what was auto
   - Structural or quality issues → `/refactor` for test-first improvements
   - Security findings in auth/input/deps → `/security` for a dedicated deep audit
   - Mechanical issues beyond what Step 6 auto-fixed → `/codex` to delegate additional tasks
+  - Docstrings, type annotations, renames, and other mechanical findings → `/resolve` (no args) to auto-implement all fixable items via Codex
 
 </notes>

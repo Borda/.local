@@ -47,15 +47,13 @@ Find existing tests for the target code:
 
 Locate test files: use the Glob tool (pattern `**/test_*.py` or `**/*_test.py`) to find candidates, then use the Grep tool (pattern `<module_name>`, output mode `files_with_matches`) to narrow to those that reference the target module.
 
+```bash
 # Check if pytest is available and run coverage on the target
-
-python -m pytest --co -q 2>/dev/null | grep -i "\<module_name>" || echo "No tests found"
+python -m pytest --co -q 2>/dev/null | grep -i "<module_name>" || echo "No tests found"
 
 # If coverage tool available
-
-python -m pytest --cov=\<target_module> --cov-report=term-missing -q 2>/dev/null
-
-````
+python -m pytest --cov=<target_module> --cov-report=term-missing -q 2>/dev/null
+```
 
 Classify each public function/method as:
 
@@ -76,7 +74,7 @@ For every **uncovered** or **partially covered** public API, spawn a **qa-specia
 ```bash
 # Run the new tests to confirm they pass against current code
 python -m pytest <test_file> -v
-````
+```
 
 **Gate**: all characterization tests must pass before proceeding. If any fail, the test is wrong — fix the test, not the code.
 

@@ -241,8 +241,6 @@ def test_dataloader_no_nan():
         assert not torch.any(torch.isinf(batch["image"])), "Inf in batch"
 ```
 
-For DDP gradient equivalence tests and 3D medical imaging fixtures, see `data-steward` agent.
-
 \</ml_testing>
 
 \<property_based_testing>

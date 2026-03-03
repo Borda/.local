@@ -119,6 +119,8 @@ The subagent handles pre-flight, dispatch, validation, and patch capture. If Cod
 
 Append a `### Codex Delegation` line to the audit output if this step ran.
 
+End your response with a `## Confidence` block per CLAUDE.md output standards.
+
 </workflow>
 
 <notes>

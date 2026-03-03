@@ -51,20 +51,23 @@ ______________________________________________________________________
 
 ## GitHub CLI — read-only
 
-| Permission                | Description                                    | Typical use case                                                |
-| ------------------------- | ---------------------------------------------- | --------------------------------------------------------------- |
-| `Bash(gh api graphql:*)`  | Run GraphQL queries against the GitHub API     | Fetch rich PR/issue data not exposed by top-level `gh` commands |
-| `Bash(gh pr view:*)`      | Inspect PR metadata, body, and review status   | Used by `/review` and `/fix` to understand the PR under review  |
-| `Bash(gh pr diff:*)`      | Fetch the full diff of a PR                    | `/review` fetches the diff for static analysis                  |
-| `Bash(gh pr list:*)`      | List open or merged PRs                        | `/analyse health` and duplicate-detection modes                 |
-| `Bash(gh pr checks:*)`    | Read CI check status on a PR                   | Verify CI passed before marking a fix complete                  |
-| `Bash(gh run list:*)`     | List recent workflow runs                      | `/ci-guardian` diagnosis: find the failing run                  |
-| `Bash(gh run view:*)`     | View logs and status of a specific CI run      | Read error output from a failed job                             |
-| `Bash(gh run rerun:*)`    | Re-trigger a failed CI job                     | Retry a flaky job without leaving the terminal                  |
-| `Bash(gh issue view:*)`   | Read issue body, labels, and comments          | `/analyse` and `/fix` read the issue before starting work       |
-| `Bash(gh issue list:*)`   | List issues                                    | `/analyse dupes` and health overview                            |
-| `Bash(gh release view:*)` | Inspect an existing release's notes and assets | `/release` uses this to read the previous release as a baseline |
-| `Bash(gh release list:*)` | List releases                                  | Find the most recent tag to set a changelog range               |
+| Permission                | Description                                         | Typical use case                                                                      |
+| ------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `Bash(gh auth status:*)`  | Check GitHub CLI authentication state               | Pre-flight check in `/resolve` and any skill that requires `gh` auth                  |
+| `Bash(gh api:*)`          | Run REST and GraphQL queries against the GitHub API | `/resolve` fetches inline review comments and review states; other skills use GraphQL |
+| `Bash(gh pr view:*)`      | Inspect PR metadata, body, and review status        | Used by `/review` and `/fix` to understand the PR under review                        |
+| `Bash(gh pr checkout:*)`  | Check out a PR branch locally                       | `/resolve` uses this to enter the PR branch state before applying changes             |
+| `Bash(gh pr diff:*)`      | Fetch the full diff of a PR                         | `/review` fetches the diff for static analysis                                        |
+| `Bash(gh pr list:*)`      | List open or merged PRs                             | `/analyse health` and duplicate-detection modes                                       |
+| `Bash(gh pr checks:*)`    | Read CI check status on a PR                        | Verify CI passed before marking a fix complete                                        |
+| `Bash(gh repo view:*)`    | Fetch repository metadata (name, owner)             | `/resolve` detects owner/repo slug for constructing API call paths                    |
+| `Bash(gh run list:*)`     | List recent workflow runs                           | `/ci-guardian` diagnosis: find the failing run                                        |
+| `Bash(gh run view:*)`     | View logs and status of a specific CI run           | Read error output from a failed job                                                   |
+| `Bash(gh run rerun:*)`    | Re-trigger a failed CI job                          | Retry a flaky job without leaving the terminal                                        |
+| `Bash(gh issue view:*)`   | Read issue body, labels, and comments               | `/analyse` and `/fix` read the issue before starting work                             |
+| `Bash(gh issue list:*)`   | List issues                                         | `/analyse dupes` and health overview                                                  |
+| `Bash(gh release view:*)` | Inspect an existing release's notes and assets      | `/release` uses this to read the previous release as a baseline                       |
+| `Bash(gh release list:*)` | List releases                                       | Find the most recent tag to set a changelog range                                     |
 
 ______________________________________________________________________
 

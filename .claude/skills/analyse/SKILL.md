@@ -295,6 +295,8 @@ Produce:
 
 After printing the output above, write the full content to `tasks/output-analyse-ecosystem-$(date +%Y-%m-%d).md` using the Write tool and notify: `→ saved to tasks/output-analyse-ecosystem-$(date +%Y-%m-%d).md`
 
+End each mode's output with a `## Confidence` block per CLAUDE.md output standards.
+
 </workflow>
 
 <notes>

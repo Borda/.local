@@ -2,7 +2,7 @@
 name: survey
 description: Survey SOTA literature for an AI/ML topic, method, or architecture. Finds relevant papers, builds a comparison table, and recommends the best implementation strategy for the current codebase. Delegates deep analysis to the ai-researcher agent.
 argument-hint: <topic, method, or problem>
-allowed-tools: Read, Write, Bash, Grep, Glob, Task, WebSearch, WebFetch
+allowed-tools: Read, Write, Grep, Glob, Task, WebSearch, WebFetch
 context: fork
 ---
 

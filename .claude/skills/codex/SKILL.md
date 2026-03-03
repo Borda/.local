@@ -3,7 +3,7 @@ name: codex
 description: Delegate narrow, mechanical coding tasks to OpenAI Codex CLI — Claude orchestrates and judges, Codex executes. Pre-flight checks ensure graceful degradation on machines without Codex.
 argument-hint: '"<task description>" ["target file or directory"]'
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Task
+allowed-tools: Read, Bash, Grep, Glob, Task
 ---
 
 <objective>

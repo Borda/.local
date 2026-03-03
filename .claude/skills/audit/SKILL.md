@@ -299,26 +299,41 @@ Output a structured audit report before fixing anything:
 
 If `fix` was not passed, stop here and present the report.
 
-## Step 8: Fix critical, high, and medium findings
+## Step 8: Delegate fixes to subagents
 
-For each `critical`, `high`, and `medium` finding, apply a targeted fix:
+Spawn one **sw-engineer** subagent per affected file, batching all findings for that file into a single subagent prompt. Issue **all spawns in a single response** for parallelism.
 
-- **Broken cross-reference**: remove or replace with the correct name (check disk to find the right target)
-- **Inventory drift in MEMORY.md**: regenerate the agents/skills lines from disk
-- **README row missing**: add the row with description from the file's `description:` frontmatter
-- **Dead loop**: break the cycle by removing or rephrasing one of the follow-up references (flag for user review before changing)
-- **Missing settings.json permission**: note it in the report — do NOT auto-edit settings.json (structural JSON edits are risky)
-- **Hardcoded `/Users/<name>/` path**: replace with `.claude/` (project-relative), `~/` (home-relative), or `$(git rev-parse --show-toplevel)/` as appropriate
-- **Broken code example**: fix the code directly (undefined variables, wrong API, wrong shell syntax)
-- **Undocumented modes**: add the mode to `<inputs>` block and `argument-hint` frontmatter
-- **`! BREAKING` context:fork + disable-model-invocation:true**: remove `disable-model-invocation: true` from the skill frontmatter. If the skill truly needs no model (pure tool pipeline), remove `context: fork` instead — but any skill using `Task` to spawn agents and reading their results needs the model.
-- **permissions-guide.md missing row**: add the table row to the correct section using `/manage add perm <rule> "description" "use case"` or manually insert it
-- **permissions-guide.md orphaned row**: remove the row (the allow entry was already removed from settings.json; the guide row is stale)
-- **CLAUDE.md contradiction**: do NOT auto-fix — raise to user with the specific contradiction (quote both the CLAUDE.md directive and the conflicting line in the agent/skill). CLAUDE.md takes precedence; the user decides whether to update the agent/skill or revise CLAUDE.md.
+Each subagent prompt template:
 
-After each fix, note the file and change in a running fix log.
+```
+Fix the following issues in `<file path>`. Apply only the listed fixes — do not change anything else.
 
-**Low findings** (nits): collect them in the final report but do not auto-fix — present them for optional manual cleanup.
+<for each finding in this file, one bullet per fix>
+- [SEVERITY] <specific fix description>
+  Fix: <exactly what to change, with enough context to locate it>
+
+Fix type reference:
+- Broken cross-reference "foo" → replace with the correct name (verify it exists on disk)
+- Inventory drift → update the relevant line to match disk state exactly
+- Hardcoded path → replace `/Users/<name>/path` with `.claude/path` or `~/path`
+- Missing Confidence block → add `End your response with a ## Confidence block per CLAUDE.md output standards.` before the closing </workflow> tag
+- Broken bash block → fix syntax per the description (add missing opening fence, fix 4-backtick closer, unescape angle brackets)
+- Missing variable declaration → prepend `VAR="$(command)"` as the first line of the affected bash block
+- Stale cross-reference → replace `<old-name>` with `<correct-name>`
+- Duplicate section → remove the listed lines verbatim
+
+Do not add comments, docstrings, or any other improvements beyond the listed fixes.
+```
+
+**Exceptions — handle inline without subagents (note in report):**
+
+- **settings.json permission missing**: report only — structural JSON edits are risky to delegate
+- **CLAUDE.md contradiction**: raise to user — do not auto-fix (CLAUDE.md takes precedence)
+- **Dead loop**: flag for user review — requires human judgment on which link to break
+
+After all subagents complete, collect their results and proceed to Step 9.
+
+**Low findings** (nits): collect them in the final report but do not fix — present them for optional manual cleanup.
 
 ## Step 9: Re-audit modified files + confidence check
 

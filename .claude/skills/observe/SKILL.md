@@ -118,29 +118,7 @@ For each candidate agent/skill:
 **Gaps**: [e.g., git history too shallow, task files not present, descriptions too generic to compare]
 ```
 
-## Decision Criteria
-
-### When to Create a New Agent (specialist role)
-
-- Has a distinct persona, expertise, or decision-making style
-- Would be invoked for a class of tasks, not a single workflow
-- Benefits from deep domain knowledge in its system prompt
-- Examples: `migration-guide`, `dependency-auditor` (hypothetical — use abstract names, not agent names that don't exist on disk)
-
-### When to Create a New Skill (workflow)
-
-- Has a fixed multi-step process that spawns sub-agents or runs commands
-- Is invoked ad-hoc for a specific task type
-- Benefits from structured output format
-- Examples: `analyse`, `review`, `release`
-
-### When to Do Nothing
-
-- Task is handled well by an existing agent with slight prompt adjustment
-- Too project-specific to be reusable
-- One-off task that won't recur
-
-### Anti-patterns to Avoid
+## Anti-patterns to Avoid
 
 - Creating an agent for every different topic (agents are roles, not tasks)
 - Duplicating an existing agent with a slightly different name

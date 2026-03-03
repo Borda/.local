@@ -159,6 +159,8 @@ git -C "$PROJECT" ls-files .codex/ \
 ## Step 4: Verify and report outcome (apply mode only)
 
 ```bash
+PROJECT="$(git rev-parse --show-toplevel)"
+HOME_EXPANDED="$(eval echo ~)"
 # JSON validity
 jq empty "$HOME_EXPANDED/.claude/settings.json" && echo "settings.json: valid"
 
