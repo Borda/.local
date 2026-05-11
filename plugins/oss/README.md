@@ -50,7 +50,7 @@ Maintaining an open-source project means juggling three competing demands: revie
 
 **Releases go out correctly.** `oss:shepherd` enforces SemVer before any tag lands. It writes the changelog with deprecation tracking, generates migration guides for breaking changes, and runs a readiness audit. No accidental major bumps. No forgotten changelog entries.
 
-**Triage is fast and structured.** `/oss:analyse health` gives you a repo overview with duplicate issue clustering and stale PR detection every morning. Drilling into a specific thread gives you a structured summary you can act on immediately.
+**Triage is fast and structured.** `/oss:analyse vitality` gives you a repo vitality scorecard with duplicate issue clustering and stale PR detection every morning. Drilling into a specific thread gives you a structured summary you can act on immediately.
 
 ______________________________________________________________________
 
@@ -110,7 +110,7 @@ ______________________________________________________________________
 
 ```text
 # Morning: understand what needs attention
-/oss:analyse health
+/oss:analyse vitality
 
 # Review top PR and draft a contributor-facing response
 /oss:review 55 --reply
@@ -128,7 +128,7 @@ ______________________________________________________________________
 
 ### /analyse
 
-Analyse GitHub threads and repo health. Accepts an issue or PR number, the keyword `health`, the keyword `ecosystem`, or a path to a saved report file.
+Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the keyword `vitality`, the keyword `ecosystem`, or a path to a saved report file.
 
 **Purpose:** Give you a structured, actionable summary of any GitHub thread or a broad view of your repo's open work. Saves you from reading every comment yourself.
 
@@ -136,7 +136,7 @@ Analyse GitHub threads and repo health. Accepts an issue or PR number, the keywo
 
 ```text
 /oss:analyse 123              # issue, PR, or discussion by number
-/oss:analyse health           # repo overview: open issues, stale PRs, duplicate clustering
+/oss:analyse vitality         # repo vitality: 8-axis health scorecard, duplicate clustering
 /oss:analyse ecosystem        # dependency health, upstream compatibility
 /oss:analyse path/to/report.md  # re-analyse a saved report
 ```
@@ -151,12 +151,12 @@ Analyse GitHub threads and repo health. Accepts an issue or PR number, the keywo
 
 For a thread number, `analyse` fetches the issue or PR, reads all comments, classifies the thread type (bug report, feature request, question, duplicate, stale), and produces a structured summary: what was asked, what the current state is, what action is needed from you, and — with `--reply` — a draft response.
 
-For `health`, it pulls open issues and PRs, clusters duplicates, flags threads stale beyond your project's threshold, and gives you a prioritised triage list.
+For `vitality`, it pulls open issues and PRs, scores repo vitality across 8 axes, clusters duplicates, flags threads stale beyond your project's threshold, and gives you a prioritised triage list with a weighted Health Score %.
 
 **Output locations:**
 
 - Thread analysis: `.reports/analyse/thread/`
-- Health report: `.reports/analyse/health/`
+- Vitality report: `.reports/analyse/vitality/`
 - Ecosystem report: `.reports/analyse/ecosystem/`
 
 GitHub API responses are cached in `.cache/gh/` by number and date (30-day TTL) — repeated calls on the same thread are fast.
@@ -449,7 +449,7 @@ ______________________________________________________________________
 
 | Directory             | Created by                    | Contents                                |
 | --------------------- | ----------------------------- | --------------------------------------- |
-| `.reports/analyse/`   | `/oss:analyse`                | Thread, health, ecosystem reports       |
+| `.reports/analyse/`   | `/oss:analyse`                | Thread, vitality, ecosystem reports     |
 | `.reports/review/`    | `/oss:review`                 | Per-agent findings, consolidated report |
 | `.reports/resolve/`   | `/oss:resolve`                | Resolve run outputs                     |
 | `.temp/`              | All skills                    | Long-form output files                  |

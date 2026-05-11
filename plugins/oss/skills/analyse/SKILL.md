@@ -1,16 +1,17 @@
 ---
 name: analyse
-description: Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo health for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo health stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd. NOT for PR readiness assessment or code review (use oss:review).
-argument-hint: '<N|health|ecosystem|path/to/report.md> [--reply]'
+description: Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd. NOT for PR readiness assessment or code review (use oss:review).
+argument-hint: '<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]'
 allowed-tools: Read, Bash, Write, Agent, AskUserQuestion
 context: fork
 model: opus
 effort: high
+when_to_use: 'Use when the user asks to analyze a GitHub issue, PR, or discussion thread, needs repo vitality stats, or wants to triage/summarize OSS contributor threads.'
 ---
 
 <objective>
 
-Analyze GitHub threads + repo health. Help maintainers triage, respond, decide fast. Output actionable + structured — not just summaries.
+Analyze GitHub threads + repo vitality. Help maintainers triage, respond, decide fast. Output actionable + structured — not just summaries.
 
 NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code review (use oss:review). NOT for CI pipeline diagnosis (use oss:cicd-steward).
 
@@ -20,9 +21,9 @@ NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code
 
 - **$ARGUMENTS**: one of:
   - `N` (number, plain `123` or `#123`) — any GitHub thread: issue, PR, or discussion; auto-detects type
-  - `health` — repo issue/PR/discussion health overview with duplicate detection
+  - `vitality [<owner>/<repo> | <github-url>]` — repo vitality overview with 8-axis health scorecard and duplicate detection. Optional repo argument accepts `owner/repo` shorthand or full `https://github.com/owner/repo` URL. When omitted, auto-detected from git upstream. Non-GitHub remotes (GitLab, Bitbucket, etc.) stop with a warning.
   - `ecosystem` — downstream consumer impact analysis for library maintainers
-  - `--reply` — only valid with `N`; spawns shepherd to draft contributor-facing reply after thread analysis. Silently ignored for `health` and `ecosystem`.
+  - `--reply` — only valid with `N`; spawns shepherd to draft contributor-facing reply after thread analysis. Silently ignored for `vitality` and `ecosystem`.
   - `path/to/report.md` — path to existing report file; only valid combined with `--reply`; skips all analysis, spawns shepherd directly using provided file
 
 </inputs>
@@ -33,7 +34,6 @@ NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
-FAST_PATH_THRESHOLD=7200  # seconds (2 hours) — item counts updated within this window qualify for fast-path
 
 </constants>
 
@@ -70,7 +70,7 @@ fi # timeout: 5000
 CLEAN_ARGS="${CLEAN_ARGS#\#}"
 ```
 
-`REPLY_MODE` only meaningful when `$CLEAN_ARGS` is number — silently ignored for `health` and `ecosystem`.
+`REPLY_MODE` only meaningful when `$CLEAN_ARGS` is number — silently ignored for `vitality` and `ecosystem`.
 
 ```bash
 DIRECT_PATH_MODE=false
@@ -81,7 +81,59 @@ fi # timeout: 5000
 TODAY=$(date +%Y-%m-%d)
 ```
 
-`DIRECT_PATH_MODE=true` only valid when `REPLY_MODE=true` — if combined without `--reply`, Step 2 invokes AskUserQuestion and stops; execution never reaches Step 5 mode dispatch.
+`DIRECT_PATH_MODE=true` only valid when `REPLY_MODE=true` — if combined without `--reply`, Step 2 prints plain-text error and stops; execution never reaches Step 5 mode dispatch.
+
+```bash
+# --- Vitality mode: resolve target repo ---
+GH_OWNER=""
+GH_REPO=""
+if [[ "$CLEAN_ARGS" == vitality* ]]; then
+    VITALITY_EXTRA="${CLEAN_ARGS#vitality}"
+    VITALITY_EXTRA="${VITALITY_EXTRA# }"  # trim leading space
+
+    if [ -n "$VITALITY_EXTRA" ]; then
+        # Argument provided — URL or owner/repo
+        if [[ "$VITALITY_EXTRA" =~ ^https?:// ]]; then
+            if [[ "$VITALITY_EXTRA" != *"github.com"* ]]; then
+                echo "⚠ Not a GitHub URL — this skill supports GitHub only."
+                echo "Other providers (GitLab, Bitbucket, Azure DevOps) are not supported."
+                echo "Usage: /oss:analyse vitality https://github.com/owner/repo"
+                exit 0
+            fi
+            VITALITY_REPO=$(echo "$VITALITY_EXTRA" | sed 's|https\?://github\.com/||' | cut -d'/' -f1-2)  # timeout: 5000
+        elif [[ "$VITALITY_EXTRA" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            VITALITY_REPO="$VITALITY_EXTRA"
+        else
+            echo "⚠ Unrecognised vitality argument: '$VITALITY_EXTRA'"
+            echo "Usage: /oss:analyse vitality [owner/repo | https://github.com/owner/repo]"
+            exit 0
+        fi
+    else
+        # No argument — detect from gh context or git remote
+        VITALITY_REPO=$(gh repo view --json nameWithOwner --jq '.nameWithOwner' 2>/dev/null)  # timeout: 10000
+        if [ -z "$VITALITY_REPO" ]; then
+            REMOTE_URL=$(git remote get-url origin 2>/dev/null || echo "")  # timeout: 5000
+            if [[ "$REMOTE_URL" == *"github.com"* ]]; then
+                VITALITY_REPO=$(echo "$REMOTE_URL" | sed 's|.*github\.com[:/]||' | sed 's|\.git$||')  # timeout: 5000
+            elif [ -n "$REMOTE_URL" ]; then
+                echo "⚠ Remote '$REMOTE_URL' is not a GitHub repository."
+                echo "This skill supports GitHub only. Other providers are not supported."
+                echo "Tip: /oss:analyse vitality https://github.com/owner/repo"
+                exit 0
+            else
+                echo "⚠ No GitHub repository detected. Pass a URL:"
+                echo "  /oss:analyse vitality https://github.com/owner/repo"
+                exit 0
+            fi
+        fi
+    fi
+    GH_OWNER=$(echo "$VITALITY_REPO" | cut -d'/' -f1)  # timeout: 5000
+    GH_REPO=$(echo "$VITALITY_REPO" | cut -d'/' -f2)  # timeout: 5000
+    CLEAN_ARGS="vitality"  # normalise for mode dispatch
+fi
+```
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 2: Reply-mode fast-path (only when `REPLY_MODE=true`)
 
@@ -89,7 +141,7 @@ Skip when `REPLY_MODE=false` and `DIRECT_PATH_MODE=false`.
 
 **Direct report path** (`DIRECT_PATH_MODE=true` — checked first):
 
-- `REPLY_MODE=false` → use `AskUserQuestion`: "A report path was passed without `--reply`. Did you mean `/analyse <path.md> --reply`?" Options: (a) "Yes — continue with `--reply` mode" → set `REPLY_MODE=true` and proceed; (b) "No — analyse a thread instead" → print usage hint (`/analyse <N> | health | ecosystem`) and stop.
+- `REPLY_MODE=false` → print: "A report path was passed without `--reply`. Did you mean `/analyse <path.md> --reply`? Re-run with `--reply` to continue, or use `/analyse <N> | vitality | ecosystem`." and stop.
 - `REPLY_MODE=true` and file missing (`[ ! -f "$REPORT_FILE" ]`) → print `Error: report not found: $REPORT_FILE` and stop.
 - `REPLY_MODE=true` and file exists → print `[direct] using $REPORT_FILE` → skip to Step 7. Don't run auto-detection fast-path below.
 
@@ -99,7 +151,7 @@ When `REPLY_MODE=true`, check if fresh report already exists before any API call
 
 ```bash
 # REPORT_FILE assigned here only for numeric (thread) mode.
-# health/ecosystem modes: REPORT_FILE set inside modes/health.md and modes/ecosystem.md respectively.
+# vitality/ecosystem modes: REPORT_FILE set inside modes/vitality.md and modes/ecosystem.md respectively.
 # DIRECT_PATH_MODE: REPORT_FILE already set from $CLEAN_ARGS above.
 SUBDIR="thread"  # default for numeric args; overridden for health/ecosystem in their mode files
 REPORT_FILE=".reports/analyse/$SUBDIR/output-analyse-$SUBDIR-$CLEAN_ARGS-$TODAY.md"
@@ -169,7 +221,7 @@ UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M
 
 > **mtime reliability caveat**: `stat` mtime is unreliable after `rsync`/copy, in CI with frozen clocks, or on HFS+ (1-second granularity). If drift check produces unexpected fast-path hits, verify report mtime is correct with `stat "$REPORT_FILE"`. Workaround: delete the cached report to force full re-analysis.
 
-Cache applies to: issue/PR/discussion primary fetch and comments. Cache does NOT apply to: `gh issue list`, `gh pr list`, `gh pr checks`, `gh pr diff`, discussion list queries, health/ecosystem modes.
+Cache applies to: issue/PR/discussion primary fetch and comments. Cache does NOT apply to: `gh issue list`, `gh pr list`, `gh pr checks`, `gh pr diff`, discussion list queries, vitality/ecosystem modes.
 
 ## Step 4: Auto-Detection (numeric arguments only)
 
@@ -212,7 +264,7 @@ else
         TYPE="unknown"
     fi
 fi
-# unknown → use AskUserQuestion: "Item #$CLEAN_ARGS was not found on GitHub. What did you want to analyse?" Options: (a) "A different issue or PR number" → ask for the correct number, (b) "Repo health overview" → re-run as `health` mode, (c) "Stop" → print usage hint and stop
+# unknown → print: "Item #$CLEAN_ARGS not found on GitHub. Re-run with a different number, or use `/analyse vitality` for repo overview." and stop
 
 # FAST_PATH=true (set above): jump to Step 7. FAST_PATH=false: continue to Step 5.
 ```
@@ -229,7 +281,7 @@ Read `$_OSS_MODE_DIR/<mode>.md` and execute all steps defined there.
 | Argument | Mode file |
 | --- | --- |
 | number (any type) | `$_OSS_MODE_DIR/thread.md` |
-| `health` | `$_OSS_MODE_DIR/health.md` |
+| `vitality` | `$_OSS_MODE_DIR/vitality.md` |
 | `ecosystem` | `$_OSS_MODE_DIR/ecosystem.md` |
 
 ## Step 6: Reply gate — STOP CHECK
@@ -242,20 +294,20 @@ Read `$_OSS_MODE_DIR/<mode>.md` and execute all steps defined there.
 
 ### 6a — Follow-up gate
 
-<!-- AskUserQuestion IS available here — context:fork = history isolation only, not tool restriction -->
-Call `AskUserQuestion` tool — do NOT write options as plain text first. Options depend on mode:
+<!-- AskUserQuestion NOT available in forked context — deferred tool schemas not loaded in fork; surface as plain text -->
+Print options as plain text. Options depend on mode:
 
 **Thread mode** (`$CLEAN_ARGS` is a number):
 - question: "What next?"
-- (a) label: `/develop:fix` — description: diagnose and fix the reported issue
-- (b) label: `/develop:feature` — description: implement as new feature
+- (a) label: `/develop:fix` — description: diagnose and fix the reported issue (requires `develop` plugin)
+- (b) label: `/develop:feature` — description: implement as new feature (requires `develop` plugin)
 - (c) label: `draft reply` — description: run `/oss:analyse $CLEAN_ARGS --reply` to shepherd a contributor-facing reply
 - (d) label: `skip` — description: no action
 
-**Health / ecosystem mode** (`$CLEAN_ARGS` is `health` or `ecosystem`):
+**Vitality / ecosystem mode** (`$CLEAN_ARGS` is `vitality` or `ecosystem`):
 - question: "What next?"
 - (a) label: `/oss:analyse <N> --reply` — description: draft a reply for a specific thread
-- (b) label: `/oss:review <N>` — description: full code review for a specific PR
+- (b) label: `/oss:review <N>` — description: full code review for a specific PR (requires `oss` plugin)
 - (c) label: `skip` — description: no action
 
 ### 6b — Confidence block (REPLY_MODE=false only)
@@ -296,30 +348,31 @@ End response with `## Confidence` block per CLAUDE.md — always **absolute last
 
 <calibration>
 
-Calibratable modes: thread (duplicate detection recall), health (issue health metrics accuracy), ecosystem (impact analysis accuracy).
+Calibratable modes: thread (duplicate detection recall), vitality (repo vitality metrics accuracy), ecosystem (impact analysis accuracy).
 
 Scenarios:
 1. Thread — duplicate detection: synthetic issue with identical symptoms to an existing closed issue → root cause match ≥0.9; duplicate link surfaced
 2. Thread — actionable response quality: feature request with no linked PRs → concrete scope + next step; no vague suggestions
-3. Health — metric accuracy: repo with known issue/PR/response-time counts → numeric values within ±10% of ground truth
+3. Vitality — metric accuracy: repo with known issue/PR/response-time counts → numeric values within ±10% of ground truth
 
 </calibration>
 
 <notes>
 
+- **Vitality mode repo resolution**: `GH_OWNER` and `GH_REPO` are set in Step 1 from: (1) explicit URL/owner-repo arg, (2) `gh repo view`, (3) `git remote origin`. vitality.md uses `-R "$GH_OWNER/$GH_REPO"` on all gh commands and literal `$GH_OWNER/$GH_REPO` in all `gh api` paths — never `{owner}/{repo}` template substitution in vitality mode.
 - Mode files live in `plugins/oss/skills/analyse/modes/` — one file per mode, fully self-contained
 - `modes/thread.md` handles all three thread types (issue, PR, discussion) via internal branching
 - Always use `gh` CLI — never hardcode repo URLs
 - Run `gh auth status` first if commands fail; user may need to authenticate
 - For closed items, note resolution so history is useful
 - Don't post responses without explicit user instruction — only draft them
-- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. Tool availability is NOT affected — `AskUserQuestion` IS callable.
+- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` is NOT available (deferred tool schemas not loaded in forked context) — all interactive gates surface as plain text output instead.
 - **`--reply` drafts only** — shepherd produces a draft file; it does NOT auto-post to GitHub. User posts manually. Write access to the repo is not required to use `--reply`; it is required only if user subsequently posts the draft via `gh issue comment` or `gh pr comment`.
 - **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix`, `/oss:review`) receive no analysis context from this run. Pass the report path explicitly or re-summarize key findings in the follow-up invocation.
 - Follow-up chains:
-  - Issue with confirmed bug → `/develop:fix` to diagnose, reproduce with test, apply targeted fix
-  - Issue is feature request → `/develop:feature` for TDD-first implementation
-  - PR with quality concerns → `/oss:review` for comprehensive multi-agent code review
+  - Issue with confirmed bug → `/develop:fix` to diagnose, reproduce with test, apply targeted fix (requires `develop` plugin)
+  - Issue is feature request → `/develop:feature` for TDD-first implementation (requires `develop` plugin)
+  - PR with quality concerns → `/oss:review` for comprehensive multi-agent code review (requires `oss` plugin)
   - Draft responses → use `--reply` to auto-draft via shepherd; or invoke shepherd manually
 
 </notes>

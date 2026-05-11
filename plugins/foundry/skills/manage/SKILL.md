@@ -90,6 +90,8 @@ ARGUMENTS="${ARGUMENTS//--skip-audit/}"
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
 ```
 
+**Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-audit\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 **Validation rules:**
 
 - Name must match `^[a-z][a-z0-9-]*$` (kebab-case)

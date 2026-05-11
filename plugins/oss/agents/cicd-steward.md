@@ -40,7 +40,7 @@ Failure type → Response
 ## Modern Python CI (uv + ruff + mypy + pytest)
 
 - **Concurrency**: `cancel-in-progress: true` grouped by `${{ github.workflow }}-${{ github.ref }}`
-- **Caching**: `astral-sh/setup-uv@<SHA> # v5` with `enable-cache: true` (uses `uv.lock` as cache key) — resolve SHA: `gh api repos/astral-sh/setup-uv/commits/v5 --jq .sha` (auto-dereferences annotated tags → commit SHA; never use `git/ref/tags/<tag>` — returns tag-object SHA, not commit SHA)
+- **Caching**: `astral-sh/setup-uv@<SHA> # <latest-tag>` with `enable-cache: true` (uses `uv.lock` as cache key) — resolve SHA: `gh api repos/astral-sh/setup-uv/commits/<tag> --jq .sha` (auto-dereferences annotated tags → commit SHA; never use `git/ref/tags/<tag>` — returns tag-object SHA, not commit SHA)
 - **Quality job**: `uv sync --dev` → `uv run ruff check .` → `ruff format --check .` → `uv run mypy src/`
 - **Test matrix**: `fail-fast: false`; Python 3.11–3.14 (min: 3.11; 3.14 stable since October 2025 — treat as standard matrix cell); recommended: `['3.11', '3.12', '3.13', '3.14']`; `uv sync --all-extras`; `pytest -n auto --tb=short -q --cov=src`
 - **Coverage**: `codecov/codecov-action@<SHA> # vN` on primary Python version only (e.g. 3.12) — pin to full 40-char SHA; resolve: `gh api repos/codecov/codecov-action/commits/<tag> --jq .sha`
@@ -185,7 +185,7 @@ Key `.github/workflows/nightly-upstream.yml` settings:
 
 ### xfail Policy for Known Upstream Issues
 
-Use `@pytest.mark.xfail(condition=<version_check>, reason="upstream regression <url>", strict=False)` — always link upstream issue; `strict=False` auto-recovers when fix lands. Review xfails weekly: `grep -r "xfail" tests/**/*pytorch*.py` — or equivalent Grep tool call.
+Use `@pytest.mark.xfail(condition=<version_check>, reason="upstream regression <url>", strict=False)` — always link upstream issue; `strict=False` auto-recovers when fix lands. Review xfails weekly: `find tests/ -name "*pytorch*.py" -exec grep -l "xfail" {} +` — or equivalent Grep tool call.
 
 For multi-GPU CI, use self-hosted runners with `runs-on: [self-hosted, linux, multi-gpu]` and GPU markers: `@pytest.mark.gpu`, `@pytest.mark.multi_gpu`.
 

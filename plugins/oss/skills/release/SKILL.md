@@ -2,9 +2,10 @@
 name: release
 description: 'Prepare release communication and check release readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness check: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format). Use whenever the user says "prepare release", "write changelog", "what changed since v1.x", "prepare v2.0", "write release notes", "am I ready to release", "check release readiness", or wants to announce a version to users.'
 argument-hint: '[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]'
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, Agent
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, Agent, AskUserQuestion
 model: opus
 effort: high
+when_to_use: 'Use when the user says "prepare release", "write changelog", "what changed since vX.Y", "write release notes", "am I ready to release", "check release readiness", or wants to announce a version to users.'
 ---
 
 <objective>
@@ -63,9 +64,9 @@ Gather + explore + validate phases produce large git/PR output that bloats main 
 
 1. Pre-compute gather file path and create dir:
    ```bash
-   # BRANCH and DATE from Shared setup block above
+   # BRANCH and DATE defined in Shared setup block below — see next section
    GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
-   mkdir -p .temp
+   mkdir -p .temp  # timeout: 5000
    ```
 2. Spawn `Agent(subagent_type="general-purpose")` — expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE` to their literal values (REPO_ROOT and GATHER_FILE defined in Shared setup; RANGE set in Gather changes phase) before spawning:
    ```text
@@ -77,7 +78,7 @@ Gather + explore + validate phases produce large git/PR output that bloats main 
    Return ONLY: {\"status\":\"done\",\"file\":\"<GATHER_FILE>\",\"changes\":N,\"breaking\":N,\"confidence\":0.N}")
    ```
 3. Validate envelope and pass file path downstream:
-   - Parse the `file` field using: `GATHER_FILE=$(echo "$ENVELOPE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['file'])" 2>/dev/null)`
+   - Parse the `file` field using: `GATHER_FILE=$(echo "$ENVELOPE" | jq -r '.file' 2>/dev/null)`
    - Assert `status == "done"`; if not or if parse fails, abort with clear error message
    - If `breaking` field absent from envelope, default to `0` — do not skip migration guide on missing field
    - Verify `[ -f "$GATHER_FILE" ]` before passing path to artifact phase; abort if file missing
@@ -129,9 +130,15 @@ done
 RANGE="${RANGE/->/../}"
 ```
 
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--changelog\`, \`--summary\`, \`--migration\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ## Shared setup
 
 ```bash
+# Locate oss plugin shared dir — installed first, local workspace fallback
+# sort -V orders semver correctly (0.9.0 < 0.10.0); tail -1 picks newest
+_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
+[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 # Resolve skill directory — used by all modes for templates and guidelines
 SKILL_DIR="$(find ~/.claude/plugins -path "*/oss/skills/release" -type d 2>/dev/null | head -1)"  # timeout: 5000
 [ -z "$SKILL_DIR" ] && SKILL_DIR="plugins/oss/skills/release"
@@ -309,7 +316,7 @@ Generate self-contained Python script in jupytext percent (`# %%`) format. Based
 # BRANCH and DATE set in Shared setup block above
 # notes mode: always write to .temp/ — $LAST_TAG is the PREVIOUS release, not the one being drafted
 DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"
-mkdir -p .temp
+mkdir -p .temp  # timeout: 5000
 ```
 
 Write demo to `$DEMO_OUT`. (`prepare` mode: `releases/$VERSION/demo.py` — see Phase 4.)
@@ -428,7 +435,7 @@ find ~/.claude/plugins -name "shepherd.md" -path "*/oss/agents/*" 2>/dev/null | 
 [ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
 # Pre-compute shepherd run dir (file-handoff protocol)
 SHEPHERD_DIR=".temp/release-shepherd-$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')-$(date +%Y-%m-%d)"
-mkdir -p "$SHEPHERD_DIR"
+mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
 # Write the generated draft content to: $SHEPHERD_DIR/draft.md before dispatching
 # IMPORTANT: expand $SHEPHERD_DIR to its literal computed value before inserting into the spawn prompt — do not pass the variable name literally.
 ```
@@ -488,7 +495,7 @@ Set up release directory and back up any existing artifacts:
 
 ```bash
 RELEASE_DIR="releases/$VERSION"
-mkdir -p "$RELEASE_DIR"
+mkdir -p "$RELEASE_DIR"  # timeout: 5000
 
 # Symlink canonical changelog into release dir — no duplication, single source of truth.
 # $CHANGELOG_FILE resolved by Phase 2b Audit changelog step.
@@ -665,7 +672,7 @@ Content rules:
 # $LAST_TAG is the previous release (range lower bound) — not the release being drafted.
 # Write to .temp/ always; prepare mode uses releases/$VERSION/ with the explicit target version.
 DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"
-mkdir -p .temp
+mkdir -p .temp  # timeout: 5000
 ```
 
 Write generated script to `$DEMO_OUT` using Write tool.

@@ -44,6 +44,8 @@ Parse `$ARGUMENTS` for `--approve` (case-insensitive). If found, set `APPROVE_AL
 
 When `APPROVE_ALL=true`, every `AskUserQuestion` below **skipped** — ★ recommended option applied automatically. Print `[--approve] auto-accepting recommended option` in place of question.
 
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ## Step 1: Locate the installed plugin
 
 Execute this exact jq command — do not parse the JSON manually:

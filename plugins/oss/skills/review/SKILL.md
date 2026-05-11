@@ -2,9 +2,10 @@
 name: review
 description: Multi-agent code review of GitHub Pull Requests (Python PRs only) covering architecture, tests, performance, docs, lint, security, and API design.
 argument-hint: '[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]'
-allowed-tools: Read, Write, Edit, Bash, Grep, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 model: opus
 effort: high
+when_to_use: 'Use when the user asks to review a GitHub Pull Request (Python PRs only), wants multi-agent code review feedback, or needs a structured review with severity-graded findings.'
 ---
 
 <objective>
@@ -19,16 +20,16 @@ Spawn specialized sub-agents in parallel. Consolidate findings into structured f
   - If a number given (e.g. `42` or `#42`): review PR diff
   - `--reply`: spawn oss:shepherd to draft contributor-facing PR comment. Path ending in `.md` → spawn oss:shepherd from that report, skip new review.
   - **Scope**: Python source only. Non-Python file → state out of scope, suggest tool, no findings.
-  - **Local files**: use `/develop:review` for local files or current git diff.
+  - **Local files**: use `/develop:review` (requires `develop` plugin) for local files or current git diff.
   - `--codemap`: enable structural context from codemap index (off by default; requires codemap plugin installed)
   - `--semble`: enable semble semantic search companion (off by default; requires semble MCP server configured)
-- **--plan handoff not supported** — this skill does not accept plan-mode output from `/develop:plan`.
+- **--plan handoff not supported** — this skill does not accept plan-mode output from `/develop:plan` (requires `develop` plugin).
 
 </inputs>
 
 <not-for>
 
-- Local file review or current git diff — use `/develop:review`
+- Local file review or current git diff — use `/develop:review` (requires `develop` plugin)
 - Non-Python PRs (TypeScript, Go, etc.) — state out of scope, stop
 - Standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — this is within scope and does not conflict.
 
@@ -47,8 +48,6 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 </constants>
 
 <workflow>
-
-<!-- Shared pattern with develop:review — coordinate on agent spawn logic, file-handoff, consolidation changes -->
 
 <!-- Agent Resolution: canonical table at plugins/oss/skills/_shared/agent-resolution.md -->
 
@@ -129,6 +128,8 @@ If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` is in your available tool
 # Strip leading '#' so both '123' and '#123' work
 CLEAN_ARGS="${CLEAN_ARGS#\#}"
 ```
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 DIRECT_PATH_MODE=false
@@ -312,7 +313,7 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 4 — foundry:doc-scribe**: Check doc completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run.
 
-- **Algorithmic accuracy check**: Functions computing math results — verify docstring claims match implementation. Output shape/length match? Standard name (e.g. "moving average") match behavior (expanding vs sliding window)? Deviates from convention → MEDIUM (docstring must document deviation). **Deprecation check**: Check stdlib deprecated (e.g., `datetime.utcnow()` deprecated in Python 3.12+, `os.path` vs `pathlib`). Flag deprecated usage as MEDIUM with replacement. Route to `foundry:linting-expert` if ruff/mypy can catch it automatically — avoid duplicate findings.
+- **Algorithmic accuracy check**: Functions computing math results — verify docstring claims match implementation. Output shape/length match? Standard name (e.g. "moving average") match behavior (expanding vs sliding window)? Deviates from convention → MEDIUM (docstring must document deviation). **Deprecation check**: Check stdlib deprecated (e.g., `datetime.utcnow()` deprecated since Python 3.12 (use `datetime.now(UTC)` instead), `os.path` vs `pathlib`). Flag deprecated usage as MEDIUM with replacement. Route to `foundry:linting-expert` if ruff/mypy can catch it automatically — avoid duplicate findings.
 
 **Agent 5 — foundry:linting-expert**: Static analysis. Check ruff/mypy pass. Type annotation gaps on public APIs, suppressed violations without explanation, missing pre-commit hooks. Flag mismatched Python version.
 
@@ -469,13 +470,9 @@ Print `### Codex Delegation` only when tasks delegated — omit if nothing deleg
 - (d) label: `walk through findings` — description: go through each finding interactively
 - (e) label: `skip` — description: no action
 
-**Follow-through** (per `quality-gates.md` follow-up gate rule) — in the same response turn as AskUserQuestion:
-- Option (a) selected → `Skill(skill="oss:resolve", args="$CLEAN_ARGS")`
-- Option (b) selected → `Skill(skill="oss:resolve", args="report")`
-- Option (c) selected → `Skill(skill="oss:resolve", args="$CLEAN_ARGS report")`
-- Options (d) or (e) → no `Skill` call; handle inline or stop
-
-Never narrate intent ("I will now run /oss:resolve") — call `Skill` directly or stop.
+`oss:resolve` has `disable-model-invocation: true` — `Skill()` invocation blocked (exempt from follow-up gate rule in `quality-gates.md`). After AskUserQuestion returns:
+- Options (a)/(b)/(c): acknowledge selection; present chosen label as command user must run manually (e.g. `Run: /oss:resolve $CLEAN_ARGS` for option a); no `Skill()` call
+- Options (d)/(e): handle inline or stop
 
 ### 8b — Confidence block
 
@@ -486,10 +483,8 @@ End with `## Confidence` block per CLAUDE.md output standards.
 `REPLY_MODE` not set → skip.
 
 ```bash
-# Check oss:shepherd availability before dispatching (mirrors release/SKILL.md guard)
-SHEPHERD_AVAILABLE=0
-find ~/.claude/plugins -name "shepherd.md" -path "*/oss/agents/*" 2>/dev/null | grep -q . && SHEPHERD_AVAILABLE=1
-[ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
+# Check oss:shepherd availability — infer from $_OSS_SHARED (only set when oss plugin is installed)
+[ -n "$_OSS_SHARED" ] && SHEPHERD_AVAILABLE=1 || SHEPHERD_AVAILABLE=0
 ```
 
 If `$SHEPHERD_AVAILABLE` equals 0: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip shepherd spawn.
@@ -522,9 +517,9 @@ Scenarios:
 - PR mode: check CI first — red → report without full review
 - Blocking issues need explicit `[blocking]` prefix
 - Follow-up chains:
-  - `[blocking]` bugs or regressions → `/develop:fix` to reproduce with test and apply targeted fix
-  - Structural or quality issues → `/develop:refactor` for test-first improvements
-  - Security findings in auth/input/deps → run `pip-audit` for dep CVEs; address OWASP issues via `/develop:fix`
+  - `[blocking]` bugs or regressions → `/develop:fix` (requires `develop` plugin) to reproduce with test and apply targeted fix
+  - Structural or quality issues → `/develop:refactor` (requires `develop` plugin) for test-first improvements
+  - Security findings in auth/input/deps → run `pip-audit` for dep CVEs; address OWASP issues via `/develop:fix` (requires `develop` plugin)
   - Mechanical issues beyond Step 6 → have Claude dispatch internally: `Agent(subagent_type="codex:codex-rescue", prompt="<task>")`
   - Docstrings, type annotations, renames → dispatch `Agent(subagent_type="codex:codex-rescue", prompt="<task description>")` per finding
   - PR feedback for contributor → `--reply` to auto-draft via oss:shepherd, or invoke oss:shepherd manually for custom framing

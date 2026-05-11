@@ -215,6 +215,8 @@ Next steps:
   /research:run <OUTPUT_PATH>     ← start iteration loop directly
 ```
 
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ### Step P-P4: --team flag
 
 `--team` detected in `$ARGUMENTS`:

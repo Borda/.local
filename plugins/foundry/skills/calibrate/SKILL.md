@@ -27,25 +27,28 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
   - `--ab-test` — also run `general-purpose` baseline and report delta metrics; requires benchmark (default `--fast` if no pace flag); mutually exclusive with `--apply`
   - `--apply` — apply proposals: with `--fast`/`--full`: run benchmark then immediately apply; without pace flag: skip benchmark, apply proposals from most recent past run; mutually exclusive with `--ab-test`
   - `--skip-gate` — suppress the follow-up gate; for programmatic callers
+  - `--local` — resolve target agent/skill files from source tree (`plugins/*/`) instead of installed plugin cache; for plugin-dev workflows where local edits aren't yet installed; sets `LOCAL_MODE=true` in all pipeline spawns
 
   **Mutual exclusion validation** (check before any work):
   - `--ab-test` + `--apply` together → hard error: "`--ab-test` and `--apply` are mutually exclusive. Pass one or neither."
   - `--fast` + `--full` together → hard error: "Pass `--fast` or `--full`, not both."
   - `--ab-test` without pace flag → default `--fast` silently (no error)
 
+  **Unsupported flag check** — after all supported flags extracted (`--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`, \`--full\`, \`--ab-test\`, \`--apply\`, \`--skip-gate\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
   **Legacy positional tokens** (`ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`ab` removed — use `--ab-test` flag: `/calibrate curator --ab-test`."
 
   **Scope tokens** (positional, space-separated — defaults to `all`):
     - `all` — all agents + relevant skills + routing + communication + all rules
     - `agents` — all agents only (full agent list in `modes/agents.md`)
-    - `skills` — calibratable skills only (`/audit`, `/oss:review` *(requires oss plugin)*)
+    - `skills` — calibratable skills only (`/audit` and others per `modes/skills.md`; `/oss:review` excluded — requires live GitHub PR)
     - `routing` — routing accuracy test: measures how accurately `general-purpose` orchestrator selects correct `subagent_type` for synthetic task prompts (not per-agent quality benchmark; included in `all`)
     - `communication` — handover + team protocol compliance: runs `foundry:curator` against synthetic agent responses and team transcripts with injected protocol violations (missing JSON envelope, missing `summary`, AgentSpeak v2 breaches); included in `all`
     - `rules` — rule adherence test: for each global rule file (no `paths:`) and each path-scoped rule when matching file is in context, generates synthetic tasks that should trigger rule's key directives, measures whether `general-purpose` agent with rule loaded correctly applies them; reports rules that are ignored, misapplied, or redundant; included in `all`
     - `plugins` — all agents + calibratable skills from all `plugins/*/` directories (union of all plugin-namespaced agents and calibratable skills)
     - `<plugin-name>` — **tier 2**: bare plugin directory name (e.g. `oss`, `foundry`, `research`, `develop`) auto-resolved when token matches a `plugins/<name>/` directory; calibrates all agents + calibratable skills in that plugin
     - `<agent-name>` — **tier 3**: single agent (e.g., `foundry:sw-engineer`); also accepts bare name (e.g. `sw-engineer`) and resolves via `plugins/*/agents/<name>.md`
-    - `/audit` or `/oss:review` — single skill
+    - `/audit` — single skill (pass any calibratable skill name; `/oss:review` accepted but excluded per `modes/skills.md`)
     - Multiple scope tokens — space-separated; calibrates union of resolved targets: `oss research`, `agents skills`, `curator shepherd`; each token resolved through same tier hierarchy as `/audit` scope tokens (reserved keywords first, then plugin-dir lookup, then agent/skill file search)
 
   Every invocation surfaces report: benchmark runs print new results; `--apply` without pace flag prints saved report from last run before applying.
@@ -98,19 +101,21 @@ Domain tables per mode: see `modes/agents.md`, `modes/skills.md`, `modes/routing
 
 From `$ARGUMENTS`, determine:
 
-- **Strip flags first**: extract `--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate` before scope resolution; validate mutual exclusion (error and stop on conflict). Strip all flags from ARGUMENTS before scope token resolution:
+- **Strip flags first**: extract `--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local` before scope resolution; validate mutual exclusion (error and stop on conflict). Strip all flags from ARGUMENTS before scope token resolution:
   ```bash
+  LOCAL_MODE=false; [[ "$ARGUMENTS" == *"--local"* ]] && LOCAL_MODE=true
   ARGUMENTS="${ARGUMENTS//--fast/}"
   ARGUMENTS="${ARGUMENTS//--full/}"
   ARGUMENTS="${ARGUMENTS//--ab-test/}"
   ARGUMENTS="${ARGUMENTS//--apply/}"
   ARGUMENTS="${ARGUMENTS//--skip-gate/}"
+  ARGUMENTS="${ARGUMENTS//--local/}"
   ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
   ```
 - **Target list** — remaining tokens after flag-strip; union of resolved targets:
-  - `all` or omitted → all agents + `/audit` + `/oss:review` + routing + communication + all rules
+  - `all` or omitted → all agents + `/audit` + routing + communication + all rules
   - `agents` → all agents (full agent list in `modes/agents.md`)
-  - `skills` → `/audit` and `/oss:review` only
+  - `skills` → `/audit` only (and other non-live-PR skills in `modes/skills.md`; `/oss:review` excluded)
   - `routing` → routing accuracy test only
   - `communication` → handover + team protocol compliance only
   - `rules` → rule adherence test (all rule files in `.claude/rules/`) only
@@ -174,7 +179,7 @@ DEVELOP_AVAILABLE=$(find ~/.claude/plugins/cache -name "develop" -type d 2>/dev/
 ```
 
 - **`agents` pipeline**: exclude `oss:cicd-steward` and `oss:shepherd` if `$OSS_AVAILABLE` empty; exclude `research:data-steward` and `research:scientist` if `$RESEARCH_AVAILABLE` empty. Log: "oss/research plugin not installed — skipping <agent> calibration"
-- **`skills` pipeline**: exclude `/oss:review` if `$OSS_AVAILABLE` empty; exclude `/codemap:*` skills if `$CODEMAP_AVAILABLE` empty; exclude `/research:plan`, `/research:judge`, `/research:verify` if `$RESEARCH_AVAILABLE` empty; exclude `/develop:review` if `$DEVELOP_AVAILABLE` empty. Log skip message per excluded skill.
+- **`skills` pipeline**: exclude `/oss:review` always (requires live GitHub PR — not calibratable with synthetic input; see `modes/skills.md`); exclude `/codemap:*` skills if `$CODEMAP_AVAILABLE` empty; exclude `/research:plan`, `/research:judge`, `/research:verify` if `$RESEARCH_AVAILABLE` empty; exclude `/develop:review` if `$DEVELOP_AVAILABLE` empty. Log skip message per excluded skill.
 
 Fallback role descriptions for cross-plugin agents (if ever substituted with `general-purpose`) — see `skills/_shared/agent-resolution.md`.
 

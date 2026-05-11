@@ -55,7 +55,7 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
 
-Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`.
+Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
 
 <!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:linting-expert → general-purpose, foundry:challenger → general-purpose. -->
 
@@ -155,6 +155,7 @@ No PR number extractable → print: "Review output does not reference a PR — p
 Parse $ARGUMENTS:
 
 ```bash
+[ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.sh" ] || { echo "Error: parse-resolve-args.sh not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
 eval "$(bash "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.sh" "$ARGUMENTS")"
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
 ```
@@ -408,7 +409,7 @@ Then return the same JSON as your final message.
 while true; do
     NOW=$(date +%s)
     ELAPSED=$((NOW - LAUNCH_AT))
-    DONE=$(find "$CHALLENGE_DIR" -name "*.json" -newer "/tmp/resolve-challenge-$$" 2>/dev/null | wc -l | tr -d ' ')
+    DONE=$(find "$CHALLENGE_DIR" -name "*.json" ! -name "items.json" -newer "/tmp/resolve-challenge-$$" 2>/dev/null | wc -l | tr -d ' ')
 
     [ "$DONE" -ge "$NUM_GROUPS" ] && break   # all groups returned
     [ "$ELAPSED" -ge 300 ] && {
@@ -868,7 +869,7 @@ Then print:
 - `gh pr merge <PR#> --merge` to merge now (preserves all commits)
 
 ## Confidence
-**Score**: [0.N]
+**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
 **Gaps**: [e.g. conflict strategy ambiguity, action items skipped at guard, Codex partial completion]
 **Refinements**: N passes. — omit if 0 passes
 ```

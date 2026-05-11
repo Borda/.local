@@ -63,6 +63,8 @@ Read current project before searching, extract constraints:
 - Task (classification, detection, generation, regression)?
 - Constraints (latency, memory, dataset size, compute budget)?
 
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ## Step 2: Research & codebase check (run in parallel)
 
 ### 2a: Spawn researcher agent (issue with 2b simultaneously in one response)

@@ -51,6 +51,8 @@ ARGUMENTS="${ARGUMENTS/--skip-validation/}"  # strip flag from args
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespace
 ```
 
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-validation\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 **Input resolution** (priority order):
 
 1. Explicit argument: `/research:judge path/to/plan.md`

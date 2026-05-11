@@ -50,7 +50,11 @@ Triggered by `fortify` or `fortify <run-id|program.md>`.
 
 **Task tracking**: create tasks for F1, F2, F3, F4, F5, F6, F7, F8 at start — before any tool calls.
 
-## Step F1: Locate source run and validate judge approval
+## Step F1: Locate source run, parse flags, and validate judge approval
+
+Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--venue\`, \`--max-ablations\`, \`--skip-run\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Input resolution** (priority order):
 

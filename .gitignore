@@ -9,6 +9,7 @@
 .claude/state/
 .claude/logs/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
 
 # Skill run artifacts and temp outputs (ephemeral, TTL-managed)
 .cache/

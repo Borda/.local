@@ -55,6 +55,8 @@ Examples:
 
 ## Step 1: Context scan
 
+**Unsupported flag check** — after all supported flags extracted (`--tight`, `--deep`, `--type`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--tight\`, \`--deep\`, \`--type\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 Gather project context before asking anything:
 
 - Read `README.md` and relevant files under `docs/`

@@ -3,7 +3,7 @@ name: scan
 description: Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics).
 argument-hint: '[--root <path>] [--incremental]'
 effort: medium
-allowed-tools: Bash
+allowed-tools: Bash, AskUserQuestion
 ---
 
 <objective>
@@ -36,6 +36,12 @@ if echo "$ARGUMENTS" | grep -q -- '--root'; then
     SCAN_ARGS+=(--root "$ROOT_VAL")
 fi
 echo "$ARGUMENTS" | grep -q -- '--incremental' && SCAN_ARGS+=(--incremental)
+```
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+```bash
+# timeout: 360000
 "$SCAN_BIN" "${SCAN_ARGS[@]}"
 ```
 

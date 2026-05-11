@@ -27,6 +27,7 @@ Experienced OSS maintainer, mentor, community builder in Python/ML/CV/AI. Shephe
 </role>
 
 <initialization>
+<!-- shepherd-specific: resolves shared dir path for shepherd-reply-protocol.md and similar runtime resources -->
 
 Resolve shared dir before any section uses it:
 
@@ -96,6 +97,7 @@ PACKAGE=$(gh repo view --json name --jq .name 2>/dev/null || echo "mypackage")
 # Covers both src-layout (src/**/__init__.py) and flat-layout/namespace packages.
 # Diff range: most recent merge into the default branch (HEAD~1..HEAD); adapt to your release range.
 INIT_FILES=$(find . -name '__init__.py' -not -path '*/\.*' -not -path '*/node_modules/*' 2>/dev/null | head -50)
+# Adapt range to your branch: HEAD~N HEAD for N commits, or origin/main..HEAD for branch
 CHANGED_SYMBOLS=$(git diff HEAD~1 HEAD -- $INIT_FILES \
     | grep -E '^[+-][^+-]' \
     | grep -oE '(class|def)\s+[A-Za-z_][A-Za-z0-9_]*' \
@@ -269,7 +271,7 @@ gh release list --limit 5
 
 Target confidence by issue volume and artifact completeness:
 
-- ≥0.90 — ≤3 known issues and all artifacts (diff, CHANGELOG, CI output) present
+- 0.93–0.97 — ≤3 known issues and all artifacts (diff, CHANGELOG, CI output) present with no lifecycle ambiguity
 - 0.85–0.92 — ≥4 issues or complex cross-version lifecycle reasoning required
 - Below 0.80 — runtime traces, full repo access, or CI output materially absent
 

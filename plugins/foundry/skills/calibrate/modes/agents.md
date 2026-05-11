@@ -39,5 +39,6 @@ Each subagent gets pipeline template from `.claude/skills/calibrate/templates/pi
 - `<TIMESTAMP>` = current run timestamp
 - `<MODE>` = `fast` or `full`
 - `<AB_MODE>` = `true` or `false` — whether to run A/B variant scoring against `general-purpose` baseline (see pipeline-prompt.md Phase 2b)
+- `<LOCAL_MODE>` = `true` or `false` — from `--local` flag; when true pipeline resolves target file from source tree
 
 Run dir per agent: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`

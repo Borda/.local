@@ -9,7 +9,7 @@
 Skill domains:
 
 - `/audit` → synthetic `.claude/` config with N injected structural issues
-- `/oss:review` → synthetic Python module with N cross-domain issues (arch + tests + docs + lint) *(oss plugin required — skip if `$OSS_AVAILABLE` empty)*
+- `/oss:review` → **currently excluded** — skill fetches live GitHub PR via `gh`; synthetic Python input cannot substitute; pipeline generates problems but skill cannot run them; deferred until fixture diff-format mocking added *(skip — even if oss plugin present)*
 - `/research:plan` → synthetic optimization goal (e.g. "reduce pytest runtime by 30%"); measure whether plan mode produces complete, valid `program.md` with all required sections, plausible `metric_cmd`, correct `direction`, coherent `scope_files` *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
 - `/research:judge` → synthetic `program.md` with N injected plan-quality issues (e.g. missing guard command, absent `direction`, non-existent `scope_files` path, invalid `agent_strategy`); measure whether judge correctly identifies each injected issue at right severity *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
 - `/develop:review` → synthetic Python file with N injected code-quality issues (style, correctness, coverage gaps); measure whether review identifies each injected issue at correct severity level *(develop plugin required — skip if `$DEVELOP_AVAILABLE` empty)*
@@ -49,6 +49,7 @@ Each subagent receives pipeline template from `.claude/skills/calibrate/template
 - `<TIMESTAMP>` = current run timestamp
 - `<MODE>` = `fast` or `full`
 - `<AB_MODE>` = `true` or `false`
+- `<LOCAL_MODE>` = `true` or `false` — from `--local` flag; when true pipeline resolves target file from source tree
 
 **Partial-calibration principle**: individual skill modes with deterministic, auditable outputs can be calibrated even when full orchestration skill cannot. Full `optimize run` loop (requires live metric commands, git state, real guard scripts) excluded. Sub-modes producing structured, inspectable output are in scope:
 

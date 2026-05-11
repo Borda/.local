@@ -47,6 +47,8 @@ From $ARGUMENTS extract:
 - **Where**: local / CI / both; which tool or command; which skill or hook if applicable
 - **When**: started recently (after change) or always broken; intermittent or consistent
 
+**Unsupported flag check** — after all supported flags extracted (`--fast`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ## Step 2: Gather signals
 
 Collect evidence in parallel — do NOT form hypotheses yet.

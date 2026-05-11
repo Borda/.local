@@ -1,7 +1,7 @@
 ---
 name: audit
 description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review. Fix level chosen via always-fire follow-up gate after report."
-argument-hint: '[<scope>...] [--upgrade | --adversarial] [--skip-gate]'
+argument-hint: '[<scope>...] [--local] [--upgrade | --adversarial] [--skip-gate]'
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
@@ -18,6 +18,7 @@ Run a full-sweep quality audit of the `.claude/` configuration and all `plugins/
 - **$ARGUMENTS**: optional — parse `--flags` first, then resolve remaining tokens as scope
 
   **Flags** (order independent, any combination with scope):
+  - `--local` — audit source tree (`plugins/*/`) rather than user setup (`.claude/` + installed cache); for plugin-dev workflows where local edits aren't yet installed; sets `LOCAL_MODE=true`
   - `--upgrade` — fetch latest Claude Code docs, filter new features by genuine value, then apply: **config** changes (apply + correctness check), **capability** changes (calibrate before → apply → calibrate after → accept if Δrecall ≥ 0 and ΔF1 ≥ 0). Skip to **Mode: upgrade**. Mutually exclusive with `--adversarial`.
   - `--adversarial` (alias: `--challenge`) — adversarial review of all agents + skills in scope using `foundry:challenger` (Phase A) + Codex adversarial pass (Phase B); surfaces issues beyond standard per-file audit; see **Mode: adversarial**. Mutually exclusive with `--upgrade`.
   - `--skip-gate` — suppress the follow-up gate; for programmatic callers (e.g. `/manage` step 9)
@@ -25,7 +26,7 @@ Run a full-sweep quality audit of the `.claude/` configuration and all `plugins/
   **Legacy positional tokens** (`fix`, `upgrade`, `adversarial`, `challenge`, `ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`fix medium` removed — run `/audit` and pick fix level from gate, or pass `--upgrade` / `--adversarial` as flags."
 
   **Scope tokens** (positional, space-separated — resolve each token before Step 2):
-  - No scope: full sweep — covers ALL files: `plugins/*/agents/`, `plugins/*/skills/`, `.claude/agents/`, `.claude/skills/`, `.claude/rules/`, hooks, settings; `plugins/` is primary source; `.claude/` is secondary
+  - No scope: full sweep — file sources determined by `--local` flag: **without `--local`** covers user setup (`.claude/agents/`, `.claude/skills/`, `.claude/rules/`, hooks, settings, `~/.claude/plugins/cache/` installed versions); **with `--local`** covers project source tree (`plugins/*/agents/`, `plugins/*/skills/`) + `.claude/` as secondary
   - `agents` — restrict sweep to agent files only
   - `skills` — restrict sweep to skill files only
   - `rules` — restrict sweep to rule files only
@@ -41,7 +42,7 @@ Run a full-sweep quality audit of the `.claude/` configuration and all `plugins/
 
   **Scope token resolution** (each remaining token after flag-strip, resolved before Step 2): (1) reserved scope keywords (`agents`, `skills`, `rules`, `communication`, `setup`, `plugin`, `plugins`) → use as-is; (2) token matches directory under `plugins/<token>/` → tier 2; (3) token matches agent file in `plugins/*/agents/<token>.md` or `.claude/agents/<token>.md` → tier 3 agent; (4) token matches skill dir `plugins/*/skills/<token>/` or `.claude/skills/<token>/` → tier 3 skill; (5) no match → error and stop
 
-  **Valid combinations**: scope tokens and flags can be mixed freely: `foundry --adversarial`, `agents skills`, `oss research --adversarial`. `--upgrade` and `--adversarial` mutually exclusive — error if both passed.
+  **Valid combinations**: scope tokens and flags can be mixed freely: `foundry --local`, `foundry --adversarial`, `agents skills --local`, `oss research --adversarial`. `--upgrade` and `--adversarial` mutually exclusive — error if both passed. `--local` compatible with all other flags.
 
 </inputs>
 
@@ -82,6 +83,10 @@ Surface progress to the user at natural milestones: after system-wide checks ("�
 **Context budget**: the full audit (12+ agents, 14+ skills, 12 system checks) runs close to context limits. Strict file-based handoff is mandatory — every sub-agent writes its full output to a file and returns only a compact JSON envelope. Any sub-agent that echoes findings back to context will cause compaction before the audit completes.
 
 ```bash
+LOCAL_MODE=false; [[ "$ARGUMENTS" == *"--local"* ]] && LOCAL_MODE=true
+ARGUMENTS="${ARGUMENTS//--local/}"
+ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
+
 RED='\033[1;31m'
 YEL='\033[1;33m'
 GRN='\033[0;32m'
@@ -143,6 +148,8 @@ AUDIT_TPL=".claude/skills/audit/templates"
 
 If `.claude/` is missing, abort immediately. Missing `jq` is a warning — the audit continues with Check 4 skipped.
 
+**Unsupported flag check** — after all supported flags extracted (`--local`, `--upgrade`, `--adversarial`, `--skip-gate`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--local\`, \`--upgrade\`, \`--adversarial\`, \`--skip-gate\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ## Step 1: Run pre-commit (if configured)
 
 ```bash
@@ -159,29 +166,39 @@ If pre-commit is not configured, skip this step silently.
 
 ## Step 2: Collect all config files
 
-Enumerate everything in scope using built-in tools. Run all Glob calls in parallel. **`plugins/` is primary** — list it first in inventory; `.claude/` project-local files are secondary:
+Enumerate everything in scope using built-in tools. Run all Glob calls in parallel.
 
-- **Agents (plugins — primary)**: Glob tool, pattern `*/agents/*.md`, path `plugins/`
-- **Skills (plugins — primary)**: Glob tool, pattern `*/skills/*/SKILL.md`, path `plugins/`
-- **Agents (project-local)**: Glob tool, pattern `agents/*.md`, path `.claude/`
-- **Skills (project-local)**: Glob tool, pattern `skills/*/SKILL.md`, path `.claude/`
+**Source selection by `LOCAL_MODE`**:
+- **`LOCAL_MODE=false` (default — user setup)**: `.claude/` is primary; `plugins/` is skipped. Collects installed/active config only.
+- **`LOCAL_MODE=true` (--local — project source)**: `plugins/` is primary; `.claude/` is secondary for rules/hooks/settings only.
+
+**Without `--local` (`LOCAL_MODE=false`)**:
+- **Agents**: Glob tool, pattern `agents/*.md`, path `.claude/`
+- **Skills**: Glob tool, pattern `skills/*/SKILL.md`, path `.claude/`
 - **Rules**: Glob tool, pattern `rules/*.md`, path `.claude/`
 - **Communication**: Read tool on `rules/communication.md`, `rules/quality-gates.md`, `TEAM_PROTOCOL.md`, `skills/_shared/file-handoff-protocol.md`
 - **Settings**: Read tool on `.claude/settings.json`
 - **Hooks**: Glob tool, pattern `hooks/*`, path `.claude/`
 
-Merge into single flat inventory; plugin files first. If same logical name appears in both `plugins/` and `.claude/` (installed copy), prefer plugin source — skip `.claude/` duplicate to avoid auditing same file twice. Record full paths — cross-reference checks in Step 3 depend on this inventory being current. If MEMORY.md has not been updated since the last agent or skill was added or removed, run a live disk scan now rather than relying on the cached roster. Stale inventory is the primary cause of false-negative cross-reference findings.
+**With `--local` (`LOCAL_MODE=true`)**:
+- **Agents (source — primary)**: Glob tool, pattern `*/agents/*.md`, path `plugins/`
+- **Skills (source — primary)**: Glob tool, pattern `*/skills/*/SKILL.md`, path `plugins/`
+- **Agents (project-local — secondary)**: Glob tool, pattern `agents/*.md`, path `.claude/`
+- **Skills (project-local — secondary)**: Glob tool, pattern `skills/*/SKILL.md`, path `.claude/`
+- **Rules / Settings / Hooks**: same as without `--local` (`.claude/`)
 
-**Scope filtering for Step 2**: resolve all scope tokens first (using the tier resolution algorithm in `<inputs>`), then collect only files for the resolved scope union:
-- `agents` scope — collect agents from `.claude/agents/` + `plugins/*/agents/`; skip skills, rules, hooks
-- `skills` scope — collect skills from `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`; skip agents, rules, hooks
-- `plugins` scope — collect agents from `plugins/*/agents/*.md` + skills from `plugins/*/skills/*/SKILL.md` across all plugins
-- `plugins <name>` or `<plugin-name>` (tier 2) scope — collect agents from `plugins/<name>/agents/*.md` + skills from `plugins/<name>/skills/*/SKILL.md` only
-- `<agent-name>` (tier 3) scope — collect single matching agent file from `plugins/*/agents/<name>.md` or `.claude/agents/<name>.md`
-- `<skill-name>` (tier 3) scope — collect single matching skill file from `plugins/*/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`
+Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name appears in both `plugins/` and `.claude/`, prefer plugin source — skip `.claude/` duplicate. Record full paths — cross-reference checks in Step 3 depend on this inventory being current. If MEMORY.md has not been updated since the last agent or skill was added or removed, run a live disk scan now rather than relying on the cached roster. Stale inventory is the primary cause of false-negative cross-reference findings.
+
+**Scope filtering for Step 2** (applies on top of `LOCAL_MODE` source selection):
+- `agents` scope — collect agents from active source (`.claude/agents/` or `plugins/*/agents/` per `LOCAL_MODE`); skip skills, rules, hooks
+- `skills` scope — collect skills from active source; skip agents, rules, hooks
+- `plugins` scope — always reads `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md` regardless of `LOCAL_MODE`; implies `LOCAL_MODE=true` for file collection
+- `plugins <name>` or `<plugin-name>` (tier 2) scope — collect agents from `plugins/<name>/agents/*.md` + skills from `plugins/<name>/skills/*/SKILL.md` only; implies `LOCAL_MODE=true` for file collection
+- `<agent-name>` (tier 3) scope — collect single matching agent file; when `LOCAL_MODE=false`: `.claude/agents/<name>.md`; when `LOCAL_MODE=true`: `plugins/*/agents/<name>.md` first, then `.claude/agents/<name>.md`
+- `<skill-name>` (tier 3) scope — collect single matching skill file; same `LOCAL_MODE` resolution as agent above
 - Multiple scope tokens — union of all resolved file sets; collect everything matched by any token
 - `setup`/`plugin` (bare) scope — no agent/skill collection from plugins; see setup/plugin notes below
-- Full sweep (no scope) — collect all: plugins primary (all `plugins/*/agents/` + `plugins/*/skills/`), then `.claude/` project-local; deduplicate on logical name (plugin source wins)
+- Full sweep (no scope) — collect per `LOCAL_MODE` source selection above
 
 **Setup scope**: when `$SCOPE` is `setup`, also collect `plugins/foundry/skills/init/SKILL.md` for the Step 3 foundry:curator spawn — this is the only per-file spawn in setup scope. Checks I1–I3 (from `checks-install.md`) run in Step 4 against `~/.claude/` to validate post-install user state.
 

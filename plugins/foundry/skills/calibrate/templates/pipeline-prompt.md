@@ -3,6 +3,7 @@
 You are calibration pipeline runner for `<TARGET>`. Complete all phases in sequence.
 
 AB mode: `<AB_MODE>` — when `true`, also run `general-purpose` baseline on every problem and compute delta metrics.
+Local mode: `<LOCAL_MODE>` — when `true`, resolve target file from source tree (`plugins/`) first; see Pre-flight below.
 
 Run dir: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`
 
@@ -18,6 +19,36 @@ echo "Codex plugin: $CODEX_AVAILABLE"
 Uses `CLAUDE_PLUGIN_DATA` env var (inherited by all subagents) not `claude plugin list` — that requires CLI allow entry and fails silently in background agents when not pre-approved.
 
 Codex integration active only for `agents` and `skills` modes. If pipeline spawned for `routing`, `communication`, or `rules`, treat `CODEX_AVAILABLE=false` regardless of install — those modes test Claude-specific internals Codex lacks context for.
+
+### Pre-flight — local file resolution
+
+When `LOCAL_MODE=true`, resolve the target file from source tree before Phase 2:
+
+```bash
+LOCAL_MODE=<LOCAL_MODE>
+TARGET_FILE=""
+if [ "$LOCAL_MODE" = "true" ]; then
+  # Strip leading / and split plugin:name
+  BARE=$(echo "<TARGET>" | sed 's|^/||')
+  PLUGIN=$(echo "$BARE" | cut -d: -f1)
+  NAME=$(echo "$BARE" | cut -d: -f2)
+  if [[ "<TARGET>" == /* ]]; then
+    # Skill target: plugins/<plugin>/skills/<name>/SKILL.md
+    CANDIDATE="plugins/$PLUGIN/skills/$NAME/SKILL.md"
+  else
+    # Agent target: plugins/<plugin>/agents/<name>.md
+    CANDIDATE="plugins/$PLUGIN/agents/$NAME.md"
+  fi
+  if [ -f "$CANDIDATE" ]; then
+    TARGET_FILE="$CANDIDATE"
+    echo "local mode: using $TARGET_FILE"
+  else
+    echo "! local mode: source file not found at $CANDIDATE — falling back to installed plugin"
+  fi
+fi
+```
+
+When `LOCAL_MODE=false` or source file not found: Phase 2 dispatches as normal (agent by subagent_type, skill by cache/installed SKILL.md).
 
 ### Phase 1a — Generate problems (dual source)
 
@@ -137,7 +168,9 @@ Prompt for each subagent:
 
 **Phase timeout**: after 5 min of no acknowledgment, run `find .reports/calibrate/<TIMESTAMP>/<TARGET>/ -newer /tmp/calibrate-<TARGET>-phase2-<TIMESTAMP> -name "response-*.md" | wc -l` — non-zero = alive, grant one +5-min extension. Hard cutoff at 15 min of no new file activity: mark that problem as `{"timed_out": true}` in scores.json and proceed. Never block indefinitely on single response.
 
-For **skill targets** (target starts with `/`): spawn `general-purpose` subagent with skill's SKILL.md content prepended as context, running against synthetic input from problem. Apply same write-and-acknowledge pattern.
+For **agent targets** when `LOCAL_MODE=true` and `TARGET_FILE` is set: spawn `general-purpose` subagent with TARGET_FILE content prepended ("You are an agent described by the following instructions: <content of TARGET_FILE>") — tests source tree definition rather than installed plugin. When LOCAL_MODE=false or TARGET_FILE empty: spawn `Agent(subagent_type="<TARGET>")` as normal.
+
+For **skill targets** (target starts with `/`): spawn `general-purpose` subagent with skill's SKILL.md content prepended as context, running against synthetic input from problem. When `LOCAL_MODE=true` and `TARGET_FILE` is set, read SKILL.md from `TARGET_FILE`; otherwise resolve: `.claude/skills/<NAME>/SKILL.md` → cache `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/skills/<NAME>/SKILL.md` (latest mtime) → `plugins/<PLUGIN>/skills/<NAME>/SKILL.md`. Apply same write-and-acknowledge pattern.
 
 ### Phase 2b — Run general-purpose baseline (skip if AB_MODE is false)
 
@@ -341,10 +374,15 @@ Write single-line JSONL result to `.reports/calibrate/<TIMESTAMP>/<TARGET>/resul
 
 ### Phase 5 — Propose instruction edits
 
-Determine target file path:
+Determine target file path for curator proposals:
 
-- Agent: `.claude/agents/<TARGET>.md`
-- Skill: `.claude/skills/<TARGET>/SKILL.md` (strip leading `/` from target name)
+When `LOCAL_MODE=true` and `TARGET_FILE` is set: use `TARGET_FILE` directly.
+
+Otherwise resolve (first match wins):
+- Agent: `.claude/agents/<NAME>.md` → `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/agents/<NAME>.md` (latest mtime) → `plugins/<PLUGIN>/agents/<NAME>.md`
+- Skill: `.claude/skills/<NAME>/SKILL.md` → `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/skills/<NAME>/SKILL.md` (latest mtime) → `plugins/<PLUGIN>/skills/<NAME>/SKILL.md`
+
+(`<PLUGIN>` and `<NAME>` parsed from `<TARGET>` as in pre-flight: strip `/`, split on `:`)
 
 Spawn **foundry:curator** subagent using **Agent tool** — never via Bash or CLI. Pass only **file path** and **report path** — do NOT paste file contents into prompt; foundry:curator reads files itself:
 
@@ -375,6 +413,8 @@ Spawn **foundry:curator** subagent using **Agent tool** — never via Bash or CL
 Write foundry:curator response verbatim to `.reports/calibrate/<TIMESTAMP>/<TARGET>/proposal.md`. Ask foundry:curator to end proposed changes with `## Confidence` block per CLAUDE.md output standards.
 
 ### Return value
+
+**CRITICAL — context discipline**: return ONLY the compact JSON line below. No prose, no report summary, no table, no Confidence block, no additional output of any kind. Every extra byte returned accumulates in the orchestrator context and can cause synthesis hang. All report content is already on disk from Phase 4.
 
 Return **only** this compact JSON (no prose before or after):
 

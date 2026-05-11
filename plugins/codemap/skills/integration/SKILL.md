@@ -165,6 +165,8 @@ printf "  • /codemap:integration check — re-run after fixes\n"
 
 If `--approve` is present in `$ARGUMENTS` (case-insensitive), skip all `AskUserQuestion` calls in this workflow and auto-select the ★ option for every prompt. Print `[--approve] applying recommended options` in place of each question. This is a reasoning instruction — do not set a bash variable. All subsequent `AskUserQuestion` calls in this workflow follow this rule automatically — no per-step check needed.
 
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ### I1 — Verify or build the index
 
 ```bash

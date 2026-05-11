@@ -3,7 +3,7 @@ name: retro
 description: Post-run retrospective analysis of experiment history. Reads .experiments/ JSONL, computes statistical significance of improvements (Wilcoxon signed-rank), detects dead iterations, flags suspicious metric jumps, and generates a learning summary with next-hypothesis queue compatible with --hypothesis flag of research:run.
 argument-hint: '[<run-id>] [--compare <run-id-2>] [--threshold <delta>] [--alpha <significance>]'
 effort: medium
-allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
 
@@ -32,6 +32,8 @@ Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback
 Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`.
 
 **Defaults**: `--threshold 0.001`, `--alpha 0.05`.
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--compare\`, \`--threshold\`, \`--alpha\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Task tracking**: create tasks for T1, T2, T3, T4, T5, T6, T7 at start — before any tool calls.
 
