@@ -3,6 +3,7 @@ name: debug
 description: Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file.
 argument-hint: '<symptom or failing test> [--no-challenge]'
 effort: medium
+when_to_use: Use when root cause is unknown and evidence must be gathered first; NOT for applying a known fix (use fix) or environment/tooling failures without a code traceback (use foundry:investigate).
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -63,13 +64,9 @@ Collect all signals before forming any hypothesis.
 **Issue-number mode first** — if `$ARGUMENTS` is an issue number, fetch the issue body and extract the test path BEFORE invoking pytest:
 
 ```bash
-# Strip leading '#' so both '123' and '#123' work
-ARGUMENTS="${ARGUMENTS#\#}"
-```
-
-```bash
-# Fetch the full issue body first
-ISSUE_BODY=$(gh issue view "$ARGUMENTS" --comments 2>&1)  # timeout: 6000
+# Strip leading '#' and fetch issue in one block — ARGUMENTS strip doesn't persist across Bash calls
+ISSUE_NUM="${ARGUMENTS#\#}"
+ISSUE_BODY=$(gh issue view "$ISSUE_NUM" --comments 2>&1)  # timeout: 6000
 echo "$ISSUE_BODY"
 ```
 

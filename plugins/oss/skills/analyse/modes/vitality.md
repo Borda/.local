@@ -384,7 +384,7 @@ else: axis3_confidence = max(0.4, 1.0 - low_contributor_penalty - dormant_penalt
 ```
 
 Axis 8 confidence logic:
-```
+```python
 if dependabot_status == 403:
     axis8_confidence = 0.4  # partial scoring mode
 else:
@@ -410,11 +410,37 @@ else:
 
 Checkpoint axes carry sub-tier resolution — numeric score is more precise than 🟢/🟡/🔴 status; consumers should use numeric score for comparison across repos.
 
+**Data Sources log**: track actual record counts as each API call completes — open_issues_count, closed_issues_count, open_prs_count, closed_prs_count, commits_count (with date range), releases_count, contributors_count (or "202-fallback"), responsiveness_sample_issues, responsiveness_sample_prs, ci_workflows_count, ci_runs_count, readme_size_bytes, dependabot_status ("N alerts" or "403"), star_history_days. These populate the Data Sources table in Step 4.
+
 ## Step 4 — Report Generation
 
 ```bash
 REPORT_TIMESTAMP=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
 REPORT_FILE=".reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-${REPORT_TIMESTAMP}.md"
+
+# Provenance metadata — embedded in report header for self-complete, deterministic output
+SKILL_VERSION=$(python3 -c "
+import json, os, glob
+# Try installed cache first, then workspace source
+paths = sorted(glob.glob(os.path.expanduser('~/.claude/plugins/cache/borda-ai-rig/oss/*/.claude-plugin/plugin.json')))
+if not paths:
+    paths = glob.glob('plugins/oss/.claude-plugin/plugin.json')
+if paths:
+    print(json.load(open(paths[-1])).get('version','unknown'))
+else:
+    print('unknown')
+" 2>/dev/null || echo "unknown")  # timeout: 5000
+
+REPORT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")  # timeout: 5000
+
+# Codex availability check — done here so agents list in frontmatter is accurate at write time
+find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
+
+# Build agents list for YAML frontmatter — deterministic, reflects actual contributors
+REPORT_AGENTS_YAML="  - oss:analyse (orchestrator)
+  - foundry:challenger (adversarial review)"
+[ "$CODEX_AVAILABLE" = "1" ] && REPORT_AGENTS_YAML="$REPORT_AGENTS_YAML
+  - codex:codex-rescue (independent repo review + adversarial review)"
 ```
 
 Run `mkdir -p .reports/analyse/vitality` then write full report to `$REPORT_FILE` via Write tool — do not print full analysis to terminal.
@@ -423,35 +449,165 @@ Report structure:
 
 ```markdown
 ---
-Repo Vitality — $GH_OWNER/$GH_REPO — $TODAY
-Score:       {XX}% (confidence: {0.NN} 🟢/🟡/🔴) | {N}/8 healthy | {N} warning | {N} critical
-Top risk:    {single most urgent finding}
-→ saved to   .reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-{YYYY-MM-DDTHH-MM-SSZ}.md
+generated_at: {REPORT_TIMESTAMP}
+repo: {GH_OWNER}/{GH_REPO}
+skill: oss:analyse
+mode: vitality
+skill_version: {SKILL_VERSION}
+commit: {REPORT_COMMIT}
+agents:
+{REPORT_AGENTS_YAML}
 ---
 
-## Repo Vitality Report — $GH_OWNER/$GH_REPO
+# Repo Vitality — {GH_OWNER}/{GH_REPO}
 
-**Date**: {date} · **Health Score**: {XX}% · **Overall**: {🟢|🟡|🔴} {N}/8 axes healthy
+**Generated:** {REPORT_TIMESTAMP}
+**Skill:** oss:analyse · mode: vitality · v{SKILL_VERSION}
+**Commit:** {REPORT_COMMIT}
+**Agents:** {comma-joined agent list from REPORT_AGENTS_YAML}
 
-### Vitality Scorecard
+---
 
-| Axis | Weight | Score | Status | Conf | Key Signal | Risk |
-|------|--------|-------|--------|------|------------|------|
-| 1 Responsiveness | 18% | N.N | 🟢/🟡/🔴 | 0.00 | median issue Xd, PR Xd; X% ≤7d | ... |
-| 2 Maintenance activity | 20% | N.N | 🟢/🟡/🔴 | 0.00 | last commit Xd, X commits/30d | ... |
-| 3 Contributor health | 15% | N.N | 🟢/🟡/🔴 | 0.00 | bus factor N, retention X% | ... |
-| 4 Issue & PR health | 12% | N.N | 🟢/🟡/🔴 | 0.00 | stale X%, close rate X, review cov X% | ... |
-| 5 CI/CD & code quality | 10% | N.N | 🟢/🟡/🔴 | 0.00 | N/5 checks, CI pass rate X% | ... |
-| 6 Documentation | 8% | N.N | 🟢/🟡/🔴 | 0.00 | N/9 checkpoints | ... |
-| 7 Governance | 10% | N.N | 🟢/🟡/🔴 | 0.00 | N/7 files, active maintainers X/Y | ... |
-| 8 Security posture | 7% | N.N | 🟢/🟡/🔴 | 0.00 | dep-config: yes/no, alerts: N or "403" | ... |
-| **Health Score** | 100% | **XX%** | | | | |
+## Summary
 
-_(Conf column: per-axis confidence 0.00–1.00; ⚠ = below 0.9)_
+{2–3 sentence verdict: overall health, top strength, top risk. Include health score badge and axis tally.}
 
-### Scoring Methodology
+**Health Score:** {XX}% · {🟢|🟡|🔴} · {N} healthy · {N} warning · {N} critical · {N} unavailable (⚪)
 
-Axes and weights reflect signal quality, data reliability, and predictive value for project sustainability — not subjective importance. Sources: CHAOSS practitioner guides, OpenSSF Scorecard risk levels, repohealth category weights.
+---
+
+## Scorecard
+
+| Axis | Weight | Score | Status | Conf | Key Signal |
+|------|--------|-------|--------|------|------------|
+| 1 Responsiveness | 18% | N.N | 🟢/🟡/🔴 | 0.00 | median issue Xd, PR Xd; X% ≤7d |
+| 2 Maintenance activity | 20% | N.N | 🟢/🟡/🔴 | 0.00 | last commit Xd, X commits/30d |
+| 3 Contributor health | 15% | N.N | 🟢/🟡/🔴 | 0.00 | bus factor N, retention X% |
+| 4 Issue & PR health | 12% | N.N | 🟢/🟡/🔴 | 0.00 | stale X%, close rate X, review cov X% |
+| 5 CI/CD & code quality | 10% | N.N | 🟢/🟡/🔴 | 0.00 | N/5 checks, CI pass rate X% |
+| 6 Documentation | 8% | N.N | 🟢/🟡/🔴 | 0.00 | N/9 checkpoints |
+| 7 Governance | 10% | N.N | 🟢/🟡/🔴 | 0.00 | N/7 files, active maintainers X/Y |
+| 8 Security posture | 7% | N.N | 🟢/🟡/🔴 | 0.00 | dep-config: yes/no, alerts: N or "403" |
+| **Health Score** | 100% | **XX%** | | | |
+
+_(Conf: per-axis confidence 0.00–1.00; ⚠ = below 0.9. ⚪ axes excluded from score; weight renormalized.)_
+
+---
+
+## Finding Matrix
+
+Quick severity cross-reference across all axes:
+
+| Axis | Critical | High | Medium | Low | Total |
+|------|----------|------|--------|-----|-------|
+| 1 Responsiveness | N | N | N | N | N |
+| 2 Maintenance activity | N | N | N | N | N |
+| 3 Contributor health | N | N | N | N | N |
+| 4 Issue & PR health | N | N | N | N | N |
+| 5 CI/CD & code quality | N | N | N | N | N |
+| 6 Documentation | N | N | N | N | N |
+| 7 Governance | N | N | N | N | N |
+| 8 Security posture | N | N | N | N | N |
+| **Total** | **N** | **N** | **N** | **N** | **N** |
+
+_Severity mapping: 🔴 axis score = Critical or High findings; 🟡 = Medium; Low = informational observations within any axis._
+
+---
+
+## Findings
+
+Ordered by severity. Each finding includes evidence from fetched data, impact assessment, and concrete action.
+
+### 🔴 Critical
+
+_(Only emitted when axis scores 🔴 with high-impact evidence. If none: "No critical findings.")_
+
+#### [Axis N] {Finding title}
+**Axis:** {name} · **Score:** {N.N} · **Conf:** {0.00}
+**Evidence:** {specific numbers and data points from API fetch — not assertions}
+**Impact:** {why this matters for the project and its contributors}
+**Action:** {concrete, specific next step with ownership hint}
+
+### 🟡 High
+
+_(🟡 axes with strong signal. If none: "No high-severity findings.")_
+
+#### [Axis N] {Finding title}
+**Axis:** {name} · **Score:** {N.N} · **Conf:** {0.00}
+**Evidence:** {specific numbers}
+**Impact:** {impact}
+**Action:** {action}
+
+### 🟠 Medium
+
+_(Informational issues within 🟡 axes, or boundary-case 🔴 axes with mitigating factors.)_
+
+### 🔵 Low
+
+_(Observations worth tracking but not urgent.)_
+
+---
+
+## Duplicate Clustering
+
+Group all issues, PRs, and discussions (open and closed) by their shared duplication root —
+the specific element that makes them the same problem: identical error message, identical
+feature ask, or identical root cause even if symptoms differ. Flag as RELATED (not duplicate)
+when items share a component/area but have distinct problems.
+
+#### Group 1
+**Root**: [the shared key — e.g. exact error message, exact feature request, exact failure mode]
+- Issue #N: [title] ([open/closed]) — created [date]  ← CANONICAL
+- Issue #N: [title] ([open/closed]) ← DUPLICATE
+- PR #N: [title] ([state]) ← related fix
+  → Close duplicates with: "Closing as duplicate of #[canonical]"
+
+_(Repeat for each group. If no duplicate groups found: "No obvious duplicates detected.")_
+
+---
+
+## Recommended Actions
+
+Ordered by priority (highest impact first):
+
+1. {action} — addresses {axis}, expected impact: {outcome}
+2. ...
+
+---
+
+## Independent Codex Review
+
+{Populated by Step 5 — codex:codex-rescue independent assessment and aggregation. When codex unavailable: "codex unavailable — single-pass analysis only."}
+
+---
+
+## Data Sources
+
+All data fetched from GitHub API at {REPORT_TIMESTAMP}. Record counts confirm analysis is grounded in actual repository state.
+
+| Source | API Endpoint | Records Fetched | Window | Notes |
+|--------|-------------|-----------------|--------|-------|
+| Open issues | `GET /repos/{repo}/issues?state=open` | N | all open | {truncated at 500 if >500} |
+| Closed issues | `GET /repos/{repo}/issues?state=closed` | N | recent 200 | close rate window |
+| Open PRs | `GET /repos/{repo}/pulls?state=open` | N | all open | |
+| Closed PRs | `GET /repos/{repo}/pulls?state=closed` | N | recent 200 | merge rate window |
+| Commits | `GET /repos/{repo}/commits` | N | last 100 | date range: {earliest}–{latest} |
+| Releases | `GET /repos/{repo}/releases` | N | last 10 | cadence + downloads |
+| Contributor stats | `GET /repos/{repo}/stats/contributors` | N contributors | all-time | {202-fallback if applicable} |
+| Responsiveness sample | GraphQL issues + PRs | 20 + 20 | most recent | time-to-first-response |
+| CI workflows | `GET /repos/{repo}/actions/workflows` | N workflows | — | |
+| CI runs | `GET /repos/{repo}/actions/runs` | N | last 20 | pass rate |
+| README | `GET /repos/{repo}/readme` | {size} bytes | — | |
+| Dependabot alerts | `GET /repos/{repo}/dependabot/alerts` | N or 403 | open | 403 = no push access |
+| Star history | `GET /repos/{repo}/stargazers` | N | last 180d | advisory only |
+
+_{Any endpoint returning 403 or 202 is noted in Gaps & Limitations. All counts are actual response sizes, not estimates.}_
+
+---
+
+## Methodology
+
+Axes and weights reflect signal quality, data reliability, and predictive value for project sustainability. Sources: CHAOSS practitioner guides, OpenSSF Scorecard risk levels, repohealth category weights.
 
 | Axis | Weight | Rationale |
 |------|--------|-----------|
@@ -464,108 +620,179 @@ Axes and weights reflect signal quality, data reliability, and predictive value 
 | 7 Governance | 10% | Legal usability (LICENSE), security contact (SECURITY.md), succession planning (CODEOWNERS) — harder to retrofit than docs |
 | 8 Security posture | 7% | Lowest — primary signal (Dependabot alerts) requires push access; most runs score via secondary signals at confidence 0.4 |
 
-Weights sum to 1.00. Axes where data is unavailable (⚪) are excluded; remaining weights renormalized — see Gaps & Limitations.
+Weights sum to 1.00. Axes where data is unavailable (⚪) are excluded; remaining weights renormalized.
 
-### Critical Findings
+---
 
-_(🔴 axes only — each gets full detail block)_
+## Gaps & Limitations
 
-#### Axis N — {Name}
-**Evidence**: {specific numbers}
-**Impact**: {why this matters}
-**Recommended action**: {concrete next step}
-
-### Warnings
-
-_(🟡 axes — summary bullets)_
-
-- **Axis N — {Name}**: {one-line finding}
-
-### Duplicate Clustering
-
-Group all issues, PRs, and discussions (open and closed) by their shared duplication root —
-the specific element that makes them the same problem: identical error message, identical
-feature ask, or identical root cause even if symptoms differ. Flag as RELATED (not duplicate)
-when items share a component/area but have distinct problems.
-
-#### Group 1
-**Root**: [the shared key — e.g. exact error message, exact feature request, exact failure mode]
-- Issue #N: [title] ([open/closed]) — created [date]  ← CANONICAL
-- Issue #N: [title] ([open/closed]) ← DUPLICATE
-- PR #N: [title] ([state]) ← related fix
-- Discussion #N: [title] ([open/closed]) ← DUPLICATE
-  → Close duplicates with: "Closing as duplicate of #[canonical]"
-
-_(Repeat for each group. If no duplicate groups found: "No obvious duplicates detected.")_
-
-### Recommended Actions
-
-1. {highest-impact action} — addresses {axis}
-2. ...
-
-### Gaps & Limitations
-
-**Overall confidence**: {overall_confidence:.2f} {🟢 ≥0.9 | 🟡 0.7–0.9 | 🔴 <0.7}
+**Overall confidence:** {overall_confidence:.2f} {🟢 ≥0.9 | 🟡 0.7–0.9 | 🔴 <0.7}
 
 {If overall_confidence < 0.7: "⚠ Health Score reliability is LOW — findings are directional only. Re-run with improved data access before acting on this score."}
 
-#### Per-Axis Confidence
+### Per-Axis Confidence
 
 | Axis | Confidence | Gap | Score Impact |
 |------|------------|-----|--------------|
 | {axes with conf < 1.0, sorted ascending} | | | |
 
-_(Only axes with confidence < 1.0 appear. If all axes have conf ≥ 0.9: "All axes scored with high-confidence data — no significant gaps.")_
+_(Only axes with confidence < 1.0 appear. If all ≥ 0.9: "All axes scored with high-confidence data.")_
 
-#### Re-run Recommendations
+### Re-run Recommendations
 
-{conditional bullets — only emit when actionable re-run condition applies:}
-- **Axis 7 full data**: re-run with push access to `$GH_OWNER/$GH_REPO` — Dependabot alert counts then available
-- **Axis 4**: re-run in 5–10 min — contributor stats computing (202); retry when complete
-- **Axis 2 merge rate**: re-run after {date+30d} — low-volume repo; <3 PRs this month makes rate unstable
-- **Axis 8 complete**: re-run when repo has >200 stars and stargazer history spans >180d
+{conditional bullets — only emit when actionable:}
+- **Axis 8 full data**: re-run with push access — Dependabot alert counts then available
+- **Axis 3**: re-run in 5–10 min — contributor stats computing (202); retry when complete
+- **Axis 4 merge rate**: re-run after {date+30d} — low-volume repo; <3 PRs this month makes rate unstable
 
-### Adversarial Review
+---
 
-_(Appended by foundry:challenger and codex:codex-rescue after main analysis)_
+## Adversarial Review
 
-**Challenger findings**: ...
-**Codex findings**: ...
+**Challenger:** {findings written by foundry:challenger — always present}
+
+**Codex:** {findings written by codex:codex-rescue — present when codex plugin installed; "codex unavailable — single adversarial pass only" when absent}
+
+---
+
+## Sign-off & Disclaimer
+
+Report generated by **oss:analyse v{SKILL_VERSION}** on commit `{REPORT_COMMIT}` at `{REPORT_TIMESTAMP}`.
+Data sourced exclusively from GitHub API — no manual input or cached external data.
+Scores reflect repository state at time of generation. Re-run for current state.
+Adversarial review performed by foundry:challenger{codex line: " and codex:codex-rescue" when CODEX_AVAILABLE=1}.
 ```
 
-## Step 5 — Adversarial Review
+## Step 5 — Codex Independent Repo Review
 
-After report written to disk. Two reviewers write to **separate files** to avoid concurrent-write race; parent merges results after both complete.
+When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess the repo on the same 8 axes using the raw fetched data — NOT by reading the main analysis report. This produces a parallel verdict for aggregation and divergence detection.
 
 ```bash
-find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
 REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
+CODEX_REVIEW_OUT="$REVIEW_DIR/codex-repo-review.md"
 mkdir -p "$REVIEW_DIR"  # timeout: 5000
+```
+
+**Spawn instruction for `codex:codex-rescue`** (only when CODEX_AVAILABLE=1):
+
+```text
+You are performing an independent vitality assessment of {GH_OWNER}/{GH_REPO}.
+Do NOT read the main analysis report. Assess the same 8 axes from raw evidence only:
+- Axis 1 Responsiveness (weight 18%)
+- Axis 2 Maintenance activity (weight 20%)
+- Axis 3 Contributor health (weight 15%)
+- Axis 4 Issue & PR health (weight 12%)
+- Axis 5 CI/CD & code quality (10%)
+- Axis 6 Documentation (8%)
+- Axis 7 Governance (10%)
+- Axis 8 Security posture (7%)
+
+Use only this raw data: [pass all fetched API data: issue counts, PR counts, commit dates,
+contributor stats, CI workflow/run data, root file list, branch protection, Dependabot status].
+
+For each axis: assign a numeric score 0–10 and status 🟢/🟡/🔴/⚪. Provide one-sentence
+evidence statement per axis. Compute overall Health Score %.
+
+Write findings to {CODEX_REVIEW_OUT} using Write tool in this exact format:
+# Codex Independent Review — {GH_OWNER}/{GH_REPO}
+| Axis | Score | Status | Evidence |
+|------|-------|--------|----------|
+| 1 Responsiveness | N.N | 🟢/🟡/🔴 | {one sentence} |
+...
+| **Health Score** | **XX%** | | |
+
+## Divergences
+[note any axis where you expect main analysis to differ — include reasoning]
+
+Write sentinel {REVIEW_DIR}/codex-repo-review.done on completion.
+Return compact JSON only: {"status":"done","file":"{CODEX_REVIEW_OUT}","health_score":XX,"confidence":0.N}
+```
+
+**When CODEX_AVAILABLE=0**: skip this step; note "codex unavailable — single-pass analysis only" in the Codex Independent Review report section.
+
+### Aggregation
+
+After codex review completes (sentinel verified), compute per-axis delta:
+
+```bash
+# delta = abs(main_score[axis] - codex_score[axis])
+# divergence threshold: delta >= 2.0 points
+# flag axes where delta >= 2.0 as "⚠ divergent"
+# aggregate health score = mean(main_health_score, codex_health_score)
+```
+
+Update the report's `## Independent Codex Review` section (append using Edit tool) with:
+- The codex scorecard table (from `$CODEX_REVIEW_OUT`)
+- Aggregate health score
+- Per-axis delta table with divergence flags
+- Divergence explanations where delta ≥ 2.0
+
+```markdown
+## Independent Codex Review
+
+Codex independently assessed the same 8 axes from raw fetched data — without reading the main analysis. Divergences ≥ 2.0 score points are flagged for human review.
+
+**Codex Health Score:** {XX}% · **Aggregate (mean):** {XX}%
+
+| Axis | Main | Codex | Delta | Agreement |
+|------|------|-------|-------|-----------|
+| 1 Responsiveness | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+| 2 Maintenance activity | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+| 3 Contributor health | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+| 4 Issue & PR health | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+| 5 CI/CD & code quality | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+| 6 Documentation | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+| 7 Governance | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+| 8 Security posture | N.N | N.N | ±N.N | ✓ / ⚠ divergent |
+
+### Divergences
+
+_(Only axes with delta ≥ 2.0. If none: "Main analysis and Codex agree within 2.0 points on all axes.")_
+
+#### Axis N — {name} (main: N.N · codex: N.N · delta: ±N.N)
+**Main evidence:** {what main analysis used}
+**Codex evidence:** {what codex found}
+**Resolution:** {which reading is more likely correct and why — or "inconclusive, re-run recommended"}
+```
+
+## Step 6 — Adversarial Review
+
+After Step 5 aggregation complete — report now includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess the **complete combined report**. Two reviewers write to separate files to avoid concurrent-write race; parent merges results after both complete.
+
+```bash
+# CODEX_AVAILABLE already set in Step 4 — do not re-check; use value as-is
+# REVIEW_DIR already set in Step 5 — do not redefine
 CHALLENGER_OUT="$REVIEW_DIR/challenger.md"
 CODEX_OUT="$REVIEW_DIR/codex.md"
 ```
 
 **Run sequentially** (not parallel — avoids concurrent writes to report file):
 
-1. Spawn `foundry:challenger` — reads report file; writes findings to `$CHALLENGER_OUT` (Write tool); on completion writes sentinel `$REVIEW_DIR/challenger.done`; instruction: stress-test scoring thresholds, flag weak evidence, challenge causality claims, verify limit-hit detection, check coverage gate logic. Return compact JSON envelope only.
+1. Spawn `foundry:challenger` — reads report file; writes findings to `$CHALLENGER_OUT` (Write tool); on completion writes sentinel `$REVIEW_DIR/challenger.done`; instruction: stress-test scoring thresholds, flag weak evidence, challenge causality claims, verify limit-hit detection, check coverage gate logic; stress-test both main analysis and Codex independent review — flag where both analyses share the same blind spot, or where divergence resolution is unconvincing. Return compact JSON envelope only.
 2. Verify sentinel before reading: `[ -f "$REVIEW_DIR/challenger.done" ] || { echo "⚠ challenger did not complete"; CHALLENGER_OUT=""; }`
 3. If CODEX_AVAILABLE=1: spawn `codex:codex-rescue` — reads report file and `$CHALLENGER_OUT` (if complete); writes independent findings to `$CODEX_OUT`; on completion writes sentinel `$REVIEW_DIR/codex.done`; second adversarial pass avoiding duplication with challenger. Return compact JSON envelope only.
 4. Verify codex sentinel: `[ -f "$REVIEW_DIR/codex.done" ] || CODEX_OUT=""`
 5. Append available outputs to report under `### Adversarial Review` in deterministic order (challenger first, codex second); skip any whose file is empty or sentinel absent.
 6. If CODEX_AVAILABLE=0: note "codex unavailable — single adversarial pass only" in Adversarial Review section.
 
-## Step 6 — Terminal Summary Output
+## Step 7 — Terminal Summary Output
 
 Read `$FOUNDRY_SHARED/terminal-summaries.md` for compact block format. File absent → warn "foundry:init required — printing plain terminal output instead."
 
-Print compact block to terminal (read header block from report file):
+Print compact block to terminal (values read from report YAML frontmatter + scorecard):
 
-```
+```markdown
+# Repo Vitality — {GH_OWNER}/{GH_REPO}
+**Generated:** {REPORT_TIMESTAMP}
+**Skill:**     oss:analyse · mode: vitality · v{SKILL_VERSION}
+**Commit:**    {REPORT_COMMIT}
+
 ---
-Repo Vitality — $GH_OWNER/$GH_REPO — $TODAY
-Score:       {XX}% (confidence: {0.NN} 🟢/🟡/🔴) | {N}/8 healthy | {N} warning | {N} critical
-Top risk:    {single most urgent finding}
-→ saved to   {REPORT_FILE}
+
+**Health Score:** {XX}% (confidence: {0.NN} 🟢/🟡/🔴) | {N}/8 healthy | {N} warning | {N} critical
+**Aggregate Score:** {XX}% (mean of main + Codex) — omit line when CODEX_AVAILABLE=0
+**Top Risk:**    {single most urgent finding}
+→ {REPORT_FILE}
 
 | Axis                   | Score | Status   | Conf | Weight |
 |------------------------|-------|----------|------|--------|
@@ -577,16 +804,17 @@ Top risk:    {single most urgent finding}
 | 6 Documentation        | N.N   | 🟢/🟡/🔴 | 0.00 |  8% |
 | 7 Governance           | N.N   | 🟢/🟡/🔴 | 0.00 | 10% |
 | 8 Security posture     | N.N   | 🟢/🟡/🔴 | 0.00 |  7% |
+
 ---
 ```
 
 For ⚪ axes: show `--` in Score/Status/Conf columns; append below the closing `---`:
-```
+```text
 ⚠ Axis {N} ({name}, wt {X}%) unavailable — score normalized over {M}/8 axes
 ```
 If Axis 3 specifically ⚪: use `⚠ Axis 3 (contributor health, wt 15%) unavailable — rerun in 5–10 min for full score`.
 
-Block must begin with `---` on own line and close with `---` on own line. Do not print full analysis to terminal.
+Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close with `---` on own line. Do not print full analysis to terminal.
 
 </workflow>
 
@@ -605,7 +833,8 @@ Block must begin with `---` on own line and close with `---` on own line. Do not
 - **Star velocity**: advisory only — excluded from numeric score; page loop stops at 180d boundary via `$CUTOFF_180D`; if coverage < 30 days of stars when loop ends, mark 8B ⚪; partial data (≥30d coverage but <180d) → note truncation and use available window for trend
 - **Package registry 404**: skip sub-signal C silently — not all repos publish to PyPI/npm
 - **Axis independence**: failure of one axis (API unavailable, access denied, computing) → ⚪ row in scorecard, continue with remaining axes; never block report on single axis failure
-- **Adversarial review opt-out**: if user passes `--no-review` flag, skip Step 5 entirely
+- **Codex independent review (Step 5)**: runs before adversarial review — codex assesses raw data independently, not the main report; produces parallel scorecard and divergence notes; aggregate health score = mean(main, codex); when CODEX_AVAILABLE=0, note "codex unavailable — single-pass analysis only" in report section.
+- **Adversarial review is mandatory** — Step 6 always runs; `foundry:challenger` always spawned; `codex:codex-rescue` spawned when `CODEX_AVAILABLE=1`. No skip path exists.
 - **codex availability check**: `find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q .` — run before spawn; do not assume codex installed
 - **Health Score footer row**: Score column shows weighted %; Weight column shows "100%"; Status/Key Signal/Risk left blank
 

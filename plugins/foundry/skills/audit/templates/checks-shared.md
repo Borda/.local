@@ -78,9 +78,38 @@ fi
 
 **Severity**: **medium** — heading jumps impair navigation. Fix: insert missing intermediate heading level, or demote/promote offending heading. **Report only** — never auto-fix.
 
-## Check 14 — Orphaned follow-up references
+## Check 14 — Orphaned empty structural blocks
 
-→ Subsumed by Check 24 (skill sequence compatibility in `checks-skills.md`). Check 24 covers reference existence (24a), argument plausibility (24b), and cycle detection (24c) for all documented follow-up chains. Run Check 24 instead.
+Structural tags present with only whitespace between open and close = dead markup left after content was moved or removed. No content loss possible on removal — safe to auto-fix.
+
+Scan all agent and skill files:
+
+```bash
+RED='\033[1;31m'
+GRN='\033[0;32m'
+NC='\033[0m'
+printf "=== Check 14: Orphaned empty structural blocks ===\n"
+violations=0
+for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
+    [ -f "$f" ] || continue
+    hits=$(perl -0777 -ne '
+        while (/<(constants|notes|calibration|inputs|not-for|role|initialization|antipatterns_to_flag)>\s*<\/\1>/g) {
+            print "$ARGV: <$1>\n"
+        }
+    ' "$f" 2>/dev/null)
+    if [ -n "$hits" ]; then
+        printf "${RED}! C14${NC}: empty block — %s\n" "$hits"
+        violations=$((violations + 1))
+    fi
+done
+if [ "$violations" -eq 0 ]; then
+    printf "${GRN}✓${NC}: Check 14 — no orphaned empty structural blocks\n"
+fi
+```
+
+**Severity**: **medium** — gate-level; must fix before audit passes. **Auto-fix: YES** — remove the empty open+close tag pair entirely; no content exists to lose.
+
+> Root cause: a prior fix moved or removed the block's content but left the container tags. Empty `<constants>` = most common; also applies to `<notes>`, `<calibration>`, `<inputs>`, `<not-for>`, `<role>`, `<initialization>`, `<antipatterns_to_flag>`.
 
 ## Check 15 — Hardcoded user paths
 

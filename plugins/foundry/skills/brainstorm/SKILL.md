@@ -5,6 +5,7 @@ argument-hint: '<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] | 
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
+when_to_use: Use when idea is fuzzy and needs exploration before a solution is known; NOT for well-scoped features with a known approach (use develop:feature) or code generation.
 ---
 
 <objective>
@@ -84,7 +85,7 @@ Goal: understand constraints so questions targeted, not generic. If idea already
 ```bash
 # timeout: 3000
 mkdir -p .plans/blueprint
-SIDECAR=".plans/blueprint/brainstorm-$(date -u +%Y%m%d-%H%M%S).json"
+SIDECAR=".plans/blueprint/brainstorm-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
 echo "$SIDECAR"
 ```
 
@@ -105,7 +106,12 @@ On write failure: log `> Viewer write failed: <reason>` inline and continue.
 
 Print launch note:
 
-> **Live tree viewer**: run the tree viewer script from the skill directory (path varies by installation — check `plugins/foundry/skills/brainstorm/scripts/` in the source tree or the installed plugin cache). Serve with `python3 -m http.server 8000` (substitute any free port if 8000 is in use) from project root, then open `http://localhost:<PORT>/<path-to-tree-viewer.html>?state=<sidecar-path>`.
+> **Live tree viewer**: resolve scripts dir:
+> ```bash
+> _BRAINSTORM_SCRIPTS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/brainstorm/scripts 2>/dev/null | head -1)
+> [ -z "$_BRAINSTORM_SCRIPTS" ] && _BRAINSTORM_SCRIPTS="plugins/foundry/skills/brainstorm/scripts"
+> ```
+> Serve with `python3 -m http.server 8000` (substitute any free port if 8000 is in use) from project root, then open `http://localhost:<PORT>/<path-to-tree-viewer.html>?state=<sidecar-path>`.
 
 ## Step 2: Clarifying questions
 

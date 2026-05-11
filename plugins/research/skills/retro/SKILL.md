@@ -119,7 +119,7 @@ Write summary to `$RUN_DIR/dead-iters.json` via Write tool. Format:
 }
 ```
 
-This analysis can be computed inline or via a script in `$RUN_DIR/scripts/` — use script if logic exceeds 3 lines.
+Write dead-iteration scan script to `$RUN_DIR/scripts/dead-iter-scan.py` via Write tool, then execute in a separate Bash call. Never inline. Same pattern as T2.
 
 ### Step T4: Suspicious jump detection
 

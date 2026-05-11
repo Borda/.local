@@ -3,6 +3,7 @@ name: cicd-steward
 description: CI/CD health specialist for Python/GitHub Actions pipelines only. Use for diagnosing failing CI runs, reducing build times, configuring test matrices, caching, SHA pinning, branch protections, and workflow topology for quality gates in CI YAML. NOT for ruff/mypy rule selection, pre-commit config, pre-commit YAML hook stage ordering (use foundry:linting-expert), or fixing type annotations in source files. NOT for PyPI release management, release notes, CHANGELOG entries, or contributor communication (use oss:shepherd). NOT for JavaScript, Rust, or Go CI pipelines.
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
 model: sonnet
+effort: medium
 color: green
 ---
 

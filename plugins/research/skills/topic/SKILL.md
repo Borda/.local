@@ -185,12 +185,18 @@ Trigger when: 3+ distinct method families exist AND field has no clear leading m
 
 **Note on CLAUDE.md §8 (background agent monitoring)**: Team mode spawns in-process teammates via TeamCreate — not background agents writing to run directory. In-process teammates send TeammateIdle notifications on completion — synchronous completion signals. File-activity polling protocol (§8) doesn't apply; TeammateIdle is equivalent liveness signal.
 
+Pre-compute before spawning:
+
+```bash
+TEAM_PROTOCOL_PATH="$HOME/.claude/TEAM_PROTOCOL.md"  # timeout: 3000
+```
+
 **Spawn prompt template:**
 
 ```markdown
-# Substitute pre-computed values — do not pass raw $(date) expressions into spawn prompts
+# Substitute pre-computed values — do not pass raw $(date) expressions or shell vars into spawn prompts
 You are an researcher teammate researching: [topic].
-Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
+Read $TEAM_PROTOCOL_PATH — use AgentSpeak v2 for inter-agent messages.
 Your cluster: [method family N] (e.g., "attention-free architectures" vs "linear attention variants").
 Research the top 3 methods in your cluster: comparison table + recommendation given constraints.
 Write your full findings (comparison table, analysis, Confidence block) to `.temp/output-research-<teammate-name>-$BRANCH-$SPAWN_DATE.md` using the Write tool.
@@ -199,7 +205,7 @@ Compact Instructions: preserve paper titles, benchmarks, code links. Discard pro
 Task tracking: call TaskUpdate(in_progress) when you start your assigned task; call TaskUpdate(completed) when done, before sending your delta message.
 ```
 
-Lead synthesizes by reading teammate file paths from delta messages. Pre-compute: `SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"` `SPAWN_DATE="$(date -u +%Y-%m-%d)"`. For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.temp/output-research-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY: `papers=N best_method=<name> confidence=0.N file=<path>`"
+Lead synthesizes by reading teammate file paths from delta messages. Pre-compute: `SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"` `SPAWN_DATE="$(date -u +%Y-%m-%d)"`. For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.temp/output-research-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
 
 ## Plan Mode
 
@@ -309,8 +315,8 @@ Call `AskUserQuestion` tool — do NOT write options as plain text first. Map op
 - **Team Mode dependency**: `--team` requires `~/.claude/TEAM_PROTOCOL.md` to exist — each teammate spawn prompt includes `Read $HOME/.claude/TEAM_PROTOCOL.md and use AgentSpeak v2`; verify file present before launching team mode.
 - **Link integrity**: All URLs cited in research report must be fetched and verified before inclusion. Use WebFetch to confirm each URL exists and says what you claim.
 - Follow-up chains:
-  - Research recommends method → `/research:plan` for sequenced plan (auto-detects latest output), then `/develop:feature` for TDD-first implementation
-  - Research integrates into existing code → `/develop:refactor` first to prepare module, then `/develop:feature`
+  - Research recommends method → `/research:plan` for sequenced plan (auto-detects latest output), then `/develop:feature` (requires `develop` plugin) for TDD-first implementation
+  - Research integrates into existing code → `/develop:refactor` (requires `develop` plugin) first to prepare module, then `/develop:feature` (requires `develop` plugin)
   - Research reveals security concerns with dependency → run `pip-audit` or `uv run pip-audit` for Common Vulnerabilities and Exposures (CVE) scan
   - Plan approved → create `.plans/active/todo_<method>.md` with phases as task groups; start with `/develop:feature <first task from Phase 1>`
 

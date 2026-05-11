@@ -292,7 +292,7 @@ CHECKPOINT_F6="/tmp/fortify-check-$LAUNCH_AT_F6"
 touch "$CHECKPOINT_F6"  # timeout: 3000
 ```
 
-Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (same 15-min cutoff, one 5-min extension — poll `find <FORTIFY_DIR> -newer "$CHECKPOINT_F6" -type f | wc -l`):
+Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (same 15-min cutoff, one 5-min extension — poll `find <FORTIFY_DIR> -name "reviewer-qa.md" -newer "$CHECKPOINT_F6" | wc -l`):
 
 ```markdown
 Act as a peer reviewer for <venue>.

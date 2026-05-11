@@ -27,12 +27,6 @@ NOT for: single-file agent/skill edits (use /foundry:manage); quality-checking f
 
 </inputs>
 
-<constants>
-
-MEMORY_DIR — resolved at runtime via: `$HOME/.claude/projects/$(git rev-parse --show-toplevel | sed 's|[/.]|-|g')/memory`
-
-</constants>
-
 <workflow>
 
 ## Step 1: Inventory existing agents and skills
@@ -357,7 +351,7 @@ Print the diff. If anything unexpected appears, revert individual files before p
 **Step L5: curator review** — after applying changes, dispatch curator to audit the created and modified config files:
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Return a prioritized report of issues; note advisory vs. blocking.")
+Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to <RUN_DIR>/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"<RUN_DIR>/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
 
 Surface curator findings as an advisory block in terminal output. Do not block on curator findings — they are quality recommendations, not release gates.

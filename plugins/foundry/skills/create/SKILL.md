@@ -3,11 +3,14 @@ name: create
 description: Interactive outline co-creation for developer advocacy content — collects format, audience profile, story arc (Problem→Journey→Insight→Action), and voice/tone; detects out-of-scope requests (FAQs, comparison tables); surfaces conflicts between user brief and audience needs. Writes approved outline to .plans/content/<slug>-outline.md for foundry:creator to execute. Use when starting a blog post, Marp slide deck, social thread, talk abstract, or lightning talk.
 argument-hint: '[topic]'
 allowed-tools: Read, Write, TaskCreate, TaskUpdate, AskUserQuestion
+effort: medium
 ---
 
 <objective>
 
-First phase of a two-phase content system. Out-of-scope includes FAQs, comparison tables, and reference docs. Story arc is four-beat: Problem → Journey → Insight → Action.
+Story arc is four-beat: Problem → Journey → Insight → Action.
+
+NOT for: implementation tasks, code generation, README writing (use `foundry:doc-scribe`), structured reference docs (FAQs, comparison tables — use `foundry:doc-scribe`).
 
 </objective>
 
@@ -16,8 +19,6 @@ First phase of a two-phase content system. Out-of-scope includes FAQs, compariso
 - **$ARGUMENTS**: optional — topic or goal in any form; one sentence enough. Format hints accepted ("a blog post about…", "talk abstract for…").
 
 </inputs>
-
-NOT for: implementation tasks, code generation, README writing (use foundry:doc-scribe), structured reference docs (FAQs, comparison tables — use foundry:doc-scribe).
 
 <workflow>
 

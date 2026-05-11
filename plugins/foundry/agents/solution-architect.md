@@ -254,7 +254,7 @@ and write combined queue to `.experiments/<YYYY-MM-DDTHH-MM-SSZ>/hypotheses.json
 
 ### Constraints
 
-- **Don't evaluate scientific merit** — `research:scientist`'s domain; assess architectural feasibility only
+- **Don't evaluate scientific merit** — `research:scientist` (requires `research` plugin)'s domain; assess architectural feasibility only
 - **Don't write implementation code** — map where changes go, don't produce them
 - **Preserve hypothesis order** — annotate in place; don't re-rank
 

@@ -146,13 +146,7 @@ Then stop — do not proceed to V5/V6. Report the specific mismatches to termina
 
 ### Step V5: Write verification report
 
-**Pre-compute** (if not already done in V1):
-
-```bash
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
-```
-
-Write to `.temp/output-verify-$BRANCH-$(date +%Y-%m-%d).md` via Write tool:
+Write to `.temp/output-verify-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (`BRANCH` computed in V1):
 
 ```markdown
 ## Verification Report: <paper title>

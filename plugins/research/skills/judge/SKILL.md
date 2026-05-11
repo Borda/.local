@@ -63,7 +63,7 @@ ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespac
    No program.md found. Run /research:plan <goal> first, or provide a path: /research:judge <path.md>
    ```
 
-**Parsing** — use program-file section-parsing rules from Step R1 in `${_RESEARCH_SHARED}/../run/SKILL.md` (find `## <Section>` headings, extract first fenced code block, parse as `key: value` lines, warn on unrecognized keys). `--skip-validation` flag and `colab_hw` are judge-specific, extracted independently — not part of R1. Note: path uses `..` traversal relative to `_shared/` position — if `_shared/` dir moves, update this reference to a direct path.
+**Parsing** — find `## <Section>` headings in program.md, extract first fenced code block per section, parse as `key: value` lines, warn on unrecognized keys. `--skip-validation` flag and `colab_hw` are judge-specific, extracted independently.
 
 **Placeholder substitution** — after parsing, apply same substitution step as R1: resolve all `{field_name}` tokens in `metric_cmd` and `guard_cmd` using corresponding field from `## Config`, falling back to declared default. No `clarification_prompt` in judge — skip clarification-override step.
 
@@ -248,7 +248,12 @@ Evaluate top-to-bottom; **first match wins**. BLOCKED always takes precedence �
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 ```
 
-**Write full report** to `.temp/output-judge-$BRANCH-$(date +%Y-%m-%d).md` (never overwrite — anti-overwrite: `OUT=".temp/output-judge-$BRANCH-$(date +%Y-%m-%d).md"; if [ -f "$OUT" ]; then OUT="${OUT%.md}-2.md"; fi`):
+**Write full report** (never overwrite — use counter loop):
+```bash
+BASE=".temp/output-judge-$BRANCH-$(date +%Y-%m-%d).md"
+OUT="$BASE"; COUNT=2
+while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done
+```
 
 ```markdown
 ## Judge Report: <program_title>

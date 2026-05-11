@@ -5,6 +5,7 @@ argument-hint: '[<scope>...] [--local] [--upgrade | --adversarial] [--skip-gate]
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
+when_to_use: Use for sweeping quality checks of .claude/ config or plugin source — NOT for creating/modifying agents (use manage) or measuring behavioral accuracy (use calibrate).
 ---
 
 <objective>
@@ -335,6 +336,7 @@ Do not leave overlap findings as vague "potential duplication" notes. The audit 
 | 28 | Cross-plugin agent dispatch fallback | high/medium | skills | 28a no fallback for cross-plugin dispatch; 28b fallback present but incomplete |
 | 29 | LLM context minimality | medium/low | agents/skills/rules | Within-file repetition, prose inflation, obvious-consequence restatement — report only |
 | 30 | Config token overhead | medium/low | setup | 30a CLAUDE.md + global + rules/ > 100 KB; 30b single rules file > 10 KB |
+| 31 | Tool-body consistency | medium | skills | Skill `allowed-tools` must include every tool the workflow body invokes; see `checks-skills.md` for full spec |
 
 ### Claude Code docs freshness (within Step 4)
 
@@ -436,7 +438,11 @@ Each subagent prompt template: Read the fix prompt template from `$AUDIT_TPL/fix
 
 <!-- Canonical multi-file orchestration template — intentionally inline; NOT derived from fix-prompt.md (per-file only). Keep both in sync when changing shared audit-fix behavior. -->
 
-After the gate fires (Step 7): if finding count > 10 or user picked "Fix all", use the audit-fix sub-agent pattern below (handles Steps 8–10 in isolation); otherwise use the inline batched pattern at the end of this step. Spawn a dedicated **audit-fix** sub-agent:
+After the gate fires (Step 7): if finding count > 10 or user picked "Fix all", use the audit-fix sub-agent pattern below (handles Steps 8–10 in isolation); otherwise use the inline batched pattern at the end of this step.
+
+**Gate authority**: when the sub-agent path is used, the orchestrator Step 7 gate (below) is **skipped** — the sub-agent runs its own gate internally and is the authoritative gatekeeper. When the inline batched path is used (≤10 findings), the orchestrator Step 7 gate is authoritative and no sub-agent gate runs. Never double-gate.
+
+Spawn a dedicated **audit-fix** sub-agent:
 
 ```markdown
 Read `<RUN_DIR>/summary.jsonl` — this is the findings list (one JSON object per line).
@@ -582,7 +588,7 @@ Run `/foundry:init` to propagate clean config to ~/.claude/
 **Trigger**: `/audit --upgrade`
 
 ```bash
-UPGRADE_MD=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/audit/ 2>/dev/null | head -1)/modes/upgrade.md  # timeout: 5000
+UPGRADE_MD=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/audit/modes/upgrade.md 2>/dev/null | head -1)  # timeout: 5000
 [ -f "$UPGRADE_MD" ] || UPGRADE_MD="plugins/foundry/skills/audit/modes/upgrade.md"
 ```
 

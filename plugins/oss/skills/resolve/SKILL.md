@@ -4,6 +4,7 @@ description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (
 argument-hint: '<PR number or URL> [report] | report | <review comment text>'
 disable-model-invocation: true
 effort: high
+when_to_use: Use to implement GitHub PR review comments and push fixes back to a contributor's fork; NOT for drafting replies to contributors (use oss:analyse --reply) or fixing local bugs (use develop:fix; requires develop plugin).
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
@@ -159,6 +160,8 @@ Parse $ARGUMENTS:
 eval "$(bash "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.sh" "$ARGUMENTS")"
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
 ```
+
+**Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not equal to `--no-challenge`. If found: invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode
 - `MODE="report"` → find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .temp/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present
@@ -375,6 +378,8 @@ Write a per-group output file before spawning each agent:
 ```bash
 CHALLENGE_DIR="/tmp/resolve-challenge-$$"
 mkdir -p "$CHALLENGE_DIR"  # timeout: 5000
+CHALLENGE_CHECKPOINT="/tmp/resolve-check-$$"
+touch "$CHALLENGE_CHECKPOINT"
 LAUNCH_AT=$(date +%s)
 NUM_GROUPS=0  # incremented once per spawned agent group below
 ```
@@ -409,7 +414,7 @@ Then return the same JSON as your final message.
 while true; do
     NOW=$(date +%s)
     ELAPSED=$((NOW - LAUNCH_AT))
-    DONE=$(find "$CHALLENGE_DIR" -name "*.json" ! -name "items.json" -newer "/tmp/resolve-challenge-$$" 2>/dev/null | wc -l | tr -d ' ')
+    DONE=$(find "$CHALLENGE_DIR" -name "*.json" ! -name "items.json" -newer "$CHALLENGE_CHECKPOINT" 2>/dev/null | wc -l | tr -d ' ')
 
     [ "$DONE" -ge "$NUM_GROUPS" ] && break   # all groups returned
     [ "$ELAPSED" -ge 300 ] && {
@@ -426,7 +431,7 @@ Aggregate verdicts — read each `$CHALLENGE_DIR/*.json` that exists:
 - File absent (agent timed out) → mark every item in that group as `VALID` with rationale `"challenge timed out — treated as VALID"`
 
 ```bash
-rm -rf "$CHALLENGE_DIR"  # cleanup  # timeout: 5000
+rm -rf "$CHALLENGE_DIR" && rm -f "$CHALLENGE_CHECKPOINT"  # cleanup  # timeout: 5000
 ```
 
 Per verdict:
@@ -581,7 +586,7 @@ git merge --continue --no-edit
 
 Report clean merge, skip Steps 6–7, continue Step 8.
 
-More than 20 conflicted files → abort and stop:
+⛔ More than 20 conflicted files → abort and stop:
 
 ```bash
 git merge --abort
@@ -882,6 +887,8 @@ if [ -n "$SAVED_BRANCH" ]; then
 fi
 ```
 
+Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Merge now (`gh pr merge <PR_NUMBER> --merge`) · (c) Skip.
+
 ## Step 12: Comment dispatch + Codex review loop
 
 ```bash
@@ -896,7 +903,9 @@ Read and execute `$_OSS_RESOLVE/modes/comment-dispatch.md`.
 
 <calibration>
 
-Scenarios:
+Non-calibratable — `disable-model-invocation: true` means this skill dispatches to sub-agents rather than running a model pass directly; calibrate cannot score model output for a skill that produces none.
+
+Reference scenarios (for documentation; not for calibrate runs):
 1. Mode selection: bare PR number (e.g. `42`) → pr mode; `42 report` → pr + report mode; bare `report` → report mode; bare comment text → comment dispatch (Step 12)
 2. Action item classification: LGTM/emoji comment → `[info]` (skip); `nit:` suggestion → `[gh][suggest]`; resolved thread → `[done]`; "must fix X before merge" from reviewer with write access → `[gh][req]`
 3. Challenge accuracy: comment about actually-present bug (confirmed by reading code) → VALID; comment about issue already addressed in a subsequent commit → PUSH_BACK

@@ -218,8 +218,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 1. Read code to understand what it actually does (don't trust existing docs)
 2. Identify audience for documentation
 3. Find gaps: public APIs without docstrings, missing examples, stale README
-4. Default: Google style (Napoleon). Exceptions: only if user explicitly requests with reason (e.g., existing codebase uses NumPy uniformly).
-5. Write docs matching actual behavior (not intended)
+4. Write docs matching actual behavior (not intended)
 6. Add usage examples that actually run (`doctest -v` or pytest --doctest-modules)
 7. Flag inconsistencies between docs and code
 8. Verify URLs before adding to docstrings: `WebFetch` each new URL — confirm non-4xx response and page content matches description; skip URLs that fail either check.

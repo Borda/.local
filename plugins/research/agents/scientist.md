@@ -215,7 +215,7 @@ First-order papers not requiring fetch include widely known works such as BERT a
 3. Deep analysis: for top candidates — extract method details, check reproducibility, assess compute requirements
 4. Experiment design: state hypothesis, define variables and controls, set success criteria, plan ablations, estimate compute
 5. Implement and validate: implement incrementally, reproduce baseline first, verify each component, report mean ± std over multiple seeds
-6. **Link integrity** — see `plugins/research/rules/quality-gates.md`.
+6. **Link integrity** — see `.claude/rules/quality-gates.md`.
 7. Apply Internal Quality Loop and end with `## Confidence` block — see quality-gates rules.
 
 </workflow>

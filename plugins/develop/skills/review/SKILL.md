@@ -2,10 +2,11 @@
 name: review
 description: Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Python files only — non-Python files are out of scope.
 argument-hint: '[python-file|dir] [--no-challenge] [--codemap] [--semble]'
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 context: fork
 model: opus
 effort: high
+when_to_use: Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse).
 ---
 
 <objective>
@@ -374,7 +375,7 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
   - `[blocking]` bugs or regressions → `/develop:fix` to reproduce with test and apply targeted fix
   - Structural or quality issues → `/develop:refactor` for test-first improvements
   - Security findings in auth/input/deps → run `pip-audit` for dependency CVEs; address OWASP issues inline via `/develop:fix`
-  - Mechanical issues beyond Step 5 findings → `/codex:codex-rescue <task>` to delegate
+  - Mechanical issues beyond Step 5 findings → `/codex:codex-rescue <task>` to delegate (requires `codex` plugin)
   - Contributor-facing review of GitHub PR → use `/oss:review <PR#>` instead
 - **Parallel agent cleanup**: after all 7 agents complete, review `TaskList` — delete any tasks created by sub-agents (not by the lead orchestrator). Sub-agent task creation is unintended and can leave zombie tasks.
 

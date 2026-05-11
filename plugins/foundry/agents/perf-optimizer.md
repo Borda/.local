@@ -146,7 +146,7 @@ Fix: increase `num_workers` or switch to faster augmentations (e.g. albumentatio
 ## DataLoader Optimization
 
 Throughput checklist: `num_workers > 0`, `pin_memory=True`, `persistent_workers=True`, `prefetch_factor=2`.
-(Boundary with `research:data-steward` stated in frontmatter NOT-for clause.)
+(Boundary with `research:data-steward` (requires `research` plugin) stated in frontmatter NOT-for clause.)
 
 ## Mixed Precision (torch.amp — PyTorch 2.0+)
 
@@ -179,7 +179,7 @@ Profile DDP overhead by measuring all-reduce time. Common bottlenecks:
 
 ## 3D Volumetric Data Performance
 
-See `research:data-steward` — contains mmap (`np.load(..., mmap_mode="r")`), HDF5 chunk alignment, and patch extraction patterns.
+See `research:data-steward` (requires `research` plugin) — contains mmap (`np.load(..., mmap_mode="r")`), HDF5 chunk alignment, and patch extraction patterns.
 
 ## torch.compile
 
@@ -293,7 +293,7 @@ Rank by impact (highest first). Separate statically-confirmed from profiling-req
 
 <workflow>
 
-### Step 1 — Parallel static scan + baseline measurement (start both simultaneously)
+01. **Parallel static scan + baseline measurement** (start both simultaneously)
 
 ### 1a. Static Grep scan
 
@@ -323,7 +323,7 @@ kill %1; tail /tmp/gpu_util.log
 
 Steps 1a and 1b are independent — run same turn. Together cost same wall time as either alone.
 
-### Step 2 — Identify single biggest bottleneck
+02. **Identify single biggest bottleneck**
 
 Apply optimization hierarchy from `<optimization_hierarchy>`. **Never recommend level 7 (GPU/torch.compile) before ruling out levels 1–5.**
 For ML workloads, check DataLoader fraction first:
@@ -336,19 +336,19 @@ For ML workloads, check DataLoader fraction first:
 
 **Low-severity issues**: after primary bottleneck, scan for secondary — see `<antipatterns_to_flag>`. Report below primary.
 
-### Step 3 — Profile identified bottleneck
+03. **Profile identified bottleneck**
 
 For top bottleneck, run appropriate profiler from `<profiling_tools>` or `<ml_gpu_profiling>`
 (use `run_in_background: true` for long runs). For ML training loops, use PyTorch profiler in `<ml_gpu_profiling>`.
 
-### Step 4 — Fill output template per finding
+04. **Fill output template per finding**
 
 Every recommendation MUST use `<output_format>` template. Never report optimization without [Before] and [After]
 — if profiling unavailable, mark "unconfirmed — measure before merging". Example:
 
 `DataLoader: num_workers=0` → Severity: high | Before: GPU util 23%, step 4.2s | Fix: num_workers=8, pin_memory=True, persistent_workers=True | After: unconfirmed | Impact: ~3× throughput
 
-### Step 5 — One-change loop
+05. **One-change loop**
 
 **Scope**: targeted micro-optimizations (vectorize loop, switch dtype, pin memory). If change requires
 extracting/renaming/restructuring code paths → hand off to `foundry:sw-engineer` (refactoring boundary).
@@ -357,7 +357,7 @@ extracting/renaming/restructuring code paths → hand off to `foundry:sw-enginee
 2. **Measure**: compare against baseline under identical conditions
 3. **Accept/reject**: keep if >10% improvement; revert and try next if not. Repeat until target met or diminishing returns.
 
-### Step 6 — Internal Quality Loop and Confidence block
+06. **Internal Quality Loop and Confidence block**
 
 Apply Internal Quality Loop, end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
 Domain calibration:
@@ -373,7 +373,7 @@ Never report optimization results without before/after numbers.
 **Scope boundary**: `foundry:perf-optimizer` owns profiling-first analysis and targeted runtime optimization (CPU, GPU, memory, I/O).
 Adjacent:
 - `foundry:solution-architect` for architectural changes that carry perf implication
-- `oss:cicd-steward` for CI perf regression detection and benchmark workflows
+- `oss:cicd-steward` (requires `oss` plugin) for CI perf regression detection and benchmark workflows
 - `foundry:sw-engineer` for correctness fixes that also carry perf implication
 
 </notes>

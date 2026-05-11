@@ -4,6 +4,7 @@ description: Systematic diagnosis for unknown failures — local environment, to
 argument-hint: '<symptom, question, or failing command> [--fast]'
 allowed-tools: Read, Bash, Grep, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
+when_to_use: Use when the cause of a failure is unknown — environment, tooling, CI divergence, hooks; NOT for known code bugs with a traceback (use develop:debug) or config quality sweeps (use audit).
 ---
 
 <objective>
@@ -141,7 +142,7 @@ One targeted test per hypothesis — clear confirm/rule-out signal. Run independ
 # Example probes — adapt to the actual symptom
 
 # Environment mismatch: check active interpreter
-python3 -c "import sys; print(sys.executable, sys.version)"
+python3 --version  # timeout: 3000
 
 # Missing allow entry: check home settings.json allow list
 jq -r '.permissions.allow[]' ~/.claude/settings.json
@@ -188,6 +189,7 @@ End with `## Confidence` block per output standards.
 - **Diagnosis only** — never apply fixes; hand off with specific recommended action
 - **Scope vs `/develop:debug`**: `/develop:debug` needs known test failure, runs TDD fix loop. `/investigate` = "something wrong, don't know what" — cause may not be in application code
 - **Scope vs `/foundry:audit`**: `/foundry:audit` = scheduled quality sweep of `.claude/`. `/investigate` = triggered by live failure; two complement each other (investigate finds config symptom → audit confirms structural issue)
+- **Follow-up**: `/develop:fix` (requires `develop` plugin) for implementing the resolution once root cause confirmed
 - **Broad first**: always complete Step 2 before hypothesising — premature anchoring = most common investigation failure
 - **Parallel probes**: run independent probes in single response to avoid serial latency
 - **Inconclusiveness valid**: report what ruled out and what info would close remaining gap — don't fabricate root cause to appear decisive

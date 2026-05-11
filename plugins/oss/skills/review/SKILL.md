@@ -64,6 +64,8 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 
 Read `$_OSS_SHARED/agent-resolution.md`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
+<!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:perf-optimizer → general-purpose, foundry:doc-scribe → general-purpose, foundry:linting-expert → general-purpose, foundry:solution-architect → general-purpose, foundry:challenger → general-purpose. -->
+
 **Task hygiene**: Before creating tasks, call `TaskList`. Each found task:
 
 - `completed` if work done
@@ -398,7 +400,12 @@ Spawn verifier agent per critical/blocking finding. Agent reads the relevant fin
 
 ## Step 6: Consolidate findings
 
-Before output path, extract: `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` `DATE=$(date +%Y-%m-%d)`
+Before output path, extract:
+```bash
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
+[ -z "$BRANCH" ] && BRANCH="main"  # fallback: detached HEAD or empty slug
+DATE=$(date +%Y-%m-%d)
+```
 
 Spawn a **foundry:sw-engineer** consolidator agent with this prompt:
 
@@ -414,7 +421,12 @@ Spawn a **foundry:sw-engineer** consolidator agent with this prompt:
 >
 > **Confidence parsing:** Parse each agent's `confidence` from its JSON envelope. Assign `codex` a fixed confidence of 0.75 (moderate — static analysis, no runtime context).
 >
-> **Write to:** `.temp/output-review-$BRANCH-$DATE.md` using the Write tool.
+> **Write to:** compute output path first, then guard against overwrite:
+> ```bash
+> OUT=".temp/output-review-$BRANCH-$DATE.md"
+> n=2; while [ -f "$OUT" ]; do OUT=".temp/output-review-$BRANCH-$DATE-${n}.md"; n=$((n+1)); done
+> ```
+> Write full report to `$OUT` using the Write tool.
 >
 > **Return ONLY** a one-liner summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
 
@@ -422,7 +434,7 @@ Main context receives only the one-liner verdict. Proceed with that summary for 
 
 **Consolidator unavailable fallback** — if `Agent` tool deferred/not loaded and consolidator cannot be spawned:
 1. Synthesize verdict one-liner inline from Step 3 JSON envelopes (or in-context findings if agents also didn't spawn): `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
-2. Write consolidated report inline to `.temp/output-review-$BRANCH-$DATE.md` using Write tool directly — include all sections and Confidence block
+2. Compute output path then guard: `OUT=".temp/output-review-$BRANCH-$DATE.md"; n=2; while [ -f "$OUT" ]; do OUT=".temp/output-review-$BRANCH-$DATE-${n}.md"; n=$((n+1)); done` — write consolidated report to `$OUT` using Write tool. Include all sections and Confidence block
 3. Print terminal block using `$FOUNDRY_SHARED/terminal-summaries.md` template — **never silently skip terminal output**
 
 Report format: read `templates/review-report.md` in this skill directory and use it as the output structure.

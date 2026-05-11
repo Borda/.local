@@ -19,13 +19,25 @@ NOT for: interactive planning (use `/research:plan`); methodology review only (u
 
 ## Agent Resolution
 
-> **Foundry plugin check**: run `Glob(pattern="foundry*", path="$HOME/.claude/plugins/cache/")` returning results = installed. If check fails, proceed as if foundry available — common case; only fall back if agent dispatch explicitly fails.
+> **Foundry plugin check**:
+> ```bash
+> ls ~/.claude/plugins/cache/foundry* 2>/dev/null | head -1  # timeout: 3000
+> ```
+> Non-empty result = foundry installed. If check fails, proceed as if foundry available — common case; only fall back if agent dispatch explicitly fails.
 
 Sweep delegates to plan (S2), judge (S3), and run (S5) skill steps — see each skill's Agent Resolution section for fallback handling.
 
 ## Steps S1–S5
 
 Triggered by `sweep "goal" [--flags]`. Non-interactive end-to-end: auto-plan → judge gate → run.
+
+**Shared path resolution** (always runs before S1):
+```bash
+_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
+[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="plugins/research/skills/_shared"
+_RESEARCH_SKILLS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills 2>/dev/null | head -1)
+[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="plugins/research/skills"
+```
 
 **Task tracking**: create tasks for S1–S5 at start.
 
@@ -55,9 +67,7 @@ Usage: /research:sweep "goal description" [--flags]
 
 ### Step S2: Non-interactive plan
 
-Locate plan skill: `_RESEARCH_SKILLS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills 2>/dev/null | head -1); [ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills"`.
-
-Run plan mode steps P-P2 and P-P3 from `$_RESEARCH_SKILLS/plan/SKILL.md` (P-P0 skipped — `<goal>` always text string; P-P1 skipped — goal provided explicitly) with overrides:
+Run plan mode steps P-P2 and P-P3 from `$_RESEARCH_SKILLS/plan/SKILL.md` (`$_RESEARCH_SKILLS` resolved above S1) (P-P0 skipped — `<goal>` always text string; P-P1 skipped — goal provided explicitly) with overrides:
 
 - **P-P2 (config presentation)**: Accept all auto-detected defaults without prompting. Print proposed config as informational block prefixed `sweep: auto-config →` — do NOT wait for confirmation.
 - If `--colab[=HW]` or `--compute=colab` passed, write `compute: colab` (and `colab_hw: <HW>` if provided) into Config block.

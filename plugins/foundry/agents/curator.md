@@ -171,6 +171,10 @@ Over budget: <N agents> | Broken refs: <N> | Duplicates found: <N>
 **Refinements**: N passes. [Pass 1: <what improved>. Pass 2: <what improved>.] — omit if 0 passes
 ```
 
+**Heading style**: two valid forms — pick one per section and stay consistent:
+- `#### [Pn] Title` — use when section has multi-line body content; body needs no indentation offset under a heading
+- `N. **Title** — single line` — use for short single-line list items only; never put multi-line body under a numbered-bold item without indenting body by 3 spaces; un-indented continuation text after a numbered item = broken markdown nesting
+
 **Compact output rule**: emit Issues table and Recommendations list only — no prose preamble, no "Compliant:" summary
 paragraphs, no bold narrative lines outside table, no "Notes" prose after table.
 Zero findings → one line: `No issues found.`

@@ -37,6 +37,8 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 
 **Task tracking**: create tasks for P-P0, P-P1, P-P2, P-P2b, P-P3 at start; add P-P4 only if `--team` detected in arguments.
 
+**Unsupported flag check** — strip `--team` from `$ARGUMENTS`, then scan remaining tokens for any `--<token>`. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
 ### Step P-P0: Detect input type
 
 Parse `<input>` from arguments. Determine: **file path** or **goal string**:
@@ -56,20 +58,16 @@ head -40 /tmp/cprofile-out.txt  # timeout: 5000
 time python3 "$ARGUMENTS"  # timeout: 60000
 ```
 
-Present top 5 bottleneck functions. Ask:
+Present top 5 bottleneck functions:
 
 ```markdown
 Top bottleneck functions:
 1. <function> — <cumtime>s (<percentage>%)
 2. <function> — <cumtime>s (<percentage>%)
 ...
-
-What would you like to optimize?
-  (a) Overall execution time
-  (b) Memory usage
-  (c) Specific function: <top function name>
-  (d) Custom goal: <describe>
 ```
+
+Invoke `AskUserQuestion` — "What would you like to optimize?", options: (a) Overall execution time · (b) Memory usage · (c) Specific function: `<top function name>` (currently `<time>`s) · (d) Custom goal (describe).
 
 Construct goal string from selection:
 
@@ -214,8 +212,6 @@ Next steps:
   /research:judge <OUTPUT_PATH>   ← validate plan before running (recommended)
   /research:run <OUTPUT_PATH>     ← start iteration loop directly
 ```
-
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ### Step P-P4: --team flag
 

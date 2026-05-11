@@ -3,7 +3,7 @@
 Each invocation ask curator to check:
 
 - **Purpose and logical coherence**: role clearly defined? Scope right — not too broad, not too narrow? New user know when to reach for it vs similar one?
-- **Structural completeness**: required sections present, tags balanced, step numbering sequential
+- **Structural completeness**: required sections present, tags balanced, step numbering sequential, **no orphaned empty blocks** — any structural tag (`<constants>`, `<notes>`, `<calibration>`, `<inputs>`, `<not-for>`, `<role>`, `<initialization>`, `<antipatterns_to_flag>`) containing only whitespace = dead markup, must be removed; flag **medium** (gate-level); auto-fix safe (no content to lose)
 - **Cross-reference validity**: every agent/skill name mentioned must exist on disk. Cross-reference against Step 2 inventory. Any name not in Step 2 inventory = **broken cross-reference** (critical). No conditional language ("if X doesn't exist") — by Step 3, inventory known. If inventory not collected (e.g., running in isolation), flag: "unverified reference — requires disk inventory check." **Antipattern to flag**: writing "potentially missing" / "likely doesn't exist" / "if this agent doesn't exist" / "pending verification" / "should be checked against inventory" when Step 2 ran. These phrases = agent not using inventory. Name in workflow, absent from Step 2 list = confirmed broken cross-reference — report critical, not conditional. Conditional language only acceptable when Step 2 genuinely not run.
 - **Verbosity and duplication**: bloated steps, repeated instructions, copy-paste between files. **Token count is the verbosity metric, not line count**:
   - prefer breaking long lines into shorter ones for clarity (line breaks help model processing)

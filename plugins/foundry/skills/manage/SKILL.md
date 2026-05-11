@@ -5,6 +5,7 @@ argument-hint: 'create <agent|skill|rule> <name> "desc" | update <name> [new-nam
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
+when_to_use: Use to create, rename, or delete agents/skills/rules/hooks and keep cross-references in sync; NOT for validating existing config quality (use audit) or implementing code changes (use develop:feature or develop:fix).
 ---
 
 > **Note:** `disable-model-invocation: true` — `/manage` is user-invoked only and cannot be chained via `Skill()` from orchestrators. When suggesting `/manage` as a follow-up, the invoking skill must present it as a user-run command, not an automatic next step.
@@ -458,18 +459,9 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
 
 2. Update `settings.json` — parse, append, write back:
 
-<!-- Note: python3 is excluded from auto-allow list by design — user will see an approval prompt for this command. -->
-
 ```bash
-RULE_VALUE="<rule>" python3 -c "  # timeout: 15000
-import json, os
-with open('.claude/settings.json') as f:
-    d = json.load(f)
-d['permissions']['allow'].append(os.environ['RULE_VALUE'])
-with open('.claude/settings.json', 'w') as f:
-    json.dump(d, f, indent=2)
-    f.write('\n')
-"
+# timeout: 15000
+jq --arg rule "<rule>" '.permissions.allow += [$rule]' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
 ```
 
 3. Update `permissions-guide.md` — append new row to end of correct section (before its trailing `---` separator). New row format:
@@ -483,7 +475,8 @@ Use Edit tool to insert row: find last table row in target section and insert af
 4. Verify both files updated:
 
 ```bash
-python3 -c "import json; d=json.load(open('.claude/settings.json')); print('OK' if '<rule>' in d['permissions']['allow'] else 'MISSING')"  # timeout: 15000
+# timeout: 5000
+jq -e '.permissions.allow | contains(["<rule>"])' .claude/settings.json && echo "OK" || echo "MISSING"
 grep -F '`<rule>`' .claude/permissions-guide.md
 ```
 
@@ -494,15 +487,8 @@ Removes rule from both `settings.json` and `permissions-guide.md` atomically.
 1. Update `settings.json` — parse, filter, write back:
 
 ```bash
-python3 -c "  # timeout: 15000
-import json
-with open('.claude/settings.json') as f:
-    d = json.load(f)
-d['permissions']['allow'] = [p for p in d['permissions']['allow'] if p != '<rule>']
-with open('.claude/settings.json', 'w') as f:
-    json.dump(d, f, indent=2)
-    f.write('\n')
-"
+# timeout: 15000
+jq --arg rule "<rule>" 'del(.permissions.allow[] | select(. == $rule))' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
 ```
 
 2. Update `permissions-guide.md` — use Edit tool to remove table row containing `` `<rule>` ``.
@@ -510,7 +496,8 @@ with open('.claude/settings.json', 'w') as f:
 3. Verify both files clean:
 
 ```bash
-python3 -c "import json; d=json.load(open('.claude/settings.json')); print('OK' if '<rule>' not in d['permissions']['allow'] else 'STILL PRESENT')"  # timeout: 15000
+# timeout: 5000
+jq -e '.permissions.allow | contains(["<rule>"]) | not' .claude/settings.json && echo "OK" || echo "STILL PRESENT"
 grep -qF '`<rule>`' .claude/permissions-guide.md && echo "STILL IN GUIDE" || echo "OK"
 ```
 

@@ -635,7 +635,11 @@ For each headline feature, read the actual diff or changed source file to unders
 **Fallback protocol — if a real demo cannot be assembled** (e.g. no usable fixtures, installed package not functional, API requires live credentials): before writing any synthetic script, execute these steps in order:
 
 1. **Document each failed attempt**: output a `## Demo attempts` block to the terminal listing every approach tried and the specific reason it was rejected (e.g. "test fixtures require database connection", "example script imports non-installable C extension"). Minimum one entry per attempt.
-2. **Ask Codex (if available)**: check `codex` plugin availability; if present, spawn `Agent(subagent_type="codex:codex-rescue")` with the `## Demo attempts` log and ask it to locate or construct a real-world demo from project artifacts. If Codex returns a viable approach, use it — stop here and do not proceed to steps 3–4.
+2. **Ask Codex (if available)**:
+   ```bash
+   CODEX_OK=$(claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "available" || echo "")  # timeout: 5000
+   ```
+   If `$CODEX_OK` non-empty, spawn `Agent(subagent_type="codex:codex-rescue")` with the `## Demo attempts` log and ask it to locate or construct a real-world demo from project artifacts. If Codex returns a viable approach, use it — stop here and do not proceed to steps 3–4.
 3. **Ask user**: invoke `AskUserQuestion` with the `## Demo attempts` log (and Codex outcome if attempted), asking the user to either provide real-world assets or explicitly approve a synthetic demo.
 4. **Synthetic demo only on explicit approval**: proceed with synthetic/fabricated demo content only if the `AskUserQuestion` response in step 3 explicitly authorises it.
 
@@ -694,8 +698,6 @@ Notify: `→ written to $DEMO_OUT`
 - **Public-facing content policy**: release notes, changelogs, migration guides = user-visible changes only. Never include: internal staff names, internal maintenance, internal refactors, CI/tooling changes, internal dep bumps, code cleanup, developer housekeeping with no user impact.
 - Public-facing output co-authored with `oss:shepherd` — follow `$_OSS_SHARED/shepherd-voice.md` guidelines for human, direct tone
 - **Demo mode output**: jupytext percent format — convert to `.ipynb` with `jupytext --to notebook <file>.py`; placeholder URLs (`<repo-url>`, `<docs-url>`) must be replaced before publishing; Colab badge URL must point to actual notebook after upload
-- **Sequential gate**: gather → explore → validate docs → classify → audit changelog → extract contributors → identify highlights → draft migration → demo (feature only, execution gate) → executive summary → write draft — never reorder
-- **Demo execution gate**: demo phase blocks executive summary — no draft without executable demo for feature releases; script must exit 0 and print expected outputs before proceeding
 - **Demo real-world-only policy**: demo must use actual project data/fixtures/API — synthetic inputs not acceptable without explicit user approval in the same session; mandatory fallback sequence: (1) document each failed attempt in `## Demo attempts` block, (2) ask Codex if available (`Agent(subagent_type="codex:codex-rescue")`), (3) ask user via `AskUserQuestion`, (4) synthetic proceeds only on explicit user approval
 - **Changelog audit non-destructive**: adds missing entries, flags extras, never removes existing entries automatically
 - Follow-up chains:
@@ -708,6 +710,8 @@ Notify: `→ written to $DEMO_OUT`
 
 <calibration>
 
-Calibratable modes: notes (classification accuracy), prepare (pipeline completeness), audit (verdict accuracy: READY/NEEDS_ATTENTION/BLOCKED), demo (headline feature selection, narrative quality, code cell correctness).
+Registered: `notes` mode — classification accuracy (change type, section assignment, noise filtering).
+
+Future candidates (not yet registered): `prepare` (pipeline completeness), `audit` (verdict accuracy: READY/NEEDS_ATTENTION/BLOCKED), `demo` (headline feature selection, narrative quality, code cell correctness).
 
 </calibration>
