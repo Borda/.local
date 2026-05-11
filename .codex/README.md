@@ -102,7 +102,7 @@ All configured `gpt-5.4-mini` agents currently use `xhigh`, so there is no activ
 
 ### Profiles
 
-Four runtime profiles in `config.toml` cover common mode switches. Activate with `--profile <name>`:
+These runtime profiles belong in your user-level `~/.codex/config.toml`. Project-local `.codex/config.toml` files ignore `[profiles.*]`, so keep the definitions there if you want them to apply across sessions. Activate with `--profile <name>`:
 
 ```bash
 codex --profile deep-review "full security audit of src/api/"
@@ -154,11 +154,11 @@ use the curator to review .codex drift and weak gates
 
 ## 🪙 RTK Integration
 
-Codex hooks are enabled in `config.toml`:
+Codex hooks are enabled in `config.toml` with the canonical feature flag:
 
 ```toml
 [features]
-codex_hooks = true
+hooks = true
 ```
 
 Configured hook files:

@@ -21,7 +21,7 @@ job_max_runtime_seconds = 3600
 multi_agent     = true
 child_agents_md = true  # propagate AGENTS.md scope to sub-agents
 personality     = true
-codex_hooks     = true
+hooks           = true
 
 [tui]
 status_line = [
@@ -33,26 +33,6 @@ status_line = [
 
 [mcp_servers.openaiDeveloperDocs]
 url = "https://developers.openai.com/mcp"
-
-[profiles.cautious]
-approval_policy = "untrusted"
-
-[profiles.fast-edit]
-model = "gpt-5.4-mini"
-model_reasoning_effort = "xhigh"
-model_reasoning_summary = "concise"
-model_verbosity = "low"
-max_threads = 2
-
-[profiles.fresh-docs]
-web_search = "live"
-model_reasoning_summary = "concise"
-
-[profiles.deep-review]
-model = "gpt-5.4-mini"
-model_reasoning_effort = "xhigh"
-web_search = "live"
-model_reasoning_summary = "concise"
 
 [skills]
 
