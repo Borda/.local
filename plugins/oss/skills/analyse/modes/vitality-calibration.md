@@ -61,6 +61,8 @@ Validate scoring range + sensitivity across known archetypes. Run `/oss:analyse 
 - Coverage gate: run scenario where ≥4 axes return 403/202 → verify score shows `⚠ provisional` flag
 - Review coverage: test solo-maintainer repo with known self-merge pattern → review_coverage <50% → Axis 4 🔴
 - pytest-mock Axis 4 caveat: review coverage volatile with <5 merged PRs — validate across ≥3 months before treating definitive
+- **Cross-run consistency**: when two repos analysed in same session, CI pass-rate and security severity must use identical denominators and classification rules; any asymmetry = B4/B2 bug respectively
+- **Silence rate primary**: Axis 1 scorecard row must show silence rate (% unresponded) as first metric; TTFR as secondary; absence of silence rate in row = formatting bug
 - **Axis 9 must be 🔴 for all abandoned repos** — pool_recent = 0, TTM no merges last 30d, P90 queue age > 180d together guarantee 🔴; any 🟢/🟡 = scoring bug
 - **Axis 9 sub-signal independence**: 🔴 on sub-signal 9B (no merges 30d) alone pulls axis score below 7.5 even when other sub-signals 🟢 — verify composite behavior
 
@@ -81,3 +83,8 @@ Validate scoring range + sensitivity across known archetypes. Run `/oss:analyse 
 - **Squash-merge repos**: commit substance ratio (9D) may undercount dep-bumps when PRs squash-merged under generic titles — known limitation; note if detected (large PR count, low distinct commit count relative to PR count)
 - **New repos (<12m old)**: reviewer pool drift (9A) requires weeks[-52:-26] baseline; repos younger than ~12m have sparse/empty prior-6m window → pool_prior empty → 9A ⚪; axis scores on remaining 3 sub-signals; not a bug
 - **High-volume dep-bump repos**: 9D 🔴 = correct signal human commit output is maintenance-only; combined with 9A stable pool may indicate healthy automated maintenance — note both signals in Key Signal column
+- **Dependabot manifest_path misclassification**: any alert whose `manifest_path` matches `*_test.txt` classified as runtime = **B2 scoring bug**; validate by grepping `dependabot.json` for `segmentation_test.txt`, `classification_test.txt`, `*_test.txt` entries — those must never appear in user-exposure severity count
+- **CODEOWNERS active count from memory**: if active maintainer list includes any login with 0 commits in `commits.json` window, or omits a login with ≥1 commits who appears in CODEOWNERS = **B3 data bug**; must recompute programmatically on every run
+- **CI pass-rate denominator trim**: Axis 5 CI pass-rate using trimmed denominator (e.g. 9/10 when total runs = 21) = **B4 methodology bug**; correct = 10/21; validate: pass-rate denominator must equal `len(workflow_runs.json)`
+- **Truncation phantom**: if open-issue stale-rate body says "N-cap window" but `len(open_issues.json) == open_issues_count - open_prs_count`, body contradicts Gaps section = **B5 framing bug**; validate consistency between body and Gaps section
+- **Cross-version score comparison**: comparing Health Score from v0.6.x run vs v0.7.x run without version annotation = **B6 methodology bug**; axis weights differ across minor versions; scores not directly comparable without version qualifier

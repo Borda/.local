@@ -460,6 +460,23 @@ trap 'rm -f "$SENTINEL"' EXIT INT TERM  # ensure cleanup even if workflow crashe
 
 Process items in `SELECTED_ITEMS` (from Step 3f) in priority order (`[req]` first, then `[suggest]`). **Each item gets own commit.**
 
+**Codex effort classification** — classify each item before dispatch; set `ITEM_EFFORT`; aggregate to `CHANGE_SCOPE` for Step 9:
+
+| Signal in `summary` or `full_comment_text` (case-insensitive) | `ITEM_EFFORT` |
+| --- | --- |
+| typo, spelling, whitespace, formatting, comment-only, rename single identifier, docstring | `medium` |
+| multi-file change, refactor, architecture, extract class, new feature, redesign | `xhigh` |
+| everything else (single-file logic, test fix, small change) | `high` (default) |
+
+Rules:
+- Minimum effort is always `medium` — never `low`
+- `ITEM_EFFORT` set per item; include in Codex prompt as `"Effort level: $ITEM_EFFORT.\n..."` prefix
+- `CHANGE_SCOPE` = aggregate across all `SELECTED_ITEMS`:
+  - ALL items classified `medium` → `CHANGE_SCOPE=lint-only`
+  - ANY item classified `xhigh` → `CHANGE_SCOPE=full`
+  - otherwise → `CHANGE_SCOPE=targeted` (default)
+- Compute `CHANGE_SCOPE` once before the loop; pass to Step 9 via shell variable
+
 **≥10 selected items — batched Codex dispatch**: group items by file affinity (items touching the same file → one batch; max 3 per batch; unrelated items → solo batch). Per batch: single Codex dispatch listing all items; one `git add` + one commit referencing all batch item IDs. Print compact progress `[N/total] batch #<ids> — <files>` instead of per-item verbose diff output. Skip per-item stash/unstash — perform one clean-state check per batch instead.
 
 Per action item (or per batch when batching):
@@ -477,7 +494,7 @@ TaskUpdate(task_id=<item.task_id>, status="in_progress")
 ```
 
 ```bash
-Agent(subagent_type="codex:codex-rescue", prompt="Apply this review feedback to the codebase. Implement exactly what is requested and nothing more. If the change is already present or there is nothing actionable, make no changes and explain why. Feedback from @<author>: <full_comment_text>")
+Agent(subagent_type="codex:codex-rescue", prompt="Effort level: $ITEM_EFFORT. Apply this review feedback to the codebase. Implement exactly what is requested and nothing more. If the change is already present or there is nothing actionable, make no changes and explain why. Feedback from @<author>: <full_comment_text>")
 git diff HEAD --stat  # timeout: 3000
 ```
 
@@ -597,6 +614,7 @@ Reference scenarios (for documentation; not for calibrate runs):
 - **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses (loses action-item commits); never `--rebase` (rewrites SHAs); default `--merge`.
 - **Escape hatch**: `git merge --abort` = undo all conflict state; `git push --force-with-lease` (never plain `--force`) only when user explicitly requests — if push rejected after local amend.
 - **Codex agent health**: subject to CLAUDE.md §8 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file.
+- **Codex effort calibration**: effort set per item — never `low`; minimum `medium`; typo/doc/formatting/rename-simple → `medium`; multi-file/architecture/new-feature → `xhigh`; default → `high`; effort prefix in Codex prompt, not a separate tool param; `CHANGE_SCOPE` aggregated from all items for Step 9 test targeting
 - **Thread resolution via GraphQL** — `isResolved` lives on `PullRequestReviewThread` (GraphQL only); REST `/pulls/{PR}/comments` does not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId` values; GraphQL failure → `[]` fallback.
 - **Commit attribution** — `[gh]` items: `[resolve #<id>] @<reviewer> (gh):`; `[report]` items: `[resolve #<id>] /review finding by <agent-name> (report: <report-path>):` — distinguishes automated findings in git history.
 - **Sources block**: print after all sources read, before action item table.

@@ -1,5 +1,6 @@
 <!-- oss:resolve Step 9 — executed via: Read $_OSS_RESOLVE/modes/lint-qa-gate.md; execute -->
 <!-- Input: $RUN_DIR, $BASE_REF_MERGE, current working tree after Step 8 -->
+<!-- $CHANGE_SCOPE: lint-only | targeted | full (default=targeted; set in SKILL.md Step 8 effort classification) -->
 <!-- Output: lint fixes committed (if any), or BLOCKING_ISSUES found -->
 
 ## Step 9: Lint and QA gate
@@ -11,12 +12,12 @@ mkdir -p "$RUN_DIR" # timeout: 5000
 BASE_REF_MERGE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || echo "origin/$BASE_REF")
 ```
 
-Spawn both in parallel:
+When `$CHANGE_SCOPE=lint-only` (ALL selected items were typing/doc/formatting): skip `foundry:qa-specialist` entirely — linting only. Otherwise spawn both in parallel:
 
 ```text
 Agent(subagent_type="foundry:linting-expert", maxTurns=15, prompt="Review all files changed in the current branch since $BASE_REF_MERGE (expand to literal SHA before spawning). List every lint/type violation. Apply inline fixes for any that are auto-fixable. Write your full findings to $RUN_DIR/linting-expert-step9.md using the Write tool, then return ONLY a compact JSON envelope: {fixed: N, remaining: N, files: [...]}.")
 
-Agent(subagent_type="foundry:qa-specialist", maxTurns=15, prompt="Review all files changed in the current branch since $BASE_REF_MERGE (expand to literal SHA before spawning) for correctness, edge cases, and regressions. Flag any blocking issues (bugs, broken contracts, missing test coverage for the changed logic). Write your full findings to $RUN_DIR/qa-specialist-step9.md using the Write tool, then return ONLY a compact JSON envelope: {blocking: N, warnings: N, issues: [...]}.")
+Agent(subagent_type="foundry:qa-specialist", maxTurns=15, prompt="Review all files changed in the current branch since $BASE_REF_MERGE (expand to literal SHA before spawning) for correctness, edge cases, and regressions. Run tests for changed modules only — do not run the full test suite unless $CHANGE_SCOPE=full. Flag any blocking issues (bugs, broken contracts, missing test coverage for the changed logic). Write your full findings to $RUN_DIR/qa-specialist-step9.md using the Write tool, then return ONLY a compact JSON envelope: {blocking: N, warnings: N, issues: [...]}.")
 ```
 
 > **Health monitoring**: synchronous. No response ~15 min → surface partial results from `$RUN_DIR` ⏱.

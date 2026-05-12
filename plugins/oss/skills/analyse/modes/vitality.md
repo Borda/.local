@@ -181,7 +181,7 @@ Run `mkdir -p .reports/analyse/vitality` then **Read `$REPORT_TPL`** to get full
 
 ## Step 5 — Codex Independent Repo Review
 
-When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 8 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation and divergence detection.
+When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 9 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation and divergence detection.
 
 ```bash
 REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
@@ -458,5 +458,14 @@ Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close
 - **Health Score footer row**: Score column shows weighted %; Weight column shows "100%"; Status/Key Signal/Risk left blank
 - **Rework loop exit conditions**: exits when `$REWORK_VERDICT = "pass"` OR `$REWORK_ITER >= $REWORK_MAX`; always exits after 2 iterations max regardless of verdict
 - **SCORES_FILE**: assembled in Step 3 by orchestrator from 3 partial files — not written by gh-scraper; gh-scraper prompt in Step 1 does NOT include SCORES_FILE
+- **CI pass-rate denominator**: always `success / total` (full denominator); never trim to success/conclusive; report `action_required` runs as separate "workflow auth failures" note — never exclude from denominator; inconsistent denominators break cross-repo Health Score comparison
+- **Dependabot manifest_path classification**: before classifying alert as runtime user exposure, check `manifest_path` — `*_test.txt`, `**/test*.txt`, `**/dev*.txt`, `**/ci*.txt` = test/CI deps, not user-facing; GitHub `scope=runtime` field is unreliable for extras classification; actual runtime exposure = alert in file referenced by published extras_require; always split security finding: "N user-facing (extras/*.txt)" vs "M dev/CI-facing (*_test.txt)"
+- **CODEOWNERS activity verification**: compute CODEOWNERS active-maintainer count programmatically from commit-author data (`commits.json`/stats); never enumerate by name recognition; inactive = 0 commits in window; still counts as CODEOWNERS member but labelled "nominal"; correct list must include all commit authors who appear in CODEOWNERS, exclude those with 0 commits
+- **Issue truncation framing**: when `open_issues.json` size == (`open_issues_count` − open PRs count), sample IS full population — state "all N open issues sampled"; reserve "N-cap window" framing for genuinely truncated samples only (response size == fetch limit); check: `sample_size = len(open_issues.json)`, `population = repo_meta.open_issues_count - open_prs_count`, if `sample_size >= population` → no truncation
+- **Workflow count reconciliation**: when API `total_count` differs from count of YAML files in `.github/workflows/`, reconcile — API includes archived/disabled; filesystem is active only; report as "N active (M registered)" never a single ambiguous number; SAST/security claims must use filesystem count (active workflows only)
+- **Bus factor confidence discounting**: when Axis 3 conf < 0.70 (e.g. stats 202 fallback), surface explicitly — add "X% of Health Score sits on low-confidence Axis 3" note; when conf ≤ 0.50, treat as partial contribution (effective weight × conf); never carry full axis weight at conf 0.50
+- **TTFR primary metric**: headline responsiveness metric is % of issues/PRs with zero response (silence rate); TTFR is secondary — characterises responded sub-sample only; always append "(responded only, N=X)" to TTFR figure; in scorecard row show silence rate first, TTFR second; for non-responded issues TTFR = ∞, not omitted
+- **Commit denominator discipline**: always use non-bot count as denominator for per-author concentration (bus factor, contributor share); phrase as "X% of non-bot commits"; never "X% of last N commits" when bots inflate N; applies to: Axis 3 bus factor, committer counts, all contributor-share metrics
+- **Skill version in Health Score**: record `SKILL_VERSION` in report header; when comparing Health Scores across two reports, warn if skill versions differ — axis weights may have changed; format: "Health Score 57.7% (v0.7.1)" not bare "57.7%"; never compare bare scores across runs with different skill versions
 
 </notes>
