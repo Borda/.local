@@ -1,0 +1,98 @@
+<!-- oss:release Mode: demo — executed via: Read $SKILL_DIR/modes/demo.md; execute -->
+<!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $GATHER_FILE -->
+
+**Trigger**: `/release demo [range]`
+
+**Purpose**: Story-telling release notebook — self-contained Python script in jupytext percent (`# %%`) format. Highlights the 2–3 most significant contributions with narrative prose and runnable code cells. Suitable for Colab, local Jupyter, or blog embeds.
+
+```bash
+# LAST_TAG, REPO_ROOT, SKILL_DIR resolved in Shared setup block above
+RANGE="${REST:+${REST/->/../}}"
+RANGE="${RANGE:-$LAST_TAG..HEAD}"
+# BRANCH, DATE from Shared setup block above
+```
+
+### Phase 1: Gather and pick headline features
+
+Run gather/explore/validate inline for `$RANGE` (no delegation — demo is single-pass like `notes` mode). Use the same commands as the **Gather changes** section above (git log, gh pr list). For diff stat, prefer three-dot range to include all commits merged on the release branch:
+
+```bash
+git diff --stat "$(echo "$RANGE" | sed 's/\.\./.../')"  # three-dot range preferred; timeout: 3000
+```
+
+From the gathered commits and diffs, select 2–3 headline features:
+- Prefer: new public API, breaking changes, significant performance wins, major UX improvements
+- Exclude: internal refactors, CI/tooling, dep bumps, doc-only changes
+
+For each headline feature, read the actual diff or changed source file to understand the before/after interface — demo cells must show real API, not a paraphrase.
+
+### Phase 2: Generate demo script
+
+**Real-world data constraint**: demo must use actual project artifacts, real API calls against the package under release, or genuine example data already present in the repo. Fabricated or synthetic inputs are not acceptable by default. Sources in priority order: repo test fixtures, example scripts shipped with package, public datasets referenced in project docs, real CLI invocations against installed package.
+
+**Fallback protocol — if a real demo cannot be assembled** (e.g. no usable fixtures, installed package not functional, API requires live credentials): before writing any synthetic script, execute these steps in order:
+
+1. **Document each failed attempt**: output a `## Demo attempts` block to the terminal listing every approach tried and the specific reason it was rejected (e.g. "test fixtures require database connection", "example script imports non-installable C extension"). Minimum one entry per attempt.
+2. **Ask Codex (if available)**:
+   ```bash
+   CODEX_OK=$(claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "available" || echo "")  # timeout: 5000
+   ```
+   If `$CODEX_OK` non-empty, spawn `Agent(subagent_type="codex:codex-rescue")` with the `## Demo attempts` log and ask it to locate or construct a real-world demo from project artifacts. If Codex returns a viable approach, use it — stop here and do not proceed to steps 3–4.
+3. **Ask user**: invoke `AskUserQuestion` with the `## Demo attempts` log (and Codex outcome if attempted), asking the user to either provide real-world assets or explicitly approve a synthetic demo.
+4. **Synthetic demo only on explicit approval**: proceed with synthetic/fabricated demo content only if the `AskUserQuestion` response in step 3 explicitly authorises it.
+
+Write a Python script in jupytext percent format. Structure in order:
+
+1. **Jupytext header** — prepend verbatim as the first block of the generated script:
+
+   ```python
+   # ---
+   # jupyter:
+   #   jupytext:
+   #     cell_metadata_filter: -all
+   #     formats: ipynb,py:percent
+   #     text_representation:
+   #       extension: .py
+   #       format_name: percent
+   #       format_version: '1.3'
+   #       jupytext_version: 1.16.0
+   # ---
+   ```
+2. **Title cell** (`# %% [markdown]`):
+   - `# <PackageName> <VERSION>: <tagline — one clause per headline feature>`
+   - Colab badge placeholder: `[![Open In Colab](...)](<repo-url>/blob/main/releases/<VERSION>/demo.ipynb)`
+   - `**What you'll learn:**` — bullet per headline feature
+   - `**Sections:**` — numbered TOC with anchor links
+   - 2–3 paragraphs of narrative: what this release adds, why it matters; `> **Breaking change:**` blockquote if any breaking changes
+3. **Install cell** (`# %%`): `# !pip install <package>==<VERSION>`
+4. **Config cell** (`# %%`): all notebook-level constants (`OUTPUT_DIR`, `BATCH_SIZE`, etc.); `num_workers` pattern for macOS/Windows safety if training involved
+5. **One section per headline feature** — for each:
+   - Markdown cell: `## N. <Feature name>` + prose (before/after, motivation, API shape)
+   - Code cell(s): demonstrate the feature; if showing old→new migration, old API in commented block above
+   - Verification cell where output confirms the feature works (e.g. print, assertion, plot)
+6. **Next steps cell** (`# %% [markdown]`):
+   - `## <N+1>. Next steps` header
+   - Bullet list: docs link, changelog link (GitHub compare URL), migration guide link if breaking changes, links to prior release demos; use `<placeholder-url>` format — never invent real URLs
+
+Content rules:
+- All code must be syntactically valid Python
+- Placeholder URLs use `<repo-url>`, `<docs-url>` — never invent real URLs
+- Narrative cells explain WHY, not just what — write for a developer who hasn't seen this release
+- No class docstrings or multi-line comment blocks in demo code cells; inline `# comments` only
+- Breaking changes get both a `> **Breaking change:**` callout in the title cell AND a comparison cell in the relevant section
+
+### Phase 3: Write output
+
+```bash
+# BRANCH and DATE from Shared setup block above
+# $LAST_TAG is the previous release (range lower bound) — not the release being drafted.
+# Write to .temp/ always; prepare mode uses releases/$VERSION/ with the explicit target version.
+DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"
+mkdir -p .temp  # timeout: 5000
+```
+
+Write generated script to `$DEMO_OUT` using Write tool.
+
+Notify: `→ written to $DEMO_OUT`
+
+> Convert `.py` → `.ipynb` with `jupytext --to notebook $DEMO_OUT` — user runs this; skill does not execute it.

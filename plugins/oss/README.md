@@ -20,6 +20,8 @@ ______________________________________________________________________
   - [/oss:resolve](#ossresolve)
   - [/oss:release](#ossrelease)
 - [Agents reference](#agents-reference)
+  - [oss:gh-scraper](#gh-scraper)
+  - [oss:repo-warden](#repo-warden)
   - [oss:shepherd](#ossshepherd)
   - [oss:cicd-steward](#osscicd-steward)
 - [Configuration](#configuration)
@@ -136,7 +138,7 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 
 ```text
 /oss:analyse 123              # issue, PR, or discussion by number
-/oss:analyse vitality         # repo vitality: 8-axis health scorecard, duplicate clustering
+/oss:analyse vitality         # repo vitality: 9-axis health scorecard, duplicate clustering, raw data JSONL
 /oss:analyse ecosystem        # dependency health, upstream compatibility
 /oss:analyse path/to/report.md  # re-analyse a saved report
 ```
@@ -151,7 +153,39 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 
 For a thread number, `analyse` fetches the issue or PR, reads all comments, classifies the thread type (bug report, feature request, question, duplicate, stale), and produces a structured summary: what was asked, what the current state is, what action is needed from you, and — with `--reply` — a draft response.
 
-For `vitality`, it pulls open issues and PRs, scores repo vitality across 8 axes, clusters duplicates, flags threads stale beyond your project's threshold, and gives you a prioritised triage list with a weighted Health Score %.
+For `vitality`, it pulls open issues and PRs, scores repo vitality across 9 axes (Axes 1–8 plus Axis 9 Trajectory), clusters duplicates, flags threads stale beyond your project's threshold, and gives you a prioritised triage list with a weighted Health Score %. All raw API data is saved to a JSONL file alongside the report for manual inspection.
+
+**Sample vitality scorecard (terminal output):**
+
+```text
+# Repo Vitality — example/mylib
+**Skill:** oss:analyse v0.7.0 · **Generated:** 2026-05-11T10-00-00Z
+
+---
+
+## Executive Summary
+
+Project is in healthy condition (74%) with strong CI/CD and documentation.
+Bus factor of 2 is the primary risk. Dependency update config absent.
+
+**Health Score:** 74% 🟡 · 5 healthy · 3 warning · 1 critical · 0 unavailable (⚪)
+**Top Risk:** Axis 3 bus factor = 2 — one departure stalls merges
+
+---
+
+| # | Axis                 | Score  | Status | Key Signal                           |
+|---|----------------------|--------|--------|--------------------------------------|
+| 1 | Responsiveness       | 10.0   | 🟢     | median issue 1.2d, PR 0.8d; 94% ≤7d |
+| 2 | Maintenance activity | 10.0   | 🟢     | last commit 3d, 18 commits/30d       |
+| 3 | Contributor health   |  5.0   | 🟡     | bus factor 2, retention 67%          |
+| 4 | Issue & PR health    |  5.0   | 🟡     | stale 18%, close 0.71, review 62%    |
+| 5 | CI/CD & code quality | 10.0   | 🟢     | 5/5 checks, CI pass 95%              |
+| 6 | Documentation        |  7.8   | 🟢     | 7/9 checkpoints                      |
+| 7 | Governance           |  8.3   | 🟢     | 5/6 files, active maint 3/3          |
+| 8 | Security posture     |  5.0   | 🟡     | dep-config: no, alerts: 403          |
+| 9 | Trajectory           |  5.0   | 🟡     | pool -10%, TTM 2d->3d, P90 45d, dep 12% |
+|   | **Total Score**      | **74%** |       |                                      |
+```
 
 **Output locations:**
 
@@ -204,7 +238,7 @@ Tier 2  Six parallel specialist agents (requires foundry plugin)
 
         Consolidation: foundry:sw-engineer merges all agent findings into ranked report
 
-        --reply: oss:shepherd writes contributor-facing comment from consolidated report
+        --reply: oss:shepherd drafts contributor-facing comment from consolidated report (written to .temp/; user posts)
 ```
 
 Without `foundry`, Tier 2 falls back to general-purpose agents with role descriptions — still functional, lower quality.
@@ -346,6 +380,46 @@ Added → Breaking Changes → Changed → Deprecated → Removed → Fixed → 
 ______________________________________________________________________
 
 ## 🤖 Agents reference
+
+### gh-scraper
+
+**Role:** Raw GitHub data fetcher for `/oss:analyse vitality`. Fetches all GitHub API data (REST + GraphQL) across two parallel groups, writes raw JSONL data file consumed by oss:repo-warden axis scorers. Internal — spawned by oss:analyse vitality Step 1 only.
+
+**Model:** Sonnet (focused data collection)
+
+**What gh-scraper does:**
+
+- Runs all GitHub API fetch calls in parallel (Group 1) then Group 2 (README, CONTRIBUTING, workflow files, branch protection)
+- Retries contributor stats (202 computing) up to 6× before writing partial record
+- Writes `raw-data-{owner}-{repo}-{date}.jsonl` for reproducibility and scorer consumption
+
+**What gh-scraper does NOT do:**
+
+- Axis scoring of any kind → oss:repo-warden owns all axis scoring
+- Report generation, terminal output, or adversarial review → oss:analyse vitality Steps 4–7 own those
+- Direct user invocation — always spawned by the vitality skill
+
+______________________________________________________________________
+
+### repo-warden
+
+**Role:** Axis scorer for `/oss:analyse vitality`. Reads pre-fetched raw JSONL from oss:gh-scraper and scores an assigned group of vitality axes per the vitality-scoring.md rubric; writes partial scores JSON for assembly. Spawned 3× in parallel by oss:analyse vitality Step 2 — not for direct user invocation.
+
+**Model:** Sonnet (focused computation)
+
+**What repo-warden does:**
+
+- Scores assigned axis group (A: Axes 1,2,5,6 / B: Axes 4,7,8 / C: Axes 3,9) from DATA_FILE
+- Runs the Axis 3 multi-pass confidence logic; applies fallback from commits_50 when contributor stats unavailable
+- Writes `partial-{group}-{owner}-{repo}-{ts}.json` consumed by vitality Step 3 assembly
+
+**What repo-warden does NOT do:**
+
+- Raw data fetching → oss:gh-scraper owns all GitHub API calls
+- Report generation, terminal output, or adversarial review → oss:analyse vitality Steps 4–7 own those
+- Direct user invocation — always spawned by the vitality skill
+
+______________________________________________________________________
 
 ### shepherd
 

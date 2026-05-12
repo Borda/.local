@@ -54,6 +54,9 @@ CHALLENGE_POLL_S=90       <!-- tightened from CLAUDE.md §8 default 300s -->
 # sort -V orders semver correctly (0.9.0 < 0.10.0); tail -1 picks newest
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+
+_OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 2>/dev/null | head -1)  # timeout: 5000
+[ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
 ```
 
 Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
@@ -164,9 +167,9 @@ eval "$(bash "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.sh" "$ARGUMENTS")"
 **Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not equal to `--no-challenge`. If found: invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode
-- `MODE="report"` → find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .temp/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present
+- `MODE="report"` → find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .temp/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present; when no PR# found in header: add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
 - `MODE="pr"` → continue Step 2
-- `MODE="comment-dispatch"` → jump to Step 12
+- `MODE="comment-dispatch"` → branch safety check before Step 12: `CURRENT=$(git branch --show-current); DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }` → jump to Step 12
 
 ## Step 2: Create initial task
 
@@ -266,6 +269,8 @@ RESOLVED_THREAD_IDS=$(gh api graphql \
   --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[0].databaseId]' \
   2>/dev/null || echo "[]")  # timeout: 15000
 # RESOLVED_THREAD_IDS: JSON array of databaseId integers for root comments of resolved threads
+# Fallback [] warning: if GraphQL failed, previously resolved threads re-appear as actionable
+[ "$RESOLVED_THREAD_IDS" = "[]" ] && echo "⚠ Could not fetch resolved thread status — some action items may already be resolved on GitHub; review the table carefully before implementing"
 ```
 
 Non-empty `CLOSING_ISSUES` → fetch each linked issue:
@@ -323,7 +328,7 @@ Status codes: `pending` · `✓ resolved` · `⊘ skipped` · `⊘ no action`. V
 
 Long content is never a reason to switch to key-value or separator-delimited format — truncate and stay in the table.
 
-Answer `[question]` items resolvable from code — clear answer → reclassify `[req]`/`[suggest]`; maintainer judgement needed → surface and pause. Contributor answer ≠ auto-close — answer revealing known limitation/deferred work → keep `[question]`, surface for maintainer to accept/reject.
+Answer `[question]` items resolvable from code — clear answer → present answer and proposed reclassification via `AskUserQuestion` before implementing: "[question] #N: '<summary>' — answer: '<answer>'. Reclassify as [req]?" Options: (a) Yes, implement · (b) Keep as question for maintainer. Never self-promote [question] to [req] without user confirmation. Maintainer judgement needed → surface and pause. Contributor answer ≠ auto-close — answer revealing known limitation/deferred work → keep `[question]`, surface for maintainer to accept/reject.
 
 ## Step 3c: Merge report findings (pr + report mode only)
 
@@ -353,103 +358,7 @@ Report merged: <N> findings from /review · <M> deduplicated against GitHub comm
 
 ## Step 3d: Challenge action items
 
-```bash
-# --no-challenge flag: skip this step entirely
-[[ "$ARGUMENTS" == *"--no-challenge"* ]] && {
-    echo "⚠ --no-challenge: skipping Step 3d — all pending items treated as VALID"
-    CHALLENGE_VERDICTS="[]"
-    # proceed directly to Step 3e; all items keep their type unchanged
-}
-```
-
-When `--no-challenge` is NOT set:
-
-Route each pending item by domain (default `foundry:challenger`); spawn one agent per group **in the background**:
-
-| Item domain | Challenger |
-| --- | --- |
-| Architecture, API design, coupling | `foundry:challenger` |
-| Code logic, correctness, edge cases | `foundry:sw-engineer` |
-| Test coverage, assertions, regressions | `foundry:qa-specialist` |
-| Default / unclassified | `foundry:challenger` |
-
-Write a per-group output file before spawning each agent:
-
-```bash
-CHALLENGE_DIR="/tmp/resolve-challenge-$$"
-mkdir -p "$CHALLENGE_DIR"  # timeout: 5000
-CHALLENGE_CHECKPOINT="/tmp/resolve-check-$$"
-touch "$CHALLENGE_CHECKPOINT"
-LAUNCH_AT=$(date +%s)
-NUM_GROUPS=0  # incremented once per spawned agent group below
-```
-
-Before spawning, write all pending action items to file using the Write tool (file-handoff protocol — CLAUDE.md §2):
-
-Write `$CHALLENGE_DIR/items.json` with all pending ACTION_ITEMS in format:
-`{"items": [{"id": <id>, "summary": "<summary>", "file_line": "<file:line or —>", "author": "<author>", "full_comment_text": "<full text>"}]}`
-
-Spawn each challenge group with `run_in_background=true`, instructing it to write compact JSON to `$CHALLENGE_DIR/<group>.json`; increment `NUM_GROUPS` after each spawn:
-
-```text
-Agent(subagent_type="foundry:challenger", run_in_background=true, prompt="
-Challenge each review comment for PR #<N>.
-Read items from $CHALLENGE_DIR/items.json (JSON array under key 'items', each with id, summary, file_line, author, full_comment_text).
-For each item: read referenced file at file_line if given; determine if comment is valid against actual code, or should be pushed back.
-Be concise — max 2 tool calls per item.
-
-Write ONLY compact JSON to $CHALLENGE_DIR/challenger.json using the Write tool:
-{\"verdicts\": [{\"id\": <id>, \"verdict\": \"VALID\"|\"PUSH_BACK\", \"rationale\": \"<one sentence>\"}]}
-Then return the same JSON as your final message.
-")
-```
-
-(Repeat pattern for `foundry:sw-engineer` → `$CHALLENGE_DIR/sw-engineer.json`, `foundry:qa-specialist` → `$CHALLENGE_DIR/qa-specialist.json`; do `((NUM_GROUPS++))` after each `Agent(...)` call.)
-
-**5-minute health monitor** — check every 90 s; hard cutoff at 300 s (5 min):
-
-```bash
-# Tightened from CLAUDE.md §8: hard cutoff 15min→5min, poll 5min→90s (appropriate for short challenge tasks)
-# Poll until all groups done or 5-min deadline reached
-while true; do
-    NOW=$(date +%s)
-    ELAPSED=$((NOW - LAUNCH_AT))
-    DONE=$(find "$CHALLENGE_DIR" -name "*.json" ! -name "items.json" -newer "$CHALLENGE_CHECKPOINT" 2>/dev/null | wc -l | tr -d ' ')
-
-    [ "$DONE" -ge "$NUM_GROUPS" ] && break   # all groups returned
-    [ "$ELAPSED" -ge 300 ] && {
-        echo "⏱ Challenge timeout at ${ELAPSED}s — marking remaining items VALID"
-        break
-    }
-    sleep 90
-done  # timeout: 360000
-```
-
-Aggregate verdicts — read each `$CHALLENGE_DIR/*.json` that exists:
-
-- File present → use verdicts
-- File absent (agent timed out) → mark every item in that group as `VALID` with rationale `"challenge timed out — treated as VALID"`
-
-```bash
-rm -rf "$CHALLENGE_DIR" && rm -f "$CHALLENGE_CHECKPOINT"  # cleanup  # timeout: 5000
-```
-
-Per verdict:
-- **VALID** → keep item unchanged
-- **PUSH_BACK** → set type to `[challenged:pushback]`; store rationale; exclude from SELECTED_ITEMS
-
-Print challenge summary:
-
-```markdown
-### Challenge Results — PR #<number>
-
-| # | Type | Author | Verdict | Rationale |
-|---|------|--------|---------|-----------|
-| 1 | [gh][req] | @reviewer | VALID | — |
-| 2 | [gh][suggest] | @maintainer | PUSH_BACK | already addressed in commit abc123 |
-```
-
-`[challenged:pushback]` items appear in final report (Step 11) with `⊘ push-back` status and rationale — for maintainer to communicate back to reviewer.
+Read and execute `$_OSS_RESOLVE/modes/challenge-dispatch.md`.
 
 ## Step 3e: Create per-item tasks
 
@@ -528,171 +437,20 @@ git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
 
 `FORK_REMOTE`: contributor login (e.g. `alice`) for forks, `origin` for same-repo. Push always `git push` — tracking configured by `gh pr checkout`.
 
-## Step 5: Conflict detection
+## Steps 5–7: Conflict detection, context, and resolution
 
-```bash
-# Detect in-progress merge via MERGE_HEAD sentinel — git status --porcelain does not expose this reliably
-MERGE_HEAD_FILE="$(git rev-parse --git-dir)/MERGE_HEAD" # timeout: 3000
-test -f "$MERGE_HEAD_FILE" && echo "MERGING" || echo "clean"
-```
-
-**Case A — MERGING** (`MERGE_HEAD` present — prior `git merge` left markers): work with existing markers. Skip to Step 7a.
-
-**Case B — not MERGING**:
-
-Merge `BASE_REF` into PR branch (BASE → HEAD_REF, not reverse):
-
-```bash
-git fetch origin "$BASE_REF"                     # ensure origin/$BASE_REF is current  # timeout: 6000
-git merge "origin/$BASE_REF" --no-commit --no-ff # timeout: 6000
-```
-
-Check conflicted files:
-
-```bash
-git diff --name-only --diff-filter=U # timeout: 3000
-```
-
-### 5a: Create per-conflict tasks
-
-For each conflicted file, create task **before touching any file**:
-
-```text
-TaskCreate(
-  subject="Resolve conflict: <filepath> — PR #<number>",
-  description="Merge conflict in <filepath> from merging origin/<BASE_REF> into <HEAD_REF>. Must be completed before action-item implementation begins.",
-  activeForm="Resolving conflict: <filepath>"
-)
-```
-
-Store returned task ID alongside each file path as `conflict_task_id`. Print conflict task table:
-
-```markdown
-### Merge Conflicts — PR #<number>
-
-| File | Task | Status |
-|------|------|--------|
-| src/foo.py | #<task_id> | pending |
-| config.yaml | #<task_id> | pending |
-```
-
-> **Invariant**: all conflict tasks `completed` before Step 8. Upfront creation keeps each conflict scoped and independently reversible.
-
-No conflicts → complete merge, skip to Step 8:
-
-```bash
-git merge --continue --no-edit
-```
-
-Report clean merge, skip Steps 6–7, continue Step 8.
-
-⛔ More than 20 conflicted files → abort and stop:
-
-```bash
-git merge --abort
-```
-
-Report count + file list; `AskUserQuestion` with options:
-- (a) "Retry with base only — merge origin/$BASE_REF in batches (manual)" — re-attempt merge in chunks outside this workflow
-- (b) "Open PR in browser for manual resolution" — `gh pr view <PR#> --web`
-- (c) "Stop — merge aborted" — workflow complete; branch left on $SAVED_BRANCH
-
-## Step 6: Distill conflict context
-
-### 6a: Source-branch intent
-
-Use Step 3b motivation as primary lens. Additionally:
-
-```bash
-MERGE_BASE=$(git merge-base "origin/$BASE_REF" "$HEAD_REF") # timeout: 3000
-git log $MERGE_BASE..$HEAD_REF --oneline --no-merges        # timeout: 3000
-git diff $MERGE_BASE $HEAD_REF --stat                       # timeout: 3000
-```
-
-One-sentence summary: which files/modules PR owns and what it changes.
-
-### 6b: Target-branch drift (the "surprises")
-
-```bash
-git log $MERGE_BASE..origin/$BASE_REF --oneline --no-merges    # timeout: 3000
-SOURCE_LAST_TIME=$(git log "$HEAD_REF" -1 --format="%ci")      # timeout: 3000
-git log origin/$BASE_REF --after="$SOURCE_LAST_TIME" --oneline # commits the contributor never saw  # timeout: 3000
-```
-
-One-sentence summary: independent base changes after contributor's last commit — preserve unconditionally.
-
-## Step 7: Resolve per conflicted file
-
-### 7a: Spawn sw-engineer
-
-Spawn `foundry:sw-engineer` (fill brackets from indicated steps):
-
-```markdown
-Agent(subagent_type="foundry:sw-engineer", prompt="
-You are resolving merge conflicts in a checked-out PR branch.
-
-## Conflicted files
-<list every file from Step 5 `git diff --name-only --diff-filter=U` output, one per line>
-
-## Contribution motivation (whose intent wins)
-<2–3 sentence motivation summary from Step 3b>
-
-## Merge context
-### What HEAD_REF added (merge-base log)
-<git log $MERGE_BASE..$HEAD_REF --oneline --no-merges output from Step 6a>
-
-### Files changed by this PR (diff stat)
-<git diff $MERGE_BASE $HEAD_REF --stat output from Step 6a>
-
-## Instructions
-For each conflicted file:
-1. Use the Read tool to inspect the full file and locate all conflict markers
-2. Determine the correct resolution using the contribution motivation above as the priority lens:
-   - Contributor's new functionality takes priority for files the PR owns (introduced or substantially rewrote)
-   - Base's independent refactors and config updates are always preserved
-   - When both sides changed the same logic, blend: keep the PR's semantic change while incorporating the base's structural update
-3. Use the Edit tool to apply targeted replacements that remove all conflict markers and produce the correct resolved content — do NOT rewrite the whole file; use Edit for minimal targeted replacements
-4. After resolving each file, stage it with: git add -- <file>  (timeout: 3000)
-
-Return ONLY a compact JSON envelope — no prose, no explanation:
-{\"status\":\"done\",\"resolved\":N,\"staged\":N,\"confidence\":0.N}
-")
-```
-
-> **Health monitoring**: synchronous; Claude awaits natively. No response ~15 min → surface partial results ⏱, proceed with staged files.
-
-### 7b: Verify and complete merge
-
-Parse JSON from sw-engineer. Check `resolved == staged` — mismatch = file resolved but not staged → surface before proceeding.
-
-Complete merge:
-
-```bash
-git merge --continue --no-edit # timeout: 3000
-```
-
-Print conflict report:
-
-```markdown
-### Conflict Resolution
-
-| File | Strategy | Notes |
-|------|----------|-------|
-| src/foo.py | Blended | kept PR's new param, adopted base's renamed import |
-| config.yaml | Target | unrelated config change from base, PR had no opinion |
-
-**Result**: N files resolved. Merge commit created.
-```
-
-Mark all conflict tasks completed:
-
-```text
-for each (filepath, conflict_task_id) pair from Step 5a: TaskUpdate(task_id=\<conflict_task_id>, status="completed")
-```
+Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
 
 ## Step 8: Implement action items
 
-Authorize commits for this workflow:
+Before committing, show the user a final pre-commit summary and request confirmation:
+
+```text
+AskUserQuestion: "Codex has applied changes. Ready to commit N items to <branch>? Summary: <list item summaries>."
+Options: (a) Commit all changes as shown · (b) Show git diff first (review each file before committing) · (c) Abort and inspect manually
+```
+
+On (a) confirmed — authorize commits for this workflow:
 
 ```bash
 SENTINEL="/tmp/claude-commit-auth-$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')-$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')"
@@ -733,9 +491,11 @@ git diff HEAD --stat  # timeout: 3000
 Code changed → commit:
 
 ```bash
-# Stage tracked modifications + new files from Codex (never git add -A)
+# Stage tracked modifications from Codex (never git add -A)
 git add $(git diff HEAD --name-only)                                                     # timeout: 3000
-git ls-files --others --exclude-standard | grep . | xargs git add -- 2>/dev/null || true # timeout: 3000
+# Stage new untracked files — restrict to known source extensions to prevent staging secrets or artifacts
+UNTRACKED=$(git ls-files --others --exclude-standard | grep -E '\.(py|md|yaml|yml|toml|cfg|ini|json|txt|sh|js|ts|go|rs|rb|java|c|cpp|h|hpp)$' 2>/dev/null)
+[ -n "$UNTRACKED" ] && echo "$UNTRACKED" | xargs git add -- 2>/dev/null || true         # timeout: 3000
 # Replace all <placeholder> tokens with actual values before committing
 git commit -m "$(
 	cat <<'EOF'
@@ -761,52 +521,19 @@ Mark item's task completed:
 TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
 
-Clean up stash if dirty-tree guard created one for this item:
+Pop stash BEFORE committing if dirty-tree guard created one for this item (pop after commit risks conflict markers in committed content):
 
 ```bash
-git stash list --quiet | grep -q "resolve-pre-item" && git stash pop  # timeout: 3000
+if git stash list --quiet | grep -q "resolve-pre-item-<id>"; then
+    git stash pop || { echo "⚠ stash pop conflict — resolve conflicts in $(git stash list | head -1) before committing item #<id>"; exit 1; }  # timeout: 3000
+fi
 ```
+
+Commit after successful stash pop.
 
 ## Step 9: Lint and QA gate
 
-```bash
-RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # IMPORTANT: expand $RUN_DIR to its literal value in each prompt string below — agents receive text, not shell context; un-expanded $RUN_DIR means literal string in instructions
-mkdir -p "$RUN_DIR" # timeout: 5000
-# Compute BASE_REF merge base for accurate diff range in agent prompts
-BASE_REF_MERGE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || echo "origin/$BASE_REF")
-```
-
-Spawn both in parallel:
-
-```text
-Agent(subagent_type="foundry:linting-expert", maxTurns=15, prompt="Review all files changed in the current branch since $BASE_REF_MERGE (expand to literal SHA before spawning). List every lint/type violation. Apply inline fixes for any that are auto-fixable. Write your full findings to $RUN_DIR/linting-expert-step9.md using the Write tool, then return ONLY a compact JSON envelope: {fixed: N, remaining: N, files: [...]}.")
-
-Agent(subagent_type="foundry:qa-specialist", maxTurns=15, prompt="Review all files changed in the current branch since $BASE_REF_MERGE (expand to literal SHA before spawning) for correctness, edge cases, and regressions. Flag any blocking issues (bugs, broken contracts, missing test coverage for the changed logic). Write your full findings to $RUN_DIR/qa-specialist-step9.md using the Write tool, then return ONLY a compact JSON envelope: {blocking: N, warnings: N, issues: [...]}.")
-```
-
-> **Health monitoring**: synchronous. No response ~15 min → surface partial results from `$RUN_DIR` ⏱.
-
-- `foundry:linting-expert` made file changes → commit:
-
-```bash
-git add $(git diff HEAD --name-only)                          # timeout: 3000
-git commit -m "$(cat <<'EOF'
-lint: auto-fix violations after resolve cycle
-
----
-Co-authored-by: Claude Code <noreply@anthropic.com>
-EOF
-)"  # timeout: 3000
-```
-
-- Blocking issues from `foundry:qa-specialist` → fix (via Codex or inline edit), re-run qa-specialist once to confirm; issues remaining after one fix pass → **stop workflow — do not proceed to Step 10 (push)**; surface all remaining blocking issues in report; print: `⛔ QA gate blocked push — review findings above, fix errors, then re-run /resolve or push manually after fixing.`
-- Warnings (non-blocking) → record in report; do not block push
-
-Revoke commit authorization:
-
-```bash
-rm -f "$SENTINEL"  # timeout: 3000
-```
+Read and execute `$_OSS_RESOLVE/modes/lint-qa-gate.md`.
 
 ## Step 10: Push
 
@@ -816,8 +543,15 @@ rm -f "$SENTINEL"  # timeout: 3000
 # Ensure fork remote is present (gh pr checkout may not have added it for all setups)
 if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
     REPO_NAME=$(git remote get-url origin | sed 's|.*/||' | sed 's|\.git$||')
-    git remote add "$FORK_REMOTE" "https://github.com/$FORK_REMOTE/$REPO_NAME.git" # timeout: 3000
-    echo "→ Added remote $FORK_REMOTE → https://github.com/$FORK_REMOTE/$REPO_NAME.git"
+    # Mirror origin URL scheme (SSH vs HTTPS) to avoid push failures for SSH-only contributors
+    ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")
+    if [[ "$ORIGIN_URL" == git@* ]]; then
+        FORK_URL="git@github.com:$FORK_REMOTE/$REPO_NAME.git"
+    else
+        FORK_URL="https://github.com/$FORK_REMOTE/$REPO_NAME.git"
+    fi
+    git remote add "$FORK_REMOTE" "$FORK_URL" # timeout: 3000
+    echo "→ Added remote $FORK_REMOTE → $FORK_URL"
 fi
 
 # Configure tracking if not already set
@@ -849,35 +583,8 @@ Confirm latest commit headlines match what was just committed.
 
 Mark remaining open tasks `completed`. Per-item tasks should be done by Step 8; this closes items skipped (guard paused, question items, codex-not-available).
 
-Then print:
-
-```markdown
-## Resolve Report — PR #<number>
-
-### Contribution
-<2–3 sentence motivation summary from Step 3b>
-
-### Conflicts
-<conflict table from Step 7, or "No conflicts detected">
-
-### Action Items
-
-<!-- Use same action item schema as Step 3b (columns: item, type, status, commit, notes); statuses now final (✓ resolved / ⊘ skipped / ⊘ no action) -->
-
-### Lint + QA
-<linting-expert summary: N fixes applied | or "no violations"> / <foundry:qa-specialist summary: N blocking fixed, N warnings | or "clean">
-
-### Push
-✓ Pushed to <remote>/<HEAD_REF> — N new commits
-
-**Next**:
-- `gh pr merge <PR#> --merge` to merge now (preserves all commits)
-
-## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
-**Gaps**: [e.g. conflict strategy ambiguity, action items skipped at guard, Codex partial completion]
-**Refinements**: N passes. — omit if 0 passes
-```
+Report template: `$_OSS_RESOLVE/templates/resolve-report.md`.
+Read it for section structure and placeholder format before writing.
 
 Restore original branch after report:
 
@@ -891,12 +598,6 @@ Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NU
 
 ## Step 12: Comment dispatch + Codex review loop
 
-```bash
-# pipe exit code from ls|head is head's (0) — correct here; only path discovery, not guarding execution; ls failure suppressed by 2>/dev/null; fallback guard below handles empty result
-_OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 2>/dev/null | head -1)
-[ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
-```
-
 Read and execute `$_OSS_RESOLVE/modes/comment-dispatch.md`.
 
 </workflow>
@@ -908,7 +609,7 @@ Non-calibratable — `disable-model-invocation: true` means this skill dispatche
 Reference scenarios (for documentation; not for calibrate runs):
 1. Mode selection: bare PR number (e.g. `42`) → pr mode; `42 report` → pr + report mode; bare `report` → report mode; bare comment text → comment dispatch (Step 12)
 2. Action item classification: LGTM/emoji comment → `[info]` (skip); `nit:` suggestion → `[gh][suggest]`; resolved thread → `[done]`; "must fix X before merge" from reviewer with write access → `[gh][req]`
-3. Challenge accuracy: comment about actually-present bug (confirmed by reading code) → VALID; comment about issue already addressed in a subsequent commit → PUSH_BACK
+3. Challenge accuracy: comment about actually-present bug (confirmed by reading code) → VALID; comment about issue already addressed in a subsequent commit → REJECT
 
 </calibration>
 

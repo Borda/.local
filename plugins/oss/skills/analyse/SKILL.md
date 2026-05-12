@@ -21,7 +21,7 @@ NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code
 
 - **$ARGUMENTS**: one of:
   - `N` (number, plain `123` or `#123`) — any GitHub thread: issue, PR, or discussion; auto-detects type
-  - `vitality [<owner>/<repo> | <github-url>]` — repo vitality overview with 8-axis health scorecard and duplicate detection. Optional repo argument accepts `owner/repo` shorthand or full `https://github.com/owner/repo` URL. When omitted, auto-detected from git upstream. Non-GitHub remotes (GitLab, Bitbucket, etc.) stop with a warning.
+  - `vitality [<owner>/<repo> | <github-url>]` — repo vitality overview with 9-axis health scorecard and duplicate detection. Optional repo argument accepts `owner/repo` shorthand or full `https://github.com/owner/repo` URL. When omitted, auto-detected from git upstream. Non-GitHub remotes (GitLab, Bitbucket, etc.) stop with a warning.
   - `ecosystem` — downstream consumer impact analysis for library maintainers
   - `--reply` — only valid with `N`; spawns shepherd to draft contributor-facing reply after thread analysis. Silently ignored for `vitality` and `ecosystem`.
   - `path/to/report.md` — path to existing report file; only valid combined with `--reply`; skips all analysis, spawns shepherd directly using provided file
@@ -133,7 +133,12 @@ if [[ "$CLEAN_ARGS" == vitality* ]]; then
 fi
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print the following as plain text (AskUserQuestion not available in forked context) and stop:
+```
+! Unknown flag(s): `--<token>`. Supported: `--reply`.
+Options: (a) re-invoke with correct flags  (b) continue ignoring unknown flags
+```
+Do not invoke `AskUserQuestion` — forked context; deferred tool schema not loaded.
 
 ## Step 2: Reply-mode fast-path (only when `REPLY_MODE=true`)
 
@@ -174,7 +179,9 @@ Check local cache before API calls — prevents redundant fetches, avoids GitHub
 
 ```bash
 CACHE_DIR=".cache/gh"
-CACHE_FILE="$CACHE_DIR/$CLEAN_ARGS-$TODAY.json"
+# Include repo slug in cache key to prevent cross-repo cache poisoning (same issue# different repo)
+_CACHE_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-' || echo 'unknown-repo')
+CACHE_FILE="$CACHE_DIR/$_CACHE_REPO-$CLEAN_ARGS-$TODAY.json"
 mkdir -p "$CACHE_DIR" # timeout: 5000
 ```
 
@@ -198,6 +205,8 @@ else
     UPDATED_AT=$(gh api "repos/{owner}/{repo}/issues/$CLEAN_ARGS" --jq '.updated_at' 2>/dev/null)  # timeout: 6000
 fi
 UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$UPDATED_AT" +%s 2>/dev/null)  # timeout: 5000
+# Guard: if date parse failed (empty UPDATED_TS), treat as drifted — conservative correct default
+[ -z "$UPDATED_TS" ] && DRIFT=true
 [ "$UPDATED_TS" -gt "$REPORT_MTIME" ] && DRIFT=true
 [ "$DRIFT" = "false" ] && FAST_PATH=true && echo "[resume] reusing existing report for #$CLEAN_ARGS"
 ```
@@ -239,6 +248,7 @@ if [ -n "$ITEM" ]; then
     if [ "$FAST_PATH_TENTATIVE" = "true" ]; then
         UPDATED_AT=$(echo "$ITEM" | jq -r '.updated_at' 2>/dev/null)
         UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$UPDATED_AT" +%s 2>/dev/null)  # timeout: 5000
+        [ -z "$UPDATED_TS" ] && DRIFT=true  # parse failed — treat as drifted
         [ "$UPDATED_TS" -gt "$REPORT_MTIME" ] && DRIFT=true
         [ "$DRIFT" = "false" ] && FAST_PATH=true && echo "[resume] reusing existing report for #$CLEAN_ARGS"
     fi
@@ -257,6 +267,7 @@ else
         if [ "$FAST_PATH_TENTATIVE" = "true" ]; then
             UPDATED_AT=$(echo "$DISC_JSON" | jq -r '.data.repository.discussion.updatedAt' 2>/dev/null)
             UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$UPDATED_AT" +%s 2>/dev/null)  # timeout: 5000
+            [ -z "$UPDATED_TS" ] && DRIFT=true  # parse failed — treat as drifted
             [ "$UPDATED_TS" -gt "$REPORT_MTIME" ] && DRIFT=true
             [ "$DRIFT" = "false" ] && FAST_PATH=true && echo "[resume] reusing existing report for #$CLEAN_ARGS"
         fi
@@ -318,8 +329,9 @@ End response here with `## Confidence` block per CLAUDE.md output standards.
 
 ```bash
 # Shepherd availability guard — oss plugin may not be installed
+# Check installed cache path specifically (bare _OSS_SHARED fallback is always non-empty — cannot use it as availability signal)
 SHEPHERD_AVAILABLE=0
-find ~/.claude/plugins -name "shepherd.md" -path "*/oss/agents/*" 2>/dev/null | grep -q . && SHEPHERD_AVAILABLE=1
+ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/agents/shepherd.md 2>/dev/null | grep -q . && SHEPHERD_AVAILABLE=1
 [ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
 if [ "$SHEPHERD_AVAILABLE" = "0" ]; then
     echo "⚠ oss:shepherd not available — --reply requires the oss plugin. Install: claude plugin install oss@borda-ai-rig"
@@ -366,7 +378,7 @@ Scenarios:
 - Run `gh auth status` first if commands fail; user may need to authenticate
 - For closed items, note resolution so history is useful
 - Don't post responses without explicit user instruction — only draft them
-- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` is NOT available (deferred tool schemas not loaded in forked context) — all interactive gates surface as plain text output instead.
+- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` is NOT available (deferred tool schema not loaded in fork) — interactive gates surface as plain text instead. `Agent` IS available in forked context (non-deferred, declared in `allowed-tools`) — do NOT skip Steps 5–6 adversarial review on the assumption that Agent is unavailable; it is available and those steps are mandatory.
 - **`--reply` drafts only** — shepherd produces a draft file; it does NOT auto-post to GitHub. User posts manually. Write access to the repo is not required to use `--reply`; it is required only if user subsequently posts the draft via `gh issue comment` or `gh pr comment`.
 - **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix`, `/oss:review`) receive no analysis context from this run. Pass the report path explicitly or re-summarize key findings in the follow-up invocation.
 - Follow-up chains:

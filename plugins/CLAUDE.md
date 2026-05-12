@@ -85,7 +85,9 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 1. Read HEAD baseline: `git show HEAD:<plugin-path>/.claude-plugin/plugin.json | grep version`
 2. Classify highest-magnitude change in session (`X` or `Y`) — do NOT read on-disk version; disk may already differ from HEAD
 3. Calculate new version from HEAD baseline: `X` → bump minor, reset patch to `0`; `Y` → bump patch only
-4. Write calculated version to `<plugin-path>/.claude-plugin/plugin.json` — if on-disk version already equals or exceeds calculated, skip write
+4. Write calculated version to `<plugin-path>/.claude-plugin/plugin.json` — **if on-disk version already equals or exceeds calculated, skip write entirely; do not bump again**
+
+**One bump per commit session** — after writing once, all further edits to that plugin in the same uncommitted session must NOT bump again. The on-disk version will already exceed HEAD baseline, triggering step 4 skip. Never treat the on-disk bumped value as a new baseline to increment from.
 
 ## Edit Quality Gate
 

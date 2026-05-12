@@ -2,7 +2,7 @@
 name: review
 description: Multi-agent code review of GitHub Pull Requests (Python PRs only) covering architecture, tests, performance, docs, lint, security, and API design.
 argument-hint: '[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]'
-allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opus
 effort: high
 when_to_use: 'Use when the user asks to review a GitHub Pull Request (Python PRs only), wants multi-agent code review feedback, or needs a structured review with severity-graded findings.'
@@ -77,38 +77,9 @@ Read `$_OSS_SHARED/agent-resolution.md`. Agents this skill uses: `foundry:sw-eng
 ## Step 1: Identify scope and context (run in parallel for PR mode)
 
 ```bash
-# Parse --reply flag — must run before any gh calls
-REPLY_MODE=false
-CLEAN_ARGS=$ARGUMENTS
-if [[ "$ARGUMENTS" == *"--reply"* ]]; then
-    REPLY_MODE=true
-    CLEAN_ARGS="${ARGUMENTS//--reply/}"
-    CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
-fi
-```
-
-```bash
-# Parse --no-challenge flag
-if [[ "$CLEAN_ARGS" == *"--no-challenge"* ]]; then
-    CHALLENGE_ENABLED=false
-    CLEAN_ARGS="${CLEAN_ARGS//--no-challenge/}"
-    CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
-fi
-```
-
-```bash
-# Parse --codemap flag
-if [[ "$CLEAN_ARGS" == *"--codemap"* ]]; then
-    CODEMAP_ENABLED=true
-    CLEAN_ARGS="${CLEAN_ARGS//--codemap/}"
-    CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
-fi
-# Parse --semble flag
-if [[ "$CLEAN_ARGS" == *"--semble"* ]]; then
-    SEMBLE_ENABLED=true
-    CLEAN_ARGS="${CLEAN_ARGS//--semble/}"
-    CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
-fi
+# Parse flags (--reply, --no-challenge, --codemap, --semble); strips leading '#' from remaining args
+[ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-review-args.sh" ] || { echo "Error: parse-review-args.sh not found — verify oss plugin installation (CLAUDE_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT:-unset})"; exit 1; }  # timeout: 5000
+eval "$(bash "${CLAUDE_PLUGIN_ROOT}/bin/parse-review-args.sh" "$ARGUMENTS")"  # timeout: 5000
 ```
 
 ```bash
@@ -125,11 +96,6 @@ fi
 ```
 
 If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` is in your available tools. If not: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
-
-```bash
-# Strip leading '#' so both '123' and '#123' work
-CLEAN_ARGS="${CLEAN_ARGS#\#}"
-```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -223,7 +189,7 @@ Agent 1 uses this to prioritize: high `rdep_count` modules warrant deeper scruti
 
 Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`, `Resolves #N`, `refs #N` — case-insensitive). Extract to `ISSUE_NUMS`. Cap 3.
 
-`ISSUE_NUMS` non-empty: spawn one **foundry:sw-engineer** per issue **concurrently in Step 2, alongside Codex co-review** (both run after the run directory is created in Step 2 — issue agents and Codex are parallel, not sequential). **Synchronization**: Step 3 agents must NOT spawn until all issue agents have returned (confirmed by checking `$RUN_DIR/issue-<N>.md` exists for each N). Wait for all issue agent completions before proceeding to Step 3. Each issue agent:
+`ISSUE_NUMS` non-empty: spawn one **foundry:sw-engineer** per issue **concurrently in Step 2, alongside Codex co-review** (both run after the run directory is created in Step 2 — issue agents and Codex are parallel, not sequential). **Synchronization**: Step 3 agents must NOT spawn until all issue agents have returned. After spawning issue agents, poll until all `$RUN_DIR/issue-<N>.md` files exist (max `$HARD_CUTOFF` seconds, check every 15s): `for N in $ISSUE_NUMS; do until [ -f "$RUN_DIR/issue-$N.md" ]; do sleep 15; done; done`. Only then proceed to Step 3. Each issue agent:
 
 - Fetch issue: `gh issue view <N> --json title,body,comments,state,labels`
 - Fetch comments: `gh issue view <N> --comments`
@@ -264,7 +230,7 @@ CODEX_OUT="$RUN_DIR/foundry--codex.md"
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/foundry--codex.md.")
 ```
 
-After Codex writes `$RUN_DIR/foundry--codex.md`, extract seed list (≤10 items, `[{"loc":"file:line","note":"..."}]`) to inject into Step 3 agent prompts as pre-flagged issues. If Codex returned ≥10 findings, note in the consolidator report header: `Codex: first 10 items seeded; full list in $RUN_DIR/foundry--codex.md (N total).` Codex skipped or empty → proceed with empty seed.
+After Codex writes `$RUN_DIR/foundry--codex.md`, extract seed list (≤10 items): parse all finding lines matching `- [SEVERITY]`, `| Location`, or `file:line` patterns; take first 10; format as `[{"loc":"<file>:<line>","note":"<first 80 chars of finding>"}]`. If parsing fails or format differs, proceed with empty seed and note `⚠ Codex seed extraction failed — format may have drifted`. Inject seed into Step 3 agent prompts as pre-flagged issues. If Codex returned ≥10 findings, note in the consolidator report header: `Codex: first 10 items seeded; full list in $RUN_DIR/foundry--codex.md (N total).` Codex skipped or empty → proceed with empty seed.
 
 ## Step 3: Spawn sub-agents in parallel
 
@@ -332,7 +298,7 @@ REVIEW_CHECKPOINT="/tmp/review-check-$(date +%s)"
 touch "$REVIEW_CHECKPOINT"
 ```
 
-Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive; zero for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
+Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. Refreshing checkpoint after each successful poll ensures stalls are detected relative to last activity, not relative to launch. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
 
 ```bash
 ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_DIR — check that $RUN_DIR was expanded correctly in spawn prompts"
@@ -433,7 +399,7 @@ Spawn a **foundry:sw-engineer** consolidator agent with this prompt:
 Main context receives only the one-liner verdict. Proceed with that summary for terminal output.
 
 **Consolidator unavailable fallback** — if `Agent` tool deferred/not loaded and consolidator cannot be spawned:
-1. Synthesize verdict one-liner inline from Step 3 JSON envelopes (or in-context findings if agents also didn't spawn): `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
+1. Read each `$RUN_DIR/*.md` agent finding file using the Read tool before synthesizing — do not rely solely on JSON envelope counts. Then synthesize verdict one-liner: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
 2. Compute output path then guard: `OUT=".temp/output-review-$BRANCH-$DATE.md"; n=2; while [ -f "$OUT" ]; do OUT=".temp/output-review-$BRANCH-$DATE-${n}.md"; n=$((n+1)); done` — write consolidated report to `$OUT` using Write tool. Include all sections and Confidence block
 3. Print terminal block using `$FOUNDRY_SHARED/terminal-summaries.md` template — **never silently skip terminal output**
 
@@ -495,8 +461,11 @@ End with `## Confidence` block per CLAUDE.md output standards.
 `REPLY_MODE` not set → skip.
 
 ```bash
-# Check oss:shepherd availability — infer from $_OSS_SHARED (only set when oss plugin is installed)
-[ -n "$_OSS_SHARED" ] && SHEPHERD_AVAILABLE=1 || SHEPHERD_AVAILABLE=0
+# Check oss:shepherd availability — verify installed cache path specifically
+# Cannot use _OSS_SHARED as signal: its bare-path fallback is always non-empty even when oss plugin absent
+SHEPHERD_AVAILABLE=0
+ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/agents/shepherd.md 2>/dev/null | grep -q . && SHEPHERD_AVAILABLE=1
+[ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
 ```
 
 If `$SHEPHERD_AVAILABLE` equals 0: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip shepherd spawn.

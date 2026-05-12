@@ -20,7 +20,7 @@ paths:
   Co-authored-by: Claude Code <noreply@anthropic.com>
   ```
 
-- No line wrapping — bullets, prose lines stay on single long lines; never break at column width
+- **No line wrapping** — bullets and prose are single continuous lines; never hard-break at any column width
 
 ## Gathering Diff Context
 
@@ -71,25 +71,49 @@ Never skip trailers because skill template omits them.
 
 ## Branch Safety
 
-- **Never commit to main/master** — check current branch first; if on default branch → warn and stop, ask user to create feature branch
+Default branch is repo-specific — do NOT hardcode `main` or `master`. The hook detects it dynamically via `git symbolic-ref refs/remotes/origin/HEAD`, `gh repo view`, or `git remote show origin`. Committing to the default branch requires a **second sentinel** (Gate 2 below).
 
-## Commit Gate (two-path)
+Before any `git commit`, check current branch:
 
-Note: branch safety check (above) runs before commit gate — even Path A sentinel does not authorize a commit to main/master.
+```bash
+CURRENT_BRANCH=$(git branch --show-current)
+```
 
-Before any `git commit`, resolve which path applies:
+If on the default branch: two sentinels required (Gate 1 + Gate 2). If on a feature branch: one sentinel required (Gate 1 only).
 
-**Path A — skill pre-auth** (skills that need multiple commits, e.g. `/oss:resolve`):
-- Skill computes sentinel at start: `SENTINEL="/tmp/claude-commit-auth-$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')-$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')"`
+## Commit Gate (two gates)
+
+**Gate 1 — commit authorization** (all branches):
+
+Sentinel path: `/tmp/claude-commit-auth-<repo-slug>-<branch-slug>` · TTL: 15 min
+
+**Gate 2 — default-branch protection** (default branch only):
+
+Sentinel path: `/tmp/claude-commit-default-<repo-slug>-<branch-slug>` · TTL: 5 min (must touch immediately before commit)
+
+Slug algorithm: all non-alphanumeric → `-`, lowercased, consecutive dashes squeezed, trailing dashes stripped.
+
+```bash
+# Compute both sentinel paths
+REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
+BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
+SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
+DEFAULT_SENTINEL="/tmp/claude-commit-default-${REPO_SLUG}-${BRANCH_SLUG}"
+```
+
+**Path A — skill pre-auth** (skills that commit as part of their workflow, e.g. `/oss:resolve`):
 - `touch $SENTINEL` at start of commit phase; `rm -f $SENTINEL` on finish or abort (use `trap` to guarantee cleanup)
-- While sentinel exists and is <15 min old → hook allows commit directly, no question
-- Sentinel absent, expired, or branch mismatch (sentinel slug ≠ current branch slug) → hook blocks → fall through to Path B
+- If committing to default branch: also `touch $DEFAULT_SENTINEL`; `rm -f $DEFAULT_SENTINEL` in same `trap`
+- While Gate 1 sentinel exists and is <15 min old (and Gate 2 valid if on default branch) → hook allows commit
+- Sentinel absent, expired, or branch mismatch → hook blocks → fall through to Path B
 
 **Path B — user ad-hoc request**:
-- No auth file for current branch → invoke `AskUserQuestion` before `git commit`
-- Question must show: target branch, diff size (`N files, +A −B lines` from `git diff --stat HEAD`), draft commit message subject line
-- On user confirmation only: `touch /tmp/claude-commit-auth-<repo-slug>-<branch-slug>` → `git commit` → `rm -f /tmp/claude-commit-auth-<repo-slug>-<branch-slug>`
-- Slugs: all non-alphanumeric → `-`, lowercased, consecutive dashes squeezed, trailing dashes stripped (same algorithm as hook's `toSlug`)
+- No Gate 1 sentinel → invoke `AskUserQuestion` before `git commit`
+- Question must show: target branch, whether it is the default branch, diff size (`N files, +A −B lines` from `git diff --stat HEAD`), draft commit message subject line
+- On user confirmation:
+  - Feature branch: `touch $SENTINEL` → `git commit` → `rm -f $SENTINEL`
+  - Default branch: `touch $SENTINEL && touch $DEFAULT_SENTINEL` → `git commit` → `rm -f $SENTINEL $DEFAULT_SENTINEL`
+- Never self-create sentinels without going through `AskUserQuestion` first — that bypasses Gate 2 entirely
 
 ## Staging and Hooks
 
