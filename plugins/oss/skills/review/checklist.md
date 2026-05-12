@@ -1,5 +1,3 @@
-**Re: Compress review checklist to caveman format**
-
 # Review Checklist
 
 ## CRITICAL Patterns (must block merge)
@@ -26,7 +24,7 @@
 
 ## Actionable Findings Format
 
-For findings requiring human decision (blocking issues, architectural trade-offs, deprecation choices):
+For findings needing human decision (blocking issues, architectural trade-offs, deprecation choices):
 
 - **[SEVERITY] Finding title** — `file:line` context
   - **Issue**: one-sentence description of what wrong or uncertain
@@ -34,7 +32,7 @@ For findings requiring human decision (blocking issues, architectural trade-offs
   - **Options**:
     - A) [recommended] — description, effort/risk
     - B) alternative — description, effort/risk
-    - C) No action — what risk you accept
+    - C) No action — risk accepted
 
 Rules: lead with recommendation; one finding per block; skip options for obvious fixes; always include "no action" option.
 

@@ -6,7 +6,7 @@ paths:
 
 ## Public GitHub — Read-Only
 
-Claude and all agents (subagents, skills, teammates) **read-only** on public GitHub.
+Claude + all agents (subagents, skills, teammates) **read-only** on public GitHub.
 Hard constraint — not suggestion.
 
 ### Permitted (read)
@@ -21,8 +21,7 @@ Hard constraint — not suggestion.
 
 ### Forbidden (write) — enforced via deny list
 
-Any write command on any public/external GitHub repo
-**permanently forbidden**, including:
+Any write command on any public/external GitHub repo **permanently forbidden**, including:
 
 - `gh issue create`, `gh issue comment`, `gh issue edit`, `gh issue close`, `gh issue delete`
 - `gh pr create`, `gh pr comment`, `gh pr edit`, `gh pr merge`, `gh pr close`, `gh pr review`
@@ -30,7 +29,7 @@ Any write command on any public/external GitHub repo
 - `gh repo fork`, `gh repo create`
 - `gh gist create`, `gh gist edit`, `gh gist delete`
 - `gh api <any-path>` with `--method POST/PATCH/PUT/DELETE` — all API mutations regardless of path
-- `gh api graphql` with mutation operations (createIssue, createPullRequest, addComment, etc.) — GraphQL mutations are write operations and are forbidden
+- `gh api graphql` with mutation operations (createIssue, createPullRequest, addComment, etc.) — GraphQL mutations are write ops, forbidden
 - All curl write methods denied globally; curl read-only (GET only)
   - `curl -X POST`, `curl --request POST`, `curl -X PATCH`, `curl --request PATCH`, `curl -X PUT`, `curl --request PUT`
 
@@ -38,5 +37,5 @@ Any write command on any public/external GitHub repo
 
 Interpret as: **draft X for user review**.
 - Show draft in terminal
-- Invoke the `AskUserQuestion` tool for explicit confirmation before any external action — a prose confirmation request is not sufficient
+- Invoke `AskUserQuestion` tool for explicit confirmation before any external action — prose confirmation not sufficient
 - Never delegate to agent assuming it will ask

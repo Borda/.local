@@ -2,27 +2,27 @@
 
 ## Summary
 
-<2–4 sentence paragraph — what changed and why it matters for users/developers>
+<2–4 sentence para — what changed + why matters to users/devs>
 
 ## Spotlights / highlights
 
-<top 3–5 features or significant fixes, each with a short code example>
+<top 3–5 features or fixes, each with short code example>
 
 ## Migration guide
 
-<Releases do not introduce breaking changes unless the API was already deprecated in a prior release.
-Guide users on any migration needed. Include before/after code examples for each change.
-If no migration needed: "No migration required for this release.">
+<No breaking changes unless API deprecated in prior release.
+Guide users on migration needed. Include before/after code for each change.
+If none: "No migration required for this release.">
 
-<!-- Use content from the Draft migration guide phase — do not regenerate independently. -->
+<!-- Use Draft migration guide content — do not regenerate independently. -->
 
 ## Notable changes
 
-<Focus on significance; group per area/component; list all PRs/commits that contributed.>
+<Significant changes, grouped by area/component; list all PRs/commits.>
 
 ### 🚀 Added
 
-- **Feature Name** — one sentence description of what it does and why it matters. (#PR or commit)
+- **Feature Name** — what it does and why it matters. (#PR or commit)
 
 ### ⚠️ Breaking Changes
 

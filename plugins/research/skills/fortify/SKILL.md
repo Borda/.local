@@ -9,9 +9,9 @@ disable-model-invocation: true
 
 <objective>
 
-Systematic ablation study runner — after `/research:run` finds improvements, fortify identifies which components contributed, generates ablation variants (remove one component at a time), runs each variant in **isolated git worktrees** (main repo never modified), ranks component importance, and optionally generates reviewer Q&A material calibrated to a venue.
+Ablation study runner — after `/research:run` finds improvements, fortify identifies which components contributed, generates ablation variants (remove one component at a time), runs each in **isolated git worktrees** (main repo never modified), ranks component importance, optionally generates reviewer Q&A calibrated to venue.
 
-NOT for: running the initial optimization loop (use `/research:run`); validating methodology before running (use `/research:judge`); verifying paper-vs-code consistency (use `/research:verify`); hypothesis generation (use `research:scientist` directly). Fortify exclusively runs ablation studies on completed runs.
+NOT for: initial optimization loop (use `/research:run`); methodology validation (use `/research:judge`); paper-vs-code consistency (use `/research:verify`); hypothesis generation (use `research:scientist` directly). Fortify runs ablation studies on completed runs only.
 
 </objective>
 
@@ -42,7 +42,7 @@ STATE_DIR_BASE:           .experiments/state
 
 ## CRITICAL: Worktree-based isolation
 
-**Do NOT use `git checkout -b <branch>` for ablations** — this dirties the main working tree and corrupts concurrent tool calls. Each ablation gets its own git worktree under `$FORTIFY_DIR/worktrees/<variant>`, created from `best_commit`. Main working tree is NEVER modified. Cleanup: `git worktree remove --force` per variant; `git worktree prune` on interrupt.
+**Do NOT use `git checkout -b <branch>` for ablations** — dirties main working tree, corrupts concurrent tool calls. Each ablation gets own git worktree under `$FORTIFY_DIR/worktrees/<variant>`, created from `best_commit`. Main working tree NEVER modified. Cleanup: `git worktree remove --force` per variant; `git worktree prune` on interrupt.
 
 ## Fortify Mode (Steps F1–F8)
 
@@ -54,7 +54,7 @@ Triggered by `fortify` or `fortify <run-id|program.md>`.
 
 Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--venue\`, \`--max-ablations\`, \`--skip-run\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--venue\`, \`--max-ablations\`, \`--skip-run\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Input resolution** (priority order):
 
@@ -66,7 +66,7 @@ Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
    fortify: No completed run found. Run /research:run first.
    ```
 
-**Guard: judge approval required.** The judge skill writes its verdict to `.temp/output-judge-<branch>-<date>.md` — scan that location for an APPROVED verdict line:
+**Guard: judge approval required.** Judge skill writes verdict to `.temp/output-judge-<branch>-<date>.md` — scan for APPROVED verdict line:
 
 ```bash
 JUDGE_VERDICT_FILE=$(ls -t .temp/output-judge-*.md 2>/dev/null | head -1)  # timeout: 5000
@@ -78,14 +78,14 @@ fi
 JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//;s/[[:space:]].*//')
 ```
 
-Verify `JUDGE_VERDICT == "APPROVED"` AND the verdict file references the same `program_file` (grep the file for the program path). If verdict is not APPROVED or file mismatches:
+Verify `JUDGE_VERDICT == "APPROVED"` AND verdict file references same `program_file` (grep for program path). If not APPROVED or mismatch:
 
 ```text
 fortify: BLOCKED — no APPROVED judge verdict found for this program.
 Ablation studies require an approved baseline. Run: /research:judge <program.md>
 ```
 
-> Note: do NOT infer from `methodology.md` alone — `methodology_rating: sound` is one input to the verdict, not the verdict itself. Only the `## Verdict` line in the judge output file is authoritative.
+> Note: do NOT infer from `methodology.md` alone — `methodology_rating: sound` is one input to verdict, not verdict itself. Only `## Verdict` line in judge output file is authoritative.
 
 Read from `state.json`: `goal`, `best_metric`, `best_commit`, `config` (including `metric_cmd`, `guard_cmd`, `compute`), `program_file`.
 
@@ -103,10 +103,10 @@ mkdir -p "$FORTIFY_DIR" "$WORKTREE_BASE"
 
 ## Step F2: Identify ablation candidates via scientist
 
-Gather two inputs for the scientist:
+Gather two inputs for scientist:
 
 1. **Git diff**: run `git diff <baseline_commit>...<best_commit> --stat` (summary) and full `git diff <baseline_commit>...<best_commit>`. If full diff exceeds ~200 lines, write to `$FORTIFY_DIR/diff.txt` via Write tool; otherwise inline in prompt.
-2. **Experiment history**: paths to `experiments.jsonl` and `diary.md` from the source run directory.
+2. **Experiment history**: paths to `experiments.jsonl` and `diary.md` from source run directory.
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (15-min cutoff, one 5-min extension — same pattern as judge J3):
 
@@ -150,13 +150,13 @@ Poll every 5 min: `find <FORTIFY_DIR> -newer "$CHECKPOINT_F2" -type f | wc -l` (
 - **One extension (+5 min)**: if `tail -20 <FORTIFY_DIR>/candidates-analysis.md` shows active progress, grant one extension; second stall = hard cutoff
 - **On timeout**: stop with `"fortify: Scientist timed out. Check <FORTIFY_DIR>/ for partial output."`; surface with ⏱
 
-Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations <M>` specified and component count + 1 (for full variant) exceeds M: sort by `expected_importance` (HIGH first, then MEDIUM, then LOW), keep top M-1 components plus always include the `full` sanity-check variant.
+Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations <M>` specified and component count + 1 (for full variant) exceeds M: sort by `expected_importance` (HIGH first, then MEDIUM, then LOW), keep top M-1 components plus always include `full` sanity-check variant.
 
-**`--skip-run` early exit**: if `--skip-run` flag present, print candidate table (component_id, name, description, files, expected_importance) and exit. No ablation execution. Mark tasks F3, F4, F5, F6, F7 as `skipped` via TaskUpdate before proceeding. Print: `"fortify: --skip-run — <N> candidates identified. Next: /research:fortify without --skip-run"`. Jump to F8 (skip-run variant).
+**`--skip-run` early exit**: if `--skip-run` flag present, print candidate table (component_id, name, description, files, expected_importance) and exit. No ablation execution. Mark tasks F3, F4, F5, F6, F7 as `skipped` via TaskUpdate. Print: `"fortify: --skip-run — <N> candidates identified. Next: /research:fortify without --skip-run"`. Jump to F8 (skip-run variant).
 
 ## Step F3: Generate ablation variants
 
-For each component from F2, there is one ablation variant: `no-<component-name>` (slugified — lowercase, spaces replaced with hyphens). Plus one `full` variant (sanity check — should reproduce `best_metric`).
+For each component from F2, one ablation variant: `no-<component-name>` (slugified — lowercase, spaces to hyphens). Plus one `full` variant (sanity check — should reproduce `best_metric`).
 
 Write variant configs to `$FORTIFY_DIR/variants.jsonl` via Write tool — one JSON line per variant:
 
@@ -167,7 +167,7 @@ Write variant configs to `$FORTIFY_DIR/variants.jsonl` via Write tool — one JS
 
 ## Step F4: Run ablation variants via worktrees
 
-Run each variant **sequentially** to avoid git worktree conflicts.
+Run each variant **sequentially** — parallel worktrees would conflict.
 
 **Before loop — store original working directory:**
 
@@ -175,7 +175,7 @@ Run each variant **sequentially** to avoid git worktree conflicts.
 ORIG_DIR="$(pwd)"  # timeout: 3000
 ```
 
-**On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then run `git worktree prune` (`timeout: 15000`) to clean up any partially created worktrees before exiting.
+**On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting.
 
 For each variant in `variants.jsonl`:
 
@@ -193,11 +193,11 @@ cd "$WORKTREE_BASE/<variant_name>"  # timeout: 3000
 
 **4c. Apply revert (skip for `full` variant):**
 
-For `full` variant: no changes — proceed directly to 4d.
+For `full` variant: no changes — proceed to 4d.
 
-For `no-<component>` variant: revert the component's commits.
+For `no-<component>` variant: revert component's commits.
 
-**IMPORTANT — order matters**: revert in **reverse chronological order** (newest first) to avoid conflicts. If `revert_commits` from `variants.jsonl` is in chronological order (oldest first, e.g. as scientist returned them), reverse before reverting:
+**IMPORTANT — order matters**: revert in **reverse chronological order** (newest first) to avoid conflicts. If `revert_commits` from `variants.jsonl` is chronological (oldest first), reverse before reverting:
 
 ```bash
 # Sort newest-first for conflict-free revert (portable awk reverse — avoids tac not available on macOS)
@@ -239,7 +239,7 @@ git worktree remove --force "$WORKTREE_BASE/<variant_name>"  # timeout: 15000
 {"variant":"<name>","component_removed":"<name or null>","metric":0.0,"delta_from_full":0.0,"delta_pct":0.0,"guard":"pass|fail","status":"completed|revert-conflict|metric-failed|timeout","timestamp":"<ISO>"}
 ```
 
-`delta_from_full` and `delta_pct` are placeholders here — computed in post-loop step below.
+`delta_from_full` and `delta_pct` are placeholders — computed in post-loop step below.
 
 After all variants processed:
 
@@ -250,7 +250,7 @@ git worktree prune  # timeout: 15000
 **Post-loop delta computation**: read `results.jsonl`, find `full` variant metric. For each completed `no-<component>` variant:
 
 - `delta_from_full = ablated_metric - full_metric`
-- `delta_pct = (delta_from_full / abs(full_metric)) * 100` (signed — negative means removing the component hurt). If `full_metric == 0`: set `delta_pct = 0` (avoid division by zero; metric is already at zero baseline).
+- `delta_pct = (delta_from_full / abs(full_metric)) * 100` (signed — negative means removing component hurt). If `full_metric == 0`: set `delta_pct = 0` (avoid division by zero).
 
 Update `results.jsonl` with computed deltas via Write tool (rewrite full file).
 
@@ -259,7 +259,7 @@ Update `results.jsonl` with computed deltas via Write tool (rewrite full file).
 For each `no-<component>` variant with `status: "completed"`:
 
 - Read `metric_direction` from `## Metric` block in `program_file` (`higher` or `lower`). If absent, default to `higher`.
-- Compute **signed delta** (positive = removal hurt the metric → component is helpful):
+- Compute **signed delta** (positive = removal hurt metric → component helpful):
   ```python
   signed_delta = (full_metric - ablated_metric) * (1 if direction == 'higher' else -1)
   importance = signed_delta / abs(full_metric) * 100 if full_metric != 0 else 0
@@ -268,9 +268,9 @@ For each `no-<component>` variant with `status: "completed"`:
   - **CRITICAL**: importance > 50%
   - **SIGNIFICANT**: importance 10–50%
   - **MARGINAL**: importance < 10%
-- **Potentially Harmful** class: `signed_delta < -5%` — removing the component IMPROVED the metric. Surface in dedicated `Potentially Harmful Components` report section; not ranked in main table.
+- **Potentially Harmful** class: `signed_delta < -5%` — removing component IMPROVED metric. Surface in dedicated `Potentially Harmful Components` report section; not ranked in main table.
 
-Sort by importance descending (helpful components only). Write ranked results to `$FORTIFY_DIR/importance-ranking.json` via Write tool — JSON array of objects with fields: `rank`, `component`, `full_metric`, `ablated_metric`, `signed_delta_pct`, `importance_pct`, `class` (`CRITICAL`/`SIGNIFICANT`/`MARGINAL`/`HARMFUL`).
+Sort by importance descending (helpful components only). Write to `$FORTIFY_DIR/importance-ranking.json` via Write tool — JSON array with fields: `rank`, `component`, `full_metric`, `ablated_metric`, `signed_delta_pct`, `importance_pct`, `class` (`CRITICAL`/`SIGNIFICANT`/`MARGINAL`/`HARMFUL`).
 
 **Sanity check**: compare `full` variant metric against `best_metric` from `state.json`. If divergence exceeds 2%:
 
@@ -278,7 +278,7 @@ Sort by importance descending (helpful components only). Write ranked results to
 Warning: Sanity check failed: full-variant metric=<X> differs from best_metric=<Y> by <Z>%. Results may be unreliable (non-deterministic metric or environment change).
 ```
 
-Include this warning prominently in the F7 report.
+Include warning prominently in F7 report.
 
 ## Step F6: Reviewer Q&A (optional — `--venue` only)
 
@@ -317,7 +317,7 @@ Return ONLY: {"status":"done","questions":N,"file":"<FORTIFY_DIR>/reviewer-qa.md
 
 ## Step F7: Write fortify report
 
-Pre-compute branch (if not already set):
+Pre-compute branch if not already set:
 
 ```bash
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
@@ -394,7 +394,7 @@ Venue Q&A:    generated for <venue> | n/a
 Next: simplify model by removing marginal components, re-run /research:run
 ```
 
-If `--skip-run` was used (early exit at F2): replace ablation lines with:
+If `--skip-run` used (early exit at F2): replace ablation lines with:
 
 ```text
 ---
@@ -411,16 +411,16 @@ Next: run /research:fortify without --skip-run to execute ablations
 
 <notes>
 
-- **Worktree invariant** — cleanup (`git worktree remove --force`) must execute even if metric/guard fails. Never leave stale worktrees. Final `git worktree prune` catches any missed cleanup.
-- **Main repo never modified** — all ablation work happens in worktrees. Main working tree stays clean throughout.
+- **Worktree invariant** — cleanup (`git worktree remove --force`) must run even if metric/guard fails. No stale worktrees. Final `git worktree prune` catches missed cleanup.
+- **Main repo never modified** — all ablation work in worktrees. Main working tree stays clean.
 - **Sequential execution** — variants run one at a time. Parallel worktrees would require separate detached HEADs and complicate cleanup.
 - **No compound Bash commands** — always two separate Bash calls (cd then command). CWD persists between calls.
 - **Bash tool `timeout` parameter** — never shell `timeout` wrapper. Pass `timeout: <ms>` on Bash tool call.
-- **Judge prerequisite** — fortify refuses to run without an APPROVED judge verdict. This prevents ablation studies on unapproved methodologies.
+- **Judge prerequisite** — fortify refuses without APPROVED judge verdict. Prevents ablation on unapproved methodologies.
 - **`--skip-run` for planning** — generates candidate list without running ablations. Useful for reviewing what would be ablated before committing compute.
-- **`--skip-run` scope**: this flag skips ablation *execution* only — the source run (`research:run`) must already be complete before invoking fortify with `--skip-run`. It does not affect the source run.
-- **Fortify run directories** don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md (installed via /foundry:init)` TTL policy — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/fortify-*/`)
-- **Compute mode**: local execution only. `--compute` and `--colab` passthrough not implemented — contributions welcome. Until then, fortify runs `metric_cmd`/`guard_cmd` directly in each worktree on the local machine.
-- **Revert conflicts expected** — when commits are interleaved (component A's commit touches same lines as component B's), revert may conflict. This is recorded as `revert-conflict` and reported, not treated as an error.
+- **`--skip-run` scope**: flag skips ablation *execution* only — source run (`research:run`) must already be complete. Does not affect source run.
+- **Fortify run directories** don't write `result.jsonl` — exempt from 30-day TTL cleanup (no `result.jsonl` = cleanup skipped); remove manually when done (`rm -rf .experiments/fortify-*/`)
+- **Compute mode**: local execution only. `--compute` and `--colab` passthrough not implemented — contributions welcome. Until then, fortify runs `metric_cmd`/`guard_cmd` directly in each worktree on local machine.
+- **Revert conflicts expected** — when commits interleave (component A's commit touches same lines as B's), revert may conflict. Recorded as `revert-conflict`, not treated as error.
 
 </notes>

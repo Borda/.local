@@ -1,5 +1,3 @@
-**Re: Compress file-based handoff protocol to caveman format**
-
 # File-Based Handoff Protocol
 
 ## When to apply
@@ -7,7 +5,7 @@
 - Any skill spawning **2+ agents in parallel** for analysis/review
 - Any **single agent** expected to produce >500 tokens of findings/analysis
 - Exception: implementation agents (writing code) return inline — output IS deliverable
-- Exception: single-agent single-question spawns where output inherently short (\<200 tokens)
+- Exception: single-agent single-question spawns where output inherently short (<200 tokens)
 
 ## Agent contract
 
@@ -49,7 +47,7 @@ Add task-specific keys (e.g. `"papers":5` for research, `"verdict":"approve"` fo
 ## Consolidator threshold
 
 - **4+ agent files** → mandatory consolidator; reads all files, writes final report
-- **2–3 agent files** → orchestrator may read directly **only if** total expected content \<2K tokens
+- **2–3 agent files** → orchestrator may read directly **only if** total expected content <2K tokens
 - Consolidator type: same domain as lead reviewer (e.g. `foundry:sw-engineer` for code review, `foundry:curator` for config audit)
 
 ## Consolidator prompt template
@@ -70,25 +68,25 @@ Main context receives only envelope JSON.
 | `status` | yes | `"done"`, `"done_with_concerns"`, `"needs_context"`, `"timed_out"`, `"error"` |
 | `findings` | yes | total finding count (0 if none) |
 | `severity` | yes | `{"critical":N,"high":N,"medium":N,"low":N}` |
-| `file` | yes | absolute path to the written findings file |
-| `confidence` | yes | agent's self-reported confidence (0–1) |
-| `summary` | yes | one-line human-readable description of what was found or done |
+| `file` | yes | absolute path to written findings file |
+| `confidence` | yes | agent self-reported confidence (0–1) |
+| `summary` | yes | one-line description of what found/done |
 
 ## Status semantics
 
 | Value | When to use |
 | --- | --- |
-| `"done"` | Completed with full confidence |
-| `"done_with_concerns"` | Completed but agent has doubts — low confidence, incomplete coverage, or unverifiable claims; orchestrator should surface this, not silently accept it |
-| `"needs_context"` | Could not produce quality output; re-running with the specific context named in `summary` would unblock the agent |
-| `"timed_out"` | Health monitor cut off the agent per §8 protocol |
+| `"done"` | Completed, full confidence |
+| `"done_with_concerns"` | Completed but agent has doubts — low confidence, incomplete coverage, or unverifiable claims; orchestrator surface this, not silently accept |
+| `"needs_context"` | No quality output; re-run with specific context named in `summary` unblocks agent |
+| `"timed_out"` | Health monitor cut off per §8 protocol |
 | `"error"` | Unrecoverable failure |
 
 Orchestrator handling by status:
 
 - `"done"` → accept normally
-- `"done_with_concerns"` → include agent's `summary` as flagged concern in consolidated report; not clean completion
-- `"needs_context"` → consider re-spawning with missing context named in `summary`; if not feasible, record as partial-result gap
+- `"done_with_concerns"` → include agent `summary` as flagged concern in consolidated report; not clean completion
+- `"needs_context"` → consider re-spawn with missing context named in `summary`; if not feasible, record as partial-result gap
 - `"timed_out"` / `"error"` → follow §8 health monitoring protocol; surface with ⏱ in report
 
 ## Reference implementation

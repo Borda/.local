@@ -1,8 +1,6 @@
-**Re: Compress natural language in this markdown to caveman format**
+For `CRITICAL`/`[blocking]` findings: spawn second independent agent to verify before report. High and lower go direct.
 
-For any finding classified as `CRITICAL` or `[blocking]`, spawn second independent agent to verify before surfacing in report. Cross-validation only for `CRITICAL`/`[blocking]` — high and lower go direct to report.
-
-Use same agent type that raised finding (see skill-specific note for exact verifier):
+Use same agent type that raised finding:
 
 ```text
 Independently review <file or scope> for the following specific issue: "<finding description>".
@@ -17,4 +15,4 @@ Classify outcome:
 - **Second pass disagrees or downgrades** → downgrade to `high` with note: "unconfirmed — one of two independent passes flagged this"
 - **Both agree it is NOT critical** → remove from critical list; re-classify at lower severity both agree on
 
-Cross-validation adds one extra spawn per critical finding — worth it to avoid false-positive blocking issues reaching user.
+One extra spawn per critical finding. Worth it — stops false-positive blockers reaching user.

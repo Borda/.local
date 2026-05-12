@@ -59,6 +59,6 @@ EXTENSION        = 300   (one +5 min extension allowed)
 ## Rules
 
 - Never omit timed-out signal (⏱) — surface partial results always
-- Skills may tighten (not loosen) HARD_CUTOFF and MONITOR_INTERVAL in own `<constants>`
-- Clean up sentinel with `rm -f` on both normal and timeout exit (use `trap` for crash safety)
+- Skills tighten (not loosen) HARD_CUTOFF and MONITOR_INTERVAL in own `<constants>`
+- Clean sentinel with `rm -f` on normal and timeout exit (use `trap` for crash safety)
 - Canonical reference: CLAUDE.md §8

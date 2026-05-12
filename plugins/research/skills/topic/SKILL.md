@@ -2,7 +2,7 @@
 name: topic
 description: Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Delegates deep analysis to the research:scientist agent and codebase mapping to foundry:solution-architect.
 argument-hint: '<topic> [--team] | plan [<output.md>]'
-allowed-tools: Read, Write, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
 disable-model-invocation: true
 ---
@@ -63,7 +63,7 @@ Read current project before searching, extract constraints:
 - Task (classification, detection, generation, regression)?
 - Constraints (latency, memory, dataset size, compute budget)?
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 2: Research & codebase check (run in parallel)
 
@@ -209,7 +209,7 @@ Lead synthesizes by reading teammate file paths from delta messages. Pre-compute
 
 ## Plan Mode
 
-Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method and need phased plan before `/develop:feature`.
+Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method — needed before `/develop:feature`.
 
 **Input detection** (parse argument after `plan`):
 
@@ -301,7 +301,7 @@ Confidence:  [score] — [key gaps]
 
 ## Follow-up gate
 
-Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into the tool call arguments:
+Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "What next?"
 - (a) label: `/research:plan` — description: design a research program from these findings
 - (b) label: `/develop:feature` — description: implement based on findings
@@ -318,6 +318,6 @@ Call `AskUserQuestion` tool — do NOT write options as plain text first. Map op
   - Research recommends method → `/research:plan` for sequenced plan (auto-detects latest output), then `/develop:feature` (requires `develop` plugin) for TDD-first implementation
   - Research integrates into existing code → `/develop:refactor` (requires `develop` plugin) first to prepare module, then `/develop:feature` (requires `develop` plugin)
   - Research reveals security concerns with dependency → run `pip-audit` or `uv run pip-audit` for Common Vulnerabilities and Exposures (CVE) scan
-  - Plan approved → create `.plans/active/todo_<method>.md` with phases as task groups; start with `/develop:feature <first task from Phase 1>`
+  - Plan approved → create `.plans/active/todo_<method>.md` with phases as task groups; start with `/develop:feature <first task from Phase 1>` (requires `develop` plugin)
 
 </notes>

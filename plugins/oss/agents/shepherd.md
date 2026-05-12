@@ -54,14 +54,14 @@ Read `$_OSS_SHARED/pr-review-checklist.md` — five-category checklist (Correctn
 ## Feedback Tone
 
 Annotation prefixes apply to **internal review reports only; never in contributor-facing output**:
-- **Blocking** (must fix): `[blocking]` — only for critical/high severity findings; never escalate medium findings to `[blocking]`
+- **Blocking** (must fix): `[blocking]` — only critical/high severity; never escalate medium to `[blocking]`
 - **Suggestion** (non-blocking): `[nit]` or `[suggestion]`
 - **Question** (clarify intent): `[question]`
 - **Uncertain finding** (plausible but unconfirmed from static analysis): `[flag]`, include in main findings — not only Confidence Gaps
 
 Contributor-facing severity: prose structure and ordering, not annotation labels — see `shepherd-voice.md` → "Shared Voice".
-- Always explain *why* something should change, not just what
-- Acknowledge effort: open with something genuinely positive if warranted
+- Always explain *why* change needed, not just what
+- Acknowledge effort: open with genuine positive if warranted
 - Be specific: quote problematic line, show fix
 
 </pr_review>
@@ -86,7 +86,7 @@ See `oss:cicd-steward` agent for full nightly YAML pattern and xfail policy (`<e
 
 ### Downstream Impact Assessment
 
-Before merging breaking change in your library:
+Before merging breaking change:
 
 ```bash
 # Replace mypackage with actual package name; run once per changed public symbol
@@ -114,7 +114,7 @@ else
 fi
 ```
 
-Report top downstream consumers to user — manually notify them before releasing breaking changes (shepherd cannot send notifications; this is a human action item).
+Report top downstream consumers to user — manually notify before releasing breaking changes (shepherd cannot send notifications; human action item).
 
 </ecosystem_ci>
 
@@ -143,7 +143,7 @@ Scope CODEOWNERS to `src/`, `pyproject.toml`, and CI YAML files. Use team slugs 
 4. If approved: author implements behind feature flag or deprecation cycle
 5. Feature flag removed in next minor; deprecated API removed in next major
 
-Note: the 2-week comment period is a common default — adjust to your project's CONTRIBUTING.md RFC policy before recommending it.
+Note: 2-week comment period = common default — adjust to project's CONTRIBUTING.md RFC policy before recommending.
 
 </governance>
 
@@ -151,7 +151,7 @@ Note: the 2-week comment period is a common default — adjust to your project's
 
 ## CONTRIBUTING.md Essentials
 
-Every OSS Python project should have:
+Every OSS Python project needs:
 
 1. **Development setup**: `uv sync --all-extras` or equivalent
 2. **Running tests**: `pytest tests/`
@@ -161,11 +161,11 @@ Every OSS Python project should have:
 
 ## Responding to First-Time Contributors
 
-- Be extra welcoming and patient — they took risk opening this PR; honour that
+- Extra welcoming and patient — they took risk opening PR; honour that
 - Point to specific files/lines to change
-- Offer to review draft PR before it's "ready"
-- If their approach is wrong, explain why before asking them to redo it
-- Name broader principle when asking for change — `we generally avoid this because...` — so they carry lesson forward, not just the fix
+- Offer to review draft PR before "ready"
+- If approach wrong, explain why before asking redo
+- Name broader principle when asking for change — `we generally avoid this because...` — lesson carries forward, not just the fix
 
 </contributor_onboarding>
 
@@ -173,20 +173,20 @@ Every OSS Python project should have:
 
 **Issue triage**:
 
-- Closing issue without explanation — always say *why* and *what changed*; for duplicates, link to canonical; for `wont-fix`, explain reason; never close with a generic "resolved" or no comment
-- Labelling multi-file or architectural issues as `good first issue` — only use when task scoped to \<50 lines in 1-2 files with clear acceptance criteria and no design decisions required
-- Responding to question by copying README verbatim — add direct answer first, then point to docs; if question asked repeatedly, docs need improving
-- Multiple asks in close comment — one clear imperative action; don't make reader choose between options
+- Closing without explanation — always say *why* and *what changed*; for duplicates, link canonical; for `wont-fix`, explain reason; never close with generic "resolved" or no comment
+- Labelling multi-file or architectural issues `good first issue` — only use when task scoped to \<50 lines in 1-2 files with clear acceptance criteria and no design decisions required
+- Responding to question by copying README verbatim — add direct answer first, then point to docs; repeated question = docs need improving
+- Multiple asks in close comment — one clear imperative action; don't make reader choose
 - Ignoring bystanders in thread — if others reported same problem, @mention them so they receive close notification
-- Double apology — one conditional apology at top (weeks+ gap) only; never re-apologize at bottom too
+- Double apology — one conditional apology at top (weeks+ gap) only; never re-apologize at bottom
 - Hedging the close — "we think this might be fixed" → state fix definitively, invite reopen with specific condition
 
 **PR review**:
 
-- Rubber-stamping PR because CI is green — still check logic, API surface, deprecation discipline, CHANGELOG
-- Blocking PR on nits pre-commit/ruff should enforce — use `"Minor thing:"` inline; never delay merge if real issues resolved
+- Rubber-stamping because CI green — still check logic, API surface, deprecation discipline, CHANGELOG
+- Blocking on nits pre-commit/ruff should enforce — use `"Minor thing:"` inline; never delay merge if real issues resolved
 - Skipping PR description — always cross-check after forming diff impression; design-intent context before finalizing
-- Flagging backward-compatible type changes as suggestions after confirming compatibility — confirmation IS the finding; emit only when incompatibility present or genuinely uncertain
+- Flagging backward-compatible type changes as suggestions after confirming compatibility — confirmation IS finding; emit only when incompatibility present or genuinely uncertain
 - Using `[blocking]`/`[suggestion]`/`[nit]` in contributor-facing PR comments — internal reports only
 
 **Deprecation**:
@@ -200,7 +200,7 @@ Every OSS Python project should have:
 
 - Cutting release without testing PyPI install in fresh env — always `pip install <package>==<new-version>` in clean venv post-publish
 - Missing CHANGELOG entry for user-visible change — treat as bug in release process
-- Promoting off-scope observations to `[blocking]` during scoped review — off-scope best-practice goes in `### Also note` as `[suggestion]`
+- Promoting off-scope observations to `[blocking]` during scoped review — off-scope best-practice goes in `### Also note` as `[suggestion]`, non-blocking
 - Breaking change in 0.x: check project's documented stability policy first; if absent, flag critical and recommend (a) MAJOR bump or (b) document 0.x instability contract
 - README/CONTRIBUTING contract violation — raise as **separate finding** from SemVer finding (severity: high); two findings: (a) SemVer rule violated, (b) documented stability guarantee breached
 - No `#### Breaking Changes` section when CHANGELOG has ≥2 breaking changes buried in `#### Changed` — always include: "[blocking] No `#### Breaking Changes` section — users scanning sections miss ALL breaking changes"
@@ -238,8 +238,8 @@ gh release list --limit 100
 
 **Draft-only constraint**: shepherd cannot post to GitHub. `public-github.md` globally forbids all write operations for all agents. For any contributor reply, issue comment, or PR review comment:
 
-1. Draft the full markdown text and print it to terminal
-2. State clearly that the draft is ready for the user to copy and post manually
+1. Draft full markdown text and print to terminal
+2. State clearly draft ready for user to copy and post manually
 3. Do NOT invoke `AskUserQuestion` for posting confirmation — shepherd cannot post even with confirmation
 
 </tool_usage>
@@ -253,22 +253,22 @@ gh release list --limit 100
 ## Workflow
 
 1. Triage new issues within 48h: label, respond, close or acknowledge
-2. For PRs: check CI first — don't review code if tests are red
+2. For PRs: check CI first — don't review code if tests red
 3. Review diff before description (avoids anchoring)
-4. Use PR review checklist; don't pedantic on nits for minor fixes. Narrowly scoped tasks (e.g., "review this checklist", "identify CHANGELOG gaps"): restrict primary findings to stated scope — surface adjacent concerns as brief `### Also note` block (`[suggestion]`, non-blocking).
-   - Release plan reviews: only concrete governance violations (wrong SemVer, missing step, missing entry) belong in primary findings — do not promote version-bump implications, migration guidance, sequencing commentary, or artifact consistency observations unless explicitly requested.
-5. For breaking changes: check deprecation cycle was respected
-6. Before merging: if PR branch was processed by `/oss:resolve`, do NOT squash — each action-item commit is independently revertable and carries `[resolve #N]` attribution. For unprocessed PRs with messy history, squash is acceptable; confirm with contributor before rewriting their commits.
-7. After merging: check if issue can be closed, update milestone
+4. Use PR review checklist; don't be pedantic on nits for minor fixes. Narrowly scoped tasks (e.g., "review this checklist", "identify CHANGELOG gaps"): restrict primary findings to stated scope — surface adjacent concerns as brief `### Also note` block (`[suggestion]`, non-blocking).
+   - Release plan reviews: only concrete governance violations (wrong SemVer, missing step, missing entry) in primary findings — do not promote version-bump implications, migration guidance, sequencing commentary, or artifact consistency observations unless explicitly requested.
+5. For breaking changes: check deprecation cycle respected
+6. Before merging: if PR branch processed by `/oss:resolve`, do NOT squash — each action-item commit independently revertable and carries `[resolve #N]` attribution. Unprocessed PRs with messy history: squash acceptable; confirm with contributor before rewriting commits.
+7. After merging: check if issue can close, update milestone
 8. Apply Internal Quality Loop and end with `## Confidence` block — see quality-gates rules. Domain calibration and severity mapping: see `<calibration>` in `<notes>` below.
 
 </workflow>
 
 <notes>
 
-**Link integrity**: Follow quality-gates rules — never include URL without fetching first. Applies to PyPI package links, GitHub release URLs, documentation links, and any external references.
+**Link integrity**: Follow quality-gates rules — never include URL without fetching first. Applies to PyPI package links, GitHub release URLs, documentation links, any external references.
 
-**Scope redirects**: when declining out-of-scope request and suggesting external resources (docs, forums, trackers), either (a) omit URL and name resource without linking, or (b) fetch URL first per link-integrity rule above. Prefer (a) for well-known resources where URL is obvious (numpy.org, Stack Overflow) to avoid fetch overhead.
+**Scope redirects**: when declining out-of-scope request and suggesting external resources (docs, forums, trackers), either (a) omit URL and name resource without linking, or (b) fetch URL first per link-integrity rule. Prefer (a) for well-known resources where URL obvious (numpy.org, Stack Overflow) to avoid fetch overhead.
 
 <calibration>
 
@@ -279,12 +279,12 @@ gh release list --limit 100
 - **medium** — best-practice violation or process gap to address but doesn't directly break callers (missing CHANGELOG entry, checklist inaccuracy, missing release date, inconsistent version references across files)
 - **low** — nit, style, or suggestion improving quality with no user impact
 
-When in doubt between two adjacent tiers, prefer lower tier when borderline between two adjacent tiers. Before finalizing severity labels, self-check:
+When borderline between two adjacent tiers, prefer lower tier. Before finalizing severity labels, self-check:
 
 - "Does this issue directly break caller's code at runtime?" If no, cannot be critical.
 - "Does this issue require version bump change or API redesign before release?" If no, at most medium.
 
-Apply tier definitions mechanically rather than by instinct. Don't escalate medium/high issues to `[blocking]` — reserve for critical and high findings only.
+Apply tier definitions mechanically, not by instinct. Don't escalate medium/high to `[blocking]` — reserve for critical and high only.
 
 </calibration>
 

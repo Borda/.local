@@ -1,6 +1,6 @@
 ---
 name: judge
-description: Research-supervisor review of program.md — validates experimental methodology (hypothesis clarity, measurement validity, control adequacy, scope, strategy fit) and emits APPROVED / NEEDS-REVISION / BLOCKED verdict before the expensive run loop.
+description: Research-supervisor review of program.md — validates experimental methodology (hypothesis clarity, measurement validity, control adequacy, scope, strategy fit), emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop.
 argument-hint: '[<program.md>] [--skip-validation]'
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
@@ -27,7 +27,7 @@ _RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills
 [ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
 ```
 
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`, `research:scientist`.
+Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
 
 | Agent | Fallback if absent |
 | --- | --- |
@@ -51,7 +51,7 @@ ARGUMENTS="${ARGUMENTS/--skip-validation/}"  # strip flag from args
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespace
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-validation\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-validation\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Input resolution** (priority order):
 
@@ -63,15 +63,15 @@ ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespac
    No program.md found. Run /research:plan <goal> first, or provide a path: /research:judge <path.md>
    ```
 
-**Parsing** — find `## <Section>` headings in program.md, extract first fenced code block per section, parse as `key: value` lines, warn on unrecognized keys. `--skip-validation` flag and `colab_hw` are judge-specific, extracted independently.
+**Parsing** — find `## <Section>` headings in program.md, extract first fenced code block per section, parse as `key: value` lines, warn on unrecognized keys. `--skip-validation` and `colab_hw` judge-specific, extracted independently.
 
-**Placeholder substitution** — after parsing, apply same substitution step as R1: resolve all `{field_name}` tokens in `metric_cmd` and `guard_cmd` using corresponding field from `## Config`, falling back to declared default. No `clarification_prompt` in judge — skip clarification-override step.
+**Placeholder substitution** — after parsing, apply same substitution as R1: resolve all `{field_name}` tokens in `metric_cmd` and `guard_cmd` using `## Config` fields, fallback to declared default. No `clarification_prompt` in judge — skip clarification-override step.
 
-Extract `<program_title>` from `# Program: <title>` line for reports (fall back to `# Campaign: <title>` for legacy files).
+Extract `<program_title>` from `# Program: <title>` line for reports (fallback `# Campaign: <title>` for legacy files).
 
 ## Step J2: Completeness audit
 
-Check each of 12 items. Produce findings list with severity. Each finding has: `id`, `check`, `status` (pass/fail/warn), `severity`, `detail`.
+Check 12 items. Produce findings list with severity. Each finding has: `id`, `check`, `status` (pass/fail/warn), `severity`, `detail`.
 
 | ID | Check | Severity if failing | Description |
 | --- | --- | --- | --- |
@@ -80,23 +80,23 @@ Check each of 12 items. Produce findings list with severity. Each finding has: `
 | C3 | `## Metric` has `direction` field (higher/lower) | critical | Cannot decide keep/revert without direction |
 | C4 | `## Guard` has `command` field | critical | Without guard, regressions go undetected |
 | C5 | `scope_files` present in `## Config` | high | Without scope, ideation agent modifies arbitrary files |
-| C6 | Each `scope_files` path exists on disk (glob match) | high | Non-matching patterns mean ideation agent has nothing to work with. If filesystem is unavailable, flag as `warn` unless the path name explicitly signals non-existence (e.g., `nonexistent`, `placeholder`, `todo`, `legacy_v1`, `deprecated`, `old`, `removed`). |
+| C6 | Each `scope_files` path exists on disk (glob match) | high | Non-matching patterns = ideation agent has nothing to work with. If filesystem unavailable, flag `warn` unless path name signals non-existence (e.g., `nonexistent`, `placeholder`, `todo`, `legacy_v1`, `deprecated`, `old`, `removed`). |
 | C7 | `target` set in `## Metric` | medium | Without target, campaign runs to max_iterations — may waste compute |
 | C8 | `max_iterations` in bounds (1–50) | medium | Missing defaults to 20 (acceptable); >50 violates SKILL.md constants |
 | C9 | `agent_strategy` is valid (`auto`/`perf`/`code`/`ml`/`arch`) | medium | Invalid value silently falls back to `auto` |
 | C10 | `compute` is valid (`local`/`colab`/`docker`) | low | Invalid defaults to `local` |
 | C11 | `colab_hw` valid (if present) | low | `colab_hw` absent OR is one of `H100, L4, T4, A100` — fail detail: `"colab_hw '<value>' is not in known set {H100, L4, T4, A100} — may cause GPU identity check failure in run mode"` |
-| C12 | `## Notes` section present | low | Notes are optional but improve ideation quality |
+| C12 | `## Notes` section present | low | Notes optional but improve ideation quality |
 
-**Severity summary**: count findings per severity level. Any critical finding = verdict cannot be APPROVED.
+**Severity summary**: count findings per severity. Any critical finding = verdict cannot be APPROVED.
 
-**Placeholder token check (C2, C4 sub-rule)** — after confirming `command` field present in `## Metric` (C2) and `## Guard` (C4), scan each command for `{...}` tokens. For each token, verify corresponding field name exists in `## Config` (any value, including declared default). Token with no matching `## Config` field = unresolvable — add `high` finding. Do not flag `{field_name}` tokens as malformed; they're valid when resolvable.
+**Placeholder token check (C2, C4 sub-rule)** — after confirming `command` present in `## Metric` (C2) and `## Guard` (C4), scan each command for `{...}` tokens. Verify each token's field name exists in `## Config`. Token with no matching field = unresolvable — add `high` finding. Don't flag `{field_name}` tokens as malformed; valid when resolvable.
 
-**Command feasibility**: J2 validates command fields statically (presence, format). Actual executability deferred to J4. If `$SKIP_VALIDATION` is `true`, J4 skipped, command feasibility unverified — report in judge output as "validation skipped — commands unverified."
+**Command feasibility**: J2 validates command fields statically (presence, format). Executability deferred to J4. If `$SKIP_VALIDATION` is `true`, J4 skipped, commands unverified — report as "validation skipped — commands unverified."
 
 ## Step J3: Methodology review
 
-Pre-compute run directory before spawning:
+Pre-compute run dir before spawning:
 
 ```bash
 RUN_DIR=".experiments/judge-$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
@@ -116,7 +116,7 @@ touch "$CHECKPOINT_SCI"
 
 Then dispatch both agents (architect + scientist) in a single response.
 
-Spawn `foundry:solution-architect` agent via `Agent(subagent_type="foundry:solution-architect", prompt="...")` (uses `opusplan` for high reasoning quality) with this prompt:
+Spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt="...")` (uses `opusplan`) with this prompt:
 
 ```markdown
 Act as a research supervisor reviewing a PhD student's experimental protocol.
@@ -147,8 +147,8 @@ Return ONLY a compact JSON envelope on your final line — nothing else after it
 Poll architect every 5 min: `find <RUN_DIR> -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
 
 - **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 <RUN_DIR>/methodology.md` shows active progress (partial content written), grant one extension; second stall = hard cutoff
-- **On timeout**: read `tail -100 <RUN_DIR>/methodology.md`; if file missing or empty, set `methodology_rating = "timed_out"`, continue to J6 with that value. Surface with ⏱ in report.
+- **One extension (+5 min)**: if `tail -20 <RUN_DIR>/methodology.md` shows active progress, grant one extension; second stall = hard cutoff
+- **On timeout**: read `tail -100 <RUN_DIR>/methodology.md`; if file missing or empty, set `methodology_rating = "timed_out"`, continue to J6. Surface with ⏱ in report.
 
 Poll scientist every 5 min: `find <RUN_DIR> -name "scientific-review.md" -newer "$CHECKPOINT_SCI" | wc -l` — file present = alive; zero = stalled.
 
@@ -162,7 +162,7 @@ Use `methodology_rating` from returned envelope for verdict computation in J6:
 - `needs-refinement` → supports NEEDS-REVISION
 - `fundamentally-flawed` → supports BLOCKED
 
-Also spawn `research:scientist` in parallel via `Agent(subagent_type="research:scientist", prompt="...")` (dispatch both in single response at start of J3) to review scientific rigor:
+Also spawn `research:scientist` in parallel (dispatch both at start of J3) to review scientific rigor:
 
 ```markdown
 Act as an ML research peer reviewer assessing experimental protocol rigor.
@@ -179,22 +179,22 @@ Write findings to `<RUN_DIR>/scientific-review.md`.
 Return ONLY: {"status":"done","scientific_rating":"sound|needs-refinement|fundamentally-flawed","issues":N,"file":"<RUN_DIR>/scientific-review.md","confidence":0.N,"summary":"<one-line>"}
 ```
 
-Use `scientific_rating` as **advisory** input in J6 report under **Scientific Rigor** section — informs but does not override verdict. Exception: `scientific_rating = "fundamentally-flawed"` elevates verdict to BLOCKED with note to redesign hypothesis.
+Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** — informs but does not override verdict. Exception: `scientific_rating = "fundamentally-flawed"` elevates verdict to BLOCKED.
 
 ## Step J4: Local validation
 
-> Skip if `$SKIP_VALIDATION` is `true` (flag parsed in J1). Print: `→ Validation skipped (--skip-validation passed)` and continue to J5.
+> Skip if `$SKIP_VALIDATION` is `true` (parsed in J1). Print: `→ Validation skipped (--skip-validation passed)` and continue to J5.
 
-Execute each command once to verify. **Non-blocking** — failures become `critical` findings, not hard stops.
+Execute each command once. **Non-blocking** — failures become `critical` findings, not hard stops.
 
-**Substitution invariant** — `metric_cmd` and `guard_cmd` fully resolved in J1. No literal `{...}` tokens should remain. If any `{field_name}` token still present, add `critical` finding: "Unresolved placeholder `{field_name}` in `<metric_cmd|guard_cmd>` — substitution failed in J1" and skip execution of that command.
+**Substitution invariant** — `metric_cmd` and `guard_cmd` fully resolved in J1. No `{...}` tokens should remain. If any `{field_name}` token still present, add `critical` finding: "Unresolved placeholder `{field_name}` in `<metric_cmd|guard_cmd>` — substitution failed in J1" and skip execution.
 
 ```bash
 # Metric validation — captures baseline value
 <metric_cmd 2>&1  # timeout: 360000
 ```
 
-Parse stdout for float value. If found, record as `baseline_value`. If not found or command exits non-zero: add critical finding: "Metric command failed or produced no numeric output".
+Parse stdout for float. If found, record as `baseline_value`. If not found or non-zero exit: add critical finding: "Metric command failed or produced no numeric output".
 
 ```bash
 # Guard validation
@@ -205,7 +205,7 @@ If guard exits non-zero: add critical finding: "Guard command exited non-zero (e
 
 Record validation results for J6 report.
 
-**Note**: J4 executes on current machine. For cross-machine workflows (e.g., plan locally, campaign on GPU), pass `--skip-validation`.
+**Note**: J4 executes on current machine. For cross-machine workflows, pass `--skip-validation`.
 
 ## Step J5: Codex adversarial review
 
@@ -215,7 +215,7 @@ Check Codex availability:
 claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'
 ```
 
-**If available**: invoke adversarial review focused on specific gaps found in J2 and J3. Construct focus string from top 3 critical/high findings. Example (replace `<top finding N>` with actual findings from J2/J3):
+**If available**: invoke adversarial review on top 3 critical/high gaps from J2 and J3. Example (replace `<top finding N>` with actual findings):
 
 ```text
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of run program: check <top finding 1>, <top finding 2>, and <top finding 3> in the program.md. Read-only: do not apply fixes.")
@@ -231,9 +231,9 @@ note: codex plugin not installed — skipping adversarial review (Claude-only ju
 
 ## Step J6: Verdict and report
 
-**Verdict computation** (deterministic — based on design soundness, not outcome prediction):
+**Verdict computation** (deterministic — design soundness, not outcome prediction):
 
-Evaluate top-to-bottom; **first match wins**. BLOCKED always takes precedence — do not continue to subsequent rows once matched.
+Top-to-bottom; **first match wins**. BLOCKED takes precedence — stop at first match.
 
 | Condition | Verdict |
 | --- | --- |
@@ -340,10 +340,10 @@ Next: fix protocol, re-run /research:judge <path>      [NEEDS-REVISION or BLOCKE
 <notes>
 
 - Judge read-only — never modifies code, commits, or writes to `.experiments/state/`
-- `.experiments/judge-<timestamp>/` stores methodology review agent's full output for reference
-- Validation commands execute on current machine — use `--skip-validation` for cross-machine workflows
+- `.experiments/judge-<timestamp>/` stores methodology agent's full output
+- Validation executes on current machine — use `--skip-validation` for cross-machine workflows
 - Verdict deterministic (finding counts + methodology_rating); not inferred from prose
-- Re-run judge after editing `program.md` to confirm fixes resolved flagged items
-- Judge run directories don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md (installed via /foundry:init)` TTL policy — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/judge-*/`)
+- Re-run judge after editing `program.md` to confirm fixes
+- Judge run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (per `.claude/rules/artifact-lifecycle.md` TTL policy — no `result.jsonl` = cleanup skipped); remove manually (`rm -rf .experiments/judge-*/`)
 
 </notes>

@@ -28,4 +28,4 @@ name / description / tools / model / color (frontmatter)
 - Skills orchestrating subagents (e.g., `review`, `feature`, `audit`): include `Agent` in `allowed-tools`
 - Web-research agents (e.g., `foundry:web-explorer`, `research:scientist`): include `WebFetch` and/or `WebSearch`
 
-Drop any tool serving no purpose for declared domain. Minimal precise list beats maximal one.
+Drop tools with no purpose for declared domain. Minimal precise list beats maximal.

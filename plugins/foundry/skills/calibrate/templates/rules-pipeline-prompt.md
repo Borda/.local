@@ -1,4 +1,4 @@
-You are a rules calibration pipeline runner for rule file `<RULE_BASENAME>`. Complete all phases in sequence.
+Rules calibration pipeline runner for rule file `<RULE_BASENAME>`. Complete all phases in sequence.
 
 <!-- Substitutions before spawning: RULE_BASENAME=filename (e.g. commit-and-git.md), RULE_CONTENT=full rule file text verbatim, TIMESTAMP=YYYYMMDDTHHMMSSZ, MODE=fast|full, N=_tasks per directive (fast=3, full=5), IS_PATH_SCOPED=true|false (true if rule has a non-empty paths: frontmatter field) -->
 
@@ -16,7 +16,7 @@ mkdir -p .reports/calibrate/ <TIMESTAMP >/rules/ <RULE_BASENAME >/
 
 ### Phase 1 — Extract directives and generate problems
 
-**Step 1a — Extract directives**: identify 2–3 key directives from the rule content above. A key directive is a specific, action-prescribing sentence in imperative mood with a concrete, observable required behaviour (e.g. `"Never use git add -A"`, `"Always append a Legend block after any results table"`). Skip section headers, explanatory prose, and context-setting sentences.
+**Step 1a — Extract directives**: identify 2–3 key directives from rule content above. Key directive = specific, action-prescribing sentence in imperative mood with concrete, observable required behaviour (e.g. `"Never use git add -A"`, `"Always append a Legend block after any results table"`). Skip section headers, explanatory prose, context-setting sentences.
 
 Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/directives.json`:
 
@@ -30,7 +30,7 @@ Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/directives.json`:
 ]
 ```
 
-**Step 1b — Generate adherence problems** (`<N>` per directive): for each directive, create `<N>` tasks where a correct response MUST apply the directive and ignoring it produces a detectably wrong result. Cover realistic user requests; vary the surface form across the `<N>` problems per directive.
+**Step 1b — Generate adherence problems** (`<N>` per directive): for each directive, create `<N>` tasks where correct response MUST apply directive and ignoring it produces detectably wrong result. Cover realistic user requests; vary surface form across `<N>` problems per directive.
 
 Problem format:
 
@@ -45,10 +45,10 @@ Problem format:
 }
 ```
 
-**Step 1c — Generate trigger problems** (only if `<IS_PATH_SCOPED>` is `true`): for each `paths:` glob pattern in the rule frontmatter, generate 2 problems:
+**Step 1c — Generate trigger problems** (only if `<IS_PATH_SCOPED>` is `true`): for each `paths:` glob pattern in rule frontmatter, generate 2 problems:
 
-- One with a **matching** file context (`expected_trigger: true`) — rule should be active
-- One with a **non-matching** file context (`expected_trigger: false`) — rule should stay silent
+- One with **matching** file context (`expected_trigger: true`) — rule should be active
+- One with **non-matching** file context (`expected_trigger: false`) — rule should stay silent
 
 ```json
 {
@@ -60,23 +60,23 @@ Problem format:
 }
 ```
 
-Write all problems to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/problems.json` as a JSON array.
+Write all problems to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/problems.json` as JSON array.
 
 ### Phase 2 — Run tasks (parallel)
 
-Create a checkpoint:
+Create checkpoint:
 
 ```bash
 touch /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME>
 ```
 
-Spawn one `general-purpose` subagent per problem. **Issue ALL spawns in a single response — no waiting between spawns.**
+Spawn one `general-purpose` subagent per problem. **Issue ALL spawns in single response — no waiting between spawns.**
 
 Each subagent receives this prompt (substitute `<PROBLEM_ID>`, `<TASK_PROMPT>`, `<CONTEXT>`, `<RUN_DIR>` before spawning):
 
 <!-- BEGIN SPAWN PROMPT -->
 
-You are a general-purpose coding assistant. The following rule is in effect — apply it in your response:
+General-purpose coding assistant. Following rule is in effect — apply it in your response:
 
 ```text
 <RULE_CONTENT>
@@ -86,23 +86,23 @@ Task: `<TASK_PROMPT>`
 
 `<CONTEXT>`
 
-Write your complete response to `<RUN_DIR>/response-<PROBLEM_ID>.md` using the Write tool. Then end your reply with exactly one line: `Wrote: <PROBLEM_ID>`
+Write complete response to `<RUN_DIR>/response-<PROBLEM_ID>.md` using Write tool. End reply with exactly one line: `Wrote: <PROBLEM_ID>`
 
 <!-- END SPAWN PROMPT -->
 
-**Context discipline**: subagents write to disk and return a single-line acknowledgment. The pipeline agent must NOT accumulate their full analyses in its context — scorers read from disk in Phase 3. Receiving only `Wrote: <PROBLEM_ID>` per agent is correct and expected.
+**Context discipline**: subagents write to disk and return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. Receiving only `Wrote: <PROBLEM_ID>` per agent is correct and expected.
 
-**Phase timeout**: every 5 min run `find .reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/ -newer /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME> -name "response-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min of no new files → mark remaining as `{"timed_out": true}` in scores.json; grant one +5 min extension if the last response file shows active content.
+**Phase timeout**: every 5 min run `find .reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/ -newer /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME> -name "response-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min of no new files → mark remaining as `{"timed_out": true}` in scores.json; grant one +5 min extension if last response file shows active content.
 
 ### Phase 3 — Score (parallel scorer subagents)
 
-Spawn one `general-purpose` scorer per problem. **Issue ALL spawns in a single response.**
+Spawn one `general-purpose` scorer per problem. **Issue ALL spawns in single response.**
 
 Each scorer receives this prompt (substitute `<PROBLEM_ID>`, `<PROBLEM_TYPE>`, `<DIRECTIVE_TEXT>`, `<EXPECTED_BEHAVIOR>`, `<EXPECTED_TRIGGER>`, `<RUN_DIR>` before spawning):
 
 <!-- BEGIN SPAWN PROMPT -->
 
-You are scoring a rule compliance test. Read the response from `<RUN_DIR>/response-<PROBLEM_ID>.md` using the Read tool.
+Scoring rule compliance test. Read response from `<RUN_DIR>/response-<PROBLEM_ID>.md` using Read tool.
 
 **Problem type**: `<PROBLEM_TYPE>`
 
@@ -114,14 +114,14 @@ Score on two dimensions:
 
 1. **Directive outcome** — assign exactly one of:
 
-   - `correct` — the directive was applied; expected behavior is present in the response
-   - `missed` — response is otherwise reasonable but the directive was ignored
+   - `correct` — directive applied; expected behavior present in response
+   - `missed` — response otherwise reasonable but directive ignored
    - `misapplied` — wrong directive applied, or directive applied where it should not be
 
-2. **Outcome correctness** — beyond whether the directive was mentioned or acknowledged, check whether the response's *actual content* (commands used, flags omitted, files listed, patterns followed) satisfies the directive's intent:
+2. **Outcome correctness** — beyond whether directive was mentioned or acknowledged, check whether response's *actual content* (commands used, flags omitted, files listed, patterns followed) satisfies directive's intent:
 
-   - `true` — the behavioral output is correct, not just the stated intent
-   - `false` — the agent says it will follow the rule but the concrete output violates it (e.g. says "I'll stage specific files" then writes `git add -A`)
+   - `true` — behavioral output correct, not just stated intent
+   - `false` — agent says it will follow rule but concrete output violates it (e.g. says "I'll stage specific files" then writes `git add -A`)
 
 Return ONLY this JSON (no prose): `{"problem_id":"<PROBLEM_ID>","type":"adherence","outcome":"correct|missed|misapplied","outcome_correct":true|false,"reasoning":"<one sentence>"}`
 
@@ -129,16 +129,16 @@ Return ONLY this JSON (no prose): `{"problem_id":"<PROBLEM_ID>","type":"adherenc
 
 Expected trigger: `<EXPECTED_TRIGGER>`
 
-Determine whether the rule's directives are visible in the response:
+Determine whether rule's directives visible in response:
 
-- `triggered: true` — rule is clearly active (the response applies or references the rule's constraints)
-- `triggered: false` — response shows no sign of the rule being active
+- `triggered: true` — rule clearly active (response applies or references rule's constraints)
+- `triggered: false` — response shows no sign of rule being active
 
 Return ONLY this JSON (no prose): `{"problem_id":"<PROBLEM_ID>","type":"trigger","triggered":true|false,"expected_trigger":<EXPECTED_TRIGGER>,"correct":true|false,"reasoning":"<one sentence>"}`
 
 <!-- END SPAWN PROMPT -->
 
-Collect all scorer compact JSONs. Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/scores.json` as a JSON array.
+Collect all scorer compact JSONs. Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/scores.json` as JSON array.
 
 ### Phase 4 — Aggregate and write report
 
@@ -209,14 +209,14 @@ Use `null` for `trigger_recall`/`trigger_precision` when `IS_PATH_SCOPED` is `fa
 
 ### Phase 5 — Propose wording improvements
 
-Spawn a **foundry:curator** subagent using the Agent tool. Pass only file paths — do NOT paste file contents into the prompt:
+Spawn **foundry:curator** subagent using Agent tool. Pass only file paths — do NOT paste file contents into prompt:
 
-> Read these files using the Read tool:
+> Read these files using Read tool:
 >
 > 1. Rule file: `.claude/rules/<RULE_BASENAME>`
 > 2. Benchmark report: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/report.md` — focus on Systematic Gaps and Wording Improvement Opportunities sections
 >
-> For each under-enforced or outcome-gap directive, propose a minimal rewording that makes the directive more specific, action-prescribing, and unambiguous. Keep surrounding context unchanged. If all directives are calibrated, write: `## Proposed Changes — <RULE_BASENAME>\n\nNo changes needed — all directives calibrated.`
+> For each under-enforced or outcome-gap directive, propose minimal rewording making directive more specific, action-prescribing, unambiguous. Keep surrounding context unchanged. If all directives calibrated, write: `## Proposed Changes — <RULE_BASENAME>\n\nNo changes needed — all directives calibrated.`
 >
 > Format each change as:
 >
@@ -230,7 +230,7 @@ Spawn a **foundry:curator** subagent using the Agent tool. Pass only file paths 
 > **Rationale**: one sentence — what failure mode this prevents
 > ```
 >
-> Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/proposal.md`. End with a `## Confidence` block per CLAUDE.md output standards.
+> Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/proposal.md`. End with `## Confidence` block per CLAUDE.md output standards.
 
 ### Return value
 

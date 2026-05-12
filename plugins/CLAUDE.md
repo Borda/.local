@@ -1,6 +1,6 @@
 # Plugin Authoring Rules
 
-Plugins under `plugins/`. See plugin `README.md` for user-facing detail.
+Plugins under `plugins/`. See `README.md` for user-facing detail.
 
 ## Writing Style
 
@@ -16,7 +16,7 @@ Use `/caveman` compression for all agent, skill, rule file edits — drop articl
 ## Installability
 
 - Every file must be installable via `claude plugin install <name>@borda-ai-rig`
-- No file may depend on source tree being present — assume installed path only
+- No file depend on source tree — assume installed path only
 - No hardcoded paths to sibling plugins or `plugins/<name>/` directories
 - Validate: after `claude plugin install`, all agents/skills/rules/hooks resolve without local `plugins/` tree
 - **Bare `plugins/` path = only valid as final fallback** after cache-path resolution: `VAR="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)"; [ -z "$VAR" ] && VAR="plugins/<plugin>/skills/_shared"`. Never use bare `plugins/` as primary path. Check C32 flags violations.
@@ -44,12 +44,12 @@ Use `/caveman` compression for all agent, skill, rule file edits — drop articl
 
 **The self-defeating plugin trap** — hook or skill whose job is "handle plugin `foo` being absent" cannot live inside plugin `foo`. If `foo` absent, hook never runs.
 
-- **General rule: resilience code lives in the plugin whose users need protecting, not the plugin being protected against**
-- Examples: fallback for missing `foundry` agents → cannot live in `foundry`; fallback for missing `oss` agents → cannot live in `oss`; same applies to any plugin pair
+- **General rule: resilience code lives in plugin whose users need protecting, not plugin being protected against**
+- Examples: fallback for missing `foundry` agents → cannot live in `foundry`; fallback for missing `oss` agents → cannot live in `oss`; same for any plugin pair
 
-Correct placement: every plugin that dispatches agents from other plugins ships own fallback hook. Source of truth lives in one plugin; `sync.sh` copies to others at release.
+Correct placement: every plugin dispatching agents from others ships own fallback hook. Source of truth in one plugin; `sync.sh` copies to others at release.
 
-No plugin dependency system exists in Claude Code — never propose "install `foo` as prerequisite" or "register globally via `foo` init" as solution to missing-plugin resilience. Circular: requires thing that might be absent.
+No plugin dependency system in Claude Code — never propose "install `foo` as prerequisite" or "register globally via `foo` init" as solution to missing-plugin resilience. Circular: requires thing that might be absent.
 
 ## README Sync
 
@@ -69,7 +69,7 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 | Fix, wording, refactor, cleanup, or restoring behaviour to original design intent | `Y` |
 | New capability, new agent/skill, new designed behaviour (not intended before) | `X` |
 
-> **Rule**: Ask "was this *supposed* to work this way?" Yes + it didn't → `Y` (fix). No, this is new intent → `X` (feature). Internal restructuring always `Y` regardless of size or visibility.
+> **Rule**: Ask "was this *supposed* to work this way?" Yes + it didn't → `Y` (fix). No, new intent → `X` (feature). Internal restructuring always `Y` regardless of size or visibility.
 
 **Bump at commit, not per edit** — single bump per commit, highest-magnitude change wins:
 
@@ -87,7 +87,7 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 3. Calculate new version from HEAD baseline: `X` → bump minor, reset patch to `0`; `Y` → bump patch only
 4. Write calculated version to `<plugin-path>/.claude-plugin/plugin.json` — **if on-disk version already equals or exceeds calculated, skip write entirely; do not bump again**
 
-**One bump per commit session** — after writing once, all further edits to that plugin in the same uncommitted session must NOT bump again. The on-disk version will already exceed HEAD baseline, triggering step 4 skip. Never treat the on-disk bumped value as a new baseline to increment from.
+**One bump per commit session** — after writing once, all further edits to that plugin in same uncommitted session must NOT bump again. On-disk version will already exceed HEAD baseline, triggering step 4 skip. Never treat on-disk bumped value as new baseline to increment from.
 
 ## Edit Quality Gate
 

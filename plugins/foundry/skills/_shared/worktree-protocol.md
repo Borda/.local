@@ -1,5 +1,3 @@
-**Re: Compress worktree protocol markdown to caveman format**
-
 # Worktree Protocol
 
 Conventions for skills/agents running commands inside git worktree.

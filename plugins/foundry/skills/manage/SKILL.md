@@ -8,7 +8,7 @@ effort: high
 when_to_use: Use to create, rename, or delete agents/skills/rules/hooks and keep cross-references in sync; NOT for validating existing config quality (use audit) or implementing code changes (use develop:feature or develop:fix).
 ---
 
-> **Note:** `disable-model-invocation: true` — `/manage` is user-invoked only and cannot be chained via `Skill()` from orchestrators. When suggesting `/manage` as a follow-up, the invoking skill must present it as a user-run command, not an automatic next step.
+> **Note:** `disable-model-invocation: true` — `/manage` user-invoked only, no `Skill()` chaining from orchestrators. When suggesting `/manage` as follow-up, invoking skill must present as user-run command, not auto step.
 
 <objective>
 
@@ -31,7 +31,7 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 
 **NOT for**: validation/quality audit of existing agents/skills (use /foundry:audit); implementing code changes (use develop:feature or develop:fix).
 - Names must be **kebab-case** (lowercase, hyphens only)
-- Descriptions must be quoted when they contain spaces
+- Descriptions must be quoted when containing spaces
 - Permission rules use Claude Code format: `WebSearch`, `Bash(cmd:*)`, `WebFetch(domain:example.com)`
 - `--skip-audit` — optional flag: skip Step 9 `/audit` validation (use inside `audit fix` loop to avoid recursion)
 
@@ -71,7 +71,7 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 - USED_COLORS: blue, cyan, green, orange, pink, purple, yellow
 - AVAILABLE_COLORS: indigo, lime, magenta, teal, violet
 
-Maintain colors manually — add new agent colors here when creating agents; this static list is advisory only — live Grep in Step 3 is authoritative check for colors in use.
+Maintain colors manually — add new agent colors here when creating agents; static list advisory only — live Grep in Step 3 authoritative for colors in use.
 
 </constants>
 
@@ -91,7 +91,7 @@ ARGUMENTS="${ARGUMENTS//--skip-audit/}"
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
 ```
 
-**Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-audit\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-audit\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Validation rules:**
 
@@ -115,7 +115,7 @@ Results:
 - Multiple non-empty results → `AskUserQuestion`: "Multiple entities named `<name>` found. Which one? (a) agent (b) skill (c) rule (d) hook"
 - All empty → report "No agent, skill, rule, or hook named `<name>` found" and stop
 
-For `create`, check only the relevant type's path.
+For `create`, check only relevant type's path.
 
 ```bash
 # Check permission existence (for add perm / remove perm)
@@ -144,7 +144,7 @@ if [[ "$MODE" == "content-edit" ]]; then
 fi
 ```
 
-Trivial = directive ≤10 words AND matches a simple-change pattern. Trivial edits: apply inline with Edit tool — no agent spawn.
+Trivial = directive ≤10 words AND matches simple-change pattern. Trivial edits: apply inline with Edit tool — no agent spawn.
 
 **Step skip rules**:
 
@@ -161,7 +161,7 @@ Before creating, check if existing agents/skills already cover requested functio
 2. Compare new description against each existing — look for domain overlap, similar workflows, redundant scope
 3. Present findings:
    - **No overlap**: proceed to Step 3
-   - **Partial overlap**: name overlapping agent/skill, explain what it covers vs what new one adds, use `AskUserQuestion`: "Extend existing (Recommended)" / "Proceed" / "Abort"
+   - **Partial overlap**: name overlapping agent/skill, explain coverage vs what new one adds, use `AskUserQuestion`: "Extend existing (Recommended)" / "Proceed" / "Abort"
    - **Strong overlap**: recommend against creation — suggest using or extending existing agent/skill
 
 Skip for `update`, `delete`, perm operations.
@@ -201,12 +201,20 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
    - `sonnet` — focused execution roles (research:data-steward, foundry:web-explorer, foundry:doc-scribe, oss:cicd-steward)
    - `haiku` — high-frequency diagnostics roles (linting-expert)
 
-4. Spawn **foundry:curator** subagent to generate and write agent file:
+4. Resolve template path:
 
-> Before passing the schema file path to curator: verify the file exists on disk using the Read tool (limit=1). If the schema file path from the JSON envelope does not exist, proceed with default frontmatter fields (name, description, model, color) — note the omission in the Step 10 report.
+```bash
+MANAGE_TPL="${CLAUDE_PLUGIN_ROOT}/skills/manage/templates"
+[ -d "$MANAGE_TPL" ] || MANAGE_TPL=".claude/skills/manage/templates"
+[ -d "$MANAGE_TPL" ] || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
+```
+
+5. Spawn **foundry:curator** subagent to generate and write agent file:
+
+> Before passing schema file path to curator: verify file exists on disk using Read tool (limit=1). If schema file path from JSON envelope does not exist, proceed with default frontmatter fields (name, description, model, color) — note omission in Step 10 report.
 
 ```markdown
-Read the agent scaffold template at `.claude/skills/manage/templates/agent-scaffold.md`.
+Read the agent scaffold template at `$MANAGE_TPL/agent-scaffold.md`.
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields (skip if schema file not found — use default frontmatter fields: name, description, model, color).
 Create `.claude/agents/<name>.md` with:
 - Frontmatter: name=<name>, description=<description>, model=<model>, color=<color>; add any broadly-useful new fields from the schema
@@ -236,11 +244,19 @@ Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confi
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
 
-2. Spawn **foundry:curator** subagent to create directory and generate skill file:
+2. Resolve template path (if not already set from Create Agent mode):
+
+```bash
+MANAGE_TPL="${MANAGE_TPL:-${CLAUDE_PLUGIN_ROOT}/skills/manage/templates}"
+[ -d "$MANAGE_TPL" ] || MANAGE_TPL=".claude/skills/manage/templates"
+[ -d "$MANAGE_TPL" ] || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
+```
+
+3. Spawn **foundry:curator** subagent to create directory and generate skill file:
 
 ```markdown
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
-Read the skill scaffold template at `.claude/skills/manage/templates/skill-scaffold.md`.
+Read the skill scaffold template at `$MANAGE_TPL/skill-scaffold.md`.
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
 Create `.claude/skills/<name>/SKILL.md` with:
 - Frontmatter: name=<name>, description=<description>; add other fields per schema and scaffold guidance
@@ -301,7 +317,7 @@ rm -r .claude/skills/<name>  # timeout: 5000
 
 ### Dispatch: Content-Edit
 
-Before executing a type-specific content-edit mode, determine approach:
+Before executing type-specific content-edit mode, determine approach:
 
 **File-type → agent routing:**
 
@@ -314,7 +330,7 @@ Before executing a type-specific content-edit mode, determine approach:
 **If `EDIT_TRIVIAL=true`** (classified in Step 1):
 1. Read file using Read tool
 2. Apply directive directly using Edit tool — no agent spawn
-3. Proceed to Step 8; skip Steps 5–7 unless name or description changed in the edit
+3. Proceed to Step 8; skip Steps 5–7 unless name or description changed in edit
 
 **If `EDIT_TRIVIAL=false`**: proceed to type-specific mode below for full agent-delegated edit.
 
@@ -374,7 +390,7 @@ Use `description_changed` from returned JSON to decide whether Steps 5–7 need 
 
 No schema fetch needed — rule files simpler than agents/skills (only frontmatter + free-form markdown sections).
 
-**Rule scope guidance**: empty `paths:` = global rule (applies everywhere); populated `paths:` = scoped (e.g., `paths: ["src/**/*.py"]` for Python-only rules). Default to global unless the rule is clearly language/directory-specific.
+**Rule scope guidance**: empty `paths:` = global rule (applies everywhere); populated `paths:` = scoped (e.g., `paths: ["src/**/*.py"]` for Python-only rules). Default to global unless rule is clearly language/directory-specific.
 
 Write `.claude/rules/<name>.md` with this structure:
 
@@ -440,7 +456,7 @@ Return ONLY: {"status":"done","file":".claude/hooks/<name>.js","edits":N,"confid
 rm .claude/hooks/<name>.js # timeout: 5000
 ```
 
-> After deleting hook, also remove its entry from `.claude/settings.json` hooks configuration so Claude Code does not try to invoke missing file.
+> After deleting hook, also remove its entry from `.claude/settings.json` hooks configuration so Claude Code does not invoke missing file.
 
 ### Mode: Add Permission
 
@@ -459,26 +475,36 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
 
 2. Update `settings.json` — parse, append, write back:
 
-```bash
-# timeout: 15000
-jq --arg rule "<rule>" '.permissions.allow += [$rule]' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
-```
+    ```bash
+    # timeout: 15000
+    jq --arg rule "<rule>" '.permissions.allow += [$rule]' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
+    ```
 
-3. Update `permissions-guide.md` — append new row to end of correct section (before its trailing `---` separator). New row format:
+3. Also append to plugin's `permissions-allow.json` so `/foundry:init` syncs it to `~/.claude/settings.json` on reinstall:
 
-```markdown
-| `<rule>` | <description> | <use case> |
-```
+    ```bash
+    # timeout: 5000
+    PERM_FILE="${CLAUDE_PLUGIN_ROOT}/.claude-plugin/permissions-allow.json"
+    if [ -f "$PERM_FILE" ]; then
+        jq --arg rule "<rule>" '. += [$rule] | unique' "$PERM_FILE" > "${PERM_FILE}.tmp" && mv "${PERM_FILE}.tmp" "$PERM_FILE"
+    fi
+    ```
 
-Use Edit tool to insert row: find last table row in target section and insert after it.
+4. Update `permissions-guide.md` — append new row to end of correct section (before its trailing `---` separator). New row format:
 
-4. Verify both files updated:
+    ```markdown
+    | `<rule>` | <description> | <use case> |
+    ```
 
-```bash
-# timeout: 5000
-jq -e '.permissions.allow | contains(["<rule>"])' .claude/settings.json && echo "OK" || echo "MISSING"
-grep -F '`<rule>`' .claude/permissions-guide.md
-```
+    Use Edit tool to insert row: find last table row in target section and insert after it.
+
+5. Verify both files updated:
+
+    ```bash
+    # timeout: 5000
+    jq -e '.permissions.allow | contains(["<rule>"])' .claude/settings.json && echo "OK" || echo "MISSING"
+    grep -F '`<rule>`' .claude/permissions-guide.md
+    ```
 
 ### Mode: Remove Permission
 
@@ -486,20 +512,20 @@ Removes rule from both `settings.json` and `permissions-guide.md` atomically.
 
 1. Update `settings.json` — parse, filter, write back:
 
-```bash
-# timeout: 15000
-jq --arg rule "<rule>" 'del(.permissions.allow[] | select(. == $rule))' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
-```
+    ```bash
+    # timeout: 15000
+    jq --arg rule "<rule>" 'del(.permissions.allow[] | select(. == $rule))' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
+    ```
 
 2. Update `permissions-guide.md` — use Edit tool to remove table row containing `` `<rule>` ``.
 
 3. Verify both files clean:
 
-```bash
-# timeout: 5000
-jq -e '.permissions.allow | contains(["<rule>"]) | not' .claude/settings.json && echo "OK" || echo "STILL PRESENT"
-grep -qF '`<rule>`' .claude/permissions-guide.md && echo "STILL IN GUIDE" || echo "OK"
-```
+    ```bash
+    # timeout: 5000
+    jq -e '.permissions.allow | contains(["<rule>"]) | not' .claude/settings.json && echo "OK" || echo "STILL PRESENT"
+    grep -qF '`<rule>`' .claude/permissions-guide.md && echo "STILL IN GUIDE" || echo "OK"
+    ```
 
 ## Step 5: Propagate cross-references
 
@@ -513,7 +539,7 @@ Use Grep to find all references:
 - Pattern `<name>`, file `.claude/CLAUDE.md`, output mode `content`
 - Pattern `<name>`, file `README.md`, output mode `content`
 
-**For update (rename):** Count files grep returns. **≤ 3 files**: apply inline with Edit tool. **> 3 files**: spawn **foundry:curator** subagent. For hook renames: also update the hook entry in `.claude/settings.json` `hooks` array if the hook filename is referenced there by path.
+**For update (rename):** Count files grep returns. **≤ 3 files**: apply inline with Edit tool. **> 3 files**: spawn **foundry:curator** subagent. For hook renames: also update hook entry in `.claude/settings.json` `hooks` array if hook filename referenced there by path.
 
 ```text
 Apply these cross-reference updates (<old-name> → <new-name>):
@@ -587,7 +613,7 @@ For **create** and **update (rename)**: verify tool efficiency — cross-check a
 
 ## Step 9: Audit and calibrate
 
-Run `/audit --skip-gate` to validate created/modified files without triggering the interactive follow-up gate. **Skip if invoked with `--skip-audit` or if current `manage` operation runs inside an audit-initiated fix session** — outer audit covers it.
+Run `/audit --skip-gate` to validate created/modified files without triggering interactive follow-up gate. **Skip if invoked with `--skip-audit` or if current `manage` operation runs inside audit-initiated fix session** — outer audit covers it.
 
 ```bash
 [[ "$SKIP_AUDIT" == "true" ]] && { echo "[--skip-audit] skipping Step 9 audit"; } || {
@@ -640,7 +666,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 - **Atomic updates**: write-before-delete prevents data loss on interruption; perm ops must update both `settings.json` and `permissions-guide.md`
 - **settings.json format**: json.load/json.dump with indent=2 — avoids fragile sed/awk on JSON
 - **README.md tables**: agent/skill tables in project `README.md`; rules table in `.claude/README.md` — keep row format consistent with existing rows
-- **No auto-edit for agent/skill/rule operations**: this skill does not mutate settings.json for non-perm operations
+- **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note
 - Follow-up chains:
   - create or non-trivial update of agent/skill → `/audit --skip-gate` → `/calibrate <name>` (mandatory) → `/calibrate routing --fast`

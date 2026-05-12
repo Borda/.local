@@ -1,10 +1,10 @@
 ---
 name: resolve
-description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads the full thread, linked issues, and PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out the PR branch (fork-aware via gh pr checkout), merges BASE into it, and resolves conflicts semantically using the contributor's intent as the priority lens; (3) implements each action item as a separate attributed commit via Codex, then pushes back to the contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for drafting contributor replies (use oss:analyse --reply). NOT for release preparation (use oss:release)."
+description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for drafting contributor replies (use oss:analyse --reply). NOT for release preparation (use oss:release)."
 argument-hint: '<PR number or URL> [report] | report | <review comment text>'
 disable-model-invocation: true
 effort: high
-when_to_use: Use to implement GitHub PR review comments and push fixes back to a contributor's fork; NOT for drafting replies to contributors (use oss:analyse --reply) or fixing local bugs (use develop:fix; requires develop plugin).
+when_to_use: Use to implement GitHub PR review comments and push fixes back to contributor's fork; NOT for drafting replies (use oss:analyse --reply) or fixing local bugs (use develop:fix; requires develop plugin).
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
@@ -59,11 +59,11 @@ _OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
 ```
 
-Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
+Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
 
 <!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:linting-expert → general-purpose, foundry:challenger → general-purpose. -->
 
-**Task hygiene**: Before creating tasks, call `TaskList`. For each task:
+**Task hygiene**: Before creating tasks, call `TaskList`. Per task:
 
 - `completed` if done
 - `deleted` if orphaned/irrelevant
@@ -106,9 +106,7 @@ fi
 # Show current remotes — confirms we are in the right repo and surfaces any existing fork remotes
 git remote -v # timeout: 3000
 
-# Sync with remote tracking branch before any git work.
-# When local is 1 commit ahead and remote is also 1 commit ahead, git pull merges cleanly.
-# This prevents the downstream `git merge --continue --no-edit` from being called out of state.
+# Sync with remote — prevents git merge --continue from being called out of state
 UPSTREAM=$(git rev-parse --abbrev-ref @{u} 2>/dev/null)
 if [ -n "$UPSTREAM" ]; then
     git fetch origin 2>/dev/null || true # timeout: 6000
@@ -126,16 +124,15 @@ if [ -n "$UPSTREAM" ]; then
 fi
 ```
 
-If gh missing or not authenticated: stop (error printed above).
+gh missing or not authenticated → stop (error printed above).
 
-Codex missing: set `CODEX_AVAILABLE=false`, continue — Steps 3–7 work without Codex. Step 8 degradation (applied in priority order):
-1. Simple, single-file action items → implement in-process via `foundry:sw-engineer` (no Codex wrapper)
-2. Complex or multi-file items → skip with notice; print: `⚠ codex not found — skipping complex item #<id>. Install: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`
-3. No items fall through both (all items are either simple or complex) — proceed to Step 9 after processing
+Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
+1. Simple, single-file items → `foundry:sw-engineer`
+2. Complex/multi-file → skip with: `⚠ codex not found — skipping item #<id>. Install: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`
 
 ### Review-handoff auto-detect (when $ARGUMENTS is empty)
 
-If `$ARGUMENTS` is empty:
+When `$ARGUMENTS` empty:
 
 ```bash
 # Find most recent review output (written by /review to .temp/)
@@ -164,10 +161,10 @@ eval "$(bash "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.sh" "$ARGUMENTS")"
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
 ```
 
-**Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not equal to `--no-challenge`. If found: invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`.
+**Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not equal to `--no-challenge`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode
-- `MODE="report"` → find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .temp/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present; when no PR# found in header: add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
+- `MODE="report"` → find latest review report via `ls -t .temp/output-review-*.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .temp/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present; no PR# in header → add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
 - `MODE="pr"` → continue Step 2
 - `MODE="comment-dispatch"` → branch safety check before Step 12: `CURRENT=$(git branch --show-current); DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }` → jump to Step 12
 
@@ -255,10 +252,9 @@ gh api repos/{owner}/{repo}/pulls/<PR_NUMBER>/reviews  # formal reviews (Approve
 gh api repos/{owner}/{repo}/pulls/<PR_NUMBER>/comments # inline code comments with file + line
 ```
 
-Fetch resolved thread status — REST API `/pulls/{PR}/comments` returns individual comment objects but does **not** expose `isResolved`; that field lives only on `PullRequestReviewThread` in GraphQL:
+Fetch resolved thread status via GraphQL (`isResolved` not in REST `/pulls/{PR}/comments`):
 
 ```bash
-# Derive owner + name from current remote (same repo as BASE_REPO_OWNER but avoids re-parsing URL)
 REPO_OWNER=$(gh repo view --json owner --jq .owner.login 2>/dev/null || echo "$BASE_REPO_OWNER")  # timeout: 6000
 REPO_NAME=$(gh repo view --json name --jq .name 2>/dev/null)  # timeout: 6000
 RESOLVED_THREAD_IDS=$(gh api graphql \
@@ -268,8 +264,6 @@ RESOLVED_THREAD_IDS=$(gh api graphql \
   -F pr="$PR_NUMBER" \
   --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[0].databaseId]' \
   2>/dev/null || echo "[]")  # timeout: 15000
-# RESOLVED_THREAD_IDS: JSON array of databaseId integers for root comments of resolved threads
-# Fallback [] warning: if GraphQL failed, previously resolved threads re-appear as actionable
 [ "$RESOLVED_THREAD_IDS" = "[]" ] && echo "⚠ Could not fetch resolved thread status — some action items may already be resolved on GitHub; review the table carefully before implementing"
 ```
 
@@ -283,7 +277,7 @@ gh issue view <ISSUE_NUMBER> --json title,body
 
 Read PR title, body, linked issues, commits. Produce 2–3 sentence paragraph:
 
-- What problem/gap contributor is solving (linked issues or PR description)
+- What problem/gap contributor solving (linked issues or PR description)
 - Why they chose this approach (PR body, design notes in commits)
 - Expected user-visible outcome
 
@@ -291,16 +285,16 @@ Motivation = **priority lens for conflict resolution** in Step 7 — whose logic
 
 ### Classify action items
 
-Read every comment, review, inline code comment. For each inline code comment: if its `id` (REST response field `id`, same value as `databaseId` in GraphQL) appears in `RESOLVED_THREAD_IDS` → classify as `[done]` immediately without reading thread content. For all others, apply the table below:
+Read every comment, review, inline code comment. Per inline code comment: if its `id` (REST response field `id`, same value as `databaseId` in GraphQL) appears in `RESOLVED_THREAD_IDS` → classify as `[done]` immediately without reading thread content. All others, apply table below:
 
 | Code | Meaning |
 | --- | --- |
-| `[gh][req]` | Change **required** before merge — requested by a reviewer with write access or the maintainer |
+| `[gh][req]` | Change **required** before merge — requested by reviewer with write access or maintainer |
 | `[gh][suggest]` | Improvement suggested — nice-to-have, non-blocking |
-| `[gh][question]` | Open question that needs an answer before deciding what code to write |
-| `[done]` | Review thread marked resolved on GitHub (`isResolved=true`) OR subsequent commit/reply already addressed this — skip |
+| `[gh][question]` | Open question needing answer before deciding what code to write |
+| `[done]` | Review thread marked resolved on GitHub (`isResolved=true`) OR subsequent commit/reply already addressed — skip |
 | `[info]` | Praise, acknowledgement, emoji-only — skip |
-| `[self-review]` | Finding from the `/oss:review` report — not a GitHub commenter; author = agent name |
+| `[self-review]` | Finding from `/oss:review` report — not a GitHub commenter; author = agent name |
 
 Build `ACTION_ITEMS`: `[{id, type, author, summary, file, line, url, full_comment_text}]` — `url`: `html_url` from GitHub API response; blank for report items
 
@@ -326,9 +320,9 @@ Status codes: `pending` · `✓ resolved` · `⊘ skipped` · `⊘ no action`. V
 | 3 | [gh][question] | @reviewer | pending | why not use X instead? | — | — |
 ```
 
-Long content is never a reason to switch to key-value or separator-delimited format — truncate and stay in the table.
+Long content never justifies switching to key-value or separator-delimited format — truncate, stay in table.
 
-Answer `[question]` items resolvable from code — clear answer → present answer and proposed reclassification via `AskUserQuestion` before implementing: "[question] #N: '<summary>' — answer: '<answer>'. Reclassify as [req]?" Options: (a) Yes, implement · (b) Keep as question for maintainer. Never self-promote [question] to [req] without user confirmation. Maintainer judgement needed → surface and pause. Contributor answer ≠ auto-close — answer revealing known limitation/deferred work → keep `[question]`, surface for maintainer to accept/reject.
+Answer `[question]` items resolvable from code — clear answer → present answer and proposed reclassification via `AskUserQuestion` before implementing: "[question] #N: '<summary>' — answer: '<answer>'. Reclassify as [req]?" Options: (a) Yes, implement · (b) Keep as question for maintainer. Never self-promote `[question]` to `[req]` without user confirmation. Maintainer judgement needed → surface and pause. Contributor answer ≠ auto-close — answer revealing known limitation/deferred work → keep `[question]`, surface for maintainer to accept/reject.
 
 ## Step 3c: Merge report findings (pr + report mode only)
 
@@ -368,19 +362,15 @@ Mark Step 2 task `completed`:
 TaskUpdate(task_id=<step2_task_id>, status="completed")
 ```
 
-For each item in `ACTION_ITEMS` create task:
+For each item in `ACTION_ITEMS` (skip `[done]`/`[info]`):
 
 ```text
 TaskCreate(
-  subject="<type> <summary> — PR #<number>",
+  subject="<type> <summary> — PR #<number>",   # <type> = full string with brackets
   description="Author: @<author> | File: <file:line or '—'> | <full_comment_text>",
-  activeForm="Implementing: <summary>"
+  activeForm="Implementing: <summary>"          # <summary> truncated to 80 chars
 )
 ```
-
-- `<type>` — full type string as-is (include brackets): `[gh][req]`, `[gh][suggest]`, `[gh][question]`, `[report][req]`, `[report][suggest]`, etc.
-- `<summary>` — item's `summary` field (truncate to 80 chars if needed)
-- Skip `[done]`/`[info]` items — no task needed.
 
 Store returned task ID in each `ACTION_ITEMS` entry as `task_id`.
 
@@ -406,7 +396,7 @@ Resolve `SELECTED_ITEMS`:
 
 ## Step 4: Checkout PR branch
 
-*Only runs when `SELECTED_ITEMS` is non-empty (set in Step 3f). If empty → skip directly to Step 9.*
+*Runs only when `SELECTED_ITEMS` non-empty (set in Step 3f). Empty → skip to Step 9.*
 
 ```bash
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
@@ -416,12 +406,11 @@ gh pr checkout <PR#>   # fetches HEAD_REF; for forks, adds the contributor's rem
 `gh pr checkout` auto-handles forks — adds contributor's remote, configures tracking. Verify:
 
 ```bash
-# Show one line per remote (fetch URL); each remote prints both (fetch) and (push) lines, so filter to (fetch) for de-dup
 git remote -v | grep '(fetch)' | head -10 # timeout: 3000
 git status                                # confirm we are on HEAD_REF  # timeout: 3000
 ```
 
-Determine `FORK_REMOTE` explicitly — `gh pr checkout` adds the remote but the skill must know its name to push later (Step 10):
+Determine `FORK_REMOTE` for push in Step 10:
 
 ```bash
 IS_CROSS_REPO=$(gh pr view "<PR#>" --json isCrossRepository --jq .isCrossRepository 2>/dev/null || echo false) # timeout: 6000
@@ -443,7 +432,7 @@ Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
 
 ## Step 8: Implement action items
 
-Before committing, show the user a final pre-commit summary and request confirmation:
+Before committing, show user final pre-commit summary and request confirmation:
 
 ```text
 AskUserQuestion: "Codex has applied changes. Ready to commit N items to <branch>? Summary: <list item summaries>."
@@ -458,19 +447,17 @@ touch "$SENTINEL"  # timeout: 3000
 trap 'rm -f "$SENTINEL"' EXIT INT TERM  # ensure cleanup even if workflow crashes
 ```
 
-If `CODEX_AVAILABLE=false`: apply degradation rules from Step 1 (simple items → foundry:sw-engineer; complex items → skip with notice). Never blanket-skip all items.
+`CODEX_AVAILABLE=false`: apply degradation rules from Step 1 (simple items → foundry:sw-engineer; complex items → skip with notice). Never blanket-skip all items.
 
 > **Conflict gate**: verify all Step 5a conflict tasks `completed` before any action item. Still `pending`/`in_progress` → stop, surface list, wait. Items on unresolved conflicts compound diff.
 
-Process items in `SELECTED_ITEMS` (from Step 3f) in priority order (`[req]` first, then `[suggest]`). **Each item gets its own commit.**
+Process items in `SELECTED_ITEMS` (from Step 3f) in priority order (`[req]` first, then `[suggest]`). **Each item gets own commit.**
 
-For each action item:
+Per action item:
 
 ```bash
-# Guard: ensure clean state before each item — substitute <id> with item.id before executing
+# Ensure clean state before each item — substitute <id> with item.id
 test -z "$(git status --porcelain)" || { echo "⚠ dirty tree before item #<id> — stashing"; git stash push -m "resolve-pre-item-<id>"; }  # timeout: 3000
-
-# Snapshot before
 git diff HEAD --stat  # timeout: 3000
 ```
 
@@ -481,22 +468,17 @@ TaskUpdate(task_id=<item.task_id>, status="in_progress")
 ```
 
 ```bash
-# Dispatch to Codex
 Agent(subagent_type="codex:codex-rescue", prompt="Apply this review feedback to the codebase. Implement exactly what is requested and nothing more. If the change is already present or there is nothing actionable, make no changes and explain why. Feedback from @<author>: <full_comment_text>")
-
-# Check whether code changed
 git diff HEAD --stat  # timeout: 3000
 ```
 
 Code changed → commit:
 
 ```bash
-# Stage tracked modifications from Codex (never git add -A)
 git add $(git diff HEAD --name-only)                                                     # timeout: 3000
-# Stage new untracked files — restrict to known source extensions to prevent staging secrets or artifacts
+# Stage new untracked files — known source extensions only (prevent staging secrets/artifacts)
 UNTRACKED=$(git ls-files --others --exclude-standard | grep -E '\.(py|md|yaml|yml|toml|cfg|ini|json|txt|sh|js|ts|go|rs|rb|java|c|cpp|h|hpp)$' 2>/dev/null)
 [ -n "$UNTRACKED" ] && echo "$UNTRACKED" | xargs git add -- 2>/dev/null || true         # timeout: 3000
-# Replace all <placeholder> tokens with actual values before committing
 git commit -m "$(
 	cat <<'EOF'
 <imperative short summary of the change>
@@ -511,9 +493,7 @@ EOF
 )"  # timeout: 3000
 ```
 
-No code changed (already done or non-actionable) → record Codex's reason; do NOT create empty commit.
-
-Record per-item: `committed <SHA>` or `skipped — <Codex reason>`.
+No code changed → record Codex's reason; do NOT create empty commit. Record per-item: `committed <SHA>` or `skipped — <Codex reason>`.
 
 Mark item's task completed:
 
@@ -521,15 +501,13 @@ Mark item's task completed:
 TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
 
-Pop stash BEFORE committing if dirty-tree guard created one for this item (pop after commit risks conflict markers in committed content):
+Pop stash BEFORE committing (pop after commit risks conflict markers in committed content):
 
 ```bash
 if git stash list --quiet | grep -q "resolve-pre-item-<id>"; then
     git stash pop || { echo "⚠ stash pop conflict — resolve conflicts in $(git stash list | head -1) before committing item #<id>"; exit 1; }  # timeout: 3000
 fi
 ```
-
-Commit after successful stash pop.
 
 ## Step 9: Lint and QA gate
 
@@ -540,11 +518,10 @@ Read and execute `$_OSS_RESOLVE/modes/lint-qa-gate.md`.
 *Skip when report mode with no PR# (`$FORK_REMOTE`, `$HEAD_REF`, `$BASE_REF` unset — no fork branch; workflow ends at Step 11).*
 
 ```bash
-# Ensure fork remote is present (gh pr checkout may not have added it for all setups)
 if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
     REPO_NAME=$(git remote get-url origin | sed 's|.*/||' | sed 's|\.git$||')
-    # Mirror origin URL scheme (SSH vs HTTPS) to avoid push failures for SSH-only contributors
     ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")
+    # Mirror SSH vs HTTPS to avoid push failures for SSH-only contributors
     if [[ "$ORIGIN_URL" == git@* ]]; then
         FORK_URL="git@github.com:$FORK_REMOTE/$REPO_NAME.git"
     else
@@ -553,45 +530,30 @@ if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
     git remote add "$FORK_REMOTE" "$FORK_URL" # timeout: 3000
     echo "→ Added remote $FORK_REMOTE → $FORK_URL"
 fi
-
-# Configure tracking if not already set
 git branch --set-upstream-to="$FORK_REMOTE/$HEAD_REF" 2>/dev/null || true # timeout: 3000
-
-# Count commits ready to push and announce — user must approve the toolbar permission prompt
 PUSH_COUNT=$(git rev-list "$FORK_REMOTE/$HEAD_REF..HEAD" --count 2>/dev/null || git rev-list "origin/$BASE_REF..HEAD" --count) # timeout: 3000
 echo "→ $PUSH_COUNT commits ready to push to $FORK_REMOTE/$HEAD_REF — approve the git push request in the toolbar ↑ to complete"
-
 git push # timeout: 30000
-# gh pr checkout configured tracking to the fork branch — git push targets it automatically
 ```
 
-Push rejected (fork protection or stale tracking):
+Push rejected → fallback:
 
 ```bash
 git push "$FORK_REMOTE" HEAD:"$HEAD_REF" # timeout: 30000
 ```
 
-Verify push reached GitHub:
+Verify push reached GitHub — confirm latest commit headlines match what was committed:
 
 ```bash
 gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messageHeadline' # timeout: 6000
 ```
 
-Confirm latest commit headlines match what was just committed.
-
 ## Step 11: Final report
 
-Mark remaining open tasks `completed`. Per-item tasks should be done by Step 8; this closes items skipped (guard paused, question items, codex-not-available).
-
-Report template: `$_OSS_RESOLVE/templates/resolve-report.md`.
-Read it for section structure and placeholder format before writing.
-
-Restore original branch after report:
+Mark remaining open tasks `completed`. Read report template from `$_OSS_RESOLVE/templates/resolve-report.md` for section structure.
 
 ```bash
-if [ -n "$SAVED_BRANCH" ]; then
-    git checkout "$SAVED_BRANCH" 2>/dev/null && echo "→ Restored to $SAVED_BRANCH"  # timeout: 5000
-fi
+[ -n "$SAVED_BRANCH" ] && git checkout "$SAVED_BRANCH" 2>/dev/null && echo "→ Restored to $SAVED_BRANCH"  # timeout: 5000
 ```
 
 Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Merge now (`gh pr merge <PR_NUMBER> --merge`) · (c) Skip.
@@ -604,12 +566,12 @@ Read and execute `$_OSS_RESOLVE/modes/comment-dispatch.md`.
 
 <calibration>
 
-Non-calibratable — `disable-model-invocation: true` means this skill dispatches to sub-agents rather than running a model pass directly; calibrate cannot score model output for a skill that produces none.
+Non-calibratable — `disable-model-invocation: true` means skill dispatches to sub-agents rather than running model pass directly; calibrate cannot score model output for skill that produces none.
 
 Reference scenarios (for documentation; not for calibrate runs):
 1. Mode selection: bare PR number (e.g. `42`) → pr mode; `42 report` → pr + report mode; bare `report` → report mode; bare comment text → comment dispatch (Step 12)
 2. Action item classification: LGTM/emoji comment → `[info]` (skip); `nit:` suggestion → `[gh][suggest]`; resolved thread → `[done]`; "must fix X before merge" from reviewer with write access → `[gh][req]`
-3. Challenge accuracy: comment about actually-present bug (confirmed by reading code) → VALID; comment about issue already addressed in a subsequent commit → REJECT
+3. Challenge accuracy: comment about actually-present bug (confirmed by reading code) → VALID; comment about issue already addressed in subsequent commit → REJECT
 
 </calibration>
 
@@ -622,18 +584,17 @@ Reference scenarios (for documentation; not for calibrate runs):
 - **Contribution motivation before code** — provides "whose intent wins" lens; PR body + linked issues reveal constraints invisible in git diff.
 - **`[question]` items** — answer inline in resolve report only (never post to PR); reclassify before implementing; never silently implement unanswered question.
 - **Push verification** — confirm via `gh pr view --json commits` before reporting success; exit 0 from `git push` necessary but not sufficient (branch protection can silently reject).
-- **Merge-push sequencing** — `git merge` and `git push` are not atomic; a concurrent push to the same branch between these steps causes a non-fast-forward rejection. If that happens, fetch + pull and retry the push step only — do not re-run the full merge.
+- **Merge-push sequencing** — `git merge` and `git push` not atomic; concurrent push to same branch between these steps causes non-fast-forward rejection. Fetch + pull and retry push step only — do not re-run full merge.
 - **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses (loses action-item commits); never `--rebase` (rewrites SHAs); default `--merge`.
 - **Escape hatch**: `git merge --abort` = undo all conflict state; `git push --force-with-lease` (never plain `--force`) only when user explicitly requests — if push rejected after local amend.
 - **Codex agent health**: subject to CLAUDE.md §8 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file.
-- **Thread resolution via GraphQL** — GitHub REST `/pulls/{PR}/comments` returns individual comment objects; `isResolved` lives on `PullRequestReviewThread` (GraphQL only). Step 3b fetches it separately. `RESOLVED_THREAD_IDS` = array of root comment `databaseId` values for all resolved threads; inline comments matching any ID → auto-`[done]`. GraphQL fetch failure (network, permissions) → `[]` fallback — skill continues without resolved-status data.
-- **`[gh]` items** (all pr-sourced items in all modes): commit messages use: `[resolve #<id>] @<reviewer> (gh):`
-- **`[report]` items**: attribute to agent, not GitHub commenter — distinguishes automated findings in git history. Format: `[resolve #<id>] /review finding by <agent-name> (report: <report-path>):`
-- **Sources block**: print after all sources read, before action item table — pre-table summary confirming what was fetched.
-- **Step 7 delegation** — resolve owns orchestration + context; sw-engineer owns code-level resolution (Read → Edit → stage); resolve retains conflict report + `git merge --continue`.
+- **Thread resolution via GraphQL** — `isResolved` lives on `PullRequestReviewThread` (GraphQL only); REST `/pulls/{PR}/comments` does not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId` values; GraphQL failure → `[]` fallback.
+- **Commit attribution** — `[gh]` items: `[resolve #<id>] @<reviewer> (gh):`; `[report]` items: `[resolve #<id>] /review finding by <agent-name> (report: <report-path>):` — distinguishes automated findings in git history.
+- **Sources block**: print after all sources read, before action item table.
+- **Step 7 delegation** — resolve owns orchestration + context; sw-engineer owns code-level resolution; resolve retains conflict report + `git merge --continue`.
 - Follow-up chains:
   - After push → never approve/comment on PR; maintainer reviews + clicks Merge.
   - Unanswered `[question]` items → record in resolve report only; do NOT post to PR.
-  - After merge → linked issues close if PR body has `Closes #<issue#>`/`Fixes #<issue#>`; if `CLOSING_ISSUES` found in Step 3b but body lacks keywords, surface this gap in the Resolve Report under a `### Closing Keywords` note — do not attempt to edit the PR body. Note: "PR body does not contain `Closes #<issue#>` — linked issue will not auto-close on merge. Add the closing keyword manually via the GitHub PR edit UI."
+  - After merge → linked issues close if PR body has `Closes #<issue#>`/`Fixes #<issue#>`; `CLOSING_ISSUES` found in Step 3b but body lacks keywords → surface gap in Resolve Report under `### Closing Keywords` note — do not edit PR body. Note: "PR body does not contain `Closes #<issue#>` — linked issue will not auto-close on merge. Add closing keyword manually via GitHub PR edit UI."
 
 </notes>

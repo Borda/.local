@@ -13,9 +13,9 @@
 }
 ```
 
-When `--no-challenge` is NOT set:
+When `--no-challenge` NOT set:
 
-Route each pending item by domain (default `foundry:challenger`); spawn one agent per group **in the background**:
+Route each pending item by domain (default `foundry:challenger`); spawn one agent per group **in background**:
 
 | Item domain | Challenger |
 | --- | --- |
@@ -24,7 +24,7 @@ Route each pending item by domain (default `foundry:challenger`); spawn one agen
 | Test coverage, assertions, regressions | `foundry:qa-specialist` |
 | Default / unclassified | `foundry:challenger` |
 
-Write a per-group output file before spawning each agent:
+Write per-group output file before spawning each agent:
 
 ```bash
 CHALLENGE_DIR="/tmp/resolve-challenge-$$"
@@ -35,12 +35,12 @@ LAUNCH_AT=$(date +%s)
 NUM_GROUPS=0  # incremented once per spawned agent group below
 ```
 
-Before spawning, write all pending action items to file using the Write tool (file-handoff protocol — CLAUDE.md §2):
+Before spawning, write all pending action items to file via Write tool (file-handoff protocol — CLAUDE.md §2):
 
-Write `$CHALLENGE_DIR/items.json` with all pending ACTION_ITEMS in format:
+Write `$CHALLENGE_DIR/items.json` with all pending ACTION_ITEMS:
 `{"items": [{"id": <id>, "summary": "<summary>", "file_line": "<file:line or —>", "author": "<author>", "full_comment_text": "<full text>"}]}`
 
-Spawn each challenge group with `run_in_background=true`, instructing it to write compact JSON to `$CHALLENGE_DIR/<group>.json`; increment `NUM_GROUPS` after each spawn:
+Spawn each challenge group with `run_in_background=true`; write compact JSON to `$CHALLENGE_DIR/<group>.json`; increment `NUM_GROUPS` after each spawn:
 
 ```text
 Agent(subagent_type="foundry:challenger", run_in_background=true, prompt="
@@ -55,9 +55,9 @@ Then return the same JSON as your final message.
 ")
 ```
 
-(Repeat pattern for `foundry:sw-engineer` → `$CHALLENGE_DIR/sw-engineer.json`, `foundry:qa-specialist` → `$CHALLENGE_DIR/qa-specialist.json`; do `((NUM_GROUPS++))` after each `Agent(...)` call.)
+(Repeat for `foundry:sw-engineer` → `$CHALLENGE_DIR/sw-engineer.json`, `foundry:qa-specialist` → `$CHALLENGE_DIR/qa-specialist.json`; `((NUM_GROUPS++))` after each `Agent(...)` call.)
 
-**5-minute health monitor** — check every 90 s; hard cutoff at 300 s (5 min):
+**5-min health monitor** — poll every 90 s; hard cutoff 300 s:
 
 ```bash
 # Tightened from CLAUDE.md §8: hard cutoff 15min→5min, poll 5min→90s (appropriate for short challenge tasks)
@@ -79,7 +79,7 @@ done  # timeout: 360000
 Aggregate verdicts — read each `$CHALLENGE_DIR/*.json` that exists:
 
 - File present → use verdicts
-- File absent (agent timed out) → mark every item in that group as `VALID` with rationale `"challenge timed out — treated as VALID"`
+- File absent (agent timed out) → mark group items `VALID`, rationale `"challenge timed out — treated as VALID"`
 
 ```bash
 rm -rf "$CHALLENGE_DIR" && rm -f "$CHALLENGE_CHECKPOINT"  # cleanup  # timeout: 5000
@@ -87,7 +87,7 @@ rm -rf "$CHALLENGE_DIR" && rm -f "$CHALLENGE_CHECKPOINT"  # cleanup  # timeout: 
 
 Per verdict:
 - **VALID** → keep item unchanged
-- **REJECT** → set type to `[challenged:reject]`; store rationale; exclude from SELECTED_ITEMS
+- **REJECT** → set type `[challenged:reject]`; store rationale; exclude from SELECTED_ITEMS
 
 Print challenge summary:
 
@@ -100,4 +100,4 @@ Print challenge summary:
 | 2 | [gh][suggest] | @maintainer | REJECT | already addressed in commit abc123 |
 ```
 
-`[challenged:reject]` items appear in final report (Step 11) with `⊘ rejected` status and rationale — for maintainer to communicate back to reviewer.
+`[challenged:reject]` items appear in final report (Step 11) with `⊘ rejected` status and rationale — maintainer communicates back to reviewer.

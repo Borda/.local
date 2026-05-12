@@ -45,7 +45,7 @@ Parse `$ARGUMENTS` for `--approve` (case-insensitive). If found, set `APPROVE_AL
 
 When `APPROVE_ALL=true`, every `AskUserQuestion` below **skipped** — ★ recommended option applied automatically. Print `[--approve] auto-accepting recommended option` in place of question.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 1: Locate the installed plugin
 
@@ -66,7 +66,7 @@ PLUGIN_ROOT=$(jq -r '
 
 # Fallback: filesystem scan — skip orphaned dirs, semver-sort descending, pick latest
 if [ -z "$PLUGIN_ROOT" ]; then
-    PLUGIN_ROOT=$(/usr/bin/find ~/.claude/plugins/cache -maxdepth 5 -name "plugin.json" 2>/dev/null \
+    PLUGIN_ROOT=$(find ~/.claude/plugins/cache -maxdepth 5 -name "plugin.json" 2>/dev/null \
             | xargs grep -l '"name"[[:space:]]*:[[:space:]]*"foundry"' 2>/dev/null \
             | while IFS= read -r f; do
                 dir=$(dirname "$(dirname "$f")")
@@ -86,10 +86,10 @@ Confirm `$PLUGIN_ROOT/hooks/statusline.js` exists. If not, stop and report.
 
 ```bash
 [ ! -f ~/.claude/settings.json ] && echo '{}' > ~/.claude/settings.json  # timeout: 5000
-cp ~/.claude/settings.json ~/.claude/settings.json.bak  # timeout: 5000
+cp ~/.claude/settings.json "~/.claude/settings.json.bak-$(date -u +%Y%m%dT%H%M%SZ)"  # timeout: 5000
 ```
 
-Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak"
+Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
 
 ## Step 3: Check for stale hooks block
 
@@ -245,7 +245,7 @@ Options:
 
 On **c**: loop with `AskUserQuestion` — "Replace `<name>`? (y) Yes / (n) Skip".
 
-**Symlink** — for each approved or absent entry, `ln -sf` atomically replaces:
+**Symlink** — for each approved or absent entry, `ln -sf` creates/replaces:
 
 ```bash
 for src in "$PLUGIN_ROOT/rules/"*.md; do

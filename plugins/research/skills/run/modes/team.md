@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 <!-- Team mode include: loaded by research:run when --team flag is set -->
 
 <!-- Implements one mode extension: Team Mode (--team flag, Phases A–D) -->
@@ -112,7 +110,7 @@ Poll every 5 min: `find $RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new f
 
 3. Sort combined queue:
 
-   - Validate `change_scope` values before sorting: `change_scope` must be one of `{small, medium, large}`; for any other value, warn (`⚠ Unknown change_scope '<value>' on hypothesis '<hypothesis>' — defaulting to medium`) and set to `medium` before sorting.
+   - Validate `change_scope` before sorting: must be one of `{small, medium, large}`; other value → warn (`⚠ Unknown change_scope '<value>' on hypothesis '<hypothesis>' — defaulting to medium`) and set to `medium`.
    - Primary: `change_scope` ascending — `small` first, then `medium`, then `large`
    - Secondary: `expected_delta` descending within scope tier (parse delta string to extract numeric midpoint, e.g., "+1–3%" → 2.0; unparsable → treat as 0, sort to end of scope tier)
    - Tertiary (tiebreaker): `confidence` descending
@@ -267,7 +265,7 @@ After all hypotheses processed (or user stops early with Ctrl-C / user abort):
 
 4. No teammates to shut down — hypothesis agents completed in Phase A; Phase C implementation agents are one-shot spawns.
 
-**CLAUDE.md §8**: Phase A health monitoring described in block above (after step 4). Phase C implementation agents are standard single-iteration spawns — same timeouts as R5.
+**CLAUDE.md §8**: Phase A health monitoring described above (after step 4). Phase C implementation agents = standard single-iteration spawns — same timeouts as R5.
 
 **Resume support**: `resume` mode reads `state.json.team_mode` to determine phase:
 

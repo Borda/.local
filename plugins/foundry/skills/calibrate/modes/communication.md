@@ -1,18 +1,16 @@
-**Re: Compress markdown to caveman format**
-
 <!-- Step 1 in SKILL.md dispatches to this mode file. Steps here continue from Step 2. -->
 
 ## Mode: communication
 
-> **Codex integration: disabled.** Problem generation and scoring Claude-only for this mode. Ground truth requires deep knowledge of `file-handoff-protocol.md`, `TEAM_PROTOCOL.md`, and AgentSpeak v2 — Codex lacks this context, produces superficial or incorrect problems.
+> **Codex integration: disabled.** Problem generation and scoring Claude-only. Ground truth needs deep knowledge of `file-handoff-protocol.md`, `TEAM_PROTOCOL.md`, AgentSpeak v2 — Codex lacks context, produces superficial/wrong problems.
 
-Handover + team protocol compliance. Included in `all`. Use explicit `communication` target to run this mode in isolation.
+Handover + team protocol compliance. Included in `all`. Use explicit `communication` target for isolation.
 
 Target agent: `foundry:curator`.
 
 ### Domain
 
-Four subdomains — each ground truth issue must be tagged with its `subdomain` field so Phase 4 can compute per-subdomain recall:
+Four subdomains — each ground truth issue must tag `subdomain` field so Phase 4 computes per-subdomain recall:
 
 ```text
 handover: malformed JSON envelopes (missing summary, plain text instead of JSON,
@@ -33,39 +31,39 @@ is a critical violation
 **Per-subdomain recall** (Phase 4 aggregate addition):
 
 - `recall_handover`, `recall_context_contamination`, `recall_agentspeak`, `recall_completeness`
-- computed as: issues found in subdomain / total issues in subdomain (omit if 0 issues for subdomain in this run)
+- computed as: issues found in subdomain / total issues in subdomain (omit if 0 issues for subdomain in run)
 - surfaced in `report.md` Aggregate section and `result.jsonl`; primary signal for context pollution detection
 
 ### Step 2: Spawn communication pipeline subagent
 
-**N override** (communication problems high-complexity — tighter N prevents context window overflow in pipeline subagent): fast=3, full=5. Do NOT use global FULL_N=10 for this mode.
+**N override** (communication problems high-complexity — tighter N prevents context overflow in pipeline subagent): fast=3, full=5. Do NOT use global FULL_N=10 for this mode.
 
-Mark "Calibrate communication" in_progress. Use standard pipeline template from `.claude/skills/calibrate/templates/pipeline-prompt.md` with `<TARGET>=curator` and `<DOMAIN>` set to domain string above. Required substitutions: `<TARGET>`, `<DOMAIN>`, `<N>`, `<TIMESTAMP>`, `<MODE>`, `<AB_MODE>`. Spawn **single** `general-purpose` pipeline subagent — runs curator against synthetic agent responses, full/compact response pairs, and team transcripts with injected violations.
+Mark "Calibrate communication" in_progress. Use standard pipeline template from `.claude/skills/calibrate/templates/pipeline-prompt.md` with `<TARGET>=curator` and `<DOMAIN>` set to domain string above. Required substitutions: `<TARGET>`, `<DOMAIN>`, `<N>`, `<TIMESTAMP>`, `<MODE>`, `<AB_MODE>`. Spawn **single** `general-purpose` pipeline subagent — runs curator against synthetic agent responses, full/compact response pairs, team transcripts with injected violations.
 
-**Phase 2 batching**: instruct pipeline to spawn Phase 2 target agents in **batches of 3** (not all at once), collecting acknowledgments between batches. Each curator response ~1–4KB of prompt + response context; batching prevents accumulation of all N problem inputs in pipeline's context simultaneously. Add to pipeline prompt: "Spawn Phase 2 agents in batches of 3 — await all acknowledgments in a batch before spawning the next. Maximum batches: ceil(N/3) — for fast (N=3) that is 1 batch; for full (N=5) that is 2 batches."
+**Phase 2 batching**: pipeline spawns Phase 2 target agents in **batches of 3** (not all at once), collects acknowledgments between batches. Each curator response ~1–4KB; batching prevents accumulation of all N problem inputs simultaneously. Add to pipeline prompt: "Spawn Phase 2 agents in batches of 3 — await all acknowledgments in a batch before spawning the next. Maximum batches: ceil(N/3) — for fast (N=3) that is 1 batch; for full (N=5) that is 2 batches."
 
 Run dir: `.reports/calibrate/<TIMESTAMP>/curator/` (relative to project root)
 
 ### Active instruction — token optimization (additional scoring measure)
 
-Append following to every `task_prompt` in Phase 1 for `communication` problems:
+Append to every `task_prompt` in Phase 1 for `communication` problems:
 
-> "Produce the most compact output that preserves all decision-relevant information. Omit prose explanations where a field name and value are self-evident. Any finding at severity≥high must appear; lower-severity findings may be summarized rather than detailed. Target: ≤30% of the raw response token count without losing critical signal."
+> "Produce most compact output preserving all decision-relevant information. Omit prose where field name and value are self-evident. Any finding at severity≥high must appear; lower-severity findings may be summarized. Target: ≤30% of raw response token count without losing critical signal."
 
-Scorer (Phase 3) must evaluate two additional dimensions independently:
+Scorer (Phase 3) evaluates two additional dimensions independently:
 
 1. **Completeness loss** — essential fields omitted vs. total essential fields → `completeness_loss_ratio`
-2. **Token overhead** — how much larger response is vs. minimum faithful representation → `token_overhead_ratio`
+2. **Token overhead** — response size vs. minimum faithful representation → `token_overhead_ratio`
 
-**`token_overhead_ratio` baseline — ground truth JSON char count**: compute `len(JSON.stringify(ground_truth))` (char count of serialised `GROUND_TRUTH_JSON` scorer already holds). Minimum lossless representation of all required findings. Ratio `response_chars / gt_json_chars` measures overhead above that floor.
+**`token_overhead_ratio` baseline — ground truth JSON char count**: compute `len(JSON.stringify(ground_truth))` (char count of serialised `GROUND_TRUTH_JSON` scorer holds). Minimum lossless representation of all required findings. Ratio `response_chars / gt_json_chars` measures overhead above that floor.
 
-- ≤1.5 ✓ compact — response fits within 1.5× bare findings (allows for confidence block, location formatting, severity labels)
+- ≤1.5 ✓ compact — fits within 1.5× bare findings (allows confidence block, location formatting, severity labels)
 - 1.5–2.0 ~ moderate — some prose wrapping, acceptable
 - > 2.0 ⚠ verbose — significant narrative overhead above minimum content
 
 For scope problems (ground_truth = []) use `response_chars / 50` as baseline (50 chars ≈ one-line decline/redirect). Set `completeness_loss_ratio = 0.0` if response correctly declines.
 
-**Why not `ground_truth_count × 150`**: synthetic proxy miscounts per-issue size, produces misleading ratios (e.g. 1.83× when actual overhead is 1.06×). `gt_json_chars` baseline always available to scorer at Phase 3 (it is `GROUND_TRUTH_JSON` field) — no extra agent calls needed.
+**Why not `ground_truth_count × 150`**: synthetic proxy miscounts per-issue size, produces misleading ratios (e.g. 1.83× when actual overhead 1.06×). `gt_json_chars` always available to scorer at Phase 3 (it is `GROUND_TRUTH_JSON` field) — no extra agent calls needed.
 
 Both fields added to each problem's entry in `scores.json`. Phase 4 aggregates: `mean_completeness_loss` and `mean_token_overhead`. Both appear in `report.md` Aggregate section and `result.jsonl`.
 

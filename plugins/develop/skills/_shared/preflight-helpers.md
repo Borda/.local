@@ -1,10 +1,10 @@
 # Preflight Helpers
 
-Shared preflight protocols for develop skills. Read and execute the relevant section(s) based on active flags.
+Shared preflight protocols for develop skills. Read + run relevant section(s) based on active flags.
 
 ## Codemap + Semble Preflight
 
-Execute when `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`.
+Run when `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`.
 
 **If `CODEMAP_ENABLED=true`**:
 
@@ -18,11 +18,11 @@ if [ ! -f ".cache/scan/${_PROJ}.json" ]; then
 fi
 ```
 
-**If `SEMBLE_ENABLED=true`**: verify `mcp__semble__search` is in your available tools. If not: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
+**If `SEMBLE_ENABLED=true`**: verify `mcp__semble__search` in available tools. If not: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
 
 ## --plan Path Extraction
 
-Execute when skill accepts `--plan <path>` flag. Sets `$PLAN_FILE`.
+Run when skill accepts `--plan <path>` flag. Sets `$PLAN_FILE`.
 
 ```bash
 # Extract --plan path from arguments — support both `--plan path` and `--plan=path`
@@ -42,10 +42,12 @@ fi
 
 ## Team Spawn Template
 
-Common spawn prompt template for foundry:sw-engineer teammate spawns. Replace `[ROLE_PHRASE]` and `[FILE_SLUG]` with skill-specific values before inserting into spawn prompt.
+Spawn prompt template for foundry:sw-engineer teammate spawns. Replace `[ROLE_PHRASE]` and `[FILE_SLUG]` with skill-specific values before inserting.
 
 - debug: `[ROLE_PHRASE]` = `[symptom]`, `[FILE_SLUG]` = `debug-hypothesis`
+- feature: `[ROLE_PHRASE]` = `[feature description]`, `[FILE_SLUG]` = `feature`
 - fix: `[ROLE_PHRASE]` = `[bug description]`, `[FILE_SLUG]` = `fix-hypothesis`
+- refactor: `[ROLE_PHRASE]` = `[refactor goal]`, `[FILE_SLUG]` = `refactor`
 
 ```
 You are a foundry:sw-engineer teammate debugging: [ROLE_PHRASE].

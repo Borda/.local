@@ -2,7 +2,7 @@
 name: session
 description: Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest
 argument-hint: 'resume | archive <text> | summary'
-allowed-tools: Read, Write, Edit, Glob, Grep, TaskCreate, TaskUpdate, Bash, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 effort: low
 model: sonnet
 context: fork
@@ -10,7 +10,7 @@ context: fork
 
 <objective>
 
-Track open-loop ideas, deferred questions, diverging threads — without losing to context compaction or session end. Three on-demand commands (`resume`, `archive`, `summary`) plus behavioral parking rule that writes `session-open-*.md` memory files as items arise.
+Track open-loop ideas, deferred questions, diverging threads — no loss to context compaction or session end. Three on-demand commands (`resume`, `archive`, `summary`) plus behavioral parking rule that writes `session-open-*.md` memory files as items arise.
 
 NOT for: general persistent notes or diary entries (use .notes/ directly); managing task lists (use TaskCreate/TaskUpdate tools).
 
@@ -52,14 +52,14 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 ## Step 0: Validate and dispatch mode
 
-Extract the first word of `$ARGUMENTS` as `MODE`.
+Extract first word of `$ARGUMENTS` as `MODE`.
 
-If `MODE` matches one of:
-- `resume` or `pending` → proceed to **Mode: resume**
-- `archive` → proceed to **Mode: archive**
-- `summary` → proceed to **Mode: summary**
+If `MODE` matches:
+- `resume` or `pending` → **Mode: resume**
+- `archive` → **Mode: archive**
+- `summary` → **Mode: summary**
 
-Otherwise (empty, unrecognized, or misspelled `$ARGUMENTS`): use `AskUserQuestion`:
+Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 
 > "Which session mode did you want?"
 > Options: (a) `resume` — list all open parked items, (b) `archive <name>` — close a parked item by name, (c) `summary` — compact digest of this session's work
@@ -131,7 +131,7 @@ If no files exist, print: `No pending session items.`
 
 ## Mode: archive (close a parked item)
 
-### Step 1: Locate the memory directory and list candidates
+### Step 1: Locate memory directory and list candidates
 
 Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with pattern `session-open-*.md` in MEMORY_DIR to list candidates.
 
@@ -145,7 +145,7 @@ Read matched file with Read tool to extract its `name` field.
 
 ### Step 3: Delete the memory file
 
-Set `MATCHED_FILE` to the full path of the matched file from Step 2, then:
+Set `MATCHED_FILE` to full path of matched file from Step 2, then:
 
 ```bash
 rm "$MATCHED_FILE"  # timeout: 5000
@@ -171,7 +171,7 @@ printf '{"ts":"%s","item":"%s","action":"archived"}\n' "$TS" "$ITEM_NAME" >> .cl
 
 Print: `Archived: <item name>` — one line, terminal only.
 
-End with `## Confidence` block per quality-gates.md — score based on match quality (did fuzzy-match find the right item; was the archive entry written cleanly).
+End with `## Confidence` block per quality-gates.md — score based on match quality (did fuzzy-match find right item; was archive entry written cleanly).
 
 ## Mode: summary (session digest)
 
@@ -251,7 +251,7 @@ During any session, Claude proactively parks open-loop items to project-scoped m
 
 | Item type | Trigger | Entry format |
 | --- | --- | --- |
-| Unanswered clarifying question | User sends a new top-level request before answering Claude's prior clarifying question | `"User raised: <idea>. Pending: <question asked>."` |
+| Unanswered clarifying question | User sends new top-level request before answering Claude's prior clarifying question | `"User raised: <idea>. Pending: <question asked>."` |
 | Deferred exploration | "let's come back to that", "park this for later", idea mentioned but not pursued | `"Deferred: <idea>. Context: <one sentence why deferred>."` |
 | Diverging idea mid-task | New feature/design idea mentioned while solving something else | `"Side idea: <idea>. Raised while: <what we were doing>."` |
 
@@ -278,9 +278,9 @@ Derive project slug via: `git rev-parse --show-toplevel | tr '[:upper:]' '[:lowe
 
 **Memory pollution guard**: before parking new item, count existing `session-open-*.md` files. If count ≥ 10, surface full list and ask user to archive some before writing new one.
 
-**TTL policy**: items ≥ 14 days listed with `⚠ stale`. Items ≥ 30 days deleted silently during `resume` and `SessionEnd` cleanup. TTL thresholds fixed global values — not configurable.
+**TTL policy**: items ≥ 14 days listed with `⚠ stale`. Items ≥ 30 days deleted silently during `resume`. TTL thresholds fixed global values — not configurable.
 
-**Session-start behavior**: open-loop items NOT surfaced automatically at session start. Appear only when `/session resume` explicitly invoked. Do not add session-start hygiene step for this in CLAUDE.md.
+**Session-start behavior**: open-loop items NOT surfaced automatically at session start. Appear only when `/session resume` explicitly invoked. Don't add session-start hygiene step for this in CLAUDE.md.
 
 **Resolution log**: `.claude/logs/session-archive.jsonl` is project-local, append-only. Stays in git-tracked project directory as audit trail; separate from home-scoped memory files intentionally.
 

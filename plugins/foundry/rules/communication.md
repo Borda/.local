@@ -36,7 +36,7 @@ Rules:
 
 ## Artifact Framing
 
-- **Verbal summary as skeleton**: when user provides verbal summary before requesting written artifact, that summary = output skeleton — mirror their order, abstraction level, named examples verbatim; no added info user didn't mention; source material (README, code) may only fill explicit gaps user left open; preserve quotable phrases from source exactly, no paraphrasing
+- **Verbal summary as skeleton**: user verbal summary = output skeleton — mirror order, abstraction level, named examples verbatim; no added info user didn't mention; source material (README, code) fill explicit gaps only; preserve quotable phrases exact, no paraphrasing
 - **Format-label register**: translate format label to implied register before writing:
   - *Slack message* — no headers, 2–4 short paragraphs, casual voice, inline links, one quotable block max
   - *PR description* — sections with headers, tables ok, technical register
@@ -45,7 +45,7 @@ Rules:
 
 ## Interactive Questions
 
-**Hard constraint — stop before writing any question.** If you need information from the user, do NOT generate the question as prose — invoke `AskUserQuestion` tool immediately instead. A prose question followed by a "note: should use tool" caveat is still a violation. Only two options: answer without asking, or call the tool. No plain-text question under any circumstances.
+**Hard constraint — stop before writing any question.** Need user info → invoke `AskUserQuestion` tool immediately. Prose question + "note: should use tool" caveat = still violation. Two options only: answer without asking, or call tool. No plain-text question ever.
 
 Labelled or annotated question (e.g. `[AskUserQuestion simulated] — What format?`) still plain text, still violates rule. Only actual tool invocation satisfies constraint.
 
@@ -54,7 +54,7 @@ Compliant example — this is the only valid form:
 
 - Plain text questions easily missed, don't block execution, don't surface as distinct UI affordance
 - Applies to: ambiguous input, clarifying choices, scope decisions, continuation guards, any point where user input required before proceeding
-- **Scope decisions count**: when user asks "should I also X?" mid-task, treat as a scope decision requiring AskUserQuestion — not as rhetorical; never silently resolve
+- **Scope decisions count**: user asks "should I also X?" mid-task → scope decision requiring AskUserQuestion — not rhetorical; never silently resolve
 - Applies globally — all skills, agents, model-generated questions without exception
 - When `AskUserQuestion` not in skill's `allowed-tools`, add it before asking any question
 - Max 4 questions per call; group related sub-questions into one option set rather than asking sequentially

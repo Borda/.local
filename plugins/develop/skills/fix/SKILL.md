@@ -1,9 +1,9 @@
 ---
 name: fix
 description: Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop.
-argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--semble]'
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--semble] [--team]'
 effort: medium
-when_to_use: Use when a specific bug is known and reproducible; NOT for unknown failures without a traceback (use debug) or adding new capabilities (use feature).
+when_to_use: Use when specific bug known and reproducible; NOT for unknown failures without traceback (use debug) or adding new capabilities (use feature).
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -12,13 +12,16 @@ disable-model-invocation: true
 
 Reproduce-first bug resolution. Capture bug in failing regression test, apply minimal fix, verify via quality stack and review loop.
 
-NOT for: unknown failures without traceback (use `/foundry:investigate`); `.claude/` config issues (use `/foundry:audit`).
+NOT for:
+- unknown failures without traceback (use `/foundry:investigate` (requires foundry plugin))
+- `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
+- non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
 
 </objective>
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -27,7 +30,7 @@ NOT for: unknown failures without traceback (use `/foundry:investigate`); `.clau
 _DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shared 2>/dev/null | head -1)
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
 _FOUNDRY_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"  # assumes project-root CWD
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED=".claude/skills/_shared"
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:challenger`.
@@ -36,11 +39,11 @@ Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 
 | Temptation | Reality |
 | --- | --- |
-| "I already know the root cause from the symptom" | Assumptions without verification produce fixes for the wrong bug. Read the code path first. |
-| "The regression test can wait — I'll add it after the fix" | A fix without a failing test is unverifiable. The test is the proof the bug existed. |
-| "I'll clean up nearby code while I'm here" | Scope creep produces side effects and obscures the actual fix. Touch only the root cause. |
-| "The targeted test passes — that's sufficient" | The targeted test shows the bug is fixed; the full suite shows nothing else broke. Both are required. |
-| "The fix is obvious — Step 1 analysis is overkill" | Obvious causes are often symptoms. Analysis reveals the actual root cause and blast radius. |
+| "I already know root cause from symptom" | Assumptions without verification fix wrong bug. Read code path first. |
+| "Regression test can wait — add after fix" | Fix without failing test = unverifiable. Test proves bug existed. |
+| "Clean up nearby code while here" | Scope creep produces side effects, obscures fix. Touch only root cause. |
+| "Targeted test passes — sufficient" | Targeted test shows bug fixed; full suite shows nothing else broke. Both required. |
+| "Fix obvious — Step 1 analysis overkill" | Obvious causes often symptoms. Analysis reveals actual root cause and blast radius. |
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -48,7 +51,7 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
-**Optional `--plan <path>`**: if `$ARGUMENTS` ends with `--plan <path>`, read the plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use these to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
+**Optional `--plan <path>`**: if `$ARGUMENTS` ends with `--plan <path>`, read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
@@ -56,13 +59,19 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 
 ## Fix Mode
 
-**Optional `--diagnosis <path>`**: if provided (from a preceding `/develop:debug` session), read the diagnosis file first. Skip codebase analysis — root cause, suspect files, and evidence are pre-populated. Proceed directly to Step 2 (regression test).
+**Optional `--diagnosis <path>`**: if provided (from preceding `/develop:debug` session), read diagnosis file first. Skip codebase analysis — root cause, suspect files, and evidence pre-populated. Proceed directly to Step 2 (regression test).
 
 ```bash
-# Extract --diagnosis path from arguments
-DIAG_FILE="${ARGUMENTS##*--diagnosis }"
-DIAG_FILE="${DIAG_FILE%% *}"
-[ "$DIAG_FILE" = "$ARGUMENTS" ] && DIAG_FILE=""
+# Extract --diagnosis path from arguments (supports both --diagnosis <path> and --diagnosis=<path>)
+DIAG_FILE=""
+set -- $ARGUMENTS
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --diagnosis=*) DIAG_FILE="${1#--diagnosis=}" ;;
+    --diagnosis) shift; DIAG_FILE="${1:-}" ;;
+  esac
+  shift
+done
 # Existence guard — fail fast if path supplied but missing
 if [ -n "$DIAG_FILE" ] && [ ! -f "$DIAG_FILE" ]; then
   echo "! BREAKING — diagnosis file not found: $DIAG_FILE"
@@ -80,17 +89,39 @@ Diagnosis file format: see `develop:debug` Final Report section for canonical fi
 **Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
 **Set `TEAM_MODE=false`**. If `--team` present in `$ARGUMENTS`, set `TEAM_MODE=true`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.
 
+## Team Mode Branch
+
+**If `TEAM_MODE=true`**: execute team workflow now — do not proceed to Step 1.
+
+Root cause unclear after initial triage, OR bug spans 3+ modules and user accepted "Proceed anyway" at scope gate: use this path.
+
+**Coordination:**
+
+1. Lead broadcasts current evidence: `{bug: <description>, traceback: <key lines>}`
+2. Spawn **foundry:sw-engineer x 2-3 (model=opus)** — each investigates a distinct root-cause hypothesis independently. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`.
+3. Each teammate investigates independently — claims hypothesis; returns full output to file (file-based handoff protocol).
+4. Lead facilitates cross-challenge between competing analyses.
+5. Lead synthesizes consensus root cause, then proceeds with Steps 2-4 (regression test, fix, review loop) alone.
+
+```bash
+if [ "$TEAM_MODE" = "true" ]; then
+  # Execute team coordination above, then exit team branch
+  # (return to Step 2 after consensus root cause established)
+  :
+fi
+```
+
 ## Step 1: Understand the problem
 
 Gather all available context about bug:
 
-> **Argument type detection**: if `$ARGUMENTS` is a positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
+> **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
 
 ```bash
 # Strip leading '#' so both '123' and '#123' work
@@ -109,14 +140,14 @@ If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, 
 $PYTEST_CMD --tb=long <test_path> -v 2>&1 >/tmp/pytest-out.txt; PYTEST_EXIT=$?; tail -40 /tmp/pytest-out.txt; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow the enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags are false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 
-- Root cause — what is wrong and why (not just the symptom)
-- Entry point to failure — which modules does the call cross?
-- State mutation — what state changed along the way?
-- Invariant violated — what condition broke at the failure point?
+- Root cause — what wrong and why (not just symptom)
+- Entry point to failure — which modules does call cross?
+- State mutation — what state changed along way?
+- Invariant violated — what condition broke at failure point?
 - Minimal code surface needing change — exact files and functions
 - Related code possibly affected by fix — blast radius
 - Recent commits touching this path (from git log output, if provided)
@@ -134,12 +165,12 @@ If root cause not definitively established after analysis, surface assumptions b
 
 **Skip if `CHALLENGE_ENABLED=false`.**
 
-Spawn `foundry:challenger` with the root cause analysis from Step 1 (root cause, blast radius, assumptions, approach):
+Spawn `foundry:challenger` with root cause analysis from Step 1 (root cause, blast radius, assumptions, approach):
 
-> "Review the root cause analysis and proposed fix approach. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
+> "Review root cause analysis and proposed fix approach. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
 Parse result:
-- **Blockers found** → STOP. Present findings. Do not proceed to Step 2 until user resolves each blocker or explicitly accepts the risk.
+- **Blockers found** → STOP. Present findings. Do not proceed to Step 2 until user resolves each blocker or explicitly accepts risk.
 - **Concerns only** → surface as advisory; continue.
 - **No findings / all refuted** → proceed.
 
@@ -147,7 +178,7 @@ Parse result:
 
 Create or identify test demonstrating failure:
 
-(Use Glob tool — `pattern: **/test_*.py` — to discover test directories if `<test_dir>` is unknown; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` first)
+(Use Glob tool — `pattern: **/test_*.py` — to discover test directories if `<test_dir>` unknown; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` first)
 
 ```bash
 # If a failing test already exists — run it to confirm it fails
@@ -182,7 +213,7 @@ fi
 echo "GATE OK: test failed as expected (exit $GATE_EXIT)"
 ```
 
-If `GATE_EXIT -eq 0`: stop. The bug is not reproduced. Do not apply any fix.
+If `GATE_EXIT -eq 0`: stop. Bug not reproduced. Do not apply fix.
 
 ### Review: Validate the reproduction
 
@@ -193,7 +224,7 @@ Before applying fix, critically evaluate regression test:
 3. **Minimal reproduction**: smallest test demonstrating failure?
 4. **Parametrization**: key variants covered if bug spans multiple input patterns?
 
-If any issue found: revise regression test before applying fix. Flawed reproduction = fix validated against wrong criteria.
+If issue found: revise regression test before applying fix. Flawed reproduction = fix validated against wrong criteria.
 
 ## Step 3: Apply the fix
 
@@ -208,7 +239,7 @@ Make minimal change to fix root cause:
    ```bash
    $PYTEST_CMD --tb=short <test_dir> -v
    ```
-   **If `<test_dir>` does not exist or has no tests beyond the regression test**: run only the regression test (already verified in Step 2). Note in Final Report: "No pre-existing test suite found — regression test is sole verification."
+   **If `<test_dir>` does not exist or has no tests beyond regression test**: run only regression test (already verified in Step 2). Note in Final Report: "No pre-existing test suite found — regression test is sole verification."
 
 4. If existing tests break: fix has side effects — reconsider approach
 
@@ -235,7 +266,7 @@ Use scan to prioritize which criteria below get deepest scrutiny.
    - **Regression test quality**: test precisely isolates bug (fails before fix, passes after)
    - **Side effects**: full suite passes without new failures or unexpected warnings
 
-2. For every gap found: implement fix immediately — tighten patch, remove collateral edits, adjust test. Return to Step 3 for any gap requiring re-examining fix approach.
+2. For every gap found: implement fix immediately — tighten patch, remove collateral edits, adjust test. Return to Step 3 for gap requiring re-examining fix approach.
 
 3. Re-run test suite:
 
@@ -245,7 +276,7 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 
 4. **Adjacent bugs** (observation only): scan for similar patterns; document in Follow-up — do not fix here, avoids scope creep.
 
-5. **Objective convergence check**: if findings this cycle are identical to the previous cycle (same locations, same issues), declare convergence and exit — further cycles will not resolve the issue; surface to user instead.
+5. **Objective convergence check**: if findings this cycle identical to previous cycle (same locations, same issues), declare convergence and exit — further cycles won't resolve; surface to user instead.
 
 6. **Only nits remain**: document in Follow-up, exit loop.
 
@@ -271,7 +302,7 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 
 ### Changes Made
 | File | Change | Lines |
-|------|--------|-------|
+| --- | --- | --- |
 | path/to/file.py | description of fix | -N/+M |
 
 ### Test Results
@@ -293,17 +324,10 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 
 ## Team Assignments
 
-**When to use team mode**: root cause unclear after Step 1, OR bug spans 3+ modules AND user accepted "Proceed anyway" at scope gate.
+<!-- Team branching logic is inline above at ## Team Mode Branch — executed immediately when TEAM_MODE=true, before Step 1. -->
 
-- **Teammate 1-3 (foundry:sw-engineer x 2-3, model=opus)**: each investigates distinct root-cause hypothesis independently
+**When to use**: root cause unclear after initial triage, OR bug spans 3+ modules AND user accepted "Proceed anyway" at scope gate. Set via `--team` flag.
 
-**Coordination:**
-
-1. Lead broadcasts current evidence: `{bug: <description>, traceback: <key lines>}`
-2. Each teammate investigates independently — claims hypothesis
-3. Lead facilitates cross-challenge between competing analyses
-4. Lead synthesizes consensus root cause, then proceeds with Steps 2-4 (regression test, fix, review loop) alone
-
-**Spawn prompt template:** read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`.
+See `## Team Mode Branch` above for spawn instructions, coordination protocol, and file-handoff pattern.
 
 </workflow>

@@ -37,7 +37,7 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 
 **Task tracking**: create tasks for P-P0, P-P1, P-P2, P-P2b, P-P3 at start; add P-P4 only if `--team` detected in arguments.
 
-**Unsupported flag check** — strip `--team` from `$ARGUMENTS`, then scan remaining tokens for any `--<token>`. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — strip `--team` from `$ARGUMENTS`, scan remaining tokens for any `--<token>`. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ### Step P-P0: Detect input type
 
@@ -80,13 +80,13 @@ Set as `<goal>`, proceed to P-P1.
 
 ### Step P-P1: Parse and scan
 
-**Scope guard (first action)**: Before scanning, check `<goal>` is optimization goal. Input clearly not optimization goal (code question, regex/algo explanation, debug question, or any prompt without measurable improvement target) → invoke `AskUserQuestion`:
+**Scope guard (first action)**: Before scanning, check `<goal>` is optimization goal. Input clearly not optimization goal (code question, regex/algo explanation, debug question, any prompt without measurable improvement target) → invoke `AskUserQuestion`:
 
 - question: "This input does not look like an optimization goal (`/research:plan` expects 'Reduce X' / 'Increase Y' / 'Improve Z metric'). How to proceed?"
-- (a) label: `rephrase as optimization goal` — description: provide a revised goal with a measurable improvement target
+- (a) label: `rephrase as optimization goal` — description: provide revised goal with measurable improvement target
 - (b) label: `abort` — description: stop; use `/research` for explanatory questions
 
-Stop if user selects (b). Do not proceed to P-P2 or P-P3 without a valid optimization goal.
+Stop if user selects (b). Do not proceed to P-P2 or P-P3 without valid optimization goal.
 
 Parse `<goal>`. Scan codebase to detect:
 
@@ -110,11 +110,11 @@ scope_files:     [files the ideation agent may modify]
 compute:         local | colab | docker
 ```
 
-Dry-run both commands before presenting (add `# timeout: 60000` to any timed bash calls — user commands may run for minutes). Failure → flag error, propose corrections. Do not proceed to P-P3 until user confirms or edits.
+Dry-run both commands before presenting (add `# timeout: 60000` to timed bash calls — user commands may run for minutes). Failure → flag error, propose corrections. Do not proceed to P-P3 until user confirms or edits.
 
 ### Step P-P2b: Agent validation (pre-write)
 
-After user confirms, run expert agent review before writing `program.md`. Dispatches conditional on goal type — run whichever apply in parallel.
+After user confirms, run expert agent review before writing `program.md`. Dispatch conditional on goal type — run whichever apply in parallel.
 
 **Pre-spawn — create plan run dir** (review files share single timestamped dir):
 
@@ -217,11 +217,11 @@ Next steps:
 
 `--team` detected in `$ARGUMENTS`:
 1. Complete Steps P-P0–P-P3 as normal — produce `program.md` with full single-researcher structure.
-2. Append a `## Team Mode Notes` section to `program.md`:
-   - Number of distinct method families found (used to determine team size at run step)
+2. Append `## Team Mode Notes` section to `program.md`:
+   - Number of distinct method families found (determines team size at run step)
    - Whether SOTA consensus exists — if clear winner, note team mode may not add value
 3. Tell user: "`--team` applies at run step, not plan step. Run: `/research:run <program.md> --team` to execute with parallel researchers."
-4. Resolve run-modes dir, read team protocol — include a one-line summary in Team Mode Notes:
+4. Resolve run-modes dir, read team protocol — include one-line summary in Team Mode Notes:
 
    ```bash
    _RESEARCH_RUN_MODES=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/run/modes 2>/dev/null | head -1)
@@ -236,7 +236,7 @@ Next steps:
 <notes>
 
 - **Scope boundary**: plan writes `program.md` only — methodology validation = `/research:judge`; execution = `/research:run`; full pipeline = `/research:sweep`.
-- **`--team` note**: `--team` applies at the run step, not the plan step. Plan produces a standard `program.md`; the team flag is passed through when invoking `/research:run <program.md> --team`.
-- **TTL exemption**: plan run directories (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from automated 30-day TTL cleanup per `.claude/rules/artifact-lifecycle.md (installed via /foundry:init)`; remove manually when no longer needed.
+- **`--team` note**: `--team` applies at run step, not plan step. Plan produces standard `program.md`; pass flag when invoking `/research:run <program.md> --team`.
+- **TTL exemption**: plan run dirs (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from 30-day TTL cleanup per `.claude/rules/artifact-lifecycle.md (installed via /foundry:init)`; remove manually when no longer needed.
 
 </notes>

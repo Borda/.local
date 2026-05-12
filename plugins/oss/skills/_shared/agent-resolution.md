@@ -2,7 +2,7 @@
 
 > **Foundry plugin check**: run `ls ~/.claude/plugins/cache/ 2>/dev/null | grep -q foundry` (exit 0 = installed). Uncertain → proceed as if foundry available — common case; fall back only if agent dispatch explicitly fails.
 
-If foundry **not** installed, substitute `foundry:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
+Foundry **not** installed: substitute `foundry:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
 
 | foundry agent | Fallback | Model | Role description prefix |
 | --- | --- | --- | --- |
@@ -14,4 +14,4 @@ If foundry **not** installed, substitute `foundry:X` with `general-purpose`, pre
 | `foundry:solution-architect` | `general-purpose` | `opus` | `You are a system design specialist. Produce ADRs, interface specs, and API contracts — read code, produce specs only.` |
 | `foundry:challenger` | `general-purpose` | `opus` | `You are an adversarial reviewer. Challenge the proposed plan or design across 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply a refutation step — try to disprove each challenge before keeping it. Report only challenges that survive refutation.` |
 
-Skills with `--team` mode: team spawning with fallback agents works but lower-quality output. Apply fallback only for agents the skill actually dispatches to.
+Skills with `--team` mode: fallback agents work, lower quality. Apply fallback only for agents skill actually dispatches.

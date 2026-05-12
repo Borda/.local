@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 Delegate only small, bounded tasks needing code read — not single-command tasks. Good fits:
 
 - **Small coding**: 1–3 functions, self-contained, no arch decisions

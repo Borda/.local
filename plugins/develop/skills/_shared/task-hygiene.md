@@ -1,6 +1,6 @@
 <!-- Content is the canonical task-hygiene block for develop plugin skills. Update this file to propagate changes to all skills that Read it. -->
 
-**Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
+**Task hygiene**: Before creating tasks, call `TaskList`. Each found task:
 
 - status `completed` if work clearly done
 - status `deleted` if orphaned / no longer relevant

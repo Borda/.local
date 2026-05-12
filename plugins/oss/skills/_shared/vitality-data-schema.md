@@ -34,10 +34,10 @@ Each line: `{"type": "<dataset>", "repo": "<GH_OWNER>/<GH_REPO>", "timestamp": "
 | `dependabot_config` | Group 2: Dependabot config | dependabot.yml file object (404 = not configured) |
 
 Rules:
-- Skip datasets that returned 403, persistent 202, or empty
-- Set `"partial": true` when truncation was detected (e.g. 501/201/1001 response count hit limit)
-- Set `"records"` to the count of items in `data`
-- After writing: `echo "[repo-warden] raw data: N datasets → $DATA_FILE"`
+- Skip datasets returning 403, persistent 202, or empty
+- Set `"partial": true` when truncation detected (e.g. 501/201/1001 response count hit limit)
+- Set `"records"` to item count in `data`
+- After write: `echo "[repo-warden] raw data: N datasets → $DATA_FILE"`
 
 ## Scores JSON Schema (`SCORES_FILE`)
 

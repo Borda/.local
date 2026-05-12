@@ -77,7 +77,7 @@ RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
 mkdir -p "$RUN_DIR"                                          # timeout: 5000
 ```
 
-Apply the **Step 9 lint and QA gate pattern** from the main resolve workflow — same parallel spawn of `foundry:linting-expert` + `foundry:qa-specialist`, commit lint fixes, surface blocking QA issues. Use `$RUN_DIR/linting-expert-step12c.md` and `$RUN_DIR/qa-specialist-step12c.md` as output paths. Revoke commit authorization after gate completes.
+Apply **Step 9 lint and QA gate pattern** from main resolve workflow — same parallel spawn of `foundry:linting-expert` + `foundry:qa-specialist`, commit lint fixes, surface blocking QA issues. Use `$RUN_DIR/linting-expert-step12c.md` and `$RUN_DIR/qa-specialist-step12c.md` as output paths. Revoke commit authorization after gate.
 
 Mark task `completed`:
 

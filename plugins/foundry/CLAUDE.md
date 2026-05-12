@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default
@@ -27,13 +25,13 @@
 ### 4. Verification Before Done
 
 - Never mark complete without proving it works — run tests, check logs, diff against main
-- Ask "would a staff engineer approve this?"
+- Ask "would staff engineer approve this?"
 - **Confidence scores**: request `## Confidence` block from every analysis agent (protocol in Output Standards); surface low confidence — never drop uncertain findings
 
 ### 5. Demand Elegance (Balanced)
 
-- Non-trivial changes: pause, ask "is there a more elegant way?"
-- Fix feels hacky: "Knowing everything I know now, implement the elegant solution"
+- Non-trivial changes: pause, ask "is there more elegant way?"
+- Fix feels hacky: "Knowing everything I know now, implement elegant solution"
 - Skip for simple, obvious fixes — don't over-engineer
 
 ### 6. Autonomous Bug Fixing
@@ -42,29 +40,29 @@ Just fix it — use logs, errors, failing tests; no hand-holding, including CI
 
 ### 7. Agent Teamwork
 
-- **Delegate to the right agent** — task has designated owner → hand it off; don't attempt yourself
+- **Delegate to right agent** — task has designated owner → hand off; don't attempt yourself
 - **No territorial behaviour** — never contradict or redo another agent's output; build on it or flag concern constructively
-- **One voice per domain** — orchestrator picks one agent; others stay silent rather than competing
+- **One voice per domain** — orchestrator picks one agent; others stay silent
 
 ### 8. Background Agent Health Monitoring
 
-Any orchestrator spawning background agents writing to run directory **must** monitor them — `/foundry:calibrate` is canonical; skills customize defaults via `<constants>` block.
+Any orchestrator spawning background agents writing to run directory **must** monitor — `/foundry:calibrate` canonical; skills customize defaults via `<constants>` block.
 
 **Protocol**:
 
 1. Create per-agent checkpoint and record launch time: `LAUNCH_AT=$(date +%s); touch /tmp/<skill>-check-<id>`
 2. Every **5 min**: `find <run-dir> -newer /tmp/<checkpoint> -type f | wc -l` — new files = alive; zero = stalled
-3. **Hard cutoff: 15 min** of no file activity → timed out
+3. **Hard cutoff: 15 min** no file activity → timed out
 4. **One extension (+5 min)** if `tail -20 <output_file>` explains delay — second unexplained stall = cutoff
 5. On timeout: read `tail -100 <output_file>` for partial results; if none use `{"verdict":"timed_out"}`; surface with ⏱ — never omit
 
-Skills may tighten (not loosen) these defaults in their own `<constants>` block.
+Skills may tighten (not loosen) defaults in own `<constants>` block.
 
 ## Pre-Authorized Operations
 
-Operations in `settings.json` are pre-approved — execute directly. Operation not covered → restructure to match existing allow entry before requesting new permission; batch missing permissions into one ask.
+Operations in `settings.json` pre-approved — execute directly. Operation not covered → restructure to match existing allow entry before requesting new permission; batch missing permissions into one ask.
 
-**Tool efficiency rule** — native Claude tools (Read, Grep, Glob, Write, Edit, and others) always available, never need `settings.json` approval; use them first:
+**Tool efficiency rule** — native Claude tools (Read, Grep, Glob, Write, Edit, and others) always available, never need `settings.json` approval; use first:
 
 - Native tools purpose-built and auditable; Bash for operations they cannot do (run tests, git, system commands)
 - Prefer N sequential native tool calls over one script; loop of 10 Reads beats heredoc needing approval
@@ -84,12 +82,12 @@ Teams always user-invoked:
 ### File-based tracking
 
 1. Plan in `.plans/active/todo_<name>.md`; check in before starting
-2. On approval → TaskCreate for each phase; mark complete as you go
+2. On approval → TaskCreate each phase; mark complete as you go
 3. Document results in `.plans/closed/results_<name>.md`; capture lessons → see §3 Self-Improvement Loop
 
 ### Session-start hygiene
 
-**First action of every interaction**: call `TaskList`, triage all found tasks before any work:
+**First action every interaction**: call `TaskList`, triage all found tasks before any work:
 
 - Work clearly done → `TaskUpdate` status `completed`
 - Orphaned / no longer relevant → `TaskUpdate` status `deleted`
@@ -102,13 +100,13 @@ Prevents zombie tasks accumulating across sessions and showing false progress.
 - **Skills with predefined workflow**: TaskCreate all steps at start — before any tool calls; keep list current as work evolves
 - **Multi-step work** (3+ tool calls or 2+ distinct instructions) → TaskCreate before first tool call, including on plan-mode exit
 - On pivot → new task for new work; TaskUpdate existing if scope changed
-- Mark complete before final output; keep statuses current — it's a live feed
+- Mark complete before final output; keep statuses current — live feed
 - Skip for: single-task actions, simple skills (sync, distill), transient subagents
 
 ### Safety breaks for loops
 
 - Default max 3 iterations
-- At limit: stop, report progress, ask user whether to continue or re-scope
+- At limit: stop, report progress, ask user continue or re-scope
 - Skill-declared bounds take precedence
 
 ## Self-Setup Maintenance
@@ -136,11 +134,11 @@ When context compacted, preserve in summary:
 3. File modification history — which files changed and why
 4. Pending follow-ups — deferred items, open questions, next steps
 
-After compaction, re-read `.claude/state/session-context.md` if it exists.
+After compaction, re-read `.claude/state/session-context.md` if exists.
 
 ## Core Principles
 
 - **Simplicity First**: touch only what's necessary; smallest change that works
-- **No Laziness**: find root causes; no temporary fixes; senior developer standards
-- **Reversibility check**: before any action that cannot restore to pre-session state (deleting pre-existing files, pushing, dropping tables, external messages), pause — confirm scope matches what was asked; prefer reversible alternatives
+- **No Laziness**: find root causes; no temp fixes; senior developer standards
+- **Reversibility check**: before any action that cannot restore pre-session state (deleting pre-existing files, pushing, dropping tables, external messages), pause — confirm scope matches what was asked; prefer reversible alternatives
 - **Tool-first**: use declared tools fully and creatively — if tool can do job indirectly, use it

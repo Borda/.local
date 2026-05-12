@@ -1,7 +1,7 @@
 # Numbers & Claims Reference
 
 Source of truth for numeric limits in `release/SKILL.md`.
-Update this file whenever a number changes — no undocumented changes.
+Update when number changes — no undocumented changes.
 
 ---
 
@@ -32,7 +32,7 @@ Update this file whenever a number changes — no undocumented changes.
 | --- | --- |
 | Location | `Write release draft` → `LATEST_TAG` detection |
 | Current value | `100` |
-| Evidence | GitHub release API is reverse-chronological; any gap between stable releases exceeding `--limit` returns wrong tag silently; 100 handles repos with ≥80 pre-release tags between stable cuts |
+| Evidence | GitHub release API reverse-chronological; gap between stable releases exceeding `--limit` returns wrong tag silently; 100 handles repos with ≥80 pre-release tags between stable cuts |
 | If insufficient | Switch to `--paginate` with early exit on first non-prerelease match |
 
 ### Demo execution timeout — 10 minutes (`timeout: 600000`)
@@ -49,7 +49,7 @@ Update this file whenever a number changes — no undocumented changes.
 
 ## Count Guidance
 
-Design choices — adjust when release output feels too sparse or too dense.
+Design choices — adjust when release output feels too sparse or dense.
 
 ### Highlights count — 3–5
 
@@ -57,8 +57,8 @@ Design choices — adjust when release output feels too sparse or too dense.
 | --- | --- |
 | Location | `Identify highlights` |
 | Range | 3 to 5 |
-| Rationale | >5 = not a highlight; <3 = thin for non-trivial releases; range covers sparse (one breaking change) vs. dense (major version) releases |
-| If wrong | Fewer than 3 for a major version → expand; more than 5 → split into highlights + "Also in this release" |
+| Rationale | >5 = not highlight; <3 = thin for non-trivial releases; range covers sparse (one breaking change) vs. dense (major version) releases |
+| If wrong | Fewer than 3 for major version → expand; more than 5 → split into highlights + "Also in this release" |
 
 ### Demo headline features — 2–3
 
@@ -66,7 +66,7 @@ Design choices — adjust when release output feels too sparse or too dense.
 | --- | --- |
 | Location | `Mode: demo / Phase 1` |
 | Range | 2 to 3 |
-| Rationale | Demo is narrative; >3 sections fragment attention; <2 is thin for a release demo |
+| Rationale | Demo narrative; >3 sections fragment attention; <2 thin for release demo |
 | If wrong | Adjust per release density; >3 allowed for major versions with distinct user-visible features |
 
 ### Contributor summary — 3–6 words
@@ -75,18 +75,18 @@ Design choices — adjust when release output feels too sparse or too dense.
 | --- | --- |
 | Location | `Extract contributors` |
 | Range | 3 to 6 words |
-| Rationale | Fits a credits line without wrapping; specific enough to be meaningful; short enough to scan |
-| If wrong | Expand to a phrase if contribution spans multiple areas |
+| Rationale | Fits credits line without wrapping; specific enough to mean something; short enough to scan |
+| If wrong | Expand to phrase if contribution spans multiple areas |
 
 ---
 
 ## Performance Claims — Fact-Check Gate
 
-Quantitative claims ("2× faster", "50% memory reduction", "latency −30 ms") in commit messages or PR bodies require evidence before inclusion in release notes. Two tiers:
+Quantitative claims ("2× faster", "50% memory reduction", "latency −30 ms") in commit messages or PR bodies need evidence before inclusion in release notes. Two tiers:
 
 | Tier | Source | Inclusion rule |
 | --- | --- | --- |
 | Supported | PR body cites benchmark run, CI artifact, profiling output, or timing table | Include claim verbatim |
-| Unsupported | Claim from commit subject only — no artifact linked | Rewrite to "improved performance" without the number |
+| Unsupported | Claim from commit subject only — no artifact linked | Rewrite to "improved performance" without number |
 
-**Never include raw numeric claims from commit subjects alone** — commit subjects are unreviewed author claims; PR body + artifacts are ground truth.
+**Never include raw numeric claims from commit subjects alone** — commit subjects unreviewed author claims; PR body + artifacts ground truth.

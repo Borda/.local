@@ -1,7 +1,7 @@
 <!-- oss:release adversarial review — executed via: Read $SKILL_DIR/modes/adversarial-review.md; execute -->
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $BRANCH, $RANGE, $GATHER_FILE, assembled draft content -->
 
-Challenge every factual claim in the assembled draft against the actual codebase and project docs. Runs before voice/tone polish — facts must be correct before prose is refined.
+Challenge every factual claim in assembled draft against codebase and project docs. Runs before voice/tone polish — facts correct before prose refined.
 
 **Scope**: applies to `notes` mode (DRAFT.md) and `prepare` mode (releases/$VERSION/DRAFT.md) and `--migration` flag output. Skip for `--summary` (internal audience) and `--changelog` entries (structured format, not claim-heavy prose).
 
@@ -37,9 +37,9 @@ Write full findings report to <$ADVERSARIAL_DIR/adversarial-review.md> using the
 Return ONLY on your final line: {\"status\":\"done\",\"file\":\"<$ADVERSARIAL_DIR/adversarial-review.md>\",\"critical\":N,\"high\":N,\"medium\":N,\"low\":N,\"confidence\":0.N}")
 ```
 
-Expand `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>`, `<$ADVERSARIAL_DIR>` to their literal values before spawning — never pass variable names literally.
+Expand `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>`, `<$ADVERSARIAL_DIR>` to literal values before spawning — never pass variable names literally.
 
 **Gate — read `$ADVERSARIAL_DIR/adversarial-review.md`**:
 - **Critical or high findings**: fix in draft before proceeding; re-run adversarial review on fixed sections once (max 1 re-run); if findings persist after re-run, surface to user and stop
-- **Medium or low findings**: append as `> ⚠️ Reviewer notes: <summary>` to the response; include in Human gate handoff; do not block Polish step
+- **Medium or low findings**: append as `> ⚠️ Reviewer notes: <summary>` to response; include in Human gate handoff; do not block Polish step
 - **0 findings**: proceed directly to Polish

@@ -2,7 +2,7 @@
 
 ## Check 21 — Skill frontmatter conflicts
 
-`context:fork + disable-model-invocation:true` is a broken combination.
+`context:fork + disable-model-invocation:true` is broken combination.
 
 ```bash
 RED='\033[1;31m'
@@ -23,29 +23,29 @@ done
 
 ## Check 22 — Calibration coverage gap
 
-**Step 1 — Read the calibrate domain table**: Read `.claude/skills/calibrate/modes/skills.md` and extract the registered target list under `### Domain table`. Build the set of registered targets.
+**Step 1 — Read calibrate domain table**: Read `.claude/skills/calibrate/modes/skills.md`, extract registered target list under `### Domain table`. Build registered-targets set.
 
 **Step 2 — Scan all skill modes on disk**: Use Glob (`skills/*/SKILL.md`, path `.claude/`) and Glob (`skills/*/modes/*.md`, path `.claude/`) to enumerate every skill and mode file. Extract mode names from `argument-hint:` frontmatter and `## Mode:` / `### Mode:` headings.
 
-**Step 3 — Validate registered targets exist on disk**: For each registered target, verify the corresponding skill/mode file exists. A registered target with no matching file → **medium** (calibrate will fail at runtime).
+**Step 3 — Validate registered targets exist on disk**: For each registered target, verify matching skill/mode file exists. Registered target with no matching file → **medium** (calibrate fails at runtime).
 
 **Step 4 — Identify unregistered calibratable candidates** (model reasoning):
 
-A mode is calibratable when ALL three signals are present:
+Mode is calibratable when ALL three signals present:
 
 1. **Deterministic structured output**: findings list, completeness checklist, structured table, or machine-readable verdict
-2. **Synthetic input feasible**: can be tested without external services
-3. **Ground truth constructable**: known issues can be injected and scored
+2. **Synthetic input feasible**: testable without external services
+3. **Ground truth constructable**: known issues injectable and scorable
 
-→ Unregistered mode matching all three signals: **low** (add to `calibrate/modes/skills.md` domain table)
+→ Unregistered mode matching all three: **low** (add to `calibrate/modes/skills.md` domain table)
 
-**Step 5 — Read the agents domain table**: Read `.claude/skills/calibrate/modes/agents.md` and extract all agent names from the `### Domain table` section. Build the set of registered agent names.
+**Step 5 — Read agents domain table**: Read `.claude/skills/calibrate/modes/agents.md`, extract all agent names from `### Domain table`. Build registered-agent-names set.
 
-**Step 6 — Scan all agent files on disk**: Use Glob (`plugins/*/agents/*.md`, path project root) to enumerate plugin agent files; also Glob (`agents/*.md`, path `.claude/`) for any directly installed agents. Derive a qualified name for each: `plugins/<plugin>/agents/<name>.md` → `<plugin>:<name>`; `.claude/agents/<name>.md` → `<name>`. Build the full discovered-agent set.
+**Step 6 — Scan all agent files on disk**: Use Glob (`plugins/*/agents/*.md`, path project root) for plugin agent files; Glob (`agents/*.md`, path `.claude/`) for directly installed agents. Derive qualified name per file: `plugins/<plugin>/agents/<name>.md` → `<plugin>:<name>`; `.claude/agents/<name>.md` → `<name>`. Build full discovered-agent set.
 
-**Step 7 — Validate registered agents exist on disk**: For each registered agent in the domain table, verify it resolves to a discovered file. A bare name in the domain table (e.g. `sw-engineer`) matches `foundry:sw-engineer` when no `.claude/agents/sw-engineer.md` exists — apply model reasoning to resolve bare names against plugin-qualified discoveries. Registered agent with no matching file → **medium** (stale entry will cause calibrate to fail at runtime; remove from domain table or correct the prefix).
+**Step 7 — Validate registered agents exist on disk**: For each registered agent in domain table, verify it resolves to discovered file. Bare name (e.g. `sw-engineer`) matches `foundry:sw-engineer` when no `.claude/agents/sw-engineer.md` exists — apply model reasoning to resolve bare names against plugin-qualified discoveries. Registered agent with no matching file → **medium** (stale entry causes calibrate to fail at runtime; remove from domain table or correct prefix).
 
-**Step 8 — Identify unregistered agents**: For each discovered agent not represented in the domain table, apply the same three-signal calibratability test from Step 4. → Unregistered calibratable agent: **low** (add to `calibrate/modes/agents.md` domain table with an appropriate domain string).
+**Step 8 — Identify unregistered agents**: For each discovered agent not in domain table, apply same three-signal calibratability test from Step 4. → Unregistered calibratable agent: **low** (add to `calibrate/modes/agents.md` domain table with appropriate domain string).
 
 ## Check 23 — Bash command misuse / native tool substitution
 
@@ -73,7 +73,7 @@ printf "  ${CYN}hint${NC}: replace sed/awk text-substitution with Edit tool\n" |
 printf "${GRN}✓${NC}: Check 23 scan complete\n"
 ```
 
-After the scan, apply model reasoning to each match — exclude cases where the shell command is genuinely necessary. Flag only where the native tool is a direct drop-in replacement.
+After scan, apply model reasoning to each match — exclude cases where shell command genuinely necessary. Flag only where native tool is direct drop-in.
 
 | Shell command | Preferred native tool | Severity |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ After the scan, apply model reasoning to each match — exclude cases where the 
 
 ### Sub-check 23e — python3 inline policy (CLAUDE.md / MEMORY.md violation)
 
-`python3` is intentionally absent from the allow list (MEMORY.md: "Allow List Policy — python* excluded by design"). Any `python3 -c` invocation in a skill body will pause for a permission prompt mid-workflow, breaking automated flows when the user denies.
+`python3` intentionally absent from allow list (MEMORY.md: "Allow List Policy — python* excluded by design"). Any `python3 -c` in skill body pauses for permission prompt mid-workflow; user deny = phase fails.
 
 ```bash
 printf "=== Check 23e: python3 inline policy ===\n"
@@ -106,14 +106,14 @@ Severity: **high** — permission prompt mid-workflow blocks automation; user de
 | 23e — python3 -c inline | `python3 -c` in skill body | high |
 | 23e — python3 heredoc | `python3 << '` in skill body | high |
 
-**Report only** — never auto-fix; some Bash invocations in example/illustration code blocks are intentional.
+**Report only** — never auto-fix; some Bash invocations in example/illustration code blocks intentional.
 
 ## Check 24 — Skill sequence compatibility
 
-Skill `<notes>` and `<workflow>` sections frequently document multi-skill chains (e.g., `→ /audit`, `suggested next: /brainstorm breakdown <file>`). This check verifies that documented sequences are internally consistent:
+Skill `<notes>` and `<workflow>` sections frequently document multi-skill chains (e.g., `→ /audit`, `suggested next: /brainstorm breakdown <file>`). Check verifies documented sequences internally consistent:
 
-- **24a (target existence)**: every skill referenced in a documented chain exists on disk — root skills under `.claude/skills/<name>/`, plugin skills under `plugins/<plugin>/skills/<skill>/`
-- **24b (argument plausibility)**: when a suggestion includes an explicit argument (e.g., `→ /audit fix`), that argument must appear as a substring in the target skill's `argument-hint:` frontmatter (case-insensitive)
+- **24a (target existence)**: every skill referenced in documented chain exists on disk — root skills under `.claude/skills/<name>/`, plugin skills under `plugins/<plugin>/skills/<skill>/`
+- **24b (argument plausibility)**: when suggestion includes explicit argument (e.g., `→ /audit fix`), that argument must appear as substring in target skill's `argument-hint:` frontmatter (case-insensitive)
 
 **Step 1 — Extract sequence references**:
 
@@ -121,15 +121,15 @@ Scan three sources for documented chains:
 
 1. **Skill files**: Grep (pattern `→.*` + backtick + `/[a-z]|suggest.*` + backtick + `/[a-z]|run.*after.*` + backtick + `/[a-z]`, glob `skills/*/SKILL.md`, path `.claude/`, output mode `content`)
 2. **Agent files**: same Grep on `agents/*.md` (path `.claude/`)
-3. **README files**: Grep the same pattern in `README.md` (project root), `plugins/*/README.md`, and `.claude/README.md` — README sequence tables are canonical documentation of the intended workflow chains and must be consistent with what is actually installed
+3. **README files**: Grep same pattern in `README.md` (project root), `plugins/*/README.md`, `.claude/README.md` — README sequence tables are canonical workflow chain documentation; must be consistent with what is installed
 
 Filter out:
 
 - Lines starting with `#` (comments)
 - Lines containing `e.g.` or `for example` (illustrative, not directive)
-- Lines whose surrounding context is a description of what the skill does rather than a "run next" directive
+- Lines whose surrounding context describes what skill does rather than "run next" directive
 
-Collect all unique (source-file, skill-reference, trailing-argument) triples. README-sourced sequences are held to the same validity standard as skill-sourced ones: a broken sequence in a README is a **high** finding because it is the user-facing documentation of the workflow.
+Collect all unique (source-file, skill-reference, trailing-argument) triples. README-sourced sequences held to same validity standard as skill-sourced ones: broken README sequence = **high** (user-facing workflow documentation).
 
 **Step 2 — Resolve each reference (Check 24a)**:
 
@@ -142,18 +142,18 @@ Missing target → **[high]**: `Sequence reference /<name> in <file> resolves to
 
 **Step 3 — Argument plausibility (Check 24b)**:
 
-For references with a trailing argument token (e.g., `--adversarial` in `/audit --adversarial`, `breakdown` in `/brainstorm breakdown`):
+For references with trailing argument token (e.g., `--adversarial` in `/audit --adversarial`, `breakdown` in `/brainstorm breakdown`):
 
-1. Read the target skill's frontmatter `argument-hint:` (Glob-resolved path, first 5 lines)
-2. If the argument token does NOT appear as a case-insensitive substring of `argument-hint` → **[medium]**: `Sequence argument '<arg>' absent from /<name> argument-hint: '<hint>'`
+1. Read target skill's frontmatter `argument-hint:` (Glob-resolved path, first 5 lines)
+2. If argument token does NOT appear as case-insensitive substring of `argument-hint` → **[medium]**: `Sequence argument '<arg>' absent from /<name> argument-hint: '<hint>'`
 
 **Step 4 — Cycle detection (Check 24c)**:
 
-Build a directed graph from (source-file, skill-reference) pairs collected in Step 1. Walk all paths from each node; flag back-edges (skill A → skill B → … → skill A).
+Build directed graph from (source-file, skill-reference) pairs collected in Step 1. Walk all paths from each node; flag back-edges (skill A → skill B → … → skill A).
 
 → Any cycle found: **[high] 24c**: `Cycle: <A> → <B> → … → <A>` — document full cycle path; do not auto-fix; resolution requires removing or redirecting one chain edge.
 
-**Report only** — do not auto-fix; sequence intent requires human judgment.
+**Report only** — no auto-fix; sequence intent requires human judgment.
 
 | Sub-check | Severity | Auto-fix |
 | --- | --- | --- |
@@ -163,9 +163,9 @@ Build a directed graph from (source-file, skill-reference) pairs collected in St
 
 ## Check 27 — Cross-plugin shared-file reference integrity
 
-Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inline references to `.claude/skills/_shared/<file>` unless that exact file ships inside `plugins/foundry/skills/_shared/`. That path is only available at runtime via the `foundry:init` symlink — any file absent from foundry's own `_shared/` is a broken reference when foundry is installed, and entirely unreachable when foundry is not installed.
+Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inline references to `.claude/skills/_shared/<file>` unless that exact file ships inside `plugins/foundry/skills/_shared/`. Path only available at runtime via `foundry:init` symlink — any file absent from foundry's `_shared/` = broken reference when foundry installed, entirely unreachable when not installed.
 
-**Special antipattern — foundry-dependency catch-22**: when the referenced file's purpose is to describe fallback behaviour for users without foundry (e.g. an `agent-resolution.md` listing `general-purpose` substitutes), the reference is **critical** — the file that explains how to work without foundry is only accessible via foundry.
+**Special antipattern — foundry-dependency catch-22**: when referenced file's purpose is to describe fallback behaviour for users without foundry (e.g. `agent-resolution.md` listing `general-purpose` substitutes), reference is **critical** — file explaining how to work without foundry is only accessible via foundry.
 
 **Step 1 — Collect cross-plugin shared-file references**:
 
@@ -182,14 +182,14 @@ For each match: record `(plugin, skill-file, referenced-filename)`.
 ls plugins/foundry/skills/_shared/ 2>/dev/null  # timeout: 5000
 ```
 
-For each referenced filename from Step 1: check if it appears in the foundry `_shared/` listing.
+For each referenced filename from Step 1: check if it appears in foundry `_shared/` listing.
 
-- Present → reference is valid at runtime (when foundry is installed) — **no finding**
+- Present → reference valid at runtime (when foundry installed) — **no finding**
 - Absent → **[high] 27a**: `<plugin>/<skill>: references .claude/skills/_shared/<file> which is absent from foundry/_shared/ — broken at all times`
 
 **Step 3 — Catch-22 upgrade**:
 
-For each file flagged in Step 2 (absent from foundry `_shared/`): inspect the referenced filename and any surrounding context for signals that it provides fallback/degraded-mode behaviour (keywords: `fallback`, `without foundry`, `agent-resolution`, `general-purpose`, `not installed`).
+For each file flagged in Step 2 (absent from foundry `_shared/`): inspect referenced filename and surrounding context for signals it provides fallback/degraded-mode behaviour (keywords: `fallback`, `without foundry`, `agent-resolution`, `general-purpose`, `not installed`).
 
 - Match → upgrade to **[critical] 27b**: `<plugin>/<skill>: fallback file <name> is only reachable via foundry — catch-22`
 - No match → keep as **[high] 27a**
@@ -200,7 +200,7 @@ For each file flagged in Step 2 (absent from foundry `_shared/`): inspect the re
 ls plugins/*/skills/_shared/ 2>/dev/null  # timeout: 5000
 ```
 
-Plugin-local `_shared/` directories (e.g. `plugins/develop/skills/_shared/`) have **no install-time mount point** — they are invisible to the model at runtime. Any file there that a SKILL.md references is unreachable.
+Plugin-local `_shared/` directories (e.g. `plugins/develop/skills/_shared/`) have **no install-time mount point** — invisible to model at runtime. Any file there that SKILL.md references is unreachable.
 
 ```bash
 # For each plugin-local _shared/ file, check if any SKILL.md in that plugin references it  # timeout: 5000
@@ -214,7 +214,7 @@ done
 - Referenced and in plugin-local `_shared/` → **[medium] 27c**: `<plugin>/<skill>: references <file> from plugin-local _shared/ which is not mounted at runtime — move to foundry/_shared/ or inline`
 - Exists in plugin-local `_shared/` but not referenced → **[low]**: unreachable dead file; suggest removal
 
-**Report only** — do not auto-fix; resolution requires deciding whether to inline content or move the file to `foundry/_shared/`.
+**Report only** — no auto-fix; resolution requires deciding whether to inline content or move file to `foundry/_shared/`.
 
 | Sub-check | Severity | Auto-fix |
 | --- | --- | --- |
@@ -224,11 +224,11 @@ done
 
 ## Check 28 — Cross-plugin agent dispatch fallback
 
-Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depend on that plugin being installed. When the dispatched agent belongs to a different plugin from the skill's own plugin, and no fallback is declared for the case where that plugin is absent, the skill fails at runtime.
+Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depend on that plugin being installed. When dispatched agent belongs to different plugin from skill's own plugin, and no fallback declared for absent-plugin case, skill fails at runtime.
 
-**Exempt from this check**: `general-purpose` (built-in, always available); `codex:*` agents (conditional dispatch already tracked by Check 7).
+**Exempt**: `general-purpose` (built-in, always available); `codex:*` agents (conditional dispatch tracked by Check 7).
 
-**Step 1 — Map skills to their owning plugin:**
+**Step 1 — Map skills to owning plugin:**
 
 ```bash
 # Map each plugin skill file to its owning plugin  # timeout: 5000
@@ -246,27 +246,27 @@ done
 grep -rn 'subagent_type' plugins/*/skills/*/SKILL.md 2>/dev/null | grep -v '^Binary'
 ```
 
-For each match: extract `(skill_file, dispatched_plugin, dispatched_agent)`. A dispatch is **cross-plugin** when `dispatched_plugin ≠ owning_plugin`. Build a map: `skill_file → [cross-plugin agents]`.
+For each match: extract `(skill_file, dispatched_plugin, dispatched_agent)`. Dispatch is **cross-plugin** when `dispatched_plugin ≠ owning_plugin`. Build map: `skill_file → [cross-plugin agents]`.
 
 Skip: any `general-purpose` dispatch and any `codex:*` dispatch.
 
 **Step 3 — Verify fallback coverage:**
 
-For each skill with one or more cross-plugin dispatches, read the skill file and search for a fallback declaration. A valid fallback is any of:
+For each skill with one or more cross-plugin dispatches, read skill file and search for fallback declaration. Valid fallback is any of:
 
-- A section heading matching `Agent Resolution`, `Fallback`, or `Plugin Check` (case-insensitive)
-- A sentence containing the cross-plugin agent name AND a word from `{fallback, not installed, substitute, general-purpose, unavailable}` within 5 lines of each other
-- A conditional dispatch block: `if not installed` or `plugin list.*grep.*<plugin>` followed by an alternative
+- Section heading matching `Agent Resolution`, `Fallback`, or `Plugin Check` (case-insensitive)
+- Sentence containing cross-plugin agent name AND word from `{fallback, not installed, substitute, general-purpose, unavailable}` within 5 lines of each other
+- Conditional dispatch block: `if not installed` or `plugin list.*grep.*<plugin>` followed by alternative
 
 No fallback found → **[high] 28a**: `<plugin>/<skill>: dispatches <cross-plugin-agent> with no fallback for missing plugin`
 
 **Step 4 — Completeness check:**
 
-For each skill where a fallback section exists: verify every cross-plugin agent dispatched by that skill is named within the fallback block (bare name OR fully-qualified `plugin:name` form). An agent is covered when its name appears in the fallback block.
+For each skill where fallback section exists: verify every cross-plugin agent dispatched by that skill is named within fallback block (bare name OR fully-qualified `plugin:name` form). Agent covered when name appears in fallback block.
 
 Partially covered → **[medium] 28b**: `<plugin>/<skill>: fallback section present but does not cover <agent>`
 
-**Report only** — fixing requires adding an Agent Resolution section with fallback substitutes for each cross-plugin dependency; the pattern in `develop:plan` (Agent Resolution table with `foundry agent | Fallback | Model | Role description prefix`) is the reference implementation.
+**Report only** — fixing requires adding Agent Resolution section with fallback substitutes for each cross-plugin dependency; pattern in `develop:plan` (Agent Resolution table with `foundry agent | Fallback | Model | Role description prefix`) is reference implementation.
 
 > **Related**: Check 25 (in `checks-shared.md`) covers bare-name dispatch (missing plugin prefix). Check 25 and Check 28 address different failure modes — run both.
 
@@ -277,7 +277,7 @@ Partially covered → **[medium] 28b**: `<plugin>/<skill>: fallback section pres
 
 ### Sub-check 28c — Cross-plugin prose references without availability guard
 
-Skills may reference other plugins' skills in `<notes>`, follow-up chains, and prose documentation without a runtime dispatch (no `Agent(subagent_type=...)` call). These prose references are shown to users as runnable next-steps; if the referenced plugin is absent, the command fails silently.
+Skills may reference other plugins' skills in `<notes>`, follow-up chains, and prose documentation without runtime dispatch (no `Agent(subagent_type=...)` call). These prose references shown to users as runnable next-steps; if referenced plugin absent, command fails silently.
 
 **Step — Scan for unguarded prose cross-plugin references**:
 
@@ -301,7 +301,7 @@ printf "✓: Check 28c scan complete\n"  # timeout: 5000
 ```
 
 Severity: **medium** — user sees broken command in follow-up gate or documentation prose.
-Fix: append `(requires \`<plugin>\` plugin)` immediately after the cross-plugin skill reference, or restructure as conditional.
+Fix: append `(requires \`<plugin>\` plugin)` immediately after cross-plugin skill reference, or restructure as conditional.
 
 | Sub-check | Condition | Severity | Auto-fix |
 | --- | --- | --- | --- |
@@ -311,7 +311,7 @@ Fix: append `(requires \`<plugin>\` plugin)` immediately after the cross-plugin 
 
 ## Check 30 — Plugin skill bash operational correctness
 
-Four static-grep patterns catching silent failures in skill SKILL.md bash blocks. Run across both `.claude/skills/` and `plugins/*/skills/` — these bugs appear in any skill.
+Four static-grep patterns catching silent failures in skill SKILL.md bash blocks. Run across both `.claude/skills/` and `plugins/*/skills/` — bugs appear in any skill.
 
 ### 30a — Pipe exit code capture (PIPESTATUS)
 
@@ -329,7 +329,7 @@ printf "  ${CYN}hint${NC}: use \${PIPESTATUS[0]} or set -o pipefail; \$? capture
 printf "${GRN}✓${NC}: Check 30a scan complete\n"  # timeout: 5000
 ```
 
-Severity: **critical** — gate commands appear to pass even on genuine failure; `$?` after `cmd | tail -N` is tail's exit code (0), not cmd's.
+Severity: **critical** — gate commands appear to pass on genuine failure; `$?` after `cmd | tail -N` = tail's exit code (0), not cmd's.
 
 Fix pattern: `cmd 2>&1 | tail -N; EXIT=${PIPESTATUS[0]}`
 
@@ -354,11 +354,11 @@ Fix pattern: `[ "${SKIP_RUFF:-0}" -ne 1 ] && $RUNNER ruff check ...`
 
 ### 30c — Agent filename convention mismatch (model reasoning)
 
-Cannot be caught by grep alone — requires reading spawn prompt and consolidator read pattern in the same file.
+Cannot be caught by grep alone — requires reading spawn prompt and consolidator read pattern in same file.
 
-Flag when a skill file:
-1. Spawns agents with a prompt instructing them to write findings to a file named with a plugin-prefixed format (e.g. `foundry:sw-engineer.md`)
-2. AND the consolidator reads files using a bare-name format (e.g. `sw-engineer.md`)
+Flag when skill file:
+1. Spawns agents with prompt instructing them to write findings to file named with plugin-prefixed format (e.g. `foundry:sw-engineer.md`)
+2. AND consolidator reads files using bare-name format (e.g. `sw-engineer.md`)
 
 These never match → all agent findings silently dropped.
 
@@ -381,11 +381,11 @@ Severity: **high** — skill fails silently on tox/make projects when pytest-spe
 
 Fix: after detecting TEST_CMD, derive `PYTEST_CMD` for targeted runs: `tox` → `PYTEST_CMD="uv run pytest"`; `make test` → `PYTEST_CMD="uv run pytest"`.
 
-**Report only** — do not auto-fix; resolution requires understanding each skill's runner detection block.
+**Report only** — no auto-fix; resolution requires understanding each skill's runner detection block.
 
 ### 30e — Heredoc python in skill bodies
 
-Heredoc python blocks (`python3 << 'EOF'`) are banned by CLAUDE.md. Distinct from 23e (which targets `python3 -c` one-liners); 30e specifically catches multi-line heredoc forms that bypass the one-liner size limit.
+Heredoc python blocks (`python3 << 'EOF'`) banned by CLAUDE.md. Distinct from 23e (targets `python3 -c` one-liners); 30e catches multi-line heredoc forms that bypass one-liner size limit.
 
 ```bash
 printf "=== Check 30e: Heredoc python ===\n"
@@ -395,7 +395,7 @@ printf "  hint: CLAUDE.md bans python3 heredoc; use bin/*.py script instead\n" |
 printf "✓: Check 30e scan complete\n"  # timeout: 5000
 ```
 
-Severity: **high** — heredoc triggers permission prompt; user deny = workflow block; also violates CLAUDE.md §Pre-Authorized Operations.
+Severity: **high** — heredoc triggers permission prompt; user deny = workflow block; violates CLAUDE.md §Pre-Authorized Operations.
 
 | Sub-check | Pattern | Severity | Auto-fix |
 | --- | --- | --- | --- |
@@ -407,9 +407,9 @@ Severity: **high** — heredoc triggers permission prompt; user deny = workflow 
 
 ## Check 31 — Skill tool call vs allowed-tools consistency
 
-For each SKILL.md, verify that every **gating or dispatch tool** called in the workflow body is declared in `allowed-tools:` frontmatter. The runtime enforces `allowed-tools` — undeclared tool calls are blocked silently, causing the entire workflow phase to fail without any error message.
+For each SKILL.md, verify every **gating or dispatch tool** called in workflow body is declared in `allowed-tools:` frontmatter. Runtime enforces `allowed-tools` — undeclared tool calls blocked silently; entire workflow phase fails with no error message.
 
-**High-risk tools** (their absence breaks entire workflow phases, not just individual steps):
+**High-risk tools** (absence breaks entire workflow phases, not just individual steps):
 
 | Tool | Consequence if absent from `allowed-tools` |
 | --- | --- |
@@ -491,7 +491,7 @@ Severity: **medium** for `effort:` (no default documented); **low** for `when_to
 
 ## Check C35 — Background agent health monitoring compliance (CLAUDE.md §8)
 
-CLAUDE.md §8 requires every skill that spawns background agents to implement: (1) launch sentinel creation, (2) 5-min file-activity poll, (3) 15-min hard cutoff. Absence = stalled agents silently drop findings.
+CLAUDE.md §8 requires every skill spawning background agents to implement: (1) launch sentinel creation, (2) 5-min file-activity poll, (3) 15-min hard cutoff. Absence = stalled agents silently drop findings.
 
 **Step 1 — Find skills with background agent spawns**:
 
@@ -524,7 +524,7 @@ done
 ```
 
 Severity: **high** for C35a/b/c — stalled background agents drop findings with no user-visible signal.
-Fix: either reference `$_FOUNDRY_SHARED/agent-spawn-protocol.md` (preferred once file exists) or inline all three §8 elements in the skill.
+Fix: reference `$_FOUNDRY_SHARED/agent-spawn-protocol.md` (preferred once file exists) or inline all three §8 elements in skill.
 
 | Sub-check | Pattern | Severity | Auto-fix |
 | --- | --- | --- | --- |

@@ -1,5 +1,3 @@
-**Re: Compress prompt template into caveman format**
-
 Fix issues in `<file path>`. Listed fixes only — no other changes.
 
 \<for each finding in this file, one bullet per fix>
@@ -17,12 +15,12 @@ Fix type reference:
 - Stale cross-reference → replace `<old-name>` with `<correct-name>`
 - Duplicate section → remove listed lines verbatim
 
-No comments, docstrings, or improvements beyond listed fixes.
+No comments, docstrings, improvements beyond listed fixes.
 
 Fix Action Hierarchy — work through order before acting:
 
-1. Reason: finding correct? If not, discard — don't act on wrong finding.
-2. Relocate: content correct but wrong place? Move it.
-3. Consolidate: duplicates something nearby? Merge.
+1. Reason: finding correct? If not, discard.
+2. Relocate: correct content, wrong place? Move.
+3. Consolidate: duplicates nearby? Merge.
 4. Minimize: too long but valid? Compress.
 5. Remove: only if none above apply.

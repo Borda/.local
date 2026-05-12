@@ -20,12 +20,12 @@ Confidence:  [aggregate score] — [key gaps]
 
 ### Architecture & Quality
 - [sw-engineer findings]
-- [blocking] issues marked explicitly
-- [nit] suggestions marked explicitly
+- [blocking] marked explicit
+- [nit] marked explicit
 
 ### Test Coverage Gaps
 - [qa-specialist findings — top 5 missing tests]
-- For ML code: non-determinism or missing seed issues
+- ML code: non-determinism or missing seed issues
 
 ### Performance Concerns
 - [perf-optimizer findings — ranked by impact]
@@ -33,7 +33,7 @@ Confidence:  [aggregate score] — [key gaps]
 
 ### Documentation Gaps
 - [doc-scribe findings]
-- Public API without docstrings listed explicitly
+- Public API without docstrings listed explicit
 
 ### Static Analysis
 - [linting-expert findings — ruff violations, mypy errors, annotation gaps]
@@ -44,8 +44,8 @@ Confidence:  [aggregate score] — [key gaps]
 - Deprecation path: [provided / missing]
 
 ### Codex Co-Review
-(omit section if Codex was unavailable or found no unique issues)
-- [unique findings from codex.md not already captured by agents above]
+(omit if Codex unavailable or no unique findings)
+- [unique findings from codex.md not already in agent sections]
 - Duplicate findings (same location as agent finding): omitted — see agent section
 
 ### Recommended Next Steps

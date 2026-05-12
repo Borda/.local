@@ -25,19 +25,19 @@ One JSON obj per line. Two-pass write by separate agents:
 | Field | Type | Description |
 | --- | --- | --- |
 | `hypothesis` | `str` | What to test — concrete, implementable change |
-| `rationale` | `str` | Literature or experiment grounding for the hypothesis |
-| `confidence` | `float` | Oracle confidence [0–1]; entries < 0.7 are deprioritized to end of queue |
+| `rationale` | `str` | Literature or experiment grounding |
+| `confidence` | `float` | Oracle confidence [0–1]; entries < 0.7 deprioritized to queue end |
 | `expected_delta` | `str` | Expected metric change (e.g. `"+1–3% val_loss"`) |
 | `priority` | `int` | Execution order (1 = highest); journal-sourced entries use lower values than oracle entries |
-| `source` | `str` | `"oracle"` for researcher entries; `"journal"` for journal-sourced entries; `"team"` for team-mode hypothesis agents (Phase A); `"retro"` for `/research:retro` output (feasibility fields absent — run treats as `feasible: true`); `"architect"` for architect-only entries (no researcher) |
+| `source` | `str` | `"oracle"` for researcher; `"journal"` for journal-sourced; `"team"` for team-mode hypothesis agents (Phase A); `"retro"` for `/research:retro` output (feasibility fields absent — treated as `feasible: true`); `"architect"` for architect-only entries |
 
 **Pass 2 — solution-architect (feasibility filter):** annotates in place, preserves order
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `feasible` | `bool` | `true` if the codebase supports the change with reasonable effort |
-| `blocker` | `str` | null` | Required if `feasible: false`; names the specific architectural blocker |
-| `codebase_mapping` | `str` | Files, classes, or functions that would need to change |
+| `feasible` | `bool` | `true` if codebase supports change with reasonable effort |
+| `blocker` | `str` | null` | Required if `feasible: false`; names specific architectural blocker |
+| `codebase_mapping` | `str` | Files, classes, or functions needing change |
 
 **Minimal valid oracle entry (before feasibility pass):**
 
@@ -69,7 +69,7 @@ One JSON obj per line. Two-pass write by separate agents:
 - Move low-confidence: assign `priority` > max in queue; don't reorder lines (preserve JSONL append order for audit)
 - Solution-architect must **preserve hypothesis order** when annotating; no re-rank
 - `blocker` required when `feasible: false` — blank/null blocker on false entry = schema violation
-- `source: "architect"` (architect-only, no researcher) and `source: "retro"` entries may omit `feasible`/`blocker`/`codebase_mapping`; absent fields are treated as `feasible: true` by all consumers
+- `source: "architect"` and `source: "retro"` entries may omit `feasible`/`blocker`/`codebase_mapping`; absent fields treated as `feasible: true` by all consumers
 
 ## checkpoint.json Schema
 
@@ -89,8 +89,8 @@ Written after every iteration; `--resume` uses to skip completed:
 | --- | --- | --- |
 | `iteration` | `int` | 1-indexed; monotonically increasing |
 | `hypothesis_id` | `int` | 0-indexed position in `hypotheses.jsonl` |
-| `metric_before` | `float` | Metric value before applying the hypothesis |
-| `metric_after` | `float` | Metric value after applying the hypothesis |
+| `metric_before` | `float` | Metric value before applying hypothesis |
+| `metric_after` | `float` | Metric value after applying hypothesis |
 | `status` | `str` | `"passed"` or `"rolled_back"` |
 
 - Completed iteration in `checkpoint.json` = idempotent — skip, don't re-run
@@ -138,8 +138,8 @@ Rules:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `axis` | `str` | The optimization axis the hypothesis belongs to (e.g., `"model architecture"`) |
-| `agent_type` | `str` | Specialist agent type to use for implementation (e.g., `"perf-optimizer"`, `"researcher"`) |
+| `axis` | `str` | Optimization axis (e.g., `"model architecture"`) |
+| `agent_type` | `str` | Specialist agent for implementation (e.g., `"perf-optimizer"`, `"researcher"`) |
 | `change_scope` | `str` | Estimated blast radius: `"small"` (1–2 files), `"medium"` (3–5 files), `"large"` (6+ files or architectural) (primary Phase B sort key — small runs first) |
 
 Team entry missing any of 3 fields = schema violation (like missing `blocker` on infeasible entry).

@@ -9,7 +9,7 @@ model: sonnet
 
 <objective>
 
-Two modes: use `init` first-time to onboard, then `check` regularly to verify. Default (no args) dispatches to `check`.
+Two modes: use `init` first-time to onboard, then `check` regularly to verify. Default (no args) → `check`.
 
 - **`check`** — fast diagnostic: finds `scan-query`, verifies index exists and fresh, runs smoke test, audits which skill files have injection block. Prints `✓`/`✗`/`⚠` per check with one-line remediation hints. Pure bash — no model reasoning needed for happy path.
 - **`init`** — interactive onboarding: builds index if missing, discovers all installed skills and agents, scores by how much codemap would help, presents recommendation table, asks which to wire in, inserts correct injection block into each selected file.
@@ -163,9 +163,9 @@ printf "  • /codemap:integration check — re-run after fixes\n"
 
 ### I0 — Detect --approve
 
-If `--approve` is present in `$ARGUMENTS` (case-insensitive), skip all `AskUserQuestion` calls in this workflow and auto-select the ★ option for every prompt. Print `[--approve] applying recommended options` in place of each question. This is a reasoning instruction — do not set a bash variable. All subsequent `AskUserQuestion` calls in this workflow follow this rule automatically — no per-step check needed.
+`--approve` in `$ARGUMENTS` → skip all `AskUserQuestion` calls, auto-select ★ option for every prompt. Print `[--approve] applying recommended options` in place of each question. Reasoning instruction — no bash variable needed. All subsequent `AskUserQuestion` calls follow this automatically.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ### I1 — Verify or build the index
 
@@ -178,7 +178,7 @@ INDEX="${GIT_ROOT:-.}/.cache/scan/${PROJ}.json"
 
 Index exists: report and proceed. Index missing:
 
-Use `AskUserQuestion` to present:
+Use `AskUserQuestion`:
 
 ```text
 No codemap index found for project: $PROJ
@@ -187,7 +187,7 @@ a) Build now ★ — scans all .py files via ast.parse (Python only), <60s on mo
 b) Skip — I'll run /codemap:scan later (recommendations will be generic, no module-count weighting)
 ```
 
-If **a** (or auto-approved): run scanner — verify binary exists first:
+If **a** (or auto-approved): verify binary exists first, then run scanner:
 
 ```bash
 # timeout: 5000
@@ -200,25 +200,25 @@ Report result (module count, degraded count). If **b**: note "Proceeding without
 
 ### I2 — Discover installed skills and agents
 
-Read `~/.claude/plugins/installed_plugins.json` to find all installed plugins (fallback: if file absent, glob `~/.claude/plugins/cache/*/*/` to discover install paths). For each plugin's `installPath`, glob for:
+Read `~/.claude/plugins/installed_plugins.json` (fallback: glob `~/.claude/plugins/cache/*/*/` if file absent). For each plugin's `installPath`, glob:
 
 - `skills/*/SKILL.md` — skill files
 - `agents/*.md` — agent files
 
-For each file: extract from frontmatter: `name`, `description`, `allowed-tools` (skills) or `description` body (agents). Extract first sentence of `<objective>` section.
+Per file: extract from frontmatter: `name`, `description`, `allowed-tools` (skills) or `description` body (agents). Extract first sentence of `<objective>` section.
 
-Flag which files already have injection block:
+Flag files with injection block:
 
 ```bash
 # timeout: 10000
 find "$CACHE" -name "SKILL.md" -exec grep -l "command -v scan-query" {} \; 2>/dev/null
 ```
 
-Build two lists: `ALREADY_INJECTED` and `CANDIDATES` (not yet injected).
+Build two lists: `ALREADY_INJECTED` and `CANDIDATES`.
 
 ### I3 — Score and rank candidates
 
-For each candidate skill/agent, classify by value tier using `<objective>` text and `allowed-tools`:
+Classify each candidate by value tier using `<objective>` text and `allowed-tools`:
 
 | Tier | Signal | Recommendation |
 | --- | --- | --- |
@@ -227,7 +227,7 @@ For each candidate skill/agent, classify by value tier using `<objective>` text 
 | **Low** | documentation, release, communication; no code traversal | "Low value — structural context unlikely to help" |
 | **Skip** | config-only, single-file, non-Python purpose (e.g. shell, YAML, JS) | "Skip — not applicable for Python import graphs" |
 
-If index built and `total_modules < 20`: downgrade all tiers one level (small project = less value from structural context).
+If index built and `total_modules < 20`: downgrade all tiers one level (small project = less value).
 
 ### I4 — Present recommendations and ask user
 
@@ -244,7 +244,7 @@ Codemap injection candidates for: $PROJ
   —       oss:release          SKIP    release artifact; no code traversal
 ```
 
-Use `AskUserQuestion` to ask:
+Use `AskUserQuestion`:
 
 ```text
 Which skills/agents should I add codemap injection to?
@@ -254,7 +254,7 @@ Reply with letters (e.g. "a b"), "all" (all High+Medium), or "none".
 
 ### I5 — Wire in the injection block
 
-For each selected file, determine insertion point and content:
+Per selected file, determine insertion point and content:
 
 **For SKILL.md files** — find step that first spawns agent. Insert hardened soft-check block immediately before it, blank line before and after:
 
@@ -269,7 +269,7 @@ fi
 # Also add: "For targeted analysis run: scan-query rdeps <module> or scan-query fn-blast module::function"
 ```
 
-For skills where target module can be derived from `$ARGUMENTS` (refactor, fix with module path, review), also add after `central` — **derive `TARGET_MODULE` first**; without it the calls run as `scan-query rdeps ""` and return nothing:
+For skills where target module derives from `$ARGUMENTS` (refactor, fix with module path, review), also add after `central` — **derive `TARGET_MODULE` first**; without it calls run as `scan-query rdeps ""` and return nothing:
 
 ```bash
 # Derive TARGET_MODULE from the file/path argument (e.g. src/foo/bar.py → foo.bar)
@@ -284,7 +284,7 @@ else
 fi
 ```
 
-**For agent `.md` files** — append to last workflow instruction paragraph, before closing section or final notes. Note: agents do not have `$ARGUMENTS` — derive `TARGET_MODULE` from the user's input prompt (e.g., extract the module or file name mentioned in the task description):
+**For agent `.md` files** — append to last workflow instruction paragraph, before closing section or final notes. Agents have no `$ARGUMENTS` — derive `TARGET_MODULE` from user's input prompt:
 
 ```markdown
 **Structural context (codemap — Python projects only)**: if `.cache/scan/<project>.json` exists, run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known — derive target from user's task description, not `$ARGUMENTS`) **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
@@ -294,7 +294,7 @@ Report each edit: `✓ injected: <plugin>/<skill-or-agent> at line N`
 
 ### I5a — Offer git post-commit hook
 
-Use `AskUserQuestion` to present option:
+Use `AskUserQuestion`:
 
 ```text
 Install post-commit git hook for automatic incremental rebuild?
@@ -338,7 +338,7 @@ HOOKEOF
 fi
 ```
 
-Report: `✓ post-commit hook installed: <path>` or `✓ already installed` if marker was already present. Hook logs to `/tmp/codemap-hook.log` — failures and version-upgrade full scans are visible there.
+Report: `✓ post-commit hook installed: <path>` or `✓ already installed` if marker present. Hook logs to `/tmp/codemap-hook.log` — failures and version-upgrade full scans visible there.
 
 ### I6 — Summary report
 

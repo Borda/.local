@@ -17,13 +17,13 @@ Spawn specialized sub-agents in parallel. Consolidate findings into structured f
 <inputs>
 
 - **$ARGUMENTS**: PR number or report path.
-  - If a number given (e.g. `42` or `#42`): review PR diff
+  - Number given (e.g. `42` or `#42`): review PR diff
   - `--reply`: spawn oss:shepherd to draft contributor-facing PR comment. Path ending in `.md` → spawn oss:shepherd from that report, skip new review.
   - **Scope**: Python source only. Non-Python file → state out of scope, suggest tool, no findings.
   - **Local files**: use `/develop:review` (requires `develop` plugin) for local files or current git diff.
   - `--codemap`: enable structural context from codemap index (off by default; requires codemap plugin installed)
   - `--semble`: enable semble semantic search companion (off by default; requires semble MCP server configured)
-- **--plan handoff not supported** — this skill does not accept plan-mode output from `/develop:plan` (requires `develop` plugin).
+- **--plan handoff not supported** — skill does not accept plan-mode output from `/develop:plan` (requires `develop` plugin).
 
 </inputs>
 
@@ -31,7 +31,7 @@ Spawn specialized sub-agents in parallel. Consolidate findings into structured f
 
 - Local file review or current git diff — use `/develop:review` (requires `develop` plugin)
 - Non-Python PRs (TypeScript, Go, etc.) — state out of scope, stop
-- Standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — this is within scope and does not conflict.
+- Standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
 
 </not-for>
 
@@ -62,7 +62,7 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 [ -z "$_OSS_SHARED" ] && echo "⚠ Could not resolve _OSS_SHARED — Step 9 --reply will fail; verify oss plugin installed" || true
 ```
 
-Read `$_OSS_SHARED/agent-resolution.md`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
+Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
 <!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:perf-optimizer → general-purpose, foundry:doc-scribe → general-purpose, foundry:linting-expert → general-purpose, foundry:solution-architect → general-purpose, foundry:challenger → general-purpose. -->
 
@@ -72,7 +72,7 @@ Read `$_OSS_SHARED/agent-resolution.md`. Agents this skill uses: `foundry:sw-eng
 - `deleted` if orphaned / irrelevant
 - `in_progress` only if genuinely continuing
 
-**Task tracking**: TaskCreate for each major phase. Mark in_progress/completed throughout. Loop retry or scope change → new task.
+**Task tracking**: TaskCreate each major phase. Mark in_progress/completed throughout. Loop retry or scope change → new task.
 
 ## Step 1: Identify scope and context (run in parallel for PR mode)
 
@@ -95,9 +95,9 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
 fi
 ```
 
-If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` is in your available tools. If not: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
+`SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. Not found: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 DIRECT_PATH_MODE=false
@@ -132,7 +132,7 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
 fi
 ```
 
-**CI RED GATE** (PR mode only): if `gh pr checks` shows any required check failing → print `⛔ CI is red — skipping full review. Fix failing CI first, then re-run /oss:review.` and `exit 0`. Do NOT proceed to Steps 2–8.
+**CI RED GATE** (PR mode only): `gh pr checks` shows failing required check → print `⛔ CI is red — skipping full review. Fix failing CI first, then re-run /oss:review.` and `exit 0`. Do NOT proceed to Steps 2–8.
 
 ### Python file pre-check
 
@@ -151,18 +151,18 @@ fi
 Before spawning agents, classify diff:
 
 - Count files changed, lines added/removed, new classes/modules
-- Classify as: **FIX** (\<3 files, \<50 lines), **REFACTOR** (no new public API), **FEATURE** (new public API or module), or **MIXED**
-- **Complexity smell**: if 8+ files changed, note in report header
+- Classify: **FIX** (\<3 files, \<50 lines), **REFACTOR** (no new public API), **FEATURE** (new public API or module), or **MIXED**
+- **Complexity smell**: 8+ files changed → note in report header
 
-Use classification to skip optional agents:
+Skip optional agents by classification:
 
-- FIX scope → skip Agent 3 (perf-optimizer), Agent 6 (solution-architect), and Agent 7 (challenger — low value for targeted fixes)
+- FIX scope → skip Agent 3 (perf-optimizer), Agent 6 (solution-architect), Agent 7 (challenger — low value for targeted fixes)
 - REFACTOR scope → skip Agent 6 (solution-architect)
 - FEATURE/MIXED → spawn all agents
 
 ### Structural context (codemap — only if `CODEMAP_ENABLED=true`)
 
-**Skip this entire section if `CODEMAP_ENABLED=false`.**
+**Skip entire section if `CODEMAP_ENABLED=false`.**
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
@@ -176,20 +176,20 @@ fi
 
 Codemap returns results: prepend `## Structural Context (codemap)` block to **Agent 1 (foundry:sw-engineer)** spawn prompt. Include:
 
-- Each changed module's `rdep_count` — label as **high risk** (>20), **moderate** (5–20), or **low** (\<5)
+- Each changed module's `rdep_count` — label **high risk** (>20), **moderate** (5–20), or **low** (\<5)
 - `central --top 5` for project-wide blast-radius reference
 
 Agent 1 uses this to prioritize: high `rdep_count` modules warrant deeper scrutiny on API compat, error handling, correctness — downstream callers outside diff not otherwise visible.
 
-**Semble companion** (only if `SEMBLE_ENABLED=true`): include this in Agent 1 spawn prompt:
+**Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt:
 
-> If `mcp__semble__search` is available in your tools and any changed module's codemap result was non-exhaustive (`"exhaustive": false`) or codemap was absent: call `mcp__semble__search` with `query="<module> import"` and `repo=<git_root>`, `top_k=20` for each such module. Stop per module when two consecutive queries return no new importers. Merge with codemap results. Skip entirely if all codemap results were exhaustive.
+> If `mcp__semble__search` available in tools and any changed module's codemap result was non-exhaustive (`"exhaustive": false`) or codemap absent: call `mcp__semble__search` with `query="<module> import"` and `repo=<git_root>`, `top_k=20` per module. Stop per module when two consecutive queries return no new importers. Merge with codemap results. Skip if all codemap results exhaustive.
 
 ### Linked issue analysis (PR mode only)
 
 Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`, `Resolves #N`, `refs #N` — case-insensitive). Extract to `ISSUE_NUMS`. Cap 3.
 
-`ISSUE_NUMS` non-empty: spawn one **foundry:sw-engineer** per issue **concurrently in Step 2, alongside Codex co-review** (both run after the run directory is created in Step 2 — issue agents and Codex are parallel, not sequential). **Synchronization**: Step 3 agents must NOT spawn until all issue agents have returned. After spawning issue agents, poll until all `$RUN_DIR/issue-<N>.md` files exist (max `$HARD_CUTOFF` seconds, check every 15s): `for N in $ISSUE_NUMS; do until [ -f "$RUN_DIR/issue-$N.md" ]; do sleep 15; done; done`. Only then proceed to Step 3. Each issue agent:
+`ISSUE_NUMS` non-empty: spawn one **foundry:sw-engineer** per issue **concurrently in Step 2, alongside Codex co-review** (both run after run directory created in Step 2 — issue agents and Codex parallel, not sequential). **Synchronization**: Step 3 agents must NOT spawn until all issue agents returned. After spawning issue agents, poll until all `$RUN_DIR/issue-<N>.md` files exist (max `$HARD_CUTOFF` seconds, check every 15s): `for N in $ISSUE_NUMS; do until [ -f "$RUN_DIR/issue-$N.md" ]; do sleep 15; done; done`. Only then proceed to Step 3. Each issue agent:
 
 - Fetch issue: `gh issue view <N> --json title,body,comments,state,labels`
 - Fetch comments: `gh issue view <N> --comments`
@@ -201,7 +201,7 @@ Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`
 
 ### Direct report fast-path
 
-If `DIRECT_PATH_MODE=true`:
+`DIRECT_PATH_MODE=true`:
 
 - `REPLY_MODE=false` → use `AskUserQuestion`: "A report path was passed without `--reply`. Did you mean `/review <path.md> --reply`?" Options: (a) "Yes — continue with `--reply` mode" → set `REPLY_MODE=true`; then re-check: `[ ! -f "$REVIEW_FILE" ] && echo "Error: review file not found at $REVIEW_FILE" && exit 1`; proceed; (b) "No — review a PR instead" → print usage hint (`/review <N> | path/to/dir`) and stop.
 - `REPLY_MODE=true` and `[ ! -f "$REVIEW_FILE" ]` → print `Error: report not found: $REVIEW_FILE` and stop.
@@ -230,7 +230,7 @@ CODEX_OUT="$RUN_DIR/foundry--codex.md"
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/foundry--codex.md.")
 ```
 
-After Codex writes `$RUN_DIR/foundry--codex.md`, extract seed list (≤10 items): parse all finding lines matching `- [SEVERITY]`, `| Location`, or `file:line` patterns; take first 10; format as `[{"loc":"<file>:<line>","note":"<first 80 chars of finding>"}]`. If parsing fails or format differs, proceed with empty seed and note `⚠ Codex seed extraction failed — format may have drifted`. Inject seed into Step 3 agent prompts as pre-flagged issues. If Codex returned ≥10 findings, note in the consolidator report header: `Codex: first 10 items seeded; full list in $RUN_DIR/foundry--codex.md (N total).` Codex skipped or empty → proceed with empty seed.
+After Codex writes `$RUN_DIR/foundry--codex.md`, extract seed list (≤10 items): parse all finding lines matching `- [SEVERITY]`, `| Location`, or `file:line` patterns; take first 10; format as `[{"loc":"<file>:<line>","note":"<first 80 chars of finding>"}]`. Parsing fails or format differs → proceed with empty seed, note `⚠ Codex seed extraction failed — format may have drifted`. Inject seed into Step 3 agent prompts as pre-flagged issues. Codex returned ≥10 findings → note in consolidator report header: `Codex: first 10 items seeded; full list in $RUN_DIR/foundry--codex.md (N total).` Codex skipped or empty → proceed with empty seed.
 
 ## Step 3: Spawn sub-agents in parallel
 
@@ -240,13 +240,13 @@ REVIEW_SKILL_DIR="$(find ~/.claude/plugins -path "*/oss/skills/review" -type d 2
 [ -z "$REVIEW_SKILL_DIR" ] && REVIEW_SKILL_DIR="plugins/oss/skills/review"
 ```
 
-**File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn the user: "file-handoff protocol not found — verify foundry plugin installed (`claude plugin list`); continuing without it." Then continue without it. Run dir from Step 2 (`$RUN_DIR`).
+**File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn: "file-handoff protocol not found — verify foundry plugin installed (`claude plugin list`); continuing without it." Then continue without it. Run dir from Step 2 (`$RUN_DIR`).
 
-**IMPORTANT**: Replace `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` with their actual literal computed values in every Agent spawn prompt below. Do NOT pass these as shell variables — agents receive text, not shell context. Un-expanded `$RUN_DIR` creates a directory literally named `$RUN_DIR` in the project root.
+**IMPORTANT**: Replace `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` with actual literal computed values in every Agent spawn prompt below. Do NOT pass as shell variables — agents receive text, not shell context. Un-expanded `$RUN_DIR` creates directory literally named `$RUN_DIR` in project root.
 
 Launch agents simultaneously. Security augmentation folded into Agent 1. Agent 6 optional. Every agent prompt must end with:
 
-> "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-slug>.md` using the Write tool — where `<agent-slug>` uses hyphen separator (no colon), e.g. `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`. Colons are invalid in macOS filenames. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2},\"file\":\"$RUN_DIR/<agent-slug>.md\",\"confidence\":0.88}`"
+> "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-slug>.md` using the Write tool — where `<agent-slug>` uses hyphen separator (no colon), e.g. `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`. Colons invalid in macOS filenames. Return to caller ONLY compact JSON envelope on final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2},\"file\":\"$RUN_DIR/<agent-slug>.md\",\"confidence\":0.88}`"
 
 **Agent 1 — foundry:sw-engineer**: Review architecture, SOLID, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking vs suggestions.
 
@@ -267,10 +267,10 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 2 — foundry:qa-specialist**: Audit test coverage. Find untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. Also check explicitly (GT-level findings, not afterthoughts):
 
-- Concurrent access to shared state (when locks or shared variables are present)
+- Concurrent access to shared state (when locks or shared variables present)
 - Error paths: calling methods in wrong order (e.g., `log()` before `start()`)
 - Resource cleanup on exception (file handles, database connections)
-- Boundary conditions for division, empty collections, and zero-count inputs
+- Boundary conditions for division, empty collections, zero-count inputs
 - Type-coercion boundary inputs: `int()`, `float()`, `datetime` parsers — test near-valid inputs (float strings for int parsers, empty strings, very large values, None)
 
 **Consolidation rule**: One finding per test gap with concise scenario list, not separate findings. Format: "Missing tests for `parse_numeric()`: empty string, None, very large integers, float-string for int parser." Keeps section actionable, ≤5 items.
@@ -281,7 +281,7 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 4 — foundry:doc-scribe**: Check doc completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run.
 
-- **Algorithmic accuracy check**: Functions computing math results — verify docstring claims match implementation. Output shape/length match? Standard name (e.g. "moving average") match behavior (expanding vs sliding window)? Deviates from convention → MEDIUM (docstring must document deviation). **Deprecation check**: Check stdlib deprecated (e.g., `datetime.utcnow()` deprecated since Python 3.12 (use `datetime.now(UTC)` instead), `os.path` vs `pathlib`). Flag deprecated usage as MEDIUM with replacement. Route to `foundry:linting-expert` if ruff/mypy can catch it automatically — avoid duplicate findings.
+- **Algorithmic accuracy check**: Functions computing math results — verify docstring claims match implementation. Output shape/length match? Standard name (e.g. "moving average") match behavior (expanding vs sliding window)? Deviates from convention → MEDIUM (docstring must document deviation). **Deprecation check**: Check stdlib deprecated (e.g., `datetime.utcnow()` deprecated since Python 3.12 (use `datetime.now(UTC)` instead), `os.path` vs `pathlib`). Flag deprecated usage as MEDIUM with replacement. Route to `foundry:linting-expert` if ruff/mypy can catch automatically — avoid duplicate findings.
 
 **Agent 5 — foundry:linting-expert**: Static analysis. Check ruff/mypy pass. Type annotation gaps on public APIs, suppressed violations without explanation, missing pre-commit hooks. Flag mismatched Python version.
 
@@ -289,7 +289,7 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 6 — foundry:solution-architect (optional, PRs touching public API boundaries)**: Diff touches `__init__.py` exports, adds/modifies Protocols/ABCs, changes module structure, or new public classes → evaluate API design, coupling, backward compat. Skip if internal only.
 
-**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false` or FIX scope)**: Adversarial review of design decisions in the PR. Attacks assumptions, missing edge cases, security risks, architectural concerns, and complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
+**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false` or FIX scope)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
 
 **Health monitoring** (CLAUDE.md §8): After spawning all agents, create checkpoint:
 
@@ -298,7 +298,7 @@ REVIEW_CHECKPOINT="/tmp/review-check-$(date +%s)"
 touch "$REVIEW_CHECKPOINT"
 ```
 
-Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. Refreshing checkpoint after each successful poll ensures stalls are detected relative to last activity, not relative to launch. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
+Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. Refreshing checkpoint after each successful poll ensures stalls detected relative to last activity, not launch. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
 
 ```bash
 ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_DIR — check that $RUN_DIR was expanded correctly in spawn prompts"
@@ -323,7 +323,7 @@ PR_BASE=$(git merge-base HEAD "origin/${TRUNK:-main}" 2>/dev/null || echo "origi
 
 ### 4a: Ecosystem impact check (for libraries with downstream users)
 
-> **Scope disclosure**: this check searches public GitHub code globally. Results may include unrelated projects that coincidentally use the same symbol names — treat as signal, not proof. Rate-limited responses (HTTP 429, empty results) may indicate limitation, not absence of usage.
+> **Scope disclosure**: check searches public GitHub code globally. Results may include unrelated projects using same symbol names — treat as signal, not proof. Rate-limited responses (HTTP 429, empty results) may indicate limitation, not absence of usage.
 
 ```bash
 # Check if changed APIs are used by downstream projects
@@ -360,9 +360,9 @@ git diff $PR_BASE HEAD -- CHANGELOG.md CHANGES.md # timeout: 3000
 
 Read `$FOUNDRY_SHARED/cross-validation-protocol.md`. File absent → warn: "cross-validation protocol not found — verify foundry plugin installed (`claude plugin list`); skipping Step 5." Then skip Step 5.
 
-**Independence requirement**: cross-validation must run as a separate spawned agent — same type as the finding's origin (e.g., `foundry:sw-engineer` verifies `foundry:sw-engineer` critical finding). Do NOT validate in orchestrator context; in-context verification violates independence.
+**Independence requirement**: cross-validation must run as separate spawned agent — same type as finding's origin (e.g., `foundry:sw-engineer` verifies `foundry:sw-engineer` critical finding). Do NOT validate in orchestrator context; in-context verification violates independence.
 
-Spawn verifier agent per critical/blocking finding. Agent reads the relevant finding file from `$RUN_DIR` and the referenced code, then returns: `{"finding_id":"<id>","verdict":"CONFIRMED|REFUTED","rationale":"<one sentence>"}`. REFUTED → downgrade finding severity or remove before consolidation.
+Spawn verifier agent per critical/blocking finding. Agent reads relevant finding file from `$RUN_DIR` and referenced code, returns: `{"finding_id":"<id>","verdict":"CONFIRMED|REFUTED","rationale":"<one sentence>"}`. REFUTED → downgrade finding severity or remove before consolidation.
 
 ## Step 6: Consolidate findings
 
@@ -373,37 +373,37 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 DATE=$(date +%Y-%m-%d)
 ```
 
-Spawn a **foundry:sw-engineer** consolidator agent with this prompt:
+Spawn **foundry:sw-engineer** consolidator agent with prompt:
 
-> **Task:** Read all finding files in `$RUN_DIR/` (agent files: `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`, `foundry--challenger.md` if present, and `foundry--codex.md` if present — skip any that are missing). Read `$REVIEW_SKILL_DIR/checklist.md` using the Read tool and apply the consolidation rules (signal-to-noise filter, annotation completeness, section caps). Include only findings that passed Step 5 cross-validation (verdict=CONFIRMED or un-cross-validated medium/low). For `foundry--challenger.md`: map severity keys Blockers → critical/high, Concerns → medium, Nitpicks → low when aggregating counts.
+> **Task:** Read all finding files in `$RUN_DIR/` (agent files: `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`, `foundry--challenger.md` if present, and `foundry--codex.md` if present — skip missing). Read `$REVIEW_SKILL_DIR/checklist.md` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). Include only findings that passed Step 5 cross-validation (verdict=CONFIRMED or un-cross-validated medium/low). For `foundry--challenger.md`: map severity keys Blockers → critical/high, Concerns → medium, Nitpicks → low when aggregating counts.
 >
 > **Filtering rules:**
-> - Precision gate: only include findings with a concrete, actionable location (function, line range, or variable name).
-> - Finding density: for modules under 100 lines, aim for ≤10 total findings.
+> - Precision gate: only include findings with concrete, actionable location (function, line range, or variable name).
+> - Finding density: modules under 100 lines → aim ≤10 total findings.
 > - Ranking: within each section, order by impact (blocking > critical > high > medium > low).
-> - Codex deduplication: include `foundry--codex.md` unique findings under `### Codex Co-Review`; same file:line raised by both agent and Codex → keep agent version, mark as 'also flagged by Codex'.
+> - Codex deduplication: include `foundry--codex.md` unique findings under `### Codex Co-Review`; same file:line raised by both agent and Codex → keep agent version, mark 'also flagged by Codex'.
 >
-> **Issue alignment (when `issue-*.md` files exist in `$RUN_DIR`):** Include a `### Issue Root Cause Alignment` section placed immediately after `### [blocking] Critical`. For each linked issue: state the root cause hypothesis, whether the PR addresses it (yes / partially / no), whether the PR description diverges from the issue's stated problem, and whether the reproduction scenario is tested. Any `root cause misalignment` or `scope divergence` finding is at least HIGH severity.
+> **Issue alignment (when `issue-*.md` files exist in `$RUN_DIR`):** Include `### Issue Root Cause Alignment` section placed immediately after `### [blocking] Critical`. Per linked issue: state root cause hypothesis, whether PR addresses it (yes / partially / no), whether PR description diverges from issue's stated problem, whether reproduction scenario tested. Any `root cause misalignment` or `scope divergence` finding is at least HIGH severity.
 >
-> **Confidence parsing:** Parse each agent's `confidence` from its JSON envelope. Assign `codex` a fixed confidence of 0.75 (moderate — static analysis, no runtime context).
+> **Confidence parsing:** Parse each agent's `confidence` from JSON envelope. Assign `codex` fixed confidence 0.75 (moderate — static analysis, no runtime context).
 >
 > **Write to:** compute output path first, then guard against overwrite:
 > ```bash
 > OUT=".temp/output-review-$BRANCH-$DATE.md"
 > n=2; while [ -f "$OUT" ]; do OUT=".temp/output-review-$BRANCH-$DATE-${n}.md"; n=$((n+1)); done
 > ```
-> Write full report to `$OUT` using the Write tool.
+> Write full report to `$OUT` using Write tool.
 >
-> **Return ONLY** a one-liner summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
+> **Return ONLY** one-liner summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
 
 Main context receives only the one-liner verdict. Proceed with that summary for terminal output.
 
-**Consolidator unavailable fallback** — if `Agent` tool deferred/not loaded and consolidator cannot be spawned:
-1. Read each `$RUN_DIR/*.md` agent finding file using the Read tool before synthesizing — do not rely solely on JSON envelope counts. Then synthesize verdict one-liner: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
+**Consolidator unavailable fallback** — `Agent` tool deferred/not loaded and consolidator cannot be spawned:
+1. Read each `$RUN_DIR/*.md` agent finding file using Read tool before synthesizing — do not rely solely on JSON envelope counts. Synthesize verdict one-liner: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`
 2. Compute output path then guard: `OUT=".temp/output-review-$BRANCH-$DATE.md"; n=2; while [ -f "$OUT" ]; do OUT=".temp/output-review-$BRANCH-$DATE-${n}.md"; n=$((n+1)); done` — write consolidated report to `$OUT` using Write tool. Include all sections and Confidence block
 3. Print terminal block using `$FOUNDRY_SHARED/terminal-summaries.md` template — **never silently skip terminal output**
 
-Report format: read `templates/review-report.md` in this skill directory and use it as the output structure.
+Report format: read `templates/review-report.md` in skill directory and use as output structure.
 
 After parsing confidence: agent < 0.7 → prepend **⚠ LOW CONFIDENCE** to findings section, state gap explicitly. Never drop uncertain findings.
 
@@ -413,18 +413,18 @@ Print terminal block: read `---` header from top of `.temp/output-review-$BRANCH
 
 After consolidating, identify tasks Codex can implement — not style violations (pre-commit handles those), but meaningful code/doc work grounded in actual implementation.
 
-**Delegate to Codex when you can write an accurate, specific brief:**
+**Delegate to Codex when you can write accurate, specific brief:**
 
 - Public functions with no docstrings — read implementation first, describe what each does so Codex writes real 6-section docstring
 - Missing test coverage for concrete, well-defined behavior — describe exact scenario
 - Consistent rename across files — name old/new symbol and reason
 
-**Do not delegate — these require human judgment:**
+**Do not delegate — require human judgment:**
 
 - Architectural issues, logic errors, security vulnerabilities, or behavioural changes
-- Any task where you cannot write a precise description without guessing
+- Any task where you cannot write precise description without guessing
 
-Read `$FOUNDRY_SHARED/codex-delegation.md`. File absent → warn the user: "codex-delegation criteria not found — verify foundry plugin installed (`claude plugin list`); skipping Step 7 delegation." Then skip Step 7.
+Read `$FOUNDRY_SHARED/codex-delegation.md`. File absent → warn: "codex-delegation criteria not found — verify foundry plugin installed (`claude plugin list`); skipping Step 7 delegation." Then skip Step 7.
 
 Example prompt: `"Add a test for StreamReader.read_chunk() in tests/test_reader.py — the method should raise ValueError when called after close(), currently no test covers this path."`
 
@@ -440,7 +440,7 @@ Print `### Codex Delegation` only when tasks delegated — omit if nothing deleg
 
 ### 8a — Follow-up gate
 
-! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text before or instead of the tool call. Map options directly into the tool call arguments:
+! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text before or instead of tool call. Map options directly into tool call arguments:
 - question: "What next?"
 - (a) label: `/oss:resolve $CLEAN_ARGS` — description: fix this PR
 - (b) label: `/oss:resolve report` — description: resolve from full report
@@ -468,9 +468,9 @@ ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/agents/shepherd.md 2>/dev/null | g
 [ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
 ```
 
-If `$SHEPHERD_AVAILABLE` equals 0: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip shepherd spawn.
+`$SHEPHERD_AVAILABLE` equals 0: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip shepherd spawn.
 
-If `$SHEPHERD_AVAILABLE` equals 1: read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
+`$SHEPHERD_AVAILABLE` equals 1: read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
 
 Spawn with:
 - Report path: review output file from Step 6
@@ -493,7 +493,7 @@ Scenarios:
 <notes>
 
 - Critical issues always surfaced regardless of scope
-- Skip sections with no issues — no padding. Isolated code without git context → skip OSS Checks and Performance Concerns unless code has evidence of perf issues (nested loops, I/O in tight loops) or OSS concerns (hardcoded secrets, new deps).
+- Skip sections with no issues — no padding. Isolated code without git context → skip OSS Checks and Performance Concerns unless evidence of perf issues (nested loops, I/O in tight loops) or OSS concerns (hardcoded secrets, new deps).
 - **Signal-to-noise gate**: Function/class ≤50 lines with 1–2 critical/high issues → max 2 additional medium/low findings. Rest as `[nit]` in "Minor Observations". First 3 findings reader sees = most impactful.
 - PR mode: check CI first — red → report without full review
 - Blocking issues need explicit `[blocking]` prefix
@@ -501,7 +501,7 @@ Scenarios:
   - `[blocking]` bugs or regressions → `/develop:fix` (requires `develop` plugin) to reproduce with test and apply targeted fix
   - Structural or quality issues → `/develop:refactor` (requires `develop` plugin) for test-first improvements
   - Security findings in auth/input/deps → run `pip-audit` for dep CVEs; address OWASP issues via `/develop:fix` (requires `develop` plugin)
-  - Mechanical issues beyond Step 6 → have Claude dispatch internally: `Agent(subagent_type="codex:codex-rescue", prompt="<task>")`
+  - Mechanical issues beyond Step 6 → dispatch internally: `Agent(subagent_type="codex:codex-rescue", prompt="<task>")`
   - Docstrings, type annotations, renames → dispatch `Agent(subagent_type="codex:codex-rescue", prompt="<task description>")` per finding
   - PR feedback for contributor → `--reply` to auto-draft via oss:shepherd, or invoke oss:shepherd manually for custom framing
 

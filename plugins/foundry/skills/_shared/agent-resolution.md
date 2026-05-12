@@ -13,7 +13,7 @@ DEVELOP_AVAILABLE=$(find ~/.claude/plugins/cache -name "develop" -type d 2>/dev/
 
 ### OSS Plugin Absent
 
-If oss **not** installed, substitute `oss:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
+oss not installed → sub `oss:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
 
 | oss agent | Fallback | Model | Role description prefix |
 | --- | --- | --- | --- |
@@ -22,7 +22,7 @@ If oss **not** installed, substitute `oss:X` with `general-purpose`, prepend rol
 
 ### Research Plugin Absent
 
-If research **not** installed, substitute `research:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
+research not installed → sub `research:X` with `general-purpose`, prepend role description + `model: <model>` to spawn call:
 
 | research agent | Fallback | Model | Role description prefix |
 | --- | --- | --- | --- |
@@ -31,11 +31,11 @@ If research **not** installed, substitute `research:X` with `general-purpose`, p
 
 ### Codemap and Develop Plugins Absent
 
-Codemap and develop expose skills only — no agent-level fallback. When absent, skip operations requiring their skills and log:
+Codemap and develop expose skills only — no agent-level fallback. When absent, skip ops requiring their skills and log:
 
 ```
 "codemap plugin not installed — skipping <codemap:skill>"
 "develop plugin not installed — skipping <develop:skill>"
 ```
 
-Skills with `--team` mode: omit unavailable cross-plugin agents from team roster, log per-agent skip note. Team still runs with available agents.
+Skills with `--team` mode: omit unavailable cross-plugin agents from roster, log per-agent skip note. Team runs with available agents.

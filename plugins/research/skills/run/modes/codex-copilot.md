@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 <!-- Codex co-pilot mode include: loaded by research:run when --codex flag is set -->
 
 <!-- Implements Phase 2c of the R5 iteration loop -->
@@ -11,12 +9,12 @@
 > 1. **Cost ceiling** — `CODEX_ITER < MAX_CODEX_RUNS` (default `MAX_CODEX_RUNS=10`; even with `MAX_ITERATIONS=20` Codex runs at most 10 times).
 > 2. **Diminishing returns** — last 2 Codex passes did NOT both produce no code changes. After 2 consecutive no-op Codex passes, skip Codex for remaining iterations and append note to `diary.md`: `"Codex skipped from iter N — 2 consecutive no-ops"`.
 >
-> Initialize before R5 loop: `CODEX_ITER=0`, `CODEX_NOOP_STREAK=0`, `CODEX_DISABLED=false`.
-> After each Phase 2c: increment `CODEX_ITER`; on no-op outcome `((CODEX_NOOP_STREAK++))`, on changes `CODEX_NOOP_STREAK=0`. If `CODEX_NOOP_STREAK >= 2` set `CODEX_DISABLED=true`.
+> Init before R5 loop: `CODEX_ITER=0`, `CODEX_NOOP_STREAK=0`, `CODEX_DISABLED=false`.
+> After each Phase 2c: increment `CODEX_ITER`; no-op → `((CODEX_NOOP_STREAK++))`, changes → `CODEX_NOOP_STREAK=0`. If `CODEX_NOOP_STREAK >= 2` set `CODEX_DISABLED=true`.
 
-If gate fails (`CODEX_DISABLED=true` or `CODEX_ITER >= MAX_CODEX_RUNS`): skip Phase 2c, continue to Phase 3.
+Gate fail (`CODEX_DISABLED=true` or `CODEX_ITER >= MAX_CODEX_RUNS`): skip Phase 2c, continue to Phase 3.
 
-Otherwise print narration, update R5b before calling Agent:
+Else print narration, update R5b before Agent call:
 
 ```text
 [→ Iter N/max · Phase 2c: Codex co-pilot — running (CODEX_ITER/MAX_CODEX_RUNS)]
@@ -24,9 +22,9 @@ Otherwise print narration, update R5b before calling Agent:
 
 TaskUpdate R5b subject: `R5b: Codex co-pilot — iter N/max_iterations running`, status: `in_progress`
 
-Codex runs second pass when active, building on Claude's kept change or fresh attempt after revert/no-op. Codex's commit is evaluated by Phase 7 against `best_metric` (same rule as any other iteration); "delta ≥ 0.1%" means delta against `best_metric`, not against the previous Claude iteration. Codex wins only if delta ≥ 0.1% AND guard passes.
+Codex runs second pass when active, building on Claude's kept change or fresh attempt after revert/no-op. Codex commit evaluated by Phase 7 against `best_metric` (same rule as any iteration); "delta ≥ 0.1%" = delta against `best_metric`, not previous Claude iteration. Codex wins only if delta ≥ 0.1% AND guard passes.
 
-- Claude Phase 2 **kept**: Codex second pass on current state — building on Claude's work.
+- Claude Phase 2 **kept**: Codex second pass on current state — builds on Claude's work.
 - Claude Phase 2 **reverted/no-op**: working tree restored; Codex fresh attempt on clean tree.
 
 Run Codex ideation:
@@ -38,7 +36,7 @@ Agent(
 )
 ```
 
-- Claude **kept** + Codex proposes changes: proceed Phases 3–7 (commit, verify, guard, decide). Codex wins only if delta ≥ 0.1% AND guard passes.
+- Claude **kept** + Codex proposes: proceed Phases 3–7 (commit, verify, guard, decide). Codex wins only if delta ≥ 0.1% AND guard passes.
 - Claude **kept** + Codex no-op: append `codex-no-op` record, continue — Claude's result stands.
 - Claude **reverted/no-op** + Codex proposes: proceed Phases 3–7.
 - Claude **reverted/no-op** + Codex no changes: append `status: codex-no-op` (`ideation_source: "codex"`), continue.
@@ -48,4 +46,4 @@ After Codex completes (any outcome):
 
 TaskUpdate R5b subject: `R5b: Codex co-pilot — iter N done (<outcome>)`
 
-**Stuck escalation with `--codex`**: when Phase 9 detects `STUCK_THRESHOLD` discards and `--codex` active, increase Codex effort — add to Codex prompt: "Previous N attempts were all reverted. Focus on a fundamentally different approach (different file, different algorithm, different abstraction)."
+**Stuck escalation with `--codex`**: Phase 9 detects `STUCK_THRESHOLD` discards and `--codex` active → increase Codex effort — add to prompt: "Previous N attempts all reverted. Focus on fundamentally different approach (different file, different algorithm, different abstraction)."

@@ -1,6 +1,4 @@
-**Re: Compress routing calibration pipeline prompt to caveman format**
-
-You are routing calibration pipeline runner. Complete all phases in sequence.
+You routing calibration pipeline runner. Complete all phases in sequence.
 
 <!-- Substitutions: TIMESTAMP=run timestamp (YYYYMMDDTHHMMSSZ), MODE=fast|full, N=problem count (fast=5, full=10) -->
 
@@ -67,7 +65,7 @@ Each selector gets this prompt (substitute `<ROSTER>`, `<TASK_PROMPT>`, `<PROBLE
 >
 > Then end reply with exactly one line: `Wrote: <PROBLEM_ID>`
 
-**Context discipline**: subagents write to disk, return single-line ack. Pipeline agent must NOT accumulate full analyses — scorers read from disk in Phase 3. `Wrote: <PROBLEM_ID>` per agent is correct.
+**Context discipline**: subagents write to disk, return single-line ack. Pipeline agent must NOT accumulate full analyses — scorers read from disk in Phase 3. `Wrote: <PROBLEM_ID>` per agent correct.
 
 **Phase timeout**: checkpoint before spawn (`touch /tmp/calibrate-routing-<TIMESTAMP>`). After all spawns, every 5 min: `find .reports/calibrate/<TIMESTAMP>/routing/ -newer /tmp/calibrate-routing-<TIMESTAMP> -name "selection-*.md" | wc -l`. New files = alive. One +5-min extension if progress. Hard cutoff: 15 min no new files → mark remaining as `{"selected":null,"timed_out":true}` with ⏱ in report.
 

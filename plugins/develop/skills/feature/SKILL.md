@@ -1,9 +1,9 @@
 ---
 name: feature
 description: TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop.
-argument-hint: '<goal> [--plan <path>] [--no-challenge] [--codemap] [--semble]'
+argument-hint: '<goal> [--plan <path>] [--no-challenge] [--codemap] [--semble] [--team]'
 effort: high
-when_to_use: Use when adding a new capability that doesn't exist yet; NOT for fixing a broken existing behaviour (use fix) or restructuring without changing behaviour (use refactor).
+when_to_use: Use when adding new capability that doesn't exist yet; NOT for fixing broken existing behaviour (use fix) or restructuring without changing behaviour (use refactor).
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
@@ -12,13 +12,17 @@ disable-model-invocation: true
 
 TDD-first feature development. Crystallise API as demo use-case test, drive implementation to pass it, close quality gaps with review, docs, quality stack.
 
-NOT for: bug fixes (use `/develop:fix`); `.claude/` config changes (use `/foundry:manage`).
+NOT for:
+- bug fixes (use `/develop:fix`)
+- `.claude/` config changes (use `/foundry:manage`)
+- non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
+- mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature
 
 </objective>
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -27,7 +31,7 @@ NOT for: bug fixes (use `/develop:fix`); `.claude/` config changes (use `/foundr
 _DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shared 2>/dev/null | head -1)
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
 _FOUNDRY_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED=".claude/skills/_shared"
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
@@ -36,10 +40,10 @@ Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 
 | Temptation | Reality |
 | --- | --- |
-| "The feature is clear — I can skip the demo and go straight to code" | Without a crystallized API contract, implementation drifts. The demo is the spec. |
+| "The feature is clear — I can skip the demo and go straight to code" | Without crystallized API contract, implementation drifts. Demo = spec. |
 | "I know this library — no need to check docs" | Training data contains deprecated patterns. One fetch prevents hours of rework. |
-| "I'll write tests after the implementation is stable" | Tests drive design. Writing them first reveals API problems before they are baked in. |
-| "The existing suite still passes — the feature is good" | The existing suite doesn't cover the new feature. The demo and edge-case tests do. |
+| "I'll write tests after the implementation is stable" | Tests drive design. Writing first reveals API problems before baked in. |
+| "The existing suite still passes — the feature is good" | Existing suite doesn't cover new feature. Demo and edge-case tests do. |
 | "Step 1 analysis is unnecessary for a small addition" | Scope analysis reveals reuse opportunities and blast radius. Small additions regularly grow. |
 
 Read `$_DEV_SHARED/task-hygiene.md`.
@@ -48,13 +52,11 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
-**Optional `--plan <path>`**: if `$ARGUMENTS` ends with `--plan <path>`, read the plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use these to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
+**Optional `--plan <path>`**: if `$ARGUMENTS` ends with `--plan <path>`, read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: create `.developments/<TS>/checkpoint.md` (where `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)`). After each major step (1, 2, 3, 4, 5), append `step: N — completed` to this file. On skill start, check for an existing `.developments/*/checkpoint.md` — if found, offer to resume from the last completed step.
-
-## Feature Mode
+**Checkpoint init**: create `.developments/<TS>/checkpoint.md` (where `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)`). After each major step (1, 2, 3, 4, 5), append `step: N — completed` to this file. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
 
 ## Flag parsing
 
@@ -63,17 +65,76 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 **Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
 **Set `TEAM_MODE=false`**. If `--team` present in `$ARGUMENTS`, set `TEAM_MODE=true`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.
 
+## Team Mode Branch
+
+**Run immediately after flag parsing when `TEAM_MODE=true` — then `exit 0`; skip Steps 1-5.**
+
+```bash
+if [ "$TEAM_MODE" = "true" ]; then
+  # Step 1 scope analysis still required — teammates need it to orient
+  # (run inline before spawning; same analysis as solo Step 1)
+  # After scope analysis, broadcast to teammates:
+  # {feature: <desc>, scope: <modules>, API: <proposed signature>}
+
+  # Spawn teammate 1: foundry:sw-engineer — implements feature (Steps 2-3)
+  # Spawn teammate 2: foundry:qa-specialist — TDD tests + security checks (parallel)
+  # Spawn teammate 3: foundry:doc-scribe — documentation structure (parallel, Step 5 prep)
+  #
+  # Coordination order:
+  #   1. QA challenges SW API design — lead routes challenge back to SW before implementation starts
+  #   2. SW shares implementation details with QA so tests stay accurate
+  #   3. Lead synthesizes outputs in Step 5 onward as normal
+  #
+  # Spawn prompt template (from $_DEV_SHARED/preflight-helpers.md ## Team Spawn Template):
+  # Replace [ROLE_PHRASE] with feature description, [FILE_SLUG] with "feature"
+  #
+  # Teammate 1 (sw-engineer):
+  #   "You are a foundry:sw-engineer teammate implementing: [feature description].
+  #    Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
+  #    Your task: implement the feature (Steps 2-3: demo test, TDD loop).
+  #    Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output.
+  #    Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state.
+  #    Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'.
+  #    Write your full analysis to .plans/active/feature-sw-engineer-[timestamp].md using the Write tool.
+  #    Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}."
+  #
+  # Teammate 2 (qa-specialist, model=opus):
+  #   "You are a foundry:qa-specialist teammate implementing: [feature description].
+  #    Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
+  #    Your task: write TDD tests in parallel with SW implementation; include security checks for any
+  #    auth/payment/data-handling code.
+  #    Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output.
+  #    Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state.
+  #    Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'.
+  #    Write your full analysis to .plans/active/feature-qa-specialist-[timestamp].md using the Write tool.
+  #    Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}."
+  #
+  # Teammate 3 (doc-scribe, model=sonnet):
+  #   "You are a foundry:doc-scribe teammate implementing: [feature description].
+  #    Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
+  #    Your task: prepare documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README).
+  #    Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output.
+  #    Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state.
+  #    Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'.
+  #    Write your full analysis to .plans/active/feature-doc-scribe-[timestamp].md using the Write tool.
+  #    Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}."
+  #
+  # After all teammates complete: read their output files, synthesize, run quality stack, produce Final Report.
+  exit 0
+fi
+```
+
 ## Step 1: Understand purpose and scope
 
 Gather full context before writing any code:
 
-> **Argument type detection**: if `$ARGUMENTS` is a positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text, treat as feature description.
+> **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text, treat as feature description.
 
 ```bash
 # Strip leading '#' and fetch in one block — ARGUMENTS strip doesn't persist across Bash calls
@@ -83,7 +144,7 @@ gh issue view "$ISSUE_NUM" --comments  # timeout: 6000
 
 If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/*.py`) to search related code. Path hint: use `src/` if that directory exists, otherwise search from project root (`.`).
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow the enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags are false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 
@@ -93,9 +154,9 @@ Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 - **Reuse opportunities**: existing utilities, base classes, patterns, abstractions new code can extend instead of duplicate
 - **Risks**: edge cases, performance implications, integration points needing careful handling
 - **Scope challenge**: Right problem? Simpler alternatives? What already exists that could extend instead of build from scratch?
-- **Complexity smell**: If proposed change touches 8+ files or introduces 2+ new classes/modules, flag explicitly — scope may need narrowing before proceeding
+- **Complexity smell**: if proposed change touches 8+ files or introduces 2+ new classes/modules, flag explicitly — scope may need narrowing before proceeding
 
-**Gate**: If complexity smell flagged, present scope concern to user before proceeding to Step 2.
+**Gate**: if complexity smell flagged, present scope concern to user before proceeding to Step 2.
 
 Present analysis summary before proceeding.
 
@@ -142,12 +203,12 @@ Skip if feature calls no external library APIs — no new framework features, no
 
 **Skip if `CHALLENGE_ENABLED=false`.**
 
-Spawn `foundry:challenger` with the scope analysis from Step 1 (purpose, scope, risks, approach):
+Spawn `foundry:challenger` with scope analysis from Step 1 (purpose, scope, risks, approach):
 
-> "Review the implementation approach and scope identified in Step 1. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
+> "Review implementation approach and scope identified in Step 1. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
 Parse result:
-- **Blockers found** → STOP. Present findings. Do not proceed to Step 2 until user resolves each blocker or explicitly accepts the risk.
+- **Blockers found** → STOP. Present findings. Don't proceed to Step 2 until user resolves each blocker or explicitly accepts risk.
 - **Concerns only** → surface as advisory section before demo test; continue.
 - **No findings / all refuted** → proceed.
 
@@ -212,12 +273,15 @@ $PYTEST_CMD --doctest-modules <module>.py -v 2>&1 | tail -10; GATE_EXIT=${PIPEST
 
 if [ "${GATE_EXIT:-0}" -eq 0 ]; then
     echo "⚠ GATE FAIL: demo passed (exit 0) — feature may already exist; revisit Step 1"
+elif [ "${GATE_EXIT}" -eq 5 ]; then
+    # exit 5 = no tests collected = demo file missing = GATE FAIL
+    echo "⚠ GATE FAIL: no demo tests collected (exit 5) — demo file missing or doctest not detected"
 else
     echo "✓ GATE OK: demo failed as expected (exit $GATE_EXIT)"
 fi
 ```
 
-If `GATE_EXIT -eq 0`: stop. Do not proceed. Revisit Step 1 — feature may already be implemented or test is wrong.
+If `GATE_EXIT -eq 0` or `GATE_EXIT -eq 5`: stop. Don't proceed. Revisit Step 2 — demo is missing or feature already implemented.
 
 ### Review: Validate the demo
 
@@ -237,13 +301,14 @@ Drive implementation by making tests pass, one cycle at a time:
 ```bash
 # Baseline: confirm existing suite is green before adding any new code
 $PYTEST_CMD --tb=short <target_test_dir> -v 2>&1 | tail -20
+GATE_EXIT=${PIPESTATUS[0]}
 ```
 
 **Gate**: all existing tests must pass before proceeding. If any fail, stop — don't add new code on broken baseline. Use `/develop:fix` to address pre-existing failures first, then return here.
 
-> **Note on exit code 5**: `pytest` returns exit code 5 when no tests are collected. Exit code 5 is acceptable here — it means no pre-existing tests exist yet, which is a valid baseline for a new feature. Proceed with TDD loop. Only exit codes 1, 2, 3, 4 indicate actual test failures.
+> **Note on exit code 5**: `pytest` returns exit code 5 when no tests collected. Exit code 5 acceptable here — means no pre-existing tests exist yet, valid baseline for new feature. Proceed with TDD loop. Only exit codes 1, 2, 3, 4 indicate actual test failures.
 
-(Use the Glob tool — `pattern: **/test_*.py` — to discover test directories if `<target_test_dir>` is unknown; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` first)
+(Use Glob tool — `pattern: **/test_*.py` — to discover test directories if `<target_test_dir>` unknown; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` first)
 
 Start from Step 2 demo — already failing, becomes first target. For each piece of functionality:
 
@@ -251,11 +316,13 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
 2. **Run existing suite — confirm all pass**:
    ```bash
    $PYTEST_CMD --tb=short <target_test_dir> -v 2>&1 | tail -20
+   GATE_EXIT=${PIPESTATUS[0]}
    ```
 3. **Run new demo/test — confirm it fails**:
    ```bash
    # doctest form
    $PYTEST_CMD --doctest-modules <module>.py -v --tb=short 2>&1 | tail -10
+   GATE_EXIT=${PIPESTATUS[0]}
    # pytest form
    $PYTEST_CMD --tb=short <test_file>::<test_name> -v
    # script form
@@ -305,9 +372,10 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 
    ```bash
    $PYTEST_CMD --tb=short <target_test_dir> -v 2>&1 | tail -20
+   GATE_EXIT=${PIPESTATUS[0]}
    ```
 
-   > **Objective convergence check**: if the set of findings in this cycle is identical to the previous cycle (same locations, same issues), declare convergence and exit loop — further cycles will not resolve the issue; surface to user.
+   > **Objective convergence check**: if findings in this cycle identical to previous cycle (same locations, same issues), declare convergence and exit loop — further cycles won't resolve; surface to user.
 
 4. **If only nits remain** (style, cosmetic naming, minor formatting): document in Follow-up and exit loop.
 
@@ -315,7 +383,7 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 
 **After 3 cycles**: if substantive issues remain, stop — surface to user before proceeding to Step 5.
 
-When stopping with unresolved issues, use this report variant instead of the standard Final Report:
+When stopping with unresolved issues, use this report variant instead of standard Final Report:
 
 ```markdown
 ## Feature Report: <feature name> [INCOMPLETE]
@@ -348,13 +416,14 @@ Spawn with context:
 - Affected files: [list from Step 1 scope analysis]
 - New/modified public API: [function names, signatures from Step 3]
 - Demo location: [Step 2 demo file path and function name]
-- CHANGELOG entry: [one-line description of the feature]
+- CHANGELOG entry: [one-line description of feature]
 
 Agent must Read each affected source file before writing docstrings — do not write placeholder content.
 
 ```bash
 # Verify doctests pass after doc updates
 $PYTEST_CMD --doctest-modules <target_module> -v 2>&1 | tail -20
+GATE_EXIT=${PIPESTATUS[0]}
 ```
 
 Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
@@ -399,6 +468,8 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 ```
 
 ## Team Assignments
+
+**Reference documentation** — execution is in `## Team Mode Branch` above. When `--team` flag set, that branch runs and exits before Step 1.
 
 **When to use team mode**: feature spans 3+ modules, OR changes public API, OR involves auth/payment/data scope.
 

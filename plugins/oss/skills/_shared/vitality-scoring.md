@@ -1,20 +1,20 @@
 # Vitality Scoring Rubrics
 
-Reference rubrics for oss:repo-warden (axis scoring and confidence assessment). Read by each of the 3 parallel scorer instances in oss:analyse vitality Step 2.
-Variables `$GH_OWNER`, `$GH_REPO`, and fetched data are sourced from DATA_FILE (written by oss:gh-scraper).
+Reference rubrics for oss:repo-warden (axis scoring + confidence). Read by each of 3 parallel scorer instances in oss:analyse vitality Step 2.
+Variables `$GH_OWNER`, `$GH_REPO`, fetched data sourced from DATA_FILE (written by oss:gh-scraper).
 
 ## Axes
 
 ### Axis 1 — Responsiveness
 
-(CHAOSS #1 metric — most predictive of project attractiveness to contributors)
+(CHAOSS #1 metric — most predictive of contributor attractiveness)
 
 Data: GraphQL response from Group 1 (20 sampled issues + 20 sampled PRs).
 
 Computation:
-- For each issue: find first comment where `comment.author.login != issue.author.login`; `response_time = comment.createdAt − issue.createdAt` (fractional days). Issues with 0 non-author comments = "unresponded".
-- For each PR: find earliest of (first non-author review) or (first non-author comment); `response_time = event.createdAt − pr.createdAt`.
-- `median_issue_response_days` = median of response_times for issues that have responses
+- Per issue: find first comment where `comment.author.login != issue.author.login`; `response_time = comment.createdAt − issue.createdAt` (fractional days). Issues with 0 non-author comments = "unresponded".
+- Per PR: find earliest of (first non-author review) or (first non-author comment); `response_time = event.createdAt − pr.createdAt`.
+- `median_issue_response_days` = median of response_times for issues with responses
 - `median_pr_response_days` = median of response_times for PRs with non-author events
 - `pct_responded_7d` = (count issues with response_time ≤7d) / (count all sampled issues)
 - `pct_unresponded` = count issues with 0 non-author comments / count all sampled
@@ -35,8 +35,8 @@ Score:
 - **Score** (B1 fix — no "stable/maintenance mode" false-positive loophole):
   - 🟢: last commit <14d AND commits/30d ≥5
   - 🟡: last commit 14–60d OR commits/30d 1–4 OR (last commit >60d AND commits/90d ≥3 AND last release <180d — genuine maintenance backports)
-  - 🔴: last commit >60d AND commits/30d = 0 — regardless of release recency. Zero commits = 🔴. A release ≤180d ago only upgrades to 🟡 when commits/90d ≥3 proves ongoing work.
-  - ALSO 🔴: commits/30d = 0 for >90d (no commits for an entire quarter)
+  - 🔴: last commit >60d AND commits/30d = 0 — regardless of release recency. Zero commits = 🔴. Release ≤180d only upgrades to 🟡 when commits/90d ≥3 proves ongoing work.
+  - ALSO 🔴: commits/30d = 0 for >90d (no commits entire quarter)
 
 ---
 
@@ -65,7 +65,7 @@ Score:
   - Mark confidence = 0.5; add "⚠ bus factor estimated from commit authors (stats API computing)"
 - Mark ⚪ only if: 202 persists AND commit fallback also fails
 
-Stats 202 after all retries WITH successful fallback: ⚪ is NOT used; fallback score at confidence 0.5.
+Stats 202 after all retries WITH successful fallback: ⚪ NOT used; fallback score at confidence 0.5.
 
 ---
 
@@ -96,7 +96,7 @@ Score (worst-of composite — any 🔴 dimension → axis 🔴):
 
 ### Axis 5 — CI/CD & Code Quality
 
-(absent entirely from prior design; repohealth scores CI/CD 35/100)
+(absent from prior design; repohealth scores CI/CD 35/100)
 
 5 checkpoints:
 1. CI workflows present — `actions/workflows` count ≥1 OR `.github/workflows/` non-empty in directory listing
@@ -118,7 +118,7 @@ Score: floor(met / 5 × 10) → 0–10; 🟢 ≥4/5 | 🟡 2–3/5 | 🔴 ≤1/5
 
 (content quality, not just presence; 9 checkpoints)
 
-Note: CONTRIBUTING.md presence is tracked in Axis 7 Governance — this axis scores content depth only.
+Note: CONTRIBUTING.md presence tracked in Axis 7 Governance — this axis scores content depth only.
 
 9 checkpoints:
 1. README present and >500 bytes
@@ -185,7 +185,7 @@ Score when Dependabot available (no 403):
 
 ### Axis 9 — Trajectory
 
-(momentum direction: is the project accelerating or decelerating?)
+(momentum direction: accelerating or decelerating?)
 
 Four sub-signals, each scored 0–10; overall axis score = mean of available sub-signals.
 Requires: merged PRs last 90d (Group 1 new fetch), last 50 commits (Group 1 new fetch),
@@ -213,9 +213,9 @@ Score 9A:
 
 Computation:
 - Filter bot PRs (author login matching `*[bot]` or `*-bot` suffix)
-- For each merged PR: merge_days = (mergedAt - createdAt) in fractional days
+- Per merged PR: merge_days = (mergedAt - createdAt) in fractional days
 - window_30d = PRs where mergedAt >= CUTOFF_30D (last 30 days)
-- window_90d = all PRs in the 90d fetch (full 90-day window)
+- window_90d = all PRs in 90d fetch (full 90-day window)
 - median_30d = median(merge_days for PRs in window_30d)
 - median_90d = median(merge_days for all PRs in window_90d)
 - If len(window_30d) == 0: signal = "no_merges_30d" → 🔴
@@ -231,7 +231,7 @@ Score 9B:
 
 Computation:
 - Use open issues list already fetched (--limit 501 with truncation detection)
-- For each open issue: age_days = (ANALYSIS_NOW - createdAt) / 86400
+- Per open issue: age_days = (ANALYSIS_NOW - createdAt) / 86400
 - Sort ages ascending; P90 = value at 90th percentile position
   - p90_index = int(len(ages) * 0.90); p90_age_days = sorted_ages[p90_index]
 - If len(open_issues) == 0: sub-signal 9C = ⚪ (no open issues — repo uses discussions or closed everything)
@@ -256,7 +256,7 @@ Computation:
 Score 9D:
 - 🟢 (10): dep_ratio < 0.20 (< 20% dep-bumps — meaningful work dominates)
 - 🟡 (5):  0.20 <= dep_ratio <= 0.50 (20–50% dep-bumps)
-- 🔴 (0):  dep_ratio > 0.50 (> 50% dep-bumps — output is maintenance-only)
+- 🔴 (0):  dep_ratio > 0.50 (> 50% dep-bumps — maintenance-only output)
 
 **Axis 9 overall score:**
 - available_subs = sub-signals not marked ⚪

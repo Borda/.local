@@ -7,7 +7,7 @@ paths:
 ## Docstring Style
 
 - **Google style (Napoleon)** — no exceptions unless user explicitly requests otherwise
-- Never switch to NumPy style based on project type, existing code, or own judgement
+- Never switch NumPy style based on project type, existing code, or own judgement
 - Every public function/class/module needs docstring; at least one `Examples` section per public function
   - Omit only when user **explicitly says skip examples** (e.g., "no examples needed", "skip the Examples section")
   - Brevity request or "minimal" docstring does NOT qualify
@@ -17,9 +17,9 @@ paths:
 **Version check first**: before generating any deprecation code:
 
 - Agentic/tool context: `python3 -c "import deprecate; print(deprecate.__version__)"` via Bash
-- In conversation context: output command for user to run and wait for confirmation before proceeding
+- In conversation context: output command for user to run, wait for confirmation before proceeding
 
-If installed version differs, read `help(deprecate)` or project CHANGELOG before generating code — do not assume Claude knows latest API. Do **not** upgrade pyDeprecate in projects on older version working fine.
+If installed version differs, read `help(deprecate)` or project CHANGELOG before generating code — don't assume Claude knows latest API. Do **not** upgrade pyDeprecate on projects where older version working fine.
 
 **Never use `warnings.warn` for deprecation** — use `pyDeprecate` exclusively. Import from `deprecate`, not `pyDeprecate`:
 
@@ -29,7 +29,7 @@ If installed version differs, read `help(deprecate)` or project CHANGELOG before
 from deprecate import deprecated  # correct
 ```
 
-If `pyDeprecate` not installed, add it — do not fall back to `warnings.warn`.
+If `pyDeprecate` not installed, add it — don't fall back to `warnings.warn`.
 
 ### Function / method deprecation
 
@@ -54,7 +54,7 @@ def old_fn(*args, **kwargs):
 
 ### Class deprecation — use `deprecated_class` (v0.6.0+) <!-- verified: 2026-04-06; re-verify if pyDeprecate is upgraded past 0.6.x -->
 
-**Do NOT apply `@deprecated` directly to class** — use `deprecated_class`. Applying `@deprecated` to class emits `UserWarning` and silently delegates, but `deprecated_class` is explicit, correct API for Enum, dataclass, and plain classes.
+**Don't apply `@deprecated` directly to class** — use `deprecated_class`. Applying `@deprecated` to class emits `UserWarning` and silently delegates, but `deprecated_class` is explicit, correct API for Enum, dataclass, and plain classes.
 
 ```python
 from deprecate import deprecated_class
@@ -66,7 +66,7 @@ class OldClass: ...
 
 `deprecated_class` wraps class in transparent proxy — attribute access, method calls, `isinstance()`, and instantiation all forward to `NewClass` with `FutureWarning`.
 
-**Version conflict resolution**: If installed pyDeprecate below v0.6.0 and upgrading prohibited (stable project, pinned deps), do NOT use `deprecated_class` — instead apply `@deprecated` to thin subclass wrapper:
+**Version conflict resolution**: If installed pyDeprecate below v0.6.0 and upgrading prohibited (stable project, pinned deps), don't use `deprecated_class` — instead apply `@deprecated` to thin subclass wrapper:
 
 ```python
 from deprecate import deprecated
@@ -118,9 +118,9 @@ Claude training data has fixed cutoff — any library released or substantially 
 1. Check installed version: `python3 -c "import <pkg>; print(<pkg>.__version__)"` or `pip show <pkg>`
 2. Compare against Claude training: Claude's training cutoff noted in system context; any library with active development after that date may have new or changed APIs
 3. If installed version newer than Claude's training snapshot: read library's CHANGELOG or online docs first; `python3 -c "import <pkg>; help(<pkg>)"` fallback for offline inspection
-4. Use API matching **installed** version — do not assume Claude's training knowledge current
+4. Use API matching **installed** version — don't assume Claude's training knowledge current
 
-**Never suggest upgrading library** solely because Claude doesn't recognise newer API. Project already has version pinned for reason — learn that version's API from docs; do not force updates on stable/stale projects.
+**Never suggest upgrading library** solely because Claude doesn't recognise newer API. Project has version pinned for reason — learn that version's API from docs; don't force updates on stable/stale projects.
 
 ## PyTorch AMP
 

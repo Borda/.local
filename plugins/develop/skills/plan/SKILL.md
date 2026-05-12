@@ -9,15 +9,17 @@ disable-model-invocation: true
 
 <objective>
 
-Analysis-only mode. Produces structured plan, no code. Use to understand scope, risks, effort before `/develop:feature`, `/develop:fix`, `/develop:refactor`.
+Analysis-only. Produces structured plan, no code. Use to understand scope, risks, effort before `/develop:feature`, `/develop:fix`, `/develop:refactor`.
 
-NOT for: writing code/tests (use develop mode); `.claude/` config changes (use `/foundry:manage`).
+NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage` (requires foundry plugin)).
+- non-Python projects (JS/TS/Go/Rust) — applies to downstream develop skills which assume pytest; use language-native toolchain
+- mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature
 
 </objective>
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -29,7 +31,7 @@ _DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shar
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
 
-**Checkpoint**: plan is single-pass — `.plans/active/<slug>` file existence serves as implicit resume signal. No `.developments/` checkpoint needed; if skill interrupted, re-run `/develop:plan` to regenerate (plan makes no code changes).
+**Checkpoint**: plan is single-pass — `.plans/active/<slug>` file existence = implicit resume signal. No `.developments/` checkpoint needed; if interrupted, re-run `/develop:plan` to regenerate (no code changes made).
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -43,11 +45,11 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 ## Flag parsing
 
-**Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` present in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
-**Set `CODEMAP_ENABLED=false`**. If `--codemap` present in `$ARGUMENTS`, set `CODEMAP_ENABLED=true`.
-**Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
+**Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
+**Set `CODEMAP_ENABLED=false`**. If `--codemap` in `$ARGUMENTS`, set `CODEMAP_ENABLED=true`.
+**Set `SEMBLE_ENABLED=false`**. If `--semble` in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -57,11 +59,12 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight 
 
 Determine task type and affected surface.
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow the enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags are false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both flags false.
 
 Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent should:
 
-- Classify task as `feature`, `fix`, or `refactor`
+- Classify task as `feature`, `fix`, `refactor`, or `debug`
+  - `debug`: root cause unknown — symptoms present but cause unclear, investigation needed before a fix can be scoped; when classified `debug`, recommend running `/develop:debug` first, then re-run `/develop:plan` once root cause identified to produce a fix plan
 - Identify affected files and modules (search codebase — no guessing)
 - Assess complexity: small (1-3 files, self-contained), medium (4-8 files or 1-2 modules), large (cross-module, API changes, or 3+ modules)
 - List risks: breaking changes, missing tests, unclear requirements, external dependencies
@@ -71,7 +74,7 @@ Agent returns findings inline (no file handoff — output short).
 
 ## Step 2: Structured plan
 
-Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-separated (e.g. `"improve caching in data loader"` -> `plan_improve-caching-data-loader.md`). If `.plans/active/<slug>` already exists, append counter suffix (`-2`, `-3`, etc.) before writing — never silently overwrite existing plan. Store full path as `PLAN_FILE` — used in Steps 3 and Final output.
+Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-separated (e.g. `"improve caching in data loader"` -> `plan_improve-caching-data-loader.md`). If `.plans/active/<slug>` already exists, append counter suffix (`-2`, `-3`, etc.) before writing — never silently overwrite. Store full path as `PLAN_FILE` — used in Steps 3 and Final output.
 
 ```markdown
 # Plan: <goal>
@@ -112,11 +115,12 @@ Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-se
 
 ## Step 3: Agent feasibility review
 
-Spawn execution agents for classification in parallel. Each reads `<PLAN_FILE>`, returns **only** compact JSON — no prose, no analysis:
+Spawn execution agents by classification in parallel. Each reads `<PLAN_FILE>`, returns **only** compact JSON — no prose, no analysis:
 
 - **feature**: foundry:sw-engineer, foundry:qa-specialist, foundry:linting-expert
 - **fix**: foundry:sw-engineer, foundry:qa-specialist, foundry:linting-expert
 - **refactor**: foundry:sw-engineer, foundry:linting-expert, foundry:qa-specialist
+- **debug**: skip feasibility review — no implementation plan to review; proceed directly to Final output with debug recommendation
 
 Each agent receives only plan file path and role — no conversation history, no unrelated context. Prompt (substitute `<ROLE>` and `<PLAN_FILE>`):
 
@@ -125,9 +129,9 @@ Each agent receives only plan file path and role — no conversation history, no
 **Parse-failure handling**: agent responses may not be valid JSON (especially fallback `general-purpose` agents that wrap JSON in prose). Before processing:
 
 1. Attempt to extract JSON object using pattern `\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}` from response
-   **Caveat**: regex matches first `{...}` substring — if response contains example JSON in prose before the real response (e.g., "here is the format: `{...}` and my result: `{...}`"), extract the LAST match, not the first. Prefer matching the `"a":"<ROLE>"` pattern as anchor.
+   **Caveat**: regex matches first `{...}` substring — if response contains example JSON in prose before real response (e.g., "here is the format: `{...}` and my result: `{...}`"), extract LAST match, not first. Prefer matching the `"a":"<ROLE>"` pattern as anchor.
 2. If extraction succeeds: use extracted object
-3. If extraction fails entirely: treat response as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
+3. If extraction fails entirely: treat as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
 
 Agents return inline (verdicts ~150 bytes — no file handoff). Collect all results:
 
@@ -137,17 +141,22 @@ Agents return inline (verdicts ~150 bytes — no file handoff). Collect all resu
 
 ### Internal resolution loop (max 3 iterations)
 
+`ITER=0` — initialize before entering loop.
+
 For each blocker or open question:
 
-1. **Attempt autonomous resolution** — search codebase, read relevant files, re-read goal. Fetch primary-source documentation for relevant issues (official docs, RFCs, library changelogs, migration guides) via WebFetch — known URLs only; WebFetch fetches a specific URL, it does not search. If answer determinable from any source, update `<PLAN_FILE>` and mark item resolved.
+`[ $ITER -ge 3 ] && { echo "Max feasibility iterations reached — escalating to user"; break; }`
+`ITER=$((ITER+1))`
+
+1. **Attempt autonomous resolution** — search codebase, read relevant files, re-read goal. Fetch primary-source docs for relevant issues (official docs, RFCs, library changelogs, migration guides) via WebFetch — known URLs only; WebFetch fetches specific URL, does not search. If answer determinable from any source, update `<PLAN_FILE>` and mark resolved.
 2. **Re-query raising agent** — send only resolved item: `{"a":"<ROLE>","resolved":"<item>","answer":"<resolution>"}`. If agent returns `ok: true` -> resolved; remove from blockers list.
 3. After all resolvable items cleared, re-check: if all agents `ok: true` -> `✓ agents ready`.
 
-**Plan file coherence**: after the resolution loop exits (regardless of outcome), annotate `<PLAN_FILE>`:
+**Plan file coherence**: after resolution loop exits (regardless of outcome), annotate `<PLAN_FILE>`:
 - Each resolved blocker: add `(resolved ✓)` inline
 - Each unresolved blocker: add `(unresolved — requires user input)`
-- Update the Brief (once it exists): note "N of M blockers resolved autonomously; N require user input"
-This ensures the plan file is coherent even after partial resolution.
+- Update Brief (once it exists): note "N of M blockers resolved autonomously; N require user input"
+Ensures plan file coherent after partial resolution.
 
 **Escalate to user only what cannot be resolved autonomously** — blocker requires user input when: depends on business decision, undocumented external constraint, missing credential/secret, or genuine goal ambiguity with two equally valid interpretations.
 
@@ -163,12 +172,12 @@ Do not escalate: items resolvable from codebase, items that are risks (not block
 
 **Skip if `CHALLENGE_ENABLED=false`.**
 
-Spawn `foundry:challenger` to adversarially review the written plan before the user commits to it:
+Spawn `foundry:challenger` to adversarially review written plan before user commits:
 
 > "Read `<PLAN_FILE>`. Challenge the plan across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step per your instructions."
 
 Parse result:
-- **Blockers found** → STOP. Present findings. Do not print the `/develop` handoff until user resolves each blocker or explicitly accepts the risk. Update `<PLAN_FILE>` with blocker annotations.
+- **Blockers found** → STOP. Present findings. Do not print `/develop` handoff until user resolves each blocker or explicitly accepts risk. Update `<PLAN_FILE>` with blocker annotations.
 - **Concerns only** → append `### Challenger concerns` to `<PLAN_FILE>` as advisory; continue to Final output.
 - **No findings / all refuted** → proceed.
 
@@ -179,7 +188,7 @@ Compose brief — compact human-readable plan summary after all agent input inco
 ```markdown
 <One-sentence summary of what the plan achieves and the main approach.>
 
-Classification : <feature|fix|refactor>
+Classification : <feature|fix|refactor|debug>
 Complexity     : <small|medium|large>
 Affected files : N files across M modules
 Key risks      : <one-liner or "none">
@@ -212,7 +221,7 @@ Plan -> <PLAN_FILE>
 
 <brief content exactly as written to the file>
 
--> /develop <classification> <goal> when ready
+-> /develop <classification> <goal> when ready  [debug: -> /develop:debug <goal> first, then re-run /develop:plan]
 ```
 
 If unresolved items escalated, print each after brief:
@@ -225,14 +234,14 @@ If unresolved items escalated, print each after brief:
 
 Wait for user input before printing `-> /develop ...`.
 
-**Handoff contract**: the plan file at `<PLAN_FILE>` is consumable by downstream skills. Pass it via `--plan <PLAN_FILE>` when invoking `/develop:feature`, `/develop:fix`, or `/develop:refactor`. When a skill receives `--plan <path>`, it reads the plan file at Step 1 and:
-- Extracts `Classification`, `Affected files`, `Risks`, `Suggested approach` — skipping cold codebase exploration
+**Handoff contract**: plan file at `<PLAN_FILE>` consumable by downstream skills. Pass via `--plan <PLAN_FILE>` when invoking `/develop:feature`, `/develop:fix`, or `/develop:refactor`. For `debug` classification: no downstream plan file — invoke `/develop:debug <goal>` directly; once root cause identified, re-run `/develop:plan` to produce a scoped fix plan. When skill receives `--plan <path>`, reads plan file at Step 1 and:
+- Extracts `Classification`, `Affected files`, `Risks`, `Suggested approach` — skips cold codebase exploration
 - Inherits agent feasibility verdicts and Codex corrections already applied
 - Uses `Suggested approach` as implementation roadmap
 
 No quality stack, no Codex pre-pass, no review loop. Exit after printing summary.
 
-End the plan document with:
+End plan document with:
 
 ```markdown
 ## Confidence

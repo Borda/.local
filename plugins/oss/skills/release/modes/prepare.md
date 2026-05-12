@@ -3,7 +3,7 @@
 
 **Trigger**: `/release prepare <version>` (e.g., `prepare v1.3.0` or `prepare 1.3.0`)
 
-**Purpose**: Full release pipeline — audit first, then generate all artifacts. Use when cutting release; use individual modes for drafting.
+**Purpose**: Full release pipeline — audit first, generate all artifacts. Use when cutting release; use individual modes for drafting.
 
 ```bash
 VERSION="${REST%% *}"
@@ -16,19 +16,19 @@ RANGE="${RANGE:-$LAST_TAG..HEAD}"
 
 Run all checks from **Mode: audit** with `$VERSION` as target. Present readiness table.
 
-**If verdict is BLOCKED**: stop. List blockers, instruct user to resolve before re-running `/release prepare $VERSION`. Write no artifacts.
+**If verdict is BLOCKED**: stop. List blockers, tell user to resolve before re-running `/release prepare $VERSION`. Write no artifacts.
 
 **If verdict is READY or NEEDS_ATTENTION**: surface warnings, continue to Phase 2.
 
 ### Phase 2: Gather, classify, and changelog
 
-**a. Gather and classify** — spawn gather subagent per **Delegation strategy** for `$RANGE`; write findings to `GATHER_FILE`. Read returned JSON envelope; pass file path downstream. Do not read gather file into main context. Note `breaking` count from envelope — gates Phase 3b (migration guide).
+**a. Gather and classify** — spawn gather subagent per **Delegation strategy** for `$RANGE`; write findings to `GATHER_FILE`. Read returned JSON envelope; pass file path downstream. Don't read gather file into main context. Note `breaking` count from envelope — gates Phase 3b (migration guide).
 
 **b. Audit changelog** — apply **Audit changelog** logic inline: locate `$CHANGELOG_FILE` (per search order in Audit changelog section), cross-check classified changes from `$GATHER_FILE`, add missing entries, stamp unreleased section as `## [$VERSION] — $DATE`. Report: "N items added, M flagged."
 
 ### Phase 3: Highlights and migration
 
-Set up release directory and back up any existing artifacts:
+Set up release directory, back up existing artifacts:
 
 ```bash
 RELEASE_DIR="releases/$VERSION"
@@ -50,7 +50,7 @@ for f in HIGHLIGHTS.md DRAFT.md SUMMARY.md MIGRATION.md demo.py; do
 done
 ```
 
-**a. Identify highlights** — apply **Identify highlights** logic using classified changes from `$GATHER_FILE`: rank top 3–5 most significant changes (breaking > new public API > major UX > notable fixes), pull one concrete code example per highlight from diff output. Write to `releases/$VERSION/HIGHLIGHTS.md`. This document is source of truth for demo, executive summary, and release draft spotlights.
+**a. Identify highlights** — apply **Identify highlights** logic using classified changes from `$GATHER_FILE`: rank top 3–5 most significant changes (breaking > new public API > major UX > notable fixes), pull one concrete code example per highlight from diff. Write to `releases/$VERSION/HIGHLIGHTS.md`. Source of truth for demo, executive summary, release draft spotlights.
 
 **b. Draft migration guide** — apply **Draft migration guide** logic using breaking/deprecated changes from `$GATHER_FILE`. No breaking changes → single line: `No breaking changes in this release.` Shepherd voice review applies. Write to `releases/$VERSION/MIGRATION.md`.
 
@@ -66,7 +66,7 @@ Write generated script to `$DEMO_OUT` using Write tool. **Execution gate** — r
 ```bash
 python3 "$DEMO_OUT"  # timeout: 600000
 ```
-Fix and re-run until script exits 0 and prints expected output. Do not proceed to 4b until gate passes.
+Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gate passes.
 
 **b. Executive summary** — apply **Draft executive summary** logic using `releases/$VERSION/HIGHLIGHTS.md` and demo output. Write to `releases/$VERSION/SUMMARY.md`.
 
@@ -99,4 +99,4 @@ Fix and re-run until script exits 0 and prints expected output. Do not proceed t
 5. Convert demo: `jupytext --to notebook releases/$VERSION/demo.py`
 ```
 
-End terminal response (not the written artifacts) with `## Confidence` block per CLAUDE.md output standards: `**Score**: 0.0–1.0 — [label]`; omit Refinements if 0 passes.
+End terminal response (not written artifacts) with `## Confidence` block per CLAUDE.md output standards: `**Score**: 0.0–1.0 — [label]`; omit Refinements if 0 passes.

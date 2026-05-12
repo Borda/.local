@@ -1,5 +1,3 @@
-**Re: Compress markdown into caveman format**
-
 # Compact Terminal Summary Templates
 
 Shared compact terminal summary templates for `/analyse` and `/oss:review`. All templates: `---` delimiters, entity identifier line, key-value fields, `→ saved to [skill-specific path]`.
@@ -20,7 +18,7 @@ Suggestions: 1. [most important action]
 ---
 ```
 
-Replace `[entity-line]` with skill-specific identifier:
+Swap `[entity-line]` with skill-specific identifier:
 
 - `/analyse` PR mode: `PR #[number] — [title]`
 - `/oss:review`: `Review — [target]`

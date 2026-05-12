@@ -1,5 +1,3 @@
-**Re: Compress upgrade mode markdown to caveman format**
-
 # Upgrade Mode — foundry:audit
 
 Triggered by `/audit --upgrade`. Read+executed by `/audit` when `--upgrade` flag present.
@@ -25,7 +23,7 @@ for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
 done
 ```
 
-If critical/high issues known from recent `/audit` run, or gate check finds BREAKING issue: stop, print "⚠ Resolve critical/high findings first (run `/audit` and pick fix level from gate), then re-run `/audit --upgrade`."
+Critical/high issues from recent `/audit` run, or gate check finds BREAKING: stop, print "⚠ Resolve critical/high findings first (run `/audit` and pick fix level from gate), then re-run `/audit --upgrade`."
 
 ### Phase 2: Fetch and classify proposals
 
@@ -46,7 +44,7 @@ No proposals pass filter: print "✓ No upgrade proposals — current setup is c
 
 ### Phase 3: Apply config proposals
 
-Mark "Apply config proposals" in_progress. For each **config** proposal, in sequence:
+Mark "Apply config proposals" in_progress. Each **config** proposal, in sequence:
 
 1. Apply change (Edit/Write tool)
 2. Correctness check:
@@ -62,7 +60,7 @@ Mark "Apply config proposals" completed.
 
 ### Phase 4: A/B test capability proposals
 
-Mark "A/B test capability proposals" in_progress. For each **capability** proposal (max 3), in sequence:
+Mark "A/B test capability proposals" in_progress. Each **capability** proposal (max 3), in sequence:
 
 **Step a — Baseline calibration**: Read `.claude/skills/calibrate/templates/pipeline-prompt.md`. Spawn `general-purpose` subagent with that template, target agent name, domain, N=3, MODE=fast, AB_MODE=false. Capture `recall_before` and `f1_before` from returned JSON.
 

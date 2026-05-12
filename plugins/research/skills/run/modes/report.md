@@ -1,7 +1,7 @@
 # Campaign Report Format — run/SKILL.md sidecar
 
 Loaded by Step R6 at end of campaign run.
-Contains report structure and terminal summary format.
+Report structure and terminal summary format.
 
 ## Report structure
 

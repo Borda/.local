@@ -43,3 +43,8 @@ pytorch-lightning-master/
 
 # Documentation build artifacts
 site/
+
+#__pycache__
+__pycache__/
+*.py[cod]
+*$py.class

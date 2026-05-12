@@ -24,7 +24,7 @@ NOT for: known Python test failures with traceback (use `/develop:debug`); `.cla
   - `"CI fails but passes locally"`
   - `"uv run pytest can't find conftest.py"`
 
-- **`--fast`**: optional flag — skip Step 4 adversarial Codex review; use when speed is more important than thoroughness or when Codex is unavailable.
+- **`--fast`**: optional flag — skip Step 4 adversarial Codex review; use when speed matters more than thoroughness or Codex unavailable.
 
 If $ARGUMENTS empty or too vague, use AskUserQuestion: "What exactly is failing or behaving unexpectedly? Include the command and any error output you can share."
 
@@ -48,7 +48,7 @@ From $ARGUMENTS extract:
 - **Where**: local / CI / both; which tool or command; which skill or hook if applicable
 - **When**: started recently (after change) or always broken; intermittent or consistent
 
-**Unsupported flag check** — after all supported flags extracted (`--fast`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted (`--fast`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 2: Gather signals
 
@@ -61,11 +61,11 @@ which python3 && python3 --version                                              
 which uv 2>/dev/null && uv --version 2>/dev/null || echo "uv: not found"                             # timeout: 5000
 node --version 2>/dev/null || echo "node: not found"                                                 # timeout: 5000
 CODEX_AVAILABLE=false
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=true || echo "codex (openai-codex): not found"  # timeout: 5000
+jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && CODEX_AVAILABLE=true || echo "codex (openai-codex): not found"  # timeout: 5000
 ```
 
 ```bash
-env | grep -E 'PATH|VIRTUAL_ENV|UV_|CLAUDE|HOME|SHELL|NODE' | sort # timeout: 5000
+env | grep -E 'PATH|VIRTUAL_ENV|UV_|CLAUDE|HOME|SHELL|NODE' | grep -v -E '(_TOKEN|_KEY|_SECRET|_PASSWORD|_PASS)=' | sort # timeout: 5000
 ```
 
 **Recent changes**:
@@ -77,7 +77,11 @@ git diff HEAD~3..HEAD --stat # timeout: 3000
 
 **Config state** (when symptom involves Claude Code, hooks, or skills):
 
-Use Read to check `.claude/settings.json` and `~/.claude/settings.json` — look for hook registrations, allow entries relevant to failing command, and `enabledMcpjsonServers`.
+Use Read to check `.claude/settings.json` — look for hook registrations, allow entries relevant to failing command, and `enabledMcpjsonServers`. For `~/.claude/settings.json` (outside allowed Read paths), use Bash:
+
+```bash
+jq . ~/.claude/settings.json  # timeout: 5000
+```
 
 **Logs** (when symptom involves skill run, background agent, or hook):
 
@@ -107,12 +111,12 @@ Common categories:
 
 ## Step 4: Auxiliary review (optional)
 
-**Skip this step entirely** when `--fast` flag passed, when both Codex and foundry:challenger unavailable, or when top hypothesis already has strong direct evidence. Skip → proceed to Step 5.
+**Skip entirely** when `--fast` passed, both Codex and foundry:challenger unavailable, or top hypothesis has strong direct evidence. Skip → proceed to Step 5.
 
 Otherwise, set up adversarial review:
 
 ```bash
-CODEX_OK=$(claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "available" || echo "")  # timeout: 5000
+CODEX_OK=$(jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && echo "available" || echo "")  # timeout: 5000
 INVESTIGATE_RUN=".investigate/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$INVESTIGATE_RUN"  # timeout: 5000
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
@@ -124,15 +128,15 @@ If `[ -n "$CODEX_OK" ]`:
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality: substitute <issue-description> with the full issue text from Step 1 — symptom: <full symptom text>, signals: <key signals from Step 2>, hypothesis table: <ranked table from Step 3>. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to $CODEX_OUT using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
 ```
 
-Else (Codex unavailable): spawn `foundry:challenger` for adversarial review:
+Else (Codex unavailable): spawn `foundry:challenger`:
 
 ```text
 Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality for this investigation — symptom: <full symptom text from Step 1>, signals: <key signals from Step 2>, hypothesis table: <ranked table from Step 3>. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to $INVESTIGATE_RUN/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
 ```
 
-- Add any challenger alternative hypotheses as new rows in Step 3 table
-- Re-rank if challenger provides stronger evidence for lower-ranked candidate
-- If challenger identifies category not in common list, add it
+- Add challenger alternative hypotheses as new rows in Step 3 table
+- Re-rank if challenger gives stronger evidence for lower-ranked candidate
+- If challenger finds category not in common list, add it
 
 ## Step 5: Probe top hypotheses
 
@@ -172,7 +176,7 @@ Stop when one hypothesis confirmed with clear evidence, or top-3 all ruled out (
 **Ruled out**: <hypotheses eliminated and why>
 
 **Recommended next action**: <one of:>
-  - `/develop:fix` — code regression confirmed (application code only — NOT for `.claude/` changes)
+  - `/develop:fix` — code regression confirmed (application code only — NOT for `.claude/` changes) (requires `develop` plugin — check plugin availability before following this recommendation)
   - `/manage update <name> "<change directive>"` — `.claude/` agent/skill/rule content needs updating (use this, NOT `/develop:feature or /develop:fix`, for any proposed change to `.claude/`)
   - `/foundry:audit` — structural/quality issue in `.claude/` config confirmed (pick fix level from gate)
   - `/foundry:init` — propagate project `.claude/` to `~/.claude/` (foundry plugin is the distribution path)
@@ -189,9 +193,9 @@ End with `## Confidence` block per output standards.
 - **Diagnosis only** — never apply fixes; hand off with specific recommended action
 - **Scope vs `/develop:debug`**: `/develop:debug` needs known test failure, runs TDD fix loop. `/investigate` = "something wrong, don't know what" — cause may not be in application code
 - **Scope vs `/foundry:audit`**: `/foundry:audit` = scheduled quality sweep of `.claude/`. `/investigate` = triggered by live failure; two complement each other (investigate finds config symptom → audit confirms structural issue)
-- **Follow-up**: `/develop:fix` (requires `develop` plugin) for implementing the resolution once root cause confirmed
+- **Follow-up**: `/develop:fix` (requires `develop` plugin) for implementing resolution once root cause confirmed
 - **Broad first**: always complete Step 2 before hypothesising — premature anchoring = most common investigation failure
-- **Parallel probes**: run independent probes in single response to avoid serial latency
+- **Parallel probes**: run independent probes in single response, avoid serial latency
 - **Inconclusiveness valid**: report what ruled out and what info would close remaining gap — don't fabricate root cause to appear decisive
 
 </notes>

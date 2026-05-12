@@ -1,9 +1,9 @@
 ---
 name: debug
 description: Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file.
-argument-hint: '<symptom or failing test> [--no-challenge]'
+argument-hint: '<symptom or failing test> [--no-challenge] [--team]'
 effort: medium
-when_to_use: Use when root cause is unknown and evidence must be gathered first; NOT for applying a known fix (use fix) or environment/tooling failures without a code traceback (use foundry:investigate).
+when_to_use: Use when root cause unknown and evidence must be gathered first; NOT for applying known fix (use fix) or environment/tooling failures without code traceback (use foundry:investigate).
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -12,13 +12,13 @@ disable-model-invocation: true
 
 Investigation-first debugging. Gather evidence, trace data flow, form confirmed root-cause hypothesis, hand off to fix mode.
 
-NOT for: production incidents without local reproduction (use `/foundry:investigate` for triage); `.claude/` config issues (use `/foundry:audit`).
+NOT for: production incidents without local reproduction (use `/foundry:investigate` (requires foundry plugin) for triage); `.claude/` config issues (use `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead.
 
 </objective>
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -36,32 +36,44 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 | Temptation | Reality |
 | --- | --- |
-| "I already know the root cause from the traceback" | Tracebacks show where, not why. Assumptions without code-path verification produce fixes for the wrong bug. |
-| "The fix is obvious — Step 2 pattern analysis is overkill" | Obvious causes are often symptoms. Pattern comparison reveals ordering, timing, or environment differences invisible in the traceback. |
-| "I'll just apply the fix here instead of handing off to `/develop:fix`" | Debug is investigation-only. Mixing investigation and implementation conflates history and skips the regression test gate. |
-| "Low confidence is fine — I'll just try the fix and see" | A fix without a confirmed hypothesis is a guess. Guesses produce fixes that pass tests but don't resolve the underlying problem. |
+| "I already know root cause from traceback" | Tracebacks show where, not why. Unverified assumptions produce fixes for wrong bug. |
+| "Fix obvious — Step 2 pattern analysis overkill" | Obvious causes often symptoms. Pattern comparison reveals ordering, timing, or environment differences invisible in traceback. |
+| "I'll apply fix here instead of handing off to `/develop:fix`" | Debug = investigation only. Mixing investigation + implementation conflates history, skips regression test gate. |
+| "Low confidence fine — I'll try fix and see" | Fix without confirmed hypothesis = guess. Guesses produce fixes that pass tests but don't resolve underlying problem. |
 
 ## Project Detection
 
 Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
-**Checkpoint**: debug is investigation-only — no code changes. `.plans/active/debug_<slug>.md` (written in Step 4) serves as implicit session state. No `.developments/` checkpoint needed.
+**Checkpoint**: debug = investigation only — no code changes. `.plans/active/debug_<slug>.md` (written in Step 4) serves as implicit session state. No `.developments/` checkpoint needed.
 
 ## Debug Mode
 
-> **Argument type detection**: if `$ARGUMENTS` is a positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
+> **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
 
 ## Flag parsing
 
-**Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` present in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
+**Set `CHALLENGE_ENABLED=true` and `TEAM_MODE=false`**. Parse flags from `$ARGUMENTS`:
+- If `--no-challenge` present: set `CHALLENGE_ENABLED=false`.
+- If `--team` present: set `TEAM_MODE=true`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**If `TEAM_MODE=true`** — execute team investigation now and exit; skip standard Steps 1-4:
+
+1. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template. Confirm `[ROLE_PHRASE]` = symptom text (from `$ARGUMENTS` stripped of flags), `[FILE_SLUG]` = `debug-hypothesis`.
+2. Run project detection (read `$_DEV_SHARED/runner-detection.md`) to set `$TEST_CMD` and `$PYTEST_CMD`.
+3. Spawn 2-3 `foundry:sw-engineer` agents (model=opus) in parallel — each investigating one independent root-cause hypothesis. Use the Team Spawn Template from preflight-helpers: replace `[ROLE_PHRASE]` with the symptom, `[FILE_SLUG]` with `debug-hypothesis`, assign each agent a distinct hypothesis number N. Each agent writes full output to `.plans/active/debug-hypothesis-N-<timestamp>.md` and returns compact JSON `{"status":"done","file":"<path>","findings":N,"confidence":0.N}`.
+4. **Coordination**: lead broadcasts `{symptom: <description>, traceback: <key lines>}` to teammates before spawning. After all return, facilitate cross-challenge between competing analyses. Convergence rule: select hypothesis with most direct evidence (observable in code or logs); if truly tied, invoke `AskUserQuestion` presenting top 2 competing hypotheses.
+5. Lead synthesises consensus root cause. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on the winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2.
+
+Health monitoring (CLAUDE.md §8): for each spawned agent, create sentinel `touch /tmp/debug-team-check-N`; poll every 5 min via `find .plans/active -newer /tmp/debug-team-check-N -type f | wc -l`; hard cutoff 15 min no-file-activity; mark timed-out agents with ⏱ in synthesis.
 
 ## Step 1: Understand the symptom
 
 Collect all signals before forming any hypothesis.
 
-**Issue-number mode first** — if `$ARGUMENTS` is an issue number, fetch the issue body and extract the test path BEFORE invoking pytest:
+**Issue-number mode first** — if `$ARGUMENTS` is issue number, fetch issue body and extract test path BEFORE invoking pytest:
 
 ```bash
 # Strip leading '#' and fetch issue in one block — ARGUMENTS strip doesn't persist across Bash calls
@@ -81,11 +93,12 @@ elif [ ! -f "$TEST_PATH" ]; then
 fi
 ```
 
-Then run pytest with the extracted path (empty `$TEST_PATH` → full suite):
+Run pytest with extracted path (empty `$TEST_PATH` → full suite):
 
 ```bash
 # Read the full traceback — never just the last line
 $PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
+GATE_EXIT=${PIPESTATUS[0]}
 ```
 
 ```bash
@@ -96,13 +109,14 @@ LOOKBACK=$(( COMMIT_COUNT < 5 ? COMMIT_COUNT : 5 ))
 [ "$LOOKBACK" -gt 1 ] && git diff HEAD~${LOOKBACK}..HEAD -- <suspect_file>
 ```
 
-**Symptom-text mode** — if `$ARGUMENTS` is free-text, skip the issue fetch + extraction; locate the failing test path from the symptom directly, then run:
+**Symptom-text mode** — if `$ARGUMENTS` is free-text, skip issue fetch + extraction; locate failing test path from symptom directly, then run:
 
 ```bash
 $PYTEST_CMD --tb=long <test_path> -v 2>&1 | tail -60
+GATE_EXIT=${PIPESTATUS[0]}
 ```
 
-Use Grep (pattern: failing symbol, class, or error keyword) to trace call path from entry point to failure site. Path hint: use `src/` if that directory exists, otherwise search from project root (`.`).
+Use Grep (pattern: failing symbol, class, or error keyword) to trace call path from entry point to failure site. Path hint: use `src/` if exists, else search from project root (`.`).
 
 Spawn **foundry:sw-engineer** agent to map execution path and produce:
 
@@ -133,12 +147,12 @@ Step catches non-obvious causes — ordering dependency, environment-specific st
 
 **Skip if `CHALLENGE_ENABLED=false`.**
 
-Spawn `foundry:challenger` with the pattern analysis from Step 2 (differences between working/broken paths, candidate causes):
+Spawn `foundry:challenger` with pattern analysis from Step 2 (differences between working/broken paths, candidate causes):
 
-> "Review the pattern analysis and candidate root causes identified. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
+> "Review pattern analysis and candidate root causes. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
 Parse result:
-- **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into the hypothesis list before the Step 3 gate.
+- **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into hypothesis list before Step 3 gate.
 - **Concerns only** → add as alternative hypotheses in Step 3; continue.
 - **No findings / all refuted** → proceed.
 
@@ -153,14 +167,14 @@ Evidence against: [anything that contradicts or remains unexplained]
 Confidence: high / medium / low
 ```
 
-**Gate**: present hypothesis to user and wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
+**Gate**: present hypothesis to user, wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
 
-**Autonomous-mode fallback** (when running as a subagent with no direct user interaction):
+**Autonomous-mode fallback** (when running as subagent with no direct user interaction):
 - Confidence **high**: proceed automatically to Step 4; note "auto-confirmed (subagent mode)" in Final Report
 - Confidence **medium**: return hypothesis + evidence to parent agent as structured JSON; let parent decide: `{"hypothesis":"<root cause>","evidence":["<s1>","<s2>"],"confidence":"medium","action_required":"confirm_before_fix"}`
 - Confidence **low**: run targeted probe (minimal script, added assertion) to gather more signal before returning to parent
 
-If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run it before committing to fix.
+If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix.
 
 ## Step 4: Hand off to fix
 
@@ -201,7 +215,7 @@ Write `$DIAG_FILE` with this structure:
 <high|medium|low>
 ```
 
-Hand off: `-> /develop:fix --diagnosis $DIAG_FILE`. Root cause already known — fix's Step 1 analysis is complete.
+Hand off: `-> /develop:fix --diagnosis $DIAG_FILE`. Root cause already known — fix's Step 1 analysis complete.
 
 ## Final Report
 
@@ -221,24 +235,17 @@ Evidence: <key signals>
 **Refinements**: N passes.
 ```
 
-**Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into the tool call arguments:
+**Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "Proceed with fix?"
 - (a) label: `/develop:fix --diagnosis $DIAG_FILE` — description: proceed with fix using confirmed diagnosis
 - (b) label: `skip` — description: no action
 
 ## Team Assignments
 
-**When to use team mode**: root cause unclear after Step 2, OR failure spans 3+ modules.
+<!-- Executed inline in Flag parsing block above when --team flag is set. -->
+<!-- This section is reference documentation only — do not execute here. -->
 
-- **Teammate 1-3 (foundry:sw-engineer x 2-3, model=opus)**: each investigates distinct root-cause hypothesis independently
-
-**Coordination:**
-
-1. Lead broadcasts current evidence: `{symptom: <description>, traceback: <key lines>}`
-2. Each teammate claims one hypothesis, investigates independently — no overlap
-3. Lead facilitates cross-challenge between competing analyses
-4. **Convergence deadline**: after cross-challenge, if teammates still disagree on root cause, lead selects the hypothesis with the most direct evidence (observable in code or logs). If truly tied, use `AskUserQuestion` to present the top 2 competing hypotheses and ask user to guide.
-5. Lead synthesises consensus root cause, then executes Steps 3-4 (hypothesis gate, hand off to fix) alone
+**When to use team mode**: pass `--team` flag. Team logic runs immediately after flag parsing and exits — Steps 1-4 below are skipped.
 
 **Spawn prompt template:** read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[symptom]`, `[FILE_SLUG]` with `debug-hypothesis`.
 

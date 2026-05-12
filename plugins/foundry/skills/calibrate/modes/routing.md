@@ -1,10 +1,8 @@
-**Re: Compress markdown to caveman format**
-
 <!-- Step 1 in SKILL.md dispatches to this mode file. Steps here continue from Step 2. -->
 
 ## Mode: routing
 
-> **Codex integration: disabled.** Problem generation and scoring Claude-only. Routing tests orchestrator dispatch logic — scoring deterministic binary match (`selected == expected`). Codex lacks agent system internals context for realistic routing problems.
+> **Codex integration: disabled.** Problem gen + scoring Claude-only. Routing tests orchestrator dispatch logic — scoring deterministic binary match (`selected == expected`). Codex lacks agent system internals context for realistic routing problems.
 
 Routing accuracy test: measures how accurately `general-purpose` orchestrator picks correct `subagent_type` for synthetic task prompts. Not per-agent quality benchmark; included in `all`. Use explicit `routing` target for isolation.
 

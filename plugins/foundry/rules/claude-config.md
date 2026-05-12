@@ -57,18 +57,18 @@ Working directory persists between Bash calls — two sequential calls equivalen
 
 ## List Range Label Discipline
 
-When editing a file that contains lettered or numbered list range labels (e.g. `**Close-scenario archetypes (A–G):**`):
+When editing file with lettered/numbered list range labels (e.g. `**Close-scenario archetypes (A–G):**`):
 
-- After any edit that adds or removes list items, update **all** range labels in the file — not just the section edited
-- Non-contiguous letter ranges: use explicit form `A–C, F–G`, not `A–G`, when items are missing
-- Scan the entire file after edits to catch stale range labels elsewhere
+- After any edit adding/removing list items, update **all** range labels in file — not just edited section
+- Non-contiguous letter ranges: use explicit form `A–C, F–G`, not `A–G`, when items missing
+- Scan entire file after edits to catch stale range labels elsewhere
 
 ## Ask Before Acting on Unknown Cause
 
-When a user asks "why" about something that happened (deleted content, unexpected state, missing items) and the cause is unknown:
+When user asks "why" about something (deleted content, unexpected state, missing items) and cause unknown:
 
 - **Never act** — do not restore, revert, or modify anything
-- State clearly that the cause is unknown and why (e.g. "pre-session change not made by me")
-- Ask the user what they want done before taking any action — use `AskUserQuestion` tool (required by `communication.md` for all interactive questions)
+- State clearly cause unknown and why (e.g. "pre-session change not made by me")
+- Ask user what they want done before any action — use `AskUserQuestion` tool (required by `communication.md`)
 
-Restoring without being asked = overstepping. The user asking "why" is a question, not a request to fix.
+Restoring without being asked = overstepping. "Why" = question, not request to fix.

@@ -58,9 +58,9 @@ git diff $RANGE --name-only
 git diff $RANGE --name-only | grep -iE 'readme|\.md$|docs/' || echo "no docs changed"
 ```
 
-Read `README.md`, verify: install/usage examples match current API, version refs not pinned to old releases, deprecated APIs still present or have deprecation notes. If `docs/` exists, read all changed public API sections in full.
+Read `README.md`: install/usage match current API, version refs not stale, deprecated APIs have notes. `docs/` exists → read all changed public API sections.
 
-Check `CHANGELOG.md`: has `[Unreleased]` entry or `$TARGET` section covering `$RANGE` commits?
+Check `CHANGELOG.md`: `[Unreleased]` or `$TARGET` section covers `$RANGE` commits?
 
 ### Check 5: Version consistency
 
@@ -69,7 +69,7 @@ grep -rn '__version__\|^version\s*=' --include="*.py" --include="*.toml" \
     --include="*.cfg" --include="*.json" . 2>/dev/null | grep -v ".git" | head -15
 ```
 
-All declarations must agree. If `$TARGET` given, verify match or flag needs bumping.
+All declarations must match. `$TARGET` given → verify or flag needs bump.
 
 ### Check 6: Critical code signals
 

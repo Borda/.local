@@ -18,8 +18,7 @@ paths:
 1. **Function goals / docs / intended user application** — verify contract and normal use
 2. **Edge cases** — boundary values, empty inputs, extreme sizes, unusual combinations
 3. **Exception handling** — only after above; don't lead with error-path tests
-   - When adding exception-handling tests, include at least one contract/normal-use test in same commit
-     or point to existing — no error-path-only test files.
+   - When adding exception-handling tests, include at least one contract/normal-use test in same commit or point to existing — no error-path-only test files.
 
 ## Test Structure
 
@@ -27,12 +26,9 @@ paths:
   - Never second `act` in same test
 - Each test validates exactly one scenario
 - No `if`/`for` logic in test bodies
-  - Exception: list-comprehension or generator used solely to build `@pytest.mark.parametrize` args,
-    spanning fewer than 30% of the lines inside the `@pytest.mark.parametrize(...)` call itself
-    (count only lines within the decorator parentheses, not the test function body)
-- Parametrize aggressively — 3+ test functions with same structure → `@pytest.mark.parametrize`
-- Group topic-related tests into class; class name carries unit (and optionally condition)
-  so method names describe expected outcome only
+  - Exception: list-comprehension or generator used solely to build `@pytest.mark.parametrize` args, spanning fewer than 30% of lines inside `@pytest.mark.parametrize(...)` call (count only lines within decorator parentheses, not test function body)
+- Parametrize aggressively — 3+ test functions same structure → `@pytest.mark.parametrize`
+- Group topic-related tests into class; class name carries unit (and optionally condition) so method names describe expected outcome only
 
 ## File Layout
 
@@ -78,8 +74,8 @@ def test_cuda_inference(): ...
 
 ## Docstrings
 
-- Every test function/method needs at least one-line docstring (max 120 chars)
-- Complex tests: include scenario being covered
+- Every test function/method needs one-line docstring min (max 120 chars)
+- Complex tests: include scenario covered
 - Module-level docstrings required
 
 ## Helpers in Tests

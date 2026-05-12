@@ -1,5 +1,3 @@
-**Re: Compress agent-checks markdown to caveman format**
-
 # Agent Checks — 8, 13
 
 ## Check 19 — Model tier appropriateness
@@ -53,7 +51,7 @@ done
 
 ### Apply model reasoning:
 
-**20a — Overlap analysis**: Per agent pair, assess domain overlap. Flag pairs where descriptions alone don't disambiguate → **medium** finding per ambiguous pair.
+**20a — Overlap analysis**: Per agent pair, assess domain overlap. Flag pairs where descriptions don't disambiguate → **medium** finding per ambiguous pair.
 
 **20b — NOT-for clause coverage**: Per high-overlap pair from 20a, check at least one agent has "NOT for" exclusion referencing other or its domain. Missing disambiguation → **medium**.
 

@@ -1,6 +1,6 @@
 # Storage and Loading Patterns — data-steward reference
 
-Loaded by data-steward agent in `acquisition` mode before Step 2.
+Loaded by data-steward in `acquisition` mode before Step 2.
 Contains: DVC versioning, Polars tabular loading, HuggingFace datasets, 3D volumetric data loading.
 
 <storage_and_loading_patterns>
@@ -31,7 +31,7 @@ train = df.filter(pl.col("subject_id").is_in(train_subjects))
 test = df.filter(pl.col("subject_id").is_in(test_subjects))
 ```
 
-Use Polars over pandas when: dataset > 1M rows, need lazy evaluation, or speed matters.
+Use Polars over pandas: >1M rows, lazy eval needed, or speed matters.
 
 ## HuggingFace datasets
 
@@ -51,11 +51,11 @@ ds = load_from_disk("data/processed/")
 
 ## 3D Volumetric Data Loading (medical imaging)
 
-Patch-based 3D Dataset pattern: init stores `self.volumes` and `self.patch_size`; `__getitem__` extracts random patch for train, center crop for val/test — returns `{"image": patch_array}`.
+Patch-based 3D Dataset: `self.volumes` + `self.patch_size` in init; `__getitem__` = random patch (train), center crop (val/test) — returns `{"image": patch_array}`.
 
 Key considerations for volumetric data:
 
-- **Memory**: 3D volumes can be GBs — use lazy loading:
+- **Memory**: volumes = GBs — use lazy loading:
 
   ```python
   # Memory-mapped arrays (numpy) — zero-copy reads from disk
@@ -77,8 +77,8 @@ Key considerations for volumetric data:
 
 - **Patch extraction**: train on patches, infer with sliding window + overlap for boundary smoothing
 
-- **Orientation**: always normalize to canonical orientation (Right-Anterior-Superior (RAS) / Left-Posterior-Superior (LPS)) before training
+- **Orientation**: normalize to canonical (RAS/LPS) before training
 
-- **Spacing**: resample to isotropic voxel spacing if model expects uniform resolution
+- **Spacing**: resample to isotropic voxel spacing if model needs uniform resolution
 
 </storage_and_loading_patterns>

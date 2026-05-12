@@ -30,10 +30,10 @@ gh api repos/:owner/:repo/pulls --paginate --field state=all
 
 Rules:
 
-- `--limit 30` (default) never acceptable for analysis tasks — set at least 10× higher than expected
+- `--limit 30` (default) never OK for analysis — set 10× higher minimum
 - Counting ("how many open issues") → use `--paginate` or high `--limit`; verify count plausible
-- `gh api` without `--paginate` returns one page only — always add `--paginate`
-- `--limit` requirement applies with `--json` + `--jq` too — 30-item cap not lifted by `--json`
+- `gh api` without `--paginate` = one page only — always add `--paginate`
+- `--limit` applies with `--json` + `--jq` too — 30-item cap not lifted by `--json`
   - Pair with `--limit 1000` or higher
 
 ## REST APIs (curl / WebFetch)
@@ -42,13 +42,13 @@ Rules:
 - `total_count` > items returned → partial result; fetch remaining pages
 - Loop until no next-page signal; never stop after one response
 - No pagination signals + round item count (10, 20, 25, 50, 100…) → likely default page size
-  - Verify by fetching page 2 (e.g. `?page=2` or `?offset=<count>`); if page 2 returns items, first response was truncated — fetch all pages before proceeding
-  - Do not substitute structural inspection for an actual page-2 request
+  - Verify by fetching page 2 (e.g. `?page=2` or `?offset=<count>`); if page 2 returns items, first response truncated — fetch all pages before proceeding
+  - No substitute structural inspection for actual page-2 request
 
 ## GraphQL APIs
 
 - Check `pageInfo.hasNextPage` — if `true`, issue another query with `after: endCursor`
-- Never treat single query result as complete if `hasNextPage` not explicitly `false`
+- Never treat single query result complete if `hasNextPage` not explicitly `false`
 
 ## Cloud / Google-style APIs (next_page_token)
 

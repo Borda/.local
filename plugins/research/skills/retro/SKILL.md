@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Post-run retrospective analysis of experiment history. Reads .experiments/ JSONL, computes statistical significance of improvements (Wilcoxon signed-rank), detects dead iterations, flags suspicious metric jumps, and generates a learning summary with next-hypothesis queue compatible with --hypothesis flag of research:run.
+description: Post-run retrospective analysis of experiment history. Reads .experiments/ JSONL, computes statistical significance of improvements (Wilcoxon signed-rank), detects dead iterations, flags suspicious metric jumps, generates learning summary with next-hypothesis queue compatible with --hypothesis flag of research:run.
 argument-hint: '[<run-id>] [--compare <run-id-2>] [--threshold <delta>] [--alpha <significance>]'
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
@@ -9,9 +9,9 @@ disable-model-invocation: true
 
 <objective>
 
-Post-run retrospective analysis. After `/research:run` completes, reads `.experiments/state/<run-id>/experiments.jsonl`, computes statistical significance, detects dead iterations, flags suspicious metric jumps, and generates a learning summary with a next-hypothesis queue.
+Post-run retrospective analysis. After `/research:run` completes, reads `.experiments/state/<run-id>/experiments.jsonl`, computes statistical significance, detects dead iterations, flags suspicious metric jumps, generates learning summary with next-hypothesis queue.
 
-NOT for: running experiments (use `/research:run`); designing experiments (use `/research:plan`); validating methodology (use `/research:judge`); verifying paper implementation (use `/research:verify`). Read-only analysis only — never modifies code, commits, or experiment state.
+NOT for: running experiments (use `/research:run`); designing experiments (use `/research:plan`); validating methodology (use `/research:judge`); verifying paper implementation (use `/research:verify`). Read-only — never modifies code, commits, or experiment state.
 
 </objective>
 
@@ -22,10 +22,10 @@ NOT for: running experiments (use `/research:run`); designing experiments (use `
 ```bash
 # Locate research plugin shared dir — installed first, local workspace fallback
 _RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="plugins/research/skills/_shared"
+[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
 ```
 
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. `research:scientist` is in the same plugin — no fallback needed if research plugin installed.
+Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
 
 ## Retro Mode (Steps T1–T7)
 
@@ -33,9 +33,9 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 
 **Defaults**: `--threshold 0.001`, `--alpha 0.05`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--compare\`, \`--threshold\`, \`--alpha\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--compare\`, \`--threshold\`, \`--alpha\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
-**Task tracking**: create tasks for T1, T2, T3, T4, T5, T6, T7 at start — before any tool calls.
+**Task tracking**: create tasks for T1–T7 at start — before any tool calls.
 
 ### Step T1: Locate and load run data
 
@@ -51,7 +51,7 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 **Load files** from `.experiments/state/<run-id>/`:
 
 - `state.json`: extract `goal`, `best_metric`, `config` (including `metric.direction`), `iteration` count, `best_commit`. Compute `baseline_metric` from iteration 0 in `experiments.jsonl`.
-- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and skip it.
+- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and skip.
 - `diary.md`: if present, read for qualitative context in T5.
 
 If `--compare <run-id-2>` present: load second run identically from `.experiments/state/<run-id-2>/`. If not found, stop: `"Compare target not found: .experiments/state/<run-id-2>/. Check run ID and retry."`
@@ -77,7 +77,7 @@ Write analysis script to `$RUN_DIR/scripts/analyze.py` via Write tool, then exec
 2. Read `baseline_metric` from iteration 0 entry (`status == "baseline"`).
 3. Read `direction` from `state.json` config (or infer from goal text: "higher"/"lower").
 
-**If `len(kept_metrics) < 6`**: compute descriptive stats only (mean, median, min, max, std of kept_metrics). Print `"insufficient data for significance testing (N=<N>, minimum 6 required)"`. Do NOT compute or report a p-value.
+**If `len(kept_metrics) < 6`**: compute descriptive stats only (mean, median, min, max, std of kept_metrics). Print `"insufficient data for significance testing (N=<N>, minimum 6 required)"`. Do NOT compute or report p-value.
 
 **If N >= 6**: run Wilcoxon signed-rank test:
 
@@ -94,7 +94,7 @@ r = 1 - (2 * stat) / (n * (n + 1))
 
 **If `--compare`**: also run Wilcoxon between kept metrics of run-1 vs run-2 (paired if same length; warn if different lengths — use min length with truncation note).
 
-**Error handling**: if `scipy` not installed, print `"pip install scipy required for significance testing, reporting descriptive stats only"` and fall back to descriptive stats. Handle empty JSONL (0 kept iterations) gracefully — report `"no kept iterations found"`.
+**Error handling**: if `scipy` not installed, print `"pip install scipy required for significance testing, reporting descriptive stats only"` and fall back to descriptive stats. Handle empty JSONL (0 kept iterations) — report `"no kept iterations found"`.
 
 Write results JSON to `$RUN_DIR/stats-results.json`. Execute script with `python3 $RUN_DIR/scripts/analyze.py` via Bash (`timeout: 30000`).
 
@@ -119,11 +119,11 @@ Write summary to `$RUN_DIR/dead-iters.json` via Write tool. Format:
 }
 ```
 
-Write dead-iteration scan script to `$RUN_DIR/scripts/dead-iter-scan.py` via Write tool, then execute in a separate Bash call. Never inline. Same pattern as T2.
+Write dead-iteration scan script to `$RUN_DIR/scripts/dead-iter-scan.py` via Write tool, then execute in separate Bash call. Never inline. Same pattern as T2.
 
 ### Step T4: Suspicious jump detection
 
-Compute per-iteration absolute metric deltas for kept iterations only. Build a sliding window of 5 kept iterations to compute running mean and standard deviation of deltas.
+Compute per-iteration absolute metric deltas for kept iterations only. Build sliding window of 5 kept iterations to compute running mean and std of deltas.
 
 Flag any single-step improvement where `abs(delta) > running_mean + 2 * running_std`:
 
@@ -144,7 +144,7 @@ Write to `$RUN_DIR/suspicious-jumps.json` via Write tool.
 
 ### Step T5: Scientist learning summary
 
-Pre-compute all file paths before spawning. Verify `$RUN_DIR/stats-results.json`, `$RUN_DIR/dead-iters.json`, and `$RUN_DIR/suspicious-jumps.json` exist (T2–T4 must complete first).
+Pre-compute all file paths before spawning. Verify `$RUN_DIR/stats-results.json`, `$RUN_DIR/dead-iters.json`, `$RUN_DIR/suspicious-jumps.json` exist (T2–T4 must complete first).
 
 **Health monitoring setup**:
 
@@ -289,12 +289,12 @@ Call `AskUserQuestion` tool after summary — do NOT write options as plain text
 
 <notes>
 
-- Retro is read-only — never modifies code, commits, or writes to `.experiments/state/<run-id>/`
-- `.experiments/retro-<timestamp>/` stores analysis scripts, intermediate JSON, scientist output, and hypotheses.jsonl
-- Retro run directories don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/retro-*/`)
-- `hypotheses.jsonl` output uses `source: "retro"` — compatible with `--hypothesis` flag of `/research:run`; `"retro"` is an additional declared source value extending the oracle schema (see `protocol.md`); feasibility fields omitted, treated as feasible:true by run
-- `--compare` requires both runs to use the same metric; if metric names differ, stop with error: `"Cannot compare runs with different metrics: <metric-1> vs <metric-2>"`
-- Dead iteration threshold (`--threshold`) should match the metric's noise floor — default 0.001 works for normalized metrics; adjust for raw values (e.g. `--threshold 0.1` for loss values in the hundreds)
-- Statistical tests assume metric values are independent samples — if iterations are highly correlated (e.g. cumulative optimization), note this limitation in the report
+- Retro read-only — never modifies code, commits, or writes to `.experiments/state/<run-id>/`
+- `.experiments/retro-<timestamp>/` stores analysis scripts, intermediate JSON, scientist output, hypotheses.jsonl
+- Retro run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when done (`rm -rf .experiments/retro-*/`)
+- `hypotheses.jsonl` uses `source: "retro"` — compatible with `--hypothesis` flag of `/research:run`; `"retro"` extends oracle schema (see `protocol.md`); feasibility fields omitted, treated as feasible:true by run
+- `--compare` requires both runs use same metric; if metric names differ, stop: `"Cannot compare runs with different metrics: <metric-1> vs <metric-2>"`
+- Dead iteration threshold (`--threshold`) should match metric's noise floor — default 0.001 for normalized metrics; adjust for raw values (e.g. `--threshold 0.1` for loss in hundreds)
+- Statistical tests assume metric values are independent samples — if iterations highly correlated (e.g. cumulative optimization), note limitation in report
 
 </notes>

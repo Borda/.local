@@ -32,7 +32,7 @@ Checklist for medical imaging datasets:
 [ ] Annotation consistency: inter-reader variability measured (Fleiss' kappa)
 ```
 
-Use `Bash` to verify zero patient overlap between splits:
+Verify zero patient overlap between splits:
 
 ```bash
 python -c "
@@ -46,7 +46,7 @@ print(f'Overlap: {len(overlap)} patients' if overlap else 'No patient overlap')
 
 ## Temporal Split (time-series or streaming data)
 
-Sort by time, split sequentially: 70% train / 15% val / 15% test using sequential index offsets (no shuffling).
+Sort by time, sequential split: 70%/15%/15% train/val/test, no shuffle.
 
 \</split_strategies>
 
@@ -70,7 +70,7 @@ ratio = majority / minority
 1. **Collect more data** for underrepresented classes
 2. **Weighted sampling**: `WeightedRandomSampler` to balance batches
 3. **Weighted loss**: `nn.CrossEntropyLoss(weight=class_weights)`
-4. **Synthetic Minority Over-sampling Technique (SMOTE)/augmentation** for minority classes
+4. **SMOTE/augmentation** for minority classes
 5. **Threshold tuning** on classifier output (classification only)
 
 \</class_imbalance>
@@ -79,8 +79,8 @@ ratio = majority / minority
 
 ## Recommended Configuration
 
-<!-- foundry:perf-optimizer availability: only available when foundry plugin installed. Skip throughput optimization referral if foundry absent. -->
-See `foundry:perf-optimizer` for throughput settings (`num_workers`, `pin_memory`, `prefetch_factor`, `persistent_workers`) — only available when foundry plugin installed; skip if absent. Core DataLoader integrity settings:
+<!-- foundry:perf-optimizer: foundry plugin only. Skip throughput referral if absent. -->
+See `foundry:perf-optimizer` for throughput settings (`num_workers`, `pin_memory`, `prefetch_factor`, `persistent_workers`) — foundry plugin only; skip if absent. Core integrity settings:
 
 ```python
 DataLoader(

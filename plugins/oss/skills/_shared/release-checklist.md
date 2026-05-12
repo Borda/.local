@@ -1,6 +1,6 @@
 # Python/PyPI Release Checklist
 
-For release notes format and CHANGELOG generation, use `/oss:release` skill. For CI publish YAML, see `oss:cicd-steward` agent `<trusted_publishing>` section.
+Release notes format + CHANGELOG generation: use `/oss:release` skill. CI publish YAML: see `oss:cicd-steward` agent `<trusted_publishing>` section.
 
 ## Pre-release
 
@@ -17,7 +17,7 @@ For release notes format and CHANGELOG generation, use `/oss:release` skill. For
 
 Trusted Publishing uses GitHub OpenID Connect (OIDC) — no `API_TOKEN` or `TWINE_PASSWORD` secret needed.
 
-1. **Create PyPI environment in GitHub** Settings → Environments → New environment → name it `pypi`. Add deployment protection rule (require reviewer) for extra safety.
+1. **Create PyPI environment in GitHub** Settings → Environments → New environment → name it `pypi`. Add deployment protection rule (require reviewer) for safety.
 
 2. **Register Trusted Publisher on PyPI** PyPI project → Manage → Publishing → Add new pending publisher:
 
@@ -28,9 +28,9 @@ Trusted Publishing uses GitHub OpenID Connect (OIDC) — no `API_TOKEN` or `TWIN
 
 3. **Verify `pyproject.toml` metadata complete** PyPI requires minimum: `[project]` with `name`, `version`, `description`, `requires-python`, and `[project.urls]` with `Homepage`.
 
-4. **Create GitHub release** Tag commit (`git tag vX.Y.Z && git push --tags`), then create GitHub release from tag. `publish.yml` workflow triggers on `release: published` and handles rest automatically.
+4. **Create GitHub release** Tag commit (`git tag vX.Y.Z && git push --tags`), create GitHub release from tag. `publish.yml` triggers on `release: published`, handles rest.
 
-> Always confirm with user before pushing tags (CLAUDE.md push safety rule)
+> Confirm with user before pushing tags (CLAUDE.md push safety rule)
 
 ## Post-release
 

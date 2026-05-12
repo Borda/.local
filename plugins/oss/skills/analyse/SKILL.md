@@ -21,7 +21,7 @@ NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code
 
 - **$ARGUMENTS**: one of:
   - `N` (number, plain `123` or `#123`) — any GitHub thread: issue, PR, or discussion; auto-detects type
-  - `vitality [<owner>/<repo> | <github-url>]` — repo vitality overview with 9-axis health scorecard and duplicate detection. Optional repo argument accepts `owner/repo` shorthand or full `https://github.com/owner/repo` URL. When omitted, auto-detected from git upstream. Non-GitHub remotes (GitLab, Bitbucket, etc.) stop with a warning.
+  - `vitality [<owner>/<repo> | <github-url>]` — repo vitality overview with 9-axis health scorecard and duplicate detection. Optional repo argument accepts `owner/repo` shorthand or full `https://github.com/owner/repo` URL. When omitted, auto-detected from git upstream. Non-GitHub remotes (GitLab, Bitbucket, etc.) stop with warning.
   - `ecosystem` — downstream consumer impact analysis for library maintainers
   - `--reply` — only valid with `N`; spawns shepherd to draft contributor-facing reply after thread analysis. Silently ignored for `vitality` and `ecosystem`.
   - `path/to/report.md` — path to existing report file; only valid combined with `--reply`; skips all analysis, spawns shepherd directly using provided file
@@ -133,7 +133,7 @@ if [[ "$CLEAN_ARGS" == vitality* ]]; then
 fi
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print the following as plain text (AskUserQuestion not available in forked context) and stop:
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: print following as plain text (AskUserQuestion not available in forked context) and stop:
 ```
 ! Unknown flag(s): `--<token>`. Supported: `--reply`.
 Options: (a) re-invoke with correct flags  (b) continue ignoring unknown flags
@@ -170,7 +170,7 @@ if [ -f "$REPORT_FILE" ]; then
 fi
 ```
 
-- `FAST_PATH_TENTATIVE=true` → continue to Steps 3–4 for type detection and type-aware drift check. If no new activity confirmed there: `FAST_PATH=true` → print `[resume] reusing existing report for #$CLEAN_ARGS` → jump to Step 7.
+- `FAST_PATH_TENTATIVE=true` → continue to Steps 3–4 for type detection and type-aware drift check. If no new activity confirmed: `FAST_PATH=true` → print `[resume] reusing existing report for #$CLEAN_ARGS` → jump to Step 7.
 - `FAST_PATH_TENTATIVE=false` (report missing) → continue to Step 3.
 
 ## Step 3: Cache layer (numeric arguments only)
@@ -187,11 +187,11 @@ mkdir -p "$CACHE_DIR" # timeout: 5000
 
 **Cache hit** — if `$CACHE_FILE` exists:
 
-- Read `type`, `item`, `comments` fields from JSON; `TYPE` is now known
+- Read `type`, `item`, `comments` fields from JSON; `TYPE` known
 - Skip all primary `gh` item fetches in `modes/thread.md`
 - Print `[cache] #$CLEAN_ARGS ($TODAY)` as one-line status note
 - Still run wide-net searches (dynamic — never cached)
-- `FAST_PATH_TENTATIVE=true`: run lightweight drift check now that `TYPE` is known, then skip Step 4 type-detection API calls:
+- `FAST_PATH_TENTATIVE=true`: run lightweight drift check now that `TYPE` known, then skip Step 4 type-detection API calls:
 
 ```bash
 # Cache hit + FAST_PATH_TENTATIVE: one lightweight API call to get updatedAt, then apply drift check
@@ -226,9 +226,9 @@ UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M
     >"$CACHE_FILE" || echo "⚠ cache write skipped — empty or malformed API response" # timeout: 5000
 ```
 
-**Stale cache** — file for same number but earlier date ignored. Old files left in place — small, provide audit history.
+**Stale cache** — file for same number but earlier date ignored. Old files left — small, provide audit history.
 
-> **mtime reliability caveat**: `stat` mtime is unreliable after `rsync`/copy, in CI with frozen clocks, or on HFS+ (1-second granularity). If drift check produces unexpected fast-path hits, verify report mtime is correct with `stat "$REPORT_FILE"`. Workaround: delete the cached report to force full re-analysis.
+> **mtime reliability caveat**: `stat` mtime unreliable after `rsync`/copy, in CI with frozen clocks, or on HFS+ (1-second granularity). If drift check produces unexpected fast-path hits, verify report mtime with `stat "$REPORT_FILE"`. Workaround: delete cached report to force full re-analysis.
 
 Cache applies to: issue/PR/discussion primary fetch and comments. Cache does NOT apply to: `gh issue list`, `gh pr list`, `gh pr checks`, `gh pr diff`, discussion list queries, vitality/ecosystem modes.
 
@@ -297,11 +297,11 @@ Read `$_OSS_MODE_DIR/<mode>.md` and execute all steps defined there.
 
 ## Step 6: Reply gate — STOP CHECK
 
-**Run this step before Confidence block regardless of `--reply` mode.**
+**Run before Confidence block regardless of `--reply` mode.**
 
 `REPLY_MODE=true`: response incomplete until Step 7 done and reply file written. Proceed to Step 7 — `## Confidence` block goes at end of Step 7 instead.
 
-`REPLY_MODE=false` — do NOT proceed to Step 7. Execute both sub-steps below, then end response here.
+`REPLY_MODE=false` — do NOT proceed to Step 7. Execute both sub-steps below, then end response.
 
 ### 6a — Follow-up gate
 
@@ -317,13 +317,13 @@ Print options as plain text. Options depend on mode:
 
 **Vitality / ecosystem mode** (`$CLEAN_ARGS` is `vitality` or `ecosystem`):
 - question: "What next?"
-- (a) label: `/oss:analyse <N> --reply` — description: draft a reply for a specific thread
-- (b) label: `/oss:review <N>` — description: full code review for a specific PR (requires `oss` plugin)
+- (a) label: `/oss:analyse <N> --reply` — description: draft reply for specific thread
+- (b) label: `/oss:review <N>` — description: full code review for specific PR (requires `oss` plugin)
 - (c) label: `skip` — description: no action
 
 ### 6b — Confidence block (REPLY_MODE=false only)
 
-End response here with `## Confidence` block per CLAUDE.md output standards.
+End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Step 7: Draft contributor reply (only when --reply, thread mode only)
 
@@ -363,7 +363,7 @@ End response with `## Confidence` block per CLAUDE.md — always **absolute last
 Calibratable modes: thread (duplicate detection recall), vitality (repo vitality metrics accuracy), ecosystem (impact analysis accuracy).
 
 Scenarios:
-1. Thread — duplicate detection: synthetic issue with identical symptoms to an existing closed issue → root cause match ≥0.9; duplicate link surfaced
+1. Thread — duplicate detection: synthetic issue with identical symptoms to existing closed issue → root cause match ≥0.9; duplicate link surfaced
 2. Thread — actionable response quality: feature request with no linked PRs → concrete scope + next step; no vague suggestions
 3. Vitality — metric accuracy: repo with known issue/PR/response-time counts → numeric values within ±10% of ground truth
 
@@ -371,16 +371,16 @@ Scenarios:
 
 <notes>
 
-- **Vitality mode repo resolution**: `GH_OWNER` and `GH_REPO` are set in Step 1 from: (1) explicit URL/owner-repo arg, (2) `gh repo view`, (3) `git remote origin`. vitality.md uses `-R "$GH_OWNER/$GH_REPO"` on all gh commands and literal `$GH_OWNER/$GH_REPO` in all `gh api` paths — never `{owner}/{repo}` template substitution in vitality mode.
+- **Vitality mode repo resolution**: `GH_OWNER` and `GH_REPO` set in Step 1 from: (1) explicit URL/owner-repo arg, (2) `gh repo view`, (3) `git remote origin`. vitality.md uses `-R "$GH_OWNER/$GH_REPO"` on all gh commands and literal `$GH_OWNER/$GH_REPO` in all `gh api` paths — never `{owner}/{repo}` template substitution in vitality mode.
 - Mode files live in `plugins/oss/skills/analyse/modes/` — one file per mode, fully self-contained
 - `modes/thread.md` handles all three thread types (issue, PR, discussion) via internal branching
 - Always use `gh` CLI — never hardcode repo URLs
 - Run `gh auth status` first if commands fail; user may need to authenticate
-- For closed items, note resolution so history is useful
-- Don't post responses without explicit user instruction — only draft them
-- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` is NOT available (deferred tool schema not loaded in fork) — interactive gates surface as plain text instead. `Agent` IS available in forked context (non-deferred, declared in `allowed-tools`) — do NOT skip Steps 5–6 adversarial review on the assumption that Agent is unavailable; it is available and those steps are mandatory.
-- **`--reply` drafts only** — shepherd produces a draft file; it does NOT auto-post to GitHub. User posts manually. Write access to the repo is not required to use `--reply`; it is required only if user subsequently posts the draft via `gh issue comment` or `gh pr comment`.
-- **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix`, `/oss:review`) receive no analysis context from this run. Pass the report path explicitly or re-summarize key findings in the follow-up invocation.
+- For closed items, note resolution so history useful
+- Don't post responses without explicit user instruction — draft only
+- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` NOT available (deferred tool schema not loaded in fork) — interactive gates surface as plain text instead. `Agent` IS available in forked context (non-deferred, declared in `allowed-tools`) — do NOT skip Steps 5–6 adversarial review assuming Agent unavailable; it is available and those steps are mandatory.
+- **`--reply` drafts only** — shepherd produces draft file; does NOT auto-post to GitHub. User posts manually. Write access to repo not required to use `--reply`; required only if user subsequently posts draft via `gh issue comment` or `gh pr comment`.
+- **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix`, `/oss:review`) receive no analysis context from this run. Pass report path explicitly or re-summarize key findings in follow-up invocation.
 - Follow-up chains:
   - Issue with confirmed bug → `/develop:fix` to diagnose, reproduce with test, apply targeted fix (requires `develop` plugin)
   - Issue is feature request → `/develop:feature` for TDD-first implementation (requires `develop` plugin)

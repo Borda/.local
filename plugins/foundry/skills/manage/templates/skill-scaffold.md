@@ -1,5 +1,3 @@
-**Re: Compress skill template instructions into caveman format**
-
 **Skill template** — write to `SKILLS_DIR/<name>/SKILL.md`:
 
 ```markdown

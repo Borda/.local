@@ -9,9 +9,9 @@ disable-model-invocation: true
 
 <objective>
 
-Paper-vs-code consistency audit. After `research:scientist` implements a method from a paper, verify the implementation actually matches the paper claims. Audits across five dimensions — formula matching, hyperparameter parity, eval protocol, notation consistency, and citation chain. Emits verification table with match status and severity.
+Paper-vs-code consistency audit. After `research:scientist` implements method from paper, verify implementation matches paper claims. Audits five dimensions — formula matching, hyperparameter parity, eval protocol, notation consistency, citation chain. Emits verification table with match status and severity.
 
-NOT for: running experiments (use `/research:run`); judging experimental methodology (use `/research:judge`); literature search (use `/research:topic`); general code review (use `/develop:review`). Verify audits implementation-vs-paper fidelity only — does not evaluate whether the paper's claims themselves are valid.
+NOT for: running experiments (use `/research:run`); judging experimental methodology (use `/research:judge`); literature search (use `/research:topic`); general code review (use `/develop:review`). Verify audits implementation-vs-paper fidelity only — does not evaluate whether paper's claims are valid.
 
 </objective>
 
@@ -28,11 +28,11 @@ HARD_CUTOFF: 900   # 15 min — if scientist does not return, surface partial re
 
 ## Agent Resolution
 
-`research:scientist` is in the same plugin as this skill — no fallback needed if research plugin installed. Scientist handles all five audit dimensions in a single spawn to preserve cross-dimension context (e.g., a notation inconsistency explaining a formula mismatch requires holistic paper understanding).
+`research:scientist` in same plugin as this skill — no fallback needed if research plugin installed. Scientist handles all five audit dimensions in single spawn to preserve cross-dimension context (e.g., notation inconsistency explaining formula mismatch requires holistic paper understanding).
 
 ## Verify Mode (Steps V1–V6)
 
-Triggered by `verify <paper>` where `<paper>` is a PDF path, arXiv URL, or multi-line quoted text.
+Triggered by `verify <paper>` where `<paper>` is PDF path, arXiv URL, or multi-line quoted text.
 
 **Task tracking**: create tasks for V1, V2, V3, V4, V5, V6 at start — before any tool calls.
 
@@ -52,7 +52,7 @@ From paper content, extract:
 - **Claims table**: each claim = `{id, section, claim_text, type}` where type is one of: `formula`, `hyperparameter`, `eval`, `architecture`, `result`
 - Focus on: equations with concrete terms, specific hyperparameter values, evaluation protocols (metric names, split names, preprocessing steps), architectural specifics, reported numeric results
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--scope\`, \`--program\`, \`--strict\`, \`--dim\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--scope\`, \`--program\`, \`--strict\`, \`--dim\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Pre-compute run directory**:
 
@@ -67,8 +67,8 @@ mkdir -p "$RUN_DIR"  # timeout: 3000
 **Scope resolution** (priority order):
 
 1. `--scope <glob>` flag — use directly
-2. `--program <program.md>` flag — Read the file, extract `scope_files` from `## Config` fenced block
-3. Auto-detect — `Glob(pattern="**/*.py")` up to 100 files; prefer files containing ML-relevant imports (`torch`, `tensorflow`, `sklearn`, `numpy`, `jax`)
+2. `--program <program.md>` flag — Read file, extract `scope_files` from `## Config` fenced block
+3. Auto-detect — `Glob(pattern="**/*.py")` up to 100 files; prefer files with ML-relevant imports (`torch`, `tensorflow`, `sklearn`, `numpy`, `jax`)
 
 Apply `--dim` filter: if `--dim F,H` specified, only audit those dimensions. Default: all five (`F,H,E,N,C`).
 
@@ -121,7 +121,7 @@ Include ## Confidence block.
 Return ONLY: {"status":"done","claims_verified":N,"mismatches":N,"high":N,"medium":N,"low":N,"fidelity":0.N,"file":"<RUN_DIR>/audit-raw.md","confidence":0.N}
 ```
 
-Use `timeout: 900000` for the Agent call (15-min budget).
+Use `timeout: 900000` for Agent call (15-min budget).
 
 On timeout: read `tail -100 $RUN_DIR/audit-raw.md`; if empty set `fidelity = null`, continue to V4 with `timed_out` status.
 
@@ -136,13 +136,13 @@ Post-process envelope from scientist:
 | < 0.7 | LOW fidelity |
 | null (timed out) | TIMED OUT |
 
-**Strict mode**: if `--strict` flag AND any HIGH severity mismatches exist in dimension F (formula) or E (eval):
+**Strict mode**: if `--strict` flag AND any HIGH severity mismatches in dimension F (formula) or E (eval):
 
 ```text
 ! BREAKING — HIGH severity mismatch in critical dimension (F or E). Fix before running experiments.
 ```
 
-Then stop — do not proceed to V5/V6. Report the specific mismatches to terminal and exit.
+Stop — do not proceed to V5/V6. Report specific mismatches to terminal and exit.
 
 ### Step V5: Write verification report
 
@@ -217,19 +217,19 @@ Omit "Next" line if no mismatches found.
 
 Call `AskUserQuestion` tool after V6 output — do NOT write options as plain text:
 - question: "What next?"
-- (a) label: `fix mismatches then re-run verify` — description: fix the listed mismatches and re-run `/research:verify <paper>`
-- (b) label: `/develop:fix` — description: implement fixes via development agent
+- (a) label: `fix mismatches then re-run verify` — description: fix listed mismatches and re-run `/research:verify <paper>`
+- (b) label: `/develop:fix` — description: implement fixes via development agent (requires `develop` plugin)
 - (c) label: `skip` — description: no further action
 
 </workflow>
 
 <notes>
 
-- Verify is read-only — never modifies code, commits, or writes to `.experiments/state/`
+- Verify read-only — never modifies code, commits, or writes to `.experiments/state/`
 - `.experiments/verify-<timestamp>/` stores scientist agent's full audit output for reference
-- Verify run directories don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md` TTL policy — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/verify-*/`)
+- Verify run dirs don't write `result.jsonl` — exempt from 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/verify-*/`)
 - Re-run verify after fixing mismatches to confirm fixes resolved flagged items
 - For papers with appendices beyond 20 pages, iterate Read with `pages: "21-40"` etc. to capture full hyperparameter tables
-- Fidelity score is a ratio, not a probability — 0.9 means 90% of verified claims match, not 90% confidence
+- Fidelity score = ratio, not probability — 0.9 means 90% of verified claims match, not 90% confidence
 
 </notes>

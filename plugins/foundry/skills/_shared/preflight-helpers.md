@@ -1,8 +1,6 @@
-**Re: Compress preflight helpers doc to caveman format**
-
 # Preflight Helpers
 
-TTL binary availability cache for skill pre-flight checks. Results cached 4 hours (14400 sec) per binary under `.claude/state/preflight/`. Skips repeated `command -v` calls within session.
+TTL binary availability cache for skill pre-flight checks. Results cached 4 hours (14400 sec) per binary under `.claude/state/preflight/`. Skip repeated `command -v` calls within session.
 
 ## Functions
 
@@ -24,7 +22,7 @@ Cache files at `.claude/state/preflight/<binary>.ok` hold Unix timestamp. 4-hour
 
 ## Usage
 
-Check binary, skip step if unavailable:
+Check binary, skip if unavailable:
 
 ```bash
 if preflight_ok jq; then

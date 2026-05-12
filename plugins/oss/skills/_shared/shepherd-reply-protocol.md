@@ -1,6 +1,6 @@
 # Shepherd Reply Protocol
 
-Shared invocation pattern for `oss:shepherd` reply generation — used by `oss:review` (Step 9) and `oss:analyse` (Step 7). Read this file, then spawn shepherd with skill-specific variables substituted.
+Shared invocation pattern for `oss:shepherd` reply generation — used by `oss:review` (Step 9) and `oss:analyse` (Step 7). Read file, spawn shepherd with skill-specific vars substituted.
 
 ## Spawn pattern
 

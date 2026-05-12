@@ -3,7 +3,7 @@
 
 **Trigger**: `/release audit [version]`
 
-**Purpose**: Pre-release readiness check — surfaces outstanding work, alignment gaps, and blockers before cutting release.
+**Purpose**: Pre-release readiness check — surfaces outstanding work, alignment gaps, blockers before cutting release.
 
 ```bash
 # LAST_TAG, REPO_ROOT, SKILL_DIR resolved in Shared setup block above
@@ -13,26 +13,26 @@ RANGE="${RANGE:-$LAST_TAG..HEAD}"
 
 ### Phase A: Gather and explore changes
 
-Use **Delegation strategy** above — spawn gather subagent for `$RANGE` to run gather/explore/validate phases and write findings to `GATHER_FILE`. Read returned JSON envelope only. Audit agent (Phase B) reads `GATHER_FILE` directly — do not pull into main context.
+Use **Delegation strategy** above — spawn gather subagent for `$RANGE`, run gather/explore/validate phases, write findings to `GATHER_FILE`. Read returned JSON envelope only. Audit agent (Phase B) reads `GATHER_FILE` directly — do not pull into main context.
 
 ### Phase B: Readiness checks
 
 Read and execute all checks from `$SKILL_DIR/templates/audit-checks.md`. Checks cover: version consistency across manifests, docs/CHANGELOG alignment, open blocking issues, dependency CVE scan, unreleased commits since last tag.
 
-After readiness table, if issues found, append **Findings summary** table with one row per issue:
+After readiness table, if issues found, append **Findings summary** table:
 
 | # | Issue | Location | Severity |
 | --- | --- | --- | --- |
 | 1 | <what is wrong> | <section or file> | critical/high/medium/low |
 
-Ensures every finding has explicit location, severity, and action — matching structured output format of `notes` and `changelog` modes.
+Every finding needs explicit location, severity, action — matches structured output format of `notes` and `changelog` modes.
 
 ### Verdict line (mandatory final output)
 
-After the findings table, print exactly one verdict line immediately before the `## Confidence` block so callers (e.g. `prepare` Phase 1) can pattern-match without parsing prose:
+Print exactly one verdict line immediately before `## Confidence` block so callers (e.g. `prepare` Phase 1) can pattern-match without parsing prose:
 
 - `verdict: READY` — no CRITICAL or HIGH findings
 - `verdict: NEEDS_ATTENTION` — one or more HIGH findings, no CRITICAL
-- `verdict: BLOCKED` — one or more CRITICAL findings (also written when readiness checks themselves cannot complete)
+- `verdict: BLOCKED` — one or more CRITICAL findings (also written when readiness checks cannot complete)
 
-Then end response with `## Confidence` block per CLAUDE.md output standards.
+End response with `## Confidence` block per CLAUDE.md output standards.

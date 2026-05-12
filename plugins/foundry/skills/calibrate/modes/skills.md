@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 <!-- Step 1 in SKILL.md dispatches to this mode file. Steps here continue from Step 2. -->
 
 ## Mode: skills
@@ -19,27 +17,27 @@ Skill domains:
 - `/research:verify` → paper-vs-code fidelity check; inject N known deviations (hyperparams, architecture, loss function, preprocessing); score recall per dimension (F, H, E, N, C) *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
 - `/research:run` → synthetic `program.md` with known metric/guard/config; measure whether run mode correctly sets up iteration loop and applies rollback guard on guard failure; calibrates R0–R3 steps only (full multi-iteration loop excluded — too long-horizon) *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
 - `/research:sweep` → synthetic goal string; measure whether sweep correctly auto-plans, passes through judge gate, and hands off to run with correct flags; ground truth = presence of plan output file and judge approval/rejection signal *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
-- `/research:retro` → synthetic `.experiments/state/*/state.json` + run logs; measure whether retro correctly identifies dead iterations, classifies them, and produces structured retrospective report; ground truth = injected iteration outcomes *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
+- `/research:retro` → synthetic `.experiments/state/*/state.json` + run logs; measure whether retro correctly identifies dead iterations, classifies them, produces structured retrospective report; ground truth = injected iteration outcomes *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
 - `/research:fortify` → synthetic ablation plan with known component importance order; measure whether fortify correctly ranks components and identifies reviewer questions; calibrates F1–F3 only (full execution loop excluded) *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
-- `/oss:analyse` → synthetic GitHub issue number (fixture: known type, known thread length, known duplicate link); measure whether thread analysis correctly classifies item type (issue/PR/discussion), surfaces duplicate, and produces actionable summary; ground truth = injected issue metadata *(oss plugin required — skip if `$OSS_AVAILABLE` empty)*
+- `/oss:analyse` → synthetic GitHub issue number (fixture: known type, known thread length, known duplicate link); measure whether thread analysis correctly classifies item type (issue/PR/discussion), surfaces duplicate, produces actionable summary; ground truth = injected issue metadata *(oss plugin required — skip if `$OSS_AVAILABLE` empty)*
 - `/oss:release` → synthetic git log with N commits of known classification (breaking, feature, fix, internal); measure whether release notes correctly classify each commit and omit internal-only entries; ground truth = injected commit metadata and expected output sections *(oss plugin required — skip if `$OSS_AVAILABLE` empty)*
 - `/distill:lessons` → synthetic `.notes/lessons.md` corpus with N injected lessons of known disposition (→ rule, → agent update, → skill update, → already covered, → too narrow); measure whether distill correctly classifies each lesson and generates accurate proposals; ground truth = injected dispositions and target files
 - `/manage:create` → synthetic create-agent and create-skill directives; measure whether output file has valid frontmatter, correct structure, NOT-for clause, non-empty domain content; ground truth = structural completeness checklist
-- `/manage:update` → synthetic rename and content-edit directives against a fixture agent/skill file; measure whether cross-reference propagation is complete and description-changed flag is correctly set; ground truth = known cross-ref targets in fixture
+- `/manage:update` → synthetic rename and content-edit directives against fixture agent/skill file; measure whether cross-reference propagation complete and description-changed flag correctly set; ground truth = known cross-ref targets in fixture
 
 ### Step 2: Spawn skill pipeline subagents
 
-Mark "Calibrate skills" in_progress. **Availability check** (vars set in SKILL.md Step 2): exclude skills marked with plugin requirements above when that plugin is absent. Log: "<plugin> plugin not installed — skipping <skill> calibration" per excluded skill.
+Mark "Calibrate skills" in_progress. **Availability check** (vars set in SKILL.md Step 2): exclude skills marked with plugin requirements above when plugin absent. Log: "<plugin> plugin not installed — skipping <skill> calibration" per excluded skill.
 
 For each skill in domain table (after exclusions), spawn one `general-purpose` pipeline subagent. Issue ALL spawns in **single response**.
 
 For skill targets (target name starts with `/`): spawn `general-purpose` subagent with skill's `SKILL.md` content prepended as context, running against synthetic input from problem. Pipeline template write-and-acknowledge pattern still applies.
 
-For mode-specific targets (`/research:plan`, `/research:judge`): prepend relevant mode file as context instead of full `SKILL.md`. Resolve the skill file via installed path first, falling back to source-tree path:
+For mode-specific targets (`/research:plan`, `/research:judge`): prepend relevant mode file as context instead of full `SKILL.md`. Resolve skill file via installed path first, falling back to source-tree path:
 - `/research:plan`: `ls ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/plan/SKILL.md 2>/dev/null | sort -V | tail -1` — fallback: `plugins/research/skills/plan/SKILL.md`
 - `/research:judge`: `ls ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/judge/SKILL.md 2>/dev/null | sort -V | tail -1` — fallback: `plugins/research/skills/judge/SKILL.md`
 
-Read the resolved path (plan wizard steps P-P0–P-P3 for `/research:plan`; steps J1–J6 for `/research:judge`). `<TARGET>` substitution uses kebab form without leading slash (e.g. `research-plan`, `research-judge`).
+Read resolved path (plan wizard steps P-P0–P-P3 for `/research:plan`; steps J1–J6 for `/research:judge`). `<TARGET>` substitution uses kebab form without leading slash (e.g. `research-plan`, `research-judge`).
 
 For `/research:judge`, calibration pattern mirrors `/audit`: inject N specific known issues into synthetic `program.md`, score recall of injected issues against judge's findings list. Ground truth = injected issues and severities (per J2 severity table: critical/high/medium/low).
 
@@ -78,9 +76,9 @@ Modes evaluated for calibration but deferred — significant barriers. `/audit` 
 | `/release-summary` | Same as `/release-notes` — git-history dependent | Git-history fixture helper exists |
 | `/release-audit` | Requires controlled repo state (version tags, CHANGELOG, CI status) | Release fixture infrastructure exists |
 | `/release-demo` | Requires controlled git history — output depends on real commit range | Git-history fixture helper exists |
-| `/develop-plan` | Output is somewhat subjective; no clear ground-truth checklist beyond section presence | Structured plan schema is formalized |
+| `/develop-plan` | Output somewhat subjective; no clear ground-truth checklist beyond section presence | Structured plan schema formalized |
 | `/distill-review` | Reads real agent/skill files; synthetic roster possible but overlaps `/audit` calibration | Distinct synthetic scenarios identified |
-| `/distill-prune` | Likely calibratable — construct a synthetic memory corpus with known entries to drop (stale, redundant, duplicated-in-CLAUDE.md), then score recall of correct drop/trim/keep decisions; ground truth is constructable | Synthetic memory corpus fixtures built |
+| `/distill-prune` | Likely calibratable — construct synthetic memory corpus with known entries to drop (stale, redundant, duplicated-in-CLAUDE.md), score recall of correct drop/trim/keep decisions; ground truth constructable | Synthetic memory corpus fixtures built |
 | `/distill-lessons` | Promoted to domain table — synthetic lesson corpus calibration now defined | — |
 | `/distill-external` | Calibratable with two concrete GT fixture cases: **(1) caveman plugin** — narrow communication-mode tool, no local overlap → GT outcome: install-as-is recommendation; **(2) Karpathy autoresearch** — research automation with strong structural overlap to `research:` plugin → GT outcome: Group A candidates map to research plugin, digest recommended. Score whether adoption-table lane assignments (adopt-as-is/tweak/discuss/skip) and install-as-is flag match GT. Ground truth constructable without live external source — fixture = static snapshot of each tool's agent/skill/rule files. | GT fixture snapshots authored |
 
@@ -93,7 +91,7 @@ Modes evaluated for calibration but deferred — significant barriers. `/audit` 
 - `/brainstorm` — creative ideation; no deterministic ground truth
 - `/investigate` — open-ended diagnosis; output varies completely by symptom
 - `/session` — session lifecycle management; no quality signal to measure
-- `/foundry:session` — session lifecycle management — no quality signal to measure; output fully context-dependent
+- `/foundry:session` — session lifecycle management — no quality signal; output fully context-dependent
 - `/calibrate` itself — meta-calibration circular
 - `/research:run` — sustained iteration loop with live metric commands and git state
 - `/research:run --resume` — continuation of run; same barriers as run

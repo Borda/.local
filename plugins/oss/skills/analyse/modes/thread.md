@@ -140,7 +140,7 @@ Collect JSON envelope. `REPRO_STATUS` = `status` field.
 
 ### Step R4: Build the Reproduction block
 
-Populate `Repro` and `Sensitive` fields in the `---` terminal summary block and `Repro validation`/`Repro missing` lines in `## Thread` metadata.
+Populate `Repro` and `Sensitive` fields in `---` terminal summary block and `Repro validation`/`Repro missing` lines in `## Thread` metadata.
 
 Status mapping: `reproduced` → ✅ · `not_reproduced` → ❌ · `partial` → ⚠ · `missing_context` → ⚠ (add missing detail) · `HAS_REPRO=false` → 🔍 No Example · PR → ⏭ Skipped
 
@@ -249,7 +249,7 @@ _Legend: ✅ present · ⚠️ partial · ❌ missing · 🔵 N/A_
 
 Run `mkdir -p .reports/analyse/thread` then write full report to `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md` using Write tool — **do not print full analysis to terminal**.
 
-Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.md`. File absent → warn: "foundry:init required — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains the block — no separate prepend step needed.
+Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.md`. File absent → warn: "foundry:init required — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed.
 
 **⛔ DO NOT STOP — `REPLY_MODE=true`**: Skip Confidence block here — emitted in SKILL.md Step 6 after reply, or as last step of SKILL.md if not in reply mode. Proceed **immediately** to "Draft contributor reply" section in SKILL.md (Step 7). Response not complete until shepherd spawned and reply file written.
 
@@ -257,9 +257,9 @@ Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.
 
 <notes>
 
-- **Cache check**: `$CACHE_FILE` keyed per item number — always set by parent SKILL.md before mode file executes; never fetch if cache hit
-- **Discussion pagination cap**: 200-comment limit is a safety rail; threads >200 comments are exceptional; always note cap in Summary if hit
-- **Sensitive pattern scan**: flag presence only, never include actual values in report — GDPR/PII risk; if `"credentials"` flagged, add advisory to Suggested Response
-- **Reproduction agent**: choose `qa-specialist` for pytest patterns, `sw-engineer` for all others; do not spawn if `HAS_REPRO=false`
+- **Cache check**: `$CACHE_FILE` keyed per item number — always set by parent SKILL.md before mode file executes; never fetch on cache hit
+- **Discussion pagination cap**: 200-comment limit is safety rail; threads >200 exceptional; always note cap in Summary if hit
+- **Sensitive pattern scan**: flag presence only, never include actual values — GDPR/PII risk; if `"credentials"` flagged, add advisory to Suggested Response
+- **Reproduction agent**: choose `qa-specialist` for pytest patterns, `sw-engineer` for all others; don't spawn if `HAS_REPRO=false`
 
 </notes>

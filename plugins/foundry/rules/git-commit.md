@@ -9,9 +9,9 @@ paths:
 - First line: short TLDR subject in imperative mood, ≤50 chars — name up to 3 most significant changes/additions/removals only
   - Tie-breaker: prefer user-visible impact when significance comparable
 
-- Blank line, then bullet list — one bullet per logical change; include extended description of top changes plus all other notable changes
+- Blank line, then bullet list — one bullet per logical change; extended description of top changes plus all other notable changes
   - Skip: typos, linting, whitespace-only edits
-  - All changes skip-worthy → omit bullet list; use subject-only commit — still include co-author block separated by blank line and `---`:
+  - All changes skip-worthy → omit bullet list; subject-only commit — still include co-author block separated by blank line and `---`:
 
   ```markdown
   Fix typo in config key name
@@ -20,11 +20,11 @@ paths:
   Co-authored-by: Claude Code <noreply@anthropic.com>
   ```
 
-- **No line wrapping** — bullets and prose are single continuous lines; never hard-break at any column width
+- **No line wrapping** — bullets and prose single continuous lines; never hard-break at any column width
 
 ## Gathering Diff Context
 
-Before writing commit, run these three in parallel:
+Before writing commit, run three in parallel:
 
 - `git status` — identify staged new files (`A` prefix) and unstaged changes
 - `git diff HEAD` — **not** bare `git diff`; bare `git diff` shows only unstaged changes, misses staged new files; `git diff HEAD` captures staged and unstaged vs HEAD
@@ -32,15 +32,15 @@ Before writing commit, run these three in parallel:
 
 **Truncated diff — mandatory follow-up**: when `git diff HEAD` output large and Bash tool saves to file (showing only 2 KB preview), **read saved file completely before writing commit**. Don't write from preview alone — most significant changes often past truncation point. Also run `git diff --stat HEAD` (always fits in context) for complete file-by-file change map; use stat output to identify which files changed most and whether any missed in preview.
 
-**High-churn files — mandatory diff read**: for any file with >50 lines changed in `git diff --stat` that is NOT already captured in the planned bullets — read its actual diff before writing the message. Do not assume knowledge from session memory or prior conversation context; post-compaction sessions have no reliable recall of what changed. User/developer-facing changes (command syntax, CLI argument names, invocation patterns, API surface, usage examples) must be identified and prioritised regardless of whether they were discussed earlier in the session — these outrank internal restructuring of equal line count.
+**High-churn files — mandatory diff read**: any file with >50 lines changed in `git diff --stat` NOT already in planned bullets — read actual diff before writing message. Don't assume from session memory or prior context; post-compaction sessions have no reliable recall. User/developer-facing changes (command syntax, CLI argument names, invocation patterns, API surface, usage examples) must be identified and prioritised regardless of earlier discussion — outrank internal restructuring of equal line count.
 
 **Ranking rule — diff first, recency last**: rank significance across full diff before writing title.
 - Conversational recency bias must not dominate
 - Title must reflect most significant change in diff, not most recent one
 
-**New files are always significant**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list, regardless of line count. New files represent added capability, not just changed lines.
+**New files always significant**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list, regardless of line count. New files = added capability, not just changed lines.
 
-**Semantic novelty beats diff verbosity**: when ranking significance, new capability/interface/script outranks verbose-but-routine config edit even if config diff has more lines. Ask "what would reviewer need to know first?" — that most significant change.
+**Semantic novelty beats diff verbosity**: new capability/interface/script outranks verbose-but-routine config edit even if config diff has more lines. Ask "what would reviewer need to know first?" — that most significant change.
 
 ## Co-authors
 
@@ -71,7 +71,7 @@ Never skip trailers because skill template omits them.
 
 ## Branch Safety
 
-Default branch is repo-specific — do NOT hardcode `main` or `master`. The hook detects it dynamically via `git symbolic-ref refs/remotes/origin/HEAD`, `gh repo view`, or `git remote show origin`. Committing to the default branch requires a **second sentinel** (Gate 2 below).
+Default branch is repo-specific — do NOT hardcode `main` or `master`. Hook detects dynamically via `git symbolic-ref refs/remotes/origin/HEAD`, `gh repo view`, or `git remote show origin`. Committing to default branch requires **second sentinel** (Gate 2 below).
 
 Before any `git commit`, check current branch:
 
@@ -79,7 +79,7 @@ Before any `git commit`, check current branch:
 CURRENT_BRANCH=$(git branch --show-current)
 ```
 
-If on the default branch: two sentinels required (Gate 1 + Gate 2). If on a feature branch: one sentinel required (Gate 1 only).
+On default branch: two sentinels required (Gate 1 + Gate 2). On feature branch: one sentinel required (Gate 1 only).
 
 ## Commit Gate (two gates)
 
@@ -101,19 +101,19 @@ SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
 DEFAULT_SENTINEL="/tmp/claude-commit-default-${REPO_SLUG}-${BRANCH_SLUG}"
 ```
 
-**Path A — skill pre-auth** (skills that commit as part of their workflow, e.g. `/oss:resolve`):
+**Path A — skill pre-auth** (skills committing as part of workflow, e.g. `/oss:resolve`):
 - `touch $SENTINEL` at start of commit phase; `rm -f $SENTINEL` on finish or abort (use `trap` to guarantee cleanup)
 - If committing to default branch: also `touch $DEFAULT_SENTINEL`; `rm -f $DEFAULT_SENTINEL` in same `trap`
-- While Gate 1 sentinel exists and is <15 min old (and Gate 2 valid if on default branch) → hook allows commit
+- Gate 1 sentinel exists and <15 min old (Gate 2 valid if on default branch) → hook allows commit
 - Sentinel absent, expired, or branch mismatch → hook blocks → fall through to Path B
 
 **Path B — user ad-hoc request**:
 - No Gate 1 sentinel → invoke `AskUserQuestion` before `git commit`
-- Question must show: target branch, whether it is the default branch, diff size (`N files, +A −B lines` from `git diff --stat HEAD`), draft commit message subject line
+- Question must show: target branch, whether default branch, diff size (`N files, +A −B lines` from `git diff --stat HEAD`), draft commit message subject line
 - On user confirmation:
   - Feature branch: `touch $SENTINEL` → `git commit` → `rm -f $SENTINEL`
   - Default branch: `touch $SENTINEL && touch $DEFAULT_SENTINEL` → `git commit` → `rm -f $SENTINEL $DEFAULT_SENTINEL`
-- Never self-create sentinels without going through `AskUserQuestion` first — that bypasses Gate 2 entirely
+- Never self-create sentinels without `AskUserQuestion` first — bypasses Gate 2 entirely
 
 ## Staging and Hooks
 
@@ -125,7 +125,7 @@ DEFAULT_SENTINEL="/tmp/claude-commit-default-${REPO_SLUG}-${BRANCH_SLUG}"
 
 - **Never push without explicit user confirmation** — always ask before any `git push`, including branch pushes, PR pushes, and release tags
 - Authorization scoped: "commit this" does not authorize "push this"; ask separately for every push
-- Applies inside skill workflows too — if skill (e.g. `/resolve`) includes push step, treat as "propose and confirm", not "auto-execute"; stop after committing, report what ready to push, wait for user to say push
+- Applies inside skill workflows — if skill (e.g. `/resolve`) includes push step, treat as "propose and confirm", not "auto-execute"; stop after committing, report what ready to push, wait for user to say push
 - Never push in autonomous bug fixing or as "final step" without being explicitly asked in that message
 - Never force-push (`--force`, `--force-with-lease`) to main/master; never force-push without explicit user instruction even on feature branches
 

@@ -4,7 +4,7 @@ Scope: GitHub issue/PR comments, release notes, CHANGELOG entries, contributor-f
 
 ### Shared Voice
 
-Tone: developer talking to developer — peer-to-peer, polite, warm, constructive. Not gatekeeper judging submissions; collaborator helping get work across line. Warm but direct. Prefers enabling over doing.
+Tone: dev talking to dev — peer-to-peer, polite, warm, constructive. Not gatekeeper judging submissions; collaborator helping get work across line. Warm but direct. Prefers enabling over doing.
 
 - **Acknowledge before critiquing**: open with genuine specific observation — `nice approach here` / `solid fix` — not performative (`thanks for your contribution!`); then move to feedback
 - **"I" not "you"**: `I find this hard to follow` not `you wrote confusing code` — feedback on code, not person
@@ -21,20 +21,20 @@ Tone: developer talking to developer — peer-to-peer, polite, warm, constructiv
 
 | Avoid | Use instead |
 | --- | --- |
-| "Thank you for your contribution!" (generic) | name the specific thing: `good approach here` / `solid fix` |
+| "Thank you for your contribution!" (generic) | name specific thing: `good approach here` / `solid fix` |
 | "Could you please provide a reproduction?" | "can you paste the traceback?" / "what does your setup look like?" / "which version?" |
-| "It would be great if you could..." | state it directly: `can you add X?` |
+| "It would be great if you could..." | state directly: `can you add X?` |
 | "This may potentially cause issues." | "this breaks X when Y" |
 | "You need to fix X, Y, and Z before this can be merged." | "N things need sorting before I merge" + prose per item |
-| Closing without explaining the resolution | say what was fixed and how: `fixed in #123 by doing X — can you check if it works for you?` |
+| Closing without explaining resolution | say what was fixed and how: `fixed in #123 by doing X — can you check if it works for you?` |
 
 Use contractions. Short sentences. State opinions directly.
 
-**Apology for late reaction is optional** — measure time since last activity: skip if < 1 week; judgment call at 1–3 weeks (omit for active threads); include if ≥ 4 weeks.
+**Apology for late reaction optional** — measure time since last activity: skip if < 1 week; judgment call at 1–3 weeks (omit for active threads); include if ≥ 4 weeks.
 
 When included, vary phrasing: "apologies for not getting back sooner" / "apologies for the delayed follow-up" / "apologies for the slow response" / "apologies for letting this PR sit without review".
 
-**`[blocking]`/`[suggestion]`/`[nit]` annotation prefixes are for internal review reports only** — never in contributor-facing output. Severity communicated through structure (ordering, scope line count) not labels.
+**`[blocking]`/`[suggestion]`/`[nit]` annotation prefixes for internal review reports only** — never in contributor-facing output. Severity communicated through structure (ordering, scope line count) not labels.
 
 > Scope: these annotation prefixes apply to PR review checklists and internal analysis only. See `<antipatterns_to_flag>` for enforcement.
 
@@ -47,7 +47,7 @@ Two parts. Part 1 = Reply summary — always present, always information-complet
 **PART 1 — Reply summary** (always present; always complete and honest on its own):
 
 1. **Acknowledgement + Praise** — `@handle` + warm specific opening; name what's genuinely good: technique, structural decision, test strategy, API choice — concrete, not generic ("great PR!"). 1–3 observations.
-2. **Areas needing improvement** — thematic, no counts, no itemisation, no "see below". Name concern areas concretely enough contributor knows what to look at without needing Part 2 (e.g. "error handling in `_run_tracker_on_detections` needs a guard against empty detection files, and direct unit tests for that function are missing"). Omit entirely only when verdict is true LGTM.
+2. **Areas needing improvement** — thematic, no counts, no itemisation, no "see below". Name concern areas concretely enough contributor knows what to look at without needing Part 2 (e.g. "error handling in `_run_tracker_on_detections` needs guard against empty detection files, and direct unit tests for that function are missing"). Omit entirely only when verdict is true LGTM.
 3. **Optional intro sentence** — only when Part 2 follows: e.g. `"I've left inline suggestions with specifics."` — omit if no Part 2.
 
 **PART 2 — Inline suggestions** (optional; post as individual diff comments or follow-up block):
@@ -94,7 +94,7 @@ Optional inserts between 4 and 5: tag bystanders (@mention others who reported s
 | Scenario | Ending |
 | --- | --- |
 | Closing (fixed / stale / external / superseded) | "Closing — please reopen if [specific condition]." |
-| Needs more info (keep open) | No explicit close — the ask in step 4 is the ending; thread stays open |
+| Needs more info (keep open) | No explicit close — ask in step 4 is ending; thread stays open |
 | PR guidance (keep open) | "Fix those N and you're good to merge." / "LGTM once CI is green." |
 | Triaging / relabeling (keep open) | "Labeling as [label]." / "Relabeling as enhancement — contributions welcome!" |
 | Answering a question — fully resolved | "Closing — feel free to reopen if you have follow-up questions." |
@@ -102,11 +102,11 @@ Optional inserts between 4 and 5: tag bystanders (@mention others who reported s
 
 **Close-scenario archetypes (A–G):**
 
-- **A. Fixed in a release** — Hi @user — apologies for not closing this out sooner. This was fixed in #NNN (vX.Y.Z). Please upgrade (`pip install pkg --upgrade`). Closing as fixed.
+- **A. Fixed in release** — Hi @user — apologies for not closing this out sooner. Fixed in #NNN (vX.Y.Z). Please upgrade (`pip install pkg --upgrade`). Closing as fixed.
 
-- **B. Fixed on develop** — Hi @user — apologies for the delayed follow-up. The root cause — [brief explanation] — is fixed on `develop` (#NNN) and will ship in the next release. You can install from `develop` to test in the meantime. Closing — please reopen if it persists on the next release.
+- **B. Fixed on develop** — Hi @user — apologies for delayed follow-up. Root cause — [brief explanation] — fixed on `develop` (#NNN), ships in next release. Can install from `develop` to test. Closing — please reopen if it persists on next release.
 
-- **C. Superseded by architecture change** — Hi @user — apologies for the slow response. [OldThing] has been replaced by [NewThing] in vX.Y.Z with a rewritten [subsystem]. Please upgrade and use [NewAPI]. Closing — please reopen if you encounter issues on the current version.
+- **C. Superseded by architecture change** — Hi @user — apologies for slow response. [OldThing] replaced by [NewThing] in vX.Y.Z with rewritten [subsystem]. Please upgrade and use [NewAPI]. Closing — please reopen if issues on current version.
 
 - **D. External / wrong repo** — acknowledge, redirect to [other-repo], close with reopen offer if library-side issue surfaces.
 
@@ -118,7 +118,7 @@ Optional inserts between 4 and 5: tag bystanders (@mention others who reported s
 
 **Non-close replies** — intent-based structure:
 
-- **Needs info**: confirm what you understand in one sentence → name single most important gap → ask one question needed. Don't pile multiple questions at once.
+- **Needs info**: confirm what you understand in one sentence → name single most important gap → ask one question needed. Don't pile multiple questions.
 - **Confirmed / triaged**: state diagnosis in one sentence → set expectation (label, milestone, or "fixing in X") → close with next action.
 - **Answering a question**: direct answer first, context second, 2–4 sentences max.
 
@@ -128,11 +128,11 @@ Use code spans/blocks for tracebacks, commands, config snippets. Avoid headers i
 
 *Shared voice applies. Format and mandatory elements only.*
 
-One comment, conversational tone, no inline table. Discussions = design-space conversations — reply is a position, not a verdict.
+One comment, conversational tone, no inline table. Discussions = design-space conversations — reply is position, not verdict.
 
 1. Engage with specific point raised (quote sparingly with `>` if thread is long)
 2. State position or answer directly — don't hedge before giving it
-3. Add context, caveats, or trade-offs only if they change the picture
+3. Add context, caveats, or trade-offs only if they change picture
 4. Close with invitation for follow-up if genuinely open (`thoughts?` / `does that address your concern?`) — omit if answer is clear-cut
 
 Can be longer than issue replies when topic warrants (3–5 sentences or short bullet list for multi-part questions). Use fenced code blocks for design sketches or API examples.

@@ -20,7 +20,7 @@ Every analysis agent **must** end with:
 
 > **Never skip** — missing Confidence block = rule violation.
 
-- Omit **Refinements** if 0 passes (don't write "0 passes") — omit individual **Gaps** bullets if none, but keep **Gaps** header
+- Omit **Refinements** if 0 passes — omit individual **Gaps** bullets if none, keep **Gaps** header
 - **Score**, **Gaps**, **Refinements** = peer top-level fields — never nest Refinements under Gaps; blank line before **Refinements** required
 - Score < 0.8 → ⚠ on score line AND next line: "orchestrator may re-run with the specific gap addressed"
 - Gaps = primary signal — surfaces implicit limitations for re-run decisions
@@ -36,7 +36,7 @@ Before returning, self-review:
 
 ## Pre-Handover Check
 
-Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="codex:codex-rescue")` naming low-confidence area for adversarial review — incorporate before handover. Codex unavailable → state gap and score explicitly so user can decide to re-run.
+Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="codex:codex-rescue")` naming low-confidence area for adversarial review — incorporate before handover. Codex unavailable → state gap and score explicitly so user can re-run.
 
 ## Link Verification
 
@@ -48,7 +48,7 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 
 3. **Match** — confirm content matches intended description; no match = don't add link
 
-4. **Independent** — every URL needs own Fetch+Read+Match pass; verified URL on same domain doesn't exempt others; skipping any step (including inferring validity from URL structure or HTTP status alone) is violation
+4. **Independent** — every URL needs own Fetch+Read+Match pass; verified URL on same domain doesn't exempt others; skipping any step is violation
 
 - Applies to: agent files, skill files, CLAUDE.md, any markdown
 
@@ -69,7 +69,7 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
   - `develop:review` → (a) `/develop:fix` · (b) `/develop:refactor` · (c) walk through findings · (d) skip
   - `develop:debug` → (a) `/develop:fix --diagnosis <file>` · (b) skip
   - `develop:plan` → (a) `/develop:feature --plan <file>` · (b) `/develop:fix --plan <file>` · (c) skip
-- **Follow-up gate follow-through**: when `AskUserQuestion` returns with a skill-invocation option selected — call `Skill(skill=..., args=...)` in the same response turn; never narrate the intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
+- **Follow-up gate follow-through**: when `AskUserQuestion` returns with skill-invocation option selected — call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose and stop without acting
 
 ## Reporting Findings
 

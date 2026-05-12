@@ -1,12 +1,10 @@
-**Re: Compress markdown to caveman format**
-
 # Shared Checks (all scopes) — 17, 21, 4, 5, 9, 16, 15
 
 ## Check 12 — File length (context budget risk)
 
 Thresholds: agents > 300 lines (~4 k tokens) · skill SKILL.md > 600 lines (~8 k tokens) · rules > 200 lines (~2.5 k tokens).
 
-> **Line count = human-readable proxy; token count = true measure.** Thresholds here guide human review — not the actual context budget. Short sentences and short lines are preferred: easier to read AND often cheaper per logical unit of information. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines is not a fix.
+> **Line count = human-readable proxy; token count = true measure.** Thresholds guide human review — not actual context budget. Short sentences + short lines preferred: easier to read AND cheaper per logical unit. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines not a fix.
 
 ```bash
 YEL='\033[1;33m'
@@ -43,7 +41,7 @@ for f in .claude/rules/*.md; do
 done
 ```
 
-**Severity**: **medium** — report only, never auto-fix. When flagging, remind the fixer: only content removal or distillation counts; collapsing lines is not acceptable.
+**Severity**: **medium** — report only, never auto-fix. When flagging, remind fixer: only content removal or distillation counts; collapsing lines not acceptable.
 
 ## Check 13 — Markdown heading hierarchy continuity
 
@@ -80,7 +78,7 @@ fi
 
 ## Check 14 — Orphaned empty structural blocks
 
-Structural tags present with only whitespace between open and close = dead markup left after content was moved or removed. No content loss possible on removal — safe to auto-fix.
+Structural tags with only whitespace between open and close = dead markup left after content moved or removed. No content loss on removal — safe to auto-fix.
 
 Scan all agent and skill files:
 
@@ -107,9 +105,9 @@ if [ "$violations" -eq 0 ]; then
 fi
 ```
 
-**Severity**: **medium** — gate-level; must fix before audit passes. **Auto-fix: YES** — remove the empty open+close tag pair entirely; no content exists to lose.
+**Severity**: **medium** — gate-level; must fix before audit passes. **Auto-fix: YES** — remove empty open+close tag pair entirely; no content to lose.
 
-> Root cause: a prior fix moved or removed the block's content but left the container tags. Empty `<constants>` = most common; also applies to `<notes>`, `<calibration>`, `<inputs>`, `<not-for>`, `<role>`, `<initialization>`, `<antipatterns_to_flag>`.
+> Root cause: prior fix moved or removed block content but left container tags. Empty `<constants>` most common; also applies to `<notes>`, `<calibration>`, `<inputs>`, `<not-for>`, `<role>`, `<initialization>`, `<antipatterns_to_flag>`.
 
 ## Check 15 — Hardcoded user paths
 
@@ -117,7 +115,7 @@ Use Grep tool (pattern `/Users/|/home/`, glob `{agents/*.md,skills/*/SKILL.md}`,
 
 **Important**: run on every file regardless of prior critical/high findings — path portability orthogonal to other severity classes, must not deprioritize.
 
-Also grep for bare `plugins/<name>/` prefix as primary path in skill/agent bodies — source-tree paths that work during authoring but break post-install. See Check C32 for the full scan.
+Also grep for bare `plugins/<name>/` prefix as primary path in skill/agent bodies — source-tree paths that work during authoring but break post-install. See Check C32 for full scan.
 
 ## Check 16 — Example value vs. token cost
 
@@ -175,13 +173,13 @@ For flagged agent pairs, name canonical owner of duplicated content. If no clear
 
 ### Sub-check 17b — Identical bash block in 3+ files (high)
 
-Bash blocks ≥8 lines appearing verbatim in 3 or more skill/agent files indicate missing `_shared/` extraction. Unlike step-overlap (17a), this catches copy-pasted operational blocks before they drift independently.
+Bash blocks ≥8 lines appearing verbatim in 3+ skill/agent files indicate missing `_shared/` extraction. Unlike step-overlap (17a), catches copy-pasted operational blocks before they drift independently.
 
 Model reasoning step — compare bash blocks across all skill files in scope:
 
-1. For each fenced bash block (` ```bash ` … ` ``` `) in every scanned SKILL.md, compute a fingerprint (content stripped of leading/trailing whitespace, comments removed)
+1. Per fenced bash block (` ```bash ` … ` ``` `) in every scanned SKILL.md, compute fingerprint (content stripped of leading/trailing whitespace, comments removed)
 2. Track file-count per fingerprint
-3. Any fingerprint appearing in ≥3 distinct files AND block length ≥8 lines → **[high] 17b**: `Bash block (~N lines) appears verbatim in K files: <file1>, <file2>, … — extract to _shared/<name>.md`
+3. Fingerprint in ≥3 distinct files AND block length ≥8 lines → **[high] 17b**: `Bash block (~N lines) appears verbatim in K files: <file1>, <file2>, … — extract to _shared/<name>.md`
 
 Severity: **high** — duplicated operational blocks drift independently; N fixes required per change instead of 1.
 Fix: extract to `plugins/foundry/skills/_shared/<descriptive-name>.md`; replace in-file copies with `Read $_FOUNDRY_SHARED/<name>.md — execute <block-purpose>`.
@@ -193,7 +191,7 @@ Fix: extract to `plugins/foundry/skills/_shared/<descriptive-name>.md`; replace 
 
 ## Check C32 — Hardcoded source-tree paths (install-path regression)
 
-Plugin skill and agent files must not contain bare `plugins/<name>/` paths as primary references. These resolve in the source tree but break post-install where `plugins/` is absent. Install-path resolution pattern (cache + fallback) is mandatory.
+Plugin skill and agent files must not contain bare `plugins/<name>/` paths as primary references. Resolve in source tree but break post-install where `plugins/` absent. Install-path resolution pattern (cache + fallback) mandatory.
 
 ```bash
 RED='\033[1;31m'
@@ -289,23 +287,23 @@ fix: use fully-qualified form, e.g. subagent_type="foundry:<name>"
 
 **Report only** — no auto-fix; correct prefix depends on which plugin owns agent.
 
-> **Related**: Check 28 (in `checks-skills.md`) covers cross-plugin fallback coverage — dispatched agent exists but no fallback when that plugin is absent. Check 25 and Check 28 address different failure modes; run both.
+> **Related**: Check 28 (in `checks-skills.md`) covers cross-plugin fallback coverage — dispatched agent exists but no fallback when that plugin absent. Check 25 and Check 28 address different failure modes; run both.
 
 ## Check 29 — LLM context minimality (verbosity)
 
-Every token in agent, skill, rule file = inference cost on every invocation. Check each file semantically minimal — all information retained, zero redundant wording.
+Every token in agent, skill, rule file = inference cost on every invocation. Each file must be semantically minimal — all information retained, zero redundant wording.
 
 **Scan targets**: `.claude/agents/*.md`, `.claude/skills/*/SKILL.md`, `.claude/rules/*.md`.
 
 Via model reasoning, apply four criteria per file:
 
-**1 — Within-file repetition**: same rule or instruction appears in two sections. Sub-bullet fully restates parent with no additive content. Workflow step re-explains constraint already defined in preamble or `<notes>`.
+**1 — Within-file repetition**: same rule or instruction in two sections. Sub-bullet fully restates parent with no additive content. Workflow step re-explains constraint already defined in preamble or `<notes>`.
 
-**2 — Prose inflation**: filler preambles ("Note that", "It is important to", "Please be aware", "Keep in mind") — flag phrase; substantive content survives without it. Unconditional rule hedged with "might", "could potentially", "in some cases" where rule is absolute. Opening sentence of section paraphrases heading with no additive content.
+**2 — Prose inflation**: filler preambles ("Note that", "It is important to", "Please be aware", "Keep in mind") — flag phrase; substantive content survives without it. Unconditional rule hedged with "might", "could potentially", "in some cases" where rule absolute. Opening sentence paraphrases heading with no additive content.
 
 **3 — Restatement of obvious consequence**: "Do X" immediately followed by "Failing to do X causes Y" where Y self-evident from X alone.
 
-**4 — Information gap test (mandatory before flagging any candidate)**: "If this text removed, can reader reconstruct from remaining content?" YES = safe to flag. NO = not a finding — content load-bearing even if verbose. Always skip: code blocks, inline examples (covered by Check 16), cross-reference tables, numbered lists where order carries meaning.
+**4 — Information gap test (mandatory before flagging any candidate)**: "If removed, can reader reconstruct from remaining content?" YES = safe to flag. NO = not a finding — content load-bearing even if verbose. Always skip: code blocks, inline examples (Check 16), cross-reference tables, numbered lists where order carries meaning.
 
 Per finding: location (section heading + approx line range) · pattern type (repetition / prose-inflation / obvious-consequence) · estimated token savings (small <20 / medium 20–80 / large >80) · proposed shorter form or "remove entirely".
 
@@ -317,7 +315,7 @@ Three sub-checks for within-file consistency of emoji symbols, slash-command not
 
 **26a — Emoji/symbol consistency within files**
 
-Per agent or skill file, extract lines with emoji and annotated concept label. Group by concept. Flag concepts with more than one distinct emoji in same file.
+Per agent or skill file, extract lines with emoji and annotated concept label. Group by concept. Flag concepts with 2+ distinct emoji in same file.
 
 ````bash
 printf "=== Check 26a: Emoji/symbol consistency ===\n"

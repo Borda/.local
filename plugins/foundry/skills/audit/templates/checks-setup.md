@@ -1,5 +1,3 @@
-**Re: Compress setup-checks markdown to caveman format**
-
 # Setup Checks — 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
 
 ## Check 1 — Inventory drift (MEMORY.md vs disk)
@@ -10,9 +8,9 @@ Use Glob (`agents/*.md`, path `.claude/`) to list agent files; extract basenames
 ls .claude/agents/*.md 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.md$//' | sort >/tmp/agents_disk.txt || true # timeout: 5000
 ```
 
-Read `- Agents:` and `- Skills:` roster lines from MEMORY.md content injected in conversation context (available as auto-memory at session start). Do not Grep a file path — MEMORY.md not stored under `.claude/` but in Claude Code's auto-memory system. Repeat with Glob (`skills/*/`, path `.claude/`) for skills on disk — write to `/tmp/skills_disk.txt`.
+Read `- Agents:` and `- Skills:` roster lines from MEMORY.md content injected in conversation context (available as auto-memory at session start). Don't Grep file path — MEMORY.md not stored under `.claude/` but in Claude Code's auto-memory system. Repeat with Glob (`skills/*/`, path `.claude/`) for skills on disk — write to `/tmp/skills_disk.txt`.
 
-**macOS caution**: BSD grep treats arguments starting with `-` as option flags. When constructing bash comparison from MEMORY.md roster via grep, always use `grep -E 'Agents:'` (no leading `- `) or `grep -- '- Agents:'` not `grep '- Agents:'` — latter exits 2 on macOS, silently produces empty result. Safest: use Read tool (not grep) for MEMORY.md as stated above.
+**macOS caution**: BSD grep treats args starting with `-` as option flags. When constructing bash comparison from MEMORY.md roster via grep, always use `grep -E 'Agents:'` (no leading `- `) or `grep -- '- Agents:'` not `grep '- Agents:'` — latter exits 2 on macOS, silently produces empty result. Safest: use Read tool (not grep) for MEMORY.md as stated above.
 
 ## Check 2 — README vs disk
 
@@ -61,7 +59,7 @@ Read `.claude/settings.json` with Read tool, extract `permissions.allow` list. F
 - **Reversible**: effect undoable without data loss (local file edits, test runs, read-only queries)
 - **Local-only**: no effect outside working directory, no external data transmission
 
-Flag destructive patterns as **critical** (auto-approved destructive commands always breaking safety failure). Flag external-state mutations as **high**, raise to user — some (e.g., `gh release create`) may be intentional but must be explicitly acknowledged.
+Flag destructive patterns as **critical** (auto-approved destructive commands always = breaking safety failure). Flag external-state mutations as **high**, raise to user — some (e.g., `gh release create`) may be intentional but must be explicitly acknowledged.
 
 ## Check 6 — Stale settings.json allow entries
 
@@ -88,7 +86,7 @@ fi
 
 **Severity**: **low** per stale entry. Fix: remove stale entry from `settings.json` (report only — `settings.json` never auto-edited per audit policy).
 
-**Important**: some allow entries intentionally grant broad patterns (e.g., `Bash(mkdir -p .reports/audit/*)`) that don't appear verbatim in config files — exercised at runtime. Flag only entries whose command fragment appears nowhere in any `.claude/` file.
+**Important**: some allow entries intentionally grant broad patterns (e.g., `Bash(mkdir -p .reports/audit/*)`) not appearing verbatim in config files — exercised at runtime. Flag only entries whose command fragment appears nowhere in any `.claude/` file.
 
 ## Check 7 — codex plugin integration check
 
@@ -330,7 +328,7 @@ for f in .claude/agents/*.md; do # timeout: 5000
 done
 ```
 
-Using model reasoning, cross-reference each extracted color name against `COLOR_MAP` keys in `.claude/hooks/statusline.js`. Flag:
+Use model reasoning to cross-reference each extracted color name against `COLOR_MAP` keys in `.claude/hooks/statusline.js`. Flag:
 
 - Color in agent frontmatter but **not a key in `COLOR_MAP`** → **medium** (agent appears uncolored)
 - Color in `COLOR_MAP` not declared by any agent → **low** (dead mapping, no functional impact)
@@ -432,11 +430,11 @@ else
 fi
 ```
 
-All three sub-checks produce only **low** findings — auto-fixed when user picks "Fix all" from the follow-up gate. Fix: remove duplicate section, drop version pin, delete absorbed feedback file.
+All three sub-checks produce only **low** findings — auto-fixed when user picks "Fix all" from follow-up gate. Fix: remove duplicate section, drop version pin, delete absorbed feedback file.
 
 ## Check 30 — Config token overhead
 
-Rules files in `.claude/rules/` load **entirely at session start**, regardless of relevance. Agents and skills are lazy-loaded (zero cost until invoked). This check measures always-loaded byte count and flags oversized components.
+Rules files in `.claude/rules/` load **entirely at session start**, regardless of relevance. Agents and skills are lazy-loaded (zero cost until invoked). Measures always-loaded byte count, flags oversized components.
 
 ```bash
 # timeout: 5000
@@ -487,4 +485,4 @@ fi
 
 Severity: > 100 KB total or > 10 KB single file = **medium**; 50–100 KB total or 5–10 KB single file = **low**. **Report only** — fix = split or remove content from rules files; never auto-collapse.
 
-Note: agents/ and skills/ are lazy-loaded — never flag them for token overhead.
+Note: `agents/` and `skills/` lazy-loaded — never flag for token overhead.

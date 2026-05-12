@@ -56,7 +56,7 @@ CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  
 **Stuck escalation sequence** (at STUCK_THRESHOLD consecutive discards):
 
 1. Switch to different agent type (rotate: `code` → `ml` → `perf` → `code`; if current `ml`, next `perf`; if current `perf`, next `code`)
-2. Spawn 2 agents in parallel with competing strategies; each agent must write full analysis to `.experiments/state/<run-id>/stuck-escalation-<i>-<agent-type>.md` and return ONLY compact JSON envelope. Consolidation: pick whichever returns delta ≥ 0.1% AND guard pass; if both qualify, pick higher delta.
+2. Spawn 2 agents parallel with competing strategies; each writes full analysis to `.experiments/state/<run-id>/stuck-escalation-<i>-<agent-type>.md`, returns ONLY compact JSON envelope. Consolidation: pick whichever returns delta ≥ 0.1% AND guard pass; if both qualify, pick higher delta.
 3. Stop, report progress, surface to user — no blind looping
 
 </constants>
@@ -70,7 +70,7 @@ CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  
 ```bash
 # Locate research plugin shared dir — installed first, local workspace fallback
 _RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="plugins/research/skills/_shared"
+[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
 # shared resolution block — canonical source: skills/_shared/agent-resolution.md
 ```
 
@@ -123,7 +123,7 @@ After clarification extraction, remaining non-flag tokens (not starting `--`) ar
   If you meant to set a clarification hint, pass it as a quoted string: "/research:run program.md \"sort improvements\" --codex"
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--resume\`, \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--journal\`, \`--hypothesis\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--resume\`, \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--journal\`, \`--hypothesis\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **If argument is a `.md` file** — read and parse with these rules:
 
@@ -150,7 +150,7 @@ RUN_DIR=".experiments/${RUN_ID}"  # hypothesis pipeline + journal outputs (per <
 mkdir -p "$RUN_DIR"  # timeout: 5000
 ```
 
-Note: `STATE_DIR` (`.experiments/state/${RUN_ID}/`) is the per-iteration artifact dir — distinct from `RUN_DIR`. Both directories coexist; see `<constants>` block.
+Note: `STATE_DIR` (`.experiments/state/${RUN_ID}/`) is per-iteration artifact dir — distinct from `RUN_DIR`. Both coexist; see `<constants>` block.
 
 Create run directory:
 
@@ -515,7 +515,7 @@ TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 
 - **Summary every SUMMARY_INTERVAL iterations**: print compact table (iteration, metric, delta, status) for last N iterations.
 - **Stuck detection**: if last `STUCK_THRESHOLD` entries all have `status: reverted|no-op|hook-blocked`, trigger escalation (see `<constants>`). Log escalation action.
-- **Diminishing returns**: if last `DIMINISHING_RETURNS_WINDOW` kept entries each improved < 0.5%, warn and suggest stopping. No auto-stop — let user decide.
+- **Diminishing returns**: if last `DIMINISHING_RETURNS_WINDOW` kept entries each improved < 0.5%, warn and suggest stopping. No auto-stop — user decides.
 - **Early stop**: if `target` set, stop when metric crosses it. Mark `state.json` `status: goal-achieved`.
 - **Context compaction** (every SUMMARY_INTERVAL): write full iteration summary to `.experiments/state/<run-id>/progress-<i>.md`, discard verbose per-iteration details from working memory. Retain only: current metric, iteration count, JSONL path, `best_commit`. Full history recoverable from `experiments.jsonl` and `ideation-<i>.md`.
 
@@ -602,10 +602,10 @@ Then re-run with --colab.
 <notes>
 
 - **Commit before verify** — enables clean `git revert HEAD` if metric doesn't improve. Never verify before committing.
-- **`git revert` over `git reset --hard`** — preserves experiment history, is not in the deny list.
+- **`git revert` over `git reset --hard`** — preserves experiment history, not in deny list.
 - **Never `git add -A`** — always stage specific files returned by agent JSON.
 - **Never `--no-verify`** — if pre-commit hook blocks, delegate to `foundry:linting-expert` and fix.
-- **Guard ≠ Verify** — guard checks for regressions (tests, lint); verify checks target metric. Both must pass to keep a commit.
+- **Guard ≠ Verify** — guard checks regressions (tests, lint); verify checks target metric. Both must pass to keep commit.
 - **Scope files read-only for guard/test files** — ideation agent must not modify test files or metric/guard scripts.
 - **JSONL over TSV** — richer structured fields, `jq`-parseable, no delimiter ambiguity; query with `jq -c 'select(.status == "kept")' experiments.jsonl`.
 - **State persistence enables resume** — if loop crashes/times out, `resume` picks up exactly where it stopped.

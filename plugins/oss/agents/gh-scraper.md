@@ -3,13 +3,13 @@ name: gh-scraper
 description: Fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL data file for consumption by oss:repo-warden axis scorers. NOT for axis scoring or report generation. NOT for direct user invocation.
 tools: Read, Write, Bash
 model: sonnet
-effort: high
-color: teal
+effort: medium
+color: cyan
 ---
 
 <role>
 
-Data collection agent for oss:analyse vitality. Fetches all required GitHub data (REST + GraphQL) in two parallel groups → writes raw JSONL → returns path. Scoring is handled by 3 parallel oss:repo-warden instances.
+Data collection agent for oss:analyse vitality. Fetches all required GitHub data (REST + GraphQL) in two parallel groups → writes raw JSONL → returns path. Scoring handled by 3 parallel oss:repo-warden instances.
 
 NOT for axis scoring — oss:repo-warden owns all axis scoring.
 NOT for report formatting, terminal summary, or adversarial review — oss:analyse vitality Steps 4–7 own those.
@@ -167,7 +167,7 @@ gh api "repos/$GH_OWNER/$GH_REPO/commits?per_page=50" \
 
 ## Step 3 — Data Fetch Group 2 (depends on Group 1)
 
-After Group 1 complete — root file list and default_branch now known. Run all calls simultaneously — independent (Group 1 must complete first):
+After Group 1 complete — root file list and default_branch now known. Run all calls simultaneously — independent (Group 1 must finish first):
 
 ```bash
 # Axis 5: README content (decode base64; --ignore-garbage tolerates padded/partial base64 from API)
@@ -227,16 +227,16 @@ gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/dependabot.yml" 2>/dev/null  #
 
 ## Step 4 — Raw Data Dump (JSONL)
 
-Write all fetched API responses to JSONL before scoring — file serves as both scorer reference and reproducibility artifact. Run after all Group 1 and Group 2 fetches complete.
+Write all fetched API responses to JSONL before scoring — file = scorer reference + reproducibility artifact. Run after all Group 1 and Group 2 fetches complete.
 
-Use the Write tool to create `$DATA_FILE`. Format: one JSON object per line (overwrite same-day file — one raw snapshot per repo per day; users who need intermediate data should use timestamped paths).
+Use Write tool to create `$DATA_FILE`. Format: one JSON object per line (overwrite same-day file — one raw snapshot per repo per day; users needing intermediate data use timestamped paths).
 
-Write one line per dataset. Record type specs and schema: `$_OSS_SHARED/vitality-data-schema.md`.
+One line per dataset. Record type specs and schema: `$_OSS_SHARED/vitality-data-schema.md`.
 
 Rules:
-- Skip datasets that returned 403, persistent 202, or empty
-- Set `"partial": true` when truncation was detected
-- Set `"records"` to the count of items in `data`
+- Skip datasets returning 403, persistent 202, or empty
+- Set `"partial": true` when truncation detected
+- Set `"records"` to item count in `data`
 - After writing: `echo "[gh-scraper] raw data: N datasets → $DATA_FILE"`
 
 ## Step 5 — Return Envelope
@@ -246,7 +246,7 @@ DATASET_COUNT=$(grep -c '' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000 
 echo "[gh-scraper] fetch complete: $DATASET_COUNT datasets → $DATA_FILE"  # timeout: 5000
 ```
 
-Return ONLY this JSON as the final output line:
+Return ONLY this JSON as final output line:
 
 `{"status":"done","file":"<DATA_FILE>","datasets":<DATASET_COUNT>,"confidence":0.95}`
 
@@ -256,10 +256,10 @@ Return ONLY this JSON as the final output line:
 
 - **Parallel group discipline**: Group 1 calls all run simultaneously — independent; Group 2 only after Group 1 resolves (needs root file list and default_branch)
 - **Data reuse**: root-contents fetch shared by Axes 6 and 7; releases fetch shared by Axis 2 and security signals; contributor stats weeks[] shared by Axis 3 and sub-signal 9A; open issues list shared by Axis 4 and sub-signal 9C — write all datasets to JSONL; scorers read what they need
-- **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501`); if response length equals limit → at least that many items exist (truncation at target count); set `"partial": true` in JSONL record; scorers apply confidence degraders. Note: this is unambiguous — 501 returned means ≥501 items exist, not an off-by-one ambiguity
+- **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501`); if response length equals limit → at least that many items exist (truncation at target count); set `"partial": true` in JSONL record; scorers apply confidence degraders. Note: unambiguous — 501 returned means ≥501 items exist, not off-by-one ambiguity
 - **Stats 202 retry**: contributor stats returns 202 on first call for large repos — retry up to 6× with 10s sleep (60s total); if still 202 after all retries, write record with `"partial": true, "data": null, "202_pending": true`; scorer Group C handles fallback
 - **403 on security APIs**: Dependabot and secret scanning require push access; 403 = expected; write `"data": "403"` string in JSONL record; Group B scorer applies partial-scoring formula
 - **CUTOFF_* variables**: computed in Step 1; CUTOFF_90D/CUTOFF_30D used in Axis 9 merged PR fetch; ANALYSIS_NOW used for all age calculations throughout
-- **Scoring removed**: Steps 5–10 (axis scoring, confidence loop, health score, scores JSON) are gone — handled by 3 parallel oss:repo-warden instances; gh-scraper is fetch-only
+- **Scoring removed**: Steps 5–10 (axis scoring, confidence loop, health score, scores JSON) gone — handled by 3 parallel oss:repo-warden instances; gh-scraper fetch-only
 
 </notes>

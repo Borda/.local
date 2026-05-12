@@ -1,6 +1,6 @@
 ---
 name: distill
-description: One-time snapshot that extracts patterns from work history and accumulated lessons, then distills them into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, or consolidating lessons and feedback into rules and agent/skill updates.
+description: One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, or consolidating lessons and feedback into rules and agent/skill updates.
 argument-hint: '[review | prune | lessons | "external <url-or-path>" | "<recurring task description>"]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch
@@ -19,11 +19,11 @@ NOT for: single-file agent/skill edits (use /foundry:manage); quality-checking f
 
 - **$ARGUMENTS**: optional. Four modes:
   - Omitted — analyze existing patterns and agents; generate suggestions proactively.
-  - `review` — review the existing agent/skill roster for quality and gaps without suggesting new additions.
-  - `prune` — evaluate the project memory file for stale, redundant, or verbose entries and apply a trimmed version.
-  - `lessons` — read `.notes/lessons.md` and memory feedback files, then distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes.
-  - `external <source>` — analyse an external plugin, skill, or agentic resource and produce a structured adoption proposal. `<source>` is a URL, file path, or local directory.
-  - Description of a recurring task — use the description as context when generating suggestions (e.g. "I keep doing X manually").
+  - `review` — review existing agent/skill roster for quality and gaps without suggesting new additions.
+  - `prune` — evaluate project memory file for stale, redundant, or verbose entries and apply trimmed version.
+  - `lessons` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes.
+  - `external <source>` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory.
+  - Description of recurring task — use description as context when generating suggestions (e.g. "I keep doing X manually").
 
 </inputs>
 
@@ -31,13 +31,13 @@ NOT for: single-file agent/skill edits (use /foundry:manage); quality-checking f
 
 ## Step 1: Inventory existing agents and skills
 
-Use the Glob tool to enumerate agents and skills across all sources — project-local AND plugin-namespaced — to avoid false-gap findings when a candidate already exists in a plugin:
+Use Glob tool to enumerate agents and skills across all sources — project-local AND plugin-namespaced — to avoid false-gap findings when candidate already exists in plugin:
 
 - **Project-local**: pattern `agents/*.md`, path `.claude/`; pattern `skills/*/SKILL.md`, path `.claude/`
 - **Plugin source** (workspace): pattern `*/agents/*.md`, path `plugins/`; pattern `*/skills/*/SKILL.md`, path `plugins/`
 - **Installed plugin cache** (if accessible): resolve cache root dynamically — `PLUGIN_CACHE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/ 2>/dev/null | head -1)` — then scan `$PLUGIN_CACHE` for pattern `*/agents/*.md` and `*/skills/*/SKILL.md`
 
-For each agent/skill found, extract: name, description, tools, purpose. Tag each entry with its plugin namespace (e.g. `foundry:sw-engineer`, `oss:resolve`) — used in Step 3 gap analysis to prevent recommending duplicates of plugin-namespaced agents/skills.
+For each agent/skill found, extract: name, description, tools, purpose. Tag each entry with plugin namespace (e.g. `foundry:sw-engineer`, `oss:resolve`) — used in Step 3 gap analysis to prevent recommending duplicates of plugin-namespaced agents/skills.
 
 ## Step 2: Analyze work patterns
 
@@ -45,9 +45,9 @@ For each agent/skill found, extract: name, description, tools, purpose. Tag each
 
 **If `$ARGUMENTS` is `lessons`**: skip Steps 2–5 entirely and go to "Mode: Lessons Distillation" below.
 
-**If `$ARGUMENTS` is `review`**: skip the git analysis below and go directly to Step 3 (Gap analysis). Use the agent/skill descriptions from Step 1 as the sole input — the goal is to assess quality and coverage of the existing roster, not to look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries.
+**If `$ARGUMENTS` is `review`**: skip git analysis below and go directly to Step 3 (Gap analysis). Use agent/skill descriptions from Step 1 as sole input — goal is to assess quality and coverage of existing roster, not look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries.
 
-Otherwise, look for signals of repetitive or specialist work. The first three git commands are independent — run them in parallel:
+Otherwise, look for signals of repetitive or specialist work. First three git commands are independent — run in parallel:
 
 ```bash
 # timeout: 3000
@@ -63,16 +63,16 @@ git log --name-only --pretty="" -30 | sort | uniq -c | sort -rn | head -20
 git log --oneline -100 | cut -d' ' -f2 | sort | uniq -c | sort -rn | head -15
 ```
 
-Then use the Glob tool (pattern `todo_*.md`, path `.plans/active/`) to list active task files; read each with the Read tool. Also read `.notes/lessons.md` (if it exists) for task history and conversation hints.
+Then use Glob tool (pattern `todo_*.md`, path `.plans/active/`) to list active task files; read each with Read tool. Also read `.notes/lessons.md` (if exists) for task history and conversation hints.
 
-If `$ARGUMENTS` was provided, use it as additional context for the pattern analysis.
+If `$ARGUMENTS` provided, use as additional context for pattern analysis.
 
 ### Frequency Heuristics
 
-- **3+ occurrences** of a pattern in recent history → candidate for automation
-- **2+ different projects** using the same manual process → cross-project skill
+- **3+ occurrences** of pattern in recent history → candidate for automation
+- **2+ different projects** using same manual process → cross-project skill
 - **significant manual effort** per occurrence (subjective — use git history context) → high-value automation target
-- **Domain-specific knowledge** required → candidate for a specialist agent (not just a skill)
+- **Domain-specific knowledge** required → candidate for specialist agent (not just skill)
 
 ## Step 3: Gap analysis
 
@@ -80,10 +80,10 @@ If `$ARGUMENTS` was provided, use it as additional context for the pattern analy
 
 For each identified pattern, check:
 
-1. **Is it already covered?** — search existing agent/skill descriptions for overlap
-2. **Is it frequent enough?** — recurring ≥ 3 times or clearly domain-specialized (See Step 2 heuristics — combine ≥3 occurrences with the effort/frequency signals from Steps 1–2)
-3. **Would a specialist add quality?** — does it require deep domain knowledge?
-4. **Is it too narrow?** — a single-use task doesn't warrant a persistent agent
+1. **Already covered?** — search existing agent/skill descriptions for overlap
+2. **Frequent enough?** — recurring ≥ 3 times or clearly domain-specialized (See Step 2 heuristics — combine ≥3 occurrences with effort/frequency signals from Steps 1–2)
+3. **Would specialist add quality?** — does it require deep domain knowledge?
+4. **Too narrow?** — single-use task doesn't warrant persistent agent
 
 Thresholds for recommendation:
 
@@ -95,7 +95,7 @@ Thresholds for recommendation:
 
 > **`review` mode**: duplication checks still apply — review mode does not skip this step.
 
-Before recommending anything, run through both the overlap check and the anti-pattern checklist:
+Before recommending anything, run overlap check and anti-pattern checklist:
 
 ```markdown
 For each candidate agent/skill:
@@ -103,11 +103,11 @@ For each candidate agent/skill:
 - Is the name/description confusingly similar to an existing one? → rename existing
 ```
 
-Anti-pattern checklist — reject the candidate if any apply:
+Anti-pattern checklist — reject candidate if any apply:
 
-1. **Role vs task confusion**: agents are roles, not tasks. Do not create an agent for every different topic.
-2. **Near-duplicate**: the candidate duplicates an existing agent with a slightly different name. Enhance the existing one instead.
-3. **Thin wrapper**: the candidate skill just calls one agent with fixed args. That is not enough value to justify a new skill file. Exception: skills that add measure-first/measure-after bookends, multi-mode dispatch across 3+ agents, or safety breaks (retry limits, validation gates) justify the wrapper even if only one agent executes for a given invocation.
+1. **Role vs task confusion**: agents are roles, not tasks. Do not create agent for every different topic.
+2. **Near-duplicate**: candidate duplicates existing agent with slightly different name. Enhance existing instead.
+3. **Thin wrapper**: candidate skill just calls one agent with fixed args. Not enough value to justify new skill file. Exception: skills that add measure-first/measure-after bookends, multi-mode dispatch across 3+ agents, or safety breaks (retry limits, validation gates) justify wrapper even if only one agent executes for given invocation.
 
 ## Step 5: Report
 
@@ -146,9 +146,9 @@ Anti-pattern checklist — reject the candidate if any apply:
 
 ## Mode: Memory Pruning (prune)
 
-Locate, evaluate, and trim the project memory file.
+Locate, evaluate, and trim project memory file.
 
-**Find the memory file:**
+**Find memory file:**
 
 <!-- Note: if the auto-memory path convention changes, update this slug derivation. -->
 
@@ -156,21 +156,22 @@ Locate, evaluate, and trim the project memory file.
 # timeout: 3000
 PROJECT="$(git rev-parse --show-toplevel)"
 MEMORY_FILE="$HOME/.claude/projects/$(echo "$PROJECT" | sed 's|[/.]|-|g')/memory/MEMORY.md"
+[ -f "$MEMORY_FILE" ] || { echo "MEMORY_FILE not found at $MEMORY_FILE — skipping memory analysis"; exit 0; }
 echo "Memory file located."
 ```
 
-Read the memory file with the Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md does not need to live in memory.
+Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md need not live in memory.
 
 **Evaluate each section against these criteria:**
 
-- **Drop**: content that is no longer accurate (removed features, resolved one-time issues, superseded decisions), or fully duplicated in CLAUDE.md
-- **Trim**: sections still accurate but containing implementation history or rationale no longer needed day-to-day — keep operational facts (what/where), drop the why-it-was-built backstory
-- **Keep**: rules actively applied every session; project-specific facts absent from CLAUDE.md; anything the model needs to act correctly
+- **Drop**: content no longer accurate (removed features, resolved one-time issues, superseded decisions), or fully duplicated in CLAUDE.md
+- **Trim**: sections still accurate but containing implementation history or rationale no longer needed day-to-day — keep operational facts (what/where), drop why-it-was-built backstory
+- **Keep**: rules actively applied every session; project-specific facts absent from CLAUDE.md; anything model needs to act correctly
 
-**Memory-write gate** — project CLAUDE.md `Memory Policy` prohibits auto-writes to MEMORY.md. Prune mode therefore runs read-only by default and produces an advisory diff/report rather than applying edits silently:
+**Memory-write gate** — project CLAUDE.md `Memory Policy` prohibits auto-writes to MEMORY.md. Prune mode runs read-only by default and produces advisory diff/report rather than applying edits silently:
 
-1. Read the memory file and analyse for stale, redundant, and verbose entries.
-2. Print the proposed prune report to terminal (sections to drop + sections to trim, with line ranges and reasoning):
+1. Read memory file and analyse for stale, redundant, and verbose entries.
+2. Print proposed prune report to terminal (sections to drop + sections to trim, with line ranges and reasoning):
 
    ```text
    Prune proposals (apply manually unless explicitly approved below):
@@ -179,15 +180,15 @@ Read the memory file with the Read tool. Also read `.claude/CLAUDE.md` to identi
      ...
    ```
 
-3. Call `AskUserQuestion` — do NOT write the question as plain text. Map options directly into the tool call:
+3. Call `AskUserQuestion` — do NOT write question as plain text. Map options directly into tool call:
    - question: "Apply prune edits to MEMORY.md?"
-   - (a) label: `Apply now` — description: use Edit tool to apply all proposals to the memory file
+   - (a) label: `Apply now` — description: use Edit tool to apply all proposals to memory file
    - (b) label: `Show diff first` — description: print line-by-line preview before applying any change
    - (c) label: `Skip` — description: leave MEMORY.md untouched; user will edit manually
 
-Only after the user picks (a) (or (b) followed by approval) may Edit be invoked on the memory file. **Never apply prune edits silently.**
+Only after user picks (a) (or (b) followed by approval) may Edit be invoked on memory file. **Never apply prune edits silently.**
 
-Print a compact summary after applying (or after the user declines):
+Print compact summary after applying (or after user declines):
 
 ```text
 Pruned MEMORY.md — <date>
@@ -197,11 +198,11 @@ Pruned MEMORY.md — <date>
   Saved:   ~N lines
 ```
 
-End your response with a `## Confidence` block per CLAUDE.md output standards.
+End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Mode: Lessons Distillation (lessons)
 
-Read accumulated lessons and feedback, then identify patterns that should be promoted into durable governance — rule files, agent instruction updates, or skill workflow changes.
+Read accumulated lessons and feedback, identify patterns to promote into durable governance — rule files, agent instruction updates, or skill workflow changes.
 
 **Step L1: Collect raw material**
 
@@ -212,7 +213,7 @@ Use Read tool on `.notes/lessons.md` (skip if file not found). Derive MEMORY_DIR
 PROJECT="$(git rev-parse --show-toplevel)"  # timeout: 3000
 MEMORY_DIR="$HOME/.claude/projects/$(echo "$PROJECT" | sed 's|[/.]|-|g')/memory"
 ```
-Then use Glob tool with pattern `feedback_*.md` in `$MEMORY_DIR` to list feedback files; read each with Read tool. Also read `.claude/rules/` (Glob `rules/*.md`, path `.claude/`) to understand what's already captured as a rule.
+Then use Glob tool with pattern `feedback_*.md` in `$MEMORY_DIR` to list feedback files; read each with Read tool. Also read `.claude/rules/` (Glob `rules/*.md`, path `.claude/`) to understand what's already captured as rule.
 
 **Step L2: Cluster and classify**
 
@@ -225,25 +226,25 @@ Group all lessons/feedback entries by domain. Use model reasoning to identify cl
 - **Tool & permission use** (Bash vs native tools, settings.json)
 - **Other** (project-specific, one-off)
 
-For each lesson entry, classify its disposition:
+For each lesson entry, classify disposition:
 
 | Disposition | Meaning |
 | --- | --- |
-| `→ rule` | Recurring enough to warrant a standalone `.claude/rules/<name>.md` file |
+| `→ rule` | Recurring enough to warrant standalone `.claude/rules/<name>.md` file |
 | `→ agent update` | Specific to one agent's instructions — edit that agent's `.md` file |
 | `→ skill update` | Specific to one skill's workflow — edit that skill's `SKILL.md` |
-| `→ already covered` | Already present verbatim (or near-verbatim) in an existing rule, agent, or CLAUDE.md |
+| `→ already covered` | Already present verbatim (or near-verbatim) in existing rule, agent, or CLAUDE.md |
 | `→ too narrow` | One-off, project-specific, or not generalizable — keep in memory only |
 
 Thresholds:
 
-- **`→ rule`**: 2+ distinct lessons on the same topic, or a single lesson that applies across ≥3 agents/skills
-- **`→ agent/skill update`**: lesson applies specifically to one file's behavior and is not yet there
-- **`→ already covered`**: exact principle already in the target file — mark and skip
+- **`→ rule`**: 2+ distinct lessons on same topic, or single lesson applying across ≥3 agents/skills
+- **`→ agent/skill update`**: lesson applies specifically to one file's behavior and not yet there
+- **`→ already covered`**: exact principle already in target file — mark and skip
 
 **Step L3: Generate proposals**
 
-Produce a structured proposal table. Do not apply anything yet — report first.
+Produce structured proposal table. Do not apply anything yet — report first.
 
 ````markdown
 ## Lessons Distillation Proposals
@@ -299,12 +300,19 @@ Produce a structured proposal table. Do not apply anything yet — report first.
 
 **Step L4: Apply (with confirmation)**
 
-**Conflict pre-check** — before presenting the question, run in parallel for every `→ rule` and `→ agent/skill update` proposal:
+Set up run directory before conflict checks:
 
-1. **Existing content grep**: use Grep to search the target file (if it already exists) for the section heading or key phrase the delta would insert near. A hit = potential collision with existing content.
-2. **Cross-proposal collision**: if two proposals both target the same file and same section heading, mark both ⚠ CONFLICT.
+```bash
+RUN_DIR=".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+mkdir -p "$RUN_DIR"  # timeout: 5000
+```
 
-Annotate each conflicting proposal row with ⚠. If any conflicts found, print above the question:
+**Conflict pre-check** — before presenting question, run in parallel for every `→ rule` and `→ agent/skill update` proposal:
+
+1. **Existing content grep**: use Grep to search target file (if already exists) for section heading or key phrase delta would insert near. Hit = potential collision with existing content.
+2. **Cross-proposal collision**: if two proposals both target same file and same section heading, mark both ⚠ CONFLICT.
+
+Annotate each conflicting proposal row with ⚠. If conflicts found, print above question:
 
 ```text
 ⚠ Conflicts detected:
@@ -313,22 +321,22 @@ Annotate each conflicting proposal row with ⚠. If any conflicts found, print a
 Review conflicts manually or select (b) to inspect each change before writing.
 ```
 
-Print the (annotated) proposal table. Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into the tool call arguments:
+Print (annotated) proposal table. Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "Apply proposals?"
 - (a) label: `Apply non-conflicting` — description: write all `→ rule` and `→ agent/skill update` changes except ⚠ flagged proposals
-- (b) label: `Review first` — description: show a diff of each proposed change before writing
+- (b) label: `Review first` — description: show diff of each proposed change before writing
 - (c) label: `Skip` — description: discard proposals and exit without changes
 
-If the user selects (a), apply changes:
+If user selects (a), apply changes:
 
-- **New rule files**: Write tool to create `.claude/rules/<name>.md` with the drafted content
-- **Agent updates**: Edit tool to insert the new instruction into the appropriate section of the agent file
-- **Skill updates**: Edit tool to insert the new step/note in the skill file
+- **New rule files**: Write tool to create `.claude/rules/<name>.md` with drafted content
+- **Agent updates**: Edit tool to insert new instruction into appropriate section of agent file
+- **Skill updates**: Edit tool to insert new step/note in skill file
 
 After applying:
 
-1. Run cross-reference checks — use Grep to verify new rule files are referenced from `CLAUDE.md` or the agent files that govern them (any rule with project-wide applicability should appear as a `See .claude/rules/<name>.md` reference in `CLAUDE.md`; agent-scoped rules should appear in the relevant agent file)
-2. Print a compact apply summary:
+1. Run cross-reference checks — use Grep to verify new rule files are referenced from `CLAUDE.md` or agent files that govern them (rule with project-wide applicability should appear as `See .claude/rules/<name>.md` reference in `CLAUDE.md`; agent-scoped rules should appear in relevant agent file)
+2. Print compact apply summary:
 
 ```text
 Applied N changes — <date>
@@ -338,7 +346,7 @@ Applied N changes — <date>
   Skipped:        N (already covered or too narrow)
 ```
 
-3. Remind the user: "Run `/foundry:init` to propagate rule changes to `~/.claude/`"
+3. Remind user: "Run `/foundry:init` to propagate rule changes to `~/.claude/`"
 
 4. **Git diff gate** — run after all writes complete:
 
@@ -346,21 +354,21 @@ Applied N changes — <date>
 git diff HEAD -- <space-separated list of changed files>  # timeout: 5000
 ```
 
-Print the diff. If anything unexpected appears, revert individual files before proceeding: `git checkout HEAD -- <file>`. This is the final safety net — changes are recoverable until committed.
+Print diff. If anything unexpected appears, revert individual files before proceeding: `git checkout HEAD -- <file>`. Final safety net — changes recoverable until committed.
 
-**Step L5: curator review** — after applying changes, dispatch curator to audit the created and modified config files:
+**Step L5: curator review** — after applying changes, dispatch curator to audit created and modified config files:
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to <RUN_DIR>/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"<RUN_DIR>/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to $RUN_DIR/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"$RUN_DIR/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
 
-Surface curator findings as an advisory block in terminal output. Do not block on curator findings — they are quality recommendations, not release gates.
+Surface curator findings as advisory block in terminal output. Do not block on curator findings — quality recommendations, not release gates.
 
-End your response with a `## Confidence` block per CLAUDE.md output standards.
+End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Mode: External Distillation (external)
 
-Analyse an external plugin, skill, or agentic resource and produce a structured adoption proposal for the local Claude Code setup.
+Analyse external plugin, skill, or agentic resource and produce structured adoption proposal for local Claude Code setup.
 
 **E1: Classify and plan**
 
@@ -412,7 +420,7 @@ Group local agents/skills/rules by responsibility, trigger conditions, gates, ou
 
 For each candidate from E6, compare against local capability map. Assign to group:
 
-- **Group A — Align + improve**: maps onto existing local agent/skill/rule, improves it without structural change
+- **Group A — Align + improve**: maps onto existing local agent/skill/rule, improves without structural change
 - **Group B — Differentiated highlights**: novel pattern or design philosophy, doesn't map natively — interesting but requires larger structural work or conflicts with existing design
 
 **E11: Score candidates**
@@ -433,12 +441,12 @@ Exactly one of Adopt/Tweak/Discuss/Skip per item. "Local target" = specific file
 After scoring, apply this judgement:
 
 - **Recommend install-as-is** when: (a) Group A has ≤ 2 candidates AND source has coherent standalone design, OR (b) cumulative edit effort is L (large) for ≥ 3 candidates
-- If recommending: state justification — what the source provides that local setup lacks, why cherry-picking would dilute the value
-- Present as an explicit option in E13 (option b); omit if not recommended
+- If recommending: state justification — what source provides that local setup lacks, why cherry-picking would dilute value
+- Present as explicit option in E13 (option b); omit if not recommended
 
 **E13: Gate — AskUserQuestion**
 
-Present source report + adoption table + install-as-is recommendation (when applicable). Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into the tool call arguments:
+Present source report + adoption table + install-as-is recommendation (when applicable). Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "Apply external source candidates?"
 - (a) label: `Apply Group A candidates` — description: adopt-as-is and tweak items only
 - (b) label: `Install as standalone plugin` — description: install external source as standalone plugin (include only when install-as-is recommended)
@@ -454,35 +462,45 @@ Present source report + adoption table + install-as-is recommendation (when appl
 
 Print changed files. Run `git diff HEAD -- <files>` and show output. Surface unresolved Group B items as open questions for future distill runs. End with `## Confidence` block per CLAUDE.md output standards.
 
+**E16: curator quality review**
+
+Spawn `foundry:curator` to review applied External Distillation changes for config quality:
+
+```text
+Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to $RUN_DIR/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/curator-external-review.md\",\"issues\":N,\"confidence\":0.N}")
+```
+
+If critical findings returned: surface to user before marking complete. Non-critical findings: advisory only.
+
 </workflow>
 
 <notes>
 
-- This skill is introspective: it looks at the tooling itself, not just the code
+- Skill is introspective: looks at tooling itself, not just code
 
-- Invoke periodically (e.g., monthly) or after a burst of correction/feedback; this is a one-time snapshot, not a continuous monitor
+- Invoke periodically (e.g., monthly) or after burst of correction/feedback; one-time snapshot, not continuous monitor
 
 - Suggestions are proposals — always review before creating new files
 
-- After creating a new agent/skill based on a suggestion, re-run this skill once to confirm the gap is resolved, then stop
+- After creating new agent/skill based on suggestion, re-run skill once to confirm gap resolved, then stop
 
-- **`lessons` mode is the primary consolidation path** — run after any session with significant corrections to prevent lesson drift back into MEMORY.md noise
+- **`lessons` mode is primary consolidation path** — run after any session with significant corrections to prevent lesson drift back into MEMORY.md noise
 
 - **Agent Teams signal tracking**: when reviewing patterns, also look for:
 
-  - Skills using `--team` or team-mode heuristics more/less than expected → flag over/under-use relative to the decision matrix in `CLAUDE.md § Agent Teams`
-  - Security findings appearing in reviews for non-auth code → suggests qa-specialist teammate scope is too broad; narrow it
+  - Skills using `--team` or team-mode heuristics more/less than expected → flag over/under-use relative to decision matrix in `CLAUDE.md § Agent Teams`
+  - Security findings appearing in reviews for non-auth code → suggests qa-specialist teammate scope too broad; narrow it
   - Model tier mismatches (e.g., heavy analysis assigned to `sonnet` teammates) → flag for tier adjustment
 
-- **`external` mode calibration**: two concrete GT fixture cases defined in the calibrate skills mode file — find it via `ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/calibrate/modes/skills.md 2>/dev/null | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
+- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/calibrate/modes/skills.md 2>/dev/null | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
   - **caveman plugin** — narrow, self-contained communication mode, no local structural overlap → GT: install-as-is recommended, Group A empty or thin
   - **Karpathy autoresearch** — research automation tool, strong overlap with `research:` plugin structure → GT: Group A candidates map to research plugin, digest recommended, install-as-is not triggered
   - Ground truth = static snapshot of each tool's agent/skill/rule files (no live fetch needed); score adoption-table lane assignments against GT outcomes
 
 - Follow-up chains:
 
-  - Suggestion accepted for new agent/skill → `/manage create` to scaffold and register it
-  - Suggestion to enhance existing → edit the agent/skill directly, then `/foundry:init`
-  - `lessons` proposals applied → `/foundry:init` to propagate; `/audit rules` to verify new rule files are structurally sound
+  - Suggestion accepted for new agent/skill → `/foundry:manage create` to scaffold and register it
+  - Suggestion to enhance existing → edit agent/skill directly, then `/foundry:init`
+  - `lessons` proposals applied → `/foundry:init` to propagate; `/audit rules` to verify new rule files structurally sound
 
 </notes>

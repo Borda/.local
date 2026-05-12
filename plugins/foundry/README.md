@@ -433,7 +433,7 @@ ______________________________________________________________________
 
 **Role**: QA specialist for writing, reviewing, and fixing tests. Rigorous black-box end-user tester: focuses exclusively on the public API surface, derives expectations from docs/type hints — not implementation, and writes tests that represent realistic user workflows.
 
-**Use for**: writing new pytest tests, analyzing public-API coverage gaps, building edge-case matrices, fixing failing tests, integration test design. Automatically includes OWASP Top 10 security perspective when used in agent teams.
+**Use for**: writing new pytest tests, analyzing public-API coverage gaps, building edge-case matrices, fixing failing tests, integration test design. Automatically embeds OWASP Top 10 security review when task scope includes authentication, payment flows, or PII handling — applies in all modes.
 
 **Model**: `opus`
 

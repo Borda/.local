@@ -1,5 +1,3 @@
-**Re: Compress install-checks markdown to caveman format**
-
 # Install Checks — I1, I2, I3
 
 Checks validate post-install state in `~/.claude/`. Operate on home dir, not project `.claude/`. Run via `/foundry:audit setup` (or `/audit setup` after `foundry:init link`).

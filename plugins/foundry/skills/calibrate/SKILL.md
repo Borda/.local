@@ -1,9 +1,10 @@
 ---
 name: calibrate
-description: Calibration testing for agents and skills. Generates synthetic problems with known outcomes (quasi-ground-truth), runs targets against them, and measures recall, precision, and confidence calibration — revealing whether self-reported confidence scores track actual quality.
+description: Calibration testing for agents and skills. Generates synthetic problems with known outcomes (quasi-ground-truth), runs targets against them, measures recall, precision, confidence calibration — reveals whether self-reported confidence scores track actual quality.
 when_to_use: Run to measure agent/skill routing accuracy, validate confidence calibration, or A/B test agent changes after editing descriptions or workflows.
 argument-hint: '[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]'
-allowed-tools: Read, Write, Edit, Bash, Agent, Glob, Grep, TaskCreate, TaskUpdate, AskUserQuestion
+disable-model-invocation: true
+allowed-tools: Read, Write, Bash, Agent, Glob, Grep, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
 ---
 
@@ -26,7 +27,7 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
   - `--full` — 10 problems per target; mutually exclusive with `--fast`
   - `--ab-test` — also run `general-purpose` baseline and report delta metrics; requires benchmark (default `--fast` if no pace flag); mutually exclusive with `--apply`
   - `--apply` — apply proposals: with `--fast`/`--full`: run benchmark then immediately apply; without pace flag: skip benchmark, apply proposals from most recent past run; mutually exclusive with `--ab-test`
-  - `--skip-gate` — suppress the follow-up gate; for programmatic callers
+  - `--skip-gate` — suppress follow-up gate; for programmatic callers
   - `--local` — resolve target agent/skill files from source tree (`plugins/*/`) instead of installed plugin cache; for plugin-dev workflows where local edits aren't yet installed; sets `LOCAL_MODE=true` in all pipeline spawns
 
   **Mutual exclusion validation** (check before any work):
@@ -34,7 +35,7 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
   - `--fast` + `--full` together → hard error: "Pass `--fast` or `--full`, not both."
   - `--ab-test` without pace flag → default `--fast` silently (no error)
 
-  **Unsupported flag check** — after all supported flags extracted (`--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local`), scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`, \`--full\`, \`--ab-test\`, \`--apply\`, \`--skip-gate\`, \`--local\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+  **Unsupported flag check** — after all supported flags extracted (`--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`, \`--full\`, \`--ab-test\`, \`--apply\`, \`--skip-gate\`, \`--local\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
   **Legacy positional tokens** (`ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`ab` removed — use `--ab-test` flag: `/calibrate curator --ab-test`."
 
@@ -46,7 +47,7 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
     - `communication` — handover + team protocol compliance: runs `foundry:curator` against synthetic agent responses and team transcripts with injected protocol violations (missing JSON envelope, missing `summary`, AgentSpeak v2 breaches); included in `all`
     - `rules` — rule adherence test: for each global rule file (no `paths:`) and each path-scoped rule when matching file is in context, generates synthetic tasks that should trigger rule's key directives, measures whether `general-purpose` agent with rule loaded correctly applies them; reports rules that are ignored, misapplied, or redundant; included in `all`
     - `plugins` — all agents + calibratable skills from all `plugins/*/` directories (union of all plugin-namespaced agents and calibratable skills)
-    - `<plugin-name>` — **tier 2**: bare plugin directory name (e.g. `oss`, `foundry`, `research`, `develop`) auto-resolved when token matches a `plugins/<name>/` directory; calibrates all agents + calibratable skills in that plugin
+    - `<plugin-name>` — **tier 2**: bare plugin directory name (e.g. `oss`, `foundry`, `research`, `develop`) auto-resolved when token matches `plugins/<name>/` directory; calibrates all agents + calibratable skills in that plugin
     - `<agent-name>` — **tier 3**: single agent (e.g., `foundry:sw-engineer`); also accepts bare name (e.g. `sw-engineer`) and resolves via `plugins/*/agents/<name>.md`
     - `/audit` — single skill (pass any calibratable skill name; `/oss:review` accepted but excluded per `modes/skills.md`)
     - Multiple scope tokens — space-separated; calibrates union of resolved targets: `oss research`, `agents skills`, `curator shepherd`; each token resolved through same tier hierarchy as `/audit` scope tokens (reserved keywords first, then plugin-dir lookup, then agent/skill file search)
@@ -124,7 +125,7 @@ From `$ARGUMENTS`, determine:
   - Any other token → tier 3: single agent or skill name; search `plugins/*/agents/<name>.md`, `.claude/agents/<name>.md`, `plugins/*/skills/<name>/SKILL.md`, `.claude/skills/<name>/SKILL.md`; error if no match
   - Multiple tokens → union: e.g. `oss research`, `curator shepherd`; each resolved independently
 
-**Empty resolution guard**: after resolving all scope tokens to the target list, if the list is empty (e.g. plugin matched but contains no calibratable agents/skills, such as `/calibrate codemap`), stop with:
+**Empty resolution guard**: after resolving all scope tokens to target list, if list is empty (e.g. plugin matched but contains no calibratable agents/skills, such as `/calibrate codemap`), stop with:
 
 ```text
 ! No calibratable agents/skills found for scope: <input-scope>
@@ -150,7 +151,7 @@ Create tasks before proceeding:
 ## Step 2: Spawn pipeline subagents
 
 > **Pre-flight**: mode files at `<plugin-cache>/foundry/<v>/skills/calibrate/modes/` — resolve via plugin cache scan below.
-> `/foundry:init` does NOT symlink these (only `rules/*.md` and `TEAM_PROTOCOL.md`); if not found, re-install the foundry plugin.
+> `/foundry:init` does NOT symlink these (only `rules/*.md` and `TEAM_PROTOCOL.md`); if not found, re-install foundry plugin.
 > ```bash
 > CALIB_MODES_DIR="$(find ${HOME}/.claude/plugins/cache -path "*/calibrate/modes" -type d 2>/dev/null | head -1)" # timeout: 5000
 > [ -d "$CALIB_MODES_DIR" ] || { printf "! BREAKING: calibrate/modes/ not found — re-install foundry plugin: claude plugin install foundry@borda-ai-rig\n"; exit 1; }
@@ -165,10 +166,10 @@ For each target mode in resolved target list, read corresponding mode file and e
 | routing | `$CALIB_MODES_DIR/routing.md` | "Calibrate routing" |
 | communication | `$CALIB_MODES_DIR/communication.md` | "Calibrate communication" |
 | rules | `$CALIB_MODES_DIR/rules.md` | "Calibrate rules" |
-| plugins or `<plugin-name>` (tier 2) | expand to per-agent + per-skill pipelines: glob `plugins/<name>/agents/*.md` and calibratable `plugins/<name>/skills/*/SKILL.md`; spawn one pipeline per resolved target using the appropriate mode file (agents.md for agents, skills.md for calibratable skills); task name "Calibrate <plugin-name>" | "Calibrate <plugin-name>" |
+| plugins or `<plugin-name>` (tier 2) | expand to per-agent + per-skill pipelines: glob `plugins/<name>/agents/*.md` and calibratable `plugins/<name>/skills/*/SKILL.md`; spawn one pipeline per resolved target using appropriate mode file (agents.md for agents, skills.md for calibratable skills); task name "Calibrate <plugin-name>" | "Calibrate <plugin-name>" |
 | `<agent-name>` / `<skill-name>` (tier 3) | single-file pipeline: use agents.md or skills.md mode file with `<TARGET>` = resolved name; task name "Calibrate <name>" | "Calibrate <name>" |
 
-For multiple tokens, merge resolved targets into per-mode groups before spawning — one pipeline per unique mode file needed, each carrying its full target list.
+For multiple tokens, merge resolved targets into per-mode groups before spawning — one pipeline per unique mode file needed, each carrying full target list.
 
 Before spawning **any** pipeline (when target includes `agents`, `skills`, or `all`), check cross-plugin availability:
 ```bash
@@ -193,7 +194,7 @@ Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instru
 # Initialise checkpoints after all pipeline spawns
 # Replace SPACE_SEPARATED_TARGETS with space-separated target names from the current run scope (e.g. "agents skills routing")
 LAUNCH_AT=$(date +%s)
-RUN_TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 for batch_target in $SPACE_SEPARATED_TARGETS; do touch /tmp/calibrate-check-$batch_target; done
 
 # Every HEALTH_CHECK_INTERVAL_MIN (5 min): check each still-running pipeline
@@ -202,7 +203,7 @@ for batch_target in $SPACE_SEPARATED_TARGETS; do
     EFFECTIVE_TIMEOUT_MIN=$PIPELINE_TIMEOUT_MIN
     for T in agents skills; do [ "$batch_target" = "$T" ] && EFFECTIVE_TIMEOUT_MIN=$PIPELINE_TIMEOUT_MIN_DUAL; done
 
-    NEW=$(find .reports/calibrate/$RUN_TS/$batch_target/ -newer /tmp/calibrate-check-$batch_target -type f 2>/dev/null | wc -l | tr -d ' ')  # tr -d strips leading spaces from wc -l on macOS; timeout: 5000
+    NEW=$(find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer /tmp/calibrate-check-$batch_target -type f 2>/dev/null | wc -l | tr -d ' ')  # tr -d strips leading spaces from wc -l on macOS; timeout: 5000
     touch /tmp/calibrate-check-$batch_target
     ELAPSED=$(( ($(date +%s) - LAUNCH_AT) / 60 ))
     if [ "$NEW" -gt 0 ]; then
@@ -210,8 +211,8 @@ for batch_target in $SPACE_SEPARATED_TARGETS; do
     elif [ "$ELAPSED" -ge "$EFFECTIVE_TIMEOUT_MIN" ]; then
         echo "⏱ $batch_target TIMED OUT (hard limit)"
     elif [ "$ELAPSED" -ge "$HEALTH_CHECK_INTERVAL_MIN" ]; then
-        OUTPUT_FILE=".reports/calibrate/$RUN_TS/$batch_target/pipeline.jsonl"
-        if tail -20 "$OUTPUT_FILE" 2>/dev/null | grep -qi 'delay\|wait\|slow'; then
+        OUTPUT_FILE=".reports/calibrate/$TIMESTAMP/$batch_target/pipeline.jsonl"
+        if tail -20 "$OUTPUT_FILE" 2>/dev/null | grep -qE 'PROGRESS:|STATUS:|HEARTBEAT:|extending'; then
             echo "⏸ $batch_target: extension granted (+5 min)"
         else
             echo "⏱ $batch_target TIMED OUT"
@@ -310,16 +311,23 @@ Stop. `--apply` without pace flag is documented as "skip benchmark, apply propos
 
 **Spawn one `general-purpose` subagent per found target. Issue ALL spawns in single response — no waiting between spawns.**
 
-**`<AGENT_FILE>` resolution**: before spawning, resolve the file path for each target. Project-local override first, then plugin cache, then source-tree fallback (plugin-dev only):
+**`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. Project-local override first, then plugin cache, then source-tree fallback (plugin-dev only):
 ```bash
-# Agent target
-AGENT_FILE=".claude/agents/<name>.md"
-[ -f "$AGENT_FILE" ] || AGENT_FILE="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents/<name>.md 2>/dev/null | head -1)"
-[ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/foundry/agents/<name>.md"
-# Skill target — substitute skills/<name>/SKILL.md in the same pattern
+# Agent target — parse plugin prefix from target name (<plugin>:<agent> pattern)
+# e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default)
+PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')
+AGENT_BARE=$(echo "<name>" | sed 's/^[^:]*://')
+[ -z "$PLUGIN_PREFIX" ] && PLUGIN_PREFIX="foundry"
+AGENT_FILE=".claude/agents/$AGENT_BARE.md"
+[ -f "$AGENT_FILE" ] || AGENT_FILE="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/$PLUGIN_PREFIX/*/agents/$AGENT_BARE.md 2>/dev/null | head -1)"
+[ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
+# Skill target — substitute skills/<name>/SKILL.md in the same pattern (plugin prefix applies equally)
+
+# Proposal path (same TIMESTAMP used throughout skill)
+PROPOSAL_PATH=".reports/calibrate/$TIMESTAMP/<name>/proposal.md"
 ```
 
-Each subagent receives this self-contained prompt (substitute `<TARGET>`, `<PROPOSAL_PATH>`, `<AGENT_FILE>` — resolved path from above):
+Each subagent receives this self-contained prompt (substitute `<TARGET>`, `<PROPOSAL_PATH>`, `<AGENT_FILE>` — resolved paths from above):
 
 Read proposal file at `<PROPOSAL_PATH>` and apply each "Change N" block to `<AGENT_FILE>` (path to agent or skill file for this target).
 

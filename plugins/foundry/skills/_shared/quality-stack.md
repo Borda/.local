@@ -1,5 +1,3 @@
-**Re: Compress quality-stack.md to caveman format**
-
 # Shared Quality Stack
 
 Used by develop mode skills (feature, fix, refactor). Invoked via `Read(".claude/skills/_shared/quality-stack.md")`.
@@ -95,13 +93,13 @@ fi
 
 ## Recovery
 
-When quality stack fails (tests, lint, or type check), choose rollback depth based on scope:
+Stack fails (tests, lint, type check) — pick rollback depth by scope:
 
 1. **Targeted revert** — single file broke: `git checkout HEAD -- <file>` then re-run stack on remaining files — **confirm with user before running**; discards all uncommitted changes in that file (destructive)
 2. **Partial revert** — feature branch has mixed good/bad commits: `git revert <bad-commit>` (preserves history)
 3. **Full revert** — nothing salvageable: `git reset --hard <last-clean-sha>` — **confirm with user before running**; destructive
 
-Document which option was used in Final Report under "Recovery" subsection.
+Document option used in Final Report under "Recovery" subsection.
 
 ## Codex Pre-pass
 
@@ -147,7 +145,7 @@ Max 3 cycles. Applied after quality stack.
 
 Replace bare agent names in spawn prompts with `foundry:` prefixed equivalents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, `foundry:perf-optimizer`, `foundry:solution-architect`.
 
-**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash polling is possible during an active Agent call. If an agent does not return within 15 min: use Read tool on `$RUN_DIR/<agent-name>.md` to surface partial results. Mark timed-out agents with ⏱ in final report.
+**Health monitoring**: Agent calls synchronous — framework awaits each response natively. No Bash polling possible during active Agent call. Agent no return within 15 min: use Read tool on `$RUN_DIR/<agent-name>.md` to surface partial results. Mark timed-out agents with ⏱ in final report.
 
 - Skip agents clean in Cycle 1
 - Collect envelopes to update review state (don't read full finding files into context — check envelopes to determine if critical/high remain)
@@ -177,6 +175,6 @@ Replace bare agent names in spawn prompts with `foundry:` prefixed equivalents: 
 
 Read `.claude/skills/_shared/codex-delegation.md` and apply delegation criteria. Delegate mechanical follow-up tasks to Codex when accurate specific brief writable.
 
-Distinct from Codex pre-pass above — pre-pass checks implementation diff for correctness; mechanical delegation outsources low-level follow-up work (scaffolding, boilerplate, migration scripts, etc.) after review loop closes.
+Distinct from Codex pre-pass — pre-pass checks implementation diff for correctness; mechanical delegation outsources low-level follow-up work (scaffolding, boilerplate, migration scripts, etc.) after review loop closes.
 
-Include `### Codex Delegation` section in final report only when tasks actually delegated — omit entirely if nothing delegated.
+Include `### Codex Delegation` section in final report only when tasks delegated — omit entirely if nothing delegated.

@@ -8,13 +8,13 @@ allowed-tools: Bash, AskUserQuestion
 
 <objective>
 
-**Python only** — uses `ast.parse` to extract import graph and symbol metadata across all `.py` files; non-Python files not indexed. Writes `.cache/scan/<project>.json`. No external deps required. Zero-Python project (no `.py` files): index writes successfully but is empty — downstream queries return no results.
+**Python only** — uses `ast.parse` to extract import graph + symbol metadata across all `.py` files; non-Python files not indexed. Writes `.cache/scan/<project>.json`. No external deps. Zero-Python project (no `.py` files): index writes but empty — downstream queries return no results.
 
-Index captures per module: import graph, blast-radius metrics, and **symbol list** (classes, functions, methods with line ranges). Symbol data enables `scan-query symbol` / `find-symbol` to return just the target function source instead of full file reads.
+Index captures per module: import graph, blast-radius metrics, **symbol list** (classes, functions, methods with line ranges). Symbol data enables `scan-query symbol` / `find-symbol` to return target function source instead of full file reads.
 
-Agents and develop skills query index via `scan-query` to understand module dependencies, blast radius, coupling, and individual symbol source before editing code.
+Agents + develop skills query index via `scan-query` for module deps, blast radius, coupling, symbol source before editing.
 
-NOT for: querying existing index (use `/codemap:query`).
+NOT for querying existing index (use `/codemap:query`).
 
 </objective>
 
@@ -22,7 +22,7 @@ NOT for: querying existing index (use `/codemap:query`).
 
 ## Step 1: Run the scanner
 
-Parse `$ARGUMENTS` to build the invocation. Pass `--root <path>` if provided; pass `--incremental` if provided. Construct args conditionally — never pass the literal placeholder strings:
+Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `--incremental` if provided. Construct args conditionally — never pass literal placeholder strings:
 
 ```bash
 # timeout: 360000
@@ -38,7 +38,7 @@ fi
 echo "$ARGUMENTS" | grep -q -- '--incremental' && SCAN_ARGS+=(--incremental)
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # timeout: 360000
@@ -54,7 +54,7 @@ Scanner writes to `<root>/.cache/scan/<project>.json` and prints summary line:
 
 ## Step 2: Report
 
-After scan completes, read index and report compact summary:
+After scan, read index and report compact summary:
 
 ```bash
 # Pass $ARGUMENTS via env var — never interpolate into script path or args.
@@ -66,7 +66,7 @@ SCAN_ARGS="$ARGUMENTS" python3 "${CLAUDE_PLUGIN_ROOT}/bin/scan-stats.py"
 
 Degraded files exist: list with reason. Not failure — index still useful.
 
-If `--incremental` was passed and scan-stats reports 0 modules indexed (or the summary line shows the same count as before), note: `--incremental` is a no-op when no existing index exists — a full scan ran instead.
+If `--incremental` passed and scan-stats reports 0 modules indexed (or same count as before), note: `--incremental` no-op when no existing index — full scan ran instead.
 
 ## Step 3: Suggest next step
 

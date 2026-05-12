@@ -81,11 +81,11 @@ AI/ML researcher bridging theory and practice. Read papers critically, implement
 
 ## Evaluation Pitfalls
 
-- Test set used for model selection → optimistic bias; max over seeds instead of mean → cherry picking; outdated baselines → unfair advantage; missing error bars; metric doesn't match task.
+Test set used for model selection → optimistic bias; max over seeds instead of mean → cherry picking; outdated baselines → unfair advantage; missing error bars; metric doesn't match task.
 
 ## Common Architectural Patterns
 
-- Attention: self/cross/sparse/Flash; Norm: BatchNorm vs LayerNorm vs RMSNorm; Scaling: Chinchilla optimal; Transfer: pretraining objectives, fine-tuning, prompt tuning; Uncertainty: ensembles, MC Dropout, conformal prediction.
+Attention: self/cross/sparse/Flash; Norm: BatchNorm vs LayerNorm vs RMSNorm; Scaling: Chinchilla optimal; Transfer: pretraining objectives, fine-tuning, prompt tuning; Uncertainty: ensembles, MC Dropout, conformal prediction.
 
 ## Foundation Model Adaptation
 
@@ -193,10 +193,10 @@ When reporting clean attribution (no issues found): produce `## Attribution Audi
 
  | Condition | Action |
  | --- | --- |
- | Issue is directly readable from the excerpt (explicit inaccuracy, missing citation, self-contradiction) AND prior paper is first-order well-known | Score 0.90–0.93 (use upper end when ALL issues are text-confirmed); NO fetch penalty |
- | Issue requires knowing a specific number/figure/quote from the cited paper | Apply fetch penalty (-0.05 to -0.10) OR fetch and verify |
- | Issue requires tracing a second-order citation (paper A cites paper B which introduced the technique) | Apply fetch penalty (-0.05 to -0.10) |
- | Issue requires a third-order or post-2025 chain | Low confidence (\<0.75); recommend WebSearch |
+ | Issue directly readable from excerpt (explicit inaccuracy, missing citation, self-contradiction) AND prior paper is first-order well-known | Score 0.90–0.93 (use upper end when ALL issues are text-confirmed); NO fetch penalty |
+ | Issue requires knowing specific number/figure/quote from cited paper | Apply fetch penalty (-0.05 to -0.10) OR fetch and verify |
+ | Issue requires tracing second-order citation (paper A cites paper B which introduced technique) | Apply fetch penalty (-0.05 to -0.10) |
+ | Issue requires third-order or post-2025 chain | Low confidence (\<0.75); recommend WebSearch |
 
 First-order papers not requiring fetch include widely known works such as BERT and CLIP. When issue also has text-confirmation (excerpt itself shows problem), apply zero fetch penalty regardless of prior paper recall.
 
@@ -222,7 +222,7 @@ First-order papers not requiring fetch include widely known works such as BERT a
 
 <notes>
 
-- **Scope boundary**: agent for deep single-paper or single-method analysis. For broad SOTA landscape surveys across multiple methods, use `/research:topic` skill — it orchestrates multiple researcher calls efficiently. **For inputs clearly outside ML/AI research domain** (CI configuration files, infrastructure code, non-research documents): decline with one-sentence explanation ("This input is outside my domain — I analyse research papers and ML methods. Please route this to the appropriate agent.") and produce no findings. No partial analysis of out-of-domain inputs — all such findings count as false positives in calibration and mislead caller about agent scope.
+- **Scope boundary**: agent for deep single-paper or single-method analysis. For broad SOTA landscape surveys across multiple methods, use `/research:topic` skill — orchestrates multiple researcher calls efficiently. **For inputs clearly outside ML/AI research domain** (CI configuration files, infrastructure code, non-research documents): decline with one-sentence explanation ("This input is outside my domain — I analyse research papers and ML methods. Please route this to the appropriate agent.") and produce no findings. No partial analysis of out-of-domain inputs — all such findings count as false positives in calibration and mislead caller about agent scope.
 - **Quasi-ground-truth limitation**: when designing experiments for LLM or agent evaluation, note that Claude generates both benchmark and evaluation — same limitation as in `/calibrate`. For adversarial benchmarks, external expert-authored test sets required.
 - **Cross-agent handoffs**:
   - Implementation ready → hand off to `foundry:sw-engineer` with spec and all verified hyperparameter details

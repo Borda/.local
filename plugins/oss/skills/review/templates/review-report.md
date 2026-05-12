@@ -32,7 +32,7 @@ Confidence:  [aggregate score] — [key gaps]
 
 ### Test Coverage Gaps
 - [qa-specialist findings — top 5 missing tests]
-- For ML code: non-determinism or missing seed issues
+- ML code: non-determinism or missing seed issues
 
 ### Performance Concerns
 - [perf-optimizer findings — ranked by impact]
@@ -51,14 +51,14 @@ Confidence:  [aggregate score] — [key gaps]
 - Deprecation path: [provided / missing]
 
 ### OSS Checks
-- New dependencies: [list, license status]
-- API stability: [any public API removed without deprecation?]
+- New deps: [list, license status]
+- API stability: [public API removed without deprecation?]
 - CHANGELOG: [updated / not updated]
 - Secrets scan: [clean / found: file:line]
 
 ### Codex Co-Review
-(omit section if Codex was unavailable or found no unique issues)
-- [unique findings from codex.md not already captured by agents above]
+(omit if Codex unavailable or no unique findings)
+- [unique findings from codex.md not in agent sections above]
 - Duplicate findings (same location as agent finding): omitted — see agent section
 
 ### Recommended Next Steps

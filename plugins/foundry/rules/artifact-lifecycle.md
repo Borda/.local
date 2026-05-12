@@ -6,7 +6,7 @@ paths:
 
 ## Canonical artifact layout
 
-Runtime artifacts live at **project root**, not inside `.claude/`.
+Runtime artifacts at **project root**, not inside `.claude/`.
 Skill output dirs use dot-prefix (`.reports/`, `.temp/`, `.plans/`, etc.) — signals ephemeral.
 
 ```text

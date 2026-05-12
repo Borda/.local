@@ -5,14 +5,14 @@ Write for reader, not commit author.
 | Feature heading | Bold title, period, then plain-English description — no jargon |
 | PR numbers (CHANGELOG) | Full Markdown link — `([#947](https://github.com/owner/repo/pull/947))` |
 | PR numbers (DRAFT.md) | Short inline ref — `(#947)` |
-| PR ref + fenced code block | Place `(#N)` at end of description text **before** the opening fence — never after the closing fence; trailing refs after fenced blocks are invisible in rendered output |
+| PR ref + fenced code block | Place `(#N)` at end of description text **before** opening fence — never after closing fence; trailing refs after fenced blocks invisible in rendered output |
 | Issue refs | Never include `closes #N` / `fixes #N` in CHANGELOG or DRAFT.md |
-| Code examples | Real usage showing the new surface; not pseudocode |
+| Code examples | Real usage showing new surface; not pseudocode |
 | Tables | Use for option/preset comparisons; skip for single-item features |
-| Breaking changes | Rare — use sparingly; false alarms scare users more than the change itself |
+| Breaking changes | Rare — use sparingly; false alarms scare users more than change itself |
 | Fix items | Say what was broken and under what condition — not just "fixed X" |
 | Changed items | Behaviour changes only — old behaviour → new behaviour |
-| Deprecated items | Name old API and its replacement; omit removal version if unknown |
+| Deprecated items | Name old API and replacement; omit removal version if unknown |
 | Removed items | State deprecated-since version and migration target |
 
 > **Breaking vs Deprecated**: Normal flow is deprecate → announce removal version → Removed. Breaking Changes = rare case where **public API or user-facing behaviour** breaks **immediately** on upgrade, no prior warning, no fallback — including dependency version incompatibilities affecting users directly. Private API and test changes never Breaking Changes. Old behaviour still works (even with deprecation warning) → belongs in Deprecated, not here. When in doubt, not Breaking Changes.

@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 <objective>
 
-Non-interactive end-to-end research pipeline: auto-plan → judge gate → run. Single command from goal to result. Accepts goal string, passes through all run/colab/team flags.
+Non-interactive end-to-end research pipeline: auto-plan → judge gate → run. Single command from goal to result. Accepts goal string, passes all run/colab/team flags.
 
 NOT for: interactive planning (use `/research:plan`); methodology review only (use `/research:judge`); running already-approved plan (use `/research:run`).
 
@@ -23,9 +23,9 @@ NOT for: interactive planning (use `/research:plan`); methodology review only (u
 > ```bash
 > ls ~/.claude/plugins/cache/foundry* 2>/dev/null | head -1  # timeout: 3000
 > ```
-> Non-empty result = foundry installed. If check fails, proceed as if foundry available — common case; only fall back if agent dispatch explicitly fails.
+> Non-empty = foundry installed. If check fails, treat foundry as available — common case; fall back only if agent dispatch explicitly fails.
 
-Sweep delegates to plan (S2), judge (S3), and run (S5) skill steps — see each skill's Agent Resolution section for fallback handling.
+Sweep delegates to plan (S2), judge (S3), run (S5) — see each skill's Agent Resolution for fallback handling.
 
 ## Steps S1–S5
 
@@ -54,9 +54,9 @@ Extract flags:
 - `--researcher` — passed through to run; combine with `--architect` for dual-agent SOTA + architectural hypothesis pipeline (`--journal` and `--hypothesis` not available in sweep mode)
 - `--architect` — passed through to run; enables architectural hypothesis pass via `foundry:solution-architect`
 - `--skip-validation` — passed to judge step (S3)
-- `--out <path>` — optional: write program.md to this path instead of project root
+- `--out <path>` — optional: write program.md here instead of project root
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--skip-validation\`, \`--out\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--skip-validation\`, \`--out\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 If `<goal>` missing or empty, stop:
 
@@ -115,8 +115,8 @@ Repeat up to `MAX_REFINE` times:
 | Outcome | Action |
 | --- | --- |
 | `approved` | Print `sweep: plan approved (REFINE_ITER/MAX_REFINE iteration(s)) ✓` → proceed to S5 |
-| `blocked` | Print `sweep: judge → BLOCKED ✗`; show all critical findings from the report; print follow-up hint; stop |
-| `unresolved` | Print `sweep: judge unresolved after MAX_REFINE iterations ✗`; show remaining Required Changes from the last report; call `AskUserQuestion` tool — do NOT write options as plain text: question "Unresolved — how to proceed?", (a) label `proceed to run anyway`, (b) label `fix manually then re-run`, (c) label `abort` — if `a`, proceed to S5; if `b` or `c`, print follow-up hint and stop |
+| `blocked` | Print `sweep: judge → BLOCKED ✗`; show all critical findings from report; print follow-up hint; stop |
+| `unresolved` | Print `sweep: judge unresolved after MAX_REFINE iterations ✗`; show remaining Required Changes from last report; call `AskUserQuestion` tool — do NOT write options as plain text: question "Unresolved — how to proceed?", (a) label `proceed to run anyway`, (b) label `fix manually then re-run`, (c) label `abort` — if `a`, proceed to S5; if `b` or `c`, print follow-up hint and stop |
 
 Follow-up hint (blocked or unresolved):
 
@@ -150,9 +150,9 @@ sweep: complete — plan → judge → run pipeline finished
 
 <notes>
 
-- **`.bak` backup behavior** (S2): when output path exists, sweep renames it to `<path>.<UTC-ISO-safe (dashes)>.bak` before overwriting. Timestamped suffix prevents collision on successive runs. The `.bak` file is the undo path for S3 judge+refinement edits.
-- **`--journal` and `--hypothesis` not available in sweep**: these flags require interactive setup and per-run state that sweep's non-interactive pipeline cannot provide. Use `/research:run` directly when you need them.
-- **`--team` and interactivity**: sweep is non-interactive except when `--team` is active. Team mode Phase B presents a user confirmation gate (hypothesis selection) before Phase C — sweep pauses and waits. This is expected behavior; sweep cannot bypass the Phase B gate.
-- **`--skip-validation`**: passes through to judge step (S3). Useful for cross-machine workflows where metric/guard commands can only run on the target machine.
+- **`.bak` backup behavior** (S2): when output path exists, sweep renames to `<path>.<UTC-ISO-safe (dashes)>.bak` before overwriting. Timestamped suffix prevents collision on successive runs. `.bak` = undo path for S3 edits.
+- **`--journal` and `--hypothesis` not available in sweep**: require interactive setup and per-run state sweep cannot provide. Use `/research:run` directly.
+- **`--team` and interactivity**: sweep non-interactive except when `--team` active. Team mode Phase B presents user confirmation gate before Phase C — sweep pauses and waits. Expected; sweep cannot bypass Phase B gate.
+- **`--skip-validation`**: passes through to judge step (S3). Useful for cross-machine workflows where metric/guard commands run only on target machine.
 
 </notes>

@@ -1,6 +1,4 @@
-**Re: Compress calibration pipeline runner prompt to caveman format**
-
-You are calibration pipeline runner for `<TARGET>`. Complete all phases in sequence.
+Calibration pipeline runner for `<TARGET>`. Complete all phases in sequence.
 
 AB mode: `<AB_MODE>` — when `true`, also run `general-purpose` baseline on every problem and compute delta metrics.
 Local mode: `<LOCAL_MODE>` — when `true`, resolve target file from source tree (`plugins/`) first; see Pre-flight below.
@@ -9,7 +7,7 @@ Run dir: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`
 
 ### Pre-flight — Codex availability
 
-Check Codex availability once at pipeline start and set `CODEX_AVAILABLE` for use throughout all phases:
+Check Codex availability once at pipeline start; set `CODEX_AVAILABLE` for all phases:
 
 ```bash
 if [ -n "$CLAUDE_PLUGIN_DATA" ] && echo "$CLAUDE_PLUGIN_DATA" | grep -q 'codex-openai-codex'; then CODEX_AVAILABLE=true; else CODEX_AVAILABLE=false; fi
@@ -18,11 +16,11 @@ echo "Codex plugin: $CODEX_AVAILABLE"
 
 Uses `CLAUDE_PLUGIN_DATA` env var (inherited by all subagents) not `claude plugin list` — that requires CLI allow entry and fails silently in background agents when not pre-approved.
 
-Codex integration active only for `agents` and `skills` modes. If pipeline spawned for `routing`, `communication`, or `rules`, treat `CODEX_AVAILABLE=false` regardless of install — those modes test Claude-specific internals Codex lacks context for.
+Codex integration active only for `agents` and `skills` modes. If pipeline spawned for `routing`, `communication`, or `rules`, treat `CODEX_AVAILABLE=false` — those modes test Claude-specific internals Codex lacks context for.
 
 ### Pre-flight — local file resolution
 
-When `LOCAL_MODE=true`, resolve the target file from source tree before Phase 2:
+When `LOCAL_MODE=true`, resolve target file from source tree before Phase 2:
 
 ```bash
 LOCAL_MODE=<LOCAL_MODE>
@@ -48,7 +46,7 @@ if [ "$LOCAL_MODE" = "true" ]; then
 fi
 ```
 
-When `LOCAL_MODE=false` or source file not found: Phase 2 dispatches as normal (agent by subagent_type, skill by cache/installed SKILL.md).
+When `LOCAL_MODE=false` or source file not found: Phase 2 dispatches normally (agent by subagent_type, skill by cache/installed SKILL.md).
 
 ### Phase 1a — Generate problems (dual source)
 
@@ -121,7 +119,7 @@ Write to `.reports/calibrate/<TIMESTAMP>/<TARGET>/problems-claude.json`.
 
 **When CODEX_AVAILABLE=false**:
 
-Claude generates all `<N>` in-scope problems + 1 out-of-scope using rules above. Write to `problems-claude.json`. Skip Codex step entirely.
+Claude generates all `<N>` in-scope problems + 1 out-of-scope using rules above. Write to `problems-claude.json`. Skip Codex step.
 
 ### Phase 1b — Validate and merge problems
 
@@ -164,13 +162,13 @@ Prompt for each subagent:
 >
 > **Write your complete response** (including the Confidence block) to `.reports/calibrate/<TIMESTAMP>/<TARGET>/response-<problem_id>.md` using the Write tool. Then end your reply with exactly one line: `Wrote: <problem_id>`
 
-**Context discipline**: subagents write to disk and return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. Receiving only `Wrote: <problem_id>` per agent is correct and expected.
+**Context discipline**: subagents write to disk and return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. `Wrote: <problem_id>` per agent = correct.
 
-**Phase timeout**: after 5 min of no acknowledgment, run `find .reports/calibrate/<TIMESTAMP>/<TARGET>/ -newer /tmp/calibrate-<TARGET>-phase2-<TIMESTAMP> -name "response-*.md" | wc -l` — non-zero = alive, grant one +5-min extension. Hard cutoff at 15 min of no new file activity: mark that problem as `{"timed_out": true}` in scores.json and proceed. Never block indefinitely on single response.
+**Phase timeout**: after 5 min no acknowledgment, run `find .reports/calibrate/<TIMESTAMP>/<TARGET>/ -newer /tmp/calibrate-<TARGET>-phase2-<TIMESTAMP> -name "response-*.md" | wc -l` — non-zero = alive, grant one +5-min extension. Hard cutoff at 15 min no new file activity: mark problem as `{"timed_out": true}` in scores.json and proceed. Never block indefinitely on single response.
 
-For **agent targets** when `LOCAL_MODE=true` and `TARGET_FILE` is set: spawn `general-purpose` subagent with TARGET_FILE content prepended ("You are an agent described by the following instructions: <content of TARGET_FILE>") — tests source tree definition rather than installed plugin. When LOCAL_MODE=false or TARGET_FILE empty: spawn `Agent(subagent_type="<TARGET>")` as normal.
+For **agent targets** when `LOCAL_MODE=true` and `TARGET_FILE` set: spawn `general-purpose` subagent with TARGET_FILE content prepended ("You are an agent described by the following instructions: <content of TARGET_FILE>") — tests source tree definition rather than installed plugin. When LOCAL_MODE=false or TARGET_FILE empty: spawn `Agent(subagent_type="<TARGET>")` normally.
 
-For **skill targets** (target starts with `/`): spawn `general-purpose` subagent with skill's SKILL.md content prepended as context, running against synthetic input from problem. When `LOCAL_MODE=true` and `TARGET_FILE` is set, read SKILL.md from `TARGET_FILE`; otherwise resolve: `.claude/skills/<NAME>/SKILL.md` → cache `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/skills/<NAME>/SKILL.md` (latest mtime) → `plugins/<PLUGIN>/skills/<NAME>/SKILL.md`. Apply same write-and-acknowledge pattern.
+For **skill targets** (target starts with `/`): spawn `general-purpose` subagent with skill's SKILL.md content prepended as context, running against synthetic input from problem. When `LOCAL_MODE=true` and `TARGET_FILE` set, read SKILL.md from `TARGET_FILE`; otherwise resolve: `.claude/skills/<NAME>/SKILL.md` → cache `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/skills/<NAME>/SKILL.md` (latest mtime) → `plugins/<PLUGIN>/skills/<NAME>/SKILL.md`. Apply same write-and-acknowledge pattern.
 
 ### Phase 2b — Run general-purpose baseline (skip if AB_MODE is false)
 
@@ -190,7 +188,7 @@ Spawn one `general-purpose` scorer subagent per problem using **Agent tool** —
 
 Each scorer receives this prompt (substitute `<PROBLEM_ID>`, `<GROUND_TRUTH_JSON>`, `<RUN_DIR>`, `<AB_MODE>`):
 
-> You are scoring agent responses against calibration ground truth.
+> Scoring agent responses against calibration ground truth.
 >
 > **Problem ID**: `<PROBLEM_ID>`
 >
@@ -226,7 +224,7 @@ Each scorer receives this prompt (substitute `<PROBLEM_ID>`, `<GROUND_TRUTH_JSON
 
 For each problem, spawn one Codex scoring subagent using **Agent tool** — never via Bash or CLI. Run **sequentially** (not parallel — Codex subagents share filesystem state; parallel invocations risk write conflicts).
 
-Agent(subagent_type="codex:codex-rescue", prompt="You are scoring a calibration response against ground truth.
+Agent(subagent_type="codex:codex-rescue", prompt="Scoring a calibration response against ground truth.
 
 ```text
 Problem ID: \<PROBLEM_ID>
@@ -376,7 +374,7 @@ Write single-line JSONL result to `.reports/calibrate/<TIMESTAMP>/<TARGET>/resul
 
 Determine target file path for curator proposals:
 
-When `LOCAL_MODE=true` and `TARGET_FILE` is set: use `TARGET_FILE` directly.
+When `LOCAL_MODE=true` and `TARGET_FILE` set: use `TARGET_FILE` directly.
 
 Otherwise resolve (first match wins):
 - Agent: `.claude/agents/<NAME>.md` → `~/.claude/plugins/cache/borda-ai-rig/<PLUGIN>/*/agents/<NAME>.md` (latest mtime) → `plugins/<PLUGIN>/agents/<NAME>.md`
@@ -386,7 +384,7 @@ Otherwise resolve (first match wins):
 
 Spawn **foundry:curator** subagent using **Agent tool** — never via Bash or CLI. Pass only **file path** and **report path** — do NOT paste file contents into prompt; foundry:curator reads files itself:
 
-> You are reviewing calibration benchmark result and proposing instruction improvements.
+> Reviewing calibration benchmark result and proposing instruction improvements.
 >
 > **Files to read** (use Read tool on each):
 >
@@ -414,7 +412,7 @@ Write foundry:curator response verbatim to `.reports/calibrate/<TIMESTAMP>/<TARG
 
 ### Return value
 
-**CRITICAL — context discipline**: return ONLY the compact JSON line below. No prose, no report summary, no table, no Confidence block, no additional output of any kind. Every extra byte returned accumulates in the orchestrator context and can cause synthesis hang. All report content is already on disk from Phase 4.
+**CRITICAL — context discipline**: return ONLY compact JSON line below. No prose, no report summary, no table, no Confidence block, no additional output. Every extra byte accumulates in orchestrator context and can cause synthesis hang. All report content already on disk from Phase 4.
 
 Return **only** this compact JSON (no prose before or after):
 

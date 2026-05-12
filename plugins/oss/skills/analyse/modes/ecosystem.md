@@ -45,17 +45,17 @@ Top action:  [single most urgent recommendation]
 - [create migration guide / add deprecation warning / notify maintainers directly]
 ```
 
-Run `mkdir -p .reports/analyse/ecosystem` then write full report to `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md` using Write tool — **do not print full analysis to terminal**.
+Run `mkdir -p .reports/analyse/ecosystem` then write full report to `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md` via Write tool — **no full analysis to terminal**.
 
-Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.md`. File absent → warn: "foundry:init required — printing plain terminal output instead." Use **Ecosystem Impact Summary** template. Replace `[skill-specific path]` with `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md`. Output opens with `---` on own line, entity line on next line, `→ saved to <path>` at end, closes with `---` on own line. Print terminal block: read '---' header from top of report file (lines 1–6 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains the block — no separate prepend step needed.
+Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.md`. File absent → warn: "foundry:init required — printing plain terminal output instead." Use **Ecosystem Impact Summary** template. Replace `[skill-specific path]` with `.reports/analyse/ecosystem/output-analyse-ecosystem-$(date +%Y-%m-%d).md`. Terminal block: `---` on own line, entity line next, `→ saved to <path>` at end, `---` close. Print by reading lines 1–6 of report file, append `→ saved to <path>`. Report already has block — no separate prepend needed.
 
 </workflow>
 
 <notes>
 
-- **GitHub search rate limit**: `gh api search/code` is rate-limited ~30 req/min; `--paginate` may trigger secondary rate limiting on large result sets — add `sleep 2` between pages if needed
-- **PyPI download counts**: johnnydep not installed by default; skip if unavailable; alternative: check libraries.io API for reverse deps
-- **Risk threshold calibration**: thresholds (5 consumers = High) are guidelines for OSS Python libs; adjust for internal/enterprise repos where even 1 consumer may be critical
+- **GitHub search rate limit**: `gh api search/code` rate-limited ~30 req/min; `--paginate` may hit secondary limit on large sets — add `sleep 2` between pages if needed
+- **PyPI download counts**: johnnydep not installed by default; skip if unavailable; alternative: libraries.io API for reverse deps
+- **Risk threshold calibration**: thresholds (5 consumers = High) guidelines for OSS Python libs; adjust for internal/enterprise repos where even 1 consumer may be critical
 - **conda-forge**: feedstock search returns repo names (`conda-forge/mypackage-feedstock`), not actual dependent packages — treat as 1 known consumer per feedstock found
 
 </notes>

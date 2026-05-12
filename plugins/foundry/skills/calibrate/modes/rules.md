@@ -1,14 +1,3 @@
-The compressed content was passed inline — no file to read. The error is the legend *inside* the report-format code block was compressed (caveman-shortened) when it must be preserved exactly.
-
-Diff between ORIGINAL and COMPRESSED legend line inside the fenced block:
-
-- ORIGINAL: `*Legend: Adherence — mean fraction of tasks where directive was followed (0–1, higher is better, ≥0.80 target). Outcome — fraction of applied directives that also produced the correct behavioral output (0–1, higher is better, ≥0.80 target; ...`
-- COMPRESSED (wrong): `*Legend: Adherence — mean fraction of tasks where directive followed (0–1, higher better, ≥0.80 target). Outcome — fraction of applied directives that produced correct behavioral output (0–1, higher better, ≥0.80 target; ...`
-
-Here is the fixed compressed file:
-
-**Re: Compress markdown to caveman format**
-
 <!-- Step 1 in SKILL.md dispatches to this mode file. Steps here continue from Step 2. -->
 
 ## Mode: rules

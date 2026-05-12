@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 # Agent Teams Protocol — Borda.AI-Rig
 
 AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60% token savings vs natural language. Adapted from [github.com/yuvalsuede/claude-teams-language-protocol](https://github.com/yuvalsuede/claude-teams-language-protocol) (MIT) <!-- attribution-only; not a runtime dependency -->.
@@ -12,13 +10,13 @@ AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60%
 
 | Code | Meaning | Use when |
 | --- | --- | --- |
-| `alpha` | Starting | Beginning a task |
+| `alpha` | Starting | Beginning task |
 | `beta` | In progress | Working (append %: `beta75`) |
-| `gamma` | Blocked | Waiting on another agent or task |
+| `gamma` | Blocked | Waiting on agent or task |
 | `delta` | Done | Task completed |
-| `epsilon` | Bug/error | Reporting an issue |
+| `epsilon` | Bug/error | Reporting issue |
 | `omega` | Shutdown | Wrapping up, final message |
-| `theta` | Protocol feedback | Proposing a protocol improvement |
+| `theta` | Protocol feedback | Proposing protocol improvement |
 
 ## Action Symbols
 
@@ -87,7 +85,7 @@ Status code always first. Task ID (`T#`) always precedes file shortcode.
 
 ¹ `MM` — session-injected from `~/.claude/projects/<slug>/memory/MEMORY.md`; read-only in teammate context (Write tool cannot address it).
 
-For source files, define shortcodes per-team in spawn prompt (e.g., `SRC=src/, TST=tests/`).
+Source files: define shortcodes per-team in spawn prompt (e.g., `SRC=src/, TST=tests/`).
 
 ## Examples
 
@@ -128,7 +126,7 @@ Teammates assigned via TaskUpdate(owner) **must** update shared task list:
 2. `TaskUpdate(status: "completed")` — when work done, **before** sending delta to @lead
 3. `TaskUpdate(status: "completed")` — **before** sending `omega` on shutdown; incomplete tasks use `"cancelled"` instead.
 
-Task list = live progress feed for user. AgentSpeak delta messages alone don't update task status.
+Task list = live progress feed for user. AgentSpeak delta alone don't update task status.
 
 ## Error Recovery
 

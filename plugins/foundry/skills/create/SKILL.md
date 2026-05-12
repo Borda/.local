@@ -2,21 +2,23 @@
 name: create
 description: Interactive outline co-creation for developer advocacy content — collects format, audience profile, story arc (Problem→Journey→Insight→Action), and voice/tone; detects out-of-scope requests (FAQs, comparison tables); surfaces conflicts between user brief and audience needs. Writes approved outline to .plans/content/<slug>-outline.md for foundry:creator to execute. Use when starting a blog post, Marp slide deck, social thread, talk abstract, or lightning talk.
 argument-hint: '[topic]'
+disable-model-invocation: true
 allowed-tools: Read, Write, TaskCreate, TaskUpdate, AskUserQuestion
 effort: medium
+when_to_use: Use when creating developer advocacy content — blog posts, Marp slides, social threads, talk abstracts, or lightning talk outlines.
 ---
 
 <objective>
 
-Story arc is four-beat: Problem → Journey → Insight → Action.
+Story arc four-beat: Problem → Journey → Insight → Action.
 
-NOT for: implementation tasks, code generation, README writing (use `foundry:doc-scribe`), structured reference docs (FAQs, comparison tables — use `foundry:doc-scribe`).
+NOT for: implementation, code gen, README writing (use `foundry:doc-scribe`), structured ref docs (FAQs, comparison tables — use `foundry:doc-scribe`).
 
 </objective>
 
 <inputs>
 
-- **$ARGUMENTS**: optional — topic or goal in any form; one sentence enough. Format hints accepted ("a blog post about…", "talk abstract for…").
+- **$ARGUMENTS**: optional — topic or goal, any form; one sentence enough. Format hints accepted ("a blog post about…", "talk abstract for…").
 
 </inputs>
 
@@ -24,13 +26,13 @@ NOT for: implementation tasks, code generation, README writing (use `foundry:doc
 
 **Task hygiene**: Call `TaskList`; mark clearly-done tasks `completed`, orphaned tasks `deleted`, genuinely-continuing tasks `in_progress`.
 
-**Task tracking**: TaskCreate entries for all steps before any tool calls.
+**Task tracking**: TaskCreate all steps before any tool calls.
 
 ## Step 1 — Parse topic and out-of-scope detection
 
-- If $ARGUMENTS provided: extract topic; note any embedded format hint.
-- If no $ARGUMENTS: AskUserQuestion — "What are you trying to write about, and for whom?" (free text).
-- Out-of-scope gate: if brief describes FAQs, comparison tables, feature matrices, or reference docs — stop immediately and respond: "This format doesn't fit a narrative arc — use `foundry:doc-scribe` for structured reference content." Do not proceed past this gate.
+- If $ARGUMENTS provided: extract topic; note embedded format hint.
+- If no $ARGUMENTS: AskUserQuestion — "What are you trying to write about, and for whom?" (free text). After receiving the answer, re-check against out-of-scope conditions: if answer describes FAQs, comparison tables, feature matrices, README content, or docstrings — stop. Respond: "This format doesn't fit a narrative arc — use `foundry:doc-scribe` for structured reference content." No further steps.
+- Out-of-scope gate (when $ARGUMENTS provided): if brief describes FAQs, comparison tables, feature matrices, or ref docs — stop. Respond: "This format doesn't fit a narrative arc — use `foundry:doc-scribe` for structured reference content." No further steps.
 
 ## Step 2 — Format and audience (max 2 AskUserQuestion calls)
 
@@ -42,33 +44,33 @@ NOT for: implementation tasks, code generation, README writing (use `foundry:doc
 > d: talk abstract (CFP submission)
 > e: lightning talk (5–10 min)
 
-After answer: restate in one sentence ("Got it — a [format] on [topic].").
+After answer: restate one sentence ("Got it — a [format] on [topic].").
 
 **Audience question** (AskUserQuestion):
 > Who is the audience?
-> a: beginners — new to the problem space ★
+> a: beginners — new to problem space ★
 > b: intermediate — familiar with basics, seeking depth
-> c: expert — already know the landscape, want novel insight
+> c: expert — know landscape, want novel insight
 > d: describe your own profile
 
-After answer: restate in one sentence, noting any implied audience needs.
+After answer: restate one sentence, note implied audience needs.
 
 ## Step 3 — Arc construction and conflict check
 
-Based on topic + audience, propose a four-beat arc:
+Propose four-beat arc from topic + audience:
 
 - **Problem**: concrete opening hook — specific pain or question, not generic
-- **Journey**: 3–5 key points to explore (what was tried, what failed, what the arc covers)
-- **Insight**: the core "aha" framed for the stated audience level — name it directly
-- **Action**: specific next step for the audience
+- **Journey**: 3–5 key points (what tried, what failed, what arc covers)
+- **Insight**: core "aha" framed for stated audience level — name directly
+- **Action**: specific next step for audience
 
-**Editorial conflict check**: if brief implies expert audience but topic is introductory, or vice versa — surface before continuing:
-> "Your brief suggests [X] but the audience profile is [Y] — recommend adjusting [Z]. Proceed as-is or adjust?"
+**Editorial conflict check**: if brief implies expert audience but topic introductory, or vice versa — surface before continuing:
+> "Your brief suggests [X] but audience profile is [Y] — recommend adjusting [Z]. Proceed as-is or adjust?"
 
 **Arc approval** (AskUserQuestion):
 > Show proposed arc. Ask: approve as-is, or which beat needs adjustment? (free text or "approve")
 
-After approval: restate confirmed arc in two sentences.
+After approval: restate confirmed arc two sentences.
 
 ## Step 4 — Voice and tone (1 AskUserQuestion)
 
@@ -79,7 +81,7 @@ After approval: restate confirmed arc in two sentences.
 > c: conversational / approachable — informal, relatable
 > d: provide your own style brief
 
-No default applied silently. Always ask.
+Never apply default silently. Always ask.
 
 ## Step 5 — Write outline file
 
@@ -122,19 +124,19 @@ created: YYYY-MM-DD
 
 - Confirm file path to user.
 - End with: "Spawn `foundry:creator` agent with the outline file path to generate the complete [format] (Claude dispatches via the Agent tool with `subagent_type=\"foundry:creator\"`)."
-- End with a `## Confidence` block per quality-gates.md protocol, scoring based on how well the outline covers the user's stated topic, arc, and audience.
+- End with `## Confidence` block per quality-gates.md protocol, score based on outline coverage of topic, arc, audience.
 
 </workflow>
 
 <notes>
 
-- Maximum 5 AskUserQuestion interactions for a well-specified brief (steps 2–4 use exactly 4; step 1 adds one only when $ARGUMENTS absent).
+- 5 questions in baseline flow; up to 7 with arc-conflict resolution (steps 2–4 use exactly 4; step 1 adds one only when $ARGUMENTS absent; arc conflicts in step 3 may add 1–2 more).
 - Each AskUserQuestion uses lettered options with one ★ recommended default.
-- After each answer, restate understanding in 1–2 sentences before proceeding.
+- After each answer, restate understanding 1–2 sentences before proceeding.
 - Never silently adjust arc to match audience — always surface conflicts explicitly (Step 3).
-- Refuse FAQs / comparison tables / reference docs at Step 1 gate; name `foundry:doc-scribe` as redirect.
+- Refuse FAQs / comparison tables / ref docs at Step 1 gate; name `foundry:doc-scribe` as redirect.
 - Write outline exactly once after approval — no second draft unless user requests.
-- `foundry:creator` reads the output outline file and generates the full artifact autonomously.
+- `foundry:creator` reads output outline file and generates full artifact autonomously.
 - See brainstorm/create workflow design notes (blueprint files in .plans/blueprint/ are TTL-30d).
 
 </notes>

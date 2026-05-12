@@ -1,19 +1,19 @@
 ---
 name: review
 description: Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Python files only — non-Python files are out of scope.
+when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse)."
 argument-hint: '[python-file|dir] [--no-challenge] [--codemap] [--semble]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
-context: fork
 model: opus
 effort: high
-when_to_use: Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse).
+disable-model-invocation: true
 ---
 
 <objective>
 
 Comprehensive code review of local files or working-tree diff. Spawn specialized sub-agents in parallel, consolidate findings into structured feedback with severity levels.
 
-NOT for: GitHub PR review (use `/oss:review <PR#>`); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>`); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` or `/foundry:audit`).
+NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>`); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` or `/foundry:audit`); non-Python projects (JS/TS/Go/Rust) — review toolchain assumes Python/pytest.
 
 </objective>
 
@@ -22,12 +22,12 @@ NOT for: GitHub PR review (use `/oss:review <PR#>`); GitHub thread analysis or P
 - **$ARGUMENTS**: optional file path or directory to review.
   - Path given: review those files
   - Omitted: review current git diff (`git diff HEAD` — staged + unstaged vs HEAD)
-  - **Scope**: reviews Python source only. Non-Python file (YAML, JSON, shell script, etc.) → state out of scope, suggest appropriate tool. No findings.
+  - **Scope**: Python source only. Non-Python file (YAML, JSON, shell script, etc.) → state out of scope, suggest appropriate tool. No findings.
   - `--no-challenge`: skip adversarial review (challenger runs by default)
   - `--codemap`: enable structural context from codemap index (off by default)
   - `--semble`: enable semble semantic search companion (off by default)
 
-**Integer detection gate** (execute BEFORE Step 1): if `$ARGUMENTS` is a positive integer or matches `#\d+`:
+**Integer detection gate** (execute BEFORE Step 1): if `$ARGUMENTS` is positive integer or matches `#\d+`:
 
 ```bash
 if [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]]; then
@@ -35,7 +35,7 @@ if [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]]; then
 fi
 ```
 
-Call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → invoke `oss:review` skill with the number; (b) "No — review local code at a path instead" → ask for the path to review.
+Call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → invoke `oss:review` skill with number; (b) "No — review local code at a path instead" → ask for path to review.
 
 </inputs>
 
@@ -58,7 +58,7 @@ EXTENSION_ADVISORY=300          # +5 min extension — reference only; not enfor
 
 <!-- Shared pattern with oss:review — coordinate on agent spawn logic, file-handoff, consolidation changes -->
 
-<!-- Agent Resolution: canonical table at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -87,7 +87,7 @@ REVIEW_ARGS="$ARGUMENTS"
 REVIEW_ARGS="${REVIEW_ARGS#"${REVIEW_ARGS%%[![:space:]]*}"}"  # trim leading whitespace
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # Preflight: fail early if requested tool not available
@@ -102,9 +102,9 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
 fi
 ```
 
-If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` is in your available tools. If not: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
+If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. If not: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
 
-Use `$REVIEW_ARGS` (not `$ARGUMENTS`) as the path for the rest of the workflow.
+Use `$REVIEW_ARGS` (not `$ARGUMENTS`) as path for rest of workflow.
 
 ## Step 1: Identify scope
 
@@ -120,14 +120,14 @@ else
 fi
 ```
 
-Filter to Python files only. No Python files found → report "no Python files to review" and stop.
+Filter to Python files only. No Python files → report "no Python files to review" and stop.
 
-**Non-Python impact check**: after filtering to Python files, scan diff for high-impact non-Python changes and warn in report header:
+**Non-Python impact check**: after filtering, scan diff for high-impact non-Python changes, warn in report header:
 - `pyproject.toml`, `setup.cfg`, `requirements*.txt` → "⚠ dependency changes detected — not reviewed; verify Python imports still resolve"
 - `Dockerfile`, `docker-compose*.yml` → "⚠ container config changes detected — not reviewed"
 - `*.yaml`, `*.toml`, `*.json` in config directories → "⚠ config changes detected — not reviewed"
 
-These are not reviewed (out of scope) but must be flagged — a dependency removal can silently break reviewed Python code.
+Out of scope but must be flagged — dependency removal can silently break reviewed Python code.
 
 ### Scope pre-check
 
@@ -137,7 +137,7 @@ Before spawning agents, classify diff:
 - Classify: **FIX** (\<3 files, \<50 lines), **REFACTOR** (no new public API), **FEATURE** (new public API or module), **MIXED**
 - **Complexity smell**: 8+ files changed → note in report header
 
-Use classification to skip optional agents:
+Skip optional agents by classification:
 
 - FIX → skip Agent 3 (perf-optimizer) and Agent 6 (solution-architect)
 - REFACTOR → skip Agent 6 (solution-architect)
@@ -145,7 +145,7 @@ Use classification to skip optional agents:
 
 ### Structural context (codemap — only if `CODEMAP_ENABLED=true`)
 
-**Skip this entire section if `CODEMAP_ENABLED=false`.**
+**Skip entire section if `CODEMAP_ENABLED=false`.**
 
 Extended scan for changed modules:
 
@@ -157,6 +157,10 @@ if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/scan/${PROJ}.json" ]; t
     # Note: this derivation assumes src-layout (files under src/). Files outside src/ (e.g.
     # scripts/, tools/) produce module names that may not be valid importable modules.
     # scan-query will return empty for these — not an error, just no structural context.
+    # flat-layout fallback: if src/-strip yields nothing, try without strip
+    if [ -z "$CHANGED_MODS" ]; then
+        CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|/[^/]*\.py$||' | sort -u | head -10)
+    fi
     for mod in $CHANGED_MODS; do
         OUT=$(scan-query rdeps "$mod" 2>/dev/null)  # timeout: 5000
         [ -n "$OUT" ] && CODEMAP_CONTEXT="${CODEMAP_CONTEXT}${OUT}"$'\n'
@@ -171,9 +175,9 @@ Codemap returns results → prepend `## Structural Context (codemap)` block to *
 
 Agent 1 uses this to prioritize: high `rdep_count` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
 
-**Semble companion** (only if `SEMBLE_ENABLED=true`): include this in Agent 1 spawn prompt:
+**Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt:
 
-> If `mcp__semble__search` is available in your tools and any changed module's codemap result was non-exhaustive (`"exhaustive": false`) or no codemap index was found: call `mcp__semble__search` with varied queries and `repo=<git_root>`, `top_k=20`. Stop per module when two consecutive queries return no new importers. Merge with codemap results.
+> If `mcp__semble__search` is available in your tools and any changed module's codemap result was non-exhaustive (`"exhaustive": false`) or no codemap index found: call `mcp__semble__search` with varied queries and `repo=<git_root>`, `top_k=20`. Stop per module when two consecutive queries return no new importers. Merge with codemap results.
 
 ## Step 2: Codex co-review
 
@@ -198,17 +202,17 @@ If Codex available:
 CODEX_OUT="$RUN_DIR/codex.md"
 ```
 
-Spawn `codex:codex-rescue` agent with prompt: "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
+Spawn `codex:codex-rescue` agent: "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
 
 After Codex writes `$RUN_DIR/codex.md`, extract compact seed list (≤10 items, `[{"loc":"file:line","note":"..."}]`) to inject into agent prompts in Step 3 as pre-flagged issues to verify or dismiss. Codex skipped or found nothing → proceed with empty seed.
 
-**Cap-disclosure**: count total Codex findings before truncating. If ≥10, surface in the consolidated report header so the user knows the seed list was capped:
+**Cap-disclosure**: count total Codex findings before truncating. If ≥10, surface in consolidated report header:
 
 ```text
 Codex: first 10 items seeded to review agents; full list in $RUN_DIR/codex.md (N total) — review codex.md directly for complete coverage.
 ```
 
-Pass this notice through to the consolidator (Step 5) so it appears in the final report header, not just terminal scratch.
+Pass notice through to consolidator (Step 5) so it appears in final report header, not just terminal scratch.
 
 ## Step 3: Spawn sub-agents in parallel
 
@@ -216,7 +220,7 @@ Pass this notice through to the consolidator (Step 5) so it appears in the final
 
 <!-- $RUN_DIR pre-expanded into $RUN_DIR_LITERAL — substitute $RUN_DIR_LITERAL (never bare $RUN_DIR) when embedding paths in Agent spawn prompt strings. -->
 
-Use `$RUN_DIR_LITERAL` in spawn prompts below — substitute its expanded value before building each Agent call.
+Use `$RUN_DIR_LITERAL` in spawn prompts below — substitute expanded value before building each Agent call.
 
 Resolve develop:review checklist path (version-agnostic):
 
@@ -246,11 +250,11 @@ if command -v jq >/dev/null 2>&1; then
 fi
 ```
 
-Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts below with resolved path. **If empty, omit the checklist instruction from those prompts entirely** — do not pass an empty path.
+Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts with resolved path. **If empty, omit checklist instruction from those prompts entirely** — do not pass empty path.
 
-**Pre-expansion required**: `$REVIEW_CHECKLIST` must be substituted with its literal resolved value before inserting into any Agent spawn prompt string — same as `$RUN_DIR_LITERAL`. Never pass the bare variable name `$REVIEW_CHECKLIST` inside a quoted Agent prompt; the agent subshell will not expand it.
+**Pre-expansion required**: `$REVIEW_CHECKLIST` must be substituted with literal resolved value before inserting into any Agent spawn prompt string — same as `$RUN_DIR_LITERAL`. Never pass bare variable name `$REVIEW_CHECKLIST` inside quoted Agent prompt; subshell won't expand it.
 
-**Visible-degradation rule** — `$REVIEW_CHECKLIST` is empty → the consolidator prompt (Step 5) **must** insert the following note into the final report under Findings: "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides the gap from reviewers and makes severity drift invisible.
+**Visible-degradation rule** — `$REVIEW_CHECKLIST` empty → consolidator prompt (Step 5) **must** insert into final report Findings section: "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides gap from reviewers, makes severity drift invisible.
 
 Launch agents simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional). Every agent prompt must end with:
 
@@ -271,7 +275,7 @@ Flag rules:
 
 Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIGH patterns as severity anchors. Respect suppressions list.
 
-**Agent 2 — foundry:qa-specialist**: Audit test coverage. Identify untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. Check explicitly for missing tests in these patterns (GT-level findings, not afterthoughts):
+**Agent 2 — foundry:qa-specialist**: Audit test coverage. Identify untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. Explicitly check for missing tests in these patterns (GT-level findings, not afterthoughts):
 
 - Concurrent access to shared state (locks or shared variables present)
 - Error paths: calling methods in wrong order (e.g., `log()` before `start()`)
@@ -293,17 +297,19 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Agent 6 — foundry:solution-architect (optional, for changes touching public API boundaries)**: Target touches `__init__.py` exports, adds/modifies Protocols or ABCs, changes module structure, or introduces new public classes → evaluate API design quality, coupling impact, backward compatibility. Skip for internal implementation changes.
 
-**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`)**: Adversarial review of design decisions in the diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, and complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR_LITERAL/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR_LITERAL/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
+**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR_LITERAL/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR_LITERAL/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
 
-**Health monitoring**: Agent calls are synchronous — the framework awaits each response natively. No Bash checkpoint polling is possible during an active Agent call. `$HARD_CUTOFF_ADVISORY` and `$EXTENSION_ADVISORY` are reference values only — not active timers.
+**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. `$HARD_CUTOFF_ADVISORY` and `$EXTENSION_ADVISORY` are reference values only — not active timers.
 
-If an agent does not return within `$HARD_CUTOFF_ADVISORY` seconds: use the Read tool on `$RUN_DIR/<agent-name>.md` to surface any partial results written so far. Mark timed-out agents with ⏱ in the final report. Grant one `$EXTENSION_ADVISORY` extension if the output file tail explains the delay. Never silently omit timed-out agents.
+If agent does not return within `$HARD_CUTOFF_ADVISORY` seconds: use Read tool on `$RUN_DIR/<agent-name>.md` to surface partial results. Mark timed-out agents with ⏱ in final report. Grant one `$EXTENSION_ADVISORY` extension if output file tail explains delay. Never silently omit timed-out agents.
 
 ## Step 4: Cross-validate critical/blocking findings
 
 ```bash
 if [ ! -f "$_FOUNDRY_SHARED/cross-validation-protocol.md" ]; then
     echo "⚠ cross-validation-protocol.md not found at $_FOUNDRY_SHARED — Step 4 skipped; critical findings are unverified. Install foundry plugin or verify _FOUNDRY_SHARED path."
+    echo "## Cross-Validation: SKIPPED" >> "$RUN_DIR/cross-validation.md"
+    echo "**Reason**: _FOUNDRY_SHARED unavailable — cross-validation protocol not executed." >> "$RUN_DIR/cross-validation.md"
 fi
 ```
 
@@ -313,28 +319,28 @@ If file present: read and follow cross-validation protocol from `$_FOUNDRY_SHARE
 
 ## Step 5: Consolidate findings
 
-Before constructing output path, extract branch and date: `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` `DATE=$(date +%Y-%m-%d)`
+Extract branch and date before constructing output path: `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` `DATE=$(date +%Y-%m-%d)`
 
-Spawn **foundry:sw-engineer** consolidator with prompt:
+Spawn **foundry:sw-engineer** consolidator:
 
-> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert a top-level note into the consolidated report's Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `.temp/output-review-$BRANCH-$DATE.md` using Write tool. Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`"
+> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert top-level note into consolidated report Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `.temp/output-review-$BRANCH-$DATE.md` using Write tool. Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`"
 
 Main context receives only one-liner verdict.
 
-**Consolidator-unavailable fallback**: if `Agent` tool is deferred or consolidator times out — read each agent finding file from `$RUN_DIR/` directly, apply the same precision gate and density rules, synthesize consolidated report, write to `.temp/output-review-$BRANCH-$DATE.md` using Write tool.
+**Consolidator-unavailable fallback**: if `Agent` tool deferred or consolidator times out — read each agent finding file from `$RUN_DIR/` directly, apply same precision gate and density rules, synthesize consolidated report, write to `.temp/output-review-$BRANCH-$DATE.md` using Write tool.
 
-Report format: read the review report template — resolve path first:
+Report format — resolve template path first:
 
 ```bash
 _REVIEW_TEMPLATE=$(ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/review/templates/review-report.md 2>/dev/null | head -1)
 [ -z "$_REVIEW_TEMPLATE" ] && _REVIEW_TEMPLATE="plugins/develop/skills/review/templates/review-report.md"
 ```
 
-Pass `$_REVIEW_TEMPLATE` (pre-expanded literal) into the consolidator spawn prompt: "Read `<resolved-template-path>` and use it as the output structure."
+Pass `$_REVIEW_TEMPLATE` (pre-expanded literal) into consolidator spawn prompt: "Read `<resolved-template-path>` and use it as output structure."
 
-After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CONFIDENCE** to that agent's findings section, explicitly state gap. Never silently drop uncertain findings.
+After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CONFIDENCE** to that agent's findings section, state gap explicitly. Never silently drop uncertain findings.
 
-Print terminal block: read `---` header from top of `.temp/output-review-$BRANCH-$DATE.md` (lines 1–12, up to and including closing `---`), append `→ saved to .temp/output-review-$BRANCH-$DATE.md`, print to terminal. Report file already contains the block — no separate prepend step needed.
+Print terminal block: read `---` header from top of `.temp/output-review-$BRANCH-$DATE.md` (lines 1–12, up to and including closing `---`), append `→ saved to .temp/output-review-$BRANCH-$DATE.md`, print to terminal. Report file already contains block — no separate prepend needed.
 
 ## Step 6: Delegate implementation follow-up (optional)
 
@@ -355,7 +361,7 @@ Read `$_FOUNDRY_SHARED/codex-delegation.md`, apply delegation criteria defined t
 
 Print `### Codex Delegation` section to terminal only when tasks actually delegated — omit entirely if nothing delegated.
 
-**Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into the tool call arguments:
+**Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "What next?"
 - (a) label: `/develop:fix` — description: fix identified issues
 - (b) label: `/develop:refactor` — description: refactor to address structural findings
@@ -376,7 +382,7 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
   - Structural or quality issues → `/develop:refactor` for test-first improvements
   - Security findings in auth/input/deps → run `pip-audit` for dependency CVEs; address OWASP issues inline via `/develop:fix`
   - Mechanical issues beyond Step 5 findings → `/codex:codex-rescue <task>` to delegate (requires `codex` plugin)
-  - Contributor-facing review of GitHub PR → use `/oss:review <PR#>` instead
-- **Parallel agent cleanup**: after all 7 agents complete, review `TaskList` — delete any tasks created by sub-agents (not by the lead orchestrator). Sub-agent task creation is unintended and can leave zombie tasks.
+  - Contributor-facing review of GitHub PR → use `/oss:review <PR#>` (requires oss plugin) instead
+- **Parallel agent cleanup**: after all 7 agents complete, review `TaskList` — delete any tasks created by sub-agents (not by lead orchestrator). Sub-agent task creation is unintended, can leave zombie tasks.
 
 </notes>

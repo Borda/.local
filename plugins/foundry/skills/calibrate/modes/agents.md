@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 <!-- Step 1 in SKILL.md dispatches to this mode file. Steps here continue from Step 2. -->
 
 ## Mode: agents
@@ -35,7 +33,7 @@ Per agent in domain table (after exclusions), spawn one `general-purpose` pipeli
 Each subagent gets pipeline template from `.claude/skills/calibrate/templates/pipeline-prompt.md` with substitutions:
 
 - `<TARGET>` = agent name (e.g., `foundry:sw-engineer`)
-- `<DOMAIN>` = domain string from table above for that agent
+- `<DOMAIN>` = domain string from table above
 - `<N>` = 3 (fast) or 10 (full)
 - `<TIMESTAMP>` = current run timestamp
 - `<MODE>` = `fast` or `full`

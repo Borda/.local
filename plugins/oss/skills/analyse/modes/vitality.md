@@ -21,13 +21,13 @@ SCORES_FILE=".reports/analyse/vitality/scores-${GH_OWNER}-${GH_REPO}-${RUN_TS}.j
 
 > `Agent(subagent_type="oss:gh-scraper", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE")`
 
-Wait for completion. Verify `$DATA_FILE` exists and is non-empty. TaskUpdate "Step 1 Data Fetch" completed.
+Wait for completion. Verify `$DATA_FILE` exists and non-empty. TaskUpdate "Step 1 Data Fetch" completed.
 
 ## Step 2 — Parallel Axis Scoring
 
 **Task tracking**: mark "Step 2 Axis Scoring (3 parallel)" in_progress.
 
-Spawn all 3 `oss:repo-warden` agents simultaneously in a single response:
+Spawn all 3 `oss:repo-warden` agents simultaneously in single response:
 
 > `Agent(subagent_type="oss:repo-warden", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE PARTIAL_FILE=$PARTIAL_A AXIS_GROUP=A")`
 > `Agent(subagent_type="oss:repo-warden", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE PARTIAL_FILE=$PARTIAL_B AXIS_GROUP=B")`
@@ -40,9 +40,9 @@ SCORE_CHECKPOINT_FILE="/tmp/vitality-score-check-${GH_OWNER}-${GH_REPO}-${RUN_TS
 touch "$SCORE_CHECKPOINT_FILE"  # timeout: 5000
 ```
 
-Every 5 min while waiting: `find .reports/analyse/vitality -newer "$SCORE_CHECKPOINT_FILE" -name "partial-*.json" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min of no file activity → timed out. One extension (+5 min) if a partial file's tail explains the delay — second unexplained stall = cutoff. On timeout: read tail of any partial output for partial results; surface with ⏱ marker.
+Every 5 min while waiting: `find .reports/analyse/vitality -newer "$SCORE_CHECKPOINT_FILE" -name "partial-*.json" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if partial file tail explains delay — second unexplained stall = cutoff. On timeout: read tail of any partial output; surface with ⏱ marker.
 
-Wait for all 3 agents to complete. Verify all 3 partial files exist: `$PARTIAL_A`, `$PARTIAL_B`, `$PARTIAL_C`.
+Wait for all 3 agents. Verify all 3 partial files exist: `$PARTIAL_A`, `$PARTIAL_B`, `$PARTIAL_C`.
 
 TaskUpdate "Step 2 Axis Scoring (3 parallel)" completed.
 
@@ -50,7 +50,7 @@ TaskUpdate "Step 2 Axis Scoring (3 parallel)" completed.
 
 **Task tracking**: mark "Step 3 Assemble Scores" in_progress.
 
-Read all 3 partial files using the Read tool. Then merge into unified `$SCORES_FILE`:
+Read all 3 partial files using Read tool. Merge into unified `$SCORES_FILE`:
 
 ```bash
 python3 -c "
@@ -156,11 +156,11 @@ _OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2
 REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 ```
 
-Run `mkdir -p .reports/analyse/vitality` then **Read `$REPORT_TPL`** to get the full report structure. Write `$REPORT_FILE` using that structure as the scaffold — substitute all `{VARIABLE}` placeholders with the bash variables set above (`REPORT_TIMESTAMP`, `GH_OWNER`, `GH_REPO`, `SKILL_VERSION`, `REPORT_COMMIT`, `TOTAL_PASSES`, `CONFIDENCE_HISTORY`, `REPORT_AGENTS_YAML`, etc.). Do not print full analysis to terminal.
+Run `mkdir -p .reports/analyse/vitality` then **Read `$REPORT_TPL`** to get full report structure. Write `$REPORT_FILE` using that structure as scaffold — substitute all `{VARIABLE}` placeholders with bash variables set above (`REPORT_TIMESTAMP`, `GH_OWNER`, `GH_REPO`, `SKILL_VERSION`, `REPORT_COMMIT`, `TOTAL_PASSES`, `CONFIDENCE_HISTORY`, `REPORT_AGENTS_YAML`, etc.). Do not print full analysis to terminal.
 
 ## Step 5 — Codex Independent Repo Review
 
-When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess the repo on the same 8 axes using the raw fetched data — NOT by reading the main analysis report. This produces a parallel verdict for aggregation and divergence detection.
+When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 8 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation and divergence detection.
 
 ```bash
 REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"
@@ -205,7 +205,7 @@ Write sentinel {REVIEW_DIR}/codex-repo-review.done on completion.
 Return compact JSON only: {"status":"done","file":"{CODEX_REVIEW_OUT}","health_score":XX,"confidence":0.N}
 ```
 
-**When CODEX_AVAILABLE=0**: skip this step; note "codex unavailable — single-pass analysis only" in the Codex Independent Review report section.
+**When CODEX_AVAILABLE=0**: skip step; note "codex unavailable — single-pass analysis only" in Codex Independent Review report section.
 
 ### Aggregation
 
@@ -218,8 +218,8 @@ After codex review completes (sentinel verified), compute per-axis delta:
 # aggregate health score = mean(main_health_score, codex_health_score)
 ```
 
-Update the report's `## Independent Codex Review` section (append using Edit tool) with:
-- The codex scorecard table (from `$CODEX_REVIEW_OUT`)
+Update report's `## Independent Codex Review` section (append via Edit tool) with:
+- Codex scorecard table (from `$CODEX_REVIEW_OUT`)
 - Aggregate health score
 - Per-axis delta table with divergence flags
 - Divergence explanations where delta ≥ 2.0
@@ -255,7 +255,7 @@ _(Only axes with delta ≥ 2.0. If none: "Main analysis and Codex agree within 2
 
 ## Step 6 — Adversarial Rework Loop
 
-After Step 5 aggregation complete — report now includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess the **complete combined report** iteratively, with rework applied between iterations.
+After Step 5 aggregation complete — report includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess **complete combined report** iteratively; rework applied between iterations.
 
 ```bash
 # CODEX_AVAILABLE already set in Step 4 — do not re-check; use value as-is
@@ -271,11 +271,11 @@ REWORK_SECTIONS=""
 
 ### 6a — Adversarial Review (fresh spawn each iteration)
 
-Spawn reviewers simultaneously in a single response — each writes to its own iter-indexed file. No shared input between reviewers.
+Spawn reviewers simultaneously in single response — each writes to own iter-indexed file. No shared input between reviewers.
 
 **When CODEX_AVAILABLE=1**: spawn `foundry:challenger` AND `codex:codex-rescue` simultaneously:
 
-1. `foundry:challenger` — reads `$REPORT_FILE`; stress-tests scoring thresholds, flags weak evidence, challenges causality claims, verifies limit-hit detection, checks coverage gate logic; flags where main analysis and Codex independent review share blind spots or where divergence resolution is unconvincing; assesses all 9 axes including Axis 9 Trajectory. Writes findings to `$REVIEW_DIR/challenger-iter${REWORK_ITER}.md` (Write tool). Writes sentinel `$REVIEW_DIR/challenger-iter${REWORK_ITER}.done`. After narrative findings, writes machine-readable block on its own line:
+1. `foundry:challenger` — reads `$REPORT_FILE`; stress-tests scoring thresholds, flags weak evidence, challenges causality claims, verifies limit-hit detection, checks coverage gate logic; flags shared blind spots between main analysis and Codex independent review, or unconvincing divergence resolution; assesses all 9 axes including Axis 9 Trajectory. Writes findings to `$REVIEW_DIR/challenger-iter${REWORK_ITER}.md` (Write tool). Writes sentinel `$REVIEW_DIR/challenger-iter${REWORK_ITER}.done`. After narrative findings, writes machine-readable block on own line:
    ```
    REWORK_JSON: {"verdict":"pass"}
    ```
@@ -283,9 +283,9 @@ Spawn reviewers simultaneously in a single response — each writes to its own i
    ```
    REWORK_JSON: {"verdict":"needs_rework","items":[{"axis":N,"section":"<heading>","issue":"<specific claim that needs correction>","severity":"critical|high|medium"}]}
    ```
-   Only flag `verdict=needs_rework` when a finding is factually wrong or unsupported by evidence — not for style or emphasis differences. Returns compact JSON envelope only.
+   Only flag `verdict=needs_rework` when finding is factually wrong or unsupported by evidence — not style/emphasis differences. Returns compact JSON envelope only.
 
-2. `codex:codex-rescue` — reads `$REPORT_FILE` independently (do NOT read challenger output — independent assessment eliminates anchoring bias); adversarial pass from a fresh perspective; focus on evidence quality, threshold calibration, data-gap risks, and scoring edge cases not covered by main analysis; assesses all 9 axes. Writes findings to `$REVIEW_DIR/codex-iter${REWORK_ITER}.md` (Write tool). Writes sentinel `$REVIEW_DIR/codex-iter${REWORK_ITER}.done`. Returns compact JSON envelope only.
+2. `codex:codex-rescue` — reads `$REPORT_FILE` independently (do NOT read challenger output — independent assessment eliminates anchoring bias); adversarial pass from fresh perspective; focus on evidence quality, threshold calibration, data-gap risks, scoring edge cases not in main analysis; assesses all 9 axes. Writes findings to `$REVIEW_DIR/codex-iter${REWORK_ITER}.md` (Write tool). Writes sentinel `$REVIEW_DIR/codex-iter${REWORK_ITER}.done`. Returns compact JSON envelope only.
 
 **When CODEX_AVAILABLE=0**: spawn `foundry:challenger` only (step 1 above; skip step 2).
 
@@ -307,13 +307,13 @@ REWORK_VERDICT=$(echo "$REWORK_JSON" | python3 -c "import json,sys; print(json.l
 
 If `$REWORK_VERDICT` = `needs_rework` AND `$REWORK_ITER` < `$REWORK_MAX`:
 
-For each item in the rework list (parsed from `$REWORK_JSON`):
+For each item in rework list (parsed from `$REWORK_JSON`):
 
-1. Extract the specific section from `$REPORT_FILE` — grep from section heading to next `##` heading
-2. Extract relevant axis data from `$DATA_FILE` — the `type` record(s) for that axis from JSONL
-3. Identify the axis rubric section from `$_OSS_SHARED/vitality-scoring.md`
+1. Extract specific section from `$REPORT_FILE` — grep from section heading to next `##` heading
+2. Extract relevant axis data from `$DATA_FILE` — `type` record(s) for that axis from JSONL
+3. Identify axis rubric section from `$_OSS_SHARED/vitality-scoring.md`
 
-Spawn a FRESH rework agent per flagged section with MINIMAL context (no report history, no prior iteration findings):
+Spawn FRESH rework agent per flagged section with MINIMAL context (no report history, no prior iteration findings):
 
 ```
 Agent(subagent_type="foundry:sw-engineer", prompt="""
@@ -337,7 +337,7 @@ Return ONLY: {"status":"done","file":"<path>","axis":N}
 """)
 ```
 
-After all rework agents complete: patch `$REPORT_FILE` in-place — replace each original section with revised version using the Edit tool (exact string match on section heading). Track revised sections in `$REWORK_SECTIONS`.
+After all rework agents complete: patch `$REPORT_FILE` in-place — replace each original section with revised version via Edit tool (exact string match on section heading). Track revised sections in `$REWORK_SECTIONS`.
 
 Increment `REWORK_ITER`:
 
@@ -347,11 +347,11 @@ REWORK_ITER=$((REWORK_ITER + 1))
 
 If `$REWORK_ITER >= $REWORK_MAX` OR `$REWORK_VERDICT = "pass"`: exit loop.
 
-Otherwise: return to 6a with new `Agent()` spawns (prior iteration's reviewer findings must NOT be in the new reviewer's prompt — each adversarial spawn is a fresh blank-context agent).
+Otherwise: return to 6a with new `Agent()` spawns (prior iteration's reviewer findings must NOT be in new reviewer's prompt — each adversarial spawn is fresh blank-context agent).
 
 ### 6c — Merge Adversarial Findings into Report
 
-After loop exits (pass or max iterations reached): update `$REPORT_FILE` — replace the placeholder `## Adversarial Review` block written in Step 4 with final content using Edit tool:
+After loop exits (pass or max iterations): update `$REPORT_FILE` — replace placeholder `## Adversarial Review` block from Step 4 with final content via Edit tool:
 
 ```markdown
 ## Adversarial Review
@@ -364,7 +364,7 @@ After loop exits (pass or max iterations reached): update `$REPORT_FILE` — rep
 **Codex:** {findings from $REVIEW_DIR/codex-iter{final_iter}.md — or "codex unavailable — single adversarial pass only" when CODEX_AVAILABLE=0}
 ```
 
-**TaskUpdate**: mark "Step 6 Adversarial Rework Loop" completed. If overall confidence from adversarial findings drops below 0.7 AND re-run of specific axes is warranted, create new task "Step 3 re-score: {axis list}" and mark in_progress before re-fetching — keep task list current when confidence-driven reruns happen.
+**TaskUpdate**: mark "Step 6 Adversarial Rework Loop" completed. If overall confidence from adversarial findings drops below 0.7 AND re-run of specific axes warranted, create new task "Step 3 re-score: {axis list}" and mark in_progress before re-fetching — keep task list current when confidence-driven reruns happen.
 
 ## Step 7 — Terminal Summary Output
 
@@ -377,7 +377,7 @@ Print compact block to terminal. Three sections: header, exec summary, simplifie
 **Skill:** oss:analyse v{SKILL_VERSION} · **Commit:** {REPORT_COMMIT} · **Generated:** {REPORT_TIMESTAMP}
 **Passes:** {TOTAL_PASSES}/5 · confidence: {OVERALL_CONFIDENCE} (history: {CONFIDENCE_HISTORY colons→commas})
 ```
-_(Omit the Passes line when TOTAL_PASSES=1 — no retry loop was needed.)_
+_(Omit Passes line when TOTAL_PASSES=1 — no retry loop needed.)_
 
 ```markdown
 ---
@@ -411,21 +411,21 @@ _(When OVERALL_CONFIDENCE < 0.7 prefix this line with: `⚠ LOW CONFIDENCE ({OVE
 ---
 ```
 
-For ⚪ axes: show `--` in Score/Status columns; append below the closing `---`:
+For ⚪ axes: show `--` in Score/Status columns; append below closing `---`:
 ```text
 ⚠ Axis {N} ({name}, wt {X}%) unavailable — score normalized over {M}/9 axes
 ```
 If Axis 3 specifically ⚪: `⚠ Axis 3 (contributor health, wt 14%) unavailable — rerun in 5–10 min for full score`.
 
-Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close with `---` on own line. Do not print full analysis to terminal. Full Conf/Weight columns and per-axis detail are in the report file only.
+Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close with `---` on own line. Do not print full analysis to terminal. Full Conf/Weight columns and per-axis detail in report file only.
 
 </workflow>
 
 <notes>
 
 - **Parallel scoring**: Group A (Axes 1,2,5,6), Group B (Axes 4,7,8), Group C (Axes 3→9) run simultaneously. Each reads DATA_FILE independently — no shared state between scorer agents. Assembler merges after all 3 complete.
-- **Rework loop**: max 2 iterations. Rework agents receive MINIMAL context — only section content + raw data + rubric + reviewer issue. No full report history passed. This prevents anchoring on prior flawed reasoning.
-- **Fresh adversarial agents each iteration**: spawn a new Agent() call each rework cycle — prior iteration's reviewer findings must NOT be in the new reviewer's context. Independent assessment is the point.
+- **Rework loop**: max 2 iterations. Rework agents get MINIMAL context — only section content + raw data + rubric + reviewer issue. No full report history passed. Prevents anchoring on prior flawed reasoning.
+- **Fresh adversarial agents each iteration**: spawn new Agent() each rework cycle — prior iteration's reviewer findings must NOT be in new reviewer's context. Independent assessment is the point.
 - **Adversarial review is mandatory** — Step 6 always runs; `foundry:challenger` always spawned; `codex:codex-rescue` spawned when `CODEX_AVAILABLE=1`. No skip path exists.
 - **Parallel group discipline**: Group 2 data fetches in gh-scraper only after Group 1 resolves (needs root file list and default_branch); scoring Groups A/B/C have no such dependency — all read from DATA_FILE independently
 - **Data reuse**: root-contents fetch shared by Axes 6 and 7; releases fetch shared by Axis 2 and security signals; contributor stats weeks[] shared by Axis 3 and sub-signal 9A — all written to DATA_FILE, each scorer reads what it needs
@@ -434,15 +434,15 @@ Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close
 - **Discussions API**: GraphQL `discussions(first:100)` sufficient for health snapshot; full pagination not needed
 - **Stats 202 retry**: contributor stats endpoint returns 202 on first call for large repos — gh-scraper retries up to 6× with 10s sleep; if still 202, writes partial record; scorer Group C handles fallback from `commits_50`
 - **403 on security APIs**: Dependabot and secret scanning require push access; 403 = expected; scorer Group B applies partial scoring for Axis 8; confidence 0.4; never ⚪ solely from Dependabot 403
-- **Axis 1 response time**: responses by the issue/PR author themselves do not count — only first non-author comment/review contributes to response time computation
-- **Code-review coverage (Axis 4)**: bot-submitted PRs (Dependabot, Renovate) are excluded from both numerator and denominator — bot PRs cannot be "reviewed" in the human sense and would distort the coverage rate
+- **Axis 1 response time**: responses by issue/PR author do not count — only first non-author comment/review contributes to response time computation
+- **Code-review coverage (Axis 4)**: bot-submitted PRs (Dependabot, Renovate) excluded from both numerator and denominator — bot PRs cannot be "reviewed" in human sense and distort coverage rate
 - **Star velocity**: advisory only — excluded from numeric score; page loop stops at 180d boundary via `$CUTOFF_180D`; if coverage < 30 days of stars when loop ends, mark 8B ⚪; partial data (≥30d coverage but <180d) → note truncation and use available window for trend
 - **Package registry 404**: skip sub-signal C silently — not all repos publish to PyPI/npm
 - **Axis independence**: failure of one axis (API unavailable, access denied, computing) → ⚪ row in scorecard, continue with remaining axes; never block report on single axis failure
-- **Codex independent review (Step 5)**: runs before adversarial review — codex assesses raw data independently, not the main report; produces parallel scorecard and divergence notes; aggregate health score = mean(main, codex); when CODEX_AVAILABLE=0, note "codex unavailable — single-pass analysis only" in report section
+- **Codex independent review (Step 5)**: runs before adversarial review — codex assesses raw data independently, not main report; produces parallel scorecard and divergence notes; aggregate health score = mean(main, codex); when CODEX_AVAILABLE=0, note "codex unavailable — single-pass analysis only" in report section
 - **codex availability check**: `find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q .` — run before spawn; do not assume codex installed
 - **Health Score footer row**: Score column shows weighted %; Weight column shows "100%"; Status/Key Signal/Risk left blank
-- **Rework loop exit conditions**: exits when `$REWORK_VERDICT = "pass"` OR `$REWORK_ITER >= $REWORK_MAX`; always exits after 2 iterations maximum regardless of verdict
+- **Rework loop exit conditions**: exits when `$REWORK_VERDICT = "pass"` OR `$REWORK_ITER >= $REWORK_MAX`; always exits after 2 iterations max regardless of verdict
 - **SCORES_FILE**: assembled in Step 3 by orchestrator from 3 partial files — not written by gh-scraper; gh-scraper prompt in Step 1 does NOT include SCORES_FILE
 
 </notes>

@@ -43,11 +43,8 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 **Never add URL without all three steps:**
 
 1. **Fetch** — call WebFetch (or equivalent); URL must return non-error (not 4xx/5xx)
-
 2. **Read** — read actual page content; don't rely on URL structure or HTTP status alone
-
 3. **Match** — confirm content matches intended description; no match = don't add link
-
 4. **Independent** — every URL needs own Fetch+Read+Match pass; verified URL on same domain doesn't exempt others; skipping any step (including inferring validity from URL structure or HTTP status alone) is violation
 
 - Applies to: agent files, skill files, CLAUDE.md, any markdown
@@ -67,7 +64,7 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 - Prose paragraphs: no hard line breaks at column width
 - **Follow-up gate options**: skill-defined; minimum: (a) primary action · (b) skip. Canonical examples by skill:
   - `research:topic` → (a) `/research:plan` · (b) `/develop:feature` · (c) skip
-- **Follow-up gate follow-through**: when `AskUserQuestion` returns with a skill-invocation option selected — call `Skill(skill=..., args=...)` in the same response turn; never narrate the intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
+- **Follow-up gate follow-through**: when `AskUserQuestion` returns with skill-invocation option selected — call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
 
 ## Reporting Findings
 

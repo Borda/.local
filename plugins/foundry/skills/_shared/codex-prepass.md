@@ -1,5 +1,3 @@
-**Re: Compress markdown to caveman format**
-
 Before cycle 1 of review loop, run Codex pre-pass if diff meaningful:
 
 ```bash
@@ -18,6 +16,6 @@ git diff HEAD --stat
 Agent(subagent_type="codex:codex-rescue", prompt="Review the current working-tree changes for bugs, missed edge cases, and inconsistencies. Read-only: do not apply fixes.")
 ```
 
-**Inline fallback**: if the bash check above printed "not available", skip the Agent dispatch entirely — do not spawn codex. Proceed to cycle 1 from scratch.
+**Inline fallback**: bash check printed "not available" → skip Agent dispatch entirely. No codex spawn. Go to cycle 1 from scratch.
 
-Treat Codex findings as pre-flagged issues entering cycle 1. If Codex found nothing or was skipped, start cycle 1 from scratch.
+Codex findings = pre-flagged issues entering cycle 1. Codex found nothing or skipped → start cycle 1 from scratch.
