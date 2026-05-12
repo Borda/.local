@@ -4,6 +4,18 @@
 
 Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex) (Rust implementation). This file covers agent spawn rules, model strategy, runtime profiles, execution architecture, mirrored skill usage, and Claude integration internals.
 
+## What This Enables
+
+Four things this Codex setup can do that vanilla Codex can't:
+
+**Adversarial diff review.** After Claude stages changes, run `codex --profile deep-review "run adversarial-review on current diff"`. Codex reads the diff with no Claude context — no mental model of what was in scope. That independence is the point: Claude applied a docstring-style mandate across 6 files and scored confidence at 0.88. The Codex pass then found `skills/develop/modes/feature.md` still referencing the old style — a direct miss. The union finds more than either tool alone.
+
+**Mirrored workflow backbone.** The same `review`, `develop`, `resolve`, `audit`, `calibrate`, `release`, `investigate`, `manage`, `analyse`, `optimize`, `research`, and `sync` workflows are available in both Claude Code and Codex CLI. Whichever tool you prefer, the same discipline is enforced: quality gates run, findings are classified by severity, and a structured artifact lands under `.reports/codex/<skill>/<timestamp>/`.
+
+**RTK token compression.** Bash output — `git log`, `pytest`, `cargo build` — is compressed 60–99% before reaching the model. A typical `resolve` or `review` run costs 40–60% fewer tokens than without RTK, with no quality difference.
+
+**Multi-agent profiles.** `deep-review` activates `xhigh` reasoning effort with live web search. `fast-edit` drops to medium effort for narrow mechanical changes. Profiles tune cost versus quality per task type without touching config.
+
 <details>
 <summary><strong>Contents</strong></summary>
 
@@ -16,6 +28,7 @@ Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex
   - [Profiles](#profiles)
 - [🧭 Skills In Codex](#-skills-in-codex)
   - [Built-in vs mirrored commands](#built-in-vs-mirrored-commands)
+  - [Skill capabilities](#skill-capabilities)
   - [Usage examples](#usage-examples)
 - [🪙 RTK Integration](#-rtk-integration)
 - [🏗️ Architecture](#-architecture)
@@ -24,6 +37,7 @@ Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex
   - [AGENTS.md layering](#agentsmd-layering)
   - [MCP server](#mcp-server)
 - [🤝 Integration with Claude](#-integration-with-claude)
+  - [Adversarial review](#adversarial-review)
 
 </details>
 
@@ -127,6 +141,25 @@ Mirrored workflow skills in `.codex/skills/*` are instruction assets, not custom
 - `/investigate`, `/resolve`, `/review` are not recognized as Codex slash commands in this setup
 - Use prompt-based invocation instead
 
+### Skill capabilities
+
+Each skill enforces a complete quality loop that prompt-style invocation does not: structured input schema, mandatory gates (lint, format, types, tests), severity classification, and a result artifact.
+
+| Skill         | What it enables                                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review`      | Diff-scoped review with measurable gates: classifies findings by severity, writes a JSON artifact so results are comparable across runs     |
+| `develop`     | TDD-first implementation: writes a failing test first, implements to pass it, then reruns all gates before handing back                     |
+| `resolve`     | Findings closure: applies fixes in priority order (critical → high → medium), reruns gates, surfaces what remains                           |
+| `audit`       | Config hygiene: detects broken refs, inventory drift, instruction overlap; produces a scored report with keep/sharpen/prune recommendations |
+| `calibrate`   | Benchmarks recall vs confidence bias on a fixed task set so you know if stated confidence is reliable                                       |
+| `release`     | SemVer-disciplined release: changelog entry, migration guide, and readiness check in one structured pass                                    |
+| `investigate` | Root-cause diagnosis for unknown failures — env, tools, hooks, CI divergence — with ranked hypotheses and a handoff artifact                |
+| `manage`      | Scaffolds agents, skills, and config with cross-ref propagation; prevents orphaned references                                               |
+| `analyse`     | Deep inspection of a scope (module, issue thread, PR) — surfaces structural findings that diff-level review misses                          |
+| `optimize`    | Profile-first optimization: measures before and after, rejects changes that don't improve the target metric                                 |
+| `research`    | SOTA lookup anchored to the codebase — finds relevant techniques and maps them to concrete implementation entry points                      |
+| `sync`        | Propagates config changes from `.codex/` to `~/.codex/` with a diff preview before overwriting                                              |
+
 ### Usage examples
 
 Interactive prompt usage:
@@ -160,6 +193,8 @@ Codex hooks are enabled in `config.toml` with the canonical feature flag:
 [features]
 hooks = true
 ```
+
+At ~60–99% Bash output compression, a typical `review` or `resolve` run costs 40–60% fewer tokens than without RTK — same quality gates, lower bill.
 
 Configured hook files:
 
@@ -251,3 +286,23 @@ Typical division:
 - Claude: long-horizon orchestration, broader review topology, final synthesis
 
 The combined workflow catches blind spots better than either tool alone.
+
+### Adversarial review
+
+The highest-value integration pattern: run Codex as an independent reviewer after Claude has made changes.
+
+**Why it works.** Claude accumulates a mental model of what it changed. When it reviews its own diff, it tends to confirm what it intended rather than what the diff actually shows. Codex has no session context — it reads the diff cold. That asymmetry is what makes the combination more effective than either tool reviewing alone.
+
+**Real example.** Claude applied a docstring-style mandate across 6 files and scored confidence at 0.88. The Codex adversarial pass found `skills/develop/modes/feature.md` still referencing the old style — outside Claude's mental scope. Codex found it because it had no scope.
+
+**How to invoke.**
+
+```bash
+# After Claude has staged or applied changes:
+codex --profile deep-review "run adversarial-review on current diff"
+
+# Targeting a specific scope:
+codex --profile deep-review "review the diff in src/mypackage/ as an independent reviewer with no prior context"
+```
+
+**What Codex does.** Reads `git diff`, applies the full `review` skill workflow — lint, format, types, tests, severity classification — and writes a findings artifact to `.reports/codex/review/<timestamp>/result.json`. Prompt-based invocation, not a registered slash command.

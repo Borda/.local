@@ -53,11 +53,29 @@ TaskUpdate "Step 2 Axis Scoring (3 parallel)" completed.
 Read all 3 partial files using Read tool. Merge into unified `$SCORES_FILE`:
 
 ```bash
+_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+SCORING_FILE="$_OSS_SHARED/vitality-scoring.md"
+```
+
+```bash
 python3 -c "
-import json, sys
+import json, sys, re
+
+# Load weights from vitality-scoring.md (single source of truth)
+weights = {}
+try:
+    with open('$SCORING_FILE') as f:
+        for line in f:
+            m = re.match(r'\|\s*(\d+)\s+[^|]+\|\s*(0\.\d+)\s*\|', line)
+            if m:
+                weights[int(m.group(1))] = float(m.group(2))
+except Exception:
+    pass
+if len(weights) != 9:
+    weights = {1:0.17, 2:0.18, 3:0.14, 4:0.11, 5:0.09, 6:0.07, 7:0.09, 8:0.07, 9:0.08}
 
 files = ['$PARTIAL_A', '$PARTIAL_B', '$PARTIAL_C']
-weights = {1:0.17, 2:0.18, 3:0.14, 4:0.11, 5:0.09, 6:0.07, 7:0.09, 8:0.07, 9:0.08}
 axes = {}
 for f in files:
     d = json.load(open(f))
@@ -78,6 +96,7 @@ result = {
     'health_score_pct': round(health, 1),
     'overall_confidence': round(overall_conf, 2),
     'axes': {str(k): v for k, v in axes.items()},
+    'weights': {str(k): v for k, v in weights.items()},
     'axis3_weeks': axis3_weeks,
     'axis3_202_pending': any(
         axes.get(str(k), {}).get('label') == '⚪' and 'stats' in axes.get(str(k), {}).get('unavailable_reason', '')
@@ -106,10 +125,12 @@ for AX in 1 2 3 4 5 6 7 8 9; do
     conf=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['conf'])" 2>/dev/null || echo "-1")  # timeout: 5000
     status=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['label'])" 2>/dev/null || echo "⚪")  # timeout: 5000
     signal=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX'].get('signal',''))" 2>/dev/null || echo "")  # timeout: 5000
+    weight=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(int(round(d['weights']['$AX'] * 100)))" 2>/dev/null || echo "0")  # timeout: 5000
     eval "AXIS${AX}_SCORE='$score'"
     eval "AXIS${AX}_CONF='$conf'"
     eval "AXIS${AX}_STATUS='$status'"
     eval "AXIS${AX}_SIGNAL='$signal'"
+    eval "WEIGHT_${AX}=${weight}"
 done
 
 echo "[vitality] scorer complete: health=${HEALTH_SCORE_PCT}% conf=${OVERALL_CONFIDENCE} passes=${TOTAL_PASSES}"
@@ -172,16 +193,7 @@ mkdir -p "$REVIEW_DIR"  # timeout: 5000
 
 ```text
 You are performing an independent vitality assessment of {GH_OWNER}/{GH_REPO}.
-Do NOT read the main analysis report. Assess the same 9 axes from raw evidence only:
-- Axis 1 Responsiveness (weight 17%)
-- Axis 2 Maintenance activity (weight 18%)
-- Axis 3 Contributor health (weight 14%)
-- Axis 4 Issue & PR health (weight 11%)
-- Axis 5 CI/CD & code quality (9%)
-- Axis 6 Documentation (7%)
-- Axis 7 Governance (9%)
-- Axis 8 Security posture (7%)
-- Axis 9 Trajectory (8%)
+Do NOT read the main analysis report. Assess the same 9 axes from raw evidence only (axes 1–9; weights from $SCORING_FILE weight table: 17%, 18%, 14%, 11%, 9%, 7%, 9%, 7%, 8%):
 
 Use only this raw data: [pass all fetched API data: issue counts, PR counts, commit dates,
 contributor stats, CI workflow/run data, root file list, branch protection, Dependabot status].
@@ -196,7 +208,7 @@ Write findings to {CODEX_REVIEW_OUT} using Write tool in this exact format:
 | 1 Responsiveness | N.N | 🟢/🟡/🔴 | {one sentence} |
 ...
 | 9 Trajectory | N.N | 🟢/🟡/🔴 | {one sentence} |
-| **Total Score** | **XX%** | | |
+| **Total Score** | **XX%** | 🟢/🟡/🔴 | — |
 
 ## Divergences
 [note any axis where you expect main analysis to differ — include reasoning]
@@ -406,7 +418,7 @@ _(When OVERALL_CONFIDENCE < 0.7 prefix this line with: `⚠ LOW CONFIDENCE ({OVE
 | 7 | Governance           | N.N   | 🟢/🟡/🔴 | N/7 files, active maint X/Y |
 | 8 | Security posture     | N.N   | 🟢/🟡/🔴 | dep-config: yes/no, alerts: N or 403 |
 | 9 | Trajectory           | N.N   | 🟢/🟡/🔴 | pool ±N%, TTM Xd→Yd, P90 Zd, dep-bump X% |
-|   | **Total Score**      | **XX%** |        | |
+|   | **Total Score**      | **XX%** | 🟢/🟡/🔴 | — |
 
 ---
 ```
@@ -416,6 +428,8 @@ For ⚪ axes: show `--` in Score/Status columns; append below closing `---`:
 ⚠ Axis {N} ({name}, wt {X}%) unavailable — score normalized over {M}/9 axes
 ```
 If Axis 3 specifically ⚪: `⚠ Axis 3 (contributor health, wt 14%) unavailable — rerun in 5–10 min for full score`.
+
+**Post-table validation (mandatory)**: after printing the scorecard, verify: (a) exactly 9 data rows appear with axis numbers 1–9, (b) no axis number repeated. Any duplicate or omission = immediately reprint the corrected full table before any other output. Never omit an axis row — even when data missing, show `--` in Score/Status.
 
 Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close with `---` on own line. Do not print full analysis to terminal. Full Conf/Weight columns and per-axis detail in report file only.
 

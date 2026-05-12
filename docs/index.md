@@ -4,7 +4,9 @@ description: Five Claude Code plugins — foundry, oss, develop, research, codem
 
 # 🤖 Borda's AI-Rig
 
-> Five plugins that turn Claude Code into a disciplined development partner
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)\] [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-orange)](https://claude.ai/code) [![Codex CLI](https://img.shields.io/badge/Codex_CLI-config-green)](https://github.com/openai/codex)
+
+> **14 specialist agents · 20+ slash-command workflows · 5 domain plugins**
 
 Claude Code is a capable generalist. Serious Python and ML OSS work needs something more: an agent that enforces your SemVer, benchmarks its own accuracy drift, validates a feature with a demo test before writing production code, and reviews a PR through six specialist lenses in one command. This suite exists because that gap is real, and the usual workarounds — copy-pasted prompts, ad-hoc checklists, hoping the model remembers your conventions — do not scale.
 
@@ -20,11 +22,20 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
+## ⚡ What stands out
+
+- **Specialist depth**: Each dimension of quality (architecture, tests, perf, docs, lint, security) has a dedicated agent with a narrow charter — not a generalist asked to check everything.
+- **Structural gates**: Workflows refuse to proceed without proof — no demo test, no feature; no regression test, no bug fix. The gate is in the workflow, not in your discipline.
+- **Self-improvement**: benchmarks agent accuracy over time. converts the week's corrections into updated agent instructions automatically.
+- **Cross-validator**: Codex provides an independent second pass with no shared context with Claude — the union of both catches more than either alone.
+
+______________________________________________________________________
+
 ## 🔌 The five plugins
 
 ### 🏭 foundry — base infrastructure
 
-foundry is the foundation the other plugins build on. It packages eight non-overlapping specialist agents — software engineer, QA specialist, performance optimizer, solution architect, doc scribe, linting expert, web explorer, and self mentor — along with the lifecycle tools that keep them reliable over time. Without foundry, every other plugin falls back to a generic agent with a role-description prompt. With it, every dispatch lands on a calibrated specialist.
+foundry is the foundation the other plugins build on. It packages ten non-overlapping specialist agents — software engineer, QA specialist, performance optimizer, solution architect, doc scribe, linting expert, web explorer, curator, challenger, and creator — along with the lifecycle tools that keep them reliable over time. Without foundry, every other plugin falls back to a generic agent with a role-description prompt. With it, every dispatch lands on a calibrated specialist.
 
 **Best for:**
 
@@ -195,7 +206,7 @@ ______________________________________________________________________
 
 ??? question "How do I know if my agent configuration has drifted?"
 
-    Run `/foundry:audit` — it runs 29 checks across hooks, settings, agent routing, and rule files. Zero critical findings means the configuration is healthy. Run it weekly or after any Claude Code update.
+    Run `/foundry:audit` — it runs 30 checks across hooks, settings, agent routing, and rule files. Zero critical findings means the configuration is healthy. Run it weekly or after any Claude Code update.
 
 ______________________________________________________________________
 

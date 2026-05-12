@@ -7,6 +7,7 @@ Configuration for [Claude Code](https://claude.ai/code) (Anthropic's AI coding C
 <details>
 <summary><strong>Contents</strong></summary>
 
+- [⚡ What this setup enables](#-what-this-setup-enables)
 - [♻️ Restore This Setup](#%EF%B8%8F-restore-this-setup)
 - [🔄 Distribution](#-distribution)
 - [📦 Plugin Architecture](#-plugin-architecture)
@@ -36,6 +37,15 @@ Configuration for [Claude Code](https://claude.ai/code) (Anthropic's AI coding C
 
 </details>
 
+## ⚡ What this setup enables
+
+Things that are not possible with vanilla Claude Code:
+
+- **Parallel multi-specialist PR review with convergence callouts.** `/oss:review` fans six specialist agents — architecture, tests, perf, docs, lint, security — plus an independent Codex pre-pass, all running simultaneously. The consolidator flags every finding that two or more reviewers independently raised. You see both per-dimension analysis and the overlap, in one report.
+- **Feature development that cannot skip the demo test.** `/develop:feature` requires a failing demo test to exist and pass review before a single line of production code is written. The gate is structural — the workflow does not proceed to implementation without it.
+- **Metric-driven experiment loops that auto-rollback on regression.** `/research:run` proposes a change, applies it, measures the target metric, and automatically reverts if the metric regresses — then tries the next hypothesis. The loop runs unattended; you set the goal and the guard, and review the committed result.
+- **Agent calibration benchmarks that measure overconfidence and fix it.** `/foundry:calibrate` generates synthetic problems, scores each agent's responses against ground truth, and computes the gap between stated confidence and actual recall. Agents that are systematically overconfident get concrete fix proposals — applied automatically with `--apply`.
+
 ## ♻️ Restore This Setup
 
 `.claude/` is entirely restored from the installed plugins — there is nothing to manually copy or edit. After a fresh clone or machine setup:
@@ -48,6 +58,7 @@ claude plugin install foundry@borda-ai-rig
 claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
+claude plugin install codemap@borda-ai-rig
 ```
 
 **Step 2** — run inside Claude Code:
@@ -187,8 +198,9 @@ Key relationships:
 - `web-explorer` feeds `scientist` — fetches current docs/papers; scientist interprets and designs experiments
 - `challenger` is **pre-implementation** — adversarially reviews plans and proposals before implementation starts; use before `sw-engineer`
 - `shepherd` is the external interface — PR replies, releases, contributor communication; no code implementation
+- `gh-scraper` → `repo-warden` (3× parallel) — internal pipeline for `/oss:analyse` vitality; `gh-scraper` fetches raw GitHub data, three `repo-warden` instances score axis groups A/B/C in parallel; neither is called directly
 
-**Model tiering**: reasoning agents (`sw-engineer`, `qa-specialist`, `perf-optimizer`, `scientist`) default to `opus`; plan-gated agents (`solution-architect`, `shepherd`, `curator`, `challenger`) use `opusplan` (plan-gated Opus — pays for reasoning only when the task warrants it); execution agents (`doc-scribe`, `linting-expert`, `cicd-steward`, `data-steward`, `web-explorer`) default to `sonnet`.
+**Model tiering**: reasoning agents (`sw-engineer`, `qa-specialist`, `perf-optimizer`, `scientist`) default to `opus`; plan-gated agents (`solution-architect`, `shepherd`, `curator`, `challenger`) use `opusplan` (plan-gated Opus — pays for reasoning only when the task warrants it); execution agents (`doc-scribe`, `linting-expert`, `cicd-steward`, `data-steward`, `web-explorer`, `gh-scraper`, `repo-warden`) default to `sonnet`.
 
 ## ⚡ Skills
 

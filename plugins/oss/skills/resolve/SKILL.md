@@ -354,7 +354,34 @@ Report merged: <N> findings from /review · <M> deduplicated against GitHub comm
 
 Read and execute `$_OSS_RESOLVE/modes/challenge-dispatch.md`.
 
-## Step 3e: Create per-item tasks
+## Step 3e: User item selection
+
+! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text.
+
+Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero pending → set `SELECTED_ITEMS` = all pending IDs, skip to Step 3f.
+
+Sort: `[req]` first, then `[suggest]`. Constraint: max 4 options/question, max 4 questions/call (3 item-group + 1 bulk-action).
+
+**≤12 pending items**: split into groups of ≤4, one `multiSelect: true` question per group. Labels: `<type> #<id>: <summary>` (≤55 chars); description: `<file:line> · @<author>`. Last question (single-select): "Or choose a bulk action:" — "Apply selected" / "Apply all [req]" / "Apply all" / "Skip all".
+
+**13–19 pending items**: two calls — call 1: `[req]` groups + bulk-action; call 2: `[suggest]` groups + bulk-action; merge selections.
+
+**≥20 pending items — context-budget mode**: skip per-item multiSelect; print compressed table (type · id · summary ≤40 chars · file) then single bulk-action call only:
+
+```text
+AskUserQuestion: "N pending items (X [req], Y [suggest]). Choose bulk action:"
+Options: (a) Apply all [req] (X items) · (b) Apply all (N items) · (c) Skip all
+```
+
+If per-item control needed: advise re-run after reducing source (e.g. use `report` mode instead of `pr + report`, or `--no-challenge` to cut upstream findings).
+
+Resolve `SELECTED_ITEMS`:
+- "Skip all" or no selections → `[]` → skip Steps 4–8, jump to Step 9
+- "Apply all [req]" → all `[req]` IDs
+- "Apply all" → all pending IDs
+- "Apply selected" → checked IDs from item questions
+
+## Step 3f: Create tasks for selected items
 
 Mark Step 2 task `completed`:
 
@@ -362,7 +389,7 @@ Mark Step 2 task `completed`:
 TaskUpdate(task_id=<step2_task_id>, status="completed")
 ```
 
-For each item in `ACTION_ITEMS` (skip `[done]`/`[info]`):
+Create tasks **only for `SELECTED_ITEMS`** — not all pending items; avoids context bloat when 20+ action items exist but only a subset is actioned:
 
 ```text
 TaskCreate(
@@ -372,27 +399,7 @@ TaskCreate(
 )
 ```
 
-Store returned task ID in each `ACTION_ITEMS` entry as `task_id`.
-
-## Step 3f: User item selection
-
-! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text.
-
-Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero pending → set `SELECTED_ITEMS` = all pending IDs, skip to Step 4.
-
-Sort: `[req]` first, then `[suggest]`. Constraint: max 4 options/question, max 4 questions/call (3 item-group + 1 bulk-action).
-
-Split items into groups of ≤4, one `multiSelect: true` question per group. Labels: `<type> #<id>: <summary>` (≤55 chars); description: `<file:line> · @<author>`.
-
-Last question (single-select, always): "Or choose a bulk action:" — "Apply selected" / "Apply all [req]" / "Apply all" / "Skip all".
-
->12 pending items: two calls — call 1: `[req]` groups + bulk-action; call 2: `[suggest]` groups + bulk-action; merge selections.
-
-Resolve `SELECTED_ITEMS`:
-- "Skip all" or no selections → `[]` → skip Steps 4–8, jump to Step 9
-- "Apply all [req]" → all `[req]` IDs
-- "Apply all" → all pending IDs
-- "Apply selected" → checked IDs from item questions
+Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`.
 
 ## Step 4: Checkout PR branch
 
@@ -453,7 +460,9 @@ trap 'rm -f "$SENTINEL"' EXIT INT TERM  # ensure cleanup even if workflow crashe
 
 Process items in `SELECTED_ITEMS` (from Step 3f) in priority order (`[req]` first, then `[suggest]`). **Each item gets own commit.**
 
-Per action item:
+**≥10 selected items — batched Codex dispatch**: group items by file affinity (items touching the same file → one batch; max 3 per batch; unrelated items → solo batch). Per batch: single Codex dispatch listing all items; one `git add` + one commit referencing all batch item IDs. Print compact progress `[N/total] batch #<ids> — <files>` instead of per-item verbose diff output. Skip per-item stash/unstash — perform one clean-state check per batch instead.
+
+Per action item (or per batch when batching):
 
 ```bash
 # Ensure clean state before each item — substitute <id> with item.id

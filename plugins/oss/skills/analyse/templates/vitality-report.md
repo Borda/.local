@@ -38,16 +38,16 @@ agents:
 
 | Axis | Weight | Score | Status | Conf | Key Signal |
 |------|--------|-------|--------|------|------------|
-| 1 Responsiveness | 18% | N.N | 🟢/🟡/🔴 | 0.00 | median issue Xd, PR Xd; X% ≤7d |
-| 2 Maintenance activity | 20% | N.N | 🟢/🟡/🔴 | 0.00 | last commit Xd, X commits/30d |
-| 3 Contributor health | 15% | N.N | 🟢/🟡/🔴 | 0.00 | bus factor N, retention X% |
-| 4 Issue & PR health | 12% | N.N | 🟢/🟡/🔴 | 0.00 | stale X%, close rate X, review cov X% |
-| 5 CI/CD & code quality | 10% | N.N | 🟢/🟡/🔴 | 0.00 | N/5 checks, CI pass rate X% |
-| 6 Documentation | 8% | N.N | 🟢/🟡/🔴 | 0.00 | N/9 checkpoints |
-| 7 Governance | 10% | N.N | 🟢/🟡/🔴 | 0.00 | N/7 files, active maintainers X/Y |
-| 8 Security posture | 7% | N.N | 🟢/🟡/🔴 | 0.00 | dep-config: yes/no, alerts: N or "403" |
-| 9 Trajectory | 8% | N.N | 🟢/🟡/🔴 | 0.00 | pool drift: ±N%, TTM 30d: Xd vs 90d: Yd, P90 queue: Zd, dep-bump: X% |
-| **Total Score** | 100% | **XX%** | | | |
+| 1 Responsiveness | {WEIGHT_1}% | N.N | 🟢/🟡/🔴 | 0.00 | median issue Xd, PR Xd; X% ≤7d |
+| 2 Maintenance activity | {WEIGHT_2}% | N.N | 🟢/🟡/🔴 | 0.00 | last commit Xd, X commits/30d |
+| 3 Contributor health | {WEIGHT_3}% | N.N | 🟢/🟡/🔴 | 0.00 | bus factor N, retention X% |
+| 4 Issue & PR health | {WEIGHT_4}% | N.N | 🟢/🟡/🔴 | 0.00 | stale X%, close rate X, review cov X% |
+| 5 CI/CD & code quality | {WEIGHT_5}% | N.N | 🟢/🟡/🔴 | 0.00 | N/5 checks, CI pass rate X% |
+| 6 Documentation | {WEIGHT_6}% | N.N | 🟢/🟡/🔴 | 0.00 | N/9 checkpoints |
+| 7 Governance | {WEIGHT_7}% | N.N | 🟢/🟡/🔴 | 0.00 | N/7 files, active maintainers X/Y |
+| 8 Security posture | {WEIGHT_8}% | N.N | 🟢/🟡/🔴 | 0.00 | dep-config: yes/no, alerts: N or "403" |
+| 9 Trajectory | {WEIGHT_9}% | N.N | 🟢/🟡/🔴 | 0.00 | pool drift: ±N%, TTM 30d: Xd vs 90d: Yd, P90 queue: Zd, dep-bump: X% |
+| **Total Score** | 100% | **XX%** | 🟢/🟡/🔴 | — | — |
 
 _(Conf: per-axis confidence 0.00–1.00; ⚠ = below 0.9. ⚪ axes excluded from score; weight renormalized.)_
 
