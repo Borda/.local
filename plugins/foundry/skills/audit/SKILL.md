@@ -675,7 +675,7 @@ After completing `--upgrade` or `--adversarial`: also fire this gate (omit optio
 
 <notes>
 
-- **`!` Breaking findings**: when skill or agent completely non-functional (check #7, broken cross-refs, invalid hook events), prefix finding with `!` and state impact + fix in one place — don't bury in table row. Surfaces as **`! BREAKING`** in bash output and as prominent callout in final report.
+- **`!` Breaking findings**: when skill or agent completely non-functional (check #7, broken cross-refs, invalid hook events), prefix finding with `!` and state impact + fix in one place — don't bury in table row. Surfaces as **`! BREAKING`** in bash output and as prominent callout in final report. **`! BREAKING` findings require user acknowledgment before audit proceeds past that check**: call `AskUserQuestion` — state what is broken and impact; user must explicitly confirm awareness before continuing. One question per distinct breaking finding; group only when logically one atomic issue. Prose acknowledgment in response body does NOT count — `AskUserQuestion` mandatory.
 - **Terminal color conventions** (used in Step 4 bash output):
   - `RED` (`\033[1;31m`) — breaking/critical: `! BREAKING`, `ERROR`
   - `YELLOW` (`\033[1;33m`) — warnings/medium: `⚠ MISSING`, `⚠ ORPHANED`, `⚠ DIFFERS`

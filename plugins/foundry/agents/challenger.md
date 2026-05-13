@@ -1,6 +1,9 @@
 ---
 name: challenger
-description: 'Adversarial review agent — read-only. Drills to bedrock: challenges plans, code reviews, and architectural decisions across 6 dimensions, treats every claim as unproven until evidence, keeps asking ''why?'' until root cause found. Applies refutation step to stay objective. Use before committing to any significant plan or before merging non-trivial architectural changes. NOT for designing plans or ADRs (use foundry:solution-architect), NOT for test writing or test coverage review (use foundry:qa-specialist), NOT for config file review (use foundry:curator).'
+description: |
+  Adversarial review agent — read-only. Drills to bedrock: challenges plans, code reviews, and architectural decisions across 6 dimensions, treats every claim as unproven until evidence, keeps asking 'why?' until root cause found. Applies refutation step to stay objective. Use before committing to any significant plan or before merging non-trivial architectural changes. NOT for designing plans or ADRs (use foundry:solution-architect), NOT for test writing or test coverage review (use foundry:qa-specialist), NOT for config file review (use foundry:curator).
+  TRIGGER when: user asks to challenge, stress-test, or critique a design, architecture, or plan; phrases: "challenge this", "what are the weaknesses", "devil's advocate", "poke holes in", "what could go wrong with", "second opinion on".
+  SKIP: user asking for improvements or implementation (use foundry:sw-engineer); already inside an active challenger context (no recursive dispatch); security review (use foundry:qa-specialist).
 tools: Read, Grep, Glob, Bash
 disallowedTools: Edit, Write
 model: opus

@@ -1,6 +1,9 @@
 ---
 name: session
-description: Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest
+description: |
+  Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest
+  TRIGGER when: user asks "what was I working on", "any pending items", "what's in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context.
+  SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only).
 argument-hint: 'resume | archive <text> | summary'
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 effort: low

@@ -1,6 +1,9 @@
 ---
 name: curator
-description: 'Claude Code configuration quality reviewer and improvement coach. Scope: Claude config markdown files only — agents, skills, rules (*.md). Use after editing any agent or skill file to audit verbosity, duplication, cross-reference integrity, structural consistency, content freshness, and agent-roster overlap. Reviews whether roles are still distinct enough to keep, should gain sharper boundaries, or should be merged/pruned. Returns a prioritized improvement report with file-level and roster-level recommendations. Runs on opusplan for best reasoning quality. NOT for hook files (*.js) — those belong to foundry:sw-engineer. NOT for architectural specifications, ADRs, or migration plan review — use foundry:solution-architect.'
+description: |
+  Claude Code configuration quality reviewer and improvement coach. Scope: Claude config markdown files only — agents, skills, rules (*.md). Use after editing any agent or skill file to audit verbosity, duplication, cross-reference integrity, structural consistency, content freshness, and agent-roster overlap. Reviews whether roles are still distinct enough to keep, should gain sharper boundaries, or should be merged/pruned. Returns a prioritized improvement report with file-level and roster-level recommendations. Runs on opusplan for best reasoning quality. NOT for hook files (*.js) — those belong to foundry:sw-engineer. NOT for architectural specifications, ADRs, or migration plan review — use foundry:solution-architect.
+  TRIGGER when: user explicitly asks to review, audit, or health-check a specific agent or skill config file by path; phrases: "audit this agent", "check this skill file", "is this config valid", "review .claude/agents/X".
+  SKIP: general code review; non-agent/skill markdown files; user asking about behavior not config structure; broad "review my agents" without a specific file path.
 tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, TaskCreate, TaskUpdate
 model: opusplan
 effort: xhigh

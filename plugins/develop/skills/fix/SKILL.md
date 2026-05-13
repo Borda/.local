@@ -252,6 +252,8 @@ If issue found: revise regression test before applying fix. Flawed reproduction 
 
 ## Step 3: Apply the fix
 
+**Breaking change gate**: before applying fix, assess whether fix introduces a breaking change (per `semver-rules.md` definition: worked before → fails/behaves differently now → no prior warning/shim). If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
+
 Make minimal change to fix root cause:
 
 1. Edit only code necessary to resolve bug

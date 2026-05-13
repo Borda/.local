@@ -1,11 +1,27 @@
 # SemVer Rules — Python/OSS
 
-## MAJOR (X.0.0) — breaking changes
+## What counts as a breaking change
 
-- Remove public function, class, or argument
+**Breaking change** = public-facing behavior worked before → fails or behaves differently now → without prior warning, deprecation notice, argument forwarding shim, or migration path offered in an earlier release.
+
+Corollary: API deprecated in a prior release (with warning + forwarding shim) and now removed = **❌ Removed**, not a breaking change. A breaking change is always a surprise; a removal after proper deprecation is not.
+
+## Breaking Change Escalation Protocol
+
+Every detected breaking change = **stop, call `AskUserQuestion`, confirm intent before proceeding**.
+
+- State: what worked before, what will break, why change needed
+- User must explicitly confirm "yes, intentional" — prose question in response body does NOT count (see `communication.md`)
+- Never batch-approve multiple breaking changes in one question unless they are logically one atomic change
+- Never proceed past breaking change silently even if reason seems obvious
+- Rule applies to all agents/skills reading this file: shepherd (PR review, release prep), plan (risk identification), fix (applying fix), audit (flagging `! BREAKING` findings)
+
+## MAJOR (X.0.0) — breaking changes (surprise incompatibilities)
+
+- Remove public function, class, or argument with no prior deprecation cycle
 - Change function return type incompatibly
 - Change argument order or required vs optional status
-- Change behavior users depend on (even if "was a bug")
+- Change behavior users depend on (even if "was a bug") without prior deprecation notice
 - Drop Python version from supported range
 
 ## MINOR (x.Y.0) — backwards-compatible additions

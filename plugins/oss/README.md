@@ -134,6 +134,8 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 
 **Purpose:** Give you a structured, actionable summary of any GitHub thread or a broad view of your repo's open work. Saves you from reading every comment yourself.
 
+**Auto-invokes when:** user provides a GitHub issue/PR number (`#N`) or `github.com` URL and asks to analyze, summarize, or triage it; user asks "is this repo healthy" or for vitality stats.
+
 **Invocation:**
 
 ```text

@@ -30,13 +30,17 @@ Generate `<N>` synthetic task prompts across all agents. Per problem, produce JS
 - `expected_agent`: correct `subagent_type` from roster (or `"general-purpose"` if no specialist needed)
 - `difficulty`: `"easy"` (single-domain, obvious match), `"medium"` (2 domains, one primary), `"hard"` (ambiguous, requires NOT-for clauses or fine distinctions)
 - `confusion_pair`: most likely wrong agent for medium/hard; `null` for easy
+- `auto_invoke_test`: `true` if problem tests TRIGGER or SKIP-guard coverage; `false` otherwise
 
 Rules:
 
 - Cover every agent ≥1 in `expected_agent` (distribute evenly given N)
-- Include ≥2 hard problems testing high-overlap pairs: e.g., sw-engineer vs qa-specialist, doc-scribe vs oss:shepherd, linting-expert vs sw-engineer, solution-architect vs sw-engineer
+- Include ≥2 hard problems testing high-overlap pairs: e.g., sw-engineer vs qa-specialist, doc-scribe vs oss:shepherd, linting-expert vs sw-engineer, solution-architect vs sw-engineer, web-explorer vs sw-engineer (look up docs to implement vs implement directly), challenger vs sw-engineer (critique plan vs implement), oss:analyse vs oss:review (analyze thread vs code review)
 - Include exactly 1 `expected_agent: "general-purpose"` problem (general question, no specialist)
 - Difficulty distribution: ~40% easy, ~40% medium, ~20% hard (adjust to cover all agents)
+- **Auto-invocation coverage**: include ≥3 problems where `task_prompt` uses exact TRIGGER phrasing for an agent with a TRIGGER block (e.g. "what does the requests docs say about retries", "write tests for the auth module", "add docstrings to utils.py") — these are easy/medium; the TRIGGER phrase is the signal
+- **SKIP-guard coverage**: include ≥2 problems where `task_prompt` superficially resembles a TRIGGER but a SKIP guard applies — `expected_agent` must be `"general-purpose"` or a different specialist, NOT the TRIGGER agent; add field `"skip_guard_test": true` to these problems
+- Add boolean field `"auto_invoke_test": true` to problems covering TRIGGER/SKIP scenarios
 - Return valid JSON array only (no prose)
 
 Write JSON array to `.reports/calibrate/<TIMESTAMP>/routing/problems.json`.
@@ -85,6 +89,7 @@ Compute aggregates:
 - `routing_accuracy` = correct_count / total_count
 - `confusion_rate` = confusion_error_count / total_count
 - `hard_accuracy` = correct hard / total hard (omit if no hard problems)
+- `auto_invoke_accuracy` = correct on `auto_invoke_test: true` problems / total `auto_invoke_test: true` problems (omit if no such problems)
 - Confusion list: per incorrect selection, record `(expected → selected, task_prompt, reasoning)`
 
 Verdict:
@@ -109,6 +114,7 @@ Write full report to `.reports/calibrate/<TIMESTAMP>/routing/report.md`:
 | Routing accuracy | X/N (XX%) | ≥90% ✓ / 80–90% ~ / <80% ⚠ |
 | Hard accuracy    | X/N (XX%) | ≥80% ✓ / <80% ⚠ |
 | Confusion errors | N         | 0 ✓ / >0 list pairs |
+| Auto-invoke accuracy | X/N (XX%) | ≥90% ✓ / <90% ⚠ (auto_invoke_test problems only) |
 
 ### Confused Pairs
 | Task Prompt | Expected → Selected | Reasoning |
@@ -126,10 +132,10 @@ minimal effective fix.
 
 Write result JSONL to `.reports/calibrate/<TIMESTAMP>/routing/result.jsonl`:
 
-`{"ts":"<TIMESTAMP>","target":"routing","mode":"<MODE>","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement","confused_pairs":["expected→selected",...]}`
+`{"ts":"<TIMESTAMP>","target":"routing","mode":"<MODE>","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"auto_invoke_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement","confused_pairs":["expected→selected",...]}`
 
 ### Return value
 
 Return **only** compact JSON (no prose):
 
-`{"target":"routing","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement","confused_pairs":["expected→selected",...]}`
+`{"target":"routing","routing_accuracy":0.N,"confusion_rate":0.N,"hard_accuracy":0.N,"auto_invoke_accuracy":0.N,"problems":<N>,"verdict":"calibrated|borderline|needs-improvement","confused_pairs":["expected→selected",...]}`

@@ -324,6 +324,8 @@ ______________________________________________________________________
 
 **Trigger**: `/codemap:query <subcommand> [args]`
 
+**Auto-invokes when:** user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "blast radius of". Requires codemap index to exist (skill self-checks and no-ops gracefully if absent).
+
 Queries the index. Every query checks staleness automatically — if Python files were committed after the index was built, you'll see a warning on stderr and a suggestion to re-scan. Results are still returned so the agent can decide whether to proceed or refresh first.
 
 #### Module-level queries

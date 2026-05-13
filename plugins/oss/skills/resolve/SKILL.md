@@ -306,7 +306,6 @@ Print Sources block (same format as Step 3a template; Mode=pr · PR=#<N> · GitH
 Print action item table — **MUST render as markdown table; never use key-value list, prose, or separator-delimited format regardless of cell length**. Mandatory per-cell truncation (truncate with `…`, never wrap or split):
 
 - **Summary**: ≤60 chars — truncate at word boundary, append `…`
-- **Comment**: markdown link `[↗](<html_url>)` from GitHub API `html_url` field; `—` when absent (report items or no inline URL)
 - **Notes**: ≤45 chars — truncate; full text preserved in `full_comment_text`; use `—` when empty
 
 Status codes: `pending` · `✓ resolved` · `⊘ skipped` · `⊘ no action`. Verbose reason → Notes column:
@@ -314,11 +313,11 @@ Status codes: `pending` · `✓ resolved` · `⊘ skipped` · `⊘ no action`. V
 ```markdown
 ### Action Items — PR #<number>
 
-| # | Type | Author | Status | Summary | Comment | Notes |
-|---|------|--------|--------|---------|---------|-------|
-| 1 | [gh][req] | @reviewer | pending | rename param `x` to `count` | [↗](https://github.com/owner/repo/pull/42#discussion_r123) | — |
-| 2 | [gh][suggest] | @maintainer | pending | add docstring | [↗](https://github.com/owner/repo/pull/42#issuecomment-456) | — |
-| 3 | [gh][question] | @reviewer | pending | why not use X instead? | — | — |
+| # | Type | Author | Status | Summary | Notes |
+|---|------|--------|--------|---------|-------|
+| 1 | [gh][req] | @reviewer | pending | rename param `x` to `count` | — |
+| 2 | [gh][suggest] | @maintainer | pending | add docstring | — |
+| 3 | [gh][question] | @reviewer | pending | why not use X instead? | — |
 ```
 
 Long content never justifies switching to key-value or separator-delimited format — truncate, stay in table.

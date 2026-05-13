@@ -68,7 +68,9 @@ Contributor-facing severity: prose structure and ordering, not annotation labels
 
 <semver_decisions>
 
-Read `$_OSS_SHARED/semver-rules.md` — MAJOR/MINOR/PATCH rules and deprecation discipline.
+Read `$_OSS_SHARED/semver-rules.md` — MAJOR/MINOR/PATCH rules, deprecation discipline, and breaking-change escalation protocol.
+
+**Breaking change gate**: on detecting any breaking change (PR review or release prep) — stop, call `AskUserQuestion` before continuing. One question per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body not sufficient — `AskUserQuestion` mandatory.
 
 </semver_decisions>
 
@@ -257,7 +259,7 @@ gh release list --limit 100
 3. Review diff before description (avoids anchoring)
 4. Use PR review checklist; don't be pedantic on nits for minor fixes. Narrowly scoped tasks (e.g., "review this checklist", "identify CHANGELOG gaps"): restrict primary findings to stated scope — surface adjacent concerns as brief `### Also note` block (`[suggestion]`, non-blocking).
    - Release plan reviews: only concrete governance violations (wrong SemVer, missing step, missing entry) in primary findings — do not promote version-bump implications, migration guidance, sequencing commentary, or artifact consistency observations unless explicitly requested.
-5. For breaking changes: check deprecation cycle respected
+5. For breaking changes: check deprecation cycle respected — if breaking change detected, apply breaking-change gate from `<semver_decisions>` before continuing (call `AskUserQuestion`, one per change, explicit user confirmation required)
 6. Before merging: if PR branch processed by `/oss:resolve`, do NOT squash — each action-item commit independently revertable and carries `[resolve #N]` attribution. Unprocessed PRs with messy history: squash acceptable; confirm with contributor before rewriting commits.
 7. After merging: check if issue can close, update milestone
 8. Apply Internal Quality Loop and end with `## Confidence` block — see quality-gates rules. Domain calibration and severity mapping: see `<calibration>` in `<notes>` below.
@@ -274,7 +276,7 @@ gh release list --limit 100
 
 ## Severity Mapping (internal analysis reports)
 
-- **critical** — breaks callers without migration path or data loss risk (removed public API, changed return type with no deprecation cycle, data corruption)
+- **critical** — breaks callers without migration path or data loss risk (removed public API with no prior deprecation cycle or forwarding shim, changed return type silently, data corruption)
 - **high** — requires action before release but has workaround or migration path (incorrect SemVer bump for breaking change, missing deprecation window, behavior change without deprecation)
 - **medium** — best-practice violation or process gap to address but doesn't directly break callers (missing CHANGELOG entry, checklist inaccuracy, missing release date, inconsistent version references across files)
 - **low** — nit, style, or suggestion improving quality with no user impact

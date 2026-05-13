@@ -329,6 +329,8 @@ Workflow: parse symptom -> gather signals in parallel (tool versions, PATH, rece
 
 Output always includes: confirmed root cause (or narrowed suspects), key evidence, what was ruled out, and a single recommended next action.
 
+**Auto-invokes when (MAYBE):** unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, behavior inconsistent with config; "not working but config looks right", "hook not triggering", "why isn't X running".
+
 ______________________________________________________________________
 
 ### `/foundry:distill`
@@ -364,6 +366,8 @@ Parking lot for open-loop ideas and unanswered questions that arise mid-session.
 /foundry:session archive <text>   # fuzzy-match and close a parked item
 /foundry:session summary          # session digest: completed tasks, parked items, recent commits
 ```
+
+**Auto-invokes when:** user asks "what was I working on", "any pending items", "remind me where we left off", "what did we defer" — resume mode only.
 
 Items are stored in project-scoped memory (`~/.claude/projects/<slug>/memory/session-open-*.md`). Items older than 14 days are marked stale; items older than 30 days are deleted silently on `resume`.
 
@@ -411,6 +415,8 @@ All ten agents are available by their full plugin-prefixed name. In spawn direct
 
 **Not for**: docstrings (use `foundry:doc-scribe`), configuring ruff/mypy (use `foundry:linting-expert`), system design decisions (use `foundry:solution-architect`), test quality analysis (use `foundry:qa-specialist`), performance profiling (use `foundry:perf-optimizer`), ML paper implementations (use `research:scientist`), editing `.claude/` config files (use `foundry:curator`).
 
+**Auto-invokes when:** user asks to implement, build, write, modify, or fix code across 3+ files; phrases: "implement", "build", "write the code for", "add feature", "fix this bug". Runs in isolated worktree.
+
 Runs in an isolated worktree by default to keep changes sandboxed until review.
 
 ______________________________________________________________________
@@ -424,6 +430,8 @@ ______________________________________________________________________
 **Model**: `opusplan` (plan-gated Opus)
 
 **Not for**: writing implementation code (use `foundry:sw-engineer`), release management (use `oss:shepherd`), performance profiling or DataLoader throughput tuning (use `foundry:perf-optimizer`).
+
+**Auto-invokes when (MAYBE):** user asks about architecture involving 3+ components; "how should I structure this", "ADR for", "migration plan for". Not triggered for simple design questions.
 
 Produces documentation — ADRs, interface contracts, migration plans, component diagrams — not production code. Hands off to `foundry:sw-engineer` for execution.
 
@@ -439,6 +447,8 @@ ______________________________________________________________________
 
 **Not for**: linting, type checking, or annotation fixes (use `foundry:linting-expert`), production implementation (use `foundry:sw-engineer`), slow test suite profiling or optimizing test execution speed (use `foundry:perf-optimizer`), testing private/internal methods or mocking internals.
 
+**Auto-invokes when:** user asks to write tests, assess coverage, or define test strategy; "write tests for", "add unit tests", "test coverage for".
+
 Writes deterministic, parametrized, behavior-focused tests. Systematic progression: happy path → edge cases → error cases → boundary values → adversarial inputs. Applies a public-API coverage checklist before marking done.
 
 ______________________________________________________________________
@@ -452,6 +462,8 @@ ______________________________________________________________________
 **Model**: `haiku` (high-frequency, lightweight diagnostics)
 
 **Not for**: CI pipeline structure or runner strategy (use `oss:cicd-steward`), writing test logic (use `foundry:qa-specialist`), implementation fixes beyond annotation/style (use `foundry:sw-engineer`), inline docstrings or API reference writing (use `foundry:doc-scribe`).
+
+**Auto-invokes when:** after code edits when user asks "is this clean", "any lint issues", "check formatting", "check types"; linting or type errors visible in output.
 
 Always downstream of `foundry:sw-engineer` — never lints code that has not yet been implemented.
 
@@ -481,6 +493,8 @@ ______________________________________________________________________
 
 **Not for**: CHANGELOG entries or release notes (use `oss:shepherd` for lifecycle/format decisions, `/oss:release` for automated generation), linting code examples (use `foundry:linting-expert`), implementation code (use `foundry:sw-engineer`), outward-facing narrative artifacts like blog posts, talk slides, or social threads (use `foundry:creator`).
 
+**Auto-invokes when:** user asks for documentation; "write docs for", "add docstrings to", "update the README", "document this function".
+
 Always downstream — documents finalized code, never shapes design. After `foundry:doc-scribe` produces content, follow with `foundry:linting-expert` to sanitize code examples in the output.
 
 ______________________________________________________________________
@@ -495,6 +509,8 @@ ______________________________________________________________________
 
 **Not for**: code analysis or implementation (use `foundry:sw-engineer`), ML paper analysis (use `research:scientist`), writing docstrings (use `foundry:doc-scribe`), dependency upgrade lifecycle decisions (use `oss:shepherd`).
 
+**Auto-invokes when:** user asks about library docs, external API, or URL content; "what does X docs say", "look up", "find the docs for", "latest version of"; user pastes URL and asks a question about it.
+
 Feeds `research:scientist` — fetches current docs and papers; scientist interprets.
 
 ______________________________________________________________________
@@ -508,6 +524,8 @@ ______________________________________________________________________
 **Model**: `opusplan`
 
 **Not for**: hook files (`*.js`) — those belong to `foundry:sw-engineer`. Not for creating or scaffolding new agents or skills (use `/foundry:manage create`). Not for routing new tasks to other agents.
+
+**Auto-invokes when (MAYBE):** user explicitly references a specific agent or skill config file by path; "audit this agent", "check this skill file", "is this config valid". Narrow trigger — see description.
 
 You will generally not invoke this agent directly. `/foundry:audit` spawns it in batches across all config files; `/foundry:manage` delegates content generation and editing to it.
 
@@ -524,6 +542,8 @@ When `codex@openai-codex` plugin is installed, challenger automatically launches
 **Model**: `opus`
 
 **Not for**: designing plans or ADRs (use `foundry:solution-architect`), writing tests or test coverage review (use `foundry:qa-specialist`), config file quality review (use `foundry:curator`).
+
+**Auto-invokes when:** user asks to challenge, stress-test, or critique a design or plan; "challenge this", "what are the weaknesses", "devil's advocate", "poke holes in", "second opinion on".
 
 Read-only — never writes or edits files. Runs by default in all `/develop:*` skills and `/oss:review` — skip with `--no-challenge`.
 
