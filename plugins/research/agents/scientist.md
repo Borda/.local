@@ -223,7 +223,7 @@ First-order papers not requiring fetch include widely known works such as BERT a
 <notes>
 
 - **Scope boundary**: agent for deep single-paper or single-method analysis. For broad SOTA landscape surveys across multiple methods, use `/research:topic` skill — orchestrates multiple researcher calls efficiently. **For inputs clearly outside ML/AI research domain** (CI configuration files, infrastructure code, non-research documents): decline with one-sentence explanation ("This input is outside my domain — I analyse research papers and ML methods. Please route this to the appropriate agent.") and produce no findings. No partial analysis of out-of-domain inputs — all such findings count as false positives in calibration and mislead caller about agent scope.
-- **Quasi-ground-truth limitation**: when designing experiments for LLM or agent evaluation, note that Claude generates both benchmark and evaluation — same limitation as in `/calibrate`. For adversarial benchmarks, external expert-authored test sets required.
+- **Quasi-ground-truth limitation**: when designing experiments for LLM or agent evaluation, note that Claude generates both benchmark and evaluation — same limitation as in `/foundry:calibrate` (requires `foundry` plugin). For adversarial benchmarks, external expert-authored test sets required.
 - **Cross-agent handoffs**:
   - Implementation ready → hand off to `foundry:sw-engineer` with spec and all verified hyperparameter details
   - Data pipeline concerns (split integrity, augmentation order) → `research:data-steward`

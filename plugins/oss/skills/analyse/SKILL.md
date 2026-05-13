@@ -2,7 +2,7 @@
 name: analyse
 description: Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd. NOT for PR readiness assessment or code review (use oss:review).
 argument-hint: '<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]'
-allowed-tools: Read, Bash, Write, Agent, AskUserQuestion
+allowed-tools: Read, Bash, Write, Agent
 context: fork
 model: opus
 effort: high
@@ -43,12 +43,12 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ## Agent Resolution
 
-```bash
-# Locate oss plugin shared dir — installed first, local workspace fallback
-# sort -V orders semver correctly (0.9.0 < 0.10.0); tail -1 picks newest
+# Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
+# Cold-start fallback (if shared resolver unreadable):
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 
+```bash
 FOUNDRY_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.claude/skills/_shared"
 ```
@@ -341,6 +341,10 @@ fi # timeout: 5000
 
 Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (Step 2, `FAST_PATH=true`) or freshly written by Step 5.
 
+```bash
+[ -f "$_OSS_SHARED/shepherd-reply-protocol.md" ] || { echo "⚠ shepherd-reply-protocol.md not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
+```
+
 Read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
 
 Spawn with:
@@ -349,6 +353,10 @@ Spawn with:
 - Thread context: also fetch `gh issue view $CLEAN_ARGS --comments` (or equivalent GraphQL for discussions) if not already in report
 - Output path: `.reports/analyse/thread/output-reply-thread-$CLEAN_ARGS-$(date +%Y-%m-%d).md`
 - Note: shepherd runs in forked context — all required context must be self-contained in prompt
+
+Spawn prompt must include: `"Write your full output to <OUTPUT_PATH> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<OUTPUT_PATH>\",\"confidence\":0.N}"`
+
+Verify output file exists and is non-empty after spawn: `[ -s "<OUTPUT_PATH>" ] || { echo "⚠ shepherd output empty or missing"; }`
 
 If `DRIFT=true`: append `[analysis refreshed — new activity since last report]` to terminal summary.
 
@@ -371,6 +379,8 @@ Scenarios:
 
 <notes>
 
+- **Thread analysis output schema** (canonical section order): `## Item Type`, `## Summary`, `## Related Items`, `## Reproduction Steps` (issues only), `## Risks / Blockers`, `## Next Steps`. Use these exact headings — consistent section names enable downstream parsing and diff-based change detection across runs.
+- **Precision guidance**: flag issues, do not solve them; flag blockers, do not design solutions. Reference `/develop:fix` and `/develop:feature` (requires `develop` plugin) for implementation work. Verbose implementation sketches in triage output dilute signal-to-noise ratio.
 - **Vitality mode repo resolution**: `GH_OWNER` and `GH_REPO` set in Step 1 from: (1) explicit URL/owner-repo arg, (2) `gh repo view`, (3) `git remote origin`. vitality.md uses `-R "$GH_OWNER/$GH_REPO"` on all gh commands and literal `$GH_OWNER/$GH_REPO` in all `gh api` paths — never `{owner}/{repo}` template substitution in vitality mode.
 - Mode files live in `plugins/oss/skills/analyse/modes/` — one file per mode, fully self-contained
 - `modes/thread.md` handles all three thread types (issue, PR, discussion) via internal branching
@@ -378,9 +388,10 @@ Scenarios:
 - Run `gh auth status` first if commands fail; user may need to authenticate
 - For closed items, note resolution so history useful
 - Don't post responses without explicit user instruction — draft only
+- **Out-of-scope early-exit**: when input is clearly outside this skill's domain (e.g. CI pipeline diagnosis, code review), print scope note + redirect (e.g. "use oss:cicd-steward") and stop — do not provide full analysis of out-of-scope content. Flag then stop; flag then analyze = precision cost with no recall benefit.
 - **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` NOT available (deferred tool schema not loaded in fork) — interactive gates surface as plain text instead. `Agent` IS available in forked context (non-deferred, declared in `allowed-tools`) — do NOT skip Steps 5–6 adversarial review assuming Agent unavailable; it is available and those steps are mandatory.
 - **`--reply` drafts only** — shepherd produces draft file; does NOT auto-post to GitHub. User posts manually. Write access to repo not required to use `--reply`; required only if user subsequently posts draft via `gh issue comment` or `gh pr comment`.
-- **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix`, `/oss:review`) receive no analysis context from this run. Pass report path explicitly or re-summarize key findings in follow-up invocation.
+- **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix` (requires `develop` plugin), `/oss:review`) receive no analysis context from this run. Pass report path explicitly or re-summarize key findings in follow-up invocation.
 - Follow-up chains:
   - Issue with confirmed bug → `/develop:fix` to diagnose, reproduce with test, apply targeted fix (requires `develop` plugin)
   - Issue is feature request → `/develop:feature` for TDD-first implementation (requires `develop` plugin)

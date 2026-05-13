@@ -7,6 +7,7 @@ paths:
 ## Before Editing
 
 - **Enter plan mode first** — triggers Opus via `opusplan`. **No exceptions**: typo fixes, single-step edits, "quick" changes all need plan mode. Global "3+ steps" threshold NOT apply here — any `.claude/` edit = non-trivial.
+- **Verify symlink target** — run `ls -la .claude/` before editing; symlinks must point to `plugins/foundry/` source; edit the source file, never the symlink destination outside the plugin tree
 
 ## After Any Change
 
@@ -35,7 +36,7 @@ paths:
 
 ## Distribution
 
-- Source of truth: `plugins/foundry/` (rules, agents, skills, hooks, CLAUDE.md, TEAM_PROTOCOL.md, permissions-guide.md)
+- Source of truth: `plugins/foundry/` for foundry-owned files (rules, agents, skills, hooks, CLAUDE.md, TEAM_PROTOCOL.md, permissions-guide.md); other plugins (`plugins/oss/`, `plugins/research/`, etc.) own their own agents/skills — edit in their respective `plugins/<name>/` source dirs
 - `.claude/` entries = symlinks into plugin — edit plugin files, not symlinks
 - Rules distribute to `~/.claude/rules/` via `/foundry:init`
 - `permissions-guide.md` = project-only reference — symlinked from `.claude/`, not copied to `~/.claude/`

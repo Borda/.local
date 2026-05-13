@@ -49,16 +49,11 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 
 **Examples:**
 
-- `/manage create agent task-planner "Planning specialist for decomposing epics into actionable tasks"`
-- `/manage create skill benchmark "Benchmark orchestrator for measuring and comparing performance across commits"`
-- `/manage create rule torch-patterns "PyTorch coding patterns — compile, AMP, distributed"`
-- `/manage update example-agent example-agent-v2`
-- `/manage update my-agent "add a section on error handling patterns"`
-- `/manage update optimize docs/specs/YYYY-MM-DD-<spec-name>.md`
-- `/manage update testing "add a section on snapshot testing with syrupy"`
-- `/manage delete old-agent-name`
-- `/manage add perm "Bash(jq:*)" "Parse and filter JSON" "Extract fields from REST API responses"`
-- `/manage remove perm "Bash(jq:*)"`
+- `/foundry:manage create agent task-planner "Planning specialist for decomposing epics into actionable tasks"`
+- `/foundry:manage update my-agent "add a section on error handling patterns"`
+- `/foundry:manage update optimize docs/specs/YYYY-MM-DD-<spec-name>.md`
+- `/foundry:manage delete old-agent-name`
+- `/foundry:manage add perm "Bash(jq:*)" "Parse and filter JSON" "Extract fields from REST API responses"`
 
 </inputs>
 
@@ -119,20 +114,23 @@ For `create`, check only relevant type's path.
 
 ```bash
 # Check permission existence (for add perm / remove perm)
-python3 -c "import json,sys; d=json.load(open('.claude/settings.json')); sys.exit(0 if '<rule>' in d['permissions']['allow'] else 1)" 2>/dev/null  # timeout: 15000
+jq -e --arg rule '<rule>' '.permissions.allow | index($rule) != null' .claude/settings.json >/dev/null 2>&1  # timeout: 5000
 ```
 
 **Update second-argument discrimination** — apply after type resolved:
 
 - Two bare kebab-case arguments (second arg no spaces, no `.md` extension) → **rename mode**: validate new-name does NOT already exist
-- One name + quoted string → **content-edit mode**: validate spec non-empty; no new-name uniqueness check
-- One name + path ending in `.md` → **content-edit mode**: validate spec file exists on disk; no new-name uniqueness check
+- One name + quoted string → **content-edit mode**: validate spec non-empty; no new-name uniqueness check; set `DIRECTIVE` = the quoted string
+- One name + path ending in `.md` → **content-edit mode**: validate spec file exists on disk; no new-name uniqueness check; set `DIRECTIVE` = contents of the spec file (Read it)
 
 If validation fails, report error and stop.
 
 **Edit complexity classification** (content-edit mode only):
 
 ```bash
+# DIRECTIVE is the change description string (second argument, stripped of quotes) or spec file contents
+# Set from argument parsing above before this block
+DIRECTIVE="${SECOND_ARGUMENT}"  # populated during discrimination step above
 # Classify directive as trivial vs substantive
 EDIT_TRIVIAL=false
 if [[ "$MODE" == "content-edit" ]]; then
@@ -281,7 +279,7 @@ Atomic update — write new file before deleting old:
 3. Verify new file exists and is valid: `Read(file_path=".claude/agents/<new-name>.md", limit=5)`
 
 ```bash
-# 4. Delete old file only after new file is confirmed
+# 4. Delete old file only after new file is confirmed (user confirmed rename via AskUserQuestion in Step 1 → safe to proceed)
 rm .claude/agents/<old-name>.md # timeout: 5000
 ```
 
@@ -299,19 +297,21 @@ mkdir -p .claude/skills/<new-name>  # timeout: 5000
 3. Verify new file exists: `Read(file_path=".claude/skills/<new-name>/SKILL.md", limit=5)`
 
 ```bash
-# 4. Remove old directory only after new is confirmed
+# 4. Remove old directory only after new is confirmed (user confirmed rename via AskUserQuestion in Step 1 → safe to proceed)
 rm -r .claude/skills/<old-name>  # timeout: 5000
 ```
 
 ### Mode: Delete Agent
 
 ```bash
+# User confirmed deletion via AskUserQuestion in Step 1 — safe to proceed
 rm .claude/agents/<name>.md # timeout: 5000
 ```
 
 ### Mode: Delete Skill
 
 ```bash
+# User confirmed deletion via AskUserQuestion in Step 1 — safe to proceed
 rm -r .claude/skills/<name>  # timeout: 5000
 ```
 
@@ -613,14 +613,14 @@ For **create** and **update (rename)**: verify tool efficiency — cross-check a
 
 ## Step 9: Audit and calibrate
 
-Run `/audit --skip-gate` to validate created/modified files without triggering interactive follow-up gate. **Skip if invoked with `--skip-audit` or if current `manage` operation runs inside audit-initiated fix session** — outer audit covers it.
+Run `/foundry:audit --skip-gate` to validate created/modified files without triggering interactive follow-up gate (requires `foundry` plugin). **Skip if invoked with `--skip-audit` or if current `manage` operation runs inside audit-initiated fix session** — outer audit covers it.
 
 ```bash
 [[ "$SKIP_AUDIT" == "true" ]] && { echo "[--skip-audit] skipping Step 9 audit"; } || {
 ```
 
 ```text
-/audit --skip-gate
+/foundry:audit --skip-gate
 ```
 
 For targeted check of only affected file, spawn **foundry:curator** directly:
@@ -631,16 +631,16 @@ For targeted check of only affected file, spawn **foundry:curator** directly:
 
 Include audit findings in final report. Do not proceed to sync if any `critical` findings remain.
 
-**Calibration** — for agent/skill create or non-trivial content-edit, run `/calibrate <name>` after audit passes — mandatory, not optional:
+**Calibration** — for agent/skill create or non-trivial content-edit, run `/foundry:calibrate <name>` after audit passes — mandatory, not optional (requires `foundry` plugin):
 
 ```text
-/calibrate <name>
+/foundry:calibrate <name>
 ```
 
-Then run `/calibrate routing --fast` to confirm overall routing accuracy unaffected:
+Then run `/foundry:calibrate routing --fast` to confirm overall routing accuracy unaffected (requires `foundry` plugin):
 
 ```text
-/calibrate routing --fast
+/foundry:calibrate routing --fast
 ```
 
 Skip calibration for: trivial edits, renames, deletes, rule operations, perm operations.
@@ -669,8 +669,8 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 - **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note
 - Follow-up chains:
-  - create or non-trivial update of agent/skill → `/audit --skip-gate` → `/calibrate <name>` (mandatory) → `/calibrate routing --fast`
-  - trivial update or rename or delete → `/audit --skip-gate` → `/calibrate routing --fast` (if description changed)
+  - create or non-trivial update of agent/skill → `/foundry:audit --skip-gate` → `/foundry:calibrate <name>` (mandatory) → `/foundry:calibrate routing --fast`
+  - trivial update or rename or delete → `/foundry:audit --skip-gate` → `/foundry:calibrate routing --fast` (if description changed)
   - add/remove perm → confirm both files updated; run `/foundry:init`
 
 </notes>

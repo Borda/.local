@@ -125,6 +125,15 @@ if [ "$TEAM_MODE" = "true" ]; then
   #    Write your full analysis to .plans/active/feature-doc-scribe-[timestamp].md using the Write tool.
   #    Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}."
   #
+  # After spawning all teammates: health monitoring (CLAUDE.md §8)
+  # FEATURE_LAUNCH=$(date +%s)
+  # touch /tmp/feature-team-check-$FEATURE_LAUNCH
+  #
+  # Poll every 5 min: find .plans/active/ -newer /tmp/feature-team-check-$FEATURE_LAUNCH -name "feature-*.md" | wc -l
+  # New files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out.
+  # One extension (+5 min) if tail -20 of output file explains delay; second stall = hard cutoff.
+  # On timeout: read tail -100 of stalled file; surface with ⏱; never omit timed-out teammates.
+  #
   # After all teammates complete: read their output files, synthesize, run quality stack, produce Final Report.
   exit 0
 fi
@@ -137,9 +146,11 @@ Gather full context before writing any code:
 > **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text, treat as feature description.
 
 ```bash
-# Strip leading '#' and fetch in one block — ARGUMENTS strip doesn't persist across Bash calls
+# Strip leading '#' so both '123' and '#123' work; only fetch if numeric
 ISSUE_NUM="${ARGUMENTS#\#}"
-gh issue view "$ISSUE_NUM" --comments  # timeout: 6000
+if [[ "$ISSUE_NUM" =~ ^[0-9]+$ ]]; then
+  gh issue view "$ISSUE_NUM" --comments  # timeout: 6000
+fi
 ```
 
 If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/*.py`) to search related code. Path hint: use `src/` if that directory exists, otherwise search from project root (`.`).
@@ -469,31 +480,12 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 
 ## Team Assignments
 
-**Reference documentation** — execution is in `## Team Mode Branch` above. When `--team` flag set, that branch runs and exits before Step 1.
+**Reference only** — execution is in `## Team Mode Branch` above. When `--team` flag set, that branch runs and exits before Step 1. Full spawn prompts, coordination order, and health monitoring are defined there — do not duplicate here.
 
 **When to use team mode**: feature spans 3+ modules, OR changes public API, OR involves auth/payment/data scope.
 
 - **Teammate 1 (foundry:sw-engineer, model=opus)**: implements feature (Steps 2-3)
 - **Teammate 2 (foundry:qa-specialist, model=opus)**: writes TDD tests in parallel + security checks for auth/payment/data scope
 - **Teammate 3 (foundry:doc-scribe, model=sonnet)**: prepares documentation structure in parallel (Step 5)
-
-**Coordination:**
-
-1. Lead broadcasts Step 1 analysis: `{feature: <desc>, scope: <modules>, API: <proposed signature>}`
-2. QA challenges SW's API design first — lead routes challenge back to SW before implementation starts
-3. SW shares implementation details with QA so tests stay accurate
-4. Lead synthesizes outputs in Steps 5 onward as normal
-
-**Spawn prompt template:**
-
-```markdown
-You are a [role] teammate implementing: [feature].
-Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
-Your task: [specific responsibility].
-[If QA]: include security checks for any auth/payment/data-handling code.
-Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output.
-Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: "Status: complete | blocked — <reason>".
-Write your full analysis to .plans/active/feature-[role]-[timestamp].md using the Write tool. Return ONLY compact JSON: {"status":"done","file":"<path>","findings":N,"confidence":0.N}.
-```
 
 </workflow>

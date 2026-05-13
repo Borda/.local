@@ -261,6 +261,7 @@ Then proceed to R5.
 
 ```bash
 touch /tmp/claude-commit-authorized  # timeout: 3000
+trap 'rm -f /tmp/claude-commit-authorized' EXIT
 ```
 
 **`--team` mode**: If `--team` active, Read `${CLAUDE_SKILL_DIR}/modes/team.md` and execute Phases A–D in place of standard iteration loop below.

@@ -221,7 +221,8 @@ Group all lessons/feedback entries by domain. Use model reasoning to identify cl
 
 - **Git & commit discipline** (staging, branching, commit messages, push safety)
 - **Testing & QA** (test patterns, mocking rules, coverage gaps)
-- **Agent & skill config** (agent instructions, skill workflow, CLAUDE.md additions)
+- **Task management** (TaskCreate/TaskUpdate lifecycle, when to create tasks, when to mark complete, orchestrator vs. teammate task ownership)
+- **Agent & skill config** (agent instructions, skill workflow, CLAUDE.md additions — excluding task tracking)
 - **Communication & output** (tone, format, reporting)
 - **Tool & permission use** (Bash vs native tools, settings.json)
 - **Other** (project-specific, one-off)
@@ -240,7 +241,7 @@ Thresholds:
 
 - **`→ rule`**: 2+ distinct lessons on same topic, or single lesson applying across ≥3 agents/skills
 - **`→ agent/skill update`**: lesson applies specifically to one file's behavior and not yet there
-- **`→ already covered`**: exact principle already in target file — mark and skip
+- **`→ already covered`**: exact principle including scope already in target file — mark and skip. Before marking, verify scope matches: same terminology does not imply same scope. If the lesson adds conditions not in the existing rule (new agent population, new trigger context, new edge case), classify as `→ rule` or `→ agent/skill update` instead.
 
 **Step L3: Generate proposals**
 
@@ -369,6 +370,11 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 ## Mode: External Distillation (external)
 
 Analyse external plugin, skill, or agentic resource and produce structured adoption proposal for local Claude Code setup.
+
+```bash
+RUN_DIR=".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+mkdir -p "$RUN_DIR"  # timeout: 5000
+```
 
 **E1: Classify and plan**
 

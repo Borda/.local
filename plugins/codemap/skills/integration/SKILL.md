@@ -20,6 +20,15 @@ Arguments: `check` (no args) or `init [--approve]` — `--approve` auto-applies 
 
 </objective>
 
+<inputs>
+
+- **$ARGUMENTS**: optional — one of:
+  - Omitted or `check` — run diagnostic; print health status for all codemap integration points
+  - `init` — interactive onboarding: build index if missing, discover skills/agents, recommend injection sites, wire in selected files
+  - `init --approve` — non-interactive; auto-applies all High+Medium injection recommendations and installs post-commit hook without prompting
+
+</inputs>
+
 <workflow>
 
 ## Mode detection
@@ -123,7 +132,15 @@ rm -f /tmp/cmc_err
 
 ```bash
 # timeout: 20000
-[ -z "$CLAUDE_PLUGIN_ROOT" ] && { printf "${RED}✗${NC} CLAUDE_PLUGIN_ROOT unset — cannot audit injection\n"; exit 1; }
+if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
+    printf "${YEL}⚠${NC} CLAUDE_PLUGIN_ROOT unset — falling back to installed cache discovery\n"
+    CLAUDE_PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/integration 2>/dev/null | head -1)
+    if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
+        printf "${RED}✗${NC} Could not locate codemap plugin — injection audit skipped. Run: claude plugin install codemap@borda-ai-rig\n"
+        # degrade gracefully — skip C5 without aborting full skill run
+    fi
+fi
+[ -z "$CLAUDE_PLUGIN_ROOT" ] && { printf "  Skipping injection audit.\n"; } || {
 CACHE=$(dirname "$(dirname "$CLAUDE_PLUGIN_ROOT")")
 printf "\n--- Skill injection audit (cache: %s) ---\n" "$CACHE"
 FILES=$(find "$CACHE" -name "SKILL.md" -exec grep -l "command -v scan-query" {} \; 2>/dev/null | sort)
@@ -157,6 +174,7 @@ printf "If any check failed:\n"
 printf "  • /codemap:scan    — build or refresh the index\n"
 printf "  • /codemap:integration init — add injection to more skills/agents\n"
 printf "  • /codemap:integration check — re-run after fixes\n"
+}  # end CLAUDE_PLUGIN_ROOT guard
 ```
 
 ## INIT MODE (Steps I0–I6)
@@ -315,7 +333,18 @@ HOOK_FILE="$HOOKS_DIR/post-commit"
 if grep -qF '# codemap: incremental' "$HOOK_FILE" 2>/dev/null; then
     printf "${GRN}✓${NC} post-commit hook: already installed (%s)\n" "$HOOK_FILE"
 elif [ -f "$HOOK_FILE" ]; then
-    # Marker absent, file exists — append
+    # Marker absent, file exists — check shebang before appending
+    # Only append if shebang is sh/bash/zsh compatible; warn if unusual interpreter
+    SHEBANG=$(head -1 "$HOOK_FILE" 2>/dev/null || echo "")
+    case "$SHEBANG" in
+        "#!/bin/sh"|"#!/bin/bash"|"#!/usr/bin/env bash"|"#!/usr/bin/env sh"|"#!/bin/zsh"|"#!/usr/bin/env zsh"|"")
+            # Compatible shebang or no shebang — safe to append
+            ;;
+        *)
+            printf "${YLW}⚠${NC} post-commit hook uses unusual interpreter: %s — appending anyway; verify compatibility\n" "$SHEBANG"
+            ;;
+    esac
+    # Note: this append is confirmed by user in Step I5a (AskUserQuestion option a)
     cat >> "$HOOK_FILE" << 'HOOKEOF'
 
 # codemap: incremental index rebuild — do not remove this line

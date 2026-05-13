@@ -68,7 +68,11 @@ Gather + explore + validate produce large git/PR output bloating main context. I
    GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
    mkdir -p .temp  # timeout: 5000
    ```
-2. Spawn `Agent(subagent_type="general-purpose")` — expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE` to literal values (REPO_ROOT and GATHER_FILE in Shared setup; RANGE in Gather changes) before spawning:
+2. Assert variables before spawning (prevent un-expanded variable names passed literally to agent):
+   ```bash
+   [ -n "$GATHER_FILE" ] && [ -n "$REPO_ROOT" ] && [ -n "$RANGE" ] || { echo "Error: GATHER_FILE, REPO_ROOT, or RANGE is empty — verify Shared setup and Gather changes completed"; exit 1; }  # timeout: 5000
+   ```
+   Spawn `Agent(subagent_type="general-purpose")` — expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE` to literal values (REPO_ROOT and GATHER_FILE in Shared setup; RANGE in Gather changes) before spawning:
    ```text
    Agent(subagent_type="general-purpose", prompt="Working directory: <REPO_ROOT>. Run all git commands from that directory (use: git -C <REPO_ROOT> <cmd> or cd <REPO_ROOT> first). For git range <RANGE>:
    Run gather phase: git log, git diff --stat, gh pr list.
@@ -84,7 +88,7 @@ Gather + explore + validate produce large git/PR output bloating main context. I
    - Verify `[ -f "$GATHER_FILE" ]` before passing to artifact phase; abort if missing
    - Pass `file` path to artifact phase — do NOT read gather file into main context; artifact agent reads it directly
 
-`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline.
+`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")..HEAD} 2>/dev/null`. If count exceeds 50, delegate gather to `oss:release-gatherer` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood.
 
 ## Mode Detection
 
@@ -135,11 +139,12 @@ RANGE="${RANGE/->/../}"
 
 ## Shared setup
 
-```bash
-# Locate oss plugin shared dir — installed first, local workspace fallback
-# sort -V orders semver correctly (0.9.0 < 0.10.0); tail -1 picks newest
+# Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
+# Cold-start fallback (if shared resolver unreadable):
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+
+```bash
 # Resolve skill directory — used by all modes for templates and guidelines
 SKILL_DIR="$(find ~/.claude/plugins -path "*/oss/skills/release" -type d 2>/dev/null | head -1)"  # timeout: 5000
 [ -z "$SKILL_DIR" ] && SKILL_DIR="plugins/oss/skills/release"
@@ -241,7 +246,11 @@ Section order (fixed — never reorder): 🚀 Added → ⚠️ Breaking Changes 
 | **Internal** | *(omit)* | Refactors, CI/tooling, deps, code cleanup, developer-facing housekeeping — omit unless directly user-impacting |
 | **Reverted** | 🔄 Reverted | Introduced AND reverted within range (REVERT_SET pairs) — net effect zero; list as "Reverted: <original description>"; do NOT classify original in any other section; omit from highlights, demo, migration guide |
 
+**Self-correction discipline**: if classification revised during self-review, present only final corrected table — do not show intermediate wrong classifications. Single authoritative table expected.
+
 **Breaking vs Deprecated vs Removed**: old call still works (even with warning) → Deprecated, never Breaking. API deprecated in prior release and now removed → Removed, never Breaking — users had fair warning. Breaking = upgrade causes immediate failures with **no prior deprecation period** between two consecutive versions.
+
+**OMIT-INTERNAL body-signal override**: if commit body contains any of — "No code changes", "no user-facing changes", "internal only", "no public API changes" — OR all changed file paths restricted to `.github/`, `ci/`, `scripts/`, `Makefile`, `*.yml` under `.github/` — classify as Internal regardless of `fix:`, `feat:`, `chore:` conventional commit prefix. Conventional commit type is a hint, not a classification gate.
 
 Filter out: merge commits, minor dep bumps, CI/tooling config, comment typos, internal refactors, code cleanup, internal-only dep bumps, developer housekeeping, no-user-impact changes. **Never include internal staff names or internal maintenance details in public-facing output.** Always include: breaking changes, behavior changes, new API surface.
 
@@ -330,6 +339,7 @@ Before running, invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OU
 
 On (a) or user confirmation after (b): run:
 ```bash
+# Note: python3 invocation triggers approval prompt by design (allow-list policy — python3 excluded from auto-allow)
 python3 "$DEMO_OUT"  # timeout: 600000
 ```
 If fails: fix and re-run. Don't proceed until exits 0 with expected output. Self-contained: package installed in current env; no live API calls or network deps; deterministic synthetic data; `# !pip install` lines are Python comments — interpreter skips.
@@ -424,7 +434,12 @@ mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
 # IMPORTANT: expand $SHEPHERD_DIR to its literal computed value before inserting into the spawn prompt — do not pass the variable name literally.
 ```
 
-If `$SHEPHERD_AVAILABLE` equals 1, write Write release draft output to `$SHEPHERD_DIR/draft.md`, then spawn shepherd:
+If `$SHEPHERD_AVAILABLE` equals 1:
+```bash
+[ -f "$_OSS_SHARED/shepherd-voice.md" ] || { echo "⚠ shepherd-voice.md not found at $_OSS_SHARED — verify oss plugin installation; falling back to draft without shepherd review"; SHEPHERD_AVAILABLE=0; }  # timeout: 5000
+```
+
+If `$SHEPHERD_AVAILABLE` still equals 1, write Write release draft output to `$SHEPHERD_DIR/draft.md`, then spawn shepherd:
 
 ```text
 Agent(subagent_type="oss:shepherd", prompt="Review the full release draft at <$SHEPHERD_DIR/draft.md> for public-facing voice and tone. Apply shepherd voice guidelines: human and direct, no internal jargon, no staff names, no internal maintenance details. Write the revised content to <$SHEPHERD_DIR/shepherd-revised.md>. Return ONLY: {\"status\":\"done\",\"changes\":N,\"file\":\"<$SHEPHERD_DIR/shepherd-revised.md>\"}")
@@ -473,8 +488,6 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 
 - **Numbers reference**: all numeric limits and claims in this skill documented with rationale and evidence in `guidelines/numbers-reference.md`; update whenever limits change
 - **Revert handling**: REVERT_SET pairs (both in range) = net-zero; appear only in 🔄 Reverted; never in highlights, demo, migration guide; if only revert is in range (original predates range) → classify as ❌ Removed or ⚠️ Breaking (not 🔄 Reverted) — feature gone from version user had it
-- **Truth check is mandatory**: top-3 classified (breaking, new API) must confirm in HEAD before Identify highlights; unconfirmed → ⚠️ Unconfirmed, require sign-off
-- **Adversarial review mandatory for public-facing output**: runs after draft assembly, before shepherd/polish; critical/high findings block write-to-disk; medium/low as reviewer notes; skip for internal outputs (--summary, --changelog); applies in `notes`, `prepare`, `--migration`
 - **Pre-release tag exclusion**: rc, dev, alpha, beta tags never used as range base — always last stable release; all modes
 - Filter noise (CI config, dep bumps, typos) unless user-impacting
 - **Public-facing content policy**: release notes, changelogs, migration guides = user-visible changes only. Never include: internal staff names, internal maintenance, internal refactors, CI/tooling changes, internal dep bumps, code cleanup, developer housekeeping with no user impact.

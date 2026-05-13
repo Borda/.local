@@ -3,7 +3,7 @@ name: plan
 description: Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/.
 argument-hint: '<goal> [--no-challenge] [--codemap] [--semble]'
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
 
@@ -168,7 +168,7 @@ For each escalated item:
 
 Do not escalate: items resolvable from codebase, items that are risks (not blockers), items already addressed in plan.
 
-## Challenger gate
+## Step 4: Challenger gate
 
 **Skip if `CHALLENGE_ENABLED=false`.**
 
@@ -181,7 +181,7 @@ Parse result:
 - **Concerns only** → append `### Challenger concerns` to `<PLAN_FILE>` as advisory; continue to Final output.
 - **No findings / all refuted** → proceed.
 
-## Final output
+## Step 5: Final output
 
 Compose brief — compact human-readable plan summary after all agent input incorporated:
 

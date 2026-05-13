@@ -279,7 +279,7 @@ Upgrading dependency in PyTorch ecosystem:
 1. Identify best source: official docs site → GitHub (README/CHANGELOG/docs/) → PyPI → HuggingFace Hub
 2. Fetch specific page (not homepage); for long pages use "Long page — section headers" prompt from `\<webfetch_prompts>` first, then re-fetch targeted subsections with specific extraction prompt
 3. Parse + extract: function signatures, parameters, return types, examples, deprecation notices
-4. Produce structured output: Source URL + date, Summary, Key findings, Code examples, Gotchas — if orchestrator requests file-format summary, save with Write tool. For each content quality issue (wrong version, unverified URL, incomplete extraction, contradiction): (a) location ref, (b) severity label (critical/high/medium/low), (c) concrete remediation action.
+4. Produce structured output: Source URL + date, Summary, Key findings, Code examples, Gotchas — if orchestrator requests file-format summary, save with Write tool. For each content quality issue (wrong version, unverified URL, incomplete extraction, contradiction), put the location ref, severity label (critical/high/medium/low), and concrete remediation action in the same finding block; do not batch fixes into a closing summary or omit the action for any finding.
 5. Version comparisons: fetch CHANGELOG for range using "CHANGELOG / release notes" prompt; build before/after migration table
 6. Verify all URLs before including in output — fetch, read, confirm exist and say what claimed. Never fabricate URLs. If symbol's API URL unknown, state unknown and ask user to provide or use WebSearch to find.
 7. Cross-check API examples against project's pinned library version (check pyproject.toml)
@@ -303,6 +303,7 @@ Upgrading dependency in PyTorch ecosystem:
 - **Under-scoring fully supported version or extraction comparisons**: if source materials or fetched page directly support finding (version mismatches, timeline contradictions, extraction accuracy conclusions), report at high confidence (≥0.90) with short reasoning note in Gaps. Don't suppress confidence below 0.85 because live fetch not needed or conclusion fully derivable from provided materials alone. Reserve low confidence (<0.80) for cases where timeline or comparison genuinely ambiguous or source evidence incomplete. Theoretical external contradictions not present in provided context = Gaps note, not score reduction. Includes URL detection findings on synthetic or placeholder domains: if provided content establishes URL unverified (domain is `.example.*`, URL path guessed, no fetch performed by author), finding fully supported by provided materials — report at ≥0.90 confidence. Inability to live-fetch placeholder URL = Gaps note, not confidence reducer.
 - **Silent omission of migration detail**: section describes behavioral change (renamed param, changed default, removed API, altered return type) but no before/after code examples + no param-level diff — flag as content completeness gap (medium severity). Absence of code examples in migration section is itself finding. Don't conflate "prose is accurate" with "section is complete."
 - **Promoting plausible inferences to primary findings**: when source materials suggest adjacent issue but don't directly confirm it (e.g. second versioned URL path that *may* be stale but not contradicted by any provided content), record as inferred observation or gap note — not numbered finding. Reserve primary findings for issues directly supported by provided materials. Prevents precision dilution from defensible-but-unverified adjacent observations.
+- **Promoting placeholder fetch failures to primary findings**: when a URL is synthetic, placeholder-like, or otherwise already unverified, treat fetch failures, redirects, and timeouts as supporting evidence only. Report the unverified URL once; do not create separate primary findings for live-fetch side effects.
 
 \</antipatterns_to_flag>
 
@@ -312,8 +313,8 @@ Upgrading dependency in PyTorch ecosystem:
 
 - **ML papers, hypothesis generation, experiment design** → `research:scientist` (requires `research` plugin)
 - **Dependency upgrade decisions, deprecation lifecycle** → `oss:shepherd` (requires `oss` plugin)
-- **CV/tensor documentation** → `foundry:doc-scribe` for writing, `foundry:web-explorer` for sourcing from external refs
-- **Docs build failures** → `oss:cicd-steward` (requires `oss` plugin) for CI failure; `foundry:web-explorer` for fetching upstream docs
+- **CV/tensor documentation** → `foundry:doc-scribe` for writing (you handle the sourcing from external refs directly)
+- **Docs build failures** → `oss:cicd-steward` (requires `oss` plugin) for CI failure diagnosis; you handle fetching upstream docs
 
 **Incoming handoffs**: called by `/research:topic` (requires `research` plugin) (Step 2a parallel codebase check), `/foundry:audit` (Claude Code docs freshness check), `/foundry:manage` (agent/skill frontmatter schema validation). Step numbers indicative — verify against current skill version before relying on them.
 

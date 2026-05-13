@@ -22,7 +22,7 @@ Every analysis agent **must** end with:
 
 - Omit **Refinements** if 0 passes (don't write "0 passes") — omit individual **Gaps** bullets if none, but keep **Gaps** header
 - **Score**, **Gaps**, **Refinements** = peer top-level fields — never nest Refinements under Gaps; blank line before **Refinements** required
-- Score < 0.8 → ⚠ on score line AND next line: "orchestrator may re-run with the specific gap addressed"
+- Score < 0.8 → ⚠ on score line AND on the line immediately after (standalone line, not a Gaps bullet): "orchestrator may re-run with the specific gap addressed"
 - Gaps = primary signal — surfaces implicit limitations for re-run decisions
 
 ## Internal Quality Loop (analysis tasks only)
@@ -42,13 +42,13 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 
 **Never add URL without all three steps:**
 
-1. **Fetch** — call WebFetch (or equivalent); URL must return non-error (not 4xx/5xx)
+1. **Fetch** — call WebFetch (or equivalent); URL must return non-error (not 4xx/5xx). HTTP 200 is necessary but not sufficient — steps 2 and 3 are still mandatory even when Fetch succeeds
 
 2. **Read** — read actual page content; don't rely on URL structure or HTTP status alone
 
 3. **Match** — confirm content matches intended description; no match = don't add link
 
-4. **Independent** — every URL needs own Fetch+Read+Match pass; verified URL on same domain doesn't exempt others; skipping any step (including inferring validity from URL structure or HTTP status alone) is violation
+4. **Independent** — every URL requires its own Fetch+Read+Match pass regardless of domain, protocol, or path similarity; no URL is ever exempt because another URL on any domain was already verified; skipping any step (including inferring validity from URL structure or HTTP status alone) is violation
 
 - Applies to: agent files, skill files, CLAUDE.md, any markdown
 
@@ -56,7 +56,7 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 
 - **Long output** (multi-item analysis, 5+ findings — including lists of 5+ items: module names, issues, files —, or prose >~10 lines) → two mandatory steps in order:
 
-1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content** — **execute the Write tool call; do not narrate intent and proceed without calling it**
+1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content** — **execute the Write tool call; do not narrate intent and proceed without calling it** — this Write step is never skipped; pipeline/background mode only exempts the AskUserQuestion gate (step 2.iv), not this Write step
 2. Print to terminal in this order:
    1. **Header** — plain ASCII verdict line; no Unicode box-drawing chars (`─`, `═`, `│`, `┌` etc.); use `·` as separator: `verdict: NEEDS_WORK · findings: 8 · critical: 0 · high: 2 · medium: 4 · low: 2 · confidence: 0.88`
    2. **Report path** — `→ <filepath>`

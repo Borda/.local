@@ -5,6 +5,16 @@ Local mode: `<LOCAL_MODE>` — when `true`, resolve target file from source tree
 
 Run dir: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`
 
+### Graceful-exit protocol
+
+Before returning for ANY reason — crash, context limit, unhandled error, or early exit — always write a minimal `result.jsonl` to the run dir. Even if phases are incomplete, the orchestrator must receive a signal.
+
+Write this line to `.reports/calibrate/<TIMESTAMP>/<TARGET>/result.jsonl` if the file does not already exist:
+
+`{"ts":"<TIMESTAMP>","target":"<TARGET>","verdict":"incomplete","mean_recall":null,"mean_confidence":null,"calibration_bias":null,"mean_f1":null,"severity_accuracy":null,"format_score":null,"problems":null,"scope_fp":null,"gaps":["pipeline exited before Phase 4 — re-run individually: /calibrate <TARGET> --fast"],"source_mode":null,"scoring":null,"scorer_agreement":null}`
+
+This is a safety net — Phase 4 always overwrites this with full results when it runs successfully.
+
 ### Pre-flight — Codex availability
 
 Check Codex availability once at pipeline start; set `CODEX_AVAILABLE` for all phases:
@@ -157,6 +167,8 @@ Prompt for each subagent:
 > `<input from that problem>`
 >
 > End your response with a `## Confidence` block: **Score**: 0.N (high >=0.9 / moderate 0.8-0.9 / low \<0.8) and **Gaps**: what limited thoroughness.
+>
+> You have approximately `<PHASE_TIMEOUT_MIN>` minutes. If time is running short, submit your partial findings — do not delay output waiting for full coverage.
 >
 > Do not self-review or refine before answering — report your initial analysis directly.
 >

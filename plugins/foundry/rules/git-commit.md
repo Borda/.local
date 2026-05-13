@@ -123,11 +123,12 @@ DEFAULT_SENTINEL="/tmp/claude-commit-default-${REPO_SLUG}-${BRANCH_SLUG}"
 
 ## Push Safety
 
-- **Never push without explicit user confirmation** — always ask before any `git push`, including branch pushes, PR pushes, and release tags
+- **Never push without explicit user confirmation** — always invoke `AskUserQuestion` before any `git push`, including branch pushes, PR pushes, and release tags (prose question alone is not sufficient)
 - Authorization scoped: "commit this" does not authorize "push this"; ask separately for every push
 - Applies inside skill workflows — if skill (e.g. `/resolve`) includes push step, treat as "propose and confirm", not "auto-execute"; stop after committing, report what ready to push, wait for user to say push
 - Never push in autonomous bug fixing or as "final step" without being explicitly asked in that message
-- Never force-push (`--force`, `--force-with-lease`) to main/master; never force-push without explicit user instruction even on feature branches
+- Never force-push (`--force`, `--force-with-lease`) to main/master — forbidden even with explicit user instruction
+- Never force-push to any other branch without explicit user instruction; prefer regular push with explicit confirmation
 
 ## History Safety
 

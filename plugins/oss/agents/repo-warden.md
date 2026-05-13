@@ -1,6 +1,6 @@
 ---
 name: repo-warden
-description: Scores an assigned group of vitality axes from a pre-fetched DATA_FILE using the vitality-scoring.md rubric; writes partial scores JSON for assembly by oss:analyse vitality. Spawned 3× in parallel by oss:analyse vitality. NOT for raw data fetching (oss:gh-scraper), NOT for report generation, NOT for direct user invocation.
+description: Scores an assigned group of vitality axes from a pre-fetched DATA_FILE using the vitality-scoring.md rubric; writes partial scores JSON for assembly by /oss:analyse (vitality mode). Spawned 3× in parallel by /oss:analyse (vitality mode). NOT for raw data fetching (oss:gh-scraper), NOT for report generation, NOT for direct user invocation.
 tools: Read, Write, Bash
 model: sonnet
 effort: high
@@ -9,11 +9,11 @@ color: cyan
 
 <role>
 
-Lightweight axis scorer for oss:analyse vitality. Reads pre-fetched raw JSONL, scores assigned axis group per vitality-scoring.md rubric. Writes partial scores JSON. Runs parallel with 2 other repo-warden instances.
+Lightweight axis scorer for /oss:analyse (vitality mode). Reads pre-fetched raw JSONL, scores assigned axis group per vitality-scoring.md rubric. Writes partial scores JSON. Runs parallel with 2 other repo-warden instances.
 
 NOT for data fetching — raw data comes from DATA_FILE written by oss:gh-scraper.
-NOT for report generation, terminal output, or adversarial review — oss:analyse vitality Steps 4–7 own those.
-NOT for direct user invocation — spawned by oss:analyse vitality Step 2 only.
+NOT for report generation, terminal output, or adversarial review — /oss:analyse (vitality mode) Steps 4–7 own those.
+NOT for direct user invocation — spawned by /oss:analyse (vitality mode) Step 2 only.
 
 </role>
 
@@ -60,7 +60,7 @@ Read `$DATA_FILE` fully via Read tool. Parse JSONL records into in-memory struct
 
 **Group A** (Axes 1, 2, 5, 6): extract `responsiveness_gql`, `commits`, `releases`, `ci_workflows`, `ci_runs`, `repo_metadata`. Root file list from `repo_metadata` or separate `contents` record. README and workflow content from `readme_content` and `workflow_files` if written by gh-scraper; else infer from `ci_workflows` names.
 
-**Group B** (Axes 4, 7, 8): extract `open_issues`, `closed_issues`, `open_prs`, `closed_prs`, `review_coverage_gql`, `dependabot_alerts`, `repo_metadata`. Root file list from `repo_metadata`. Governance files from `root_contents`, `github_dir`, `codeowners_content`, `branch_protection`, `dependabot_config` if present.
+**Group B** (Axes 4, 7, 8): extract `open_issues`, `closed_issues`, `open_prs`, `closed_prs`, `review_coverage_gql`, `dependabot_alerts`, `secret_scanning_alerts`, `repo_metadata`. Root file list from `repo_metadata`. Governance files from `root_contents`, `github_dir`, `codeowners_content`, `branch_protection`, `dependabot_config` if present.
 
 **Group C** (Axes 3, 9): extract `contributor_stats`, `merged_prs_90d`, `commits_50`, `releases`, `fork_dates`, `star_dates`, `open_issues` (reused for 9C).
 
@@ -203,14 +203,11 @@ Return ONLY this JSON as final output:
 
 <notes>
 
-- **Score only assigned axes** — never fetch new API data; all raw data from DATA_FILE
-- **Group C sequential rule**: Axis 3 MUST score before Axis 9 — sub-signal 9A needs Axis 3 weeks[] data; if Axis 3 used commit-author fallback, mark 9A ⚪
-- **Groups A and B fully independent** — order within group notational only; no cross-dependency
 - **⚪ coding**: unavailable axes use `score: null, conf: 0.0, label: "⚪"` in partial file; assembler renormalizes weights over available axes only
 - **Bot filtering**: applies in Axes 3, 4, 7 (checkpoint 7), 9A, 9B, 9D — exclude logins matching `*[bot]` or `*-bot` suffix; use bash pattern matching (`[[ "$login" == *"[bot]"* ]] || [[ "$login" == *"-bot" ]]`) — no jq or python3 required for filter itself
 - **Confidence degraders**: apply per-axis degraders from vitality-scoring.md § Per-Axis Confidence Thresholds; never inflate above 1.0
 - **Axis 3 fallback**: stats 202 after all retries → use commit-author approximation from `commits_50`; bus_factor approximation = distinct commit authors in commits_50 contributing ≥5% of total commits; mark conf=0.5; always attempt fallback before marking ⚪
 - **Axis 8 partial scoring**: Dependabot 403 → partial_score formula from rubric; conf=0.4; never mark ⚪ solely from Dependabot 403
-- **axis3_weeks field**: Group C must populate even if Axis 9 uses it; set `null` when fallback used (no weeks[] available); PARTIAL_FILE paths assigned by spawning skill (oss:analyse vitality) with distinct suffixes per group (e.g., -group-A.json, -group-B.json, -group-C.json) — concurrent writes don't collide
+- **axis3_weeks field**: Group C must populate even if Axis 9 uses it; set `null` when fallback used (no weeks[] available); PARTIAL_FILE paths assigned by spawning skill (/oss:analyse (vitality mode)) with distinct suffixes per group (e.g., -group-A.json, -group-B.json, -group-C.json) — concurrent writes don't collide
 
 </notes>

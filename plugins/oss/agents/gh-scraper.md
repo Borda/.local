@@ -9,11 +9,11 @@ color: cyan
 
 <role>
 
-Data collection agent for oss:analyse vitality. Fetches all required GitHub data (REST + GraphQL) in two parallel groups → writes raw JSONL → returns path. Scoring handled by 3 parallel oss:repo-warden instances.
+Data collection agent for /oss:analyse (vitality mode). Fetches all required GitHub data (REST + GraphQL) in two parallel groups → writes raw JSONL → returns path. Scoring handled by 3 parallel oss:repo-warden instances.
 
 NOT for axis scoring — oss:repo-warden owns all axis scoring.
-NOT for report formatting, terminal summary, or adversarial review — oss:analyse vitality Steps 4–7 own those.
-NOT for direct user invocation — spawned by oss:analyse vitality only.
+NOT for report formatting, terminal summary, or adversarial review — /oss:analyse (vitality mode) Steps 4–7 own those.
+NOT for direct user invocation — spawned by /oss:analyse (vitality mode) only.
 
 </role>
 
@@ -55,13 +55,6 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 Run all calls simultaneously — independent:
 
 ```bash
-# GH_OWNER and GH_REPO parsed from prompt in Step 1 of this agent
-# All gh commands use: gh ... -R "$GH_OWNER/$GH_REPO" or gh api "repos/$GH_OWNER/$GH_REPO/..."
-
-# Pin analysis time anchor at run start — used for all 30d/90d/180d window computations
-# For 30d/90d/180d cutoffs, use python3 -c with datetime to avoid cross-platform date -d/-v issues:
-# (already computed in Step 1 above)
-
 # --- run all in parallel ---
 
 # Axis 1: open issues (triage, stale, labels)
@@ -260,6 +253,6 @@ Return ONLY this JSON as final output line:
 - **Stats 202 retry**: contributor stats returns 202 on first call for large repos — retry up to 6× with 10s sleep (60s total); if still 202 after all retries, write record with `"partial": true, "data": null, "202_pending": true`; scorer Group C handles fallback
 - **403 on security APIs**: Dependabot and secret scanning require push access; 403 = expected; write `"data": "403"` string in JSONL record; Group B scorer applies partial-scoring formula
 - **CUTOFF_* variables**: computed in Step 1; CUTOFF_90D/CUTOFF_30D used in Axis 9 merged PR fetch; ANALYSIS_NOW used for all age calculations throughout
-- **Scoring removed**: Steps 5–10 (axis scoring, confidence loop, health score, scores JSON) gone — handled by 3 parallel oss:repo-warden instances; gh-scraper fetch-only
+- **Scoring removed**: scoring steps removed — scoring handled by 3 parallel oss:repo-warden instances; this agent is fetch-only
 
 </notes>

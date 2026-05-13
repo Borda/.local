@@ -64,9 +64,9 @@ Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 > "Which session mode did you want?"
 > Options: (a) `resume` — list all open parked items, (b) `archive <name>` — close a parked item by name, (c) `summary` — compact digest of this session's work
 
-## Mode: resume (list pending items)
+## Step 1 / Mode: resume (list pending items)
 
-### Step 1: Resolve the memory directory
+### Step 1a: Resolve the memory directory
 
 Derive MEMORY_DIR using canonical snippet from `<constants>`.
 
@@ -129,7 +129,7 @@ Print in this format:
 
 If no files exist, print: `No pending session items.`
 
-## Mode: archive (close a parked item)
+## Step 2 / Mode: archive (close a parked item)
 
 ### Step 1: Locate memory directory and list candidates
 
@@ -173,7 +173,7 @@ Print: `Archived: <item name>` — one line, terminal only.
 
 End with `## Confidence` block per quality-gates.md — score based on match quality (did fuzzy-match find right item; was archive entry written cleanly).
 
-## Mode: summary (session digest)
+## Step 3 / Mode: summary (session digest)
 
 ### Step 1: Collect completed tasks
 

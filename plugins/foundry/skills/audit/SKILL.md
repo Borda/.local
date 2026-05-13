@@ -3,7 +3,7 @@ name: audit
 description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review. Fix level chosen via always-fire follow-up gate after report."
 argument-hint: '[<scope>...] [--local] [--upgrade | --adversarial] [--skip-gate]'
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
 when_to_use: Use for sweeping quality checks of .claude/ config or plugin source — NOT for creating/modifying agents (use manage) or measuring behavioral accuracy (use calibrate).
 ---
@@ -237,9 +237,9 @@ Spawn **foundry:curator** agents in batches of up to `BATCH_SIZE` (grouping algo
 2. Include the disk inventory from Step 2 (agent/skill list for cross-reference validation)
 3. End with:
 
-> "Write your FULL findings (all severity levels, Confidence block) to `<RUN_DIR>/<file-basename>.md` using the Write tool — where `<file-basename>` is the filename only (e.g. `shepherd.md`, `audit-SKILL.md`). Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/<file-basename>.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<filename>: N critical, N high, N medium, N low\"}`"
+> "Write your FULL findings (all severity levels, Confidence block) to `<RUN_DIR>/<file-slug>.md` using the Write tool — where `<file-slug>` is a unique identifier combining plugin prefix and filename (e.g. `foundry-shepherd.md`, `oss-analyse-SKILL.md`, `develop-fix-SKILL.md`) to avoid collisions between cross-plugin files sharing the same basename. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/<file-slug>.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<filename>: N critical, N high, N medium, N low\"}`"
 
-Replace `<RUN_DIR>` with actual path, `<file-basename>` with filename only.
+Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique slug (e.g. `foundry-shepherd`, `oss-analyse-SKILL`, `develop-fix-SKILL`).
 
 **Critical context discipline**: response body = JSON envelope on final line only. No other text, output summaries, or findings. All content to file.
 
@@ -689,7 +689,7 @@ After completing `--upgrade` or `--adversarial`: also fire this gate (omit optio
 - **Bash error logging**: if bash block in Pre-flight or Step 4 fails unexpectedly, append JSONL line to `.claude/logs/audit-errors.jsonl` (`{"ts":"<ISO>","check":"<N>","error":"<message>"}`) for post-mortem — never swallow errors silently.
 - **Parallel execution rule**: after Step 2, launch Steps 3 and 4 in same response — all foundry:curator spawns AND system-wide bash checks issued together. Do NOT run Step 3 first then Step 4. Aggregation (Step 5) waits for both. Docs-freshness web-explorer (within Step 4) launches in same parallel batch.
 - **Token cost**: Step 3 (foundry:curator spawns) most expensive. For quick structural scan needing only cross-reference + inventory validation, Step 4 system-wide checks often sufficient. Run `/audit agents` or `/audit skills` to scope, or skip Step 3 for fast pass when per-file quality already trusted.
-- **Skill-creator complement**: for testing whether skill trigger descriptions fire correctly (trigger accuracy, A/B testing), see Anthropic's official skill-creator utility. `/audit` checks structural quality; `skill-creator` validates right skill selected by Claude Code dispatcher when user types command.
+- **Routing calibration complement**: for testing whether skill trigger descriptions fire correctly (trigger accuracy, A/B testing), use `/foundry:calibrate routing`. `/audit` checks structural quality; `/foundry:calibrate routing` validates right skill selected by Claude Code dispatcher.
 - Follow-up chains:
   - Audit clean → pick `/foundry:init` from gate to propagate verified config to `~/.claude/`
   - Audit found structural issues → review flagged files manually before syncing; pick fix level from gate

@@ -89,6 +89,12 @@ Use Grep with pattern `ERROR|WARN|failed|not found|exit` across `.claude/logs/`,
 
 Capture all output before Step 3.
 
+```bash
+# Summarize gathered signals for downstream spawn prompts
+SYMPTOM_DESCRIPTION="${ARGUMENTS}"  # full user-provided symptom text from $ARGUMENTS
+KEY_SIGNALS="<summarize top 3-5 signals from Step 2 evidence above>"  # replace with actual gathered signals
+```
+
 ## Step 3: Rank hypotheses
 
 List candidate root causes ranked by probability, drawing only from gathered evidence:
@@ -98,6 +104,11 @@ List candidate root causes ranked by probability, drawing only from gathered evi
 | 1 | … | … | … |
 | 2 | … | … | … |
 | 3 | … | … | … |
+
+```bash
+# Capture ranked hypothesis table text for downstream spawn prompts
+HYPOTHESIS_TABLE="<copy the ranked hypothesis table above as inline text>"  # replace with actual table
+```
 
 Common categories:
 
@@ -125,13 +136,13 @@ CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
 If `[ -n "$CODEX_OK" ]`:
 
 ```text
-Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality: substitute <issue-description> with the full issue text from Step 1 — symptom: <full symptom text>, signals: <key signals from Step 2>, hypothesis table: <ranked table from Step 3>. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to $CODEX_OUT using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
+Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality — symptom: ${SYMPTOM_DESCRIPTION}, signals: ${KEY_SIGNALS}, hypothesis table: ${HYPOTHESIS_TABLE}. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to $CODEX_OUT using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
 ```
 
 Else (Codex unavailable): spawn `foundry:challenger`:
 
 ```text
-Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality for this investigation — symptom: <full symptom text from Step 1>, signals: <key signals from Step 2>, hypothesis table: <ranked table from Step 3>. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to $INVESTIGATE_RUN/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality for this investigation — symptom: ${SYMPTOM_DESCRIPTION}, signals: ${KEY_SIGNALS}, hypothesis table: ${HYPOTHESIS_TABLE}. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to $INVESTIGATE_RUN/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
 ```
 
 - Add challenger alternative hypotheses as new rows in Step 3 table
@@ -184,7 +195,17 @@ Stop when one hypothesis confirmed with clear evidence, or top-3 all ruled out (
   - Further investigation needed: <what additional info would resolve it>
 ```
 
-End with `## Confidence` block per output standards.
+End with a `## Confidence` block:
+
+```markdown
+## Confidence
+**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Gaps**:
+- [e.g., root cause unconfirmed — probe was inconclusive; external service logs inaccessible]
+
+**Refinements**: N passes.
+- Pass 1: [gap addressed]
+```
 
 </workflow>
 

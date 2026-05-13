@@ -34,9 +34,9 @@ Triggered by `sweep "goal" [--flags]`. Non-interactive end-to-end: auto-plan →
 **Shared path resolution** (always runs before S1):
 ```bash
 _RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="plugins/research/skills/_shared"
+[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
 _RESEARCH_SKILLS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="plugins/research/skills"
+[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills"
 ```
 
 **Task tracking**: create tasks for S1–S5 at start.

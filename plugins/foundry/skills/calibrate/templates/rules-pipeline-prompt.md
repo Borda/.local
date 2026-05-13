@@ -1,11 +1,12 @@
 Rules calibration pipeline runner for rule file `<RULE_BASENAME>`. Complete all phases in sequence.
 
 <!-- Substitutions before spawning: RULE_BASENAME=filename (e.g. commit-and-git.md), RULE_CONTENT=full rule file text verbatim, TIMESTAMP=YYYYMMDDTHHMMSSZ, MODE=fast|full, N=_tasks per directive (fast=3, full=5), IS_PATH_SCOPED=true|false (true if rule has a non-empty paths: frontmatter field) -->
+<!-- Derive RULE_DIR before spawning: RULE_DIR="${RULE_BASENAME%.md}" (strips .md extension — used as the run directory name to avoid permission-matcher conflicts with .md-suffixed paths) -->
 
-Mode: `<MODE>` Run dir: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/`
+Mode: `<MODE>` Run dir: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/`
 
 ```bash
-mkdir -p .reports/calibrate/ <TIMESTAMP >/rules/ <RULE_BASENAME >/
+mkdir -p .reports/calibrate/ <TIMESTAMP >/rules/ <RULE_DIR >/
 ```
 
 **Rule under test** (loaded as context for all Phase 2 agents):
@@ -18,7 +19,7 @@ mkdir -p .reports/calibrate/ <TIMESTAMP >/rules/ <RULE_BASENAME >/
 
 **Step 1a — Extract directives**: identify 2–3 key directives from rule content above. Key directive = specific, action-prescribing sentence in imperative mood with concrete, observable required behaviour (e.g. `"Never use git add -A"`, `"Always append a Legend block after any results table"`). Skip section headers, explanatory prose, context-setting sentences.
 
-Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/directives.json`:
+Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/directives.json`:
 
 ```json
 [
@@ -60,7 +61,7 @@ Problem format:
 }
 ```
 
-Write all problems to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/problems.json` as JSON array.
+Write all problems to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/problems.json` as JSON array.
 
 ### Phase 2 — Run tasks (parallel)
 
@@ -92,7 +93,7 @@ Write complete response to `<RUN_DIR>/response-<PROBLEM_ID>.md` using Write tool
 
 **Context discipline**: subagents write to disk and return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. Receiving only `Wrote: <PROBLEM_ID>` per agent is correct and expected.
 
-**Phase timeout**: every 5 min run `find .reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/ -newer /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME> -name "response-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min of no new files → mark remaining as `{"timed_out": true}` in scores.json; grant one +5 min extension if last response file shows active content.
+**Phase timeout**: every 5 min run `find .reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/ -newer /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME> -name "response-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min of no new files → mark remaining as `{"timed_out": true}` in scores.json; grant one +5 min extension if last response file shows active content.
 
 ### Phase 3 — Score (parallel scorer subagents)
 
@@ -138,7 +139,7 @@ Return ONLY this JSON (no prose): `{"problem_id":"<PROBLEM_ID>","type":"trigger"
 
 <!-- END SPAWN PROMPT -->
 
-Collect all scorer compact JSONs. Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/scores.json` as JSON array.
+Collect all scorer compact JSONs. Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/scores.json` as JSON array.
 
 ### Phase 4 — Aggregate and write report
 
@@ -162,7 +163,7 @@ Compute aggregates from `scores.json`:
 - `mean_adherence_recall ≥ 0.8` AND `outcome_correctness < 0.8` → `outcome-gap` (directive followed in word, not in effect)
 - `mean_adherence_recall < 0.8` → `under-enforced`
 
-Write full report to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/report.md`:
+Write full report to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/report.md`:
 
 ```markdown
 ## Rules Benchmark — <RULE_BASENAME> — <date>
@@ -201,7 +202,7 @@ Mode: <MODE> | Directives: D | Adherence tasks: D×N | Trigger tests: T (or 0 if
 <for under-enforced directives: original text and suggested rewording>
 ```
 
-Write result JSONL to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/result.jsonl`:
+Write result JSONL to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/result.jsonl`:
 
 `{"ts":"<TIMESTAMP>","target":"rules/<RULE_BASENAME>","mode":"<MODE>","mean_adherence_recall":0.N,"outcome_correctness":0.N,"misapplied_rate":0.N,"trigger_recall":0.N,"trigger_precision":0.N,"problems":<N>,"verdict":"calibrated|outcome-gap|under-enforced","gaps":["..."]}`
 
@@ -214,7 +215,7 @@ Spawn **foundry:curator** subagent using Agent tool. Pass only file paths — do
 > Read these files using Read tool:
 >
 > 1. Rule file: `.claude/rules/<RULE_BASENAME>`
-> 2. Benchmark report: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/report.md` — focus on Systematic Gaps and Wording Improvement Opportunities sections
+> 2. Benchmark report: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/report.md` — focus on Systematic Gaps and Wording Improvement Opportunities sections
 >
 > For each under-enforced or outcome-gap directive, propose minimal rewording making directive more specific, action-prescribing, unambiguous. Keep surrounding context unchanged. If all directives calibrated, write: `## Proposed Changes — <RULE_BASENAME>\n\nNo changes needed — all directives calibrated.`
 >
@@ -230,7 +231,7 @@ Spawn **foundry:curator** subagent using Agent tool. Pass only file paths — do
 > **Rationale**: one sentence — what failure mode this prevents
 > ```
 >
-> Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_BASENAME>/proposal.md`. End with `## Confidence` block per CLAUDE.md output standards.
+> Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/proposal.md`. End with `## Confidence` block per CLAUDE.md output standards.
 
 ### Return value
 

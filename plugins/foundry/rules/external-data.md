@@ -18,7 +18,7 @@ Default page size 30. Override:
 # List commands — raise the limit explicitly
 gh issue list --limit 1000
 gh pr list --state all --limit 500
-gh release list --limit 500  # adjust upward for repos with many releases
+gh release list --limit 500  # floor for typical repos; verify against actual release count for prolific repos — this is not a ceiling
 
 # API calls — use --paginate to follow all pages automatically
 gh api repos/:owner/:repo/issues --paginate

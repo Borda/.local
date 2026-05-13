@@ -4,7 +4,7 @@ description: Calibration testing for agents and skills. Generates synthetic prob
 when_to_use: Run to measure agent/skill routing accuracy, validate confidence calibration, or A/B test agent changes after editing descriptions or workflows.
 argument-hint: '[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]'
 disable-model-invocation: true
-allowed-tools: Read, Write, Bash, Agent, Glob, Grep, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Agent, Glob, Grep, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
 ---
 
@@ -199,9 +199,9 @@ for batch_target in $SPACE_SEPARATED_TARGETS; do touch /tmp/calibrate-check-$bat
 
 # Every HEALTH_CHECK_INTERVAL_MIN (5 min): check each still-running pipeline
 for batch_target in $SPACE_SEPARATED_TARGETS; do
-    # Use extended timeout for dual-source runs (Codex active in agents/skills modes)
+    # Use extended timeout for dual-source runs (Codex active in CODEX_MODES)
     EFFECTIVE_TIMEOUT_MIN=$PIPELINE_TIMEOUT_MIN
-    for T in agents skills; do [ "$batch_target" = "$T" ] && EFFECTIVE_TIMEOUT_MIN=$PIPELINE_TIMEOUT_MIN_DUAL; done
+    for T in $CODEX_MODES; do [ "$batch_target" = "$T" ] && EFFECTIVE_TIMEOUT_MIN=$PIPELINE_TIMEOUT_MIN_DUAL; done
 
     NEW=$(find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer /tmp/calibrate-check-$batch_target -type f 2>/dev/null | wc -l | tr -d ' ')  # tr -d strips leading spaces from wc -l on macOS; timeout: 5000
     touch /tmp/calibrate-check-$batch_target
@@ -224,6 +224,8 @@ done
 **On timeout**: read `tail -100 <output_file>` for partial JSON; if none use: `{"target":"<TARGET>","verdict":"timed_out","mean_recall":null,"gaps":["pipeline timed out — re-run individually with /calibrate <target> fast"]}`. Timed-out targets appear in report with ⏱ prefix and null metrics.
 
 After all pipeline subagents complete or time out: mark "Calibrate agents", "Calibrate skills", "Calibrate routing", "Calibrate communication", "Calibrate rules" completed (whichever ran). Mark "Analyse and report" in_progress. Parse compact JSON summary from each.
+
+For any pipeline that returned without a compact JSON, use Glob (pattern `*/result.jsonl`, base `.reports/calibrate/<TIMESTAMP>/`) to check whether a result file was written. If `result.jsonl` exists, parse it as the compact JSON for that target. If neither compact JSON nor `result.jsonl` exists, synthesize: `{"target":"<TARGET>","verdict":"incomplete","mean_recall":null,"calibration_bias":null,"gaps":["pipeline returned no output — re-run: /calibrate <TARGET> --fast"]}` and mark that target with ⏱ in the report table.
 
 Print combined benchmark report:
 

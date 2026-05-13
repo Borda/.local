@@ -178,13 +178,11 @@ Include ## Confidence block per quality-gates rules.
 Return ONLY: {"status":"done","hypotheses":N,"file":"<RUN_DIR>/retrospective.md","confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §8):
+**Health monitoring note** (CLAUDE.md §8 deviation): the research:scientist agent here is spawned synchronously (not `run_in_background=true`), so CLAUDE.md §8 sentinel polling is unreachable mid-call. Health monitoring is approximated post-hoc: if the Agent() call returns after >15 min with no output file, treat as timed out. CLAUDE.md §8 full protocol applies only to background agents.
 
-Poll every 5 min: `find $RUN_DIR -newer /tmp/retro-check-$LAUNCH_AT -type f | wc -l` — new files = alive; zero = stalled.
-
-- **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 $RUN_DIR/retrospective.md` shows active progress (partial content written), grant one extension; second stall = hard cutoff
-- **On timeout**: read `tail -100 $RUN_DIR/retrospective.md`; if file missing or empty, set `scientist_status = "timed_out"`, continue to T6. Surface with ⏱ in report.
+**Post-call timeout check**: after Agent() returns, verify:
+- File `$RUN_DIR/retrospective.md` exists and has content → success
+- File missing or empty → set `scientist_status = "timed_out"`, continue to T6; surface with ⏱ in report
 
 Parse returned JSON envelope. Record `hypotheses` count and `confidence` for T6.
 

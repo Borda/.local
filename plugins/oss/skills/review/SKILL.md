@@ -12,6 +12,8 @@ when_to_use: 'Use when the user asks to review a GitHub Pull Request (Python PRs
 
 Spawn specialized sub-agents in parallel. Consolidate findings into structured feedback with severity levels.
 
+NOT for local file review or current git diff — use `/develop:review` (requires `develop` plugin). NOT for non-Python PRs (TypeScript, Go, etc.) — state out of scope, stop. NOT for standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
+
 </objective>
 
 <inputs>
@@ -26,14 +28,6 @@ Spawn specialized sub-agents in parallel. Consolidate findings into structured f
 - **--plan handoff not supported** — skill does not accept plan-mode output from `/develop:plan` (requires `develop` plugin).
 
 </inputs>
-
-<not-for>
-
-- Local file review or current git diff — use `/develop:review` (requires `develop` plugin)
-- Non-Python PRs (TypeScript, Go, etc.) — state out of scope, stop
-- Standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
-
-</not-for>
 
 <constants>
 
@@ -53,14 +47,12 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ## Agent Resolution
 
-```bash
-# Locate oss plugin shared dir — installed first, local workspace fallback
-# sort -V orders semver correctly (0.9.0 < 0.10.0); tail -1 picks newest
+# Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
+# Cold-start fallback (if shared resolver unreadable):
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 # Verify $_OSS_SHARED is resolved before any step that uses it (Step 9 reads shepherd-reply-protocol.md)
 [ -z "$_OSS_SHARED" ] && echo "⚠ Could not resolve _OSS_SHARED — Step 9 --reply will fail; verify oss plugin installed" || true
-```
 
 Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
@@ -189,7 +181,7 @@ Agent 1 uses this to prioritize: high `rdep_count` modules warrant deeper scruti
 
 Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`, `Resolves #N`, `refs #N` — case-insensitive). Extract to `ISSUE_NUMS`. Cap 3.
 
-`ISSUE_NUMS` non-empty: spawn one **foundry:sw-engineer** per issue **concurrently in Step 2, alongside Codex co-review** (both run after run directory created in Step 2 — issue agents and Codex parallel, not sequential). **Synchronization**: Step 3 agents must NOT spawn until all issue agents returned. After spawning issue agents, poll until all `$RUN_DIR/issue-<N>.md` files exist (max `$HARD_CUTOFF` seconds, check every 15s): `for N in $ISSUE_NUMS; do until [ -f "$RUN_DIR/issue-$N.md" ]; do sleep 15; done; done`. Only then proceed to Step 3. Each issue agent:
+`ISSUE_NUMS` non-empty: spawn one **foundry:sw-engineer** per issue in Step 2 alongside Codex — all launch simultaneously in one message batch; no sequential hold between Codex and issue agents. Step 2's unified wait covers all outputs before Step 3. Each issue agent:
 
 - Fetch issue: `gh issue view <N> --json title,body,comments,state,labels`
 - Fetch comments: `gh issue view <N> --comments`
@@ -207,9 +199,9 @@ Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`
 - `REPLY_MODE=true` and `[ ! -f "$REVIEW_FILE" ]` → print `Error: report not found: $REVIEW_FILE` and stop.
 - `REPLY_MODE=true` and file exists → print `[direct] using $REVIEW_FILE` → **skip to Step 9**. Skip Steps 2–8.
 
-## Step 2: Codex co-review
+## Step 2: Codex + parallel agent launch
 
-Set up run directory (shared by Codex and Step 3 agents):
+Set up run directory (shared by all agents) and resolve skill paths:
 
 ```bash
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
@@ -217,34 +209,23 @@ RUN_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR" # timeout: 5000
 ```
 
-Check availability:
-
-```bash
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "codex (openai-codex) available" || echo "⚠ codex (openai-codex) not found — skipping co-review" # timeout: 15000
-```
-
-Codex available → run review on diff:
-
-```bash
-CODEX_OUT="$RUN_DIR/foundry--codex.md"
-Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/foundry--codex.md.")
-```
-
-After Codex writes `$RUN_DIR/foundry--codex.md`, extract seed list (≤10 items): parse all finding lines matching `- [SEVERITY]`, `| Location`, or `file:line` patterns; take first 10; format as `[{"loc":"<file>:<line>","note":"<first 80 chars of finding>"}]`. Parsing fails or format differs → proceed with empty seed, note `⚠ Codex seed extraction failed — format may have drifted`. Inject seed into Step 3 agent prompts as pre-flagged issues. Codex returned ≥10 findings → note in consolidator report header: `Codex: first 10 items seeded; full list in $RUN_DIR/foundry--codex.md (N total).` Codex skipped or empty → proceed with empty seed.
-
-## Step 3: Spawn sub-agents in parallel
-
 ```bash
 # find exit code lost through pipe; fallback guard below covers empty result
 REVIEW_SKILL_DIR="$(find ~/.claude/plugins -path "*/oss/skills/review" -type d 2>/dev/null)"
 [ -z "$REVIEW_SKILL_DIR" ] && REVIEW_SKILL_DIR="plugins/oss/skills/review"
 ```
 
-**File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn: "file-handoff protocol not found — verify foundry plugin installed (`claude plugin list`); continuing without it." Then continue without it. Run dir from Step 2 (`$RUN_DIR`).
+**File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn: "file-handoff protocol not found — verify foundry plugin installed (`claude plugin list`); continuing without it." Then continue without it.
 
 **IMPORTANT**: Replace `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` with actual literal computed values in every Agent spawn prompt below. Do NOT pass as shell variables — agents receive text, not shell context. Un-expanded `$RUN_DIR` creates directory literally named `$RUN_DIR` in project root.
 
-Launch agents simultaneously. Security augmentation folded into Agent 1. Agent 6 optional. Every agent prompt must end with:
+Check Codex availability:
+
+```bash
+claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=1 && echo "codex (openai-codex) available" || { CODEX_AVAILABLE=0; echo "⚠ codex (openai-codex) not found — skipping co-review"; } # timeout: 15000
+```
+
+Every agent prompt must end with:
 
 > "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-slug>.md` using the Write tool — where `<agent-slug>` uses hyphen separator (no colon), e.g. `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`. Colons invalid in macOS filenames. Return to caller ONLY compact JSON envelope on final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2},\"file\":\"$RUN_DIR/<agent-slug>.md\",\"confidence\":0.88}`"
 
@@ -291,22 +272,70 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false` or FIX scope)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
 
-**Health monitoring** (CLAUDE.md §8): After spawning all agents, create checkpoint:
+**Health monitoring** (CLAUDE.md §8): Create checkpoint BEFORE spawning agents — timing starts from first spawn:
 
 ```bash
 REVIEW_CHECKPOINT="/tmp/review-check-$(date +%s)"
 touch "$REVIEW_CHECKPOINT"
 ```
 
+Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents:
+
+```bash
+CODEX_OUT="$RUN_DIR/foundry--codex.md"
+# All Agent() calls below go in a SINGLE response turn — Codex + all review agents start simultaneously:
+# [if CODEX_AVAILABLE=1] Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/foundry--codex.md.")
+# [for each N in ISSUE_NUMS] Agent(subagent_type="foundry:sw-engineer", prompt="<issue N prompt — see Step 1 issue agent spec>. Write to $RUN_DIR/issue-N.md")
+# Agent(subagent_type="foundry:sw-engineer", ...) ← Agent 1
+# Agent(subagent_type="foundry:qa-specialist", ...) ← Agent 2
+# Agent(subagent_type="foundry:perf-optimizer", ...) ← Agent 3
+# Agent(subagent_type="foundry:doc-scribe", ...) ← Agent 4
+# Agent(subagent_type="foundry:linting-expert", ...) ← Agent 5
+# [optional] Agent(subagent_type="foundry:solution-architect", ...) ← Agent 6
+# [conditional] Agent(subagent_type="foundry:challenger", ...) ← Agent 7
+```
+
+Unified wait — poll until all expected outputs present or each hits hard cutoff:
+
+```bash
+POLL_START=$(date +%s)
+EXPECTED=()
+[ "$CODEX_AVAILABLE" = "1" ] && EXPECTED+=("$RUN_DIR/foundry--codex.md")
+for N in $ISSUE_NUMS; do EXPECTED+=("$RUN_DIR/issue-$N.md"); done
+EXPECTED+=("$RUN_DIR/foundry--sw-engineer.md")
+EXPECTED+=("$RUN_DIR/foundry--qa-specialist.md")
+EXPECTED+=("$RUN_DIR/foundry--perf-optimizer.md")
+EXPECTED+=("$RUN_DIR/foundry--doc-scribe.md")
+EXPECTED+=("$RUN_DIR/foundry--linting-expert.md")
+# solution-architect and challenger added conditionally when spawned
+
+for EXPECTED_FILE in "${EXPECTED[@]}"; do
+    until [ -f "$EXPECTED_FILE" ]; do
+        sleep 15
+        ELAPSED=$(( $(date +%s) - POLL_START ))
+        if [ "$ELAPSED" -gt "$HARD_CUTOFF" ]; then
+            printf "⏱ %s timed out after %ds — proceeding without it\n" "$(basename "$EXPECTED_FILE")" "$ELAPSED"
+            break
+        fi
+    done
+done
+```
+
 Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. Refreshing checkpoint after each successful poll ensures stalls detected relative to last activity, not launch. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
+
+After all outputs collected (or timed out), proceed to post-agent checks.
 
 ```bash
 ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_DIR — check that $RUN_DIR was expanded correctly in spawn prompts"
 ```
 
-## Step 4: Post-agent checks (begin after Step 3 agent spawns launch — do not wait for Step 3 completion)
+## Step 3: Post-agent checks and consolidation setup
 
-Run these two checks concurrently with Step 3 agent execution:
+Run Steps 3 and 4 concurrently with agent execution started in Step 2 — do not wait for Step 2 agents to complete before beginning these checks.
+
+## Step 4: Post-agent checks (begin after Step 2 agent spawns launch — do not wait for Step 2 completion)
+
+Run these two checks concurrently with Step 2 agent execution:
 
 ```bash
 TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}') # timeout: 6000  # shared by 4a and 4b
@@ -362,7 +391,7 @@ Read `$FOUNDRY_SHARED/cross-validation-protocol.md`. File absent → warn: "cros
 
 **Independence requirement**: cross-validation must run as separate spawned agent — same type as finding's origin (e.g., `foundry:sw-engineer` verifies `foundry:sw-engineer` critical finding). Do NOT validate in orchestrator context; in-context verification violates independence.
 
-Spawn verifier agent per critical/blocking finding. Agent reads relevant finding file from `$RUN_DIR` and referenced code, returns: `{"finding_id":"<id>","verdict":"CONFIRMED|REFUTED","rationale":"<one sentence>"}`. REFUTED → downgrade finding severity or remove before consolidation.
+Spawn verifier agent per critical/blocking finding. Agent reads relevant finding file from `$RUN_DIR` and referenced code. Each verifier must write full rationale to `$RUN_DIR/verify-<finding-id>.md` using the Write tool, then return ONLY: `{"finding_id":"<id>","verdict":"CONFIRMED|REFUTED","rationale":"<one sentence>","file":"$RUN_DIR/verify-<finding-id>.md"}`. REFUTED → downgrade finding severity or remove before consolidation.
 
 ## Step 6: Consolidate findings
 
@@ -372,6 +401,8 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 [ -z "$BRANCH" ] && BRANCH="main"  # fallback: detached HEAD or empty slug
 DATE=$(date +%Y-%m-%d)
 ```
+
+**IMPORTANT**: expand `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` to literal values before inserting into the spawn prompt — same rule as Step 3. Un-expanded variables create wrong paths.
 
 Spawn **foundry:sw-engineer** consolidator agent with prompt:
 

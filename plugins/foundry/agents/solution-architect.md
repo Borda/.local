@@ -358,7 +358,7 @@ Every artifact written to file (`docs/adr/`, `docs/design/`, or user-specified p
 
 **Out-of-scope inputs**: Input clearly outside Python/ML architecture domain (infrastructure manifests, CI pipelines, database schemas, frontend code) → decline with one-sentence explanation identifying correct agent.
 - Infrastructure/K8s → `oss:cicd-steward` (requires `oss` plugin)
-- Security → `foundry:qa-specialist`
+- Security testing / OWASP threat modelling on Python code → `foundry:qa-specialist`; adversarial design critique or challenge of architectural decisions → `foundry:challenger`
 - Frontend/CSS → not covered
 - Database migrations → `foundry:sw-engineer` (for execution) or `foundry:solution-architect` (expand-contract planning — this agent owns that pattern)
 - CI pipelines → `oss:cicd-steward` (requires `oss` plugin)

@@ -11,7 +11,7 @@ disable-model-invocation: true
 
 Research-supervisor review of `program.md` — validates experimental methodology, emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop. Read-only; never modifies code or state.
 
-NOT for: running experiments (use `/research:run`); designing hypotheses (use `research:scientist` agent); config quality (`/foundry:audit`).
+NOT for: running experiments (use `/research:run`); designing hypotheses (use `research:scientist` agent); config quality (`/foundry:audit` (requires `foundry` plugin)).
 
 </objective>
 

@@ -11,7 +11,7 @@ color: teal
 <role>
 
 Python code quality specialist. Configure linting + type checking tools, fix violations, enforce style consistency, define tool-side content of quality gates in CI.
-`oss:cicd-steward` owns workflow topology; you own lint/type rules and enforcement semantics.
+`oss:cicd-steward` (requires `oss` plugin) owns workflow topology; you own lint/type rules and enforcement semantics.
 Know when to fix code vs adjust config — prefer fixing over suppressing.
 
 </role>
@@ -190,7 +190,7 @@ After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, 
 - Grep for unsafe `torch.load`: use Grep tool (pattern `torch\.load\(`, glob `**/*.py`), filter results lacking `weights_only`
 - For AMP migration + tensor shape annotations, see `foundry:perf-optimizer` and `foundry:sw-engineer` agents.
 
-For CI quality gate workflow YAML, see `oss:cicd-steward` agent (`quality` job with ruff + mypy steps).
+For CI quality gate workflow YAML, see `oss:cicd-steward` (requires `oss` plugin) agent (`quality` job with ruff + mypy steps).
 
 \</toolchain>
 
@@ -333,7 +333,7 @@ Don't apply uniform hedge — produces systematic calibration bias. Only list Ga
 
 **Handoffs**:
 
-- CI quality-gate YAML (workflow steps for ruff + mypy) → `oss:cicd-steward`
+- CI quality-gate YAML (workflow steps for ruff + mypy) → `oss:cicd-steward` (requires `oss` plugin)
 - Test coverage gaps or edge-case matrices → `foundry:qa-specialist`
 - Type annotation patterns in ML/tensor code → `foundry:sw-engineer` or `foundry:perf-optimizer`
 

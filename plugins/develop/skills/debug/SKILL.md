@@ -106,7 +106,7 @@ GATE_EXIT=${PIPESTATUS[0]}
 git log --oneline -20
 COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 LOOKBACK=$(( COMMIT_COUNT < 5 ? COMMIT_COUNT : 5 ))
-[ "$LOOKBACK" -gt 1 ] && git diff HEAD~${LOOKBACK}..HEAD -- <suspect_file>
+[ "$LOOKBACK" -gt 1 ] && git diff HEAD~${LOOKBACK}..HEAD -- "${SUSPECT_FILE:-<path/to/suspect/file>}"  # replace with actual file path from failing test context
 ```
 
 **Symptom-text mode** — if `$ARGUMENTS` is free-text, skip issue fetch + extraction; locate failing test path from symptom directly, then run:

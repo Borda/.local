@@ -282,7 +282,7 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 
 \<hook_authoring>
 
-Hook editing reviewed by `foundry:curator` (per NOT-for boundary). `foundry:sw-engineer` may author hook *logic* in coordination with curator for validation. For standalone hook creation, hand off to `foundry:curator`.
+Hook authoring and editing owned exclusively by `foundry:sw-engineer` (per curator NOT-for boundary — curator does not touch hook files). `foundry:curator` reviews hook-adjacent markdown config files only. For hook creation or modification, `foundry:sw-engineer` owns the work end-to-end.
 Patterns below apply when sw-engineer collaborates on hook code.
 
 ## File Header Structure

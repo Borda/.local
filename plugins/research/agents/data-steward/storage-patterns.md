@@ -1,3 +1,4 @@
+# Reference document — NOT an agent definition. Used by research:data-steward as contextual material.
 # Storage and Loading Patterns — data-steward reference
 
 Loaded by data-steward in `acquisition` mode before Step 2.

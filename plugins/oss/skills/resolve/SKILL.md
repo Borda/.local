@@ -1,10 +1,10 @@
 ---
 name: resolve
-description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for drafting contributor replies (use oss:analyse --reply). NOT for release preparation (use oss:release)."
+description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for drafting contributor replies (use /oss:analyse --reply). NOT for release preparation (use /oss:release)."
 argument-hint: '<PR number or URL> [report] | report | <review comment text>'
 disable-model-invocation: true
 effort: high
-when_to_use: Use to implement GitHub PR review comments and push fixes back to contributor's fork; NOT for drafting replies (use oss:analyse --reply) or fixing local bugs (use develop:fix; requires develop plugin).
+when_to_use: Use to implement GitHub PR review comments and push fixes back to contributor's fork; NOT for drafting replies (use /oss:analyse --reply) or fixing local bugs (use /develop:fix; requires develop plugin).
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
@@ -49,12 +49,12 @@ CHALLENGE_POLL_S=90       <!-- tightened from CLAUDE.md §8 default 300s -->
 
 ## Agent Resolution
 
-```bash
-# Locate oss plugin shared dir — installed first, local workspace fallback
-# sort -V orders semver correctly (0.9.0 < 0.10.0); tail -1 picks newest
+# Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
+# Cold-start fallback (if shared resolver unreadable):
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 
+```bash
 _OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 2>/dev/null | head -1)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
 ```
@@ -156,6 +156,7 @@ No PR number extractable → print: "Review output does not reference a PR — p
 Parse $ARGUMENTS:
 
 ```bash
+[ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.sh" ] || { echo "Error: parse-resolve-args.sh not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
 eval "$(bash "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.sh" "$ARGUMENTS")"
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
@@ -434,6 +435,7 @@ git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
 `FORK_REMOTE`: contributor login (e.g. `alice`) for forks, `origin` for same-repo. Push always `git push` — tracking configured by `gh pr checkout`.
 
 ## Steps 5–7: Conflict detection, context, and resolution
+<!-- Steps 5–7 defined in conflict-resolution.md — see that file for sub-step numbering -->
 
 Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
 
@@ -461,14 +463,7 @@ trap 'rm -f "$SENTINEL"' EXIT INT TERM  # ensure cleanup even if workflow crashe
 Process items in `SELECTED_ITEMS` (from Step 3f) in priority order (`[req]` first, then `[suggest]`). **Each item gets own commit.**
 
 **Codex effort classification** — classify each item before dispatch; set `ITEM_EFFORT`; aggregate to `CHANGE_SCOPE` for Step 9:
-
-| Signal in `summary` or `full_comment_text` (case-insensitive) | `ITEM_EFFORT` |
-| --- | --- |
-| typo, spelling, whitespace, formatting, comment-only, rename single identifier, docstring | `medium` |
-| multi-file change, refactor, architecture, extract class, new feature, redesign | `xhigh` |
-| everything else (single-file logic, test fix, small change) | `high` (default) |
-
-Rules:
+- typo/spelling/whitespace/formatting/comment/rename-single/docstring → `medium`; multi-file/refactor/architecture/new-feature/redesign → `xhigh`; all else → `high` (default)
 - Minimum effort is always `medium` — never `low`
 - `ITEM_EFFORT` set per item; include in Codex prompt as `"Effort level: $ITEM_EFFORT.\n..."` prefix
 - `CHANGE_SCOPE` = aggregate across all `SELECTED_ITEMS`:
@@ -498,7 +493,13 @@ Agent(subagent_type="codex:codex-rescue", prompt="Effort level: $ITEM_EFFORT. Ap
 git diff HEAD --stat  # timeout: 3000
 ```
 
-Code changed → commit:
+Code changed → pop stash BEFORE committing (pop after commit risks conflict markers in committed content), then commit:
+
+```bash
+if git stash list --quiet | grep -q "resolve-pre-item-<id>"; then
+    git stash pop || { echo "⚠ stash pop conflict — resolve conflicts in $(git stash list | head -1) before committing item #<id>"; exit 1; }  # timeout: 3000
+fi
+```
 
 ```bash
 git add $(git diff HEAD --name-only)                                                     # timeout: 3000
@@ -525,14 +526,6 @@ Mark item's task completed:
 
 ```text
 TaskUpdate(task_id=<item.task_id>, status="completed")
-```
-
-Pop stash BEFORE committing (pop after commit risks conflict markers in committed content):
-
-```bash
-if git stash list --quiet | grep -q "resolve-pre-item-<id>"; then
-    git stash pop || { echo "⚠ stash pop conflict — resolve conflicts in $(git stash list | head -1) before committing item #<id>"; exit 1; }  # timeout: 3000
-fi
 ```
 
 ## Step 9: Lint and QA gate

@@ -4,7 +4,7 @@ description: OSS project shepherd for Python/ML/CV/AI — owns all public-facing
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
 model: opusplan
 maxTurns: 40
-effort: xhigh
+effort: high
 color: green
 ---
 
@@ -37,7 +37,7 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 
 `sort -V` orders semver correctly (`0.8.0 < 0.9.0 < 0.10.0`); `tail -1` selects newest.
 
-<!-- Model/effort note: effort: xhigh applies to plan (opus) phase; Sonnet execution phase gracefully falls back to high — intentional for deeper planning. -->
+<!-- Model/effort note: effort: high applies to plan (opus) phase; Sonnet execution phase gracefully falls back to high — intentional for deeper planning. -->
 
 </initialization>
 

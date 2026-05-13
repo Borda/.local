@@ -3,7 +3,7 @@ name: refactor
 description: Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop.
 argument-hint: '<target file or directory> <goal> [--plan <path>] [--no-challenge] [--codemap] [--semble] [--team]'
 effort: high
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
 
@@ -186,7 +186,7 @@ if [ "$TEAM_MODE" = "true" ]; then
   #
   # Spawn prompt template (apply to each teammate, substituting role and task):
   #   You are a [foundry:sw-engineer|foundry:qa-specialist] teammate refactoring: [target].
-  #   Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Apply file locking protocol for concurrent edits.
+  #   Read $(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/TEAM_PROTOCOL.md 2>/dev/null | head -1 || echo "${HOME}/.claude/TEAM_PROTOCOL.md") — use AgentSpeak v2. Apply file locking protocol for concurrent edits.
   #   Your task: [refactoring steps 4–5 | characterization tests step 3].
   #   Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}
   #   Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output.

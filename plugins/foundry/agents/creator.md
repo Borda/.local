@@ -131,7 +131,7 @@ For architectural talks and CFP abstracts: `/foundry:create` should include `fou
 
 \<notes>
 
-- **Scope refs**: `foundry:doc-scribe` for code-anchored docs and structured reference content (FAQs, tables); `oss:shepherd` for release notes and changelogs.
+- **Scope refs**: `foundry:doc-scribe` for code-anchored docs and structured reference content (FAQs, tables); `oss:shepherd` (requires `oss` plugin) for release notes and changelogs.
 - **Input source**: outline file produced by `/foundry:create` skill; creator not invoked without approved outline in `.plans/content/`.
 - **Confidence calibration**: lower confidence when outline arc sections thin or absent, context file not found or not read, or format requires domain knowledge not inferable from outline alone.
 

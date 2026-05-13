@@ -86,7 +86,8 @@ Confirm `$PLUGIN_ROOT/hooks/statusline.js` exists. If not, stop and report.
 
 ```bash
 [ ! -f ~/.claude/settings.json ] && echo '{}' > ~/.claude/settings.json  # timeout: 5000
-cp ~/.claude/settings.json "~/.claude/settings.json.bak-$(date -u +%Y%m%dT%H%M%SZ)"  # timeout: 5000
+INIT_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
+cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${INIT_BAK_TS}"  # timeout: 5000
 ```
 
 Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
@@ -192,7 +193,7 @@ After all writes, confirm file parses as valid JSON:
 jq empty ~/.claude/settings.json  # timeout: 5000
 ```
 
-If `jq` exits non-zero: restore from backup (`cp ~/.claude/settings.json.bak ~/.claude/settings.json`), report error, stop. If valid: continue.
+If `jq` exits non-zero: restore from backup (`cp "$HOME/.claude/settings.json.bak-${INIT_BAK_TS}" ~/.claude/settings.json`), report error, stop. If valid: continue.
 
 ## Step 9: Symlink rules and TEAM_PROTOCOL.md
 

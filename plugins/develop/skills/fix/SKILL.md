@@ -80,7 +80,7 @@ if [ -n "$DIAG_FILE" ] && [ ! -f "$DIAG_FILE" ]; then
 fi
 ```
 
-Diagnosis file format: see `develop:debug` Final Report section for canonical field definitions (Root Cause, Suspect Files, Evidence).
+Diagnosis file format: see `/develop:debug` Final Report section for canonical field definitions (Root Cause, Suspect Files, Evidence).
 
 ## Flag parsing
 
@@ -111,9 +111,33 @@ Root cause unclear after initial triage, OR bug spans 3+ modules and user accept
 
 ```bash
 if [ "$TEAM_MODE" = "true" ]; then
-  # Execute team coordination above, then exit team branch
-  # (return to Step 2 after consensus root cause established)
-  :
+  # Spawn 2-3 sw-engineer teammates — each claims a distinct root-cause hypothesis
+  # Health monitoring setup (CLAUDE.md §8)
+  FIX_TEAM_LAUNCH=$(date +%s)
+  touch /tmp/fix-team-check-1 /tmp/fix-team-check-2  # timeout: 3000
+fi
+```
+
+```text
+# Teammate 1 (foundry:sw-engineer, model=opus) — hypothesis A:
+Agent(subagent_type="foundry:sw-engineer", model="opus", prompt="You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template.\n\nBug: ${ARGUMENTS}\nEvidence: {bug: <description>, traceback: <key lines>}\n\nYour task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach.\nTask tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state.\nSignal completion: 'Status: complete | blocked — <reason>'.\nWrite full analysis to .plans/active/fix-hypothesis-A-[timestamp].md using Write tool.\nReturn ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}")
+
+# Teammate 2 (foundry:sw-engineer, model=opus) — hypothesis B:
+Agent(subagent_type="foundry:sw-engineer", model="opus", prompt="You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template.\n\nBug: ${ARGUMENTS}\nEvidence: {bug: <description>, traceback: <key lines>}\n\nYour task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach.\nTask tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state.\nSignal completion: 'Status: complete | blocked — <reason>'.\nWrite full analysis to .plans/active/fix-hypothesis-B-[timestamp].md using Write tool.\nReturn ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}")
+```
+
+```bash
+# Health monitoring — poll every 5 min; hard cutoff 15 min (CLAUDE.md §8)
+# After spawning both teammates above, monitor:
+# find .plans/active/ -newer /tmp/fix-team-check-1 -name "fix-hypothesis-*.md" | wc -l — new files = alive
+# On timeout: read tail -100 of each .plans/active/fix-hypothesis-*.md; surface with ⏱
+```
+
+```bash
+if [ "$TEAM_MODE" = "true" ]; then
+  # After teammates complete: read their output files, synthesize consensus root cause
+  # Lead proceeds with Steps 2-4 (regression test, fix, review loop) alone
+  exit 0
 fi
 ```
 

@@ -1,3 +1,4 @@
+# Reference document — NOT an agent definition. Used by research:data-steward as contextual material.
 # ML Pipeline Patterns — data-steward reference
 
 Loaded by data-steward agent in `pipeline-audit` mode before Step 1.
