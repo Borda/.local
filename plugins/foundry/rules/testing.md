@@ -105,6 +105,18 @@ addopts = "--doctest-modules"
 testpaths = ["src", "tests"]
 ```
 
+## Test-Softening Anti-patterns
+
+Never soften a failing test to make it pass. Every softening pattern signals wrong testing approach or implementation bug — investigate root cause:
+
+- **`try`/`except` in test body**: `try: <act>; assert ...; except: pass` = test always passes regardless of behavior; remove wrapper, fix implementation
+- **Silent `pytest.skip()` without root cause**: skipping without understanding why hides regressions; trace failure, fix or open tracked issue; never skip as first response to failure
+- **`@pytest.mark.xfail` without `raises=` and issue link**: open-ended `xfail` = permanent silent hole; require `raises=<ExceptionType>` + `reason="<issue-URL>"` — both mandatory
+- **Over-mocking to avoid real failures**: adding mocks after tests start failing (not upfront as isolation design) covers implementation bugs; remove mock to expose root cause
+- **Widening tolerance to pass**: loosening `atol`/`rtol`, switching `==` to `in range`, or relaxing type checks without documented precision reason = hiding numerical or type bugs
+
+When tempted to soften a test: stop — read the failure, find the implementation bug, fix that instead.
+
 ## Baseline Gate
 
 All existing tests must pass before adding new code.

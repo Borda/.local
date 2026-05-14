@@ -69,6 +69,8 @@ No implementation. Writing function body or class = stop, write spec instead.
 
 ## API Design Proposal
 
+> **Template note**: Public Surface section lists signatures with type annotations only — no docstrings (docstrings are `foundry:sw-engineer`'s responsibility). Remove this note before publishing the artifact.
+
 ```markdown
 # API Design: [Feature/Module Name]
 
@@ -77,7 +79,6 @@ No implementation. Writing function body or class = stop, write spec instead.
 
 ## Public Surface
 
-Proposed signatures with type annotations only — no docstrings (sw-engineer's responsibility):
 `def new_function(param_a: TypeA, param_b: TypeB = default) -> ReturnType: ...`
 
 ## Usage Examples

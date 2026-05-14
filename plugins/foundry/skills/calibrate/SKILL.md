@@ -179,8 +179,8 @@ CODEMAP_AVAILABLE=$(find ~/.claude/plugins/cache -name "codemap" -type d 2>/dev/
 DEVELOP_AVAILABLE=$(find ~/.claude/plugins/cache -name "develop" -type d 2>/dev/null | head -1)  # timeout: 5000
 ```
 
-- **`agents` pipeline**: exclude `oss:cicd-steward` and `oss:shepherd` if `$OSS_AVAILABLE` empty; exclude `research:data-steward` and `research:scientist` if `$RESEARCH_AVAILABLE` empty. Log: "oss/research plugin not installed — skipping <agent> calibration"
-- **`skills` pipeline**: exclude `/oss:review` always (requires live GitHub PR — not calibratable with synthetic input; see `modes/skills.md`); exclude `/codemap:*` skills if `$CODEMAP_AVAILABLE` empty; exclude `/research:plan`, `/research:judge`, `/research:verify` if `$RESEARCH_AVAILABLE` empty; exclude `/develop:review` if `$DEVELOP_AVAILABLE` empty. Log skip message per excluded skill.
+- **`agents` pipeline**: exclude `oss:cicd-steward` and `oss:shepherd` (requires `oss` plugin) if `$OSS_AVAILABLE` empty; exclude `research:data-steward` and `research:scientist` (requires `research` plugin) if `$RESEARCH_AVAILABLE` empty. Log: "oss/research plugin not installed — skipping <agent> calibration"
+- **`skills` pipeline**: exclude `/oss:review` (requires `oss` plugin) always (requires live GitHub PR — not calibratable with synthetic input; see `modes/skills.md`); exclude `/codemap:*` skills (requires `codemap` plugin) if `$CODEMAP_AVAILABLE` empty; exclude `/research:plan`, `/research:judge`, `/research:verify` (requires `research` plugin) if `$RESEARCH_AVAILABLE` empty; exclude `/develop:review` (requires `develop` plugin) if `$DEVELOP_AVAILABLE` empty. Log skip message per excluded skill.
 
 Fallback role descriptions for cross-plugin agents (if ever substituted with `general-purpose`) — see `skills/_shared/agent-resolution.md`.
 
@@ -188,38 +188,15 @@ Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instru
 
 ## Step 3: Collect results and print combined report
 
-**Health monitoring** — apply protocol from CLAUDE.md §8. Run dir for liveness checks: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`. Constants below tighten global defaults for this skill:
+**Health monitoring** — follow CLAUDE.md §8 protocol. Run dir for liveness checks: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`. Skill-specific constants (tighter than global defaults — see `<constants>` block): `PIPELINE_TIMEOUT_MIN`, `PIPELINE_TIMEOUT_MIN_DUAL` (when Codex active in CODEX_MODES), `HEALTH_CHECK_INTERVAL_MIN`, `EXTENSION_MIN`.
 
+Per-target checkpoint init after all spawns:
 ```bash
-# Initialise checkpoints after all pipeline spawns
-# Replace SPACE_SEPARATED_TARGETS with space-separated target names from the current run scope (e.g. "agents skills routing")
 LAUNCH_AT=$(date +%s)
-TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 for batch_target in $SPACE_SEPARATED_TARGETS; do touch /tmp/calibrate-check-$batch_target; done
-
-# Every HEALTH_CHECK_INTERVAL_MIN (5 min): check each still-running pipeline
-for batch_target in $SPACE_SEPARATED_TARGETS; do
-    # Use extended timeout for dual-source runs (Codex active in CODEX_MODES)
-    EFFECTIVE_TIMEOUT_MIN=$PIPELINE_TIMEOUT_MIN
-    for T in $CODEX_MODES; do [ "$batch_target" = "$T" ] && EFFECTIVE_TIMEOUT_MIN=$PIPELINE_TIMEOUT_MIN_DUAL; done
-
-    NEW=$(find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer /tmp/calibrate-check-$batch_target -type f 2>/dev/null | wc -l | tr -d ' ')  # tr -d strips leading spaces from wc -l on macOS; timeout: 5000
-    touch /tmp/calibrate-check-$batch_target
-    ELAPSED=$(( ($(date +%s) - LAUNCH_AT) / 60 ))
-    if [ "$NEW" -gt 0 ]; then
-        echo "✓ $batch_target active"
-    elif [ "$ELAPSED" -ge "$EFFECTIVE_TIMEOUT_MIN" ]; then
-        echo "⏱ $batch_target TIMED OUT (hard limit)"
-    elif [ "$ELAPSED" -ge "$HEALTH_CHECK_INTERVAL_MIN" ]; then
-        OUTPUT_FILE=".reports/calibrate/$TIMESTAMP/$batch_target/pipeline.jsonl"
-        if tail -20 "$OUTPUT_FILE" 2>/dev/null | grep -qE 'PROGRESS:|STATUS:|HEARTBEAT:|extending'; then
-            echo "⏸ $batch_target: extension granted (+5 min)"
-        else
-            echo "⏱ $batch_target TIMED OUT"
-        fi
-    fi
-done
 ```
+
+Poll every `$HEALTH_CHECK_INTERVAL_MIN` minutes: `find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer /tmp/calibrate-check-$batch_target -type f | wc -l` — new files = alive; use Read tool (limit=20) on `pipeline.jsonl` to check for PROGRESS:/HEARTBEAT: if stalled; apply `$PIPELINE_TIMEOUT_MIN_DUAL` instead of `$PIPELINE_TIMEOUT_MIN` for dual-source (Codex-active) targets.
 
 **On timeout**: read `tail -100 <output_file>` for partial JSON; if none use: `{"target":"<TARGET>","verdict":"timed_out","mean_recall":null,"gaps":["pipeline timed out — re-run individually with /calibrate <target> fast"]}`. Timed-out targets appear in report with ⏱ prefix and null metrics.
 
@@ -298,7 +275,7 @@ Mark "Apply findings" in_progress.
 - Pure apply mode (only `--apply`, no pace flag): find most recent run:
 
 ```bash
-LATEST=$(ls -td .reports/calibrate/*/ 2>/dev/null | head -1)
+LATEST=$(find .reports/calibrate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)
 TIMESTAMP=$(basename "$LATEST")
 ```
 
@@ -311,7 +288,7 @@ Stop. `--apply` without pace flag is documented as "skip benchmark, apply propos
 
 **Print run's report before applying**: for each found target, read and print `.reports/calibrate/<TIMESTAMP>/<target>/report.md` verbatim so user sees benchmark basis before any file changes.
 
-**Spawn one `general-purpose` subagent per found target. Issue ALL spawns in single response — no waiting between spawns.**
+**Spawn one `foundry:curator` subagent per found target (`.md` files — agents and skills). Issue ALL spawns in single response — no waiting between spawns.**
 
 **`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. Project-local override first, then plugin cache, then source-tree fallback (plugin-dev only):
 ```bash
@@ -321,7 +298,7 @@ PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')
 AGENT_BARE=$(echo "<name>" | sed 's/^[^:]*://')
 [ -z "$PLUGIN_PREFIX" ] && PLUGIN_PREFIX="foundry"
 AGENT_FILE=".claude/agents/$AGENT_BARE.md"
-[ -f "$AGENT_FILE" ] || AGENT_FILE="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/$PLUGIN_PREFIX/*/agents/$AGENT_BARE.md 2>/dev/null | head -1)"
+[ -f "$AGENT_FILE" ] || AGENT_FILE="$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/$PLUGIN_PREFIX" -maxdepth 4 -name "$AGENT_BARE.md" -path "*/agents/*" 2>/dev/null | sort -Vr | head -1)"
 [ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
 # Skill target — substitute skills/<name>/SKILL.md in the same pattern (plugin prefix applies equally)
 

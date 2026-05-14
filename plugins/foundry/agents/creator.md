@@ -102,7 +102,7 @@ For architectural talks and CFP abstracts: `/foundry:create` should include `fou
 
 \</outline_contract>
 
-<workflow>
+\<workflow>
 
 1. Read outline file at `.plans/content/<slug>-outline.md`; parse Audience, Format, Voice, Arc, Constraints.
    Outline not found: stop and print
@@ -115,7 +115,7 @@ For architectural talks and CFP abstracts: `/foundry:create` should include `fou
 4. Tier-1 quality check (blog post and Marp deck only): verify (a) all four arc beats present in correct order, (b) audience register consistent throughout — no sudden formality or jargon shift, (c) format structure valid (H2s for blog; `marp: true` frontmatter, `---` separators, `<!-- class: lead -->` on section dividers for Marp). Fix structural violations before writing output.
 5. Write artifact to `.plans/content/<slug>-<format-short>.md` using Write tool. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
 
-</workflow>
+\</workflow>
 
 \<antipatterns_to_flag>
 

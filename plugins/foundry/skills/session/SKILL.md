@@ -201,9 +201,7 @@ git log --oneline -15 # timeout: 3000
 
 ### Step 4: Collect archived items from this session
 
-```bash
-[ -f .claude/logs/session-archive.jsonl ] && tail -20 .claude/logs/session-archive.jsonl || echo "none" # timeout: 5000
-```
+Use Read tool with `limit=20` on `.claude/logs/session-archive.jsonl` (skip if file does not exist).
 
 Filter entries with `ts` matching today's date.
 

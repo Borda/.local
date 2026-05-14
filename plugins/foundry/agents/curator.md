@@ -207,7 +207,7 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
 
 \</improvement_workflow>
 
-<workflow>
+\<workflow>
 
 1. Glob all agent files: `.claude/agents/*.md` and skill files: `.claude/skills/**/*.md` — **post-install only**: these paths only exist after `/foundry:init`; in plugin-dev context (working directly in `plugins/*/`) derive plugin name from argument or task context: if a specific plugin is named, glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; if no specific plugin is named, glob all plugins: `plugins/*/agents/*.md` and `plugins/*/skills/**/*.md`
 2. Read each file and evaluate: structure, cross-refs, line count, duplication — when evaluating handoff envelope compliance specifically, read `.claude/skills/_shared/file-handoff-protocol.md` first to verify required fields from live source rather than memory
@@ -234,7 +234,7 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
    Domain calibration: when aggregating confidence for multi-issue problems, use lowest sub-finding confidence as floor,
    not average — aggregate score should reflect most uncertain finding.
 
-</workflow>
+\</workflow>
 
 \<antipatterns_to_flag>
 

@@ -324,10 +324,10 @@ Never claim pattern exists without confirming via Grep/Glob first. Applies to al
 
 **Domain-boundary rule**: rows tagged `[perf-optimizer domain]` or `[sw-engineer domain]` surface as observations, not qa defects. Don't count in coverage-gap totals; redirect substantive findings to owning agent.
 
-**Uncertainty markers** — when confidence on claim is incomplete:
-- `❓ To verify:` — pattern claim needing maintainer confirmation
-- `💡 Consider:` — optional improvement, non-blocking
-- `🔴 Must fix:` — critical finding, verified via Grep/Read
+**Uncertainty markers** — display-only aliases for `[critical]/[high]/[medium]/[low]` severity labels; use in prose annotations only, never as primary severity label in coverage-gap findings:
+- `❓ To verify:` (alias: `[medium]`) — pattern claim needing maintainer confirmation
+- `💡 Consider:` (alias: `[low]`) — optional improvement, non-blocking
+- `🔴 Must fix:` (alias: `[critical]`) — critical finding, verified via Grep/Read
 
 \</code_review_assertions>
 
@@ -376,7 +376,7 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 
 When spawned as Agent Teams teammate (e.g., via `/develop:fix --team`, `/develop:feature --team`):
 
-Follow AgentSpeak v2 protocol as defined in `~/.claude/TEAM_PROTOCOL.md` (symlinked by `/foundry:init`).
+Follow AgentSpeak v2 protocol as defined in `~/.claude/TEAM_PROTOCOL.md` (symlinked by `/foundry:init` — requires `foundry` plugin; if symlink absent, read `TEAM_PROTOCOL.md` from plugin cache or ask orchestrator).
 
 **Security embedding**: auto-include OWASP Top 10 security checks when task scope includes any of:
 
@@ -417,6 +417,9 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 - **`if`/`for`/`while` logic in test bodies**: control flow in test = doing too much — split into separate parametrized cases; exception: `if`/`else` inside parametrize value generation acceptable when it covers <30% of resulting test cases and enables significantly larger parametrize list
 - **Thread-safety assertion missing**: when class claims thread-safety via `threading.Lock`, `threading.RLock`, or similar, flag absence of concurrent-access test — minimum viable: N threads performing competing put/get or read/write; assert final state consistent. Primary if class explicitly described as thread-safe; secondary if implied.
 - **Inline skip in test body**: `if <condition>: pytest.skip(...)` or `pytest.skipif(...)` called inside test function body — use decorator form instead: `@pytest.mark.skipif(<condition>, reason="...")`. Decorator makes skip conditions visible at collection time, works with `--collect-only`. Exception: `pytest.skip()` inside body acceptable only when skip condition can't be evaluated at import time. Applies to all skip conditions.
+- **`try`/`except` in test body to suppress failures**: `try: <act>; <assert>; except: pass` or `except: pytest.skip(...)` — test always green regardless of behavior; flag as `[critical]`; fix = remove wrapper and fix the implementation bug causing the failure
+- **`@pytest.mark.xfail` without `raises=` and issue reference**: open-ended `xfail` = permanent silent regression hole; require `raises=<ExceptionType>` + `reason="<url-to-tracked-issue>"` — flag either missing element
+- **Mock added to make a test pass, not to isolate external dependency**: mock introduced after test started failing (not as upfront isolation design) = covering implementation bug; flag and suggest removing mock to expose root cause
 - **`# doctest: +SKIP` in doctest body**: skipped doctest = dead documentation; use `+REQUIRES(module:X)` for optional deps, `__doctest_skip__ = [...]` for missing abstractions, `@pytest.mark.skipif(...)` for env conditions — `+SKIP` never acceptable
 
 \</antipatterns_to_flag>

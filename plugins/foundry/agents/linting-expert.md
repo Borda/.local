@@ -148,6 +148,8 @@ pre-commit autoupdate      # bump all hook revs to latest — run this regularly
 
 > **Tip**: Enable pre-commit.ci to auto-run + auto-fix hooks on every PR without local setup burden.
 
+\</toolchain>
+
 \<pre_commit_versioning>
 
 ### Version Pinning
@@ -187,6 +189,8 @@ After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, 
 
 \</pre_commit_versioning>
 
+\<pytorch_migration>
+
 ## PyTorch API Migration
 
 - Grep for deprecated `torch.cuda.amp` usage: use Grep tool (pattern `torch\.cuda\.amp`, glob `**/*.py`)
@@ -195,7 +199,7 @@ After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, 
 
 For CI quality gate workflow YAML, see `oss:cicd-steward` (requires `oss` plugin) agent (`quality` job with ruff + mypy steps).
 
-\</toolchain>
+\</pytorch_migration>
 
 \<common_fixes>
 

@@ -36,7 +36,7 @@ Use Glob tool to enumerate agents and skills across all sources — project-loca
 
 - **Project-local**: pattern `agents/*.md`, path `.claude/`; pattern `skills/*/SKILL.md`, path `.claude/`
 - **Plugin source** (workspace): pattern `*/agents/*.md`, path `plugins/`; pattern `*/skills/*/SKILL.md`, path `plugins/`
-- **Installed plugin cache** (if accessible): resolve cache root dynamically — `PLUGIN_CACHE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/ 2>/dev/null | head -1)` — then scan `$PLUGIN_CACHE` for pattern `*/agents/*.md` and `*/skills/*/SKILL.md`
+- **Installed plugin cache** (if accessible): resolve cache root — `PLUGIN_CACHE=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)` — then use Glob tool on `$PLUGIN_CACHE` for pattern `*/agents/*.md` and `*/skills/*/SKILL.md`
 
 For each agent/skill found, extract: name, description, tools, purpose. Tag each entry with plugin namespace (e.g. `foundry:sw-engineer`, `oss:resolve`) — used in Step 3 gap analysis to prevent recommending duplicates of plugin-namespaced agents/skills.
 
@@ -499,7 +499,7 @@ If critical findings returned: surface to user before marking complete. Non-crit
   - Security findings appearing in reviews for non-auth code → suggests qa-specialist teammate scope too broad; narrow it
   - Model tier mismatches (e.g., heavy analysis assigned to `sonnet` teammates) → flag for tier adjustment
 
-- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/calibrate/modes/skills.md 2>/dev/null | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
+- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | sort -Vr | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
   - **caveman plugin** — narrow, self-contained communication mode, no local structural overlap → GT: install-as-is recommended, Group A empty or thin
   - **Karpathy autoresearch** — research automation tool, strong overlap with `research:` plugin structure → GT: Group A candidates map to research plugin, digest recommended, install-as-is not triggered
   - Ground truth = static snapshot of each tool's agent/skill/rule files (no live fetch needed); score adoption-table lane assignments against GT outcomes

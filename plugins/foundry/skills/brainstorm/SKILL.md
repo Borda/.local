@@ -115,10 +115,10 @@ Print launch note:
 
 > **Live tree viewer**: resolve scripts dir:
 > ```bash
-> _BRAINSTORM_SCRIPTS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/brainstorm/scripts 2>/dev/null | head -1)
+> _BRAINSTORM_SCRIPTS=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -type d -name "scripts" -path "*/brainstorm/*" 2>/dev/null | sort -Vr | head -1)
 > [ -z "$_BRAINSTORM_SCRIPTS" ] && _BRAINSTORM_SCRIPTS="plugins/foundry/skills/brainstorm/scripts"
 > ```
-> Serve from project root with any static-file server that doesn't require python3 (e.g. `npx serve .`, `npx http-server .`); python3-based servers excluded from bash allow list by design. Then open `http://localhost:<PORT>/<path-to-tree-viewer.html>?state=<sidecar-path>`.
+> Serve from project root with a static-file server (e.g. `npx serve .`, `npx http-server .`). Then open `http://localhost:<PORT>/<path-to-tree-viewer.html>?state=<sidecar-path>`.
 
 ## Step 2: Clarifying questions
 
@@ -462,9 +462,9 @@ For each blocking question: call `AskUserQuestion` — one at a time, in order. 
 2. For each item, write ready-to-run invocation:
    - `.claude/` config change → `/manage create <type> <name> "description"` or `/manage update <name> <spec-file>`
    - System install or shell setup → full shell command
-   - Application code change → `/develop:feature "<goal>"` or `/develop:fix "<symptom>"`
-   - Documentation → `/develop:feature "<doc goal>"`
-   - Verification/testing → `/develop:feature "<test goal>"` or manual check command
+   - Application code change → `/develop:feature "<goal>"` or `/develop:fix "<symptom>"` (requires `develop` plugin)
+   - Documentation → `/develop:feature "<doc goal>"` (requires `develop` plugin)
+   - Verification/testing → `/develop:feature "<test goal>"` (requires `develop` plugin) or manual check command
 3. Output ordered task table:
 
 > *Note: `/develop:feature` and `/develop:fix` require the `develop` plugin. If not installed, replace those commands with appropriate manual workflow.*

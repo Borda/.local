@@ -195,7 +195,7 @@ Report above is Claude-only.
 
 <notes>
 
-End every analysis with `## Confidence` block per `.claude/rules/quality-gates.md`.
+End every analysis with `## Confidence` block per quality-gates.md rules (see workflow step 7).
 
 **Opt-out**: include `--no-codex` in prompt to skip Codex cross-check — useful when Codex rate-limited,
 unavailable, or review target is plan-only with no git diff.

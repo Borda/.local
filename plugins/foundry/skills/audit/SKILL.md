@@ -346,18 +346,13 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 
 ### Claude Code docs freshness (within Step 4)
 
-Spawn **foundry:web-explorer** to fetch current Claude Code docs. **File-based handoff**: writes full findings to `$RUN_DIR/docs-freshness.md`. Return ONLY compact JSON envelope: `{"status":"done","file":"$RUN_DIR/docs-freshness.md","findings":N,"deprecated":N,"new_features":N,"confidence":0.N,"summary":"N findings, N deprecated, N new features"}`
-
-Validate local config against fetched docs:
-
-- **Hook validation**: every hook event name and `type` in documented schema; no deprecated `decision:`/`reason:` fields
-- **Agent frontmatter validation**: all fields in documented schema; `model` values are recognized short-names
-- **Skill frontmatter validation**: all fields in documented schema
-- **Improvement opportunities**: new features passing genuine-value filter → **Upgrade Proposals** table (max 5; classify `config` or `capability`)
-
-Findings: deprecated/invalid = **high**; deprecated frontmatter field = **medium**; new feature not used = **Upgrade Proposals** (not LOW).
+```text
+Agent(subagent_type="foundry:web-explorer", prompt="Fetch current Claude Code docs (https://code.claude.com/docs). Check: hook event names + type field vs documented schema (deprecated decision:/reason: fields); agent frontmatter fields + model values; skill frontmatter fields; new features passing genuine-value filter → Upgrade Proposals table (max 5, classify config or capability). Write full findings to $RUN_DIR/docs-freshness.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/docs-freshness.md\",\"findings\":N,\"deprecated\":N,\"new_features\":N,\"confidence\":0.N,\"summary\":\"N findings, N deprecated, N new features\"}")
+```
 
 <!-- URLs fetched live by web-explorer at runtime; graceful degradation: if any 404, instruct navigation from code.claude.com homepage. -->
+
+Severity: deprecated/invalid = **high**; deprecated frontmatter field = **medium**; new feature not used = **Upgrade Proposals** (not LOW).
 
 After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/system-checks.md`, include only summary table in context.
 
@@ -372,7 +367,7 @@ Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate
 ## Step 6: Cross-validate critical findings
 
 ```bash
-_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)  # timeout: 5000
+_SHARED=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 3 -type d -name "_shared" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
 [ -z "$_SHARED" ] && _SHARED="plugins/foundry/skills/_shared"
 [ -f "$_SHARED/cross-validation-protocol.md" ] || { printf "⚠ WARNING: cross-validation-protocol.md not found at $_SHARED — skipping cross-validation\n"; }
 ```
@@ -490,7 +485,7 @@ After Step 8 fix agents complete, before foundry:curator re-audit:
 
 ```bash
 CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
-_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)  # timeout: 5000
+_SHARED=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 3 -type d -name "_shared" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
 [ -z "$_SHARED" ] && _SHARED="plugins/foundry/skills/_shared"
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 ```
@@ -596,7 +591,7 @@ Run `/foundry:init` to propagate clean config to ~/.claude/
 **Trigger**: `/audit --upgrade`
 
 ```bash
-UPGRADE_MD=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/audit/modes/upgrade.md 2>/dev/null | head -1)  # timeout: 5000
+UPGRADE_MD=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -path "*/audit/modes/upgrade.md" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
 [ -f "$UPGRADE_MD" ] || UPGRADE_MD="plugins/foundry/skills/audit/modes/upgrade.md"
 ```
 
@@ -621,7 +616,7 @@ Use same `BATCH_SIZE` grouping as Step 3 — same plugin-aware batching applies.
 
 ```bash
 CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
-_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)  # timeout: 5000
+_SHARED=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 3 -type d -name "_shared" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
 [ -z "$_SHARED" ] && _SHARED="plugins/foundry/skills/_shared"
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 ```

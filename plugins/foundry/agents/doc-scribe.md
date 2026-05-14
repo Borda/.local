@@ -112,8 +112,8 @@ When public API deprecated with pyDeprecate, write migration guide
 
 \</deprecation_migration_guides>
 
-<!-- CV/ML projects only — skip for non-ML codebases -->
 \<cv_docstring_extensions>
+<!-- CV/ML projects only — skip for non-ML codebases -->
 
 ## Computer Vision (CV)/Tensor Docstring Checklist
 

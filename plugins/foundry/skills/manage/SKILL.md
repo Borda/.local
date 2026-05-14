@@ -268,9 +268,9 @@ Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,
  Every 5 min: find .claude/skills -newer /tmp/manage-check-curator-skill -name "SKILL.md" | wc -l
      Hard cutoff: 15 min of no activity → surface partial results with ⏱ -->
 
-### Mode: Update Agent
+### Mode: Update Agent (rename)
 
-Atomic update — write new file before deleting old:
+Atomic rename — write new file before deleting old:
 
 1. Read `.claude/agents/<old-name>.md` using the Read tool.
 
@@ -283,9 +283,9 @@ Atomic update — write new file before deleting old:
 rm .claude/agents/<old-name>.md # timeout: 5000
 ```
 
-### Mode: Update Skill
+### Mode: Update Skill (rename)
 
-Atomic update — create new directory before removing old:
+Atomic rename — create new directory before removing old:
 
 1. Create new directory:
 
@@ -315,7 +315,7 @@ rm .claude/agents/<name>.md # timeout: 5000
 rm -r .claude/skills/<name>  # timeout: 5000
 ```
 
-### Dispatch: Content-Edit
+### Mode: Update Agent/Skill (content-edit)
 
 Before executing type-specific content-edit mode, determine approach:
 
@@ -664,7 +664,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 <notes>
 
 - **Atomic updates**: write-before-delete prevents data loss on interruption; perm ops must update both `settings.json` and `permissions-guide.md`
-- **settings.json format**: json.load/json.dump with indent=2 — avoids fragile sed/awk on JSON
+- **settings.json format**: jq with atomic tmp-file pattern (`jq ... > .tmp && mv .tmp dest`) — avoids fragile sed/awk on JSON; indent=2 via `jq --indent 2` when formatting required
 - **README.md tables**: agent/skill tables in project `README.md`; rules table in `.claude/README.md` — keep row format consistent with existing rows
 - **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note

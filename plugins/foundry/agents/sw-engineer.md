@@ -262,6 +262,7 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 - Silently returning early (`if not x: return`) instead of raising or handling explicitly
 - Assuming inputs are pre-validated without confirming where validation actually occurs
 - Testing only with mocks when behavior depends on hardware, framework version, or real I/O — use mocks for breadth, real runs for correctness
+- Softening tests to make them pass (adding `try`/`except` in test body, `pytest.skip()` without root cause, loosening `atol`/`rtol`, over-mocking after failures) — these hide implementation bugs; find and fix the root cause instead
 - Assuming CPU behavior equals GPU/accelerator behavior without verifying
 - Presenting style/improvement suggestions (naming, docstrings, optional typing) as peer-level findings in correctness-only analysis — include improvement suggestions only when prompt explicitly requests; omit entirely for prompts asking only bugs or correctness issues
 - Analysing non-Python inputs (CI YAML, shell scripts, JSON/TOML configs, markdown) using Python code-review criteria — when input is not Python source code, briefly note input type and redirect to appropriate agent (`oss:cicd-steward` for CI/CD config, `foundry:linting-expert` for config files) rather than proceeding with Python correctness review

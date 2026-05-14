@@ -92,11 +92,9 @@ Use Grep with pattern `ERROR|WARN|failed|not found|exit` across `.claude/logs/`,
 
 Capture all output before Step 3.
 
-```bash
-# Summarize gathered signals for downstream spawn prompts
-SYMPTOM_DESCRIPTION="${ARGUMENTS}"  # full user-provided symptom text from $ARGUMENTS
-KEY_SIGNALS="<summarize top 3-5 signals from Step 2 evidence above>"  # replace with actual gathered signals
-```
+After gathering evidence, capture top signals as working notes for Step 4 spawn prompts:
+- `SYMPTOM_DESCRIPTION` — verbatim from `$ARGUMENTS`
+- `KEY_SIGNALS` — write 3–5 bullet-point sentences summarizing the most diagnostic signals found above (tool versions, missing binaries, config anomalies, recent changes)
 
 ## Step 3: Rank hypotheses
 
@@ -108,10 +106,7 @@ List candidate root causes ranked by probability, drawing only from gathered evi
 | 2 | … | … | … |
 | 3 | … | … | … |
 
-```bash
-# Capture ranked hypothesis table text for downstream spawn prompts
-HYPOTHESIS_TABLE="<copy the ranked hypothesis table above as inline text>"  # replace with actual table
-```
+Capture the ranked hypothesis table as `HYPOTHESIS_TABLE` (inline text) for use in Step 4 spawn prompts.
 
 Common categories:
 
@@ -131,7 +126,7 @@ Otherwise, set up adversarial review:
 
 ```bash
 CODEX_OK=$(jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && echo "available" || echo "")  # timeout: 5000
-INVESTIGATE_RUN=".investigate/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+INVESTIGATE_RUN=".temp/investigate/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$INVESTIGATE_RUN"  # timeout: 5000
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
 ```

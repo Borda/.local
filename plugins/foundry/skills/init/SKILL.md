@@ -84,8 +84,9 @@ Confirm `$PLUGIN_ROOT/hooks/statusline.js` exists. If not, stop and report.
 
 ## Step 2: Back up settings.json
 
+If `~/.claude/settings.json` does not exist, create it using the Write tool with content `{}`.
+
 ```bash
-[ ! -f ~/.claude/settings.json ] && echo '{}' > ~/.claude/settings.json  # timeout: 5000
 INIT_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
 cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${INIT_BAK_TS}"  # timeout: 5000
 ```
