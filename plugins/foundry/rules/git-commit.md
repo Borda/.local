@@ -6,8 +6,26 @@ paths:
 
 ## Commit Message Format
 
-- First line: short TLDR subject in imperative mood, ≤50 chars — name up to 3 most significant changes/additions/removals only
-  - Tie-breaker: prefer user-visible impact when significance comparable
+Subject line format: `type(scope): detail` — ≤50 chars total; name up to 3 most significant changes only.
+
+**type** — pick lowest that fits:
+
+| type | when |
+| --- | --- |
+| `fix` | Bug fix, correctness repair |
+| `feat` | New user-visible capability |
+| `refactor` | Internal restructure, no behaviour change |
+| `perf` | Performance improvement |
+| `test` | Test-only changes |
+| `docs` | Documentation only |
+| `ci` | CI/CD pipeline |
+| `chore` | Tooling, config, deps, build |
+| `refine` | Improvement to existing behaviour (not pure fix, not new feature) |
+| `compress` | Compression / caveman reformatting pass |
+
+**scope** — affected area: `plugins`, `oss`, `foundry`, `docs`, `cli`, `<module_name>`, etc. Omit only when change is truly cross-cutting.
+
+- Tie-breaker: prefer user-visible impact when type/significance comparable
 
 - Blank line, then bullet list — one bullet per logical change; extended description of top changes plus all other notable changes
   - Skip: typos, linting, whitespace-only edits

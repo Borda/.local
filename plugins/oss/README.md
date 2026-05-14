@@ -524,14 +524,14 @@ ______________________________________________________________________
 
 **Artifact directories** created by `oss` skills:
 
-| Directory             | Created by                    | Contents                                |
-| --------------------- | ----------------------------- | --------------------------------------- |
-| `.reports/analyse/`   | `/oss:analyse`                | Thread, vitality, ecosystem reports     |
-| `.temp/review/`    | `/oss:review`                 | Per-agent handover files (intermediate, per-run) |
-| `.reports/resolve/`   | `/oss:resolve`                | Resolve run outputs                     |
-| `.temp/`              | All skills                    | Long-form output files                  |
-| `.cache/gh/`          | `/oss:analyse`, `/oss:review` | GitHub API response cache               |
-| `releases/<version>/` | `/oss:release prepare`        | Release artefacts                       |
+| Directory             | Created by                    | Contents                                         |
+| --------------------- | ----------------------------- | ------------------------------------------------ |
+| `.reports/analyse/`   | `/oss:analyse`                | Thread, vitality, ecosystem reports              |
+| `.temp/review/`       | `/oss:review`                 | Per-agent handover files (intermediate, per-run) |
+| `.reports/resolve/`   | `/oss:resolve`                | Resolve run outputs                              |
+| `.temp/`              | All skills                    | Long-form output files                           |
+| `.cache/gh/`          | `/oss:analyse`, `/oss:review` | GitHub API response cache                        |
+| `releases/<version>/` | `/oss:release prepare`        | Release artefacts                                |
 
 All artifact directories are gitignored (ephemeral, TTL-managed).
 

@@ -518,8 +518,8 @@ Skills write to these directories at project root (all gitignored):
 | ------------------------------ | ---------------------------------------------------------------------- |
 | `.plans/active/`               | Plan files from `/develop:plan`, diagnosis files from `/develop:debug` |
 | `.developments/<timestamp>/`   | Checkpoint files for resumable feature/fix/refactor sessions           |
-| `.temp/review/<timestamp>/` | Per-agent handover files (intermediate) from `/develop:review`                         |
-| `.reports/review/<timestamp>/` | Consolidated final report from `/develop:review`                                            |
+| `.temp/review/<timestamp>/`    | Per-agent handover files (intermediate) from `/develop:review`         |
+| `.reports/review/<timestamp>/` | Consolidated final report from `/develop:review`                       |
 
 Completed runs are cleaned up after 30 days. Interrupted runs (no `result.jsonl`) are kept for debugging.
 
