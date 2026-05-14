@@ -5,7 +5,7 @@ Delegate only small, bounded tasks needing code read — not single-command task
 - **Complex linting**: ruff or mypy violations needing non-trivial code changes (not auto-fixable with `--fix`)
 - **Typing/mypy resolution**: type annotation fixes needing function contract understanding
 
-For each qualifying task, read target code, form accurate brief, spawn:
+For each qualifying task, read target code, form accurate brief, spawn (requires `codex` plugin):
 
 ```text
 Agent(

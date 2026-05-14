@@ -3,7 +3,7 @@ name: release
 description: 'Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format). Trigger: "prepare release", "write changelog", "what changed since v1.x", "prepare v2.0", "write release notes", "am I ready to release", "check release readiness", or wants to announce version to users.'
 argument-hint: '[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion
-model: opus
+model: opusplan
 effort: high
 when_to_use: 'Use when user says "prepare release", "write changelog", "what changed since vX.Y", "write release notes", "am I ready to release", "check release readiness", or wants to announce version to users.'
 ---
@@ -88,7 +88,7 @@ Gather + explore + validate produce large git/PR output bloating main context. I
    - Verify `[ -f "$GATHER_FILE" ]` before passing to artifact phase; abort if missing
    - Pass `file` path to artifact phase — do NOT read gather file into main context; artifact agent reads it directly
 
-`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")..HEAD} 2>/dev/null`. If count exceeds 50, delegate gather to `oss:release-gatherer` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood.
+`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")..HEAD} 2>/dev/null`. If count exceeds 50, delegate gather to `general-purpose` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood.
 
 ## Mode Detection
 
@@ -139,10 +139,10 @@ RANGE="${RANGE/->/../}"
 
 ## Shared setup
 
-# Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
-# Cold-start fallback (if shared resolver unreadable):
+# Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+# Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
 ```bash
 # Resolve skill directory — used by all modes for templates and guidelines
@@ -199,7 +199,7 @@ git diff --stat "$(echo "$RANGE" | sed 's/\.\.\./\ /;s/\.\./\ /')" # timeout: 30
 # PR titles, bodies, and labels for merged PRs (richer context than commits)
 TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | { read -r _ _ val; echo "${val:-main}"; })
 # timeout: 15000
-gh pr list --state merged --base "${TRUNK:-main}" --limit 500 \
+gh pr list --state merged --base "${TRUNK:-main}" --paginate \
     --json number,title,body,labels,mergedAt,author 2>/dev/null
 ```
 
@@ -487,8 +487,6 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 <notes>
 
 - **Numbers reference**: all numeric limits and claims in this skill documented with rationale and evidence in `guidelines/numbers-reference.md`; update whenever limits change
-- **Revert handling**: REVERT_SET pairs (both in range) = net-zero; appear only in 🔄 Reverted; never in highlights, demo, migration guide; if only revert is in range (original predates range) → classify as ❌ Removed or ⚠️ Breaking (not 🔄 Reverted) — feature gone from version user had it
-- **Pre-release tag exclusion**: rc, dev, alpha, beta tags never used as range base — always last stable release; all modes
 - Filter noise (CI config, dep bumps, typos) unless user-impacting
 - **Public-facing content policy**: release notes, changelogs, migration guides = user-visible changes only. Never include: internal staff names, internal maintenance, internal refactors, CI/tooling changes, internal dep bumps, code cleanup, developer housekeeping with no user impact.
 - **Contributor email privacy**: `git log --format="%aN <%aE>"` captures emails in GATHER_FILE under `.temp/`. Ensure `.temp/` in `.gitignore` before committing — emails must not leak into repo.

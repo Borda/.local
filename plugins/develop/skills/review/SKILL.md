@@ -4,7 +4,7 @@ description: Multi-agent code review of local Python files, directories, or the 
 when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse)."
 argument-hint: '[python-file|dir] [--no-challenge] [--codemap] [--semble]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
-model: opus
+model: opusplan
 effort: high
 disable-model-invocation: true
 ---
@@ -185,9 +185,12 @@ Set up run directory:
 
 ```bash
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-RUN_DIR=".reports/review/$TIMESTAMP"
+RUN_DIR=".temp/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR"  # timeout: 5000
 RUN_DIR_LITERAL="$RUN_DIR"
+REPORT_DIR=".reports/review/$TIMESTAMP"
+mkdir -p "$REPORT_DIR"  # timeout: 5000
+REPORT_DIR_LITERAL="$REPORT_DIR"
 ```
 
 Check availability:
@@ -218,7 +221,7 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 
 **File-based handoff**: read `$_FOUNDRY_SHARED/file-handoff-protocol.md`. Run directory created in Step 2 (`$RUN_DIR`).
 
-<!-- $RUN_DIR pre-expanded into $RUN_DIR_LITERAL — substitute $RUN_DIR_LITERAL (never bare $RUN_DIR) when embedding paths in Agent spawn prompt strings. -->
+<!-- $RUN_DIR pre-expanded into $RUN_DIR_LITERAL, $REPORT_DIR into $REPORT_DIR_LITERAL — substitute literal vars (never bare $RUN_DIR/$REPORT_DIR) in Agent spawn prompt strings. -->
 
 Use `$RUN_DIR_LITERAL` in spawn prompts below — substitute expanded value before building each Agent call.
 
@@ -323,11 +326,11 @@ Extract branch and date before constructing output path: `BRANCH=$(git branch --
 
 Spawn **foundry:sw-engineer** consolidator:
 
-> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert top-level note into consolidated report Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `.temp/output-review-$BRANCH-$DATE.md` using Write tool. Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=.temp/output-review-$BRANCH-$DATE.md`"
+> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert top-level note into consolidated report Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `$REPORT_DIR_LITERAL/review-report.md` using Write tool. After the `## Confidence` block, append `## Source Files` section: use `Glob(pattern="*.md", path="$RUN_DIR")` to list every handover file present (paths relative to repo root, one per line). Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=$REPORT_DIR_LITERAL/review-report.md`"
 
 Main context receives only one-liner verdict.
 
-**Consolidator-unavailable fallback**: if `Agent` tool deferred or consolidator times out — read each agent finding file from `$RUN_DIR/` directly, apply same precision gate and density rules, synthesize consolidated report, write to `.temp/output-review-$BRANCH-$DATE.md` using Write tool.
+**Consolidator-unavailable fallback**: if `Agent` tool deferred or consolidator times out — read each agent finding file from `$RUN_DIR/` directly, apply same precision gate and density rules, synthesize consolidated report, write to `$REPORT_DIR/review-report.md` using Write tool.
 
 Report format — resolve template path first:
 
@@ -340,7 +343,7 @@ Pass `$_REVIEW_TEMPLATE` (pre-expanded literal) into consolidator spawn prompt: 
 
 After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CONFIDENCE** to that agent's findings section, state gap explicitly. Never silently drop uncertain findings.
 
-Print terminal block: read `---` header from top of `.temp/output-review-$BRANCH-$DATE.md` (lines 1–12, up to and including closing `---`), append `→ saved to .temp/output-review-$BRANCH-$DATE.md`, print to terminal. Report file already contains block — no separate prepend needed.
+Print terminal block: read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–12, up to and including closing `---`), append `→ saved to $REPORT_DIR/review-report.md`, print to terminal. Report file already contains block — no separate prepend needed.
 
 ## Step 6: Delegate implementation follow-up (optional)
 

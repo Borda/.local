@@ -57,7 +57,7 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Bash(find .developments*)` | Locate files inside `.developments/` skill run dirs | `/develop` review-cycle artifact inspection and TTL cleanup |
 | `Bash(find .notes*)` | Locate files inside `.notes/` | Notes inspection and TTL cleanup |
 | `Bash(find .plans*)` | Locate files inside `.plans/` | Blueprint spec TTL cleanup; plan file inspection |
-| `Bash(find .reports*)` | Locate files inside `.reports/` (skill runs) | `/analyse`, `/calibrate`, `/audit`, `/oss:review`, `/resolve` artifact inspection and TTL cleanup |
+| `Bash(find .reports*)` | Locate files inside `.reports/` (skill runs) | `/analyse`, `/calibrate`, `/audit`, `/resolve` artifact inspection and TTL cleanup |
 | `Bash(find .temp*)` | Locate files inside `.temp/` (prose output) | Quality-gates long output inspection and TTL cleanup |
 | `Bash(grep:*)` | Search file content by regex pattern | Filter command output, find usages across codebase |
 | `Bash(head:*)` | Read first N lines of file | Inspect file headers, preview log beginnings |
@@ -76,7 +76,8 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Bash(mkdir -p .reports/calibrate/*)` | Create `.reports/calibrate/` skill run subdirs | `/calibrate` creates timestamped run dir before spawning pipeline agents |
 | `Bash(mkdir -p .reports/resolve/*)` | Create `.reports/resolve/` skill run subdirs | `/resolve` creates run dir for lint+QA gate artifacts |
 | `Bash(mkdir -p .reports/audit/*)` | Create `.reports/audit/` skill run subdirs | `/audit` creates timestamped run dir before spawning curator agents |
-| `Bash(mkdir -p .reports/review/*)` | Create `.reports/review/` skill run subdirs | `/oss:review` creates run dir for multi-agent review artifacts |
+| `Bash(mkdir -p .reports/review/*)` | Create `.reports/review/` final report subdirs | `/oss:review`, `/develop:review` create per-run dir for consolidated final report |
+| `Bash(mkdir -p .temp/review/*)` | Create `.temp/review/` intermediate handover subdirs | `/oss:review`, `/develop:review` create per-run dir for subagent handover files |
 | `Bash(mkdir -p .reports/analyse/*)` | Create `.reports/analyse/` skill run subdirs | `/analyse` creates subdirs for thread, ecosystem, health modes |
 | `Bash(mkdir -p .experiments/*)` | Create `.experiments/` skill run subdirs | `/optimize` creates run dir for run mode artifacts |
 | `Bash(mkdir -p .developments/*)` | Create `.developments/` skill run subdirs | `/develop` creates run dir for review-cycle artifacts |

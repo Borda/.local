@@ -16,16 +16,19 @@ Skill output dirs use dot-prefix (`.reports/`, `.temp/`, `.plans/`, etc.) — si
   closed/                ← completed plans
 .notes/                  ← lessons.md, diary, guides  (was _tasks/_working/)
 .reports/
-  calibrate/             ← /foundry:calibrate skill runs
-  resolve/               ← /oss:resolve lint+QA gate runs
-  audit/                 ← /foundry:audit skill runs
-  review/                ← /oss:review or /develop:review skill runs
+  calibrate/             ← /foundry:calibrate — final calibration reports
+  resolve/               ← /oss:resolve — final lint+QA gate reports
+  audit/                 ← /foundry:audit — final audit reports
+  review/<timestamp>/    ← /oss:review, /develop:review — final consolidated review reports
   analyse/               ← /oss:analyse skill (thread, ecosystem, health subdirs)
 .experiments/            ← /research:run (run mode)
 .developments/           ← /develop:feature, /develop:fix, /develop:refactor runs
 .cache/
   gh/                    ← shared GitHub API response cache (cross-skill)
-.temp/                   ← quality-gates prose output (cross-cutting)
+.temp/
+  output-<slug>-*.md     ← quality-gates prose output (cross-cutting)
+  review/<timestamp>/    ← /oss:review, /develop:review — intermediate subagent handover files
+  <skill>/<timestamp>/   ← other skills migrating to three-tier convention (audit, resolve, calibrate — pending)
 ```
 
 Dot-prefixed artifact dirs gitignored — ephemeral, TTL-managed.
@@ -35,9 +38,16 @@ Dot-prefixed artifact dirs gitignored — ephemeral, TTL-managed.
 Each skill creates timestamped subdir under canonical base dir:
 
 ```bash
-RUN_DIR=".reports/<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)" # for .reports/<skill>/ skills
-# or: RUN_DIR=".<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"   # for dedicated dirs (.experiments/, .developments/)
+# Intermediate subagent handover files (NEVER in .reports/):
+RUN_DIR=".temp/<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$RUN_DIR"
+
+# Final consolidated report (one per skill run):
+REPORT_DIR=".reports/<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+mkdir -p "$REPORT_DIR"
+
+# Dedicated non-.reports skill dirs:
+# RUN_DIR=".<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"   # .experiments/, .developments/
 ```
 
 Format: `YYYY-MM-DDTHH-MM-SSZ` (UTC, dashes throughout, filesystem-safe).
@@ -51,6 +61,8 @@ Incomplete runs (crashed, timed out) lack it — TTL hook skips them (keeps for 
 | Location | TTL | Condition |
 | --- | --- | --- |
 | `.reports/<skill>/YYYY-MM-DDTHH-MM-SSZ/`, `.<skill>/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | only dirs containing `result.jsonl` |
+| `.reports/review/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | keyed on dir mtime (no result.jsonl — hook uses separate find) |
+| `.temp/<skill>/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | keyed on file mtime (intermediate subagent handover dirs) |
 | `.plans/blueprint/` | 30 days | keyed on file mtime (flat spec/tree files) |
 | `.cache/gh/` | 30 days | keyed on file mtime (GitHub API response cache) |
 | `.temp/` | 30 days | keyed on file mtime |

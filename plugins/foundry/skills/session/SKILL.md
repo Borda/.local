@@ -5,10 +5,11 @@ description: |
   TRIGGER when: user asks "what was I working on", "any pending items", "what's in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context.
   SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only).
 argument-hint: 'resume | archive <text> | summary'
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 effort: low
 model: sonnet
 context: fork
+when_to_use: Use to resume, archive, or summarize parked session items — "what was I working on", "any pending items", "session summary". SKIP for new topics or when user is providing fresh context rather than resuming prior work.
 ---
 
 <objective>

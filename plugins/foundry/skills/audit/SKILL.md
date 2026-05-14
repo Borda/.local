@@ -59,7 +59,7 @@ BATCH_SIZE=5           # max files per foundry:curator spawn in Step 3; keep sma
 
 <workflow>
 
-**Task hygiene**: Call `TaskList` before creating tasks. For each found task:
+**Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
 
 - status `completed` if work clearly done
 - status `deleted` if orphaned / no longer relevant

@@ -247,8 +247,8 @@ Without `foundry`, Tier 2 falls back to general-purpose agents with role descrip
 
 **Output locations:**
 
-- Per-agent findings: `.reports/review/<timestamp>/`
-- Consolidated report: `.temp/output-review-<branch>-<date>.md`
+- Per-agent handover files (intermediate): `.temp/review/<timestamp>/`
+- Consolidated report: `.reports/review/<timestamp>/review-report.md`
 - Reply draft (with `--reply`): `.temp/output-reply-<PR#>-<date>.md`
 
 **Flags:**
@@ -527,7 +527,7 @@ ______________________________________________________________________
 | Directory             | Created by                    | Contents                                |
 | --------------------- | ----------------------------- | --------------------------------------- |
 | `.reports/analyse/`   | `/oss:analyse`                | Thread, vitality, ecosystem reports     |
-| `.reports/review/`    | `/oss:review`                 | Per-agent findings, consolidated report |
+| `.temp/review/`    | `/oss:review`                 | Per-agent handover files (intermediate, per-run) |
 | `.reports/resolve/`   | `/oss:resolve`                | Resolve run outputs                     |
 | `.temp/`              | All skills                    | Long-form output files                  |
 | `.cache/gh/`          | `/oss:analyse`, `/oss:review` | GitHub API response cache               |

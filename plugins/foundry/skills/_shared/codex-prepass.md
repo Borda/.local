@@ -10,7 +10,7 @@ git diff HEAD --stat
 - `codex@openai-codex` plugin not installed
 - `git diff HEAD --stat` shows only 1–3 lines changed, or changes are formatting, comments, whitespace, or variable renames only
 
-**Run** when changes include new logic, functions, conditionals, error paths, or restructured code:
+**Run** when changes include new logic, functions, conditionals, error paths, or restructured code (requires `codex` plugin):
 
 ```text
 Agent(subagent_type="codex:codex-rescue", prompt="Review the current working-tree changes for bugs, missed edge cases, and inconsistencies. Read-only: do not apply fixes.")

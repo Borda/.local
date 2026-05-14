@@ -7,7 +7,7 @@ description: |
 argument-hint: '<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]'
 allowed-tools: Read, Bash, Write, Agent
 context: fork
-model: opus
+model: opusplan
 effort: high
 when_to_use: 'Use when the user asks to analyze a GitHub issue, PR, or discussion thread, needs repo vitality stats, or wants to triage/summarize OSS contributor threads.'
 ---
@@ -46,15 +46,14 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ## Agent Resolution
 
-# Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
-# Cold-start fallback (if shared resolver unreadable):
+```bash
+# Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
-
-```bash
 FOUNDRY_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.claude/skills/_shared"
 ```
+# Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
 ## Step 1: Flag parsing
 
@@ -350,14 +349,15 @@ Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (St
 
 Read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
 
-Spawn with:
-- Report path: `$REPORT_FILE`
-- Item number: `$CLEAN_ARGS`
-- Thread context: also fetch `gh issue view $CLEAN_ARGS --comments` (or equivalent GraphQL for discussions) if not already in report
-- Output path: `.reports/analyse/thread/output-reply-thread-$CLEAN_ARGS-$(date +%Y-%m-%d).md`
-- Note: shepherd runs in forked context — all required context must be self-contained in prompt
+```text
+Agent(
+  subagent_type="oss:shepherd",
+  description="Draft contributor reply for thread #<CLEAN_ARGS>",
+  prompt="Read <_OSS_SHARED>/shepherd-reply-protocol.md and follow its invocation pattern. Report: <REPORT_FILE>. Thread #<CLEAN_ARGS>. Fetch thread context via `gh issue view <CLEAN_ARGS> --comments` (or GraphQL for discussions) if not already in report. Write full reply draft to .reports/analyse/thread/output-reply-thread-<CLEAN_ARGS>-<TODAY>.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<OUTPUT_PATH>\",\"confidence\":0.N}"
+)
+```
 
-Spawn prompt must include: `"Write your full output to <OUTPUT_PATH> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<OUTPUT_PATH>\",\"confidence\":0.N}"`
+**Replace `<_OSS_SHARED>`, `<REPORT_FILE>`, `<CLEAN_ARGS>`, `<TODAY>` with actual runtime values before spawning — agents receive text, not shell variables.**
 
 Verify output file exists and is non-empty after spawn: `[ -s "<OUTPUT_PATH>" ] || { echo "⚠ shepherd output empty or missing"; }`
 

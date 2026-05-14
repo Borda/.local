@@ -69,7 +69,7 @@ Split `<N>` in-scope problems between two generators. Claude always owns 1 out-o
 | fast (N=3) | 1 | 2 | 1 | 4 |
 | full (N=10) | 5 | 5 | 1 | 11 |
 
-**Step 1 — Codex generates N_CODEX in-scope problems** (runs first; writes directly to file):
+**Step 1 — Codex generates N_CODEX in-scope problems** (runs first; writes directly to file — requires `codex` plugin):
 
 Agent(subagent_type="codex:codex-rescue", prompt="Generate \<N_CODEX> synthetic calibration problems for domain: '<DOMAIN>'.
 
@@ -232,7 +232,7 @@ Each scorer receives this prompt (substitute `<PROBLEM_ID>`, `<GROUND_TRUTH_JSON
 
 **Context discipline**: scorers write results to `score-<PROBLEM_ID>-claude.json` and return single-line acknowledgment (`Scored: <PROBLEM_ID>`). Do NOT accumulate inline JSON in pipeline context — Phase 3c reads from disk.
 
-### Phase 3b — Score responses via Codex (skip when CODEX_AVAILABLE=false)
+### Phase 3b — Score responses via Codex (skip when CODEX_AVAILABLE=false — requires `codex` plugin)
 
 For each problem, spawn one Codex scoring subagent using **Agent tool** — never via Bash or CLI. Run **sequentially** (not parallel — Codex subagents share filesystem state; parallel invocations risk write conflicts).
 

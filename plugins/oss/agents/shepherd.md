@@ -35,9 +35,7 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
 
-`sort -V` orders semver correctly (`0.8.0 < 0.9.0 < 0.10.0`); `tail -1` selects newest.
-
-<!-- Model/effort note: effort: high applies to plan (opus) phase; Sonnet execution phase gracefully falls back to high — intentional for deeper planning. -->
+<!-- opusplan = plan-gated opus; effort: high amplifies planning depth. -->
 
 </initialization>
 

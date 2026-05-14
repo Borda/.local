@@ -20,11 +20,11 @@ NOT for direct user invocation — spawned by /oss:analyse (vitality mode) Step 
 <inputs>
 
 Prompt supplies key=value pairs (space-separated):
-- `GH_OWNER=<owner>` — GitHub owner or org (log messages only)
-- `GH_REPO=<repo>` — GitHub repository name (log messages only)
+- `GH_OWNER=<owner>` — GitHub owner or org (required)
+- `GH_REPO=<repo>` — GitHub repository name (required)
 - `DATA_FILE=<path>` — path to JSONL written by oss:gh-scraper
 - `PARTIAL_FILE=<path>` — output path for group's partial scores JSON
-- `AXIS_GROUP=A|B|C` — axes to score
+- `AXIS_GROUP=A|B|C` — axis group to score: A=1,2,5,6 · B=4,7,8 · C=3,9
 
 </inputs>
 
@@ -65,14 +65,7 @@ Read `$DATA_FILE` fully via Read tool. Parse JSONL records into in-memory struct
 **Group C** (Axes 3, 9): extract `contributor_stats`, `merged_prs_90d`, `commits_50`, `releases`, `fork_dates`, `star_dates`, `open_issues` (reused for 9C).
 
 ```bash
-ANALYSIS_NOW=$(python3 -c "
-import json
-for line in open('$DATA_FILE'):
-    d = json.loads(line.strip())
-    if d.get('timestamp'):
-        print(d['timestamp'])
-        break
-" 2>/dev/null || TZ=UTC date +%s)  # timeout: 5000
+ANALYSIS_NOW=$(jq -r '.timestamp // empty' "$DATA_FILE" 2>/dev/null | head -1 || TZ=UTC date +%s)  # timeout: 5000
 ```
 
 ## Step 3 — Score Axes

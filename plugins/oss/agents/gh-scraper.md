@@ -35,11 +35,20 @@ Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE` from prompt key=value pairs. Compute ti
 ```bash
 ANALYSIS_NOW=$(TZ=UTC date +%s)  # timeout: 5000
 TODAY=$(TZ=UTC date +%Y-%m-%d)   # timeout: 5000
-# Use datetime.now(timezone.utc) — datetime.utcnow() deprecated in Python 3.12+
-CUTOFF_30D=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc)-timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%SZ'))")  # timeout: 5000
-CUTOFF_90D=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc)-timedelta(days=90)).strftime('%Y-%m-%dT%H:%M:%SZ'))")  # timeout: 5000
-CUTOFF_180D=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc)-timedelta(days=180)).strftime('%Y-%m-%dT%H:%M:%SZ'))")  # timeout: 5000
-CUTOFF_3Y=$(python3 -c "from datetime import datetime, timezone, timedelta; print((datetime.now(timezone.utc)-timedelta(days=1095)).strftime('%Y-%m-%d'))")  # timeout: 5000
+# Compute cutoff dates using date (cross-platform: macOS BSD and GNU/Linux)
+if date -v-1d +%Y-%m-%d >/dev/null 2>&1; then
+    # macOS BSD date (-v relative offset)
+    CUTOFF_30D=$(date -u -v-30d +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
+    CUTOFF_90D=$(date -u -v-90d +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
+    CUTOFF_180D=$(date -u -v-180d +%Y-%m-%dT%H:%M:%SZ)  # timeout: 5000
+    CUTOFF_3Y=$(date -u -v-1095d +%Y-%m-%d)              # timeout: 5000
+else
+    # GNU date (-d relative offset)
+    CUTOFF_30D=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
+    CUTOFF_90D=$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
+    CUTOFF_180D=$(date -u -d '180 days ago' +%Y-%m-%dT%H:%M:%SZ)  # timeout: 5000
+    CUTOFF_3Y=$(date -u -d '1095 days ago' +%Y-%m-%d)             # timeout: 5000
+fi
 
 # Auth preflight — fail fast before any API calls
 gh auth status 2>/dev/null || { echo "[gh-scraper] ERROR: not authenticated — run gh auth login"; exit 1; }  # timeout: 6000
@@ -150,9 +159,9 @@ gh pr list -R "$GH_OWNER/$GH_REPO" --state closed \
     --limit 201  # timeout: 30000
 
 # Axis 9B: last 50 commit messages (commit substance ratio)
-# author fallback: .commit.author.login // .author.login handles detached-push authors
+# author: .author.login = GitHub user (null for detached push); fallback to .commit.author.name as display name
 gh api "repos/$GH_OWNER/$GH_REPO/commits?per_page=50" \
-    --jq '[.[] | {sha:.sha[:7], message:(.commit.message | split("\n")[0]), author:(.commit.author.login // .author.login // "unknown"), date:.commit.author.date}]'  # timeout: 15000
+    --jq '[.[] | {sha:.sha[:7], message:(.commit.message | split("\n")[0]), author:(.author.login // .commit.author.name // "unknown"), date:.commit.author.date}]'  # timeout: 15000
 
 # NOTE — no new fetch for open issues (reuse Axis 4 open issues list for queue staleness P90)
 # NOTE — no new fetch for contributor stats (reuse Axis 3 weeks[] data for reviewer pool drift)
@@ -236,12 +245,16 @@ Rules:
 
 ```bash
 DATASET_COUNT=$(grep -c '' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000  # grep -c counts lines including files without trailing newline
-echo "[gh-scraper] fetch complete: $DATASET_COUNT datasets → $DATA_FILE"  # timeout: 5000
+PARTIAL_COUNT=$(grep -c '"partial":true' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000
+if [ "$PARTIAL_COUNT" -eq 0 ]; then CONFIDENCE=0.95
+elif [ "$PARTIAL_COUNT" -le 2 ]; then CONFIDENCE=0.88
+else CONFIDENCE=0.78; fi
+echo "[gh-scraper] fetch complete: $DATASET_COUNT datasets ($PARTIAL_COUNT partial) → $DATA_FILE"  # timeout: 5000
 ```
 
 Return ONLY this JSON as final output line:
 
-`{"status":"done","file":"<DATA_FILE>","datasets":<DATASET_COUNT>,"confidence":0.95}`
+`{"status":"done","file":"<DATA_FILE>","datasets":<DATASET_COUNT>,"confidence":<CONFIDENCE>}`
 
 </workflow>
 

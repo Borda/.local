@@ -398,7 +398,7 @@ ______________________________________________________________________
 
 1. **Identify scope**: collects Python files from the path or `git diff HEAD`. Classifies the diff as FIX / REFACTOR / FEATURE / MIXED — skips optional agents for smaller diffs (e.g., FIX skips `foundry:perf-optimizer` and `foundry:solution-architect`).
 2. **Codex co-review** (if `codex` plugin installed): adversarial diff review to seed a pre-flagged issues list for the specialist agents.
-3. **Six parallel agents** (file-based handoff — each writes findings to `.reports/review/<timestamp>/`):
+3. **Six parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`):
    - `foundry:sw-engineer`: architecture, SOLID adherence, type safety, error handling, Python anti-patterns, security for touched auth/input/data paths
    - `foundry:qa-specialist`: test coverage gaps, missing edge cases, ML non-determinism, seed pinning, boundary conditions
    - `foundry:perf-optimizer`: algorithmic complexity, loops that should be NumPy/torch ops, unnecessary I/O, ML DataLoader config (skipped for FIX diffs)
@@ -406,7 +406,7 @@ ______________________________________________________________________
    - `foundry:linting-expert`: ruff violations, mypy errors, type annotation gaps on public API, suppressed violations
    - `foundry:solution-architect`: API design quality, coupling, backward compatibility (only for changes touching public API boundaries; skipped for REFACTOR and FIX)
 4. **Cross-validate** critical and blocking findings using the same agent type that raised each finding.
-5. **Consolidate** (`foundry:sw-engineer`): reads all agent findings, deduplicates, ranks by impact, writes full report to `.temp/output-review-<branch>-<date>.md`. Applies signal-to-noise gate: small modules do not get padded with low-severity findings.
+5. **Consolidate** (`foundry:sw-engineer`): reads all agent findings, deduplicates, ranks by impact, writes full report to `.reports/review/<timestamp>/review-report.md`. Applies signal-to-noise gate: small modules do not get padded with low-severity findings.
 6. **Codex delegation** (optional): delegates mechanical tasks — docstrings, missing tests for concrete scenarios, consistent renames — to Codex when a precise brief can be written.
 
 **Report structure**:
@@ -518,8 +518,8 @@ Skills write to these directories at project root (all gitignored):
 | ------------------------------ | ---------------------------------------------------------------------- |
 | `.plans/active/`               | Plan files from `/develop:plan`, diagnosis files from `/develop:debug` |
 | `.developments/<timestamp>/`   | Checkpoint files for resumable feature/fix/refactor sessions           |
-| `.reports/review/<timestamp>/` | Per-agent finding files from `/develop:review`                         |
-| `.temp/`                       | Consolidated review reports                                            |
+| `.temp/review/<timestamp>/` | Per-agent handover files (intermediate) from `/develop:review`                         |
+| `.reports/review/<timestamp>/` | Consolidated final report from `/develop:review`                                            |
 
 Completed runs are cleaned up after 30 days. Interrupted runs (no `result.jsonl`) are kept for debugging.
 

@@ -34,8 +34,17 @@ Add task-specific keys (e.g. `"papers":5` for research, `"verdict":"approve"` fo
 
 ## RUN_DIR convention
 
-- **Ephemeral** (per-run): `/tmp/<skill>-<timestamp>/` — create once before spawns: `mkdir -p /tmp/<skill>-$(date +%s)`
-- **Persistent** (reports): `.temp/` — for final consolidated reports surviving session
+Three tiers — pick based on what the dir holds:
+
+- **Ephemeral** (session-scoped): `/tmp/<skill>-<timestamp>/` — OS-managed; for short-lived state not needed after session; create once: `mkdir -p /tmp/<skill>-$(date +%s)`
+- **Intermediate** (subagent handover, project-scoped): `.temp/<skill>/<timestamp>/` — per-run working dir for subagent output files; 30-day TTL; **NEVER in `.reports/`**
+- **Final** (permanent skill output): `.reports/<skill>/<timestamp>/` — consolidated final report only; 30-day TTL when `result.jsonl` present
+
+**Key rule**: `.reports/<skill>/` holds ONLY final consolidated outputs. Intermediate subagent handover files (agent `.md` analysis files) must go to `.temp/<skill>/<timestamp>/`, never to `.reports/`.
+
+**Rollout status**: `oss:review` and `develop:review` implement this fully. `audit`, `calibrate`, `resolve`, `distill` currently mix intermediate + final in `.reports/<skill>/` — pending migration to three-tier.
+
+**Footnote requirement**: final report MUST include `## Source Files` section listing every intermediate agent handover file used (paths relative to repo root, one per line) — lets reviewer locate raw subagent outputs without knowing the run timestamp.
 
 ## Orchestrator contract
 
@@ -91,6 +100,6 @@ Orchestrator handling by status:
 
 ## Reference implementation
 
-`/calibrate` = canonical example of file-based handoff at scale — agents write to `/tmp/calibrate-<id>/`; orchestrator collects one-line summaries; consolidation post-collection without flooding main context.
+`/oss:review` and `/develop:review` = canonical examples of three-tier convention — intermediate agent handover files in `.temp/review/<timestamp>/`, final report in `.reports/review/<timestamp>/review-report.md`.
 
-See also `/audit` Step 3 (`foundry:curator` agents per file → `<RUN_DIR>/<file-basename>.md`) and `/oss:review` Step 3–6.
+`/calibrate`, `/audit` predate this convention — they mix intermediate and final in `.reports/<skill>/`. Treat those as legacy patterns, not examples to follow. Migration pending.

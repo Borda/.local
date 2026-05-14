@@ -55,12 +55,18 @@ paths:
 
 ```bash
 # Delete completed skill runs older than 30 days
-find .reports/calibrate .reports/resolve .reports/audit .reports/review .reports/analyse .experiments .developments \
+find .reports/calibrate .reports/resolve .reports/audit .reports/analyse .experiments .developments \
     -maxdepth 2 -name "result.jsonl" -mtime +30 2>/dev/null |
 xargs dirname | xargs rm -rf
 
+# Delete review reports older than 30 days by dir mtime (no result.jsonl convention)
+find .reports/review -mindepth 1 -maxdepth 1 -type d -mtime +30 2>/dev/null | xargs rm -rf 2>/dev/null
+
 # Delete stale blueprint specs, cache, and temp outputs older than 30 days
 find .plans/blueprint .cache .temp -type f -mtime +30 2>/dev/null | xargs rm -f
+
+# Delete empty skill subdirs in .temp/ left after file cleanup (mindepth 2 = <skill>/<timestamp>/ level)
+find .temp -mindepth 2 -maxdepth 2 -type d -empty -delete 2>/dev/null
 ```
 
 ## Settings.json Allow Entries
@@ -76,8 +82,9 @@ Dot-prefixed paths enable precise allow rules (keep in sync with `settings.json`
 "Bash(mkdir -p .reports/calibrate/*)",
 "Bash(mkdir -p .reports/resolve/*)",
 "Bash(mkdir -p .reports/audit/*)",
-"Bash(mkdir -p .reports/review/*)",
 "Bash(mkdir -p .reports/analyse/*)",
+"Bash(mkdir -p .reports/review/*)",
+"Bash(mkdir -p .temp/review/*)",
 "Bash(mkdir -p .experiments/*)",
 "Bash(mkdir -p .developments/*)",
 "Bash(mkdir -p .temp/)",
@@ -87,7 +94,6 @@ Dot-prefixed paths enable precise allow rules (keep in sync with `settings.json`
 "Bash(find .reports/calibrate*)",
 "Bash(find .reports/resolve*)",
 "Bash(find .reports/audit*)",
-"Bash(find .reports/review*)",
 "Bash(find .experiments*)",
 "Bash(find .developments*)",
 "Bash(find .reports*)",
