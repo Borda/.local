@@ -170,14 +170,28 @@ process.stdin.on("end", () => {
           desc,
           prompt,
         });
-        // Cache subagent_type so SubagentStart can resolve agent_type when its payload omits it.
-        // Agent()-spawned agents may have null agent_type in SubagentStart; pending/ bridges the gap.
+        // Track Agent() calls directly via PreToolUse — SubagentStart fires sporadically and cannot be
+        // relied on to appear in the statusline. Write to agents/ immediately; PostToolUse deletes it.
+        // Also keep pending/ cache so SubagentStart (when it does fire) can consume it without double-writing.
         if (tool_name === "Agent" && tool_input?.subagent_type && data.tool_use_id) {
           try {
+            const agentType = tool_input.subagent_type;
+            const info = readAgentInfo(root, agentType);
+            fs.mkdirSync(agentsDir, { recursive: true });
+            fs.writeFileSync(
+              path.join(agentsDir, `${data.tool_use_id}.json`),
+              JSON.stringify({
+                id: data.tool_use_id,
+                type: agentType,
+                model: info.model,
+                color: info.color,
+                since: ts,
+              }),
+            );
             fs.mkdirSync(pendingDir, { recursive: true });
             fs.writeFileSync(
               path.join(pendingDir, `${data.tool_use_id}.json`),
-              JSON.stringify({ type: tool_input.subagent_type, ts }),
+              JSON.stringify({ type: agentType, ts }),
             );
           } catch (_) {}
         }
@@ -199,7 +213,7 @@ process.stdin.on("end", () => {
         }
       }
       // Track all tool calls for statusline tool-activity line (count per type within window)
-      // Exclude Agent/Task — those are tracked separately via SubagentStart/Stop → state/agents/
+      // Exclude Agent/Task — those are tracked separately via PreToolUse/PostToolUse → state/agents/
       if (tool_name && tool_name !== "Agent" && tool_name !== "Task") {
         try {
           fs.mkdirSync(toolsDir, { recursive: true });
@@ -237,6 +251,12 @@ process.stdin.on("end", () => {
             fs.unlinkSync(path.join(codexDir, `${data.tool_use_id}.json`));
           } catch (_) {}
         }
+        // Remove agent tracking entry written by PreToolUse when Agent() call completes.
+        if (tool_name === "Agent") {
+          try {
+            fs.unlinkSync(path.join(agentsDir, `${data.tool_use_id}.json`));
+          } catch (_) {}
+        }
         // Complete timing: read start marker, compute duration, append to timings.jsonl, delete marker.
         // Natural dedup: first fire reads+deletes the marker; second fire finds it gone and exits silently.
         recordTiming(data.tool_use_id, tool_name, session_id, "ok", timingsDir, timingsFile, globalLogsDir, data.model);
@@ -256,30 +276,34 @@ process.stdin.on("end", () => {
         );
       }
     } else if (hook_event_name === "SubagentStart") {
-      // Each agent gets its own file — no read-modify-write race with concurrent agents
+      // PreToolUse already wrote to agents/ for Agent() calls. SubagentStart fires sporadically —
+      // consume the pending entry (if present) so it doesn't linger, but skip writing agents/ again.
+      // For agents without a pending entry (e.g. team-mode agents), write as before.
       try {
-        fs.mkdirSync(agentsDir, { recursive: true });
         const id = agent_id || ts;
-        // Resolve agent type — Agent()-spawned agents may have null agent_type in the SubagentStart
-        // payload. Look up the pending cache written by PreToolUse to recover the true type.
         let resolvedType = agent_type;
-        if (!resolvedType && data.tool_use_id) {
+        let preToolUseTracked = false;
+        if (data.tool_use_id) {
+          const pendingFile = path.join(pendingDir, `${data.tool_use_id}.json`);
           try {
-            const pendingFile = path.join(pendingDir, `${data.tool_use_id}.json`);
             const p = JSON.parse(fs.readFileSync(pendingFile, "utf8"));
-            resolvedType = p.type;
-            fs.unlinkSync(pendingFile); // consume once — remainder cleaned at SessionEnd
+            resolvedType = resolvedType || p.type;
+            fs.unlinkSync(pendingFile); // consume — PreToolUse already wrote to agents/
+            preToolUseTracked = true;
           } catch (_) {}
         }
-        // Try hook data first; fall back to reading model+color from agent frontmatter
-        const info = readAgentInfo(root, resolvedType);
-        const model = data.model || info.model;
-        const color = info.color;
-        fs.writeFileSync(
-          path.join(agentsDir, `${id}.json`),
-          JSON.stringify({ id, type: resolvedType || "unknown", model, color, since: ts }),
-        );
-        // Also track codex:* agents in state/codex/ so statusline shows them in the 🤖 section
+        if (!preToolUseTracked) {
+          // No PreToolUse entry — write agents/ entry for this agent (e.g. team-mode agent)
+          fs.mkdirSync(agentsDir, { recursive: true });
+          const info = readAgentInfo(root, resolvedType);
+          const model = data.model || info.model;
+          const color = info.color;
+          fs.writeFileSync(
+            path.join(agentsDir, `${id}.json`),
+            JSON.stringify({ id, type: resolvedType || "unknown", model, color, since: ts }),
+          );
+        }
+        // Always track codex:* agents in state/codex/ so statusline shows them in the 🤖 section
         if (resolvedType && resolvedType.startsWith("codex:")) {
           fs.mkdirSync(codexDir, { recursive: true });
           const shortName = resolvedType.slice("codex:".length);

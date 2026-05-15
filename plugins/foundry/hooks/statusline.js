@@ -228,7 +228,7 @@ process.stdin.on("end", () => {
           const model = a.model || "inherit";
           const key = isGeneral ? `model:${model}` : `type:${a.type}`;
           const isGray = isGeneral || model === "inherit";
-          const label = isGeneral ? model : a.type;
+          const label = isGeneral ? model : a.type.replace(/^[^:]+:/, ""); // strip optional plugin: prefix
           // Use agent's declared color (from frontmatter) if available and not gray.
           // Fallback: hash the agent type name to a stable palette color so typed agents
           // never render gray even when their frontmatter file isn't found.
