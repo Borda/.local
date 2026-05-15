@@ -8,5 +8,10 @@
   "fastModePerSessionOptIn": false,
   "model": "opusplan",
   "ordering": "auto",
+  "permissions": {
+    "allow": [
+      "Bash(node:*)"
+    ]
+  },
   "teammateMode": "in-process"
 }

@@ -3,7 +3,6 @@ name: resolve
 description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for drafting contributor replies (use /oss:analyse --reply). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin)."
 argument-hint: '<PR number or URL> [report] | report | <review comment text>'
 disable-model-invocation: true
-model: opusplan
 effort: high
 when_to_use: 'Use when closing out a GitHub PR — implementing review action items, resolving conflicts, and pushing to contributor fork. Also accepts bare review comment text for single-comment dispatch.'
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
@@ -453,6 +452,8 @@ git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
 Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
 
 ## Step 8: Implement action items
+
+**Soft cap: 8 Codex dispatches per session.** If `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] items only (if ≤8) · (c) Proceed anyway (sequential, may be slow).
 
 <!-- Step 8 defined in action-item-dispatch.md — see that file for phase/sub-step detail -->
 

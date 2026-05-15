@@ -1,10 +1,10 @@
 ---
 name: calibrate
-description: Calibration testing for agents and skills. Generates synthetic problems with known outcomes (quasi-ground-truth), runs targets against them, measures recall, precision, confidence calibration — reveals whether self-reported confidence scores track actual quality.
+description: "Calibration testing for agents and skills. Generates synthetic problems with known outcomes (quasi-ground-truth), runs targets against them, measures recall, precision, confidence calibration — reveals whether self-reported confidence scores track actual quality."
 when_to_use: Run to measure agent/skill routing accuracy, validate confidence calibration, or A/B test agent changes after editing descriptions or workflows.
-argument-hint: '[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]'
+argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Bash, Agent, Glob, Grep, Skill, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Agent, Glob, Grep, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
 ---
 
@@ -83,11 +83,11 @@ Domain tables per mode: see `modes/agents.md`, `modes/skills.md`, `modes/routing
 
 <workflow>
 
-**Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
-
-- status `completed` if work clearly done
-- status `deleted` if orphaned / no longer relevant
-- keep `in_progress` only if genuinely continuing
+**Task hygiene**:
+```bash
+_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+```
+Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 **Task tracking**: create tasks at start of execution (Step 1) for each phase that will run:
 

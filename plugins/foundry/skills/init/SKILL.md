@@ -1,11 +1,11 @@
 ---
 name: init
-description: Post-install setup for foundry plugin. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules and TEAM_PROTOCOL.md into ~/.claude/.
+description: "Post-install setup for foundry plugin. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules and TEAM_PROTOCOL.md into ~/.claude/."
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
 when_to_use: Use once after installing the foundry plugin on a new machine; NOT for editing project .claude/ config (use manage) or re-running audits (use audit).
 model: sonnet
-argument-hint: '[--approve]'
+argument-hint: "[--approve]"
 ---
 
 <objective>
@@ -158,6 +158,12 @@ Write back with Write tool. Report: "Added N new permissions.deny entries (M alr
 
 ## Step 6: Copy permissions-guide.md
 
+Note: this step writes to `.claude/permissions-guide.md` relative to the current working directory — init must be run from project root (a git repository root). Guard:
+
+```bash
+[ -d ".git" ] || { echo "! Run /foundry:init from project root (git repository root)"; exit 1; }
+```
+
 Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — only if destination absent (preserves project-local edits via `/manage`):
 
 ```bash
@@ -224,7 +230,7 @@ if [ -L "$dest" ]; then
     echo "$target" | grep -q "$PLUGIN_ROOT" || LINK_CONFLICTS+=("TEAM_PROTOCOL.md → $target")
 elif [ -f "$dest" ]; then
     LINK_CONFLICTS+=("TEAM_PROTOCOL.md  (real file)")
-fi  # timeout: 5000
+fi
 ```
 
 If conflicts exist:
@@ -274,6 +280,8 @@ Suggest: "Re-run `/foundry:init` after any plugin upgrade to refresh symlinks to
 </workflow>
 
 <notes>
+
+**Follow-up gate omitted** — init is a one-shot setup skill; no iterative follow-up action applies. Step 10 summary is the terminal output; no `AskUserQuestion` gate required.
 
 **Testing init changes**: Init skill has no `.claude/skills/init` entry — only reachable as `/foundry:init` after plugin installed. To test: bump `version` in `plugins/foundry/.claude-plugin/plugin.json`, run `claude plugin install foundry@borda-ai-rig` from repo root to refresh cache, invoke `/foundry:init`. **Upgrade path**: After `claude plugin install foundry@borda-ai-rig` upgrades version, symlinks point to old cache path. Re-run `/foundry:init` — Step 9 detects stale symlinks as conflicts and replaces them.
 

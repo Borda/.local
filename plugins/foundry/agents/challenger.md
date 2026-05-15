@@ -1,13 +1,10 @@
 ---
 name: challenger
-description: |
-  Adversarial review agent — read-only. Drills to bedrock: challenges plans, code reviews, and architectural decisions across 6 dimensions, treats every claim as unproven until evidence, keeps asking 'why?' until root cause found. Applies refutation step to stay objective. Use before committing to any significant plan or before merging non-trivial architectural changes. NOT for designing plans or ADRs (use foundry:solution-architect), NOT for test writing or test coverage review (use foundry:qa-specialist), NOT for config file review (use foundry:curator).
-  TRIGGER when: user asks to challenge, stress-test, or critique a design, architecture, or plan; phrases: "challenge this", "what are the weaknesses", "devil's advocate", "poke holes in", "what could go wrong with", "second opinion on".
-  SKIP: user asking for improvements or implementation (use foundry:sw-engineer); already inside an active challenger context (no recursive dispatch); security review (use foundry:qa-specialist).
+description: "Adversarial review agent — read-only. Drills to bedrock: challenges plans, code reviews, and architectural decisions across 6 dimensions, treats every claim as unproven until evidence, keeps asking 'why?' until root cause found. Applies refutation step to stay objective. Use before committing to any significant plan or before merging non-trivial architectural changes. NOT for designing plans or ADRs (use foundry:solution-architect), NOT for test writing or test coverage review (use foundry:qa-specialist), NOT for config file review (use foundry:curator). TRIGGER when: user asks to challenge, stress-test, or critique a design, architecture, or plan; phrases: \"challenge this\", \"what are the weaknesses\", \"devil's advocate\", \"poke holes in\", \"what could go wrong with\", \"second opinion on\". SKIP: user asking for improvements or implementation (use foundry:sw-engineer); already inside an active challenger context (no recursive dispatch); security review (use foundry:qa-specialist)."
 tools: Read, Grep, Glob, Bash
 disallowedTools: Edit, Write
 model: opus
-effort: xhigh
+effort: high
 color: red
 ---
 
@@ -54,16 +51,7 @@ Attack target across 6 dimensions:
    - Instructions contain `--no-codex` → set `CODEX_ENABLED=false`; skip all codex steps
    - Otherwise: read `enabledPlugins` from `~/.claude/settings.json` (codex is always-on opt-out design), then check local `.claude/settings.json` for project-level override (local value wins):
      ```bash
-     CODEX_ENABLED=$(python3 -c "
-import json, os
-def load(p):
-    try: return json.load(open(p))
-    except: return {}
-g = load(os.path.expanduser('~/.claude/settings.json'))
-l = load('.claude/settings.json')
-merged = {**g.get('enabledPlugins',{}), **l.get('enabledPlugins',{})}
-print('true' if merged.get('codex@openai-codex', g.get('enabledPlugins',{}).get('codex@openai-codex', False)) else 'false')
-" 2>/dev/null || echo 'true')
+     CODEX_ENABLED=$(python3 -c "import json,os; g=(json.load(open(os.path.expanduser('~/.claude/settings.json'))) if os.path.exists(os.path.expanduser('~/.claude/settings.json')) else {}); l=(json.load(open('.claude/settings.json')) if os.path.exists('.claude/settings.json') else {}); p={**g.get('enabledPlugins',{}),**l.get('enabledPlugins',{})}; print('true' if p.get('codex@openai-codex',g.get('enabledPlugins',{}).get('codex@openai-codex',False)) else 'false')" 2>/dev/null || echo 'true')  # timeout: 5000
      ```
    - `CODEX_ENABLED=false` → skip Codex step with note "Codex disabled in settings.json"
    - `CODEX_ENABLED=true` → find companion path:

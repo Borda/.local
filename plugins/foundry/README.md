@@ -154,6 +154,7 @@ Full-sweep quality audit of `.claude/` configuration and all `plugins/*/` agent 
 /foundry:audit                      # full sweep, report only — gate offers fix options
 /foundry:audit --upgrade            # fetch latest Claude Code docs, apply improvements with A/B testing
 /foundry:audit --adversarial        # adversarial review with foundry:challenger + Codex
+/foundry:audit --efficiency         # cost and efficiency sweep: model tiers, effort levels, unbounded spawn patterns, token bloat, boilerplate duplication; outputs prioritized P1-P4 improvement plan
 
 # Tier 1 — group scopes
 /foundry:audit agents               # all agents
@@ -443,7 +444,7 @@ ______________________________________________________________________
 
 **Use for**: writing new pytest tests, analyzing public-API coverage gaps, building edge-case matrices, fixing failing tests, integration test design. Automatically embeds OWASP Top 10 security review when task scope includes authentication, payment flows, or PII handling — applies in all modes.
 
-**Model**: `opus`
+**Model**: `sonnet`
 
 **Not for**: linting, type checking, or annotation fixes (use `foundry:linting-expert`), production implementation (use `foundry:sw-engineer`), slow test suite profiling or optimizing test execution speed (use `foundry:perf-optimizer`), testing private/internal methods or mocking internals.
 
@@ -477,7 +478,9 @@ ______________________________________________________________________
 
 **Model**: `opus`
 
-**Not for**: general code refactoring (use `foundry:sw-engineer`), architectural redesign (use `foundry:solution-architect`).
+**Not for**: general code refactoring (use `foundry:sw-engineer`), architectural redesign (use `foundry:solution-architect`), DataLoader pipeline correctness or reproducibility audits (use `research:data-steward` — requires `research` plugin), doc writing (use `foundry:doc-scribe`), annotation fixes (use `foundry:linting-expert`).
+
+**Auto-invokes when:** user asks to profile, benchmark, or optimize a Python/ML workload; mentions slow training, GPU underutilization, or DataLoader bottleneck; phrases: "why is this slow", "profile this", "optimize training speed". Not triggered for general code changes (use `foundry:sw-engineer`).
 
 Strictly profile-first: measures before changing, changes one thing, measures again. Optimization order: algorithm -> data structure -> I/O -> memory -> concurrency -> vectorization -> compute -> caching. Never jumps to GPU tuning before checking I/O.
 
@@ -507,7 +510,7 @@ ______________________________________________________________________
 
 **Model**: `sonnet`
 
-**Not for**: code analysis or implementation (use `foundry:sw-engineer`), ML paper analysis (use `research:scientist`), writing docstrings (use `foundry:doc-scribe`), dependency upgrade lifecycle decisions (use `oss:shepherd`).
+**Not for**: code analysis or implementation (use `foundry:sw-engineer`), ML paper analysis (use `research:scientist`), writing or updating README content or docstrings (use `foundry:doc-scribe`), dependency upgrade lifecycle decisions (use `oss:shepherd`), performance profiling or benchmarking recommendations (use `foundry:perf-optimizer`).
 
 **Auto-invokes when:** user asks about library docs, external API, or URL content; "what does X docs say", "look up", "find the docs for", "latest version of"; user pastes URL and asks a question about it.
 
@@ -555,9 +558,11 @@ ______________________________________________________________________
 
 **Use for**: generating complete blog posts, Marp slide decks, social threads, talk abstracts, and lightning talk outlines in one autonomous pass. Imagines the ideal reader experience first, then works backwards to structure and form — questions status-quo conventions before accepting them, pushes for genuinely fresh angles. Reads an approved outline file (`.plans/content/<slug>-outline.md`) produced by `/foundry:create`. Applies a four-beat story arc (Problem→Journey→Insight→Action) calibrated to the target audience level.
 
-**Model**: `opus`
+**Model**: `sonnet`
 
-**Not for**: in-code documentation, docstrings, or API references (use `foundry:doc-scribe`), release notes or changelogs (use `oss:shepherd`), structured reference content such as FAQs or comparison tables (redirect to `foundry:doc-scribe`).
+**Not for**: in-code documentation, docstrings, or API references (use `foundry:doc-scribe`), release notes or changelogs (use `oss:shepherd` — requires `oss` plugin), structured reference content such as FAQs or comparison tables (redirect to `foundry:doc-scribe`).
+
+**Auto-invokes when:** outline file `.plans/content/<slug>-outline.md` approved; user asks to write a blog post, Marp slide deck, social thread, talk abstract, or lightning talk outline. Skip when outline file not found (run `/foundry:create` first); code documentation (use `foundry:doc-scribe`); release notes (use `oss:shepherd`).
 
 Always downstream of `/foundry:create` — reads the approved outline file and generates the full artifact. The two-phase system: `/foundry:create` (interactive intake → outline) then `foundry:creator` (autonomous generation → artifact).
 
@@ -575,7 +580,7 @@ Agents form a directed pipeline, not a flat pool:
 - `foundry:web-explorer` **feeds** `research:scientist` — fetches current docs and papers; scientist interprets
 - `foundry:creator` is always **downstream** of `/foundry:create` — reads the approved outline file; never generates content without a prior outline
 
-**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`) use `opus`; plan-gated roles (`foundry:solution-architect`, `foundry:curator`, `foundry:challenger`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`.
+**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:solution-architect`, `foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`.
 
 ______________________________________________________________________
 

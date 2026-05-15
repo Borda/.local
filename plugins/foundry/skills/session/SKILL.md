@@ -1,10 +1,7 @@
 ---
 name: session
-description: |
-  Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest
-  TRIGGER when: user asks "what was I working on", "any pending items", "what's in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context.
-  SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only).
-argument-hint: 'resume | archive <text> | summary'
+description: "Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks \"what was I working on\", \"any pending items\", \"what's in the parking lot\", \"remind me where we left off\", \"what did we defer\"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only)."
+argument-hint: "resume | archive <text> | summary"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 effort: low
 model: sonnet
@@ -48,11 +45,11 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 <workflow>
 
-**Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
-
-- status `completed` if work clearly done
-- status `deleted` if orphaned / no longer relevant
-- keep `in_progress` only if genuinely continuing
+**Task hygiene**:
+```bash
+_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+```
+Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 ## Step 0: Validate and dispatch mode
 
@@ -63,6 +60,8 @@ If `MODE` matches:
 - `archive` → **Mode: archive**
 - `summary` → **Mode: summary**
 
+**Unsupported flag check** — after extracting the mode token, scan `$ARGUMENTS` for any remaining `--<token>` patterns. If found: print `! Unknown flag(s): \`--<token>\`. Supported modes: resume, archive, summary.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
+
 Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 
 > "Which session mode did you want?"
@@ -70,7 +69,7 @@ Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 
 ## Step 1 / Mode: resume (list pending items)
 
-### Step 1a: Resolve the memory directory
+### Substep 1a: Resolve the memory directory
 
 Derive MEMORY_DIR using canonical snippet from `<constants>`.
 
@@ -82,22 +81,22 @@ MEMORY_DIR="$HOME/.claude/projects/$SLUG/memory/"
 echo "$MEMORY_DIR"
 ```
 
-### Step 2: Age-out expired items (≥ 30 days) silently
+### Substep 1b: Age-out expired items (≥ 30 days) silently
 
 ```bash
-# MEMORY_DIR derived in Step 1 — reuse that value
+# MEMORY_DIR derived in Substep 1a — reuse that value
 find "$MEMORY_DIR" -name "session-open-*.md" -mtime +30 -delete 2>/dev/null # timeout: 5000
 echo "cleanup done"
 ```
 
-### Step 3: Collect remaining items and compute age
+### Substep 1c: Collect remaining items and compute age
 
 Use Glob with pattern `session-open-*.md` in memory directory. For each file, read with Read tool to extract `name` and `description` frontmatter fields and item body.
 
 Compute age in days per file:
 
 ```bash
-# MEMORY_DIR derived in Step 1 — reuse that value
+# MEMORY_DIR derived in Substep 1a — reuse that value
 NOW=$(date +%s)
 for f in "$MEMORY_DIR"/session-open-*.md; do
     [ -f "$f" ] || continue
@@ -107,7 +106,7 @@ for f in "$MEMORY_DIR"/session-open-*.md; do
 done
 ```
 
-### Step 4: Render grouped list
+### Substep 1d: Render grouped list
 
 Group by age bucket:
 
@@ -135,11 +134,11 @@ If no files exist, print: `No pending session items.`
 
 ## Step 2 / Mode: archive (close a parked item)
 
-### Step 1: Locate memory directory and list candidates
+### Substep 2a: Locate memory directory and list candidates
 
 Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with pattern `session-open-*.md` in MEMORY_DIR to list candidates.
 
-### Step 2: Fuzzy-match the target item
+### Substep 2b: Fuzzy-match the target item
 
 Extract `<partial-text>` from `$ARGUMENTS` (everything after `archive `).
 
@@ -147,16 +146,16 @@ Use Grep with partial text against memory directory, pattern `session-open-*.md`
 
 Read matched file with Read tool to extract its `name` field.
 
-### Step 3: Delete the memory file
+### Substep 2c: Delete the memory file
 
-Set `MATCHED_FILE` to full path of matched file from Step 2, then:
+Set `MATCHED_FILE` to full path of matched file from Substep 2b, then:
 
 ```bash
 rm "$MATCHED_FILE"  # timeout: 5000
 echo "deleted"
 ```
 
-### Step 4: Append audit entry to resolution log
+### Substep 2d: Append audit entry to resolution log
 
 Ensure log directory exists:
 
@@ -171,7 +170,7 @@ TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 printf '{"ts":"%s","item":"%s","action":"archived"}\n' "$TS" "$ITEM_NAME" >> .claude/logs/session-archive.jsonl  # timeout: 5000
 ```
 
-### Step 5: Confirm to user
+### Substep 2e: Confirm to user
 
 Print: `Archived: <item name>` — one line, terminal only.
 
@@ -190,13 +189,9 @@ Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with
 ### Step 3: Collect recent git commits
 
 ```bash
-git log --oneline --since="$(date -u -d '8 hours ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -v-8H '+%Y-%m-%dT%H:%M:%SZ')" 2>/dev/null | head -20 || true # timeout: 3000 — empty result acceptable (no commits in window)
-```
-
-If date flag syntax fails, fall back to:
-
-```bash
-git log --oneline -15 # timeout: 3000
+OS=$(uname -s)
+SINCE=$([ "$OS" = "Darwin" ] && date -u -v-8H '+%Y-%m-%dT%H:%M:%SZ' || date -u -d '8 hours ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')
+git log --oneline --since="$SINCE" | head -20 || true # timeout: 3000 — empty result acceptable (no commits in window)
 ```
 
 ### Step 4: Collect archived items from this session
@@ -243,9 +238,16 @@ Write to `$OUTPUT`, print compact terminal summary with `→ file`.
 
 End with `## Confidence` block per quality-gates.md — score based on summary completeness (all completed tasks captured, parked items current, git log resolved).
 
+Follow-up gate (`AskUserQuestion`):
+(a) `/session archive <item>` — archive a completed item
+(b) Add item to parking lot (specify which)
+(c) Skip
+
 </workflow>
 
 <notes>
+
+**`context: fork`** — reads/writes files only; fork avoids polluting parent context with file listings and session state.
 
 **Automatic parking behavior (core behavioral rule — no command needed)**
 

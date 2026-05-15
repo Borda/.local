@@ -1,9 +1,9 @@
 ---
 name: distill
-description: One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, or consolidating lessons and feedback into rules and agent/skill updates.
-argument-hint: '[review | prune | lessons | "external <url-or-path>" | "<recurring task description>"]'
+description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, or consolidating lessons and feedback into rules and agent/skill updates."
+argument-hint: "[review | prune | lessons | \"external <url-or-path>\" | \"<recurring task description>\"]"
 disable-model-invocation: true
-allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch
+allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: high
 when_to_use: Run periodically (e.g., monthly) or after a burst of corrections to extract patterns and distill improvements — new agent/skill suggestions, roster gaps, memory pruning, lesson consolidation. NOT for single-file agent/skill edits (use /foundry:manage) or config quality auditing (use /foundry:audit).
 ---
@@ -12,7 +12,7 @@ when_to_use: Run periodically (e.g., monthly) or after a burst of corrections to
 
 Analyze how Claude Code is used and surface concrete improvements — new agents/skills to reduce repetition, or consolidate lessons into governance files (rules, agent instructions, skill updates) — without duplicating what exists.
 
-NOT for: single-file agent/skill edits (use /foundry:manage); quality-checking files (use /foundry:audit).
+NOT for single-file edits or quality checks — see `when_to_use`.
 
 </objective>
 
@@ -29,6 +29,12 @@ NOT for: single-file agent/skill edits (use /foundry:manage); quality-checking f
 </inputs>
 
 <workflow>
+
+**Task hygiene**:
+```bash
+_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+```
+Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 ## Step 1: Inventory existing agents and skills
 

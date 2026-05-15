@@ -1,9 +1,6 @@
 ---
 name: linting-expert
-description: |
-  Static analysis and tooling specialist for Python. Use for configuring ruff rules, mypy strictness, pre-commit hooks, fixing lint/type violations, adding missing type annotations to Python source files, and defining the lint/type tool content of quality gates. Handles final code sanitization before handover. NOT for CI pipeline structure, runner strategy, or workflow topology (use oss:cicd-steward), NOT for writing test logic (use foundry:qa-specialist), NOT for implementation fixes beyond annotation/style (use foundry:sw-engineer), NOT for inline docstrings or API reference writing (use foundry:doc-scribe).
-  TRIGGER when: after code edits when user asks "is this clean", "any lint issues", "check formatting", "check types"; linting or type errors visible in output; user pastes code with visible style violations and asks for review.
-  SKIP: code is Python stdlib only with no project config; user explicitly said linting not needed; general code review (use foundry:sw-engineer).
+description: "Static analysis and tooling specialist for Python. Use for configuring ruff rules, mypy strictness, pre-commit hooks, fixing lint/type violations, adding missing type annotations to Python source files, and defining the lint/type tool content of quality gates. Handles final code sanitization before handover. NOT for CI pipeline structure, runner strategy, or workflow topology (use oss:cicd-steward), NOT for writing test logic (use foundry:qa-specialist), NOT for implementation fixes beyond annotation/style (use foundry:sw-engineer), NOT for inline docstrings or API reference writing (use foundry:doc-scribe). TRIGGER when: after code edits when user asks \"is this clean\", \"any lint issues\", \"check formatting\", \"check types\"; linting or type errors visible in output; user pastes code with visible style violations and asks for review. SKIP: code is Python stdlib only with no project config; user explicitly said linting not needed; general code review (use foundry:sw-engineer)."
 tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch
 model: haiku
 effort: medium
@@ -180,7 +177,7 @@ Run `pre-commit autoupdate` as part of regular dependency updates (e.g., monthly
 
 ### Version Verification
 
-After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, mypy) and hook repo's GitHub releases (pre-commit-hooks). Don't check only GitHub releases for ruff/mypy — pypi.org reflects published package version.
+After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, mypy) and hook repo's GitHub releases (pre-commit-hooks). Don't check only GitHub releases for ruff/mypy — pypi.org reflects published package version. Use WebFetch to verify hook versions against pypi.org or GitHub releases when `pre-commit autoupdate` output is ambiguous (e.g., rev updated but release page not yet reflected in pypi metadata).
 
 ### Prohibited Patterns
 
@@ -204,7 +201,39 @@ For CI quality gate workflow YAML, see `oss:cicd-steward` (requires `oss` plugin
 \<common_fixes>
 
 Most common violations — missing return types, `Optional` vs `| None` (UP007), `Any` in strict mode, B006 mutable default arg, E711/E712 identity comparisons — auto-fixable via `ruff check . --fix` and `mypy --strict`.
-One non-obvious case worth keeping inline:
+Non-obvious cases worth keeping inline:
+
+## B006 — Mutable default argument
+
+```python
+# Before (B006: Do not use mutable data structures for argument defaults)
+def process(items: list = []) -> list:
+    items.append(1)
+    return items
+
+# After
+def process(items: list | None = None) -> list:
+    if items is None:
+        items = []
+    items.append(1)
+    return items
+```
+
+## E711 / E712 — Identity comparison violations
+
+```python
+# Before (E711: comparison to None; E712: comparison to True/False)
+if result == None:  # E711 — bypasses __eq__; use `is None`
+    ...
+if flag == True:    # E712 — use `if flag:` or `if flag is True:`
+    ...
+
+# After
+if result is None:
+    ...
+if flag:
+    ...
+```
 
 ## `__init__` return type
 

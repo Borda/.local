@@ -1,7 +1,7 @@
 ---
 name: manage
-description: 'Create, update, or delete agents, skills, rules, and hooks with full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing code changes (use develop:feature or develop:fix).'
-argument-hint: 'create <agent|skill|rule> <name> "desc" | update <name> [new-name|"change"|spec.md] | delete <name> | add perm <rule> "desc" "use-case" | remove perm <rule>'
+description: "Create, update, or delete agents, skills, rules, and hooks with full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing code changes (use develop:feature or develop:fix)."
+argument-hint: "create <agent|skill|rule> <name> \"desc\" | update <name> [new-name|\"change\"|spec.md] | delete <name> | add perm <rule> \"desc\" \"use-case\" | remove perm <rule>"
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
@@ -82,8 +82,7 @@ Extract operation, type, name, optional arguments from `$ARGUMENTS`.
 # Parse --skip-audit flag before other argument processing
 SKIP_AUDIT=false
 [[ "$ARGUMENTS" == *"--skip-audit"* ]] && SKIP_AUDIT=true
-ARGUMENTS="${ARGUMENTS//--skip-audit/}"
-ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/\(^\|[[:space:]]\)--skip-audit\([[:space:]]\|$\)/ /g' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
 ```
 
 **Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-audit\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -111,6 +110,8 @@ Results:
 - All empty → report "No agent, skill, rule, or hook named `<name>` found" and stop
 
 For `create`, check only relevant type's path.
+
+**Delete confirmation gate** — when `$MODE` is `delete`, immediately after type resolution invoke `AskUserQuestion`: "Delete `<name>` (`<type>`)? This cannot be undone. (a) Confirm · (b) Abort". On Abort: stop. On Confirm: proceed to Step 4.
 
 ```bash
 # Check permission existence (for add perm / remove perm)
@@ -178,14 +179,14 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 
 1. Fetch latest Claude Code agent frontmatter schema:
 
-   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`" <!-- URL verified -->
+   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`" <!-- URL unverified — verify at: https://code.claude.com/docs/en/sub-agents -->
 
-     <!--
-     Health monitoring (CLAUDE.md §8): create checkpoint after spawn:
-     LAUNCH_AT=$(date +%s); touch /tmp/manage-check-web-explorer
-     Every 5 min: find /tmp -newer /tmp/manage-check-web-explorer -name "manage-schema-*.md" | wc -l
-     Hard cutoff: 15 min of no activity → surface partial results with ⏱
-     -->
+   **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
+   ```bash
+   LAUNCH_AT=$(date +%s)
+   touch /tmp/manage-check-web-explorer-$LAUNCH_AT
+   ```
+   Every 5 min: `find /tmp -newer /tmp/manage-check-web-explorer-$LAUNCH_AT -name "manage-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `effort`, `initialPrompt`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `isolation`, `color`), current model shorthands, new fields
    - Note new fields worth including. Adjust template to reflect current schema. If new field broadly useful for agent's role (e.g. `maxTurns` for long-running agents), include with sensible default and inline comment.
@@ -204,6 +205,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 ```bash
 MANAGE_TPL="${CLAUDE_PLUGIN_ROOT}/skills/manage/templates"
 [ -d "$MANAGE_TPL" ] || MANAGE_TPL=".claude/skills/manage/templates"
+[ -z "$MANAGE_TPL" ] && MANAGE_TPL="$(find "${HOME}/.claude/plugins/cache" -name "templates" -path "*/manage/templates" -type d 2>/dev/null | sort -Vr | head -1)"
 [ -d "$MANAGE_TPL" ] || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
 ```
 
@@ -221,23 +223,25 @@ Write the file using the Write tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confidence":0.N}
 ```
 
-<!-- Health monitoring (CLAUDE.md §8): create checkpoint after spawn:
-     LAUNCH_AT=$(date +%s); touch /tmp/manage-check-curator-agent
- Every 5 min: find .claude/agents -newer /tmp/manage-check-curator-agent -name "<name>.md" | wc -l
-     Hard cutoff: 15 min of no activity → surface partial results with ⏱ -->
+**Health monitoring** (CLAUDE.md §8): After spawning foundry:curator agent:
+```bash
+LAUNCH_AT=$(date +%s)
+touch /tmp/manage-check-curator-agent-$LAUNCH_AT
+```
+Every 5 min: `find .claude/agents -newer /tmp/manage-check-curator-agent-$LAUNCH_AT -name "<name>.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
 ### Mode: Create Skill
 
 1. Fetch latest Claude Code skill frontmatter schema:
 
-   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-skill-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-skill-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`" <!-- URL verified -->
+   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-skill-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-skill-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`" <!-- URL unverified — verify at: https://code.claude.com/docs/en/skills -->
 
-     <!--
-     Health monitoring (CLAUDE.md §8): create checkpoint after spawn:
-     LAUNCH_AT=$(date +%s); touch /tmp/manage-check-web-explorer-skill
-     Every 5 min: find /tmp -newer /tmp/manage-check-web-explorer-skill -name "manage-skill-schema-*.md" | wc -l
-     Hard cutoff: 15 min of no activity → surface partial results with ⏱
-     -->
+   **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
+   ```bash
+   LAUNCH_AT=$(date +%s)
+   touch /tmp/manage-check-web-explorer-skill-$LAUNCH_AT
+   ```
+   Every 5 min: `find /tmp -newer /tmp/manage-check-web-explorer-skill-$LAUNCH_AT -name "manage-skill-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
@@ -247,6 +251,7 @@ Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confi
 ```bash
 MANAGE_TPL="${MANAGE_TPL:-${CLAUDE_PLUGIN_ROOT}/skills/manage/templates}"
 [ -d "$MANAGE_TPL" ] || MANAGE_TPL=".claude/skills/manage/templates"
+[ -z "$MANAGE_TPL" ] && MANAGE_TPL="$(find "${HOME}/.claude/plugins/cache" -name "templates" -path "*/manage/templates" -type d 2>/dev/null | sort -Vr | head -1)"
 [ -d "$MANAGE_TPL" ] || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
 ```
 
@@ -263,10 +268,12 @@ Write using the Write tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,"confidence":0.N}
 ```
 
-<!-- Health monitoring (CLAUDE.md §8): create checkpoint after spawn:
-     LAUNCH_AT=$(date +%s); touch /tmp/manage-check-curator-skill
- Every 5 min: find .claude/skills -newer /tmp/manage-check-curator-skill -name "SKILL.md" | wc -l
-     Hard cutoff: 15 min of no activity → surface partial results with ⏱ -->
+**Health monitoring** (CLAUDE.md §8): After spawning foundry:curator agent:
+```bash
+LAUNCH_AT=$(date +%s)
+touch /tmp/manage-check-curator-skill-$LAUNCH_AT
+```
+Every 5 min: `find .claude/skills -newer /tmp/manage-check-curator-skill-$LAUNCH_AT -name "SKILL.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
 ### Mode: Update Agent (rename)
 
@@ -279,7 +286,7 @@ Atomic rename — write new file before deleting old:
 3. Verify new file exists and is valid: `Read(file_path=".claude/agents/<new-name>.md", limit=5)`
 
 ```bash
-# 4. Delete old file only after new file is confirmed (user confirmed rename via AskUserQuestion in Step 1 → safe to proceed)
+# 4. Delete old file only after new file is confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
 rm .claude/agents/<old-name>.md # timeout: 5000
 ```
 
@@ -297,21 +304,21 @@ mkdir -p .claude/skills/<new-name>  # timeout: 5000
 3. Verify new file exists: `Read(file_path=".claude/skills/<new-name>/SKILL.md", limit=5)`
 
 ```bash
-# 4. Remove old directory only after new is confirmed (user confirmed rename via AskUserQuestion in Step 1 → safe to proceed)
+# 4. Remove old directory only after new is confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
 rm -r .claude/skills/<old-name>  # timeout: 5000
 ```
 
 ### Mode: Delete Agent
 
 ```bash
-# User confirmed deletion via AskUserQuestion in Step 1 — safe to proceed
+# Confirmed by delete gate in Step 1 — safe to proceed
 rm .claude/agents/<name>.md # timeout: 5000
 ```
 
 ### Mode: Delete Skill
 
 ```bash
-# User confirmed deletion via AskUserQuestion in Step 1 — safe to proceed
+# Confirmed by delete gate in Step 1 — safe to proceed
 rm -r .claude/skills/<name>  # timeout: 5000
 ```
 
@@ -425,6 +432,7 @@ Atomic update — write new file before deleting old:
 ### Mode: Delete Rule
 
 ```bash
+# Confirmed by delete gate in Step 1 — safe to proceed
 rm .claude/rules/<name>.md # timeout: 5000
 ```
 
@@ -613,14 +621,10 @@ For **create** and **update (rename)**: verify tool efficiency — cross-check a
 
 ## Step 9: Audit and calibrate
 
-Run `/foundry:audit --skip-gate` to validate created/modified files without triggering interactive follow-up gate (requires `foundry` plugin). **Skip if invoked with `--skip-audit` or if current `manage` operation runs inside audit-initiated fix session** — outer audit covers it.
+Invoke `Skill(skill="foundry:audit", args="--skip-gate")` to validate created/modified files without triggering interactive follow-up gate (requires `foundry` plugin). **Skip if invoked with `--skip-audit` or if current `manage` operation runs inside audit-initiated fix session** — outer audit covers it.
 
 ```bash
-[[ "$SKIP_AUDIT" == "true" ]] && { echo "[--skip-audit] skipping Step 9 audit"; } || {
-```
-
-```text
-/foundry:audit --skip-gate
+[[ "$SKIP_AUDIT" == "true" ]] && { echo "[--skip-audit] skipping Step 9 audit"; }
 ```
 
 For targeted check of only affected file, spawn **foundry:curator** directly:
@@ -631,21 +635,11 @@ For targeted check of only affected file, spawn **foundry:curator** directly:
 
 Include audit findings in final report. Do not proceed to sync if any `critical` findings remain.
 
-**Calibration** — for agent/skill create or non-trivial content-edit, run `/foundry:calibrate <name>` after audit passes — mandatory, not optional (requires `foundry` plugin):
+**Calibration** — for agent/skill create or non-trivial content-edit, invoke `Skill(skill="foundry:calibrate", args="<name>")` after audit passes — mandatory, not optional (requires `foundry` plugin).
 
-```text
-/foundry:calibrate <name>
-```
-
-Then run `/foundry:calibrate routing --fast` to confirm overall routing accuracy unaffected (requires `foundry` plugin):
-
-```text
-/foundry:calibrate routing --fast
-```
+Then invoke `Skill(skill="foundry:calibrate", args="routing --fast")` to confirm overall routing accuracy unaffected (requires `foundry` plugin).
 
 Skip calibration for: trivial edits, renames, deletes, rule operations, perm operations.
-
-}
 
 ## Step 10: Summary report
 
@@ -669,8 +663,8 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 - **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note
 - Follow-up chains:
-  - create or non-trivial update of agent/skill → `/foundry:audit --skip-gate` → `/foundry:calibrate <name>` (mandatory) → `/foundry:calibrate routing --fast`
-  - trivial update or rename or delete → `/foundry:audit --skip-gate` → `/foundry:calibrate routing --fast` (if description changed)
+  - create or non-trivial update of agent/skill → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="<name>")` (mandatory) → `Skill(skill="foundry:calibrate", args="routing --fast")`
+  - trivial update or rename or delete → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="routing --fast")` (if description changed)
   - add/remove perm → confirm both files updated; run `/foundry:init`
 
 </notes>

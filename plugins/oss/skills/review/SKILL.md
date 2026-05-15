@@ -3,7 +3,6 @@ name: review
 description: Multi-agent code review of GitHub Pull Requests (Python PRs only) covering architecture, tests, performance, docs, lint, security, and API design.
 argument-hint: '[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
-model: opusplan
 effort: high
 when_to_use: 'Use when the user asks to review a GitHub Pull Request (Python PRs only), wants multi-agent code review feedback, or needs a structured review with severity-graded findings.'
 ---
@@ -395,7 +394,9 @@ Read `$FOUNDRY_SHARED/cross-validation-protocol.md`. File absent → warn: "cros
 
 **Independence requirement**: cross-validation must run as separate spawned agent — same type as finding's origin (e.g., `foundry:sw-engineer` verifies `foundry:sw-engineer` critical finding). Do NOT validate in orchestrator context; in-context verification violates independence.
 
-Spawn verifier agent per critical/blocking finding. Agent reads relevant finding file from `$RUN_DIR` and referenced code. Each verifier must write full rationale to `$RUN_DIR/verify-<finding-id>.md` using the Write tool, then return ONLY: `{"finding_id":"<id>","verdict":"CONFIRMED|REFUTED","rationale":"<one sentence>","file":"$RUN_DIR/verify-<finding-id>.md"}`. REFUTED → downgrade finding severity or remove before consolidation.
+**Spawn cap: max 3 verifier agents.** If critical/blocking findings > 3, group into batches of ≤2 findings per verifier agent; note grouped IDs in the rationale. This prevents runaway spawn cost on large PRs.
+
+Spawn verifier agent per critical/blocking finding (or per batch when capped). Agent reads relevant finding file from `$RUN_DIR` and referenced code. Each verifier must write full rationale to `$RUN_DIR/verify-<finding-id>.md` using the Write tool, then return ONLY: `{"finding_id":"<id>","verdict":"CONFIRMED|REFUTED","rationale":"<one sentence>","file":"$RUN_DIR/verify-<finding-id>.md"}`. REFUTED → downgrade finding severity or remove before consolidation.
 
 ## Step 5: Consolidate findings
 

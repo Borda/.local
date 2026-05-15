@@ -1,11 +1,9 @@
 ---
 name: investigate
-description: |
-  Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug) or config quality (/foundry:audit).
-  TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: "not working but config looks right", "hook not triggering", "why isn't X running".
-  SKIP: Python traceback present (use develop:debug); known code bug with repro (use develop:fix); pure config quality check (use foundry:audit).
-argument-hint: '<symptom, question, or failing command> [--fast]'
+description: "Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug) or config quality (/foundry:audit). TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: \"not working but config looks right\", \"hook not triggering\", \"why isn't X running\". SKIP: Python traceback present (use develop:debug); known code bug with repro (use develop:fix); pure config quality check (use foundry:audit)."
+argument-hint: "<symptom, question, or failing command> [--fast]"
 allowed-tools: Read, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+model: opusplan
 effort: high
 when_to_use: Use when the cause of a failure is unknown — environment, tooling, CI divergence, hooks; NOT for known code bugs with a traceback (use develop:debug) or config quality sweeps (use audit).
 ---
@@ -35,11 +33,11 @@ If $ARGUMENTS empty or too vague, use AskUserQuestion: "What exactly is failing 
 
 <workflow>
 
-**Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
-
-- status `completed` if work clearly done
-- status `deleted` if orphaned / no longer relevant
-- keep `in_progress` only if genuinely continuing
+**Task hygiene**:
+```bash
+_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+```
+Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 **Task tracking**: TaskCreate tasks for Gather, Hypothesise, Probe, Report; mark in_progress/completed as you go.
 
@@ -120,18 +118,19 @@ Common categories:
 
 ## Step 4: Auxiliary review (optional)
 
-**Skip entirely** when `--fast` passed, both Codex and foundry:challenger unavailable, or top hypothesis has strong direct evidence. Skip → proceed to Step 5.
+**Skip entirely** when `--fast` passed, or top hypothesis has strong direct evidence. (`foundry:challenger` is always available as part of foundry plugin, so the skip condition simplifies to: skip when `--fast` passed.) Skip → proceed to Step 5.
+
+When `--fast`: mark Step 4 task as `deleted` (not completed — it was skipped).
 
 Otherwise, set up adversarial review:
 
 ```bash
-CODEX_OK=$(jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && echo "available" || echo "")  # timeout: 5000
 INVESTIGATE_RUN=".temp/investigate/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$INVESTIGATE_RUN"  # timeout: 5000
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
 ```
 
-If `[ -n "$CODEX_OK" ]`:
+If `[ "$CODEX_AVAILABLE" = "true" ]`:
 
 ```text
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality — symptom: ${SYMPTOM_DESCRIPTION}, signals: ${KEY_SIGNALS}, hypothesis table: ${HYPOTHESIS_TABLE}. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to $CODEX_OUT using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
@@ -173,6 +172,8 @@ Stop when one hypothesis confirmed with clear evidence, or top-3 all ruled out (
 
 ## Step 6: Report findings
 
+If `$INVESTIGATE_RUN/codex-review.md` or `$INVESTIGATE_RUN/challenger-review.md` exists from Step 4, read it and incorporate any new hypotheses or blindspots into the Evidence section below.
+
 ```markdown
 ## Investigation: <symptom>
 
@@ -205,12 +206,17 @@ End with a `## Confidence` block:
 - Pass 1: [gap addressed]
 ```
 
+Invoke `AskUserQuestion` as follow-up gate:
+(a) Invoke recommended next action (from Recommended next action field above)
+(b) Run additional investigation with narrowed hypothesis
+(c) Skip — diagnosis complete
+
 </workflow>
 
 <notes>
 
 - **Diagnosis only** — never apply fixes; hand off with specific recommended action
-- **Scope vs `/develop:debug`**: `/develop:debug` needs known test failure, runs TDD fix loop. `/investigate` = "something wrong, don't know what" — cause may not be in application code
+- **Scope vs `/develop:debug`**: `/develop:debug` (requires `develop` plugin) needs known test failure, runs TDD fix loop. `/investigate` = "something wrong, don't know what" — cause may not be in application code
 - **Scope vs `/foundry:audit`**: `/foundry:audit` = scheduled quality sweep of `.claude/`. `/investigate` = triggered by live failure; two complement each other (investigate finds config symptom → audit confirms structural issue)
 - **Follow-up**: `/develop:fix` (requires `develop` plugin) for implementing resolution once root cause confirmed
 - **Broad first**: always complete Step 2 before hypothesising — premature anchoring = most common investigation failure

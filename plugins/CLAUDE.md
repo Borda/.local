@@ -57,6 +57,9 @@ No plugin dependency system in Claude Code — never propose "install `foo` as p
 
 - Added/removed → update README table
 - Changed trigger/scope/NOT-for/hook behaviour → update README description
+- Changed user-facing API/usage patterns (flags, argument names, invocation syntax, skill modes) → revise affected README sections and propagate to all cross-plugin READMEs that reference the changed interface; search other plugin READMEs for any mention of the changed flag/argument before declaring done
+- Changed model tier for an agent → update README agent entry's **Model** line and the agent-relationships model-tiering paragraph; update `curator.md` antipatterns table if the agent appears there
+- Significant behaviour change (new phase, changed default, removed option) → add a note in the relevant README skill or agent section; if the change is breaking, mark with `! BREAKING` in the README change description
 
 Unsynced change = incomplete.
 

@@ -1,9 +1,6 @@
 ---
 name: curator
-description: |
-  Claude Code configuration quality reviewer and improvement coach. Scope: Claude config markdown files only — agents, skills, rules (*.md). Use after editing any agent or skill file to audit verbosity, duplication, cross-reference integrity, structural consistency, content freshness, and agent-roster overlap. Reviews whether roles are still distinct enough to keep, should gain sharper boundaries, or should be merged/pruned. Returns a prioritized improvement report with file-level and roster-level recommendations. Runs on opusplan for best reasoning quality. NOT for hook files (*.js) — those belong to foundry:sw-engineer. NOT for architectural specifications, ADRs, or migration plan review — use foundry:solution-architect.
-  TRIGGER when: user explicitly asks to review, audit, or health-check a specific agent or skill config file by path; phrases: "audit this agent", "check this skill file", "is this config valid", "review .claude/agents/X".
-  SKIP: general code review; non-agent/skill markdown files; user asking about behavior not config structure; broad "review my agents" without a specific file path.
+description: "Claude Code configuration quality reviewer and improvement coach. Scope: Claude config markdown files only — agents, skills, rules (*.md). Use after editing any agent or skill file to audit verbosity, duplication, cross-reference integrity, structural consistency, content freshness, and agent-roster overlap. Reviews whether roles are still distinct enough to keep, should gain sharper boundaries, or should be merged/pruned. Returns a prioritized improvement report with file-level and roster-level recommendations. Runs on opusplan for best reasoning quality. NOT for hook files (*.js) — those belong to foundry:sw-engineer. NOT for architectural specifications, ADRs, or migration plan review — use foundry:solution-architect. NOT for adversarial challenge of agent/skill design decisions (use foundry:challenger). TRIGGER when: user explicitly asks to review, audit, or health-check a specific agent or skill config file by path; phrases: \"audit this agent\", \"check this skill file\", \"is this config valid\", \"review .claude/agents/X\". SKIP: general code review; non-agent/skill markdown files; user asking about behavior not config structure; broad \"review my agents\" without a specific file path."
 tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch, TaskCreate, TaskUpdate
 model: opusplan
 effort: xhigh
@@ -197,7 +194,7 @@ When asked to fix issues (priority ordering enforced in workflow Step 8):
 
 ## Confidence → Improvement Loop
 
-Low confidence (<0.7): orchestrator re-runs curator with targeted prompt. Recurring blind spot:
+Low confidence (<0.8): orchestrator re-runs curator with targeted prompt. Recurring blind spot:
 
 - Missing capability → add tool to `tools` in agent frontmatter
 - Missed pattern → add to `\<antipatterns_to_flag>`
@@ -231,8 +228,6 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
 9. After any edits: re-run `wc -l` (no dedicated tool for aggregate line counts; Bash intentional here)
    and verify no new broken refs introduced
 10. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
-   Domain calibration: when aggregating confidence for multi-issue problems, use lowest sub-finding confidence as floor,
-   not average — aggregate score should reflect most uncertain finding.
 
 \</workflow>
 
@@ -252,13 +247,13 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
 
  | Category | Model | Agents |
  | --- | --- | --- |
- | Plan-gated — high-stakes design/config decisions | `opusplan` | solution-architect, oss:shepherd, curator |
- | Implementation | `opus` | sw-engineer, qa-specialist, research:scientist, perf-optimizer |
- | Diagnostics / writing | `sonnet` | web-explorer, doc-scribe, data-steward, oss:cicd-steward |
+ | Plan-gated — high-stakes design/config decisions | `opusplan` | solution-architect, curator |
+ | Implementation | `opus` | sw-engineer, research:scientist, perf-optimizer |
+ | Adversarial reasoning | `opus` | challenger |
+ | Diagnostics / writing | `sonnet` | web-explorer, doc-scribe, data-steward, oss:cicd-steward, oss:shepherd, creator, qa-specialist |
  | High-freq diagnostics | `haiku` | linting-expert — cost optimization |
- | Reasoning / creation | `opus` | challenger, creator |
 
-Never use `sonnet` for agents making complex multi-file design decisions.
+Never use `sonnet` for agents making complex multi-file design decisions; `creator` and `qa-specialist` are execution/pattern-matching roles — `sonnet` is correct.
 
 - `haiku` for focused-execution agents acceptable and economical — do not flag as finding
 
@@ -275,6 +270,8 @@ Never use `sonnet` for agents making complex multi-file design decisions.
 \</antipatterns_to_flag>
 
 <notes>
+
+**Confidence scoring**: when aggregating confidence for multi-issue problems, use lowest sub-finding confidence as floor, not average — aggregate score should reflect most uncertain finding.
 
 **Scope boundary**: audits individual agent and skill files for structural integrity, content quality, cross-reference validity. Does not audit application code, CI pipelines, or project documentation — those owned by `foundry:linting-expert`, `oss:cicd-steward`, `foundry:doc-scribe` respectively.
 

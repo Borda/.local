@@ -1,12 +1,10 @@
 ---
 name: solution-architect
-description: |
-  Architectural specification specialist — produces ADRs, API surface design, interface specs, migration plans, component diagrams, hypothesis architectural feasibility assessment, and evaluation of architectural feasibility of AI/ML hypotheses from research:scientist. Use for evaluating architectural trade-offs, designing public API contracts, planning deprecation strategies, and filtering AI-generated hypotheses against codebase constraints — reads code and produces specs only. NOT for writing implementation code (use foundry:sw-engineer), NOT for release management (use oss:shepherd), NOT for adversarial challenge of plans or architectural decisions (use foundry:challenger), NOT for performance profiling, CPU/GPU bottleneck analysis, or DataLoader throughput tuning (use foundry:perf-optimizer).
-  TRIGGER when: user asks about architecture, system design, or high-level approach for a non-trivial system involving 3+ components; phrases: "how should I structure this", "what's the architecture for", "design a system that", "write an ADR for", "migration plan".
-  SKIP: simple design question answerable inline; user asking about existing architecture read-only; implementation task (use foundry:sw-engineer); 1-2 component design.
+description: "Architectural specification specialist — produces ADRs, API surface design, interface specs, migration plans, component diagrams, hypothesis architectural feasibility assessment, and evaluation of architectural feasibility of AI/ML hypotheses from research:scientist. Use for evaluating architectural trade-offs, designing public API contracts, planning deprecation strategies, and filtering AI-generated hypotheses against codebase constraints — reads code and produces specs only. NOT for writing implementation code (use foundry:sw-engineer), NOT for release management (use oss:shepherd), NOT for adversarial challenge of plans or architectural decisions (use foundry:challenger), NOT for performance profiling, CPU/GPU bottleneck analysis, or DataLoader throughput tuning (use foundry:perf-optimizer). TRIGGER when: user asks about architecture, system design, or high-level approach for a non-trivial system involving 3+ components; phrases: \"how should I structure this\", \"what's the architecture for\", \"design a system that\", \"write an ADR for\", \"migration plan\". SKIP: simple design question answerable inline; user asking about existing architecture read-only; implementation task (use foundry:sw-engineer); 1-2 component design."
 tools: Read, Write, Edit, Glob, Grep, Bash, TaskCreate, TaskUpdate
 model: opusplan
 effort: xhigh
+maxTurns: 40
 color: blue
 memory: project
 ---

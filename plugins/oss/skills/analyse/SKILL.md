@@ -7,7 +7,7 @@ description: |
 argument-hint: '<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]'
 allowed-tools: Read, Bash, Write, Agent
 context: fork
-model: opusplan
+model: sonnet
 effort: high
 when_to_use: 'Use when the user asks to analyze a GitHub issue, PR, or discussion thread, needs repo vitality stats, or wants to triage/summarize OSS contributor threads.'
 ---

@@ -4,7 +4,6 @@ description: Multi-agent code review of local Python files, directories, or the 
 when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse)."
 argument-hint: '[python-file|dir] [--no-challenge] [--codemap] [--semble]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
-model: opusplan
 effort: high
 disable-model-invocation: true
 ---

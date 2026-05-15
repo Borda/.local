@@ -1,9 +1,9 @@
 ---
 name: brainstorm
-description: Iterative brainstorming skill for turning fuzzy ideas into approved tree documents. Diverges into branches, deepens and prunes them over many rounds, saves a tree doc. Run breakdown on the tree to distill it into a spec via guided questions.
-argument-hint: '<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] | breakdown <tree-or-spec-file>'
+description: "Iterative brainstorming skill for turning fuzzy ideas into approved tree documents. Diverges into branches, deepens and prunes them over many rounds, saves a tree doc. Run breakdown on the tree to distill it into a spec via guided questions."
+argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] | breakdown <tree-or-spec-file>"
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
 when_to_use: Use when idea is fuzzy and needs exploration before a solution is known; NOT for well-scoped features with a known approach (use develop:feature) or code generation.
 ---
@@ -12,7 +12,7 @@ when_to_use: Use when idea is fuzzy and needs exploration before a solution is k
 
 Turn unformed idea into branching exploration tree, then distill into spec. Idea mode = pure divergence — grow tree of directions, deepen promising branches, prune others, save result. No premature convergence. Run `breakdown` on tree when ready: asks distillation questions, writes spec section-by-section.
 
-NOT for: implementation tasks with known solution; code generation; single well-scoped feature requests.
+NOT for implementation or code-gen — see `develop` plugin.
 
 <HARD-GATE>
 
@@ -44,11 +44,11 @@ Examples:
 
 <workflow>
 
-**Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
-
-- status `completed` if work clearly done
-- status `deleted` if orphaned / no longer relevant
-- keep `in_progress` only if genuinely continuing
+**Task hygiene**:
+```bash
+_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+```
+Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 **Task tracking**: Before Step 1, create TaskCreate entries for all 6 steps (context scan, clarifying questions, build tree, save tree, tree review, present + gate). Then print session plan to user:
 

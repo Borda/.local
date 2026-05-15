@@ -3,7 +3,7 @@ name: release
 description: 'Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format). Trigger: "prepare release", "write changelog", "what changed since v1.x", "prepare v2.0", "write release notes", "am I ready to release", "check release readiness", or wants to announce version to users.'
 argument-hint: '[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion
-model: opusplan
+model: sonnet
 effort: high
 when_to_use: 'Use when user says "prepare release", "write changelog", "what changed since vX.Y", "write release notes", "am I ready to release", "check release readiness", or wants to announce version to users.'
 ---

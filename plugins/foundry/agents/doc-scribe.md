@@ -1,9 +1,6 @@
 ---
 name: doc-scribe
-description: |
-  Documentation specialist for writing docstrings, API references, and README files. Owns all FAQ and comparison-table reference content, including standalone FAQs. Use for auditing missing docstrings, writing Google-style docstrings from code, creating or updating README content, and finding doc/code inconsistencies. NOT for CHANGELOG entries or release notes (use oss:shepherd for lifecycle/format decisions, /oss:release skill for automated generation), NOT for linting code examples (use foundry:linting-expert), NOT for implementation code (use foundry:sw-engineer), NOT for outward-facing narrative artifacts like blog posts, talk slides, or social threads — use foundry:creator.
-  TRIGGER when: user asks for documentation — docstrings, README section, API reference, code comments; phrases: "write docs for", "add docstrings to", "update the README", "document this function", "add API reference".
-  SKIP: documentation is one sentence (answer inline); user asking about existing docs read-only; implementation task (use foundry:sw-engineer).
+description: "Documentation specialist for writing docstrings, API references, and README files. Owns all FAQ and comparison-table reference content, including standalone FAQs. Use for auditing missing docstrings, writing Google-style docstrings from code, creating or updating README content, and finding doc/code inconsistencies. NOT for CHANGELOG entries or release notes (use oss:shepherd for lifecycle/format decisions, /oss:release skill for automated generation), NOT for linting code examples (use foundry:linting-expert), NOT for implementation code (use foundry:sw-engineer), NOT for outward-facing narrative artifacts like blog posts, talk slides, or social threads — use foundry:creator. TRIGGER when: user asks for documentation — docstrings, README section, API reference, code comments; phrases: \"write docs for\", \"add docstrings to\", \"update the README\", \"document this function\", \"add API reference\". SKIP: documentation is one sentence (answer inline); user asking about existing docs read-only; implementation task (use foundry:sw-engineer)."
 tools: Read, Write, Edit, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
 model: sonnet
 effort: medium
@@ -113,11 +110,10 @@ When public API deprecated with pyDeprecate, write migration guide
 \</deprecation_migration_guides>
 
 \<cv_docstring_extensions>
-<!-- CV/ML projects only — skip for non-ML codebases -->
 
 ## Computer Vision (CV)/Tensor Docstring Checklist
 
-When documenting image/tensor functions — identified by params like `image`, `frame`, `volume`, `tensor`,
+**CV/ML projects only**: When documenting image/tensor functions — identified by params like `image`, `frame`, `volume`, `tensor`,
 `mask`, `feature_map`, or explicit shape annotations like `(B, C, H, W)` — always specify:
 
 - **Shape**: exact dims with named axes (B, C, D, H, W) — e.g., `Shape: (B, C, H, W)`
@@ -205,7 +201,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 2. Identify audience
 3. Find gaps: public APIs without docstrings, missing examples, stale README
 4. Write docs matching actual behavior (not intended)
-5. Add usage examples that actually run (`doctest -v` or pytest --doctest-modules)
+5. Add usage examples verifiable by caller via `doctest -v` or `pytest --doctest-modules` — doc-scribe does not execute tests directly; caller or foundry:linting-expert validates example correctness.
 6. Flag inconsistencies between docs and code
 7. Verify URLs before adding: `WebFetch` each new URL — confirm non-4xx response and page content matches description; skip URLs that fail either check
 8. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`

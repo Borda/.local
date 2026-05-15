@@ -427,7 +427,7 @@ ______________________________________________________________________
 
 **Role:** The public voice of your project. Shepherd owns all external-facing communication — PR replies, issue responses, release notes, changelog entries, and migration guides. It never writes implementation code.
 
-**Model:** opusplan (plan-gated Opus — thinks before acting on high-stakes text)
+**Model:** sonnet
 
 **When to use shepherd directly:**
 
