@@ -25,6 +25,22 @@ Subject line format: `type(scope): detail` — ≤50 chars total; name up to 3 m
 
 **scope** — affected area: `plugins`, `oss`, `foundry`, `docs`, `cli`, `<module_name>`, etc. Omit only when change is truly cross-cutting.
 
+**Subject priority — classify before drafting**
+
+Enumerate ALL changes from diff, assign each a tier, pick subject from highest tier present:
+
+| Tier | Change type | Example |
+| --- | --- | --- |
+| 1 | New capability — new file, new agent/skill, new flag, new user-visible behaviour | `efficiency.md` added |
+| 2 | Changed behaviour — existing feature works differently, routing/trigger updated | TRIGGER/SKIP added to agent |
+| 3 | Fix or removal — correctness repair, deleted dead code | audit findings fixed |
+| 4 | Maintenance — quoting, README sync, version bump, formatting, refactor/extract | frontmatter `"..."` wrap, extract to `_shared/` |
+
+Rules:
+- **Never draft subject from session memory** — always enumerate from diff first, classify each change, then write subject
+- Session recency bias must not dominate: last task worked on ≠ most significant change
+- Line count ≠ tier: 200-line maintenance diff < 20-line new capability
+- Multiple tiers present → subject names tier-1 change; lower tiers appear in bullet list only
 - Tie-breaker: prefer user-visible impact when type/significance comparable
 
 - Blank line, then bullet list — one bullet per logical change; extended description of top changes plus all other notable changes
@@ -52,11 +68,14 @@ Before writing commit, run three in parallel:
 
 **High-churn files — mandatory diff read**: any file with >50 lines changed in `git diff --stat` NOT already in planned bullets — read actual diff before writing message. Don't assume from session memory or prior context; post-compaction sessions have no reliable recall. User/developer-facing changes (command syntax, CLI argument names, invocation patterns, API surface, usage examples) must be identified and prioritised regardless of earlier discussion — outrank internal restructuring of equal line count.
 
-**Ranking rule — diff first, recency last**: rank significance across full diff before writing title.
-- Conversational recency bias must not dominate
-- Title must reflect most significant change in diff, not most recent one
+**Ranking rule — diff first, recency last**: classify all changes into tiers (see Subject priority table above) before writing title.
+- Conversational recency bias must not dominate — last task in session ≠ most significant
+- Title must reflect highest-tier change in diff, not most recent one
 
-**New files always significant**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list, regardless of line count. New files = added capability, not just changed lines.
+**New files — classify by content, not by `A` marker**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list. But tier depends on content origin:
+- Content is genuinely new → tier 1 (new capability)
+- Content extracted/refactored from existing file → tier 4 (maintenance); mention as "extracted from X", not "added"
+- New file + new content = tier 1. New file + moved content = tier 3.
 
 **Semantic novelty beats diff verbosity**: new capability/interface/script outranks verbose-but-routine config edit even if config diff has more lines. Ask "what would reviewer need to know first?" — that most significant change.
 

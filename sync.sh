@@ -7,8 +7,7 @@
 #   codex    — sync .codex/ configs to ~/.codex/   (default: both)
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
 #
-# After this script completes, run /foundry:init inside Claude Code
-# to merge settings.json and refresh symlinks.
+# foundry:init runs headlessly at end of script — no manual step needed.
 
 set -e
 
@@ -113,7 +112,7 @@ for p in "${PLUGINS[@]}"; do
 done
 
 echo "Initializing Foundry (sync settings + symlinks)..."
-claude "/foundry:init --approve"
+claude --print "/foundry:init"
 
 fi  # SYNC_CLAUDE
 
