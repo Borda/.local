@@ -3,6 +3,7 @@ name: review
 description: Multi-agent code review of GitHub Pull Requests (Python PRs only) covering architecture, tests, performance, docs, lint, security, and API design.
 argument-hint: '[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+model: sonnet
 effort: high
 when_to_use: 'Use when the user asks to review a GitHub Pull Request (Python PRs only), wants multi-agent code review feedback, or needs a structured review with severity-graded findings.'
 ---
@@ -110,7 +111,7 @@ fi
 ```
 
 ```bash
-FOUNDRY_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | sort -V | tail -1); [ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.claude/skills/_shared"
+FOUNDRY_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | sort -V | tail -1); [ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 [ -z "$FOUNDRY_SHARED" ] && echo "⚠ Could not resolve FOUNDRY_SHARED — Steps 5/7/consolidator will fail; verify foundry plugin installed" || true
 ```
 
@@ -129,33 +130,42 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
 fi
 ```
 
-**CI RED GATE** (PR mode only): `gh pr checks` shows failing required check → print `⛔ CI is red — skipping full review. Fix failing CI first, then re-run /oss:review.` and `exit 0`. Do NOT proceed to Steps 2–8.
+**CI STATUS** (PR mode only): parse `gh pr checks` output → extract failing required check names into `CI_FAILING_CHECKS`. Any failing: set `CI_RED=true`, print `⚠ CI is red: [list failing check names] — review proceeds; status noted in report header.` Continue to Steps 2–8 regardless. Expand `$CI_RED` and `$CI_FAILING_CHECKS` to literal values in the consolidator spawn prompt (Step 5).
 
-### Python file pre-check
+### File scope detection
 
 ```bash
 if [ "$DIRECT_PATH_MODE" = "false" ]; then
     PY_FILES=$(echo "$CHANGED_FILES" | grep '\.py$' || true)
-    if [ -z "$PY_FILES" ]; then
-        echo "No Python files changed in PR #$CLEAN_ARGS — skipping Python-specific review (oss:review is Python-only)"
+    DOC_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(md|rst)$' || true)
+    CICD_FILES=$(echo "$CHANGED_FILES" | grep -E '\.github/(workflows|actions)/|azure-pipelines\.yml|\.circleci/config\.yml|Jenkinsfile|\.travis\.yml|\.gitlab-ci\.yml' || true)
+    if [ -z "$PY_FILES" ] && [ -z "$DOC_FILES" ] && [ -z "$CICD_FILES" ]; then
+        echo "No Python, documentation, or CI/CD files changed in PR #$CLEAN_ARGS — skipping review (oss:review covers Python source, docs, and CI/CD config)"
         exit 0
     fi
+    [ -z "$PY_FILES" ] && [ -z "$DOC_FILES" ] && [ -n "$CICD_FILES" ] && CICD_ONLY_MODE=true || CICD_ONLY_MODE=false
+    [ -z "$PY_FILES" ] && [ -n "$DOC_FILES" ] && DOCS_ONLY_MODE=true || DOCS_ONLY_MODE=false
 fi
 ```
 
 ### Scope pre-check
 
-Before spawning agents, classify diff:
+**CI/CD-only mode** (`CICD_ONLY_MODE=true`): PR changes only CI/CD config files (`.github/workflows/`, `.github/actions/`, `azure-pipelines.yml`, `.circleci/config.yml`, `Jenkinsfile`, etc.), no `.py` or `.md`/`.rst`. Spawn `oss:cicd-steward` + Agent 1 (sw-engineer) + Agent 7 (challenger, if `CHALLENGE_ENABLED=true`) + Codex (if available); skip Agents 2, 3, 4, 5, 6. Skip scope classification below — proceed directly to agent launch.
+
+**Docs-only mode** (`DOCS_ONLY_MODE=true`): PR changes only `.md`/`.rst` files, no `.py`. Spawn Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 7 (challenger, if `CHALLENGE_ENABLED=true`), and Codex (if available); skip Agents 2 (qa-specialist), 3 (perf-optimizer), 5 (linting-expert), 6 (solution-architect). Skip scope classification below — proceed directly to agent launch.
+
+Before spawning agents (Python mode only), classify diff:
 
 - Count files changed, lines added/removed, new classes/modules
-- Classify: **FIX** (\<3 files, \<50 lines), **REFACTOR** (no new public API), **FEATURE** (new public API or module), or **MIXED**
+- Classify: **FIX** (\<3 files, \<50 lines), **REFACTOR** (internal restructure, no new public API), **FEATURE** (new public API or module), **CHORE** (deps, config, tooling — no logic changes), or **MIXED**
 - **Complexity smell**: 8+ files changed → note in report header
 
 Skip optional agents by classification:
 
-- FIX scope → skip Agent 3 (perf-optimizer), Agent 6 (solution-architect), Agent 7 (challenger — low value for targeted fixes)
-- REFACTOR scope → skip Agent 6 (solution-architect)
+- FIX scope → skip Agent 3 (perf-optimizer), Agent 6 (solution-architect)
+- REFACTOR scope → keep all agents; perf-optimizer runs to verify new structure isn't slower
 - FEATURE/MIXED → spawn all agents
+- CHORE scope → spawn Agents 1 (sw-engineer), 4 (doc-scribe), 5 (linting-expert), 7 (challenger, if `CHALLENGE_ENABLED=true`), Codex (if available); skip Agents 2, 3, 6
 
 ### Structural context (codemap — only if `CODEMAP_ENABLED=true`)
 
@@ -277,7 +287,9 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 6 — foundry:solution-architect (optional, PRs touching public API boundaries)**: Diff touches `__init__.py` exports, adds/modifies Protocols/ABCs, changes module structure, or new public classes → evaluate API design, coupling, backward compat. Skip if internal only.
 
-**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false` or FIX scope)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
+**Agent 7 — foundry:challenger (skip only if `CHALLENGE_ENABLED=false` — pass `--no-challenge` to opt out)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
+
+**Agent 8 — oss:cicd-steward (CI/CD-only mode only)**: Review CI/CD config changes. Check: correctness (valid YAML/syntax, correct job ordering, trigger expressions), security (pinned SHA for third-party actions, no secret exposure in logs, `permissions:` scopes minimal), best practices (cache keys, matrix strategy, workflow topology), and breaking changes to existing CI behavior (removed jobs, changed required checks). Write findings to `$RUN_DIR/oss--cicd-steward.md`.
 
 **Health monitoring** (CLAUDE.md §8): Create checkpoint BEFORE spawning agents — timing starts from first spawn:
 
@@ -299,7 +311,8 @@ CODEX_OUT="$RUN_DIR/foundry--codex.md"
 # Agent(subagent_type="foundry:doc-scribe", ...) ← Agent 4
 # Agent(subagent_type="foundry:linting-expert", ...) ← Agent 5
 # [optional] Agent(subagent_type="foundry:solution-architect", ...) ← Agent 6
-# [conditional] Agent(subagent_type="foundry:challenger", ...) ← Agent 7
+# [skip if CHALLENGE_ENABLED=false] Agent(subagent_type="foundry:challenger", ...) ← Agent 7
+# [CI/CD-only] Agent(subagent_type="oss:cicd-steward", ...) ← Agent 8
 ```
 
 Unified wait — poll until all expected outputs present or each hits hard cutoff:
@@ -309,12 +322,14 @@ POLL_START=$(date +%s)
 EXPECTED=()
 [ "$CODEX_AVAILABLE" = "1" ] && EXPECTED+=("$RUN_DIR/foundry--codex.md")
 for N in $ISSUE_NUMS; do EXPECTED+=("$RUN_DIR/issue-$N.md"); done
+[ "$CICD_ONLY_MODE" = "true" ] && EXPECTED+=("$RUN_DIR/oss--cicd-steward.md")
 EXPECTED+=("$RUN_DIR/foundry--sw-engineer.md")
-EXPECTED+=("$RUN_DIR/foundry--qa-specialist.md")
-EXPECTED+=("$RUN_DIR/foundry--perf-optimizer.md")
-EXPECTED+=("$RUN_DIR/foundry--doc-scribe.md")
-EXPECTED+=("$RUN_DIR/foundry--linting-expert.md")
-# solution-architect and challenger added conditionally when spawned
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && EXPECTED+=("$RUN_DIR/foundry--qa-specialist.md")
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && EXPECTED+=("$RUN_DIR/foundry--perf-optimizer.md")
+[ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--doc-scribe.md")
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--linting-expert.md")
+[ "$CHALLENGE_ENABLED" = "true" ] && EXPECTED+=("$RUN_DIR/foundry--challenger.md")
+# solution-architect added conditionally when spawned
 
 for EXPECTED_FILE in "${EXPECTED[@]}"; do
     until [ -f "$EXPECTED_FILE" ]; do
@@ -407,11 +422,11 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
 DATE=$(date +%Y-%m-%d)
 ```
 
-**IMPORTANT**: expand `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` to literal values before inserting into the spawn prompt — same rule as Step 2. Un-expanded variables create wrong paths.
+**IMPORTANT**: expand `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt — same rule as Step 2. Un-expanded variables create wrong paths.
 
 Spawn **foundry:sw-engineer** consolidator agent with prompt:
 
-> **Task:** Read all finding files in `$RUN_DIR/` (agent files: `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`, `foundry--challenger.md` if present, and `foundry--codex.md` if present — skip missing). Read `$REVIEW_SKILL_DIR/checklist.md` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). Include only findings that passed Step 5 cross-validation (verdict=CONFIRMED or un-cross-validated medium/low). For `foundry--challenger.md`: map severity keys Blockers → critical/high, Concerns → medium, Nitpicks → low when aggregating counts.
+> **Task:** Read all finding files in `$RUN_DIR/` (agent files: `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`, `foundry--challenger.md` if present, and `foundry--codex.md` if present — skip missing). Read `$REVIEW_SKILL_DIR/checklist.md` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). Include only findings that passed Step 4 cross-validation (verdict=CONFIRMED or un-cross-validated medium/low). For `foundry--challenger.md`: map severity keys Blockers → critical/high, Concerns → medium, Nitpicks → low when aggregating counts.
 >
 > **Filtering rules:**
 > - Precision gate: only include findings with concrete, actionable location (function, line range, or variable name).
@@ -420,6 +435,8 @@ Spawn **foundry:sw-engineer** consolidator agent with prompt:
 > - Codex deduplication: include `foundry--codex.md` unique findings under `### Codex Co-Review`; same file:line raised by both agent and Codex → keep agent version, mark 'also flagged by Codex'.
 >
 > **Issue alignment (when `issue-*.md` files exist in `$RUN_DIR`):** Include `### Issue Root Cause Alignment` section placed immediately after `### [blocking] Critical`. Per linked issue: state root cause hypothesis, whether PR addresses it (yes / partially / no), whether PR description diverges from issue's stated problem, whether reproduction scenario tested. Any `root cause misalignment` or `scope divergence` finding is at least HIGH severity.
+>
+> **CI status:** If `CI_RED=true` (literal value expanded by orchestrator): set report header `CI:` field to `failing — [CI_FAILING_CHECKS literal list]`. Otherwise set to `passing` or `pending` per `gh pr checks` output.
 >
 > **Confidence parsing:** Parse each agent's `confidence` from JSON envelope. Assign `codex` fixed confidence 0.75 (moderate — static analysis, no runtime context).
 >
@@ -517,7 +534,7 @@ End with `## Confidence` block per CLAUDE.md. Always last thing, regardless of `
 <calibration>
 
 Scenarios:
-1. FIX scope: single bug-fix PR with 1 changed file → scope=FIX, 3 agents skipped: perf-optimizer (scope), solution-architect (scope), challenger skipped by scope rule (FIX); also always skipped when `--no-challenge` passed (independent flag path). Remaining: sw-engineer, qa-specialist, doc-scribe, linting-expert = 4 agents run.
+1. FIX scope: single bug-fix PR with 1 changed file → scope=FIX, 2 agents skipped: perf-optimizer (scope), solution-architect (scope). Remaining: sw-engineer, qa-specialist, doc-scribe, linting-expert, challenger (unless `--no-challenge`) = 5 agents run (+ Codex if installed).
 2. FEATURE scope: new feature PR with API changes → scope=FEATURE, all 7 agents run
 3. --reply mode: existing review report + --reply flag → skip to Step 8, no agents spawned
 

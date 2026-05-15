@@ -73,7 +73,7 @@ Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 ## Step 1: Pre-flight
 
 ```bash
-# From plugins/foundry/skills/_shared/preflight-helpers.md — TTL 4 hours, keyed per binary
+# Adapted from foundry:_shared/preflight-helpers.md — TTL 4 hours, keyed per binary
 preflight_ok() {
     local f=".claude/state/preflight/$1.ok"
     [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]

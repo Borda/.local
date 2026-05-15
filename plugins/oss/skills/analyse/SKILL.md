@@ -51,7 +51,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 FOUNDRY_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | sort -V | tail -1)
-[ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="$(git rev-parse --show-toplevel 2>/dev/null || echo .)/.claude/skills/_shared"
+[ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 ```
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 

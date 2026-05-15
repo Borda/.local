@@ -218,30 +218,47 @@ Tiered parallel review of a GitHub PR. Input is always a PR number.
 
 ```text
 Tier 0  git diff --stat
-        Mechanical gate — skips trivial diffs (whitespace-only, docs-only changes)
+        Scope detection — exits only if no Python or doc files changed
 
 Tier 1  Codex pre-pass (~60 seconds)
         Independent diff review; surfaces obvious issues first
         If blocking issue found → report immediately, skip Tier 2
 
-Tier 2  Six parallel specialist agents (requires foundry plugin)
+Tier 2  Parallel specialist agents (requires foundry plugin)
         foundry:sw-engineer        — correctness, design, API contracts
         foundry:qa-specialist      — test coverage, edge cases, regression risk
         foundry:perf-optimizer     — hot paths, memory, algorithmic complexity
-        foundry:doc-scribe         — docstrings, README accuracy, examples
+        foundry:doc-scribe         — docstrings, README accuracy, examples  [always]
         foundry:solution-architect — architecture fit, dependency impact
         foundry:linting-expert     — style, type annotations, ruff/mypy
 
-        Agent skip rules:
-          FIX commits   → skips perf-optimizer and linting-expert
-          REFACTOR      → skips linting-expert
+        Agent skip rules (sw-engineer, challenger, Codex always run):
+          CI/CD-only PR → oss:cicd-steward + sw-engineer + challenger + Codex
+          docs-only PR  → doc-scribe + sw-engineer + challenger + Codex
+          FIX           → skips perf-optimizer, solution-architect
+          REFACTOR      → all agents (perf-optimizer verifies new structure isn't slower)
+          FEATURE/MIXED → all agents
+          CHORE         → sw-engineer + doc-scribe + linting-expert + challenger + Codex
 
+        CI status: failing CI noted in report header — review always proceeds
         codemap integration: rdep_count > 20 flags as high-risk change
 
         Consolidation: foundry:sw-engineer merges all agent findings into ranked report
 
         --reply: oss:shepherd drafts contributor-facing comment from consolidated report (written to .temp/; user posts)
 ```
+
+**Typical scenarios:**
+
+| PR type                                               | Agents that run                                                                                        | Skipped                                                                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| CI/CD only (.github/workflows, azure-pipelines, etc.) | oss:cicd-steward, sw-engineer, challenger, Codex                                                       | qa-specialist, perf-optimizer, doc-scribe, linting-expert, solution-architect |
+| Docs/README only (.md, .rst)                          | doc-scribe, sw-engineer, challenger, Codex                                                             | qa-specialist, perf-optimizer, linting-expert, solution-architect             |
+| Bug fix (\<3 files, \<50 lines)                       | sw-engineer, qa-specialist, doc-scribe, linting-expert, challenger                                     | perf-optimizer, solution-architect                                            |
+| Refactor (restructure, no new API)                    | sw-engineer, qa-specialist, perf-optimizer, doc-scribe, linting-expert, solution-architect, challenger | —                                                                             |
+| Feature (new public API/module)                       | all agents                                                                                             | —                                                                             |
+| Chore (deps, config, tooling)                         | sw-engineer, doc-scribe, linting-expert, challenger, Codex                                             | qa-specialist, perf-optimizer, solution-architect                             |
+| Any PR with failing CI                                | same as above by type                                                                                  | — (CI noted in report header)                                                 |
 
 Without `foundry`, Tier 2 falls back to general-purpose agents with role descriptions — still functional, lower quality.
 

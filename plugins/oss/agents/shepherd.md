@@ -35,7 +35,6 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
 
-<!-- opusplan = plan-gated opus; effort: high amplifies planning depth. -->
 
 </initialization>
 
