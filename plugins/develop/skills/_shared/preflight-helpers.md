@@ -50,11 +50,11 @@ Spawn prompt template for foundry:sw-engineer teammate spawns. Replace `[ROLE_PH
 - refactor: `[ROLE_PHRASE]` = `[refactor goal]`, `[FILE_SLUG]` = `refactor`
 
 ```
-You are a foundry:sw-engineer teammate debugging: [ROLE_PHRASE].
+You are a foundry:sw-engineer teammate working on: [ROLE_PHRASE].
 Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
 Your hypothesis: [hypothesis N]. Investigate ONLY this root cause.
 Report findings to @lead using deltaT# or epsilonT# codes.
 Compact Instructions: preserve file paths, errors, line numbers. Discard verbose tool output.
 Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: "Status: complete | blocked — <reason>".
-Write your full analysis to .plans/active/[FILE_SLUG]-[N]-[timestamp].md using the Write tool. Return ONLY compact JSON: {"status":"done","file":"<path>","findings":N,"confidence":0.N}.
+Write your full analysis to .plans/active/[FILE_SLUG]-[N]-[timestamp].md using the Write tool. Return ONLY compact JSON: {"status":"done","file":"<path>","findings":N,"confidence":0.N,"summary":"<one-line description of what found/done>"}.
 ```

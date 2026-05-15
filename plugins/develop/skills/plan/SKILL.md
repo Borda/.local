@@ -1,10 +1,11 @@
 ---
 name: plan
-description: Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/.
+description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/."
 argument-hint: '<goal> [--no-challenge] [--codemap] [--semble]'
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
+when_to_use: "Analysis and scoping before non-trivial feature, fix, or refactor — produces plan file only, no code. Also auto-invoked inline by feature/fix/refactor for medium/large complexity."
 ---
 
 <objective>

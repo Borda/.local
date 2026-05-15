@@ -57,21 +57,33 @@ $RUNNER pytest <test_dir> -v --tb=short  # timeout: 600000
 SUITE_EXIT=$?
 
 # Flaky test detection — if suite failed, retry twice
+RETRY_COUNT=2
 if [ $SUITE_EXIT -ne 0 ]; then
     PASS_COUNT=0
     for _i in 2 3; do
         $RUNNER pytest <test_dir> -v --tb=short 2>&1 | tail -5  # timeout: 600000
         [ ${PIPESTATUS[0]} -eq 0 ] && PASS_COUNT=$((PASS_COUNT + 1))
     done
-    if [ $PASS_COUNT -gt 0 ]; then
-        echo "⚠ FLAKY: test(s) passed $PASS_COUNT/2 retries — flag as flaky, do not block"
-    else
+    if [ $PASS_COUNT -lt $RETRY_COUNT ] && [ $PASS_COUNT -gt 0 ]; then
+        echo "⚠ FLAKY: test(s) passed $PASS_COUNT/$RETRY_COUNT retries"
+    elif [ $PASS_COUNT -eq 0 ]; then
         echo "✗ GENUINE FAILURE: test(s) failed all 3 runs"
         echo "Quality stack halted — do not proceed to doctests, Codex pre-pass, or review loop"
         exit 1
     fi
 fi
+```
 
+When `PASS_COUNT < RETRY_COUNT` and `PASS_COUNT > 0` (test is genuinely flaky):
+- Print `⚠ FLAKY: test(s) passed $PASS_COUNT/$RETRY_COUNT retries`
+- **Do NOT fall through** — invoke `AskUserQuestion`:
+  - (a) **Mark and continue** — add `@pytest.mark.flaky(reruns=3)` marker and `# TODO: flaky — investigate <date>` comment to failing test(s); then continue quality stack
+  - (b) **Fix now** — stop quality stack here; investigate and fix flaky test before proceeding
+  - (c) **Abort** — cancel skill run
+- On (b) or (c): stop quality stack execution immediately
+- On (a): apply marker + comment, then continue to doctests
+
+```bash
 # Doctests (if applicable)
 $RUNNER pytest --doctest-modules <target_module> -v 2>&1 | tail -20  # timeout: 600000
 DOCTEST_EXIT=${PIPESTATUS[0]}

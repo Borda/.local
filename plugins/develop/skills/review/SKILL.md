@@ -1,6 +1,6 @@
 ---
 name: review
-description: Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Python files only — non-Python files are out of scope.
+description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Python files only — non-Python files are out of scope."
 when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse)."
 argument-hint: '[python-file|dir] [--no-challenge] [--codemap] [--semble]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
@@ -66,8 +66,7 @@ EXTENSION_ADVISORY=300          # +5 min extension — reference only; not enfor
 _DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shared 2>/dev/null | head -1)
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
 _FOUNDRY_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)
-_GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-[ -z "$_FOUNDRY_SHARED" ] && [ -n "$_GIT_ROOT" ] && _FOUNDRY_SHARED="$_GIT_ROOT/.claude/skills/_shared"
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`.
@@ -203,6 +202,8 @@ If Codex available:
 ```bash
 CODEX_OUT="$RUN_DIR/codex.md"
 ```
+
+If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
 
 Spawn `codex:codex-rescue` agent: "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
 
@@ -345,6 +346,8 @@ After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CO
 Print terminal block: read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–12, up to and including closing `---`), append `→ saved to $REPORT_DIR/review-report.md`, print to terminal. Report file already contains block — no separate prepend needed.
 
 ## Step 6: Delegate implementation follow-up (optional)
+
+Skip if `$CODEX_OUT` is empty (set in Step 2 when Codex available and wrote output); proceed only when `CODEX_OUT` has a file path.
 
 After consolidating, identify tasks Codex can implement directly — not style violations (pre-commit handles those), but work requiring meaningful code or documentation grounded in actual implementation.
 

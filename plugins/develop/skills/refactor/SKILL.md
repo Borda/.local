@@ -1,10 +1,11 @@
 ---
 name: refactor
-description: Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop.
-argument-hint: '<target file or directory> <goal> [--plan <path>] [--no-challenge] [--codemap] [--semble] [--team]'
+description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop."
+argument-hint: '<target file or directory> <goal> [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
+when_to_use: "Restructure existing code without changing behaviour — NOT for bug fixes (use fix) or new capabilities (use feature)."
 ---
 
 <objective>
@@ -14,7 +15,7 @@ Test-first refactoring. Audit coverage, add characterization tests if missing, a
 NOT for:
 - bug fixes (use `/develop:fix`)
 - new features (use `/develop:feature`)
-- `.claude/` config changes (use `/foundry:manage`)
+- `.claude/` config changes (use `/foundry:manage` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
 - mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature; do not attempt both in single skill run
 
@@ -67,11 +68,24 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 ## Flag parsing
 
 **Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
-**Set `CODEMAP_ENABLED=false`**. If `--codemap` in `$ARGUMENTS`, set `CODEMAP_ENABLED=true`.
+
+```bash
+CODEMAP_ENABLED=auto   # use when available, skip silently when absent
+[[ "$ARGUMENTS" == *"--no-codemap"* ]] && CODEMAP_ENABLED=off
+[[ "$ARGUMENTS" == *"--codemap"* ]] && CODEMAP_ENABLED=strict
+```
+
 **Set `SEMBLE_ENABLED=false`**. If `--semble` in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
 **Set `TEAM_MODE=false`**. If `--team` in `$ARGUMENTS`, set `TEAM_MODE=true`.
+**Set `ACCEPT_NO_PLAN=false`**. If `--accept-no-plan` in `$ARGUMENTS`, set `ACCEPT_NO_PLAN=true`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Codemap auto-detection** — run after flag parsing:
+
+```bash
+CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") || exit 1
+```
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -119,6 +133,8 @@ Spawn **foundry:sw-engineer** agent to analyze code and identify:
 - **Complexity smell**: directory or cross-module scope — flag it; consider team mode
 
 **Scope gate**: if target is directory-wide scope (10+ files) regardless of goal, flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
+
+Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **refactor** context from the Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 ## Challenger gate
 
@@ -178,25 +194,26 @@ If audit incomplete: re-examine before Step 3. Gaps found mid-refactoring (Step 
 
 **Team mode branch** — if `TEAM_MODE=true`: Steps 1–2 complete solo (teammates need scope + coverage context). Spawn both teammates now; skip Steps 3–5, proceed to Final Report after results received.
 
+When `TEAM_MODE=true`:
+
+Compute run directory and create health sentinel:
+
 ```bash
-if [ "$TEAM_MODE" = "true" ]; then
-  # Teammate 1 (foundry:sw-engineer, model=opus): performs refactoring (Steps 4–5)
-  # Teammate 2 (foundry:qa-specialist, model=opus): writes characterization tests (Step 3) in parallel
-  # Coordinate via TEAM_PROTOCOL.md file locking
-  #
-  # Spawn prompt template (apply to each teammate, substituting role and task):
-  #   You are a [foundry:sw-engineer|foundry:qa-specialist] teammate refactoring: [target].
-  #   Read $(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/TEAM_PROTOCOL.md 2>/dev/null | head -1 || echo "${HOME}/.claude/TEAM_PROTOCOL.md") — use AgentSpeak v2. Apply file locking protocol for concurrent edits.
-  #   Your task: [refactoring steps 4–5 | characterization tests step 3].
-  #   Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}
-  #   Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output.
-  #   Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state.
-  #   Signal completion in final delta message: "Status: complete | blocked — <reason>".
-  #   Write your full analysis to .plans/active/refactor-[role]-[timestamp].md using the Write tool.
-  #   Return ONLY compact JSON: {"status":"done","file":"<path>","findings":N,"confidence":0.N}.
-  # After both complete: synthesize outputs, run quality stack, produce Final Report — skip Steps 3–5.
-fi
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+RUN_DIR=".temp/develop/${TS}"
+mkdir -p "$RUN_DIR"
+touch /tmp/refactor-team-check-$TS
 ```
+
+Spawn 2 teammates in parallel using Agent() tool:
+
+**Teammate 1 — foundry:sw-engineer (model=opus)**: performs refactoring (Steps 4–5). Prompt: "You are a foundry:sw-engineer teammate refactoring: [target]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: apply the refactoring steps (Steps 4–5: change with safety net, review). Scope constraint: only edit source files (not under `tests/`). Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR/refactor-sw-engineer.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
+
+**Teammate 2 — foundry:qa-specialist (model=opus)**: writes characterization tests (Step 3) in parallel. Prompt: "You are a foundry:qa-specialist teammate refactoring: [target]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: write characterization tests (Step 3) to build a safety net for the refactor. Scope constraint: only create/edit files under `tests/`. Do NOT edit source files. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR/refactor-qa-specialist.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
+
+Health monitoring (CLAUDE.md §8): create sentinel `touch /tmp/refactor-team-check-$TS`; every 5 min: `find $RUN_DIR -newer /tmp/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
+
+After both complete: read their output files from `$RUN_DIR/`, synthesize outputs, run quality stack, produce Final Report. Exit — do not continue to Steps 3–5.
 
 Continue to Step 3 only when `TEAM_MODE=false`.
 

@@ -1,9 +1,9 @@
 ---
 name: feature
-description: TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop.
-argument-hint: '<goal> [--plan <path>] [--no-challenge] [--codemap] [--semble] [--team]'
+description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop."
+argument-hint: '<goal> [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team]'
 effort: high
-when_to_use: Use when adding new capability that doesn't exist yet; NOT for fixing broken existing behaviour (use fix) or restructuring without changing behaviour (use refactor).
+when_to_use: "Use when adding new capability that doesn't exist yet; NOT for fixing broken existing behaviour (use fix) or restructuring without changing behaviour (use refactor)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
@@ -14,7 +14,7 @@ TDD-first feature development. Crystallise API as demo use-case test, drive impl
 
 NOT for:
 - bug fixes (use `/develop:fix`)
-- `.claude/` config changes (use `/foundry:manage`)
+- `.claude/` config changes (use `/foundry:manage` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
 - mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature
 
@@ -61,83 +61,54 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 ## Flag parsing
 
 **Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` present in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
-**Set `CODEMAP_ENABLED=false`**. If `--codemap` present in `$ARGUMENTS`, set `CODEMAP_ENABLED=true`.
+**Set `CODEMAP_ENABLED=auto`** (use when available, skip silently when absent). If `--no-codemap` present in `$ARGUMENTS`, set `CODEMAP_ENABLED=off`. If `--codemap` present in `$ARGUMENTS`, set `CODEMAP_ENABLED=strict`.
 **Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
 **Set `TEAM_MODE=false`**. If `--team` present in `$ARGUMENTS`, set `TEAM_MODE=true`.
+**Set `ACCEPT_NO_PLAN=false`**. If `--accept-no-plan` present in `$ARGUMENTS`, set `ACCEPT_NO_PLAN=true` (skips inline plan generation for medium/large complexity — trust user override).
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--no-codemap\`, \`--codemap\`, \`--semble\`, \`--accept-no-plan\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
-**Preflight** — if `CODEMAP_ENABLED=true`:
+**Codemap auto-detection** — run after flag parsing:
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.
+```bash
+CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") || exit 1
+```
+
+**Semble preflight** — if `SEMBLE_ENABLED=true`:
+
+Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight if flag set.
 
 ## Team Mode Branch
 
-**Run immediately after flag parsing when `TEAM_MODE=true` — then `exit 0`; skip Steps 1-5.**
+**Run immediately after flag parsing when `TEAM_MODE=true`. Runs Step 1 inline (teammates need scope context), then spawns parallel teammates for Steps 2-4. Exit after synthesis.**
+
+When `TEAM_MODE=true`:
+
+Run Step 1 scope analysis inline (same analysis as solo Step 1) — teammates need orientation context. After Step 1 completes, broadcast to teammates: `{feature: <desc>, scope: <modules>, API: <proposed signature>}`.
+
+Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template to get spawn prompt template. Replace `[ROLE_PHRASE]` with feature description, `[FILE_SLUG]` with `feature`.
+
+Compute run directory:
 
 ```bash
-if [ "$TEAM_MODE" = "true" ]; then
-  # Step 1 scope analysis still required — teammates need it to orient
-  # (run inline before spawning; same analysis as solo Step 1)
-  # After scope analysis, broadcast to teammates:
-  # {feature: <desc>, scope: <modules>, API: <proposed signature>}
-
-  # Spawn teammate 1: foundry:sw-engineer — implements feature (Steps 2-3)
-  # Spawn teammate 2: foundry:qa-specialist — TDD tests + security checks (parallel)
-  # Spawn teammate 3: foundry:doc-scribe — documentation structure (parallel, Step 5 prep)
-  #
-  # Coordination order:
-  #   1. QA challenges SW API design — lead routes challenge back to SW before implementation starts
-  #   2. SW shares implementation details with QA so tests stay accurate
-  #   3. Lead synthesizes outputs in Step 5 onward as normal
-  #
-  # Spawn prompt template (from $_DEV_SHARED/preflight-helpers.md ## Team Spawn Template):
-  # Replace [ROLE_PHRASE] with feature description, [FILE_SLUG] with "feature"
-  #
-  # Teammate 1 (sw-engineer):
-  #   "You are a foundry:sw-engineer teammate implementing: [feature description].
-  #    Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
-  #    Your task: implement the feature (Steps 2-3: demo test, TDD loop).
-  #    Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output.
-  #    Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state.
-  #    Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'.
-  #    Write your full analysis to .plans/active/feature-sw-engineer-[timestamp].md using the Write tool.
-  #    Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}."
-  #
-  # Teammate 2 (qa-specialist, model=opus):
-  #   "You are a foundry:qa-specialist teammate implementing: [feature description].
-  #    Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
-  #    Your task: write TDD tests in parallel with SW implementation; include security checks for any
-  #    auth/payment/data-handling code.
-  #    Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output.
-  #    Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state.
-  #    Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'.
-  #    Write your full analysis to .plans/active/feature-qa-specialist-[timestamp].md using the Write tool.
-  #    Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}."
-  #
-  # Teammate 3 (doc-scribe, model=sonnet):
-  #   "You are a foundry:doc-scribe teammate implementing: [feature description].
-  #    Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
-  #    Your task: prepare documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README).
-  #    Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output.
-  #    Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state.
-  #    Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'.
-  #    Write your full analysis to .plans/active/feature-doc-scribe-[timestamp].md using the Write tool.
-  #    Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}."
-  #
-  # After spawning all teammates: health monitoring (CLAUDE.md §8)
-  # FEATURE_LAUNCH=$(date +%s)
-  # touch /tmp/feature-team-check-$FEATURE_LAUNCH
-  #
-  # Poll every 5 min: find .plans/active/ -newer /tmp/feature-team-check-$FEATURE_LAUNCH -name "feature-*.md" | wc -l
-  # New files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out.
-  # One extension (+5 min) if tail -20 of output file explains delay; second stall = hard cutoff.
-  # On timeout: read tail -100 of stalled file; surface with ⏱; never omit timed-out teammates.
-  #
-  # After all teammates complete: read their output files, synthesize, run quality stack, produce Final Report.
-  exit 0
-fi
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+TEAM_DIR=".temp/develop/${TS}"
+mkdir -p "$TEAM_DIR"
 ```
+
+Spawn 3 teammates in parallel using Agent() tool:
+
+**Teammate 1 — foundry:sw-engineer (model=opus)**: implements the feature (Steps 2-3: demo test, TDD loop). Prompt: "You are a foundry:sw-engineer teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: implement the feature (Steps 2-3: demo test, TDD loop). Scope constraint: only edit files in `src/`, the target module directory, and non-test Python files. Do NOT edit files under `tests/`. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-sw-engineer-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+
+**Teammate 2 — foundry:qa-specialist (model=opus)**: writes TDD tests in parallel + security checks for auth/payment/data scope. Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: write TDD tests in parallel with SW implementation; include security checks for any auth/payment/data-handling code. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-qa-specialist-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+
+**Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepares documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README). Prompt: "You are a foundry:doc-scribe teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: prepare documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README). Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-doc-scribe-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+
+**Coordination order**: QA challenges SW API design — lead routes challenge back to SW before implementation starts. SW shares implementation details with QA so tests stay accurate. Lead synthesizes outputs in Step 5 onward as normal.
+
+Health monitoring (CLAUDE.md §8): create sentinel `touch /tmp/feature-team-check-$TS`; every 5 min: `find .temp/develop/$TS -newer /tmp/feature-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface with ⏱; never omit timed-out teammates.
+
+After all teammates complete: read their output files from `.temp/develop/$TS/`, synthesize, run quality stack, produce Final Report. Exit — do not continue to solo Steps 1-5.
 
 ## Step 1: Understand purpose and scope
 
@@ -167,7 +138,9 @@ Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 - **Scope challenge**: Right problem? Simpler alternatives? What already exists that could extend instead of build from scratch?
 - **Complexity smell**: if proposed change touches 8+ files or introduces 2+ new classes/modules, flag explicitly — scope may need narrowing before proceeding
 
-**Gate**: if complexity smell flagged, present scope concern to user before proceeding to Step 2.
+**Complexity classification**: classify as `small` (≤3 files, single concern), `medium` (4–7 files, or 1 new module), or `large` (8+ files, 2+ new modules, or public API change).
+
+Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **feature** context from the Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 Present analysis summary before proceeding.
 
@@ -480,12 +453,6 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 
 ## Team Assignments
 
-**Reference only** — execution is in `## Team Mode Branch` above. When `--team` flag set, that branch runs and exits before Step 1. Full spawn prompts, coordination order, and health monitoring are defined there — do not duplicate here.
-
-**When to use team mode**: feature spans 3+ modules, OR changes public API, OR involves auth/payment/data scope.
-
-- **Teammate 1 (foundry:sw-engineer, model=opus)**: implements feature (Steps 2-3)
-- **Teammate 2 (foundry:qa-specialist, model=opus)**: writes TDD tests in parallel + security checks for auth/payment/data scope
-- **Teammate 3 (foundry:doc-scribe, model=sonnet)**: prepares documentation structure in parallel (Step 5)
+**Reference only** — full spawn prompts, coordination order, and health monitoring are defined in `## Team Mode Branch` above. When `--team` flag set, that branch runs and exits. Use team mode when: feature spans 3+ modules, changes public API, or involves auth/payment/data scope.
 
 </workflow>

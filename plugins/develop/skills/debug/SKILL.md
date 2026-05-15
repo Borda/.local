@@ -1,9 +1,9 @@
 ---
 name: debug
-description: Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file.
-argument-hint: '<symptom or failing test> [--no-challenge] [--team]'
+description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file."
+argument-hint: '<symptom or failing test> [--no-challenge] [--team] [--ci-run <run-id-or-url>]'
 effort: medium
-when_to_use: Use when root cause unknown and evidence must be gathered first; NOT for applying known fix (use fix) or environment/tooling failures without code traceback (use foundry:investigate).
+when_to_use: "Use when root cause unknown and evidence must be gathered first; CI-only failures: pass `--ci-run <run-id>` to fetch GitHub Actions logs instead of local pytest; NOT for applying known fix (use fix) or production incidents without any CI run or traceback (use foundry:investigate)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 Investigation-first debugging. Gather evidence, trace data flow, form confirmed root-cause hypothesis, hand off to fix mode.
 
-NOT for: production incidents without local reproduction (use `/foundry:investigate` (requires foundry plugin) for triage); `.claude/` config issues (use `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead.
+NOT for: production incidents without any CI run ID or local traceback (use `/foundry:investigate` (requires foundry plugin) for triage); `.claude/` config issues (use `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead. CI-only failures ARE supported — pass `--ci-run <run-id or URL>` to use GitHub Actions logs as evidence source.
 
 </objective>
 
@@ -53,21 +53,37 @@ Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$
 
 ## Flag parsing
 
-**Set `CHALLENGE_ENABLED=true` and `TEAM_MODE=false`**. Parse flags from `$ARGUMENTS`:
+**Set `CHALLENGE_ENABLED=true`, `TEAM_MODE=false`, and `CI_RUN_ID=""`**. Parse flags from `$ARGUMENTS`:
 - If `--no-challenge` present: set `CHALLENGE_ENABLED=false`.
 - If `--team` present: set `TEAM_MODE=true`.
+- Parse `--ci-run`:
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+```bash
+CI_RUN_ID=""
+set -- $ARGUMENTS
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --ci-run=*) CI_RUN_ID="${1#--ci-run=}" ;;
+    --ci-run) shift; CI_RUN_ID="${1:-}" ;;
+  esac
+  shift
+done
+# URL normalization and log fetching: see §URL Normalization in ci-log-extract.md below
+```
+
+Read `$_DEV_SHARED/ci-log-extract.md`. Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`, \`--ci-run\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **If `TEAM_MODE=true`** — execute team investigation now and exit; skip standard Steps 1-4:
 
 1. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template. Confirm `[ROLE_PHRASE]` = symptom text (from `$ARGUMENTS` stripped of flags), `[FILE_SLUG]` = `debug-hypothesis`.
 2. Run project detection (read `$_DEV_SHARED/runner-detection.md`) to set `$TEST_CMD` and `$PYTEST_CMD`.
-3. Spawn 2-3 `foundry:sw-engineer` agents (model=opus) in parallel — each investigating one independent root-cause hypothesis. Use the Team Spawn Template from preflight-helpers: replace `[ROLE_PHRASE]` with the symptom, `[FILE_SLUG]` with `debug-hypothesis`, assign each agent a distinct hypothesis number N. Each agent writes full output to `.plans/active/debug-hypothesis-N-<timestamp>.md` and returns compact JSON `{"status":"done","file":"<path>","findings":N,"confidence":0.N}`.
+3. Compute `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)` and `mkdir -p ".temp/develop/$TS"`. Spawn 2-3 `foundry:sw-engineer` agents (model=opus) in parallel — each investigating one independent root-cause hypothesis. Use the Team Spawn Template from preflight-helpers: replace `[ROLE_PHRASE]` with the symptom, `[FILE_SLUG]` with `debug-hypothesis`, assign each agent a distinct hypothesis number N. Each agent writes full output to `.temp/develop/$TS/debug-hypothesis-N.md` and returns compact JSON `{"status":"done","file":"<path>","findings":N,"confidence":0.N,"summary":"<one-line description of hypothesis>"}`.
 4. **Coordination**: lead broadcasts `{symptom: <description>, traceback: <key lines>}` to teammates before spawning. After all return, facilitate cross-challenge between competing analyses. Convergence rule: select hypothesis with most direct evidence (observable in code or logs); if truly tied, invoke `AskUserQuestion` presenting top 2 competing hypotheses.
 5. Lead synthesises consensus root cause. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on the winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2.
 
-Health monitoring (CLAUDE.md §8): for each spawned agent, create sentinel `touch /tmp/debug-team-check-N`; poll every 5 min via `find .plans/active -newer /tmp/debug-team-check-N -type f | wc -l`; hard cutoff 15 min no-file-activity; mark timed-out agents with ⏱ in synthesis.
+Health monitoring (CLAUDE.md §8): for each spawned agent, create sentinel `touch /tmp/debug-team-check-N`; poll every 5 min via `find .temp/develop/$TS -newer /tmp/debug-team-check-N -type f | wc -l`; hard cutoff 15 min no-file-activity; mark timed-out agents with ⏱ in synthesis.
 
 ## Step 1: Understand the symptom
 
@@ -191,8 +207,7 @@ Evidence: <key signals that confirmed the hypothesis>
 **Write diagnosis to file** before handing off — enables `/develop:fix` to skip Step 1 analysis via `--diagnosis <path>`:
 
 ```bash
-SLUG=$(echo "<symptom first 4 words>" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-')
-[ -z "$SLUG" ] && SLUG="unnamed-$(date +%s)"
+SLUG=$(echo "$ARGUMENTS" | tr ' ' '\n' | grep -v '^--' | head -4 | tr '\n' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | sed 's/-$//'); [ -z "$SLUG" ] && SLUG="unnamed-$(date +%s)"
 DIAG_FILE=".plans/active/debug_${SLUG}.md"
 mkdir -p .plans/active
 ```
@@ -247,6 +262,6 @@ Evidence: <key signals>
 
 **When to use team mode**: pass `--team` flag. Team logic runs immediately after flag parsing and exits — Steps 1-4 below are skipped.
 
-**Spawn prompt template:** read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[symptom]`, `[FILE_SLUG]` with `debug-hypothesis`.
+**Spawn prompt template:** read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[symptom]`, `[FILE_SLUG]` with `debug-hypothesis`. Output written to `.temp/develop/$TS/debug-hypothesis-N.md`.
 
 </workflow>

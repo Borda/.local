@@ -36,6 +36,8 @@ ______________________________________________________________________
 
 It is for developers who want AI assistance that follows engineering discipline rather than one that guesses and charges ahead. Every skill has explicit gates that prevent moving forward on shaky ground.
 
+**Not for**: dependency upgrades (pydantic v1→v2, numpy 1→2), codebase onboarding/exploration, data migration scripts, CI-only failures without local repro (use `--ci-run` in debug), cross-cutting refactors spanning >15 files (split into phases).
+
 ______________________________________________________________________
 
 ## 🎯 Why develop?
@@ -149,7 +151,14 @@ ______________________________________________________________________
 /develop:plan "<goal>"
 ```
 
-**Flags**: none. Pass the goal as free text.
+**Flags**:
+
+| Flag               | Description                                          |
+| ------------------ | ---------------------------------------------------- |
+| `--no-challenge`   | Skip challenger adversarial gate                     |
+| `--codemap`        | Strict codemap — fail if index missing               |
+| `--no-codemap`     | Disable codemap even if available                    |
+| `--accept-no-plan` | Skip inline plan generation (for nested invocations) |
 
 **What happens**:
 
@@ -202,10 +211,14 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag            | Description                                                                                                                                                                                |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--plan <path>` | Read classification, scope, and approach from an existing plan file                                                                                                                        |
-| `--team`        | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope |
+| Flag               | Description                                                                                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--plan <path>`    | Read classification, scope, and approach from an existing plan file                                                                                                                        |
+| `--team`           | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope |
+| `--no-codemap`     | Disable codemap even if available                                                                                                                                                          |
+| `--codemap`        | Strict codemap — fail if index missing                                                                                                                                                     |
+| `--accept-no-plan` | Skip inline plan generation for medium/large scope (trust your own scoping)                                                                                                                |
+| `--no-challenge`   | Skip challenger adversarial gate                                                                                                                                                           |
 
 **Workflow**:
 
@@ -234,7 +247,7 @@ ______________________________________________________________________
 
 **When to use**: fixing a known bug with a traceback, failing test, or GitHub issue.
 
-**Not for**: unknown failures without a traceback or reproduction path — use `/foundry:investigate` for triage; `.claude/` config issues — use `/foundry:audit`.
+**Not for**: CI-only failures — use `/develop:debug --ci-run <run-id>` first; production incidents without any CI run or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`.
 
 **Invocation**:
 
@@ -299,10 +312,14 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag            | Description                                                                                                                                                          |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--plan <path>` | Read scope and approach from an existing plan file                                                                                                                   |
-| `--team`        | Spawn `foundry:sw-engineer` (refactoring) and `foundry:qa-specialist` (characterization tests) in parallel. Use when target is a directory or spans multiple modules |
+| Flag               | Description                                                                                                                                                          |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--plan <path>`    | Read scope and approach from an existing plan file                                                                                                                   |
+| `--team`           | Spawn `foundry:sw-engineer` (refactoring) and `foundry:qa-specialist` (characterization tests) in parallel. Use when target is a directory or spans multiple modules |
+| `--no-codemap`     | Disable codemap even if available                                                                                                                                    |
+| `--codemap`        | Strict codemap — fail if index missing                                                                                                                               |
+| `--accept-no-plan` | Skip inline plan generation for medium/large scope                                                                                                                   |
+| `--no-challenge`   | Skip challenger adversarial gate                                                                                                                                     |
 
 **Workflow**:
 
@@ -338,7 +355,7 @@ ______________________________________________________________________
 
 **When to use**: when you have a symptom but not a confirmed root cause; when a bug is mysterious enough to warrant structured investigation before fixing.
 
-**Not for**: production incidents without local reproduction — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`.
+**Not for**: production incidents without any CI run ID or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`. CI-only failures ARE supported — pass `--ci-run <run-id or URL>`.
 
 **Invocation**:
 
@@ -350,9 +367,10 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag     | Description                                                                                                                                                                                      |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--team` | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating a distinct root-cause hypothesis independently. Use when root cause is unclear after initial analysis, or failure spans 3+ modules |
+| Flag                   | Description                                                                                                                                                                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating a distinct root-cause hypothesis independently. Use when root cause is unclear after initial analysis, or failure spans 3+ modules                                                    |
+| `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures with no local repro. |
 
 **Workflow**:
 
@@ -392,7 +410,14 @@ ______________________________________________________________________
 /develop:review src/mypackage/           # review all Python files in a directory
 ```
 
-**Flags**: none. Pass an optional file or directory path as the argument.
+**Flags**:
+
+| Flag             | Description                            |
+| ---------------- | -------------------------------------- |
+| `--no-challenge` | Skip challenger adversarial gate       |
+| `--codemap`      | Strict codemap — fail if index missing |
+| `--no-codemap`   | Disable codemap even if available      |
+| `--semble`       | Enable semble semantic search context  |
 
 **Workflow**:
 

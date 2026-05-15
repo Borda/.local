@@ -1,9 +1,9 @@
 ---
 name: fix
-description: Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop.
-argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--semble] [--team]'
+description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop."
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: medium
-when_to_use: Use when specific bug known and reproducible; NOT for unknown failures without traceback (use debug) or adding new capabilities (use feature).
+when_to_use: "Use when specific bug known and reproducible; NOT for unknown failures without traceback (use debug) or adding new capabilities (use feature)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -13,7 +13,8 @@ disable-model-invocation: true
 Reproduce-first bug resolution. Capture bug in failing regression test, apply minimal fix, verify via quality stack and review loop.
 
 NOT for:
-- unknown failures without traceback (use `/foundry:investigate` (requires foundry plugin))
+- CI-only failures with no local traceback — use `/develop:debug --ci-run <run-id>` first
+- production incidents without any CI run or traceback (use `/foundry:investigate` (requires foundry plugin))
 - `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
 
@@ -85,11 +86,22 @@ Diagnosis file format: see `/develop:debug` Final Report section for canonical f
 ## Flag parsing
 
 **Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` present in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
-**Set `CODEMAP_ENABLED=false`**. If `--codemap` present in `$ARGUMENTS`, set `CODEMAP_ENABLED=true`.
+**Set `ACCEPT_NO_PLAN=false`**. If `--accept-no-plan` present in `$ARGUMENTS`, set `ACCEPT_NO_PLAN=true` (skips inline plan generation for medium/large complexity — trust user override).
+
+```bash
+CODEMAP_ENABLED=auto   # use when available, skip silently when absent
+[[ "$ARGUMENTS" == *"--no-codemap"* ]] && CODEMAP_ENABLED=off
+[[ "$ARGUMENTS" == *"--codemap"* ]] && CODEMAP_ENABLED=strict
+```
+
+```bash
+CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") || exit 1
+```
+
 **Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
 **Set `TEAM_MODE=false`**. If `--team` present in `$ARGUMENTS`, set `TEAM_MODE=true`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -109,37 +121,24 @@ Root cause unclear after initial triage, OR bug spans 3+ modules and user accept
 4. Lead facilitates cross-challenge between competing analyses.
 5. Lead synthesizes consensus root cause, then proceeds with Steps 2-4 (regression test, fix, review loop) alone.
 
-```bash
-if [ "$TEAM_MODE" = "true" ]; then
-  # Spawn 2-3 sw-engineer teammates — each claims a distinct root-cause hypothesis
-  # Health monitoring setup (CLAUDE.md §8)
-  FIX_TEAM_LAUNCH=$(date +%s)
-  touch /tmp/fix-team-check-1 /tmp/fix-team-check-2  # timeout: 3000
-fi
-```
-
-```text
-# Teammate 1 (foundry:sw-engineer, model=opus) — hypothesis A:
-Agent(subagent_type="foundry:sw-engineer", model="opus", prompt="You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template.\n\nBug: ${ARGUMENTS}\nEvidence: {bug: <description>, traceback: <key lines>}\n\nYour task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach.\nTask tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state.\nSignal completion: 'Status: complete | blocked — <reason>'.\nWrite full analysis to .plans/active/fix-hypothesis-A-[timestamp].md using Write tool.\nReturn ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}")
-
-# Teammate 2 (foundry:sw-engineer, model=opus) — hypothesis B:
-Agent(subagent_type="foundry:sw-engineer", model="opus", prompt="You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template.\n\nBug: ${ARGUMENTS}\nEvidence: {bug: <description>, traceback: <key lines>}\n\nYour task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach.\nTask tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state.\nSignal completion: 'Status: complete | blocked — <reason>'.\nWrite full analysis to .plans/active/fix-hypothesis-B-[timestamp].md using Write tool.\nReturn ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}")
-```
+Compute run directory and create health sentinel:
 
 ```bash
-# Health monitoring — poll every 5 min; hard cutoff 15 min (CLAUDE.md §8)
-# After spawning both teammates above, monitor:
-# find .plans/active/ -newer /tmp/fix-team-check-1 -name "fix-hypothesis-*.md" | wc -l — new files = alive
-# On timeout: read tail -100 of each .plans/active/fix-hypothesis-*.md; surface with ⏱
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+FIX_TEAM_DIR=".temp/develop/${TS}"
+mkdir -p "$FIX_TEAM_DIR"
+touch /tmp/fix-team-check-$TS
 ```
 
-```bash
-if [ "$TEAM_MODE" = "true" ]; then
-  # After teammates complete: read their output files, synthesize consensus root cause
-  # Lead proceeds with Steps 2-4 (regression test, fix, review loop) alone
-  exit 0
-fi
-```
+Spawn 2 teammates in parallel using Agent() tool:
+
+**Teammate 1 — foundry:sw-engineer (model=opus) — hypothesis A**: "You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template. Bug: ${ARGUMENTS}. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to .temp/develop/$TS/fix-hypothesis-A-$TS.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
+
+**Teammate 2 — foundry:sw-engineer (model=opus) — hypothesis B**: "You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template. Bug: ${ARGUMENTS}. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to .temp/develop/$TS/fix-hypothesis-B-$TS.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
+
+Health monitoring (CLAUDE.md §8): every 5 min: `find .temp/develop/$TS -newer /tmp/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `.temp/develop/$TS/fix-hypothesis-*.md`; surface with ⏱; never omit.
+
+After both teammates complete: read their output files from `.temp/develop/$TS/`, synthesize consensus root cause, facilitate cross-challenge between competing analyses. Lead then proceeds alone with Steps 2-4 (regression test, fix, review loop).
 
 ## Step 1: Understand the problem
 
@@ -149,12 +148,12 @@ Gather all available context about bug:
 
 ```bash
 # Strip leading '#' so both '123' and '#123' work
-ARGUMENTS="${ARGUMENTS#\#}"
+ISSUE_NUM="${ARGUMENTS#\#}"
 ```
 
 ```bash
 # If issue number: fetch the full issue with comments
-gh issue view <number> --comments
+gh issue view $ISSUE_NUM --comments
 ```
 
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
@@ -185,6 +184,8 @@ If root cause not definitively established after analysis, surface assumptions b
 
 **Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
 
+Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **fix** context from the Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
+
 ## Challenger gate
 
 **Skip if `CHALLENGE_ENABLED=false`.**
@@ -200,23 +201,40 @@ Parse result:
 
 ## Step 2: Reproduce the bug
 
-Create or identify test demonstrating failure:
-
 (Use Glob tool — `pattern: **/test_*.py` — to discover test directories if `<test_dir>` unknown; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` first)
 
-```bash
-# If a failing test already exists — run it to confirm it fails
-$PYTEST_CMD --tb=short <test_file>::<test_name> -v
+### Part A — Test archaeology (before writing anything new)
 
-# If no test exists — write a regression test that captures the bug
-```
+1. Search for existing tests covering the broken behavior:
 
-Spawn **foundry:qa-specialist** agent to write regression test if none exists:
+   ```bash
+   # Grep for broken function/class name, error string, or issue number across tests/
+   grep -r "<broken_symbol_or_error>" tests/ --include="*.py" -l
+   grep -r "#<issue_number>" tests/ --include="*.py" -l
+   ```
 
-- Test must **fail** against current code (proving bug exists)
-- Use `pytest.mark.parametrize` if bug affects multiple input patterns
-- Keep test minimal — exercise exactly broken behavior
-- Add brief comment linking to issue if applicable (e.g., `# Regression test for #123`)
+   Run any candidate tests found to see if they currently pass or fail:
+
+   ```bash
+   $PYTEST_CMD --tb=short <candidate_test_file>::<candidate_test_name> -v
+   ```
+
+2. For each candidate test found — critically assess coverage quality:
+   - Does it exercise the exact failing path (correct inputs, correct assertions)?
+   - Or is it a weak test — broad mocking, trivially happy-path, partial assertion — that deflected the problem rather than caught it?
+
+3. Three outcomes from archaeology:
+   - **A: Existing test fails already** → captures bug; use as-is; proceed to Step 3
+   - **B: Existing test passes but is weak** (deflected problem) → fix existing test to properly reproduce; do NOT write new test; gate: test must fail after fix
+   - **C: No relevant test found** → write new test (proceed to Part B)
+
+Surface archaeology verdict before any writing:
+
+> Found: `[test path or "none"]` — verdict: `[captures / weak-deflected / no test]`
+
+### Part B — Write new reproduction test (only when outcome C)
+
+Spawn **foundry:qa-specialist** agent to write two reproduction tests:
 
 Spawn with context:
 - Bug description: [symptom from $ARGUMENTS or issue]
@@ -224,35 +242,64 @@ Spawn with context:
 - Suspect files: [files identified by sw-engineer in Step 1]
 - Expected behaviour: [what should happen]
 - Actual behaviour: [what currently happens]
-- Regression test must import from `<module>`, name `test_<bug_description>_regression`
 
-**Gate**: regression test must fail before proceeding. Check exit code — do not rely on output text alone:
+**Path 1 — Full user flow (integration demo)**
+- Exercises complete user-reported scenario end-to-end
+- No mocking of broken subsystem — real execution
+- Confirms user-reported problem fully resolved
+- Name: `test_<bug>_user_flow` or `test_<bug>_integration`
+- Lives in `tests/integration/` or alongside existing integration tests
+
+**Path 2 — Targeted unit test (fast iteration)**
+- Minimal scope: isolates root cause directly
+- Mock external dependencies; only broken unit under test is real
+- Designed for quick re-run during fix iteration (sub-second)
+- Name: `test_<bug>_unit` or `test_<bug>_regression`
+- Lives next to broken module's existing unit tests
+- Use `pytest.mark.parametrize` if bug affects multiple input patterns
+- Add brief comment linking to issue if applicable (e.g., `# Regression test for #123`)
+
+**When to skip Path 1**: if bug is purely internal (no user-facing flow exists), document why and proceed with Path 2 only.
+
+Both tests must **fail** against current code before proceeding. Check exit codes for each independently:
 
 ```bash
-GATE_EXIT=$?
-if [ $GATE_EXIT -eq 0 ]; then
-    echo "GATE FAIL: test passed (exit 0) — bug not captured; revisit Step 1"
-    exit 1
-fi
-echo "GATE OK: test failed as expected (exit $GATE_EXIT)"
+# Path 1 gate
+$PYTEST_CMD --tb=short tests/integration/<test_file>::test_<bug>_user_flow -v
+GATE_P1=$?
+[ $GATE_P1 -eq 0 ] && echo "GATE FAIL (Path 1): test passed — bug not captured" || echo "GATE OK (Path 1): failed as expected (exit $GATE_P1)"
+
+# Path 2 gate
+$PYTEST_CMD --tb=short <unit_test_file>::test_<bug>_unit -v
+GATE_P2=$?
+[ $GATE_P2 -eq 0 ] && echo "GATE FAIL (Path 2): test passed — bug not captured" || echo "GATE OK (Path 2): failed as expected (exit $GATE_P2)"
 ```
 
-If `GATE_EXIT -eq 0`: stop. Bug not reproduced. Do not apply fix.
+If either gate exit is 0: stop. Bug not reproduced on that path. Do not apply fix.
+
+**Outcome B gate** (weak test fixed path): after fixing existing test, run it to confirm it now fails:
+
+```bash
+$PYTEST_CMD --tb=short <existing_test_file>::<existing_test_name> -v
+GATE_EXIT=$?
+[ $GATE_EXIT -eq 0 ] && echo "GATE FAIL: fixed test still passes — weak test not corrected; revisit" || echo "GATE OK: fixed test fails as expected (exit $GATE_EXIT)"
+```
 
 ### Review: Validate the reproduction
 
-Before applying fix, critically evaluate regression test:
+Before applying fix, critically evaluate reproduction test(s):
 
 1. **Correct failure mode**: fails for right reason (actual bug), not setup issue?
 2. **Isolation**: exercises exactly broken behavior, not too broadly?
 3. **Minimal reproduction**: smallest test demonstrating failure?
 4. **Parametrization**: key variants covered if bug spans multiple input patterns?
+5. **Archaeology honesty**: if outcome B (weak test fixed), is test now harder to pass? Does it catch actual failure mode?
 
-If issue found: revise regression test before applying fix. Flawed reproduction = fix validated against wrong criteria.
+If issue found: revise test(s) before applying fix. Flawed reproduction = fix validated against wrong criteria.
 
 ## Step 3: Apply the fix
 
-**Breaking change gate**: before applying fix, assess whether fix introduces a breaking change (per `semver-rules.md` definition: worked before → fails/behaves differently now → no prior warning/shim). If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
+**Breaking change gate**: before applying fix, assess whether fix introduces a breaking change. If `oss` plugin available, read `$_OSS_SHARED/semver-rules.md` for semver classification guidance; otherwise use standard SemVer rules (fix→patch, feature→minor, breaking→major). Breaking change definition: worked before → fails/behaves differently now → no prior warning/shim. If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
 
 Make minimal change to fix root cause:
 

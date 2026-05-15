@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Resolve CODEMAP_ENABLED from auto/strict/off to true/false
+# Usage: CODEMAP_ENABLED=$(codemap-resolve "$CODEMAP_ENABLED") || exit 1
+# Exits 0: prints "true" or "false" to stdout
+# Exits 1: strict mode and binary/index missing — error to stderr
+
+MODE="${1:-auto}"
+
+case "$MODE" in
+  off|false) echo "false"; exit 0 ;;
+  true) echo "true"; exit 0 ;;
+esac
+
+# auto or strict: probe binary + index
+if command -v scan-query >/dev/null 2>&1; then
+  PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo 'default')")
+  INDEX=".cache/scan/${PROJ}.json"
+  if [ -f "$INDEX" ]; then
+    echo "true"
+  elif [ "$MODE" = "strict" ]; then
+    echo "! BREAKING — --codemap strict: index $INDEX not found. Run /codemap:scan first." >&2
+    exit 1
+  else
+    echo "false"
+  fi
+elif [ "$MODE" = "strict" ]; then
+  echo "! BREAKING — --codemap strict: scan-query not found. Install codemap plugin." >&2
+  exit 1
+else
+  echo "false"
+fi
