@@ -197,7 +197,7 @@ Return ONLY this JSON as final output:
 <notes>
 
 - **⚪ coding**: unavailable axes use `score: null, conf: 0.0, label: "⚪"` in partial file; assembler renormalizes weights over available axes only
-- **Bot filtering**: applies in Axes 3, 4, 7 (checkpoint 7), 9A, 9B, 9D — exclude logins matching `*[bot]` or `*-bot` suffix; use bash pattern matching (`[[ "$login" == *"[bot]"* ]] || [[ "$login" == *"-bot" ]]`) — no jq or python3 required for filter itself
+- **Bot filtering**: applies in Axes 3, 4, 7 (checkpoint 7), 9A, 9B, 9D — exclude logins matching `*[bot]` or `*-bot` suffix; use bash pattern matching (`[[ "$login" == *"[bot]"* ]] || [[ "$login" == *"-bot" ]]`) — no jq or python required for filter itself
 - **Confidence degraders**: apply per-axis degraders from vitality-scoring.md § Per-Axis Confidence Thresholds; never inflate above 1.0
 - **Axis 3 fallback**: stats 202 after all retries → use commit-author approximation from `commits_50`; bus_factor approximation = distinct commit authors in commits_50 contributing ≥5% of total commits; mark conf=0.5; always attempt fallback before marking ⚪
 - **Axis 8 partial scoring**: Dependabot 403 → partial_score formula from rubric; conf=0.4; never mark ⚪ solely from Dependabot 403

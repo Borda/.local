@@ -51,11 +51,11 @@ Parse `<input>` from arguments. Determine: **file path** or **goal string**:
 Run baseline profiling:
 
 ```bash
-python3 -m cProfile -s cumtime "$ARGUMENTS" > /tmp/cprofile-out.txt 2>&1  # timeout: 60000
+python -m cProfile -s cumtime "$ARGUMENTS" > /tmp/cprofile-out.txt 2>&1  # timeout: 60000
 PROFILE_EXIT=$?
 [ $PROFILE_EXIT -ne 0 ] && echo "cProfile failed (exit $PROFILE_EXIT)" && exit 1
 head -40 /tmp/cprofile-out.txt  # timeout: 5000
-time python3 "$ARGUMENTS"  # timeout: 60000
+time python "$ARGUMENTS"  # timeout: 60000
 ```
 
 Present top 5 bottleneck functions:

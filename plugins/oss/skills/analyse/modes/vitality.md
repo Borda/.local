@@ -59,7 +59,7 @@ SCORING_FILE="$_OSS_SHARED/vitality-scoring.md"
 ```
 
 ```bash
-python3 -c "
+python -c "
 import json, sys, re
 
 # Load weights from vitality-scoring.md (single source of truth)
@@ -113,19 +113,19 @@ print(f'[vitality] assembled: health={health:.1f}% conf={overall_conf:.2f}')
 Extract variables from `$SCORES_FILE` for use in Steps 4–7:
 
 ```bash
-ANALYSIS_NOW=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['analysis_now'])" 2>/dev/null || echo "$(date +%s)")  # timeout: 5000
-OVERALL_CONFIDENCE=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['overall_confidence'])" 2>/dev/null || echo "0.0")  # timeout: 5000
-HEALTH_SCORE_PCT=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['health_score_pct'])" 2>/dev/null || echo "0")  # timeout: 5000
-AXIS3_202_PENDING=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print('true' if d.get('axis3_202_pending') else 'false')" 2>/dev/null || echo "false")  # timeout: 5000
-TOTAL_PASSES=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d.get('total_passes',1))" 2>/dev/null || echo "1")  # timeout: 5000
-CONFIDENCE_HISTORY=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d.get('confidence_history','0.0'))" 2>/dev/null || echo "$OVERALL_CONFIDENCE")  # timeout: 5000
+ANALYSIS_NOW=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['analysis_now'])" 2>/dev/null || echo "$(date +%s)")  # timeout: 5000
+OVERALL_CONFIDENCE=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['overall_confidence'])" 2>/dev/null || echo "0.0")  # timeout: 5000
+HEALTH_SCORE_PCT=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['health_score_pct'])" 2>/dev/null || echo "0")  # timeout: 5000
+AXIS3_202_PENDING=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print('true' if d.get('axis3_202_pending') else 'false')" 2>/dev/null || echo "false")  # timeout: 5000
+TOTAL_PASSES=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d.get('total_passes',1))" 2>/dev/null || echo "1")  # timeout: 5000
+CONFIDENCE_HISTORY=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d.get('confidence_history','0.0'))" 2>/dev/null || echo "$OVERALL_CONFIDENCE")  # timeout: 5000
 
 for AX in 1 2 3 4 5 6 7 8 9; do
-    score=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); v=d['axes']['$AX']; print(v['score'] if v['score'] is not None else -1)" 2>/dev/null || echo "-1")  # timeout: 5000
-    conf=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['conf'])" 2>/dev/null || echo "-1")  # timeout: 5000
-    status=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['label'])" 2>/dev/null || echo "⚪")  # timeout: 5000
-    signal=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX'].get('signal',''))" 2>/dev/null || echo "")  # timeout: 5000
-    weight=$(python3 -c "import json; d=json.load(open('$SCORES_FILE')); print(int(round(d['weights']['$AX'] * 100)))" 2>/dev/null || echo "0")  # timeout: 5000
+    score=$(python -c "import json; d=json.load(open('$SCORES_FILE')); v=d['axes']['$AX']; print(v['score'] if v['score'] is not None else -1)" 2>/dev/null || echo "-1")  # timeout: 5000
+    conf=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['conf'])" 2>/dev/null || echo "-1")  # timeout: 5000
+    status=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['label'])" 2>/dev/null || echo "⚪")  # timeout: 5000
+    signal=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX'].get('signal',''))" 2>/dev/null || echo "")  # timeout: 5000
+    weight=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(int(round(d['weights']['$AX'] * 100)))" 2>/dev/null || echo "0")  # timeout: 5000
     eval "AXIS${AX}_SCORE='$score'"
     eval "AXIS${AX}_CONF='$conf'"
     eval "AXIS${AX}_STATUS='$status'"
@@ -145,7 +145,7 @@ REPORT_TIMESTAMP=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
 REPORT_FILE=".reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-${REPORT_TIMESTAMP}.md"
 
 # Provenance metadata — embedded in report header for self-complete, deterministic output
-SKILL_VERSION=$(python3 -c "
+SKILL_VERSION=$(python -c "
 import json, os, glob
 # Try installed cache first, then workspace source
 paths = sorted(glob.glob(os.path.expanduser('~/.claude/plugins/cache/borda-ai-rig/oss/*/.claude-plugin/plugin.json')))
@@ -312,7 +312,7 @@ Parse REWORK_JSON from challenger output:
 
 ```bash
 REWORK_JSON=$(grep "^REWORK_JSON:" "$REVIEW_DIR/challenger-iter${REWORK_ITER}.md" 2>/dev/null | sed 's/^REWORK_JSON: //')
-REWORK_VERDICT=$(echo "$REWORK_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['verdict'])" 2>/dev/null || echo "pass")  # timeout: 5000
+REWORK_VERDICT=$(echo "$REWORK_JSON" | python -c "import json,sys; print(json.load(sys.stdin)['verdict'])" 2>/dev/null || echo "pass")  # timeout: 5000
 ```
 
 ### 6b — Rework (only when REWORK_VERDICT=needs_rework)

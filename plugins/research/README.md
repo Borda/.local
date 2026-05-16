@@ -736,7 +736,7 @@ Run `/research:plan "<goal>"` first. The plan skill writes `program.md` to your 
 
 **"Metric command failed or produced no numeric output" during judge or run**
 
-Your `metric_cmd` must print a single float to stdout. Test it in your terminal first. If the command prints a label alongside the number (e.g., `F1: 0.82`), the skill can parse it. If it prints a table or structured output, you need a wrapper that extracts the number: `python3 eval.py | grep f1 | awk '{print $2}'`.
+Your `metric_cmd` must print a single float to stdout. Test it in your terminal first. If the command prints a label alongside the number (e.g., `F1: 0.82`), the skill can parse it. If it prints a table or structured output, you need a wrapper that extracts the number: `python eval.py | grep f1 | awk '{print $2}'`.
 
 **"Guard command exited non-zero" in judge**
 

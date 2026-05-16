@@ -16,7 +16,7 @@ paths:
 
 **Version check first**: before generating any deprecation code:
 
-- Agentic/tool context: `python3 -c "import deprecate; print(deprecate.__version__)"` via Bash
+- Agentic/tool context: `python -c "import deprecate; print(deprecate.__version__)"` via Bash
 - In conversation context: output command for user to run, wait for confirmation before proceeding
 
 If installed version differs, read `help(deprecate)` or project CHANGELOG before generating code — don't assume Claude knows latest API. Do **not** upgrade pyDeprecate on projects where older version working fine.
@@ -115,9 +115,9 @@ Claude training data has fixed cutoff — any library released or substantially 
 
 **Before using any third-party library feature**:
 
-1. Check installed version: `python3 -c "import <pkg>; print(<pkg>.__version__)"` or `pip show <pkg>`
+1. Check installed version: `python -c "import <pkg>; print(<pkg>.__version__)"` or `pip show <pkg>`
 2. Compare against Claude training: Claude's training cutoff noted in system context; any library with active development after that date may have new or changed APIs
-3. If installed version newer than Claude's training snapshot: read library's CHANGELOG or online docs first; `python3 -c "import <pkg>; help(<pkg>)"` fallback for offline inspection
+3. If installed version newer than Claude's training snapshot: read library's CHANGELOG or online docs first; `python -c "import <pkg>; help(<pkg>)"` fallback for offline inspection
 4. Use API matching **installed** version — don't assume Claude's training knowledge current
 
 **Never suggest upgrading library** solely because Claude doesn't recognise newer API. Project has version pinned for reason — learn that version's API from docs; don't force updates on stable/stale projects.

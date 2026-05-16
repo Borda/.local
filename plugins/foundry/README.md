@@ -300,7 +300,7 @@ Turns a fuzzy idea into an approved exploration tree, then into a spec, then int
 3. Presents 3-5 initial branches with core idea, tension resolved, and what it trades away
 4. Interactive operations loop: deepen, reject, resolve, merge, add — up to 10 rounds
 5. Saves tree to `.plans/blueprint/YYYY-MM-DD-<slug>.md` with `Status: tree`
-6. Live tree viewer available at the URL printed during Step 1 (serve project root with `python3 -m http.server 8000`)
+6. Live tree viewer available at the URL printed during Step 1 (serve project root with `python -m http.server 8000`)
 
 **Breakdown mode** (`breakdown <file>`):
 

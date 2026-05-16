@@ -77,7 +77,7 @@ Steward principle: every role must earn its place AND have room to grow. When ro
 - Valid plugin directories: `agents/`, `skills/`, `bin/`, `rules/` (foundry), `hooks/` (foundry), `.claude-plugin/`
 - `bin/` = standalone executables (`.sh`, `.py`) auto-added to Bash PATH by Claude Code; invoked via `${CLAUDE_PLUGIN_ROOT}/bin/<script>`; NOT for LLM instruction
 - Shell/Python scripts found in `skills/_shared/` or `commands/` → misplaced; flag P2; fix: move to plugin's `bin/` dir
-- Skills using `$_SHARED/script.sh`, `$_COMMANDS/script.sh`, or inline `python3 -c` blocks → update to `${CLAUDE_PLUGIN_ROOT}/bin/<script>`
+- Skills using `$_SHARED/script.sh`, `$_COMMANDS/script.sh`, or inline `python -c` blocks → update to `${CLAUDE_PLUGIN_ROOT}/bin/<script>`
 - `_shared/` is for markdown reference docs only — agent-resolution tables, protocol files, voice guides
 
 ## Frontmatter Schema Freshness
@@ -261,7 +261,7 @@ Never use `sonnet` for agents making complex multi-file design decisions; `creat
 
 - **Context-flooding delegation**: skill spawns 2+ agents without file-based handoff — all agent outputs return to main context for inline consolidation. Ref: `.claude/skills/_shared/file-handoff-protocol.md`. Severity: P2 (duplication-level — remove inline output, add file handoff).
 
-- **Scripts in `skills/_shared/` or `commands/`** — `.sh`/`.py` files there are misplaced; `_shared/` is for markdown reference docs; `commands/` is Claude Code's legacy name for flat skill `.md` files. Fix: move to plugin's `bin/` directory; update caller to `${CLAUDE_PLUGIN_ROOT}/bin/<script>`; inline `python3 -c` blocks > ~20 lines also belong in `bin/*.py`. Severity: P2.
+- **Scripts in `skills/_shared/` or `commands/`** — `.sh`/`.py` files there are misplaced; `_shared/` is for markdown reference docs; `commands/` is Claude Code's legacy name for flat skill `.md` files. Fix: move to plugin's `bin/` directory; update caller to `${CLAUDE_PLUGIN_ROOT}/bin/<script>`; inline `python -c` blocks > ~20 lines also belong in `bin/*.py`. Severity: P2.
 
 - **Hallucinating issues on clean files** — do not report problem unless evidence explicit in file content. If file passes all checks, say so plainly ("No issues found — all sections present, refs valid, steps sequential"). Never fabricate findings to appear thorough.
 

@@ -134,11 +134,11 @@ else
     if [ ! -f "$MANIFEST" ]; then
         printf "${RED}! CRITICAL${NC}: Check 8a — manifest not found: %s\n" "$MANIFEST"
         FAIL=$((FAIL + 1))
-    elif ! python3 -c "import json,sys; d=json.load(open('$MANIFEST')); [sys.exit(1) for k in ('name','version','description') if k not in d]" 2>/dev/null; then # timeout: 5000
+    elif ! python -c "import json,sys; d=json.load(open('$MANIFEST')); [sys.exit(1) for k in ('name','version','description') if k not in d]" 2>/dev/null; then # timeout: 5000
         printf "${RED}! CRITICAL${NC}: Check 8a — manifest invalid JSON or missing required fields (name, version, description)\n"
         FAIL=$((FAIL + 1))
     else
-        PLUGIN_NAME=$(python3 -c "import json; print(json.load(open('$MANIFEST'))['name'])" 2>/dev/null) # timeout: 5000
+        PLUGIN_NAME=$(python -c "import json; print(json.load(open('$MANIFEST'))['name'])" 2>/dev/null) # timeout: 5000
         if [ "$PLUGIN_NAME" != "foundry" ]; then
             printf "${RED}! HIGH${NC}: Check 8a — manifest name is '%s', expected 'foundry'\n" "$PLUGIN_NAME"
             FAIL=$((FAIL + 1))
@@ -230,7 +230,7 @@ else
     if [ ! -f "$HOOKS_JSON" ]; then
         printf "${RED}! HIGH${NC}: Check 8d — hooks/hooks.json not found\n"
         FAIL=$((FAIL + 1))
-    elif ! python3 -c "import json; json.load(open('$HOOKS_JSON'))" 2>/dev/null; then # timeout: 5000
+    elif ! python -c "import json; json.load(open('$HOOKS_JSON'))" 2>/dev/null; then # timeout: 5000
         printf "${RED}! HIGH${NC}: Check 8d — hooks/hooks.json is not valid JSON\n"
         FAIL=$((FAIL + 1))
     else

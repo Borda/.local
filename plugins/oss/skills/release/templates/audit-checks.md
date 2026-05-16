@@ -81,7 +81,7 @@ grep -rn "TODO.*release\|FIXME\|HACK\|XXX" --include="*.py" \
 # Dependency CVE scan
 if command -v pip-audit &>/dev/null; then
     pip-audit --format=json 2>/dev/null |
-    python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{len(d[\"dependencies\"])} deps, {sum(len(x[\"vulns\"]) for x in d[\"dependencies\"])} vulns')"
+    python -c "import sys,json; d=json.load(sys.stdin); print(f'{len(d[\"dependencies\"])} deps, {sum(len(x[\"vulns\"]) for x in d[\"dependencies\"])} vulns')"
 else
     echo "pip-audit not installed — CVE scan skipped; install with: pip install pip-audit"
 fi

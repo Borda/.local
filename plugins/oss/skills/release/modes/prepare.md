@@ -64,7 +64,7 @@ DEMO_OUT="releases/$VERSION/demo.py"
 
 Write generated script to `$DEMO_OUT` using Write tool. **Execution gate** — run:
 ```bash
-python3 "$DEMO_OUT"  # timeout: 600000
+python "$DEMO_OUT"  # timeout: 600000
 ```
 Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gate passes.
 

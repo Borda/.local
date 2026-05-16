@@ -1,9 +1,9 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Parse oss:review $ARGUMENTS, emit shell variable assignments for eval.
 
 Usage (Claude Code plugin — ``CLAUDE_PLUGIN_ROOT`` set automatically)::
 
-    eval "$(python3 "${CLAUDE_PLUGIN_ROOT}/bin/parse-review-args.py" "$ARGUMENTS")"
+    eval "$(python "${CLAUDE_PLUGIN_ROOT}/bin/parse-review-args.py" "$ARGUMENTS")"
 
 Emits five shell-quoted variable assignments:
 

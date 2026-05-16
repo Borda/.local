@@ -50,7 +50,7 @@ cd /path || uv run pytest tests/
 
 **Why**: Claude Code's permission matcher checks only **first token** of Bash command.
 - Compound using `&&`, `;`, or `||` presents `cd` as first token — matches no allow entry
-- Even when `Bash(uv run pytest:*)`, `Bash(python3:*)`, or similar rules in allow list
+- Even when `Bash(uv run pytest:*)`, `Bash(python:*)`, or similar rules in allow list
 - Applies to every command, not just worktrees
 
 Working directory persists between Bash calls — two sequential calls equivalent.

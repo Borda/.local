@@ -295,9 +295,9 @@ For each iteration `i` from 1 to `max_iterations`:
 
 1. **No compound commands**: Never `cd /path && command`. Always two separate Bash calls — CWD persists between calls.
 2. **Use Bash tool `timeout` parameter**: Never shell `timeout` wrapper. Pass `timeout: <ms>` on Bash tool call itself.
-3. **No inline multi-line Python**: Python logic >3 lines → write to `.experiments/state/<run-id>/scripts/script-<i>.py` via Write tool, execute with `python3 <path>` or `uv run python <path>`. Two triggers Claude Code always flags: (a) `=([0-9.]+)` inside `-c "..."` (false Zsh substitution); (b) multi-line `-c "..."` with `#`-prefixed comment lines. Writing to file sidesteps both.
+3. **No inline multi-line Python**: Python logic >3 lines → write to `.experiments/state/<run-id>/scripts/script-<i>.py` via Write tool, execute with `python <path>` or `uv run python <path>`. Two triggers Claude Code always flags: (a) `=([0-9.]+)` inside `-c "..."` (false Zsh substitution); (b) multi-line `-c "..."` with `#`-prefixed comment lines. Writing to file sidesteps both.
 4. **No Zsh constructs**: Never use `=()`, `<()`, `>()` in Bash commands — even inside quoted strings; Claude Code scans raw command text.
-5. **Local exploratory scripts writing to real files** (scanning config combos, patching JSON, temp overrides): write to `.experiments/state/<run-id>/scripts/`, run locally with `python3 <path>`. Legitimately modify project files — NOT in Docker sandbox.
+5. **Local exploratory scripts writing to real files** (scanning config combos, patching JSON, temp overrides): write to `.experiments/state/<run-id>/scripts/`, run locally with `python <path>`. Legitimately modify project files — NOT in Docker sandbox.
 6. **Docker sandbox** (when available — see Phase 2a): Phases 4–6 route `metric_cmd`/`guard_cmd` through Docker when `compute: docker`. Phase 2a: read-only hypothesis scripts in sandbox. Scripts writing to project files always run locally.
 7. **One change per iteration**: Never batch-loop over config variants/combos in single Bash/Python call. Each variant = one campaign iteration — loop/measure/compare is campaign framework's job, not ideation agent's.
 
@@ -366,7 +366,7 @@ docker run --rm --network <sandbox_network> \
     --tmpfs /tmp:rw,size=256m \
     -w /workspace \
     python:3.11-slim \
-    python3 /workspace/.experiments/state/<run-id>/scripts/<script>
+    python /workspace/.experiments/state/<run-id>/scripts/<script>
 ```
 
 Use Bash tool `timeout`: `timeout: <VERIFY_TIMEOUT_SEC * 1000>`. Not shell `timeout` command.
@@ -426,7 +426,7 @@ docker run --rm --network "${SANDBOX_NETWORK}" \
 
 No resource limits. Use Bash tool `timeout` parameter (not shell `timeout`): `timeout: <VERIFY_TIMEOUT_SEC * 1000>`.
 
-**If `sandbox_mode = "local"`**: Run `metric_cmd` via Bash (`timeout: <VERIFY_TIMEOUT_SEC * 1000>` ms). Not shell `timeout`. Different CWD → separate `cd <path>` call first. Complex metric parsing → write parser to `.experiments/state/<run-id>/scripts/parse-metric-<i>.py`, run with `python3 <path>` — no inline one-liner.
+**If `sandbox_mode = "local"`**: Run `metric_cmd` via Bash (`timeout: <VERIFY_TIMEOUT_SEC * 1000>` ms). Not shell `timeout`. Different CWD → separate `cd <path>` call first. Complex metric parsing → write parser to `.experiments/state/<run-id>/scripts/parse-metric-<i>.py`, run with `python <path>` — no inline one-liner.
 
 **If `--colab` active**: routes through `mcp__colab-mcp__runtime_execute_code`; Docker not used. (`--colab` + `--compute=docker` conflict caught at R2.) If `colab_hw` non-null, prepend GPU identity check: `import torch; actual=torch.cuda.get_device_name(0); assert '<colab_hw>' in actual, f'Wrong GPU: expected <colab_hw>, got {actual}'` via `mcp__colab-mcp__runtime_execute_code`. If fails: print `"⚠ GPU mismatch: requested <colab_hw> but runtime has {actual}. Change the Colab runtime type and re-run."` Stop — do not proceed to Phase 6.
 

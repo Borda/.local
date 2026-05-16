@@ -342,8 +342,8 @@ Before running, invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OU
 
 On (a) or user confirmation after (b): run:
 ```bash
-# Note: python3 invocation triggers approval prompt by design (allow-list policy — python3 excluded from auto-allow)
-python3 "$DEMO_OUT"  # timeout: 600000
+# Note: python invocation triggers approval prompt by design (allow-list policy — python excluded from auto-allow)
+python "$DEMO_OUT"  # timeout: 600000
 ```
 If fails: fix and re-run. Don't proceed until exits 0 with expected output. Self-contained: package installed in current env; no live API calls or network deps; deterministic synthetic data; `# !pip install` lines are Python comments — interpreter skips.
 

@@ -62,7 +62,7 @@ After scan, read index and report compact summary:
 # SCAN_ARGS provides root-path context for stats script to resolve relative module paths.
 # CLAUDE_PLUGIN_ROOT is set automatically by Claude Code when plugin is active.
 # timeout: 15000
-SCAN_ARGS="$ARGUMENTS" python3 "${CLAUDE_PLUGIN_ROOT}/bin/scan-stats.py"
+SCAN_ARGS="$ARGUMENTS" python "${CLAUDE_PLUGIN_ROOT}/bin/scan-stats.py"
 ```
 
 Degraded files exist: list with reason. Not failure — index still useful.

@@ -96,7 +96,7 @@ r = 1 - (2 * stat) / (n * (n + 1))
 
 **Error handling**: if `scipy` not installed, print `"pip install scipy required for significance testing, reporting descriptive stats only"` and fall back to descriptive stats. Handle empty JSONL (0 kept iterations) — report `"no kept iterations found"`.
 
-Write results JSON to `$RUN_DIR/stats-results.json`. Execute script with `python3 $RUN_DIR/scripts/analyze.py` via Bash (`timeout: 30000`).
+Write results JSON to `$RUN_DIR/stats-results.json`. Execute script with `python $RUN_DIR/scripts/analyze.py` via Bash (`timeout: 30000`).
 
 ### Step T3: Dead iteration detection
 

@@ -83,17 +83,17 @@ After scan, apply model reasoning to each match — exclude cases where shell co
 | `echo … >` / `tee` to write a file | Write tool | medium |
 | `sed`/`awk` for text substitution | Edit tool | medium |
 
-### Sub-check 23e — python3 inline policy (CLAUDE.md / MEMORY.md violation)
+### Sub-check 23e — python inline policy (CLAUDE.md / MEMORY.md violation)
 
-`python3` intentionally absent from allow list (MEMORY.md: "Allow List Policy — python* excluded by design"). Any `python3 -c` in skill body pauses for permission prompt mid-workflow; user deny = phase fails.
+`python` intentionally absent from allow list (MEMORY.md: "Allow List Policy — python* excluded by design"). Any `python -c` in skill body pauses for permission prompt mid-workflow; user deny = phase fails.
 
 ```bash
-printf "=== Check 23e: python3 inline policy ===\n"
-grep -rn 'python3 -c\b' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
+printf "=== Check 23e: python inline policy ===\n"
+grep -rn 'python -c\b' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
-printf "  hint: python3 not in allow list by design — move logic to bin/*.py or use native tools (Read/Write/Edit/Bash with jq)\n" || true
+printf "  hint: python not in allow list by design — move logic to bin/*.py or use native tools (Read/Write/Edit/Bash with jq)\n" || true
 printf "=== Check 23e: heredoc python policy ===\n"
-grep -rn "python3 << '\|python3 <<\"" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
+grep -rn "python << '\|python <<\"" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: CLAUDE.md bans heredoc python; use bin/*.py instead\n" || true
 printf "✓: Check 23e scan complete\n"  # timeout: 5000
@@ -103,8 +103,8 @@ Severity: **high** — permission prompt mid-workflow blocks automation; user de
 
 | Sub-check | Pattern | Severity |
 | --- | --- | --- |
-| 23e — python3 -c inline | `python3 -c` in skill body | high |
-| 23e — python3 heredoc | `python3 << '` in skill body | high |
+| 23e — python -c inline | `python -c` in skill body | high |
+| 23e — python heredoc | `python << '` in skill body | high |
 
 **Report only** — never auto-fix; some Bash invocations in example/illustration code blocks intentional.
 
@@ -385,13 +385,13 @@ Fix: after detecting TEST_CMD, derive `PYTEST_CMD` for targeted runs: `tox` → 
 
 ### 30e — Heredoc python in skill bodies
 
-Heredoc python blocks (`python3 << 'EOF'`) banned by CLAUDE.md. Distinct from 23e (targets `python3 -c` one-liners); 30e catches multi-line heredoc forms that bypass one-liner size limit.
+Heredoc python blocks (`python << 'EOF'`) banned by CLAUDE.md. Distinct from 23e (targets `python -c` one-liners); 30e catches multi-line heredoc forms that bypass one-liner size limit.
 
 ```bash
 printf "=== Check 30e: Heredoc python ===\n"
-grep -rn "python3 <<\|python3 << '" plugins/*/skills/ .claude/skills/ 2>/dev/null |
+grep -rn "python <<\|python << '" plugins/*/skills/ .claude/skills/ 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
-printf "  hint: CLAUDE.md bans python3 heredoc; use bin/*.py script instead\n" || true
+printf "  hint: CLAUDE.md bans python heredoc; use bin/*.py script instead\n" || true
 printf "✓: Check 30e scan complete\n"  # timeout: 5000
 ```
 
@@ -403,7 +403,7 @@ Severity: **high** — heredoc triggers permission prompt; user deny = workflow 
 | 30b — SKIP guard missing | `SKIP_X=1` with no `[ "${SKIP_X:-0}" ]` guard | critical | no |
 | 30c — filename mismatch | spawn filename ≠ consolidator filename (model reasoning) | high | no |
 | 30d — TEST_CMD+pytest flags | `$TEST_CMD --tb` / `--co` / `::` / `--cov` without PYTEST_CMD | high | no |
-| 30e — heredoc python | `python3 <<` in skill body | high | no |
+| 30e — heredoc python | `python <<` in skill body | high | no |
 
 ## Check 31 — Skill tool call vs allowed-tools consistency
 
@@ -662,8 +662,8 @@ SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cac
 [ "${SHARED_RES:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: bash _shared resolution pattern in %s files (variants may be inconsistent) — bin/ extraction candidate\n" "$SHARED_RES"
 
 # Python heredoc pattern (bin/ python script candidate)
-PY_HEREDOC=$(grep -rl 'python3 -c' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-[ "${PY_HEREDOC:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: python3 -c one-liner in %s files — evaluate if any cluster repeats across skills\n" "$PY_HEREDOC"
+PY_HEREDOC=$(grep -rl 'python -c' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+[ "${PY_HEREDOC:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: python -c one-liner in %s files — evaluate if any cluster repeats across skills\n" "$PY_HEREDOC"
 
 # Unsupported-flag-check (intentional resilience replication — info only)
 FLAG_CHECK=$(grep -rl 'Unknown flag' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
@@ -691,7 +691,7 @@ Severity: **medium** for actionable extraction candidates (mode-dispatch, _share
 
 Auto-fix guidance:
 - **Bin/ shell script**: bash/sh blocks that are self-contained (stdout output, no function defs, no shell state mutation) → `plugins/foundry/bin/<name>.sh` with full fallback chain; callers: `$( ${CLAUDE_PLUGIN_ROOT}/bin/<name>.sh 2>/dev/null || echo "fallback-path")`
-- **Bin/ python script**: python3 blocks repeated 3+ times → `plugins/foundry/bin/<name>.py`; callers: `python3 ${CLAUDE_PLUGIN_ROOT}/bin/<name>.py`
+- **Bin/ python script**: python blocks repeated 3+ times → `plugins/foundry/bin/<name>.py`; callers: `python ${CLAUDE_PLUGIN_ROOT}/bin/<name>.py`
 - **Inline function**: for within-skill bash duplication where block uses caller shell state → define bash function once in pre-flight, call at each site
 - **Never extract**: blocks explicitly marked as resilience replications (unsupported-flag-check, health-monitoring constants)
 

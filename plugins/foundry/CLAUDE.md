@@ -66,7 +66,7 @@ Operations in `settings.json` pre-approved — execute directly. Operation not c
 
 - Native tools purpose-built and auditable; Bash for operations they cannot do (run tests, git, system commands)
 - Prefer N sequential native tool calls over one script; loop of 10 Reads beats heredoc needing approval
-- Avoid `python3 << 'EOF' ... EOF` heredocs; use `python3 -c "..."` one-liners only when native tools cannot write back (e.g. JSON transforms)
+- Avoid `python << 'EOF' ... EOF` heredocs; use `python -c "..."` one-liners only when native tools cannot write back (e.g. JSON transforms)
 
 ## Agent Teams
 

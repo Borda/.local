@@ -71,7 +71,7 @@ Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry
 ```bash
 # Parse flags (--reply, --no-challenge, --codemap, --semble); strips leading '#' from remaining args
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-review-args.py" ] || { echo "Error: parse-review-args.py not found — verify oss plugin installation (CLAUDE_PLUGIN_ROOT=${CLAUDE_PLUGIN_ROOT:-unset})"; exit 1; }  # timeout: 5000
-eval "$(python3 "${CLAUDE_PLUGIN_ROOT}/bin/parse-review-args.py" "$ARGUMENTS")"  # timeout: 5000
+eval "$(python "${CLAUDE_PLUGIN_ROOT}/bin/parse-review-args.py" "$ARGUMENTS")"  # timeout: 5000
 ```
 
 ```bash

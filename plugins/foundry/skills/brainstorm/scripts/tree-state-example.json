@@ -18,7 +18,7 @@
         "skill_lean": "Most deployable option. The Chrome file:// issue is a one-command solve (http.server). No infrastructure overhead justifies this approach for a session-time companion.",
         "status": "open",
         "tension": "Zero infra \u2014 open the file in any browser, it just works. No server, no npm install.",
-        "trades_away": "No animated SVG connectors. Chrome file:// origin blocks fetch() by default \u2014 requires python3 -m http.server as documented prerequisite."
+        "trades_away": "No animated SVG connectors. Chrome file:// origin blocks fetch() by default \u2014 requires python -m http.server as documented prerequisite."
       },
       {
         "children": [],

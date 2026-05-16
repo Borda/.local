@@ -541,7 +541,7 @@ Degraded modules in the scan report
 Some files could not be parsed — usually generated code, files with syntax errors, or files that use Python syntax features not yet supported by the standard library `ast` module. Degraded modules are skipped but the rest of the index is fully usable. To see which files are degraded:
 
 ```bash
-python3 -c "
+python -c "
 import json, os, subprocess
 proj = os.path.basename(subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip())
 d = json.load(open(f'.cache/scan/{proj}.json'))
@@ -589,7 +589,7 @@ codemap lives in the `plugins/codemap/` directory of the Borda-AI-Rig repository
 
 **Found a bug or want a feature?** Open an issue in the repository. Include:
 
-- Your Python version (`python3 --version`)
+- Your Python version (`python --version`)
 - The codemap version (`cat ~/.claude/plugins/cache/borda-ai-rig/codemap/*/.claude-plugin/plugin.json`)
 - The error message or unexpected behavior
 - The approximate size of the project you were scanning (module count from scan output)

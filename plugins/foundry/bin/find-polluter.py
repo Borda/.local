@@ -1,11 +1,11 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """find-polluter.py — binary-search test isolation.
 
 Finds which test in a suite contaminates another test when run before it.
 Uses binary search: O(log N) runs instead of O(N).
 
 Usage (Claude Code plugin — CLAUDE_PLUGIN_ROOT is set automatically):
-    python3 "${CLAUDE_PLUGIN_ROOT}/bin/find-polluter.py" <failing-test-id> [test-dir]
+    python "${CLAUDE_PLUGIN_ROOT}/bin/find-polluter.py" <failing-test-id> [test-dir]
 
 Arguments:
     failing-test-id   pytest node ID of the test that fails due to contamination
@@ -13,7 +13,7 @@ Arguments:
     test-dir          directory to search for candidate tests (default: tests)
 
 Example:
-    python3 "${CLAUDE_PLUGIN_ROOT}/bin/find-polluter.py" tests/test_model.py::test_predict tests/
+    python "${CLAUDE_PLUGIN_ROOT}/bin/find-polluter.py" tests/test_model.py::test_predict tests/
 
 Requirements: pytest available on PATH (or via `python -m pytest`).
 
