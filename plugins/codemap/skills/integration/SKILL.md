@@ -1,6 +1,7 @@
 ---
 name: integration
 description: "Manage codemap integration — 'check' audits installation health (scan-query reachable, index fresh, injection present), 'init' onboards codemap by discovering skills/agents, recommending injection sites, and wiring them in."
+when_to_use: "Use when setting up or configuring codemap integration for a project repository. SKIP when codemap is already configured."
 argument-hint: "check | init [--approve]  # --approve: non-interactive, auto-applies all High+Medium injection recommendations and installs post-commit hook"
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion

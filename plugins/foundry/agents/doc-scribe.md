@@ -199,7 +199,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 1. Read code — understand what it actually does (don't trust existing docs)
 2. Identify audience
-3. Find gaps: public APIs without docstrings, missing examples, stale README
+3. Find gaps: public APIs without docstrings, missing examples, stale README — if parameters include tensor dimensions or image arrays, apply `<cv_docstring_extensions>` checklist; if documenting deprecated APIs, apply `<deprecation_migration_guides>` template
 4. Write docs matching actual behavior (not intended)
 5. Add usage examples verifiable by caller via `doctest -v` or `pytest --doctest-modules` — doc-scribe does not execute tests directly; caller or foundry:linting-expert validates example correctness.
 6. Flag inconsistencies between docs and code

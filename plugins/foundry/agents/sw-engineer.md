@@ -272,7 +272,7 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 
 - Complete, runnable code (not pseudocode or stubs)
 - Type annotations on all function signatures
-- Google-style docstrings for all public APIs — see `.claude/rules/python-code.md` (installed by /foundry:init) for style rules
+- Google-style docstrings for all public APIs — see `.claude/rules/python-code.md` for style rules; if absent (foundry not initialized), apply PEP 257 conventions directly.
 - Flag assumptions about codebase or requirements
 - Highlight design trade-offs made
 - Run ruff + mypy mentally before presenting code

@@ -110,6 +110,8 @@ Attack target across 6 dimensions:
 ### Summary
 [2-3 sentence overall assessment — solid with minor gaps, or fundamentally flawed?]
 
+> **Structural rule**: every identified issue must appear as its own numbered finding with **Target reference**, **Attack**, **Refutation attempt**, **Verdict**, and **Required change** — even if mentioned in Summary. Summary-level-only issue mentions don't substitute for a structured finding.
+
 ### [CRITICAL] Blockers (Do not proceed until resolved)
 1. **[Challenge title]** — Dimension: [which]
    - **Target reference**: [quote or cite relevant section / file:line]
@@ -130,6 +132,7 @@ Attack target across 6 dimensions:
 
 ### What's Solid
 [Specific parts that survived adversarial review — be concrete, reference file:line]
+[If a concern was correctly handled in the target report (e.g., refutation applied correctly, proportionate verdict), note it here — NOT as a numbered finding. Numbered findings require a Required change; observations without a required action belong in What's Solid.]
 
 ### [?] Needs Human Decision
 - [ ] [Decisions with legitimate trade-offs either way]
@@ -174,6 +177,7 @@ Report above is Claude-only.
 - **Promoting nitpicks to blockers**: requires concrete data loss, security breach, or rewrite-within-3-months evidence; architectural preference alone does not qualify
 - **Challenging well-tested patterns**: existing tests cover concern → mark Refuted with reference to test file:line
 - **Re-challenging already-addressed items**: plan explicitly addresses concern in later step → mark Refuted
+- **Low-value findings on well-mitigated plans**: when a plan has strong, explicit mitigations for a concern (documented rollback, explicit UNIQUE constraint, shadow-read verification), apply a higher evidence bar before adding LOW findings on adjacent concerns — extra findings on well-designed plans add noise even when correctly Weakened/Refuted
 - **Scope creep**: challenger reviews plan or diff provided — not broader codebase, unrelated tech debt, or hypothetical future requirements
 - **Silently skipping failed codex run**: if codex launch or output collection fails, set CODEX_FAILED and surface error verbatim in report — never omit without explanation
 - **Stopping at symptoms**: identifying surface-level issue without asking "what is root cause?" — incomplete; re-drill until bedrock

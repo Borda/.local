@@ -4,6 +4,7 @@ description: |
   Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, and function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
   TRIGGER when: user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of".
   SKIP: codemap index not built (skill self-checks and no-ops gracefully); simple grep would suffice; non-Python repo.
+when_to_use: "Use when searching or querying the codemap index for symbols, dependencies, or code patterns. Requires codemap to be initialized first."
 argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]>"
 allowed-tools: Bash, AskUserQuestion
 effort: low
@@ -87,7 +88,7 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 
 ## Budget and stop rules
 
-**Query budget**: max 3 calls per task. Stop after 3 even if not exhaustive — report what found. Exception: explicit exhaustive multi-target analysis requests — state exhaustive intent before first call, budget extends to 6.
+**Query budget**: max 3 calls per task. Stop after 3 even if not exhaustive — report what found. Exception: explicit exhaustive multi-target analysis requests — state exhaustive intent before first call, budget extends to 6. Declaring exhaustive intent after the first call has already been made is invalid — treat that run as non-exhaustive (budget=3).
 
 **exhaustive: true — STOP ALL TOOL CALLS:** When `rdeps` or `deps` result contains `"exhaustive": true`, list complete and authoritative for **unfiltered** index. Note: if `--exclude-tests` used, exhaustive reflects unfiltered coverage — filtered results may omit callers; state caveat if relevant. Write answer immediately. Do NOT call codemap again. Do NOT run grep, bash, or Glob passes to verify or extend. No exceptions.
 

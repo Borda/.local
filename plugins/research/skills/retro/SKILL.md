@@ -1,6 +1,6 @@
 ---
 name: retro
-description: "Post-run retrospective analysis of experiment history. Reads .experiments/ JSONL, computes statistical significance of improvements (Wilcoxon signed-rank), detects dead iterations, flags suspicious metric jumps, generates learning summary with next-hypothesis queue compatible with --hypothesis flag of research:run."
+description: "Post-run retrospective: reads .experiments/ JSONL, computes Wilcoxon significance, detects dead iterations, flags suspicious jumps, generates next-hypothesis queue for --hypothesis flag."
 argument-hint: "[<run-id>] [--compare <run-id-2>] [--threshold <delta>] [--alpha <significance>]"
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
@@ -101,6 +101,16 @@ Write results JSON to `$RUN_DIR/stats-results.json`. Execute script with `python
 ### Step T3: Dead iteration detection
 
 **Definition**: dead iteration window = 3+ consecutive iterations (any status) where `abs(metric_delta) < threshold` (default `--threshold 0.001`).
+
+**Scale check** (after loading baseline_metric in T1): if `baseline_metric > 100 * threshold`, print:
+```text
+! Threshold advisory: baseline_metric=[value] is >100x the default threshold (0.001).
+  For this metric scale, consider: --threshold [baseline_metric * 0.0001:.4f]
+  Proceeding with --threshold [threshold] — override with: /research:retro <run-id> --threshold <value>
+```
+Apply advisory threshold automatically only when `--threshold` not explicitly provided by user.
+
+**Timeout detection**: when scanning reverted iterations, check for `timeout:true` field. If present: classify as `timeout-as-revert` (see Notes). If field absent: flag any reverted iteration where `delta` is in the correct improvement direction (i.e., metric moved toward goal) as "possible timeout — verify commit [sha]"; do not count delta as valid.
 
 Scan `experiments.jsonl` sequentially, skipping iteration 0 (baseline). For each window of 3+ consecutive iterations where `abs(delta) < threshold`:
 
@@ -272,6 +282,8 @@ Next hypotheses queue: <RUN_DIR>/hypotheses.jsonl
 
 ## Confidence
 **Score**: 0.N — [high|moderate|low]
+**Finding confidence** (dead windows, suspicious jumps, classification errors, pattern detection): [high|moderate|low] — independent of statistical test availability
+**Statistical confidence** (Wilcoxon p-value): [available: p=X | unavailable: scipy not installed — descriptive stats only]
 **Gaps**:
 - [specific limitation]
 ```
@@ -312,5 +324,10 @@ Call `AskUserQuestion` tool after summary — do NOT write options as plain text
 - `--compare` requires both runs use same metric; if metric names differ, stop: `"Cannot compare runs with different metrics: <metric-1> vs <metric-2>"`
 - Dead iteration threshold (`--threshold`) should match metric's noise floor — default 0.001 for normalized metrics; adjust for raw values (e.g. `--threshold 0.1` for loss in hundreds)
 - Statistical tests assume metric values are independent samples — if iterations highly correlated (e.g. cumulative optimization), note limitation in report
+- **Named anomaly patterns** (use consistently across reports):
+  - `kept-regression`: a kept iteration where metric moved in wrong direction (positive delta for higher-is-better, negative delta for lower-is-better)
+  - `reverted-improvement`: a reverted iteration where metric moved in correct direction — reverted for non-metric reasons (performance, OOM, instability); flag as "improvement-when-reverted — consider revisiting with adjusted constraints"
+  - `timeout-as-revert`: a reverted iteration with `timeout:true` field — metric value unreliable; never count delta as valid improvement
+  - `config-repetition`: same agent + same file(s) attempted 3+ times without crossing threshold — flag as "repeated-failure pattern"
 
 </notes>

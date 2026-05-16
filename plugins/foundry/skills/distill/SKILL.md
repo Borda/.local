@@ -250,6 +250,10 @@ Thresholds:
 - **`→ agent/skill update`**: lesson applies specifically to one file's behavior and not yet there
 - **`→ already covered`**: exact principle including scope already in target file — mark and skip. Before marking, verify scope matches: same terminology does not imply same scope. If the lesson adds conditions not in the existing rule (new agent population, new trigger context, new edge case), classify as `→ rule` or `→ agent/skill update` instead.
 
+**Duplicate detection**: Before finalizing proposals, scan all lessons for identical insights expressed with different wording. When two or more lessons reduce to the same principle, consolidate into one entry — do not propose separate changes for duplicate lessons. Flag the consolidation explicitly in the proposals table.
+
+**Contradiction detection**: If two lessons make mutually exclusive claims about the same topic, flag both with ⚠ CONTRADICTION and do not classify either as → rule or → agent/skill update. Surface to user for resolution.
+
 **Step L3: Generate proposals**
 
 Produce structured proposal table. Do not apply anything yet — report first.
@@ -305,6 +309,8 @@ Produce structured proposal table. Do not apply anything yet — report first.
 ### Too Narrow (N) — keep in memory
 - L5: [lesson] → one-off, not generalizable
 ````
+
+**Agent/skill name verification**: For each → agent update and → skill update row, verify: (1) proposed target file/agent name matches the lesson content — if lesson mentions foundry:qa-specialist, target must be qa-specialist.md, not a different agent; (2) agent name is plugin-prefixed and exists in the roster from Step 1.
 
 **Step L4: Apply (with confirmation)**
 
@@ -363,6 +369,8 @@ git diff HEAD -- <space-separated list of changed files>  # timeout: 5000
 ```
 
 Print diff. If anything unexpected appears, revert individual files before proceeding: `git checkout HEAD -- <file>`. Final safety net — changes recoverable until committed.
+
+**Quality gate**: After edits in L4, proceed to L5 (`foundry:curator` review) before considering the lesson applied. For agent or skill file edits specifically (not rule files), treat L5 curator findings as advisory — address any structural issues found before finalizing.
 
 **Step L5: curator review** — after applying changes, dispatch curator to audit created and modified config files:
 

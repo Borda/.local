@@ -111,8 +111,10 @@ For each finding, produce:
 - paper_reference: exact quote or equation from paper
 - code_reference: file:line in codebase
 - match_status: MATCH | MISMATCH | PARTIAL | UNVERIFIABLE
+  - PARTIAL: use when claim is debatable — code implements a valid variant but not the exact paper formulation; include both interpretations in `detail`
 - severity: HIGH (would change results) | MEDIUM (affects reproducibility) | LOW (cosmetic)
 - detail: one-sentence explanation
+- fix: concrete one-line fix (e.g., "change `reduction='mean'` to `reduction='sum'`" or "set `bias=False`") — required for all MISMATCH and PARTIAL findings; omit only for MATCH and UNVERIFIABLE
 
 Also compute fidelity score: (MATCH + 0.5*PARTIAL) / total_verified_claims.
 

@@ -71,10 +71,12 @@ Usage: /research:sweep "goal description" [--flags]
 
 ### Step S2: Non-interactive plan
 
-Run plan mode steps P-P2 and P-P3 from `$_RESEARCH_SKILLS/plan/SKILL.md` (`$_RESEARCH_SKILLS` resolved above S1) (P-P0 skipped — `<goal>` always text string; P-P1 skipped — goal provided explicitly) with overrides:
+First, `Read $_RESEARCH_SKILLS/plan/SKILL.md` to load the plan mode step definitions, then execute steps P-P2 and P-P3 from `$_RESEARCH_SKILLS/plan/SKILL.md` (`$_RESEARCH_SKILLS` resolved above S1) (P-P0 skipped — `<goal>` always text string; P-P1 skipped — goal provided explicitly) with overrides:
 
 - **P-P2 (config presentation)**: Accept all auto-detected defaults without prompting. Print proposed config as informational block prefixed `sweep: auto-config →` — do NOT wait for confirmation.
 - If `--colab[=HW]` or `--compute=colab` passed, write `compute: colab` (and `colab_hw: <HW>` if provided) into Config block.
+- **scope_files**: derive from goal string — extract domain-relevant file patterns (e.g. goal mentioning "neural network" → `["*.py", "models/**", "train*.py"]`; goal mentioning "config" or "YAML" → `["*.yaml", "*.yml", "*.json"]`). Default `["**/*.py"]` only when goal provides no domain signals.
+- **agent_strategy**: set based on active flags — `--team` + `--architect` → `"dual-agent: researcher+architect"`; `--team` only → `"team"`; `--researcher` → `"researcher"`; none → `"default"`. Never leave `null` when flags are present.
 - **P-P3 (write program.md)**: Write to `<--out path>` if provided; else `program.md` at project root.
   - If output path exists: rename to `<path>.<UTC-ISO-safe (dashes)>.bak` (e.g., `program.md.2026-04-26T14-00-00Z.bak`), proceed — no confirmation in sweep mode. Timestamped suffix prevents overwrite on successive runs.
 
@@ -107,8 +109,8 @@ Repeat up to `MAX_REFINE` times:
 
    - If `REFINE_ITER < MAX_REFINE`:
      - Read `JUDGE_REPORT`. Extract `### Required Changes` section.
-     - Apply each fix to program file via Edit tool. Count as `N_FIXES`.
-     - Print: `sweep: applied N_FIXES fix(es) to <program path> — re-judging`
+     - If `### Required Changes` section absent: print `sweep: judge report missing Required Changes section — re-judging without edits` and continue loop (re-judge with unchanged file).
+     - If present: apply each fix to program file via Edit tool. Count applied fixes as `N_FIXES`. Print: `sweep: applied N_FIXES fix(es) to <program path> — re-judging`
      - Continue next iteration (loop item #1 will re-judge).
    - If `REFINE_ITER == MAX_REFINE` — exit loop, outcome `unresolved`.
 
@@ -133,7 +135,7 @@ Fix the issues above in <program path>, then:
 
 ### Step S5: Run
 
-Run Default Mode (R1–R7 from `$_RESEARCH_SKILLS/run/SKILL.md`) against program file from S2, passing all flags:
+Run Default Mode (R1–R7 from `$_RESEARCH_SKILLS/run/SKILL.md`) passing program file from S2 as the first positional argument, plus all flags:
 
 - `--colab[=HW]` / `--compute`
 - `--team`
@@ -158,5 +160,6 @@ sweep: complete — plan → judge → run pipeline finished
 - **`--journal` and `--hypothesis` not available in sweep**: require interactive setup and per-run state sweep cannot provide. Use `/research:run` directly.
 - **`--team` and interactivity**: sweep non-interactive except when `--team` active. Team mode Phase B presents user confirmation gate before Phase C — sweep pauses and waits. Expected; sweep cannot bypass Phase B gate.
 - **`--skip-validation`**: passes through to judge step (S3). Useful for cross-machine workflows where metric/guard commands run only on target machine.
+- **Metric direction conventions** (S2 auto-config): minimize for loss/error/latency metrics (loss, error_rate, mse, mae, latency, time); maximize for quality metrics (accuracy, f1, precision, recall, auc, throughput). When goal string is ambiguous, default to `minimize` and note assumption in config comment.
 
 </notes>

@@ -1,7 +1,7 @@
 ---
 name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop."
-argument-hint: "<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]"
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: medium
 when_to_use: "Use when specific bug known and reproducible; NOT for unknown failures without traceback (use debug) or adding new capabilities (use feature)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
@@ -22,7 +22,7 @@ NOT for:
 
 <workflow>
 
-<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -299,7 +299,15 @@ If issue found: revise test(s) before applying fix. Flawed reproduction = fix va
 
 ## Step 3: Apply the fix
 
-**Breaking change gate**: before applying fix, assess whether fix introduces a breaking change. If `oss` plugin available, read `$_OSS_SHARED/semver-rules.md` for semver classification guidance; otherwise use standard SemVer rules (fix→patch, feature→minor, breaking→major). Breaking change definition: worked before → fails/behaves differently now → no prior warning/shim. If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
+**Breaking change gate**: before applying fix, assess whether fix introduces a breaking change.
+
+```bash
+# Resolve oss plugin shared dir (undefined if oss plugin absent)
+_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
+[ -z "$_OSS_SHARED" ] && _OSS_SHARED=""  # oss plugin absent — semver-rules.md unavailable
+```
+
+If `oss` plugin available (i.e., `$_OSS_SHARED` non-empty), read `$_OSS_SHARED/semver-rules.md` for semver classification guidance; otherwise use standard SemVer rules (BREAKING = major bump, new feature = minor, fix = patch). Breaking change definition: worked before → fails/behaves differently now → no prior warning/shim. If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
 
 Make minimal change to fix root cause:
 

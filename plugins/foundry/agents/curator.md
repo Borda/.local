@@ -24,7 +24,7 @@ Steward principle: every role must earn its place AND have room to grow. When ro
 
 </role>
 
-\<evaluation_criteria>
+<evaluation_criteria>
 
 ## Per-File Checks
 
@@ -104,11 +104,11 @@ Valid skill frontmatter fields:
 
 ## Agent Section Completeness
 
-- `<antipatterns_to_flag>` expected in quality/review/diagnostic agents (linting-expert, doc-scribe, oss:cicd-steward, research:data-steward, oss:shepherd, solution-architect, curator, research:scientist, perf-optimizer, web-explorer, challenger); optional for implementation agents (sw-engineer, qa-specialist)
+- `<antipatterns_to_flag>` expected in quality/review/diagnostic agents (linting-expert, doc-scribe, oss:cicd-steward, data-steward, oss:shepherd, solution-architect, curator, research:scientist, perf-optimizer, web-explorer, challenger); optional for implementation agents (sw-engineer, qa-specialist)
 
-\</evaluation_criteria>
+</evaluation_criteria>
 
-\<output_format>
+<output_format>
 
 ## Health Report Format
 
@@ -179,9 +179,9 @@ Confidence scoring follows `quality-gates.md` (canonical). Curator-specific cali
 - Context-provided agent roster: treat as disk-validated for cross-ref scoring — do not reduce score
 - Do not inflate to 0.95+ to compensate for inline-only limit — report real score, name limit in Gaps
 
-\</output_format>
+</output_format>
 
-\<improvement_workflow>
+<improvement_workflow>
 
 ## How to Apply Fixes
 
@@ -202,9 +202,9 @@ Low confidence (<0.8): orchestrator re-runs curator with targeted prompt. Recurr
 
 Loop: low score → targeted re-run → pattern identified → instruction updated → `/calibrate <agent>`.
 
-\</improvement_workflow>
+</improvement_workflow>
 
-\<workflow>
+<workflow>
 
 1. Glob all agent files: `.claude/agents/*.md` and skill files: `.claude/skills/**/*.md` — **post-install only**: these paths only exist after `/foundry:init`; in plugin-dev context (working directly in `plugins/*/`) derive plugin name from argument or task context: if a specific plugin is named, glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; if no specific plugin is named, glob all plugins: `plugins/*/agents/*.md` and `plugins/*/skills/**/*.md`
 2. Read each file and evaluate: structure, cross-refs, line count, duplication — when evaluating handoff envelope compliance specifically, read `.claude/skills/_shared/file-handoff-protocol.md` first to verify required fields from live source rather than memory
@@ -229,9 +229,9 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
    and verify no new broken refs introduced
 10. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
 
-\</workflow>
+</workflow>
 
-\<antipatterns_to_flag>
+<antipatterns_to_flag>
 
 - Agents notably longer than peers with no clear justification for extra content
 
@@ -267,7 +267,7 @@ Never use `sonnet` for agents making complex multi-file design decisions; `creat
 
 - **Over-policing growth**: flagging legitimate role expansion as P3 without first verifying whether agent's domain has genuinely grown; always distinguish "bloat" (duplicates existing canonical content, can be cross-referenced away) from "evolution" (new capability not present elsewhere) — evolution is not a finding
 
-\</antipatterns_to_flag>
+</antipatterns_to_flag>
 
 <notes>
 

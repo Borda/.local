@@ -268,7 +268,23 @@ For each `no-<component>` variant with `status: "completed"`:
   - **CRITICAL**: importance > 50%
   - **SIGNIFICANT**: importance 10–50%
   - **MARGINAL**: importance < 10%
+**Sign convention check** — after computing signed_delta for all variants, verify:
+- For `direction == 'higher'`: all helpful components should have `signed_delta >= 0` (ablated metric < full)
+- For `direction == 'lower'`: all helpful components should have `signed_delta >= 0` (ablated metric > full; removing component worsened metric)
+- Any component where `signed_delta` has unexpected sign: flag explicitly in report as "sign anomaly — verify ablation ran correctly"
+
 - **Potentially Harmful** class: `signed_delta < -5%` — removing component IMPROVED metric. Surface in dedicated `Potentially Harmful Components` report section; not ranked in main table.
+
+**Borderline components** (CI spans zero): if a confidence interval is available and spans zero (includes both positive and negative values), do NOT classify as MARGINAL. Instead:
+- Add to a "Borderline Components" subsection in the F7 report
+- Note: "CI spans zero — component may be neutral or harmful; additional runs required before including in model"
+- Do not rank these in the main importance table; surface separately
+
+**Coupling check** — before sorting, scan the ablation candidates (from `ablation-candidates.jsonl`) for notes on architectural dependencies. For any pair where one component explicitly requires the other (noted in `description` field or `candidates-analysis.md`):
+- Mark both components in the ranking with `[COUPLED]` suffix
+- Add a note: "Independent ablation unreliable — recommend joint ablation of [A + B]"
+- Add to the "Skipped Variants" section: `joint-[A]-[B] — not run (joint ablation recommended)`
+- Surface as a `! WARNING` in the F7 report before the ranking table
 
 Sort by importance descending (helpful components only). Write to `$FORTIFY_DIR/importance-ranking.json` via Write tool — JSON array with fields: `rank`, `component`, `full_metric`, `ablated_metric`, `signed_delta_pct`, `importance_pct`, `class` (`CRITICAL`/`SIGNIFICANT`/`MARGINAL`/`HARMFUL`).
 
@@ -360,15 +376,18 @@ Full metric: <value> (expected from run: <best_metric>) — PASS | Warning MISMA
 |------|-----------|-------------|----------------|----------|------------|-------|
 | 1    | ...       | ...         | ...            | +X.X%    | X.X%       | CRITICAL |
 
-### Potentially Harmful Components
+### Potentially Harmful or Borderline Components
 
-Components whose removal **improved** the metric (signed_delta < −5%) — likely added noise or hurt performance.
+Components that either:
+- Improved the metric when removed (`signed_delta < -5%`) — **Potentially Harmful**
+- Have CI spanning zero — **Borderline** (insufficient evidence of contribution)
 
-| Component | Full Metric | Ablated Metric | Signed Δ |
-|-----------|-------------|----------------|----------|
-| ...       | ...         | ...            | −X.X%    |
+| Component | Full Metric | Ablated Metric | Signed Δ | Status |
+|-----------|-------------|----------------|----------|--------|
+| ...       | ...         | ...            | -X.X%    | Potentially Harmful |
+| ...       | ...         | CI [−a, +b]    | n/a      | Borderline |
 
-(Omit section entirely if no harmful components found.)
+(Omit section entirely if no harmful or borderline components found.)
 
 ### Ablation Matrix
 

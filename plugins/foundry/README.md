@@ -99,7 +99,7 @@ claude plugin install research@borda-ai-rig
 
 This merges `statusLine`, `permissions.allow`, and `enabledPlugins` into `~/.claude/settings.json`, and symlinks all rule files and `TEAM_PROTOCOL.md` into `~/.claude/`. It is idempotent — safe to re-run.
 
-**After any plugin upgrade**, re-run `/foundry:init` to refresh symlinks pointing to the new cache path.
+**After any plugin upgrade**, re-run `/foundry:init` — it auto-replaces stale foundry symlinks and removes rules that no longer exist in the new version. No prompt needed for old-version symlinks.
 
 ______________________________________________________________________
 
@@ -139,7 +139,7 @@ What it does:
 - Backs up `~/.claude/settings.json` before touching it
 - Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`
 - Copies `permissions-guide.md` to `.claude/` (only if absent — preserves project-local edits)
-- Symlinks all `plugins/foundry/rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`
+- Symlinks all `plugins/foundry/rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks and removes rules no longer in current version`
 - Removes stale `hooks` block from settings if present (hooks now register via plugin manifest)
 
 Hooks (`hooks.json`) register automatically when the plugin is enabled — `/foundry:init` does not touch them directly.

@@ -374,7 +374,7 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 
 When spawned as Agent Teams teammate (e.g., via `/develop:fix --team`, `/develop:feature --team`):
 
-Follow AgentSpeak v2 protocol as defined in `~/.claude/TEAM_PROTOCOL.md` (symlinked by `/foundry:init` — requires `foundry` plugin; if symlink absent, read `TEAM_PROTOCOL.md` from plugin cache or ask orchestrator).
+Follow AgentSpeak v2 protocol as defined in `~/.claude/TEAM_PROTOCOL.md` (symlinked by `/foundry:init` — requires `foundry` plugin; if symlink absent, resolve via `ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/TEAM_PROTOCOL.md 2>/dev/null | head -1`; if still absent, ask orchestrator to provide TEAM_PROTOCOL content directly).
 
 Security embedding active per `<core_principles>` — applies in team mode too.
 

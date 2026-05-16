@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Sustained metric-improvement loop with atomic commits, auto-rollback, and experiment logging. Iterates with specialist agents, commits atomically, auto-rolls back on regression. Accepts a program.md file path. Supports --resume, --team, --colab, --codex, --researcher, --architect, --journal, --hypothesis."
-argument-hint: "<program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>]>"
+argument-hint: "<program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -20,7 +20,7 @@ NOT for: methodology validation before run (use `/research:judge`); hypothesis g
 Campaign mode only:
 
 ```yaml
-MAX_ITERATIONS:             20 (ceiling: 50 — never exceed without explicit user override)
+MAX_ITERATIONS:             20 (hard cap for program.md config — values above 20 are silently clamped; ceiling: 50 — only reachable via explicit CLI override, not program.md config)
 MAX_CODEX_RUNS:             10 (cost ceiling for --codex Phase 2c — disable Codex once exceeded)
 STUCK_THRESHOLD:            5 consecutive discards → escalation
 GUARD_REWORK_MAX:           2 attempts before revert
@@ -196,7 +196,7 @@ Run all checks before touching code. Fail fast with clear message:
 8. **Flag conflict**: if `--colab` and `--compute=docker` both active: print `⚠ --colab and --compute=docker are mutually exclusive. Use one or the other.` and **stop**.
 9. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
 
-**`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:init` from foundry plugin to `.claude/skills/_shared/`). If not found:
+**`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:init` (requires `foundry` plugin) from foundry plugin to `.claude/skills/_shared/`). If not found:
 
 ```bash
 # codex-delegation.md is deployed by /foundry:init to .claude/skills/_shared/
@@ -615,10 +615,12 @@ Then re-run with --colab.
 - **Never `git add -A`** — always stage specific files returned by agent JSON.
 - **Never `--no-verify`** — if pre-commit hook blocks, delegate to `foundry:linting-expert` and fix.
 - **Guard ≠ Verify** — guard checks regressions (tests, lint); verify checks target metric. Both must pass to keep commit.
-- **Scope files read-only for guard/test files** — ideation agent must not modify test files or metric/guard scripts.
+- **metric_cmd exit code ignored** — R2 validates metric_cmd by parsing stdout for a float, not by checking exit code. Piping metric output through grep/awk/tr is acceptable; only the final stdout float matters.
+- **Guard/metric scripts protected** — ideation agent must not modify the files referenced in `guard_cmd` or `metric_cmd`; do not include them in `scope_files`. New test files may be created within `scope_files` for coverage improvement campaigns.
 - **JSONL over TSV** — richer structured fields, `jq`-parseable, no delimiter ambiguity; query with `jq -c 'select(.status == "kept")' experiments.jsonl`.
 - **State persistence enables resume** — if loop crashes/times out, `resume` picks up exactly where it stopped.
 - **Safety break**: max iterations = 20; skill never exceeds MAX_ITERATIONS without user override.
 - **Explicit flags = hard requirements**: all flags (`--colab`, `--compute=docker`, `--codex`, `--researcher`, `--architect`) must be available at R2. If unavailable, stop — never silently degrade.
+- R7 Codex delegation requires `/foundry:init` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `.claude/skills/_shared/`; R7 is silently skipped if absent.
 
 </notes>

@@ -6,8 +6,8 @@ paths:
 
 ## Before Editing
 
-- **Enter plan mode first** — triggers Opus via `opusplan`. **No exceptions**: typo fixes, single-step edits, "quick" changes all need plan mode. Global "3+ steps" threshold NOT apply here — any `.claude/` edit = non-trivial.
-- **Verify symlink target** — run `ls -la .claude/` before editing; symlinks must point to `plugins/foundry/` source; edit the source file, never the symlink destination outside the plugin tree
+- **STOP — do not open, read, or edit any file.** Enter plan mode first (`opusplan`). **No exceptions**: typo fixes, single-step edits, "quick" changes all require plan mode before any action. Global "3+ steps" threshold does NOT apply — any `.claude/` edit = non-trivial.
+- **Never edit `.claude/` paths directly.** Run `ls -la .claude/` first to identify the symlink target; all `.claude/` entries are symlinks into `plugins/foundry/`; edit only the source file under `plugins/foundry/`, never the `.claude/` symlink destination.
 
 ## After Any Change
 

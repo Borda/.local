@@ -456,7 +456,7 @@ After all sections approved: write to `.plans/blueprint/YYYY-MM-DD-<slug>.md` (n
 
 After writing spec, suggest:
 
-- **Spec targets `.claude/` config**: `/manage update <name> .plans/blueprint/<spec-file>` or `/manage create <type> <name> "description"`
+- **Spec targets `.claude/` config**: `/foundry:manage update <name> .plans/blueprint/<spec-file>` or `/foundry:manage create <type> <name> "description"`
 - **Spec targets application code or mixed changes**: `/brainstorm breakdown .plans/blueprint/<spec-file>` to generate action plan (action plan may emit `/develop:feature` and `/develop:fix` invocations — these require the `develop` plugin)
 
 ### Action plan mode (Status: draft)
@@ -471,7 +471,7 @@ For each blocking question: call `AskUserQuestion` — one at a time, in order. 
 
 1. Parse spec into discrete action items from "Proposed design" and "Success criteria"
 2. For each item, write ready-to-run invocation:
-   - `.claude/` config change → `/manage create <type> <name> "description"` or `/manage update <name> <spec-file>`
+   - `.claude/` config change → `/foundry:manage create <type> <name> "description"` or `/foundry:manage update <name> <spec-file>`
    - System install or shell setup → full shell command
    - Application code change → `/develop:feature "<goal>"` or `/develop:fix "<symptom>"` (requires `develop` plugin)
    - Documentation → `/develop:feature "<doc goal>"` (requires `develop` plugin)
@@ -518,7 +518,7 @@ End with `## Confidence` block per CLAUDE.md output standards.
 - **Exploration notes in spec**: Section 6 derived from tree's Pruning log — intentional context for future readers; do not remove in foundry:curator review
 - **Interaction budget**: idea mode — worst case: 13 (`--tight`) / 23 (default) / 33 (`--deep`) questions + operations + 3 approval cycles; breakdown distillation — max 5 questions + 6 section drafts ≈ 11; typical sessions use ~8–15 total AskUserQuestion calls across both
 - **Flag modes**: `--tight` / `--deep` scale question and operation caps (5/15 vs default 10); `--type` enables type-aware scan and question framing in Steps 1–2; flags apply to idea mode only, ignored in breakdown
-- **Follow-up**: after spec approval in distillation mode → if targeting `.claude/` config: `/manage update <name> <spec-file>`; for application or mixed changes: `/brainstorm breakdown .plans/blueprint/<spec-file>` for action plan
+- **Follow-up**: after spec approval in distillation mode → if targeting `.claude/` config: `/foundry:manage update <name> <spec-file>`; for application or mixed changes: `/brainstorm breakdown .plans/blueprint/<spec-file>` for action plan
 - **Rejected vs resolved distinction**: ⛔ marks branches dismissed as wrong direction; ✅ marks branch explicitly chosen as direction. Resolved branches do not count toward minimum-rejected-branches gate — they are the goal. Pruning log captures rejected only; resolved branches go in separate "Resolved branches" section.
 - **Idea stacking (g) vs pre-seeding exchange**: both are free-form tennis rallies but serve different purposes — pre-seeding runs once before branches exist to seed directions; idea stacking can be invoked at any point during tree ops when exploration feels stuck or half-formed thought needs to be batted around before committing to a branch. Neither consumes an operation slot.
 - **Confidence block**: idea mode is conversational session and produces a file (not an inline report) — Confidence block requirement from CLAUDE.md output standards applies to analysis responses only; omitted by design for Steps 1–6. foundry:curator spawn in Step 5 returns its own Confidence block, surfaced in review but not re-emitted to user.

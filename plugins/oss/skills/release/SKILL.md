@@ -1,6 +1,6 @@
 ---
 name: release
-description: "Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format). Trigger: \"prepare release\", \"write changelog\", \"what changed since v1.x\", \"prepare v2.0\", \"write release notes\", \"am I ready to release\", \"check release readiness\", or wants to announce version to users."
+description: "Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format)."
 argument-hint: "[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion
 model: sonnet
@@ -139,10 +139,13 @@ RANGE="${RANGE/->/../}"
 
 ## Shared setup
 
-# Cold-start fallback (sets $_OSS_SHARED — run this first):
+Run this first — cold-start fallback (sets `$_OSS_SHARED`):
+
+```bash
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
+```
 
 ```bash
 # Resolve skill directory — used by all modes for templates and guidelines
@@ -242,15 +245,15 @@ Section order (fixed — never reorder): 🚀 Added → ⚠️ Breaking Changes 
 | **Deprecations** | 🗑️ Deprecated | Old API **still works** this release but scheduled for removal — emits warning, replacement exists |
 | **Removals** | ❌ Removed | Previously deprecated API now gone — marked 🗑️ Deprecated in prior release, users had warning. Not ⚠️ Breaking Changes. |
 | **Bug Fixes** | 🔧 Fixed | Correctness fixes |
-| **Security** | 🔒 Security | Security fixes and vulnerability patches — omit CVE numbers in public notes; link to advisory if public |
+| **Security** | 🔒 Security | Security fixes and vulnerability patches — omit CVE numbers in public notes; link to advisory if public. Also classify here: any fix whose commit body contains security-intent keywords ("security hardening", "timing attack", "side-channel", "exploitable", "vulnerability", "injection", "mitigation") regardless of CVE assignment or `fix:` commit type prefix. Dependency updates that address a CVE belong here — OMIT-INTERNAL does NOT apply to security fixes regardless of "no logic changes" or "no code changes" body signals. |
 | **Internal** | *(omit)* | Refactors, CI/tooling, deps, code cleanup, developer-facing housekeeping — omit unless directly user-impacting |
 | **Reverted** | 🔄 Reverted | Introduced AND reverted within range (REVERT_SET pairs) — net effect zero; list as "Reverted: <original description>"; do NOT classify original in any other section; omit from highlights, demo, migration guide |
 
 **Self-correction discipline**: if classification revised during self-review, present only final corrected table — do not show intermediate wrong classifications. Single authoritative table expected.
 
-**Breaking vs Deprecated vs Removed**: old call still works (even with warning) → Deprecated, never Breaking. API deprecated in prior release and now removed → Removed, never Breaking — users had fair warning. Breaking = upgrade causes immediate failures with **no prior deprecation period** between two consecutive versions.
+**Breaking vs Deprecated vs Removed**: old call still works (even with warning) → Deprecated, never Breaking. API deprecated in prior release and now removed → Removed, never Breaking — users had fair warning. Breaking = upgrade causes immediate failures with **no prior deprecation period** between two consecutive versions. **Prior-deprecation body-signal**: if commit body contains "deprecated in vX", "previously deprecated", "was deprecated", "emits DeprecationWarning since", or "deprecated since" — treat as Removed regardless of `feat!:` or `BREAKING CHANGE:` markers; cross-version deprecation history in body overrides commit type prefix. **Bug fixed to match documented spec**: if behavior changes from buggy to correct (matching docs) but users relied on the buggy behavior, classify as 🌱 Changed (not 🔧 Fixed) and note the behavioral impact explicitly — use ⚠️ Breaking Changes only if the bug was load-bearing and fixing it causes widespread breakage.
 
-**OMIT-INTERNAL body-signal override**: if commit body contains any of — "No code changes", "no user-facing changes", "internal only", "no public API changes" — OR all changed file paths restricted to `.github/`, `ci/`, `scripts/`, `Makefile`, `*.yml` under `.github/` — classify as Internal regardless of `fix:`, `feat:`, `chore:` conventional commit prefix. Conventional commit type is a hint, not a classification gate.
+**OMIT-INTERNAL body-signal override**: if commit body contains any of — "No code changes", "no user-facing changes", "internal only", "no public API changes", "internal buffer changes only", "internal restructure" — OR all changed file paths restricted to `.github/`, `ci/`, `scripts/`, `Makefile`, `*.yml` under `.github/` — classify as Internal regardless of `fix:`, `feat:`, `perf:`, `chore:` conventional commit prefix. For `perf:` commits: if body contains unsubstantiated language ("should be faster", "might improve", "potentially") without a benchmark artifact reference, rewrite claim to "improved X performance" without number rather than including the unsubstantiated claim verbatim. Conventional commit type is a hint, not a classification gate. **Exception**: BREAKING CHANGE footer or confirmed user-visible breakage always overrides OMIT-INTERNAL — "Always include: breaking changes" takes priority over body-signal omission.
 
 Filter out: merge commits, minor dep bumps, CI/tooling config, comment typos, internal refactors, code cleanup, internal-only dep bumps, developer housekeeping, no-user-impact changes. **Never include internal staff names or internal maintenance details in public-facing output.** Always include: breaking changes, behavior changes, new API surface.
 

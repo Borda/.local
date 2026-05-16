@@ -210,7 +210,33 @@ Ensure target dir exists:
 mkdir -p ~/.claude/rules  # timeout: 5000
 ```
 
-**Conflict scan** — identify rule files and TEAM_PROTOCOL.md existing in `~/.claude/` as real files or symlinks pointing elsewhere:
+**Phase 1 — Remove obsolete foundry-managed symlinks** (file removed from current plugin version, or dangling target):
+
+```bash
+# timeout: 15000
+for dest in "$HOME/.claude/rules/"*.md; do
+    [ -L "$dest" ] || continue
+    target=$(readlink "$dest")
+    echo "$target" | grep -q "borda-ai-rig/foundry/" || continue  # not foundry-managed — skip
+    echo "$target" | grep -q "$PLUGIN_ROOT" && continue           # already current — skip
+    base=$(basename "$dest")
+    if [ ! -f "$PLUGIN_ROOT/rules/$base" ]; then
+        rm "$dest"
+        printf "  removed obsolete: %s\n" "$base"
+    fi
+done
+if [ -L "$HOME/.claude/TEAM_PROTOCOL.md" ]; then
+    target=$(readlink "$HOME/.claude/TEAM_PROTOCOL.md")
+    if echo "$target" | grep -q "borda-ai-rig/foundry/" \
+    && ! echo "$target" | grep -q "$PLUGIN_ROOT" \
+    && [ ! -f "$PLUGIN_ROOT/TEAM_PROTOCOL.md" ]; then
+        rm "$HOME/.claude/TEAM_PROTOCOL.md"
+        printf "  removed obsolete: TEAM_PROTOCOL.md\n"
+    fi
+fi
+```
+
+**Phase 2 — Conflict scan** — identify entries needing user confirmation. Stale foundry symlinks (old version → current) are auto-replaced in Phase 3 without prompt:
 
 ```bash
 LINK_CONFLICTS=()
@@ -219,7 +245,13 @@ for src in "$PLUGIN_ROOT/rules/"*.md; do
     dest="$HOME/.claude/rules/$(basename "$src")"
     if [ -L "$dest" ]; then
         target=$(readlink "$dest")
-        echo "$target" | grep -q "$PLUGIN_ROOT" || LINK_CONFLICTS+=("rules/$(basename "$src") → $target")
+        if echo "$target" | grep -q "$PLUGIN_ROOT"; then
+            : # current — skip
+        elif echo "$target" | grep -q "borda-ai-rig/foundry/"; then
+            : # stale foundry version — auto-replace in Phase 3 (no prompt)
+        else
+            LINK_CONFLICTS+=("rules/$(basename "$src") → $target")
+        fi
     elif [ -f "$dest" ]; then
         LINK_CONFLICTS+=("rules/$(basename "$src")  (real file)")
     fi
@@ -227,13 +259,21 @@ done
 src="$PLUGIN_ROOT/TEAM_PROTOCOL.md"; dest="$HOME/.claude/TEAM_PROTOCOL.md"
 if [ -L "$dest" ]; then
     target=$(readlink "$dest")
-    echo "$target" | grep -q "$PLUGIN_ROOT" || LINK_CONFLICTS+=("TEAM_PROTOCOL.md → $target")
+    if echo "$target" | grep -q "$PLUGIN_ROOT"; then
+        : # current — skip
+    elif echo "$target" | grep -q "borda-ai-rig/foundry/"; then
+        : # stale foundry version — auto-replace in Phase 3 (no prompt)
+    else
+        LINK_CONFLICTS+=("TEAM_PROTOCOL.md → $target")
+    fi
 elif [ -f "$dest" ]; then
     LINK_CONFLICTS+=("TEAM_PROTOCOL.md  (real file)")
 fi
 ```
 
-If conflicts exist:
+**Phase 3 — Handle remaining conflicts** (real files or symlinks to non-foundry paths):
+
+If `$LINK_CONFLICTS` empty: skip to Phase 4.
 
 If `APPROVE_ALL=true`: print `[--approve] auto-accepting: replace all symlink conflicts` and replace all (apply option a below). # --approve mode: auto-accept all conflicts; AskUserQuestion skipped
 
@@ -253,7 +293,7 @@ Options:
 
 On **c**: loop with `AskUserQuestion` — "Replace `<name>`? (y) Yes / (n) Skip".
 
-**Symlink** — for each approved or absent entry, `ln -sf` creates/replaces:
+**Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently):
 
 ```bash
 for src in "$PLUGIN_ROOT/rules/"*.md; do
@@ -271,11 +311,10 @@ Print summary:
 - statusLine: set / skipped
 - permissions.allow: N entries added
 - enabledPlugins: set / skipped
+- Rules removed obsolete: N (files no longer in current plugin version)
 - Rules linked: N → ~/.claude/rules/
 - TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
 - Backup at: ~/.claude/settings.json.bak
-
-Suggest: "Re-run `/foundry:init` after any plugin upgrade to refresh symlinks to new cache path."
 
 </workflow>
 
@@ -283,6 +322,6 @@ Suggest: "Re-run `/foundry:init` after any plugin upgrade to refresh symlinks to
 
 **Follow-up gate omitted** — init is a one-shot setup skill; no iterative follow-up action applies. Step 10 summary is the terminal output; no `AskUserQuestion` gate required.
 
-**Testing init changes**: Init skill has no `.claude/skills/init` entry — only reachable as `/foundry:init` after plugin installed. To test: bump `version` in `plugins/foundry/.claude-plugin/plugin.json`, run `claude plugin install foundry@borda-ai-rig` from repo root to refresh cache, invoke `/foundry:init`. **Upgrade path**: After `claude plugin install foundry@borda-ai-rig` upgrades version, symlinks point to old cache path. Re-run `/foundry:init` — Step 9 detects stale symlinks as conflicts and replaces them.
+**Testing init changes**: Init skill has no `.claude/skills/init` entry — only reachable as `/foundry:init` after plugin installed. To test: bump `version` in `plugins/foundry/.claude-plugin/plugin.json`, run `claude plugin install foundry@borda-ai-rig` from repo root to refresh cache, invoke `/foundry:init`. **Upgrade path**: After `claude plugin install foundry@borda-ai-rig` upgrades version, re-run `/foundry:init` — Step 9 Phase 1 removes rules that no longer exist in new version; Phase 2–4 auto-replaces stale foundry symlinks without prompting; real-file and non-foundry-path conflicts still surfaced for user review.
 
 </notes>

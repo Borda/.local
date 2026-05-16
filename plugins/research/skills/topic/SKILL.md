@@ -157,6 +157,7 @@ Path:        → .reports/research/topic-<branch>-<date>.md
 
 ### Agent Confidence
 <!-- One row per spawned agent; team mode: 2–3 rows -->
+<!-- Emit only rows for agents actually spawned — omit researcher-2 and researcher-3 rows in single-agent mode -->
 | Agent | Score | Gaps |
 |---|---|---|
 | researcher-1 | [score] | [gaps] |
@@ -206,7 +207,7 @@ Trigger when: 3+ distinct method families exist AND field has no clear leading m
 Pre-compute before spawning:
 
 ```bash
-TEAM_PROTOCOL_PATH="$HOME/.claude/TEAM_PROTOCOL.md"  # timeout: 3000
+TEAM_PROTOCOL_PATH="$HOME/.claude/TEAM_PROTOCOL.md"
 ```
 
 **Spawn prompt template:**
@@ -214,7 +215,7 @@ TEAM_PROTOCOL_PATH="$HOME/.claude/TEAM_PROTOCOL.md"  # timeout: 3000
 ```markdown
 # Substitute pre-computed values — do not pass raw $(date) expressions or shell vars into spawn prompts
 You are an researcher teammate researching: [topic].
-Read $TEAM_PROTOCOL_PATH — use AgentSpeak v2 for inter-agent messages.
+Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
 Your cluster: [method family N] (e.g., "attention-free architectures" vs "linear attention variants").
 Research the top 3 methods in your cluster: comparison table + recommendation given constraints.
 Write your full findings (comparison table, analysis, Confidence block) to `.temp/output-research-<teammate-name>-$BRANCH-$SPAWN_DATE.md` using the Write tool.

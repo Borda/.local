@@ -5,7 +5,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch
 model: haiku
 effort: medium
 memory: project
-color: lime
+color: teal
 ---
 
 <role>
@@ -203,37 +203,8 @@ For CI quality gate workflow YAML, see `oss:cicd-steward` (requires `oss` plugin
 Most common violations — missing return types, `Optional` vs `| None` (UP007), `Any` in strict mode, B006 mutable default arg, E711/E712 identity comparisons — auto-fixable via `ruff check . --fix` and `mypy --strict`.
 Non-obvious cases worth keeping inline:
 
-## B006 — Mutable default argument
-
-```python
-# Before (B006: Do not use mutable data structures for argument defaults)
-def process(items: list = []) -> list:
-    items.append(1)
-    return items
-
-# After
-def process(items: list | None = None) -> list:
-    if items is None:
-        items = []
-    items.append(1)
-    return items
-```
-
-## E711 / E712 — Identity comparison violations
-
-```python
-# Before (E711: comparison to None; E712: comparison to True/False)
-if result == None:  # E711 — bypasses __eq__; use `is None`
-    ...
-if flag == True:    # E712 — use `if flag:` or `if flag is True:`
-    ...
-
-# After
-if result is None:
-    ...
-if flag:
-    ...
-```
+- **B006** — mutable default argument (e.g., `def f(x=[]):`); ruff auto-fixes with `ruff --fix`.
+- **E711/E712** — comparison to None/True/False using `==`/`!=`; ruff auto-fixes with `ruff --fix`.
 
 ## `__init__` return type
 
@@ -353,7 +324,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
 
 **Model note**: `haiku` handles straightforward rule configs and deterministic violations well. If annotation-gap detection returns incomplete results or complex type inference gaps are missed, re-run with `model: sonnet`.
 
-**Auto-escalation**: when dispatched with "add annotations" or "annotate" in the prompt and initial results are incomplete, re-dispatch with `model: sonnet` for reliable annotation coverage. Do not silently produce incomplete results — escalate before returning.
+**Auto-escalation**: when dispatched with "add annotations" or "annotate" in the prompt and initial results are incomplete, signal the orchestrator to re-spawn `foundry:linting-expert` with `model: sonnet` for a focused follow-up pass. Do not silently produce incomplete results — escalate before returning.
 
 **Confidence calibration**: tier by finding type —
 - Unambiguous violations (F401 unused import, missing return annotation, incompatible return): score ≥0.90

@@ -123,7 +123,11 @@ created: YYYY-MM-DD
 ```
 
 - Confirm file path to user.
-- End with: "Spawn `foundry:creator` agent with the outline file path to generate the complete [format] (Claude dispatches via the Agent tool with `subagent_type=\"foundry:creator\"`)."
+- End with an `AskUserQuestion` gate with two options:
+  (a) **Generate the full artifact now** — spawn `foundry:creator` via `Agent(subagent_type='foundry:creator', prompt='Read .plans/content/<slug>-outline.md and generate the complete [format] artifact. Output file path: .plans/content/<slug>.<ext>')` where slug and format come from the generated outline.
+  (b) **Stop here** — I'll invoke `foundry:creator` manually when ready.
+
+  If the user selects (a), issue the Agent() call in the same response turn. Do not narrate intent — call the tool.
 - End with `## Confidence` block per quality-gates.md protocol, score based on outline coverage of topic, arc, audience.
 
 </workflow>

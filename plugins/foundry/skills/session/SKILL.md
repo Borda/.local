@@ -178,15 +178,15 @@ End with `## Confidence` block per quality-gates.md — score based on match qua
 
 ## Step 3 / Mode: summary (session digest)
 
-#### S1: Collect completed tasks
+### S1: Collect completed tasks
 
 Call TaskList (or use TaskCreate/TaskUpdate context) to get tasks with status `completed` from this session. Extract subject lines.
 
-#### S2: Collect parked items
+### S2: Collect parked items
 
 Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with pattern `session-open-*.md` in MEMORY_DIR to list candidates. Read each matched file with Read tool for `name` and `description`.
 
-#### S3: Collect recent git commits
+### S3: Collect recent git commits
 
 ```bash
 OS=$(uname -s)
@@ -194,13 +194,13 @@ SINCE=$([ "$OS" = "Darwin" ] && date -u -v-8H '+%Y-%m-%dT%H:%M:%SZ' || date -u -
 git log --oneline --since="$SINCE" | head -20 || true # timeout: 3000 — empty result acceptable (no commits in window)
 ```
 
-#### S4: Collect archived items from this session
+### S4: Collect archived items from this session
 
 Use Read tool with `limit=20` on `.claude/logs/session-archive.jsonl` (skip if file does not exist).
 
 Filter entries with `ts` matching today's date.
 
-#### S5: Compose and route the digest
+### S5: Compose and route the digest
 
 Draft digest:
 

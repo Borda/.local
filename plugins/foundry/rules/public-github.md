@@ -37,5 +37,5 @@ Any write command on any public/external GitHub repo **permanently forbidden**, 
 
 Interpret as: **draft X for user review**.
 - Show draft in terminal
-- Invoke `AskUserQuestion` tool for explicit confirmation before any external action — prose confirmation not sufficient
+- Call the `AskUserQuestion` tool before any external GitHub action — the tool call must appear in the response. Prose questions ("Should I post this?") and bracketed simulations ("[AskUserQuestion would be invoked here]") do not satisfy this requirement; only an actual tool invocation does.
 - Never delegate to agent assuming it will ask

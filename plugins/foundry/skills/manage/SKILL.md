@@ -29,7 +29,6 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
   - `add perm <rule> "description" "use case"` — add permission to settings.json allow list and permissions-guide.md
   - `remove perm <rule>` — remove permission from settings.json allow list and permissions-guide.md
 
-**NOT for**: validation/quality audit of existing agents/skills (use /foundry:audit); implementing code changes (use develop:feature or develop:fix).
 - Names must be **kebab-case** (lowercase, hyphens only)
 - Descriptions must be quoted when containing spaces
 - Permission rules use Claude Code format: `WebSearch`, `Bash(cmd:*)`, `WebFetch(domain:example.com)`
@@ -198,7 +197,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
    - `opusplan` — plan-gated roles (solution-architect, oss:shepherd, foundry:curator)
    - `opus` — complex implementation roles (foundry:sw-engineer, foundry:qa-specialist, research:scientist, foundry:perf-optimizer)
    - `sonnet` — focused execution roles (research:data-steward, foundry:web-explorer, foundry:doc-scribe, oss:cicd-steward)
-   - `haiku` — high-frequency diagnostics roles (linting-expert)
+   - `haiku` — high-frequency diagnostics ONLY (e.g. linting-expert); NOT for analysis/auditing roles that require substantive reasoning
 
 4. Resolve template path:
 
@@ -296,17 +295,20 @@ Atomic rename — create new directory before removing old:
 
 1. Create new directory:
 
-```bash
-mkdir -p .claude/skills/<new-name>  # timeout: 5000
-```
+    ```bash
+    mkdir -p .claude/skills/<new-name>  # timeout: 5000
+    ```
 
 2. Read old SKILL.md, update `name:` line in frontmatter, Write to new location.
+
+   > After updating `name:` in frontmatter: also scan the new SKILL.md body for TRIGGER conditions, NOT-for lines, and example invocations that still reference the old skill name — update those inline with Edit tool before proceeding to Step 5.
+
 3. Verify new file exists: `Read(file_path=".claude/skills/<new-name>/SKILL.md", limit=5)`
 
-```bash
-# 4. Remove old directory only after new is confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
-rm -r .claude/skills/<old-name>  # timeout: 5000
-```
+    ```bash
+    # 4. Remove old directory only after new is confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
+    rm -r .claude/skills/<old-name>  # timeout: 5000
+    ```
 
 ### Mode: Delete Agent
 
@@ -600,7 +602,7 @@ Use Edit tool with **absolute auto-memory path** to update these roster lines in
 
 Keep descriptions concise (one line), consistent in tone with surrounding rows. Do not add/remove table columns.
 
-**For content-edit (agent/skill):** Update README only if description changed.
+**For content-edit (agent/skill):** Update README if description OR model field changed. Model changes update the Model column only; description changes update the description column.
 
 ## Step 8: Verify integrity
 

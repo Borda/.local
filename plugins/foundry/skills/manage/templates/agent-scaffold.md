@@ -29,3 +29,10 @@ name / description / tools / model / color (frontmatter)
 - Web-research agents (e.g., `foundry:web-explorer`, `research:scientist`): include `WebFetch` and/or `WebSearch`
 
 Drop tools with no purpose for declared domain. Minimal precise list beats maximal.
+
+**NOT-for clause requirement**: Every agent must include a NOT-for clause specifying:
+1. What use cases this agent does NOT handle
+2. Which specific alternative agent handles each excluded case
+   - Example: "NOT for fixing vulnerabilities — use develop:fix"
+   - Example: "NOT for generating reports — use foundry:doc-scribe"
+   - Never: "NOT for X" without naming an alternative

@@ -1,18 +1,18 @@
 ---
 name: review
-description: "Multi-agent code review of GitHub Pull Requests (Python PRs only) covering architecture, tests, performance, docs, lint, security, and API design."
+description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design."
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
 model: sonnet
 effort: high
-when_to_use: "Use when the user asks to review a GitHub Pull Request (Python PRs only), wants multi-agent code review feedback, or needs a structured review with severity-graded findings."
+when_to_use: "Use when the user asks to review a GitHub Pull Request (Python source, documentation (Markdown/RST), and CI/CD config PRs), wants multi-agent code review feedback, or needs a structured review with severity-graded findings."
 ---
 
 <objective>
 
 Spawn specialized sub-agents in parallel. Consolidate findings into structured feedback with severity levels.
 
-NOT for local file review or current git diff — use `/develop:review` (requires `develop` plugin). NOT for non-Python PRs (TypeScript, Go, etc.) — state out of scope, stop. NOT for standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
+NOT for local file review or current git diff — use `/develop:review` (requires `develop` plugin). NOT for non-Python source PRs (TypeScript, Go, Rust, etc.) unless they include Python files — docs-only and CI/CD-only PRs are in scope. NOT for standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
 
 </objective>
 
@@ -356,7 +356,7 @@ ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_
 Run these two checks concurrently with Step 2 agent execution:
 
 ```bash
-TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}') # timeout: 6000  # shared by 4a and 4b
+TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}') # timeout: 6000  # shared by 3a and 3b
 
 # Shallow-clone guard: git merge-base fails silently on shallow clones, returning empty output
 # that looks like "nothing changed" — causes false-negative in security scan and ecosystem check.
@@ -368,7 +368,7 @@ fi
 PR_BASE=$(git merge-base HEAD "origin/${TRUNK:-main}" 2>/dev/null || echo "origin/${TRUNK:-main}")
 ```
 
-### 4a: Ecosystem impact check (for libraries with downstream users)
+### 3a: Ecosystem impact check (for libraries with downstream users)
 
 > **Scope disclosure**: check searches public GitHub code globally. Results may include unrelated projects using same symbol names — treat as signal, not proof. Rate-limited responses (HTTP 429, empty results) may indicate limitation, not absence of usage.
 
@@ -387,7 +387,7 @@ done
 git diff $PR_BASE HEAD | grep -A2 "deprecated" # timeout: 3000
 ```
 
-### 4b: OSS checks
+### 3b: OSS checks
 
 ```bash
 # Check for new dependencies — license compatibility

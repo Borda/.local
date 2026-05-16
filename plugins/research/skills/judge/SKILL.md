@@ -78,19 +78,33 @@ Check 12 items. Produce findings list with severity. Each finding has: `id`, `ch
 | C1 | `## Goal` present and non-empty | critical | Campaign cannot run without a goal |
 | C2 | `## Metric` has `command` field | critical | No metric = no feedback loop |
 | C3 | `## Metric` has `direction` field (higher/lower) | critical | Cannot decide keep/revert without direction |
-| C4 | `## Guard` has `command` field | critical | Without guard, regressions go undetected |
+| C4 | `## Guard` has `command` field | critical | Without guard, regressions go undetected. Note: a command field containing only `echo 0`, `true`, or `exit 0` is equivalent to no guard (always exits 0 regardless of test state) — flag as critical with detail "guard command is a no-op; add real regression detection". |
 | C5 | `scope_files` present in `## Config` | high | Without scope, ideation agent modifies arbitrary files |
 | C6 | Each `scope_files` path exists on disk (glob match) | high | Non-matching patterns = ideation agent has nothing to work with. If filesystem unavailable, flag `warn` unless path name signals non-existence (e.g., `nonexistent`, `placeholder`, `todo`, `legacy_v1`, `deprecated`, `old`, `removed`). |
 | C7 | `target` set in `## Metric` | medium | Without target, campaign runs to max_iterations — may waste compute |
-| C8 | `max_iterations` in bounds (1–50) | medium | Missing defaults to 20 (acceptable); >50 violates SKILL.md constants |
+| C8 | `max_iterations` in bounds (1–50) | medium | Missing defaults to 20 (acceptable); >50 violates SKILL.md constants. Additionally: if value is within bounds but >20 AND combined with risk factors (C4 fails / guard empty, OR C6 fails / scope non-existent), add a separate `low` finding: "max_iterations=N is elevated; with no functioning guard/scope, runaway iterations amplify risk — consider reducing to ≤15 until guard/scope is fixed" |
 | C9 | `agent_strategy` is valid (`auto`/`perf`/`code`/`ml`/`arch`) | medium | Invalid value silently falls back to `auto` |
 | C10 | `compute` is valid (`local`/`colab`/`docker`) | low | Invalid defaults to `local` |
 | C11 | `colab_hw` valid (if present) | low | `colab_hw` absent OR is one of `H100, L4, T4, A100` — fail detail: `"colab_hw '<value>' is not in known set {H100, L4, T4, A100} — may cause GPU identity check failure in run mode"` |
 | C12 | `## Notes` section present | low | Notes optional but improve ideation quality |
 
-**Severity summary**: count findings per severity. Any critical finding = verdict cannot be APPROVED.
+**Scope adequacy sub-rule (C6b)** — after C6 passes, assess whether `scope_files` is *sufficient* for the stated goal. If the goal type implies known bottleneck locations outside the declared scope, add a `medium` finding:
+- Test-speed goal + scope limited to `tests/` only → flag: "conftest.py, fixtures, and test infrastructure outside tests/ are common levers for test runtime; scope may be too narrow"
+- Throughput/latency goal + scope limited to single-layer path (e.g., `src/serving/`) → flag: "serving bottlenecks often span middleware, connection pooling, or database layers outside declared scope"
+- Any goal where the stated scope excludes a widely-known dependency class → emit medium finding with location `## Config / scope_files`, suggested broader pattern as fix
+
+This is distinct from C6 (path existence) — C6b fires even when the path exists but is likely insufficient.
+
+**Severity summary**: count findings per severity. Any critical finding = verdict cannot be APPROVED. **Enumeration rule**: check ALL 12 items before stopping — do not short-circuit after finding the first critical issue. A program.md can have multiple independent flaws across different severity levels; the Required Changes section must list all of them, not just the verdict-determining one.
 
 **Placeholder token check (C2, C4 sub-rule)** — after confirming `command` present in `## Metric` (C2) and `## Guard` (C4), scan each command for `{...}` tokens. Verify each token's field name exists in `## Config`. Token with no matching field = unresolvable — add `high` finding. Don't flag `{field_name}` tokens as malformed; valid when resolvable.
+
+**Goodhart's Law check (C2b)** — after confirming metric `command` present (C2 passes), assess whether the command operationalizes the stated `## Goal` or measures a proxy. If the metric could improve while the actual goal is NOT achieved, add a `critical` finding:
+- metric measures test pass rate but goal is latency reduction → critical: "metric is a correctness proxy, not a latency measure"
+- metric measures lint error count but goal is bug density reduction → critical: "pylint score is a gameable proxy; agent can suppress warnings without improving actual quality"
+- metric measures a format/style score but goal is functional improvement → critical: "metric does not operationalize the stated goal"
+
+Goodhart findings are `critical` (not just methodology notes) because a broken metric invalidates the entire feedback loop — equivalent impact to C2 (missing command).
 
 **Command feasibility**: J2 validates command fields statically (presence, format). Executability deferred to J4. If `$SKIP_VALIDATION` is `true`, J4 skipped, commands unverified — report as "validation skipped — commands unverified."
 
@@ -129,7 +143,7 @@ Review the experimental protocol across seven dimensions:
 
 1. **Hypothesis clarity**: Is the `## Goal` a clear, testable hypothesis? Can you tell what constitutes success vs failure? Vague goals produce unfocused experiments — flag if the hypothesis is ambiguous.
 2. **Measurement validity**: Does `<metric_cmd>` correctly operationalize the hypothesis? Does it measure what the goal actually intends? Could the metric move in the right direction while the underlying goal is NOT achieved (Goodhart's Law)? Could noise dominate signal at the expected delta scale?
-3. **Control adequacy**: Does `<guard_cmd>` serve as a valid control condition? Does it catch regressions that an ideation agent could inadvertently introduce? Is it too strict (would block valid improvements) or too permissive (would miss real breakage)?
+3. **Control adequacy**: Does `<guard_cmd>` serve as a valid control condition? Does it catch regressions that an ideation agent could inadvertently introduce? Is it too strict (would block valid improvements) or too permissive (would miss real breakage)? **Exit-code check**: verify that the guard command's exit code actually depends on test outcomes. Commands using awk with print (not exit), grep -c piped to a shell ignoring the count, or other patterns where exit code is always 0 = critical guard flaw regardless of semantic intent. Flag as critical, not medium.
 4. **Experimental scope**: Do the `scope_files` define a coherent experimental boundary? Are there known dependencies outside scope that could confound results? Is the scope too broad (unfocused changes) or too narrow (the real lever is outside scope)?
 5. **Protocol consistency**: Is `agent_strategy: <strategy>` logically consistent with the hypothesis type? (e.g., using `perf` strategy to improve code quality is a methodology mismatch — flag it)
 6. **Stopping criteria**: Is the termination condition well-defined? A missing `target` means the experiment runs until budget exhaustion — flag if the goal implies a natural stopping point that is not encoded.
