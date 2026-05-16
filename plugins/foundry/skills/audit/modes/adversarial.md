@@ -13,7 +13,7 @@ Adversarial review of all agents + skills in scope. Runs parallel with or after 
 For each file in scope (Step 2 inventory; default all agents + skills if no explicit scope), spawn **foundry:challenger**:
 
 > "Adversarially challenge this agent/skill. Do NOT accept claims at face value. Find: (1) unstated assumptions that will fail in edge cases, (2) NOT-for coverage gaps — tasks this agent will wrongly accept because exclusions are incomplete, (3) conflicting instructions that produce non-deterministic or contradictory behavior, (4) workflow steps that would route to the wrong sub-agent for the stated goal, (5) implicit scope that contradicts explicit NOT-for lines. Report every finding with specific evidence from the file."
-> Write full findings to `<RUN_DIR>/challenger-<file-basename>.md`. Return ONLY: `{"status":"done","file":"<path>","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N}`
+> Write full findings to `<RUN_DIR>/challenger-<file-slug>.md` where `<file-slug>` = `<plugin>-<skill-dir-name>` for skills or `<plugin>-<agent-name>` for agents (e.g. `foundry-audit`, `oss-review`, `foundry-curator`); `.claude/` files prefix `local`. Never use bare `challenger-SKILL.md`. Return ONLY: `{"status":"done","file":"<path>","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N}`
 
 Use same `BATCH_SIZE` grouping as Step 3 — same plugin-aware batching applies.
 
@@ -21,8 +21,7 @@ Use same `BATCH_SIZE` grouping as Step 3 — same plugin-aware batching applies.
 
 ```bash
 CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
-_SHARED=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 3 -type d -name "_shared" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
-[ -z "$_SHARED" ] && _SHARED="plugins/foundry/skills/_shared"
+_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 ```
 

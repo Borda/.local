@@ -531,3 +531,171 @@ Fix: reference `$_FOUNDRY_SHARED/agent-spawn-protocol.md` (preferred once file e
 | C35a — no launch sentinel | no `touch /tmp/<sentinel>` after background spawn | high | no |
 | C35b — no file-activity poll | no 5-min `find -newer` loop | high | no |
 | C35c — no hard cutoff | no `HARD_CUTOFF` / 15-min signal | high | no |
+
+## Check 32 — Dead file detection
+
+Surfaces skill subdirectory files and rule files that exist on disk but are never loaded at runtime — accumulated from past iterations where references were removed but files were not.
+
+### Sub-check 32a — Dead mode files
+
+Mode files in `*/skills/*/modes/` that are not referenced from the parent skill's `SKILL.md` are never executed. They create maintenance confusion and may contain outdated logic that silently diverges from the live mode.
+
+```bash
+RED='\033[1;31m'
+YEL='\033[1;33m'
+GRN='\033[0;32m'
+NC='\033[0m'
+
+printf "=== Check 32a: Dead mode files ===\n"
+found=0
+for skill_dir in plugins/*/skills/*/ .claude/skills/*/; do  # timeout: 5000
+    [ -d "${skill_dir}modes" ] || continue
+    skill_md="${skill_dir}SKILL.md"
+    [ -f "$skill_md" ] || continue
+    for mode_file in "${skill_dir}modes/"*.md; do
+        [ -f "$mode_file" ] || continue
+        mode_name=$(basename "$mode_file")
+        if ! /usr/bin/grep -qF "$mode_name" "$skill_md" 2>/dev/null; then
+            printf "${YEL}⚠ 32a${NC}: %s — not referenced in %s\n" "$mode_file" "$skill_md"
+            found=1
+        fi
+    done
+done
+[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 32a — all mode files referenced in parent SKILL.md\n"
+```
+
+Severity: **medium** — dead mode file = unreachable code; may diverge silently from live workflow.
+Auto-fix: delete the file, or add a reference in SKILL.md if omission was accidental.
+
+### Sub-check 32b — Dead template files
+
+Template files in `*/skills/*/templates/` not referenced from the parent `SKILL.md` are never injected into prompts.
+
+```bash
+printf "=== Check 32b: Dead template files ===\n"
+found=0
+for skill_dir in plugins/*/skills/*/ .claude/skills/*/; do  # timeout: 5000
+    [ -d "${skill_dir}templates" ] || continue
+    skill_md="${skill_dir}SKILL.md"
+    [ -f "$skill_md" ] || continue
+    for tpl_file in "${skill_dir}templates/"*; do
+        [ -f "$tpl_file" ] || continue
+        tpl_name=$(basename "$tpl_file")
+        if ! /usr/bin/grep -qF "$tpl_name" "$skill_md" 2>/dev/null; then
+            printf "${YEL}⚠ 32b${NC}: %s — not referenced in %s\n" "$tpl_file" "$skill_md"
+            found=1
+        fi
+    done
+done
+[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 32b — all template files referenced in parent SKILL.md\n"
+```
+
+Severity: **low** — templates may be referenced indirectly via agent spawn prompts that mention the filename inline; human review required before deletion.
+Auto-fix: delete if confirmed unused; no auto-delete.
+
+### Sub-check 32c — Dead rule files (paths: matches no project files)
+
+Rule files with `paths:` frontmatter that match no existing project files are never applied. Rules without `paths:` (global rules) are always active — skip those.
+
+```bash
+printf "=== Check 32c: Dead rule files ===\n"
+found=0
+for rule_file in plugins/*/rules/*.md .claude/rules/*.md; do  # timeout: 5000
+    [ -f "$rule_file" ] || continue
+    # Extract paths: list from frontmatter
+    paths_block=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$rule_file" 2>/dev/null | awk '/^paths:/{p=1;next} p && /^[^ ]/{p=0} p{print}')
+    [ -z "$paths_block" ] && continue  # no paths: — global rule, always active, skip
+    # Check each glob pattern against project files
+    matched=0
+    while IFS= read -r pat_line; do
+        pat=$(echo "$pat_line" | sed "s/^ *- *'//;s/'$//;s/^ *- *//")
+        [ -z "$pat" ] && continue
+        found_file=$(find . -path "./$pat" -not -path "./.git/*" 2>/dev/null | head -1)
+        [ -n "$found_file" ] && { matched=1; break; }
+    done <<< "$paths_block"
+    if [ "$matched" -eq 0 ]; then
+        printf "${YEL}⚠ 32c${NC}: %s — paths: patterns match no project files (rule never applied)\n" "$rule_file"
+        found=1
+    fi
+done
+[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 32c — all scoped rules match at least one project file\n"
+```
+
+Severity: **medium** — rule with non-matching paths is never applied; may represent outdated scope (e.g., `src/**/*.py` when project no longer has Python files).
+Note: false positives possible if project files are in a non-standard location or generated at runtime. Human review before deletion.
+Auto-fix: remove `paths:` to make the rule global, or delete the file if rule is obsolete.
+
+| Sub-check | Target | Condition | Severity | Auto-fix |
+| --- | --- | --- | --- | --- |
+| 32a — dead mode file | `*/modes/*.md` | file exists but not referenced in parent SKILL.md | medium | delete file or add reference |
+| 32b — dead template file | `*/templates/*` | file exists but not referenced in parent SKILL.md | low | human review — may be indirect ref |
+| 32c — dead rule file | `*/rules/*.md` | `paths:` set but matches no project files | medium | remove `paths:` or delete file |
+
+## Check 33 — Code block duplication (NxN similarity matrix)
+
+Full-spectrum detection of duplicate or near-duplicate fenced code blocks across SKILL.md files — any language (bash, python, sh, perl, ruby, js, etc.). Produces NxN pairwise similarity matrix to surface extraction candidates: 33a within-file (same block 3+ times — bin/ script or helper function candidate); 33b cross-file NxN (same block in 3+ SKILL.md files — shared bin/ script candidate).
+
+**33a — Within-file repetition**: delegate to Phase A foundry:curator (has full file context). Curator prompt must include:
+
+> "Extract every fenced code block (any language marker — ` ```bash `, ` ```python `, ` ```sh `, ` ```perl `, ` ```ruby `, ` ```js `, etc.) from this file. For each pair of blocks, compute normalized similarity: strip comments → normalize variable names to `<VAR>` → normalize string literals to `<STR>` → compare structure. Report any pair with similarity ≥ 0.8 that appears 3+ times (within this file) as a 33a finding. For each candidate: block language, purpose, occurrence count, similarity score, what differs between instances, and suggested extraction (bash function / `bin/<name>.sh` / `bin/<name>.py`). Context saving estimate: (block_lines − 1) × occurrence_count. Skip: blocks with comments marking them as intentional resilience replications."
+
+**33b — Cross-file NxN** — two phases: bash quick scan identifies known hotspots; curator NxN delegation runs when clusters found.
+
+**Phase 1 — Bash quick scan** (known duplication hotspots):
+
+```bash
+RED='\033[1;31m'
+YEL='\033[1;33m'
+GRN='\033[0;32m'
+CYN='\033[0;36m'
+NC='\033[0m'
+
+printf "=== Check 33b Phase 1: Cross-file code block quick scan ===\n"
+
+# Known bash cross-file patterns
+# Mode-dispatch: find .../plugins/cache.../audit/modes/<x>.md (bash)
+MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+[ "${MODE_DISPATCH:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: bash mode-dispatch pattern in %s files — bin/ extraction candidate: resolve-skill-mode.sh <mode>\n" "$MODE_DISPATCH"
+
+# _shared/ resolution: find .../foundry.../_shared or ls -td .../foundry/*/skills/_shared (bash)
+SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+[ "${SHARED_RES:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: bash _shared resolution pattern in %s files (variants may be inconsistent) — bin/ extraction candidate\n" "$SHARED_RES"
+
+# Python heredoc pattern (bin/ python script candidate)
+PY_HEREDOC=$(grep -rl 'python3 -c' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+[ "${PY_HEREDOC:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: python3 -c one-liner in %s files — evaluate if any cluster repeats across skills\n" "$PY_HEREDOC"
+
+# Unsupported-flag-check (intentional resilience replication — info only)
+FLAG_CHECK=$(grep -rl 'Unknown flag' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+[ "${FLAG_CHECK:-0}" -ge 3 ] && printf "${CYN}ℹ 33b${NC}: unsupported-flag-check boilerplate in %s files — known intentional per-plugin resilience\n" "$FLAG_CHECK"
+
+# Count code blocks by language marker — identifies files for Phase 2 curator NxN
+echo "--- Code block language distribution across skills (Phase 2 trigger signals) ---"
+NEEDS_CURATOR_NXN=false
+for lang in bash python sh perl ruby node js; do
+  count=$(grep -rl "^\`\`\`${lang}" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+  [ "${count:-0}" -ge 5 ] && { echo "  ${lang}: ${count} files — TRIGGER Phase 2 curator NxN"; NEEDS_CURATOR_NXN=true; }
+  [ "${count:-0}" -ge 2 ] && [ "${count:-0}" -lt 5 ] && echo "  ${lang}: ${count} files"
+done
+
+# Emit trigger signal for Phase 2 decision
+[ "$NEEDS_CURATOR_NXN" = "true" ] && printf "${YEL}→ Phase 2${NC}: curator NxN delegation triggered — see 33b Phase 2 instructions below\n"
+printf "${GRN}✓${NC}: Check 33b Phase 1 complete\n"  # timeout: 5000
+```
+
+**Phase 2 — Curator NxN delegation**: run when Phase 1 finds any known pattern in ≥3 files OR any language marker appears in ≥5 SKILL.md files. Spawn **foundry:curator** with all flagged files:
+
+> "Perform Check 33b cross-file NxN code block similarity analysis on: <list all SKILL.md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language). Build a cross-file NxN similarity matrix: for each pair of blocks across different files, normalize (strip comments → variable names to `<VAR>` → string literals to `<STR>`) then compute structural similarity. Report clusters where similarity ≥ 0.8 appears in 3+ files as 33b findings. For each cluster: language, purpose, affected files, similarity score, what differs between instances, context savings estimate (block_lines × occurrence_count), and suggested bin/ extraction path. Skip blocks explicitly marked as intentional resilience replications."
+
+Severity: **medium** for actionable extraction candidates (mode-dispatch, _shared resolution, multi-file python clusters); **low/info** for known intentional replications (unsupported-flag-check, health-monitoring constants — per-plugin resilience by design per `plugins/CLAUDE.md`).
+
+Auto-fix guidance:
+- **Bin/ shell script**: bash/sh blocks that are self-contained (stdout output, no function defs, no shell state mutation) → `plugins/foundry/bin/<name>.sh` with full fallback chain; callers: `$( ${CLAUDE_PLUGIN_ROOT}/bin/<name>.sh 2>/dev/null || echo "fallback-path")`
+- **Bin/ python script**: python3 blocks repeated 3+ times → `plugins/foundry/bin/<name>.py`; callers: `python3 ${CLAUDE_PLUGIN_ROOT}/bin/<name>.py`
+- **Inline function**: for within-skill bash duplication where block uses caller shell state → define bash function once in pre-flight, call at each site
+- **Never extract**: blocks explicitly marked as resilience replications (unsupported-flag-check, health-monitoring constants)
+
+| Sub-check | Target | Condition | Severity | Auto-fix |
+| --- | --- | --- | --- | --- |
+| 33a — within-file repetition | single SKILL.md | same code block (any language) 3+ times, constants only differ | medium | inline helper function or bin/ script |
+| 33b — cross-file repetition | 3+ SKILL.md files | same block (excluding known resilience replications) | medium/low | bin/ script with fallback chain |

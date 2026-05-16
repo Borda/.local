@@ -1,11 +1,11 @@
-name: codemap CI
+name: CI executables
 
 on:
   push:
     branches: [main]
   pull_request:
     paths:
-      - "plugins/codemap/**"
+      - "plugins/**"
 
 jobs:
   tests:
@@ -25,6 +25,6 @@ jobs:
       - name: Install pytest
         run: pip install -q pytest
 
-      - name: Run codemap bin tests
-        working-directory: plugins/codemap/
-        run: pytest -v tests/ --color=yes
+      - name: Run plugin's bin tests
+        working-directory: plugins/
+        run: pytest -v --color=yes

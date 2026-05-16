@@ -20,9 +20,9 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 
   **Flags** (order independent, any combination with scope):
   - `--local` — audit source tree (`plugins/*/`) not user setup (`.claude/` + installed cache); plugin-dev workflows where local edits not yet installed; sets `LOCAL_MODE=true`
-  - `--upgrade` — fetch latest Claude Code docs, filter new features by genuine value, apply: **config** changes (apply + correctness check), **capability** changes (calibrate before → apply → calibrate after → accept if Δrecall ≥ 0 and ΔF1 ≥ 0). Skip to **Mode: upgrade**. Mutually exclusive with `--adversarial` and `--efficiency`.
-  - `--adversarial` (alias: `--challenge`) — adversarial review of all agents + skills in scope using `foundry:challenger` (Phase A) + Codex adversarial pass (Phase B); surfaces issues beyond standard per-file audit; see **Mode: adversarial**. Mutually exclusive with `--upgrade` and `--efficiency`.
-  - `--efficiency` — cost and efficiency sweep: model tier validation, token bloat detection, unbounded spawn patterns, cross-file boilerplate duplication, missing model declarations, dead model specs. Generates prioritized cost-reduction plan with estimated savings per change. Skip to **Mode: efficiency**. Mutually exclusive with `--upgrade` and `--adversarial`.
+  - `--upgrade` — fetch latest Claude Code docs, filter new features by genuine value, apply: **config** changes (apply + correctness check), **capability** changes (calibrate before → apply → calibrate after → accept if Δrecall ≥ 0 and ΔF1 ≥ 0). Skip to **Mode: upgrade**. Mutually exclusive with `--adversarial` and `--efficiency` — error if combined with either.
+  - `--adversarial` (alias: `--challenge`) — adversarial review of all agents + skills in scope using `foundry:challenger` (Phase A) + Codex adversarial pass (Phase B); surfaces issues beyond standard per-file audit; see **Mode: adversarial**. Mutually exclusive with `--upgrade` only; combinable with `--efficiency`.
+  - `--efficiency` — cost and efficiency sweep: model tier validation, token bloat detection, unbounded spawn patterns, cross-file boilerplate duplication, missing model declarations, dead model specs. Generates prioritized cost-reduction plan with estimated savings per change. Skip to **Mode: efficiency**. Mutually exclusive with `--upgrade` only; combinable with `--adversarial`.
   - `--skip-gate` — suppress follow-up gate (for automation pipelines)
 
   **Legacy positional tokens** (`fix`, `upgrade`, `adversarial`, `challenge`, `ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`fix medium` removed — run `/audit` and pick fix level from gate, or pass `--upgrade` / `--adversarial` as flags."
@@ -44,7 +44,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 
   **Scope token resolution** (each remaining token after flag-strip, resolved before Step 2): (1) reserved keywords (`agents`, `skills`, `rules`, `communication`, `setup`, `plugin`, `plugins`) → use as-is; (2) matches dir under `plugins/<token>/` → tier 2; (3) matches agent file in `plugins/*/agents/<token>.md` or `.claude/agents/<token>.md` → tier 3 agent; (4) matches skill dir `plugins/*/skills/<token>/` or `.claude/skills/<token>/` → tier 3 skill; (5) no match → error and stop
 
-  **Valid combinations**: scope tokens + flags mix freely: `foundry --local`, `foundry --adversarial`, `agents skills --local`, `oss research --adversarial`, `foundry --efficiency`, `plugins --efficiency`. `--upgrade`, `--adversarial`, and `--efficiency` mutually exclusive — error if any two combined. `--local` compatible with all.
+  **Valid combinations**: scope tokens + flags mix freely: `foundry --local`, `foundry --adversarial`, `agents skills --local`, `oss research --adversarial`, `foundry --efficiency`, `plugins --efficiency`, `foundry --adversarial --efficiency`, `plugins --local --adversarial --efficiency`. `--upgrade` mutually exclusive with `--adversarial` and `--efficiency` — error if combined with either. `--local` compatible with all. When `--adversarial` and `--efficiency` both present: run adversarial Phases A–C then efficiency Phases A–C sequentially; merge findings; single follow-up gate.
 
 </inputs>
 
@@ -62,7 +62,7 @@ BATCH_SIZE=5           # max files per foundry:curator spawn in Step 3; keep sma
 
 **Task hygiene**:
 ```bash
-_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
@@ -85,8 +85,14 @@ Surface progress at milestones: after system-wide checks ("✓ Checks 1-21 compl
 **Context budget**: full audit (12+ agents, 14+ skills, 12 system checks) runs close to context limits. File-based handoff mandatory — every sub-agent writes full output to file, returns only compact JSON envelope. Sub-agent echoing findings to context = compaction before audit completes.
 
 ```bash
-LOCAL_MODE=false; [[ "$ARGUMENTS" == *"--local"* ]] && LOCAL_MODE=true
-ARGUMENTS="${ARGUMENTS//--local/}"
+LOCAL_MODE=false;      [[ "$ARGUMENTS" == *"--local"*      ]] && LOCAL_MODE=true
+ADVERSARIAL_MODE=false; [[ "$ARGUMENTS" == *"--adversarial"* ]] && ADVERSARIAL_MODE=true
+EFFICIENCY_MODE=false;  [[ "$ARGUMENTS" == *"--efficiency"*  ]] && EFFICIENCY_MODE=true
+UPGRADE_MODE=false;     [[ "$ARGUMENTS" == *"--upgrade"*     ]] && UPGRADE_MODE=true
+SKIP_GATE=false;        [[ "$ARGUMENTS" == *"--skip-gate"*   ]] && SKIP_GATE=true
+ARGUMENTS="${ARGUMENTS//--local/}"; ARGUMENTS="${ARGUMENTS//--adversarial/}"
+ARGUMENTS="${ARGUMENTS//--efficiency/}"; ARGUMENTS="${ARGUMENTS//--upgrade/}"
+ARGUMENTS="${ARGUMENTS//--skip-gate/}"; ARGUMENTS="${ARGUMENTS//--challenge/}"
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
 
 RED='\033[1;31m'
@@ -265,11 +271,11 @@ Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$AUDIT_CHECKPOINT" -ty
 > | --- | --- |
 > | `setup` | `checks-setup.md` + `checks-install.md` (Checks 1–11, I1–I3) |
 > | `plugin` | `checks-setup.md` (Checks 7, 8 only) |
-> | `plugins` | `checks-setup.md` (Checks 7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 29) |
+> | `plugins` | `checks-setup.md` (Checks 7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 29) + checks 32, 33 |
 > | `plugins <name>` | same as `plugins` — scoped to one plugin directory |
 > | `agents` | `checks-agents.md` + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) + `checks-skills.md` (Check 22 only) |
-> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) |
-> | `rules` | `checks-shared.md` (run only: 18, 12, 13, 29) |
+> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) |
+> | `rules` | `checks-shared.md` (run only: 18, 12, 13, 29) + `checks-skills.md` (32c only) |
 > | `communication` | `checks-shared.md` (run only: 15, 16, 12, 13, 29) |
 > | No scope (full) | all 4 files |
 
@@ -293,15 +299,15 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 **Scope filter**: when `$SCOPE` is set, run only checks listed for that scope; skip all others silently.
 
 - `agents` — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
-- `skills` — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
-- `rules` — Checks 18, 12, 13, 29
+- `skills` — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
+- `rules` — Checks 18, 12, 13, 29, 32c
 - `communication` — Checks 15, 16, 12, 13, 29
 - `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, I1, I2, I3 (Step 3: one foundry:curator spawn for `init` SKILL.md only; I1–I3 read `~/.claude/`)
 - `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `plugins/foundry/skills/init/SKILL.md` only)
-- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md)
+- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 33 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md)
 - `plugins <name>` or `<plugin-name>` (tier 2) — same check list as `plugins`, scoped to `plugins/<name>/` only
 - `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29 (one file only; no cross-plugin Checks 7/8)
-- `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31 (one file only)
+- `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a (one file only)
 - Multiple scope tokens — union of check lists for all resolved scope types; de-duplicate; run each check once against union file set
 - No scope argument — run all checks
 
@@ -344,6 +350,8 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 | 29 | LLM context minimality | medium/low | agents/skills/rules | Within-file repetition, prose inflation, obvious-consequence restatement — report only |
 | 30 | Config token overhead | medium/low | setup | 30a CLAUDE.md + global + rules/ > 100 KB; 30b single rules file > 10 KB |
 | 31 | Tool-body consistency | medium | skills | Skill `allowed-tools` must include every tool the workflow body invokes; see `checks-skills.md` for full spec |
+| 32 | Dead file detection | medium/low | skills/rules | 32a mode files in `*/modes/` not referenced from parent SKILL.md; 32b template files in `*/templates/` not referenced; 32c rule files whose `paths:` globs match no project files |
+| 33 | Code block duplication | medium/low | skills | 33a within-file: same code block (any language — bash, python, sh, perl, etc.) 3+ times with only constant differences — extraction candidate; 33b cross-file: same block in 3+ SKILL.md files across plugins |
 
 ### Claude Code docs freshness (within Step 4)
 
@@ -368,8 +376,7 @@ Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate
 ## Step 6: Cross-validate critical findings
 
 ```bash
-_SHARED=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 3 -type d -name "_shared" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
-[ -z "$_SHARED" ] && _SHARED="plugins/foundry/skills/_shared"
+_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/cross-validation-protocol.md" ] || { printf "⚠ WARNING: cross-validation-protocol.md not found at $_SHARED — skipping cross-validation\n"; }
 ```
 
@@ -486,8 +493,7 @@ After Step 8 fix agents complete, before foundry:curator re-audit:
 
 ```bash
 CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
-_SHARED=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 3 -type d -name "_shared" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
-[ -z "$_SHARED" ] && _SHARED="plugins/foundry/skills/_shared"
+_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 ```
 
@@ -605,8 +611,7 @@ Run `/foundry:init` to propagate clean config to ~/.claude/
 **Trigger**: `/audit --upgrade`
 
 ```bash
-UPGRADE_MD=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -path "*/audit/modes/upgrade.md" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
-[ -f "$UPGRADE_MD" ] || UPGRADE_MD="plugins/foundry/skills/audit/modes/upgrade.md"
+UPGRADE_MD=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-audit-mode.sh" upgrade)  # timeout: 5000
 ```
 
 Read and execute `$UPGRADE_MD`.
@@ -616,8 +621,7 @@ Read and execute `$UPGRADE_MD`.
 **Trigger**: `/audit [<scope>...] --adversarial`
 
 ```bash
-ADVERSARIAL_MD=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -path "*/audit/modes/adversarial.md" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
-[ -f "$ADVERSARIAL_MD" ] || ADVERSARIAL_MD="plugins/foundry/skills/audit/modes/adversarial.md"
+ADVERSARIAL_MD=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-audit-mode.sh" adversarial)  # timeout: 5000
 ```
 
 Read and execute `$ADVERSARIAL_MD`.
@@ -627,8 +631,7 @@ Read and execute `$ADVERSARIAL_MD`.
 **Trigger**: `/audit [<scope>...] --efficiency`
 
 ```bash
-EFFICIENCY_MD=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -path "*/audit/modes/efficiency.md" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
-[ -f "$EFFICIENCY_MD" ] || EFFICIENCY_MD="plugins/foundry/skills/audit/modes/efficiency.md"
+EFFICIENCY_MD=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-audit-mode.sh" efficiency)  # timeout: 5000
 ```
 
 Read and execute `$EFFICIENCY_MD`.
@@ -646,7 +649,7 @@ When user picks fix option (a–c): run Steps 8–10 inline (state on disk in `s
 - (c) label: `Fix critical + high + medium` — auto-fix critical, high, medium only (skip low and systemic)
 - (d) label: `Skip` — no fixes now; for other modes run `/audit --upgrade`, `/audit --adversarial`, `/audit --efficiency`, or `/foundry:init` manually
 
-After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate (omit the option that was just run — no point repeating the mode just run).
+After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate (omit the option(s) just run — no point repeating). When `--adversarial --efficiency` combined: fire gate once after both modes complete with merged finding counts; omit both options (d) and (e).
 
 </workflow>
 

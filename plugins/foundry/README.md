@@ -139,7 +139,7 @@ What it does:
 - Backs up `~/.claude/settings.json` before touching it
 - Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`
 - Copies `permissions-guide.md` to `.claude/` (only if absent — preserves project-local edits)
-- Symlinks all `plugins/foundry/rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks and removes rules no longer in current version`
+- Symlinks all `plugins/foundry/rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks and removes rules no longer in current version\`
 - Removes stale `hooks` block from settings if present (hooks now register via plugin manifest)
 
 Hooks (`hooks.json`) register automatically when the plugin is enabled — `/foundry:init` does not touch them directly.
