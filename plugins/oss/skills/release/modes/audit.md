@@ -27,6 +27,10 @@ After readiness table, if issues found, append **Findings summary** table:
 
 Every finding needs explicit location, severity, action — matches structured output format of `notes` and `changelog` modes.
 
+### Output routing
+
+Write the full report to `.reports/release/$BRANCH-$DATE.md` (create dir with `mkdir -p .reports/release` if needed) — **not** `.temp/`. This overrides the quality-gates default `.temp/output-...` path. Print the verdict line and executive summary to terminal per quality-gates rules.
+
 ### Verdict line (mandatory final output)
 
 Print exactly one verdict line immediately before `## Confidence` block so callers (e.g. `prepare` Phase 1) can pattern-match without parsing prose:

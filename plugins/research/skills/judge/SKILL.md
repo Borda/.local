@@ -1,7 +1,7 @@
 ---
 name: judge
-description: Research-supervisor review of program.md — validates experimental methodology (hypothesis clarity, measurement validity, control adequacy, scope, strategy fit), emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop.
-argument-hint: '[<program.md>] [--skip-validation]'
+description: "Research-supervisor review of program.md — validates experimental methodology (hypothesis clarity, measurement validity, control adequacy, scope, strategy fit), emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop."
+argument-hint: "[<program.md>] [--skip-validation]"
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -17,7 +17,7 @@ NOT for: running experiments (use `/research:run`); designing hypotheses (use `r
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/research/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -250,12 +250,28 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 
 **Write full report** (never overwrite — use counter loop):
 ```bash
-BASE=".temp/output-judge-$BRANCH-$(date +%Y-%m-%d).md"
+mkdir -p .reports/research  # timeout: 3000
+BASE=".reports/research/judge-$BRANCH-$(date +%Y-%m-%d).md"
 OUT="$BASE"; COUNT=2
 while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done
 ```
 
 ```markdown
+---
+Judge — [program_title]
+Date:          [YYYY-MM-DD]
+Scope:         [path to program.md]
+Focus:         experimental protocol validation
+Agents:        foundry:solution-architect (J3), research:scientist (J3)
+Outcome:       APPROVED | NEEDS-REVISION | BLOCKED
+Methodology:   sound | needs-refinement | fundamentally-flawed
+Findings:      [N] critical · [N] high · [N] medium · [N] low
+Protocol gaps: [N]
+Confidence:    [score] — [key gaps]
+Next steps:    /research:run <path>  [APPROVED] | fix protocol, re-run /research:judge  [otherwise]
+Path:          → .reports/research/judge-<branch>-<date>.md
+---
+
 ## Judge Report: <program_title>
 
 **Program**: <path to program.md>
@@ -329,7 +345,7 @@ Findings:     <N> critical · <N> high · <N> medium · <N> low
 Protocol gaps: <N>
 Validation:   metric=<value> guard=pass|fail  (or "skipped — --skip-validation")
 Codex:        reviewed | skipped
-→ saved to .temp/output-judge-<branch>-<date>.md
+→ saved to .reports/research/judge-<branch>-<date>.md
 ---
 Next: /research:run <path>                         [APPROVED]
 Next: fix protocol, re-run /research:judge <path>      [NEEDS-REVISION or BLOCKED]

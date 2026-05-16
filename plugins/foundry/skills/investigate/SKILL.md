@@ -5,7 +5,7 @@ argument-hint: "<symptom, question, or failing command> [--fast]"
 allowed-tools: Read, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opusplan
 effort: high
-when_to_use: Use when the cause of a failure is unknown — environment, tooling, CI divergence, hooks; NOT for known code bugs with a traceback (use develop:debug) or config quality sweeps (use audit).
+when_to_use: "Use when the cause of a failure is unknown — environment, tooling, CI divergence, hooks; NOT for known code bugs with a traceback (use develop:debug) or config quality sweeps (use audit)."
 ---
 
 <objective>
@@ -187,7 +187,7 @@ If `$INVESTIGATE_RUN/codex-review.md` or `$INVESTIGATE_RUN/challenger-review.md`
 
 **Recommended next action**: <one of:>
   - `/develop:fix` — code regression confirmed (application code only — NOT for `.claude/` changes) (requires `develop` plugin — check plugin availability before following this recommendation)
-  - `/manage update <name> "<change directive>"` — `.claude/` agent/skill/rule content needs updating (use this, NOT `/develop:feature or /develop:fix`, for any proposed change to `.claude/`)
+  - `/manage update <name> "<change directive>"` — `.claude/` agent/skill/rule content needs updating (use this, NOT `/develop:feature or /develop:fix` (requires `develop` plugin), for any proposed change to `.claude/`)
   - `/foundry:audit` — structural/quality issue in `.claude/` config confirmed (pick fix level from gate)
   - `/foundry:init` — propagate project `.claude/` to `~/.claude/` (foundry plugin is the distribution path)
   - Manual step: <exact command to run>

@@ -1,7 +1,7 @@
 ---
 name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop."
-argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: "<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]"
 effort: medium
 when_to_use: "Use when specific bug known and reproducible; NOT for unknown failures without traceback (use debug) or adding new capabilities (use feature)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
@@ -22,7 +22,7 @@ NOT for:
 
 <workflow>
 
-<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
 
 ## Agent Resolution
 

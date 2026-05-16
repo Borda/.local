@@ -104,7 +104,7 @@ Valid skill frontmatter fields:
 
 ## Agent Section Completeness
 
-- `<antipatterns_to_flag>` expected in quality/review/diagnostic agents (linting-expert, doc-scribe, oss:cicd-steward, data-steward, oss:shepherd, solution-architect, curator, research:scientist, perf-optimizer, web-explorer, challenger); optional for implementation agents (sw-engineer, qa-specialist)
+- `<antipatterns_to_flag>` expected in quality/review/diagnostic agents (linting-expert, doc-scribe, oss:cicd-steward, research:data-steward, oss:shepherd, solution-architect, curator, research:scientist, perf-optimizer, web-explorer, challenger); optional for implementation agents (sw-engineer, qa-specialist)
 
 \</evaluation_criteria>
 

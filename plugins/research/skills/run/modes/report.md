@@ -6,6 +6,19 @@ Report structure and terminal summary format.
 ## Report structure
 
 ```markdown
+---
+Run — [goal]
+Date:        [YYYY-MM-DD]
+Scope:       [program.md path] / [N] iterations planned
+Focus:       ML optimization run
+Agents:      research:scientist (per iteration)
+Outcome:     GOAL_ACHIEVED | IMPROVED | STALLED | DIVERGED
+Best:        [metric_key] = [best] ([delta]% improvement)
+Confidence:  [score] — [key gaps]
+Next steps:  /research:retro | /research:fortify | /research:run --resume
+Path:        → .reports/research/run-<branch>-<date>.md
+---
+
 ## Run: <goal>
 
 **Run ID**: <run-id>
@@ -40,7 +53,7 @@ Iterations: <total>  Kept: <kept>  Reverted: <reverted>
 Baseline:   <metric_key> = <baseline>
 Best:       <metric_key> = <best> (<delta>% improvement, commit <sha>)
 Agent:      <agent type used>
-→ saved to .temp/output-optimize-run-<branch>-<date>.md
+→ saved to .reports/research/run-<branch>-<date>.md
 → diary: .experiments/state/<run-id>/diary.md
 ---
 ```

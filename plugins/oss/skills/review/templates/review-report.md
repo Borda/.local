@@ -10,6 +10,7 @@ Recommendation:
 Summary:     [2–3 sentence overview of key findings]
 Critical:    [blocking items one per line, or "none"]
 Confidence:  [aggregate score] — [key gaps]
+Path:        → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
 ---
 
 ## Code Review: [target]

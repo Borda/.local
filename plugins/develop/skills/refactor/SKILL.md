@@ -1,7 +1,7 @@
 ---
 name: refactor
 description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop."
-argument-hint: '<target file or directory> <goal> [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: "<target file or directory> <goal> [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -29,7 +29,7 @@ NOT for:
 
 <workflow>
 
-<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
 
 ## Agent Resolution
 

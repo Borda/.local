@@ -5,7 +5,7 @@ argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
-when_to_use: Use for sweeping quality checks of .claude/ config or plugin source — NOT for creating/modifying agents (use manage) or measuring behavioral accuracy (use calibrate).
+when_to_use: "Use for sweeping quality checks of .claude/ config or plugin source — NOT for creating/modifying agents (use manage) or measuring behavioral accuracy (use calibrate)."
 ---
 
 <objective>
@@ -94,7 +94,7 @@ YEL='\033[1;33m'
 GRN='\033[0;32m'
 NC='\033[0m'
 
-# Canonical source: plugins/foundry/skills/_shared/preflight-helpers.md
+# Canonical source: foundry _shared/preflight-helpers.md (deployed by /foundry:init to .claude/skills/_shared/)
 # Keep in sync with that file when updating
 # From _shared/preflight-helpers.md — TTL 4 hours, keyed per binary
 preflight_ok() {
@@ -392,7 +392,7 @@ Emit report (omit Upgrade Proposals if none passed genuine-value filter):
 
 ### Summary
 - Total: N (C critical, H high, M medium, L low)
-- Fix via follow-up gate: (a) critical+high · (b) critical+high+medium · (c) all
+- Fix via follow-up gate: (a) critical+high · (b) all auto-fixable incl. low · (c) critical+high+medium
 
 ### Upgrade Proposals (N — pick `/audit --upgrade` from gate to apply)
 | # | Feature | Type | Rationale |
@@ -531,6 +531,19 @@ Write findings to `<RUN_DIR>/crossfile-revalidation-pass<N>.md` where N is curre
 Output complete audit summary. List each audited file by name in `### Files Audited` — from Step 2 inventory; counts alone insufficient.
 
 ```markdown
+---
+Audit — .claude/ config
+Date:     [YYYY-MM-DD]
+Scope:    [N agents, N skills, N rules, N hooks]
+Focus:    [config quality audit — agents / skills / routing / all]
+Agents:   foundry:curator, foundry:challenger (adversarial mode only)
+Outcome:  CLEAN | NEEDS_ATTENTION | BLOCKED
+Findings: [N] critical · [N] high · [N] medium · [N] low
+Confidence: [aggregate score from agent Confidence blocks]
+Next steps: /foundry:init (sync clean config) | fix findings → re-run /foundry:audit
+Path:       → .reports/audit/<timestamp>/report.md
+---
+
 ## Audit Complete — .claude/ config
 
 ### Files Audited
@@ -628,14 +641,10 @@ Read and execute `$EFFICIENCY_MD`.
 When user picks fix option (a–c): run Steps 8–10 inline (state on disk in `summary.jsonl`); no recursive `/audit` call.
 
 - question: "What next?" (include counts, e.g. "2 critical, 4 high, 3 medium, 1 low. What next?")
-- (a) label: `Fix critical + high` — auto-fix critical and high findings
-- (b) label: `Fix critical + high + medium` — auto-fix critical, high, and medium findings (recommended)
-- (c) label: `Fix all` — auto-fix all findings including low
-- (d) label: `/audit --upgrade` — fetch latest Claude Code docs and apply improvements
-- (e) label: `/audit --adversarial` — adversarial review with foundry:challenger + Codex
-- (f) label: `/audit --efficiency` — model tier, token bloat, spawn patterns, duplication sweep
-- (g) label: `/foundry:init` — sync verified config to `~/.claude/`
-- (h) label: `skip` — no action
+- (a) label: `Fix critical + high` — auto-fix critical and high findings only
+- (b) label: `Fix all auto-fixable` — auto-fix critical, high, medium, and low findings (skip non-auto-fixable systemic issues); **recommended when low findings present**
+- (c) label: `Fix critical + high + medium` — auto-fix critical, high, medium only (skip low and systemic)
+- (d) label: `Skip` — no fixes now; for other modes run `/audit --upgrade`, `/audit --adversarial`, `/audit --efficiency`, or `/foundry:init` manually
 
 After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate (omit the option that was just run — no point repeating the mode just run).
 

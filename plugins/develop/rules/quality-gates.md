@@ -58,7 +58,7 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
 
 1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content**
 2. Print to terminal in this order:
-   1. **Header** — plain ASCII verdict line; no Unicode box-drawing chars (`─`, `═`, `│`, `┌` etc.); use `·` as separator: `verdict: NEEDS_WORK · findings: 8 · critical: 0 · high: 2 · medium: 4 · low: 2 · confidence: 0.88`
+   1. **YAML header block** — print the `---` metadata block verbatim from the top of the report file (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: NEEDS_WORK · findings: 8 · ...`
    2. **Report path** — `→ <filepath>`
    3. **Executive summary** — prose: 2–3 sentence overview + each critical/high finding listed individually; omit medium/low detail unless ≤2 total findings
    4. **Follow-up gate** — invoke `AskUserQuestion` as final step; skip when running as background agent or inside another skill's pipeline
@@ -70,6 +70,28 @@ Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="co
   - `develop:debug` → (a) `/develop:fix --diagnosis <file>` · (b) skip
   - `develop:plan` → (a) `/develop:feature --plan <file>` · (b) `/develop:fix --plan <file>` · (c) skip
 - **Follow-up gate follow-through**: when `AskUserQuestion` returns with skill-invocation option selected — call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose and stop without acting
+
+## Report File Format
+
+Every report file created via output routing must begin with a YAML metadata block between `---` delimiter lines. This block is the canonical meta summary — printed verbatim to terminal before the executive summary, machine-parseable by downstream skills.
+
+**Required minimum fields** (all reports):
+
+```yaml
+---
+[Skill] — [subject]
+Date:       [YYYY-MM-DD]
+Scope:      [what was analyzed — file paths, topic, PR#, run-id, etc.]
+Focus:      [aspect examined — "quality audit" / "SOTA research" / "code review" / etc.]
+Agents:     [agent names that contributed — comma-separated]
+Outcome:    [verdict — APPROVED | READY | NEEDS_ATTENTION | BLOCKED | etc.]
+Confidence: [score] — [key gaps]
+Next steps: [recommended follow-up skill invocation]
+Path:       → .reports/<skill>/<timestamp>/<name>.md
+---
+```
+
+After the required fields, add **skill-specific fields** relevant to the report type (e.g. Verdict, CI, Risk, Blockers for `develop:review`; Best method, Papers for `research:topic`; Methodology, Findings for `research:judge`). `develop:review` report template is the canonical reference. Skills with dedicated output routing (audit, review, resolve, analyse, release) must include an equivalent `---` block at the top of their report files.
 
 ## Reporting Findings
 

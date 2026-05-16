@@ -188,9 +188,27 @@ Parse returned JSON envelope. Record `hypotheses` count and `confidence` for T6.
 
 ### Step T6: Write retro report
 
-Pre-compute branch (already done in T1). Write full report to `.temp/output-retro-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (never overwrite — append counter suffix if file exists):
+Pre-compute branch (already done in T1). ```bash
+mkdir -p .reports/research  # timeout: 3000
+```
+
+Write full report to `.reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (never overwrite — append counter suffix if file exists):
 
 ```markdown
+---
+Retro — [goal]
+Date:          [YYYY-MM-DD]
+Scope:         [run-id] / [total] iterations
+Focus:         retrospective analysis of ML optimization run
+Agents:        research:scientist (T5)
+Outcome:       IMPROVED | STALLED | PLATEAU | DIVERGED
+Significance:  p=[value] ([significant|not significant] at alpha=[alpha])
+Hypotheses:    [N] next steps generated
+Confidence:    [score] — [key gaps]
+Next steps:    /research:run … --hypothesis | /research:fortify
+Path:          → .reports/research/retro-<branch>-<date>.md
+---
+
 ## Retrospective: <goal>
 
 **Run**: <run-id>
@@ -202,7 +220,7 @@ Pre-compute branch (already done in T1). Write full report to `.temp/output-retr
 ### Statistical Significance
 
 | Test | N | Statistic | p-value | Significant? | Effect size |
-|------|---|-----------|---------|--------------|-------------|
+| --- | --- | --- | --- | --- | --- |
 | Wilcoxon vs baseline | N | ... | ... | YES/NO (alpha=<alpha>) | r=... (<small/medium/large>) |
 | Wilcoxon run-1 vs run-2 | N | ... | ... | YES/NO | r=... |
 
@@ -213,7 +231,7 @@ Pre-compute branch (already done in T1). Write full report to `.temp/output-retr
 ### Dead Iterations
 
 | Start | End | Count | Type | Notes |
-|-------|-----|-------|------|-------|
+| --- | --- | --- | --- | --- |
 | ... | ... | ... | dead-plateau / dead-churn | ... |
 
 Total dead: <N> of <total> (<pct>% of compute)
@@ -223,7 +241,7 @@ Total dead: <N> of <total> (<pct>% of compute)
 ### Suspicious Metric Jumps
 
 | Iteration | Delta | Sigma | Severity | Commit | Files Changed |
-|-----------|-------|-------|----------|--------|---------------|
+| --- | --- | --- | --- | --- | --- |
 | ... | ... | ... | HIGH/MEDIUM | <sha> | <files> |
 
 (If none: "No suspicious jumps detected")
@@ -232,7 +250,7 @@ Total dead: <N> of <total> (<pct>% of compute)
 ### Strategy Effectiveness
 
 | Strategy | Kept | Tried | Keep-rate | Avg Delta | Best Delta |
-|----------|------|-------|-----------|-----------|------------|
+| --- | --- | --- | --- | --- | --- |
 | ... | ... | ... | ...% | ... | ... |
 
 (From scientist retrospective. If scientist timed out: "Scientist agent timed out — strategy analysis unavailable")
@@ -246,7 +264,7 @@ Total dead: <N> of <total> (<pct>% of compute)
 ### Suggested Next Hypotheses
 
 | # | Hypothesis | Rationale | Expected Delta | Confidence |
-|---|-----------|-----------|----------------|------------|
+| --- | --- | --- | --- | --- |
 | 1 | ... | ... | ... | 0.N |
 
 Full retrospective: <RUN_DIR>/retrospective.md
@@ -271,7 +289,7 @@ Effect size:   r=<value> (<small|medium|large>)  [or: n/a]
 Dead iters:    <N>/<total> (<pct>%)  [or: none]
 Suspicious:    <N> jumps (<severity> — investigate: <sha1>, <sha2>)  [or: none]
 Hypotheses:    <N> next steps generated
--> saved to .temp/output-retro-<branch>-<date>.md
+-> saved to .reports/research/retro-<branch>-<date>.md
 ---
 Next: /research:run <program.md> --hypothesis <RUN_DIR>/hypotheses.jsonl
      /research:fortify <run-id>    ← stress-test top hypothesis before full re-run

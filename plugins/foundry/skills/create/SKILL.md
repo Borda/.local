@@ -5,7 +5,7 @@ argument-hint: "[topic]"
 disable-model-invocation: true
 allowed-tools: Read, Write, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: medium
-when_to_use: Use when creating developer advocacy content — blog posts, Marp slides, social threads, talk abstracts, or lightning talk outlines.
+when_to_use: "Use when creating developer advocacy content — blog posts, Marp slides, social threads, talk abstracts, or lightning talk outlines."
 ---
 
 <objective>

@@ -1,7 +1,7 @@
 ---
 name: analyse
 description: |
-  Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd. NOT for PR readiness assessment or code review (use oss:review).
+  Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd (requires `oss` plugin). NOT for PR readiness assessment or code review (use oss:review).
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
   SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review).
 argument-hint: '<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]'
@@ -9,14 +9,14 @@ allowed-tools: Read, Bash, Write, Agent
 context: fork
 model: sonnet
 effort: high
-when_to_use: 'Use when the user asks to analyze a GitHub issue, PR, or discussion thread, needs repo vitality stats, or wants to triage/summarize OSS contributor threads.'
+when_to_use: "Use when the user asks to analyze a GitHub issue, PR, or discussion thread, needs repo vitality stats, or wants to triage/summarize OSS contributor threads."
 ---
 
 <objective>
 
 Analyze GitHub threads + repo vitality. Help maintainers triage, respond, decide fast. Output actionable + structured — not just summaries.
 
-NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code review (use oss:review). NOT for CI pipeline diagnosis (use oss:cicd-steward).
+NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code review (use oss:review). NOT for CI pipeline diagnosis (use oss:cicd-steward (requires `oss` plugin)).
 
 </objective>
 
@@ -42,7 +42,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/oss/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _OSS_SHARED/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -391,7 +391,7 @@ Scenarios:
 - Run `gh auth status` first if commands fail; user may need to authenticate
 - For closed items, note resolution so history useful
 - Don't post responses without explicit user instruction — draft only
-- **Out-of-scope early-exit**: when input is clearly outside this skill's domain (e.g. CI pipeline diagnosis, code review), print scope note + redirect (e.g. "use oss:cicd-steward") and stop — do not provide full analysis of out-of-scope content. Flag then stop; flag then analyze = precision cost with no recall benefit.
+- **Out-of-scope early-exit**: when input is clearly outside this skill's domain (e.g. CI pipeline diagnosis, code review), print scope note + redirect (e.g. "use oss:cicd-steward (requires `oss` plugin)") and stop — do not provide full analysis of out-of-scope content. Flag then stop; flag then analyze = precision cost with no recall benefit.
 - **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` NOT available (deferred tool schema not loaded in fork) — interactive gates surface as plain text instead. `Agent` IS available in forked context (non-deferred, declared in `allowed-tools`) — do NOT skip Steps 5–6 adversarial review assuming Agent unavailable; it is available and those steps are mandatory.
 - **`--reply` drafts only** — shepherd produces draft file; does NOT auto-post to GitHub. User posts manually. Write access to repo not required to use `--reply`; required only if user subsequently posts draft via `gh issue comment` or `gh pr comment`.
 - **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix` (requires `develop` plugin), `/oss:review`) receive no analysis context from this run. Pass report path explicitly or re-summarize key findings in follow-up invocation.

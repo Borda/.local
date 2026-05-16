@@ -1,7 +1,7 @@
 ---
 name: plan
-description: Interactive wizard that scans the codebase, proposes a metric/guard/agent config, and writes a program.md run spec. Also runs cProfile on a file path to surface bottlenecks before prompting for optimization goal.
-argument-hint: '<goal> | <file.py> [out.md] [--team]'
+description: "Interactive wizard that scans the codebase, proposes a metric/guard/agent config, and writes a program.md run spec. Also runs cProfile on a file path to surface bottlenecks before prompting for optimization goal."
+argument-hint: "<goal> | <file.py> [out.md] [--team]"
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -17,7 +17,7 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/research/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -237,6 +237,6 @@ Next steps:
 
 - **Scope boundary**: plan writes `program.md` only — methodology validation = `/research:judge`; execution = `/research:run`; full pipeline = `/research:sweep`.
 - **`--team` note**: `--team` applies at run step, not plan step. Plan produces standard `program.md`; pass flag when invoking `/research:run <program.md> --team`.
-- **TTL exemption**: plan run dirs (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from 30-day TTL cleanup per `.claude/rules/artifact-lifecycle.md (installed via `/foundry:init` (requires `foundry` plugin))`; remove manually when no longer needed.
+- **TTL exemption**: plan run dirs (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from 30-day TTL cleanup per `.claude/rules/artifact-lifecycle.md` (installed via `/foundry:init` — requires `foundry` plugin); remove manually when no longer needed.
 
 </notes>

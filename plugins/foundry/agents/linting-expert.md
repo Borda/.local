@@ -5,7 +5,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch
 model: haiku
 effort: medium
 memory: project
-color: teal
+color: lime
 ---
 
 <role>

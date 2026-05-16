@@ -1,7 +1,7 @@
 ---
 name: scan
-description: Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics).
-argument-hint: '[--root <path>] [--incremental]'
+description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics)."
+argument-hint: "[--root <path>] [--incremental]"
 effort: medium
 allowed-tools: Bash, AskUserQuestion
 ---

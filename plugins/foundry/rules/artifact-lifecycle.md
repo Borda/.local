@@ -21,12 +21,15 @@ Skill output dirs use dot-prefix (`.reports/`, `.temp/`, `.plans/`, etc.) — si
   audit/                 ← /foundry:audit — final audit reports
   review/<timestamp>/    ← /oss:review, /develop:review — final consolidated review reports
   analyse/               ← /oss:analyse skill (thread, ecosystem, health subdirs)
+  release/               ← /oss:release audit — release readiness reports
+  brainstorm/            ← /foundry:brainstorm — tree review reports
+  research/              ← research plugin skills (topic, judge, verify, fortify, retro, run)
 .experiments/            ← /research:run (run mode)
 .developments/           ← /develop:feature, /develop:fix, /develop:refactor runs
 .cache/
   gh/                    ← shared GitHub API response cache (cross-skill)
 .temp/
-  output-<slug>-*.md     ← quality-gates prose output (cross-cutting)
+  output-<slug>-*.md     ← quality-gates prose output (cross-cutting, no dedicated skill dir)
   review/<timestamp>/    ← /oss:review, /develop:review — intermediate subagent handover files
   <skill>/<timestamp>/   ← other skills migrating to three-tier convention (audit, resolve, calibrate — pending)
 ```

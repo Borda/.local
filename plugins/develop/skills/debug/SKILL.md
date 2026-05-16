@@ -1,7 +1,7 @@
 ---
 name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file."
-argument-hint: '<symptom or failing test> [--no-challenge] [--team] [--ci-run <run-id-or-url>]'
+argument-hint: "<symptom or failing test> [--no-challenge] [--team] [--ci-run <run-id-or-url>]"
 effort: medium
 when_to_use: "Use when root cause unknown and evidence must be gathered first; CI-only failures: pass `--ci-run <run-id>` to fetch GitHub Actions logs instead of local pytest; NOT for applying known fix (use fix) or production incidents without any CI run or traceback (use foundry:investigate)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
@@ -18,7 +18,7 @@ NOT for: production incidents without any CI run ID or local traceback (use `/fo
 
 <workflow>
 
-<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
 
 ## Agent Resolution
 

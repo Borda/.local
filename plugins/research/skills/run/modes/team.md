@@ -219,7 +219,11 @@ After all hypotheses processed (or user stops early with Ctrl-C / user abort):
 
 1. Read `<RUN_DIR>/team-results.jsonl`.
 
-2. Write full report to `.temp/output-optimize-team-<branch>-<YYYY-MM-DD>.md`:
+2. Write full report to `.reports/research/run-team-<branch>-<YYYY-MM-DD>.md`:
+
+   ```bash
+   mkdir -p .reports/research  # timeout: 3000
+   ```
 
    ```markdown
    ## Team Run: <goal>
@@ -259,7 +263,7 @@ After all hypotheses processed (or user stops early with Ctrl-C / user abort):
    Axes:     <comma-separated list>
    Baseline: <metric_key> = <baseline>
    Final:    <metric_key> = <final> (<total delta>% improvement)
-   → saved to .temp/output-optimize-team-<branch>-<date>.md
+   → saved to .reports/research/run-team-<branch>-<date>.md
    ---
    ```
 

@@ -1,6 +1,6 @@
 ---
 name: scientist
-description: AI/ML researcher for deep paper analysis, hypothesis generation, and experiment design. Use ONLY when task is rooted in research paper, ML hypothesis, or experiment — understanding paper method, implementing from publication, generating testable hypotheses, designing ablations, validating ML results. NOT for general Python unrelated to paper (use foundry:sw-engineer), NOT for broad SOTA surveys (use /research:topic), NOT for web content (use foundry:web-explorer), NOT for dataset acquisition or data leakage detection (use research:data-steward).
+description: "AI/ML researcher for deep paper analysis, hypothesis generation, and experiment design. Use ONLY when task is rooted in research paper, ML hypothesis, or experiment — understanding paper method, implementing from publication, generating testable hypotheses, designing ablations, validating ML results. NOT for general Python unrelated to paper (use foundry:sw-engineer), NOT for broad SOTA surveys (use /research:topic), NOT for web content (use foundry:web-explorer), NOT for dataset acquisition or data leakage detection (use research:data-steward)."
 tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, TaskCreate, TaskUpdate
 maxTurns: 60
 model: opus

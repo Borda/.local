@@ -3,7 +3,7 @@ name: verify
 description: Paper-vs-code consistency audit. After research:scientist implements a method from a paper, verify the implementation matches paper claims across five dimensions — formula matching [F], hyperparameter parity [H], eval protocol [E], notation consistency [N], and citation chain [C]. Reads paper (PDF path / arXiv URL / pasted text), maps claims to codebase, emits verification table with match status and severity.
 argument-hint: '<paper> [--scope <glob>] [--program <program.md>] [--strict] [--dim <F,H,E,N,C>]'
 effort: high
-allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
 
@@ -11,7 +11,7 @@ disable-model-invocation: true
 
 Paper-vs-code consistency audit. After `research:scientist` implements method from paper, verify implementation matches paper claims. Audits five dimensions — formula matching, hyperparameter parity, eval protocol, notation consistency, citation chain. Emits verification table with match status and severity.
 
-NOT for: running experiments (use `/research:run`); judging experimental methodology (use `/research:judge`); literature search (use `/research:topic`); general code review (use `/develop:review`). Verify audits implementation-vs-paper fidelity only — does not evaluate whether paper's claims are valid.
+NOT for: running experiments (use `/research:run`); judging experimental methodology (use `/research:judge`); literature search (use `/research:topic`); general code review (use `/develop:review` (requires `develop` plugin)). Verify audits implementation-vs-paper fidelity only — does not evaluate whether paper's claims are valid.
 
 </objective>
 
@@ -146,9 +146,26 @@ Stop — do not proceed to V5/V6. Report specific mismatches to terminal and exi
 
 ### Step V5: Write verification report
 
-Write to `.temp/output-verify-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (`BRANCH` computed in V1):
+```bash
+mkdir -p .reports/research  # timeout: 3000
+```
+
+Write to `.reports/research/verify-$BRANCH-$(date -u +%Y-%m-%d).md` via Write tool (`BRANCH` computed in V1):
 
 ```markdown
+---
+Verify — [paper title]
+Date:        [YYYY-MM-DD]
+Scope:       [paper title] ([year]) / [code glob pattern]
+Focus:       paper-to-code fidelity verification
+Agents:      research:scientist (V3)
+Outcome:     HIGH | MODERATE | LOW fidelity
+Claims:      [N] verified / [N] match / [N] mismatch / [N] partial
+Confidence:  [score] — [key gaps]
+Next steps:  fix mismatches → /research:verify | proceed to /research:run <program.md>
+Path:        → .reports/research/verify-<branch>-<date>.md
+---
+
 ## Verification Report: <paper title>
 
 **Paper**: <title> (<year>) by <authors>
@@ -207,7 +224,7 @@ Fidelity:    HIGH | MODERATE | LOW (<score>)  [or: TIMED OUT]
 Claims:      <N> verified / <match> match / <mismatch> mismatch
 Severity:    <N> HIGH / <N> MEDIUM / <N> LOW
 Top issue:   <one-line from highest severity finding>   [or: "no mismatches found"]
--> saved to .temp/output-verify-<branch>-<date>.md
+-> saved to .reports/research/verify-<branch>-<date>.md
 -> full audit: <RUN_DIR>/audit-raw.md
 ---
 Next: fix mismatches, then /research:verify <paper> --scope <glob>

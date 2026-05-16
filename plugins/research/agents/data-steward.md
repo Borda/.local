@@ -1,6 +1,6 @@
 ---
 name: data-steward
-description: Data lifecycle specialist — acquisition, validation, ML pipeline integrity. Use for dataset collection from external sources (delegates web search/scraping to foundry:web-explorer), paginated API completeness, DVC versioning, lineage tracking, train/val/test split audits, leakage detection, augmentation validation, DataLoader config. NOT for ML experiment design or hypothesis generation (use research:scientist), NOT for DataLoader throughput optimization (use foundry:perf-optimizer), NOT for fetching docs (use foundry:web-explorer).
+description: "Data lifecycle specialist — acquisition, validation, ML pipeline integrity. Use for dataset collection from external sources (delegates web search/scraping to foundry:web-explorer), paginated API completeness, DVC versioning, lineage tracking, train/val/test split audits, leakage detection, augmentation validation, DataLoader config. NOT for ML experiment design or hypothesis generation (use research:scientist), NOT for DataLoader throughput optimization (use foundry:perf-optimizer), NOT for fetching docs (use foundry:web-explorer)."
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
 model: sonnet
 effort: high

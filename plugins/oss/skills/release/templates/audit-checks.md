@@ -92,6 +92,15 @@ fi
 Print readiness report:
 
 ```markdown
+---
+repo: [repo-name]
+date: [YYYY-MM-DD]
+version: [version or "next"]
+range: [range]
+commits: [N non-merge commits]
+verdict: [READY | NEEDS_ATTENTION | BLOCKED]
+---
+
 ## Release Readiness — [repo] [version or "next release"]
 Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 
@@ -116,3 +125,5 @@ Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 ### Next steps
 [e.g., "resolve open PRs → re-run `/release audit v1.3.0` to verify → `/release prepare v1.3.0`"]
 ```
+
+**Terminal output** — after writing the report file, print the readiness check table (the `| Check | Status | Detail |` rows only, no YAML header, no verdict prose) directly to the terminal so it appears inline in the Claude response without requiring the user to open the file.

@@ -63,7 +63,7 @@ CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/research/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -196,9 +196,10 @@ Run all checks before touching code. Fail fast with clear message:
 8. **Flag conflict**: if `--colab` and `--compute=docker` both active: print `⚠ --colab and --compute=docker are mutually exclusive. Use one or the other.` and **stop**.
 9. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
 
-**`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:init`). If not found:
+**`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:init` from foundry plugin to `.claude/skills/_shared/`). If not found:
 
 ```bash
+# codex-delegation.md is deployed by /foundry:init to .claude/skills/_shared/
 [ -f ".claude/skills/_shared/codex-delegation.md" ] || echo "⚠ .claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:init to install it."
 ```
 
@@ -260,8 +261,11 @@ Then proceed to R5.
 ### Step R5: Iteration loop
 
 ```bash
-touch /tmp/claude-commit-authorized  # timeout: 3000
-trap 'rm -f /tmp/claude-commit-authorized' EXIT
+REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
+BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
+COMMIT_SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
+touch "$COMMIT_SENTINEL"  # timeout: 3000
+trap 'rm -f "$COMMIT_SENTINEL"' EXIT
 ```
 
 **`--team` mode**: If `--team` active, Read `${CLAUDE_SKILL_DIR}/modes/team.md` and execute Phases A–D in place of standard iteration loop below.
@@ -523,14 +527,18 @@ TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 **After campaign loop completes** (outside per-iteration loop):
 
 ```bash
-rm -f /tmp/claude-commit-authorized  # timeout: 3000
+rm -f "$COMMIT_SENTINEL"  # timeout: 3000
 ```
 
 ### Step R6: Results report
 
 Pre-compute branch before writing: `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')`
 
-Write full report to `.temp/output-optimize-run-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Do not print to terminal. Anti-overwrite: if file exists, append counter suffix (e.g. `-2.md`): `OUT=".temp/output-optimize-run-$BRANCH-$(date +%Y-%m-%d).md"; if [ -f "$OUT" ]; then OUT="${OUT%.md}-2.md"; fi`
+```bash
+mkdir -p .reports/research  # timeout: 3000
+```
+
+Write full report to `.reports/research/run-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Do not print to terminal. Anti-overwrite: if file exists, append counter suffix (e.g. `-2.md`): `OUT=".reports/research/run-$BRANCH-$(date +%Y-%m-%d).md"; if [ -f "$OUT" ]; then OUT="${OUT%.md}-2.md"; fi`
 
 Read `${CLAUDE_SKILL_DIR}/modes/report.md`
 `state.json`: `status = completed`.

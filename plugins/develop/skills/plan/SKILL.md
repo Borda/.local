@@ -1,7 +1,7 @@
 ---
 name: plan
 description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/."
-argument-hint: '<goal> [--no-challenge] [--codemap] [--semble]'
+argument-hint: "<goal> [--no-challenge] [--codemap] [--semble]"
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -20,7 +20,7 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 
 <workflow>
 
-<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
 
 ## Agent Resolution
 

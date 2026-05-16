@@ -35,7 +35,7 @@ HARD_CUTOFF: 900   # 15 min — if researcher does not return, surface partial r
 
 <workflow>
 
-<!-- Agent Resolution: canonical table at plugins/research/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
 
 ## Agent Resolution
 
@@ -108,6 +108,20 @@ Use Grep tool to search codebase for existing related code:
 ## Step 3: Report
 
 ```markdown
+---
+Research — [topic]
+Date:        [YYYY-MM-DD]
+Scope:       [topic / research question]
+Focus:       SOTA literature research
+Agents:      research:scientist (Step 2a), foundry:solution-architect (plan mode P2)
+Outcome:     EXPLORATORY | PROMISING | CONSENSUS
+Best method: [recommended approach / architecture]
+Papers:      [N papers analyzed]
+Confidence:  [aggregate score] — [key gaps]
+Next steps:  /research:topic plan → /develop:feature
+Path:        → .reports/research/topic-<branch>-<date>.md
+---
+
 ## Research: $ARGUMENTS
 
 ### SOTA Overview
@@ -150,7 +164,11 @@ Use Grep tool to search codebase for existing related code:
 | researcher-3 _(team mode only)_ | [score] | [gaps] |
 ```
 
-Write full report to `.temp/output-research-$BRANCH-$DATE.md` using Write tool — **do not print full report to terminal**.
+```bash
+mkdir -p .reports/research  # timeout: 3000
+```
+
+Write full report to `.reports/research/topic-$BRANCH-$DATE.md` using Write tool — **do not print full report to terminal**.
 
 Print compact terminal summary:
 
@@ -162,7 +180,7 @@ Best method: [recommended approach / architecture]
 Key papers:  [top 2–3 papers with year]
 Gaps:        [what the research couldn't cover or needs runtime validation]
 Confidence:  [aggregate score] — [key gaps]
-→ saved to .temp/output-research-$BRANCH-$DATE.md
+→ saved to .reports/research/topic-$BRANCH-$DATE.md
 ---
 ```
 
@@ -205,20 +223,20 @@ Compact Instructions: preserve paper titles, benchmarks, code links. Discard pro
 Task tracking: call TaskUpdate(in_progress) when you start your assigned task; call TaskUpdate(completed) when done, before sending your delta message.
 ```
 
-Lead synthesizes by reading teammate file paths from delta messages. Pre-compute: `SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"` `SPAWN_DATE="$(date -u +%Y-%m-%d)"`. For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.temp/output-research-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
+Lead synthesizes by reading teammate file paths from delta messages. Pre-compute: `SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"` `SPAWN_DATE="$(date -u +%Y-%m-%d)"`. For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.reports/research/topic-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
 
 ## Plan Mode
 
-Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method — needed before `/develop:feature`.
+Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method — needed before `/develop:feature` (requires `develop` plugin).
 
 **Input detection** (parse argument after `plan`):
 
-- No argument → **auto-detect**: use Glob (pattern `**/output-research-*.md`, path `.temp/`) to find recent research outputs; exclude paths containing `-plan-` or `-codebase-`; sort by modification time descending; pick most recent. Print `→ Using: <path>` before proceeding. If no file found, stop: "No recent research output found — run `/research:topic <topic>` first."
+- No argument → **auto-detect**: use Glob (pattern `topic-*.md`, path `.reports/research/`) to find recent research outputs; exclude paths containing `-plan-` or `-codebase-`; sort by modification time descending; pick most recent. Print `→ Using: <path>` before proceeding. If no file found, stop: "No recent research output found — run `/research:topic <topic>` first."
 - Ends in `.md` → treat as path to existing research output file; skip to Step P1-B
 
 ### Step P1: Gather research findings
 
-**P1-A — From fresh research**: After Steps 1–3 complete, read generated `.temp/output-research-<date>.md`. Extract: Recommendation section, Implementation Plan, Key Hyperparameters, Gotchas, Integration with Current Codebase.
+**P1-A — From fresh research**: After Steps 1–3 complete, read generated `.reports/research/topic-<date>.md`. Extract: Recommendation section, Implementation Plan, Key Hyperparameters, Gotchas, Integration with Current Codebase.
 
 **P1-B — From existing output**: Read file at given path directly. Extract same sections.
 
@@ -246,7 +264,7 @@ Return ONLY a compact JSON envelope on your final line — nothing else after it
 
 ### Step P3: Synthesize plan
 
-Read both files (research findings from P1 + codebase analysis from P2). Produce phased plan, write to `.temp/output-research-plan-$BRANCH-$DATE.md`:
+Read both files (research findings from P1 + codebase analysis from P2). Produce phased plan, write to `.reports/research/topic-plan-$BRANCH-$DATE.md`:
 
 ```markdown
 ## Implementation Roadmap: [method name]
@@ -282,7 +300,7 @@ Topic: [original $ARGUMENTS]
 | 1     | N     | N low, M med   | X days   |
 
 ### Next Steps
-- Phase 1 ready → `/develop:feature <first task from Phase 1>`
+- Phase 1 ready → `/develop:feature <first task from Phase 1>` (requires `develop` plugin)
 - Full plan approved → create `.plans/active/todo_<method>.md` with phases as task groups
 ```
 
@@ -295,7 +313,7 @@ Phases:      [N] phases, [M] tasks total
 Complexity:  [N low / M medium / K high]
 Top risk:    [one-line from risks table]
 Confidence:  [score] — [key gaps]
-→ saved to .temp/output-research-plan-[date].md
+→ saved to .reports/research/topic-plan-[date].md
 ---
 ```
 
@@ -304,7 +322,7 @@ Confidence:  [score] — [key gaps]
 Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "What next?"
 - (a) label: `/research:plan` — description: design a research program from these findings
-- (b) label: `/develop:feature` — description: implement based on findings
+- (b) label: `/develop:feature` — description: implement based on findings (requires `develop` plugin)
 - (c) label: `skip` — description: no action
 
 </workflow>

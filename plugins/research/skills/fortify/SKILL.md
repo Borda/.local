@@ -1,7 +1,7 @@
 ---
 name: fortify
-description: Systematic ablation study runner. After research:run finds improvements, fortify identifies component candidates from git diff + diary, creates isolated git worktrees per ablation (main repo never modified), runs metric+guard in each worktree, ranks component importance, and optionally generates reviewer Q&A calibrated to a target venue.
-argument-hint: '[<run-id>|<program.md>] [--venue <CVPR|NeurIPS|ICML|workshop>] [--max-ablations <N>] [--skip-run]'
+description: "Systematic ablation study runner. After research:run finds improvements, fortify identifies component candidates from git diff + diary, creates isolated git worktrees per ablation (main repo never modified), runs metric+guard in each worktree, ranks component importance, and optionally generates reviewer Q&A calibrated to a target venue."
+argument-hint: "[<run-id>|<program.md>] [--venue <CVPR|NeurIPS|ICML|workshop>] [--max-ablations <N>] [--skip-run]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -66,12 +66,12 @@ Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
    fortify: No completed run found. Run /research:run first.
    ```
 
-**Guard: judge approval required.** Judge skill writes verdict to `.temp/output-judge-<branch>-<date>.md` — scan for APPROVED verdict line:
+**Guard: judge approval required.** Judge skill writes verdict to `.reports/research/judge-<branch>-<date>.md` — scan for APPROVED verdict line:
 
 ```bash
-JUDGE_VERDICT_FILE=$(ls -t .temp/output-judge-*.md 2>/dev/null | head -1)  # timeout: 5000
+JUDGE_VERDICT_FILE=$(ls -t .reports/research/judge-*.md 2>/dev/null | head -1)  # timeout: 5000
 if [ -z "$JUDGE_VERDICT_FILE" ]; then
-  echo "fortify: BLOCKED — no judge verdict found in .temp/."
+  echo "fortify: BLOCKED — no judge verdict found in .reports/research/."
   echo "Ablation studies require an approved baseline. Run: /research:judge <program.md>"
   exit 1
 fi
@@ -323,9 +323,26 @@ Pre-compute branch if not already set:
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 ```
 
-Write full report to `.temp/output-fortify-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (never overwrite — append counter suffix if slug exists, e.g. `-2.md`):
+```bash
+mkdir -p .reports/research  # timeout: 3000
+```
+
+Write full report to `.reports/research/fortify-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (never overwrite — append counter suffix if slug exists, e.g. `-2.md`):
 
 ```markdown
+---
+Fortify — [goal]
+Date:        [YYYY-MM-DD]
+Scope:       [run-id] / [N] components identified
+Focus:       ablation study / component importance ranking
+Agents:      research:scientist (F2, F6)
+Outcome:     [N] critical · [N] significant · [N] marginal components
+Top:         [component-name] (importance: X.X% · CRITICAL|SIGNIFICANT|MARGINAL)
+Confidence:  [score] — [key gaps]
+Next steps:  simplify by removing marginal components, re-run /research:run
+Path:        → .reports/research/fortify-<branch>-<date>.md
+---
+
 ## Fortify Report: <goal>
 
 **Source run**: <run-id>
@@ -388,7 +405,7 @@ Components:   <N> identified · <N> ablations completed
 Top:          <component-name> (importance: X.X% · CRITICAL|SIGNIFICANT|MARGINAL)
 Marginal:     <N> components < 10% each
 Venue Q&A:    generated for <venue> | n/a
--> saved to .temp/output-fortify-<branch>-<date>.md
+-> saved to .reports/research/fortify-<branch>-<date>.md
 -> ablation artifacts: <FORTIFY_DIR>/
 ---
 Next: simplify model by removing marginal components, re-run /research:run

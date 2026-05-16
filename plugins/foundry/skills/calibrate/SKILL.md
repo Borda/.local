@@ -1,7 +1,7 @@
 ---
 name: calibrate
 description: "Calibration testing for agents and skills. Generates synthetic problems with known outcomes (quasi-ground-truth), runs targets against them, measures recall, precision, confidence calibration — reveals whether self-reported confidence scores track actual quality."
-when_to_use: Run to measure agent/skill routing accuracy, validate confidence calibration, or A/B test agent changes after editing descriptions or workflows.
+when_to_use: "Run to measure agent/skill routing accuracy, validate confidence calibration, or A/B test agent changes after editing descriptions or workflows."
 argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]"
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Agent, Glob, Grep, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
@@ -42,14 +42,14 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
   **Scope tokens** (positional, space-separated — defaults to `all`):
     - `all` — all agents + relevant skills + routing + communication + all rules
     - `agents` — all agents only (full agent list in `modes/agents.md`)
-    - `skills` — calibratable skills only (`/audit` and others per `modes/skills.md`; `/oss:review` excluded — requires live GitHub PR)
+    - `skills` — calibratable skills only (`/audit` and others per `modes/skills.md`; `/oss:review` (requires `oss` plugin) excluded — requires live GitHub PR)
     - `routing` — routing accuracy test: measures how accurately `general-purpose` orchestrator selects correct `subagent_type` for synthetic task prompts (not per-agent quality benchmark; included in `all`)
     - `communication` — handover + team protocol compliance: runs `foundry:curator` against synthetic agent responses and team transcripts with injected protocol violations (missing JSON envelope, missing `summary`, AgentSpeak v2 breaches); included in `all`
     - `rules` — rule adherence test: for each global rule file (no `paths:`) and each path-scoped rule when matching file is in context, generates synthetic tasks that should trigger rule's key directives, measures whether `general-purpose` agent with rule loaded correctly applies them; reports rules that are ignored, misapplied, or redundant; included in `all`
     - `plugins` — all agents + calibratable skills from all `plugins/*/` directories (union of all plugin-namespaced agents and calibratable skills)
     - `<plugin-name>` — **tier 2**: bare plugin directory name (e.g. `oss`, `foundry`, `research`, `develop`) auto-resolved when token matches `plugins/<name>/` directory; calibrates all agents + calibratable skills in that plugin
     - `<agent-name>` — **tier 3**: single agent (e.g., `foundry:sw-engineer`); also accepts bare name (e.g. `sw-engineer`) and resolves via `plugins/*/agents/<name>.md`
-    - `/audit` — single skill (pass any calibratable skill name; `/oss:review` accepted but excluded per `modes/skills.md`)
+    - `/audit` — single skill (pass any calibratable skill name; `/oss:review` (requires `oss` plugin) accepted but excluded per `modes/skills.md`)
     - Multiple scope tokens — space-separated; calibrates union of resolved targets: `oss research`, `agents skills`, `curator shepherd`; each token resolved through same tier hierarchy as `/audit` scope tokens (reserved keywords first, then plugin-dir lookup, then agent/skill file search)
 
   Every invocation surfaces report: benchmark runs print new results; `--apply` without pace flag prints saved report from last run before applying.
@@ -116,7 +116,7 @@ From `$ARGUMENTS`, determine:
 - **Target list** — remaining tokens after flag-strip; union of resolved targets:
   - `all` or omitted → all agents + `/audit` + routing + communication + all rules
   - `agents` → all agents (full agent list in `modes/agents.md`)
-  - `skills` → `/audit` only (and other non-live-PR skills in `modes/skills.md`; `/oss:review` excluded)
+  - `skills` → `/audit` only (and other non-live-PR skills in `modes/skills.md`; `/oss:review` (requires `oss` plugin) excluded)
   - `routing` → routing accuracy test only
   - `communication` → handover + team protocol compliance only
   - `rules` → rule adherence test (all rule files in `.claude/rules/`) only

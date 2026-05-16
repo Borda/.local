@@ -1,18 +1,18 @@
 ---
 name: release
-description: 'Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format). Trigger: "prepare release", "write changelog", "what changed since v1.x", "prepare v2.0", "write release notes", "am I ready to release", "check release readiness", or wants to announce version to users.'
-argument-hint: '[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]'
+description: "Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format). Trigger: \"prepare release\", \"write changelog\", \"what changed since v1.x\", \"prepare v2.0\", \"write release notes\", \"am I ready to release\", \"check release readiness\", or wants to announce version to users."
+argument-hint: "[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion
 model: sonnet
 effort: high
-when_to_use: 'Use when user says "prepare release", "write changelog", "what changed since vX.Y", "write release notes", "am I ready to release", "check release readiness", or wants to announce version to users.'
+when_to_use: "Use when user says \"prepare release\", \"write changelog\", \"what changed since vX.Y\", \"write release notes\", \"am I ready to release\", \"check release readiness\", or wants to announce version to users."
 ---
 
 <objective>
 
 Prepare release communication from changes. Output adapts to audience — user-facing notes, CHANGELOG entry, internal summary, migration guide.
 
-NOT for ecosystem impact without release (use oss:analyse). NOT for contributor communication or post-release announcements (use oss:shepherd). NOT for retrospective analysis (audit checks forward readiness only — historical review → oss:analyse).
+NOT for ecosystem impact without release (use oss:analyse (requires `oss` plugin)). NOT for contributor communication or post-release announcements (use oss:shepherd (requires `oss` plugin)). NOT for retrospective analysis (audit checks forward readiness only — historical review → oss:analyse (requires `oss` plugin)).
 
 </objective>
 
@@ -490,13 +490,13 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 - Filter noise (CI config, dep bumps, typos) unless user-impacting
 - **Public-facing content policy**: release notes, changelogs, migration guides = user-visible changes only. Never include: internal staff names, internal maintenance, internal refactors, CI/tooling changes, internal dep bumps, code cleanup, developer housekeeping with no user impact.
 - **Contributor email privacy**: `git log --format="%aN <%aE>"` captures emails in GATHER_FILE under `.temp/`. Ensure `.temp/` in `.gitignore` before committing — emails must not leak into repo.
-- Public-facing output co-authored with `oss:shepherd` — follow `$_OSS_SHARED/shepherd-voice.md` for human, direct tone
+- Public-facing output co-authored with `oss:shepherd` (requires `oss` plugin) — follow `$_OSS_SHARED/shepherd-voice.md` for human, direct tone
 - **Demo mode output**: jupytext percent format — convert to `.ipynb` with `jupytext --to notebook <file>.py`; replace placeholder URLs (`<repo-url>`, `<docs-url>`) before publishing; Colab badge URL must point to actual notebook after upload
 - **Demo real-world-only policy**: use actual project data/fixtures/API — synthetic requires explicit user approval; fallback sequence: (1) document each failed attempt in `## Demo attempts`, (2) ask Codex if available (`Agent(subagent_type="codex:codex-rescue")`), (3) ask user via `AskUserQuestion`, (4) synthetic only on explicit approval
 - **Changelog audit non-destructive**: adds missing entries, flags extras, never removes existing entries automatically
 - Follow-up chains:
   - Readiness check → `/release prepare <version>` runs built-in audit first; use standalone `/release audit [version]` only for readiness check without cutting release
-  - Release includes breaking changes → `/oss:analyse` for downstream ecosystem impact
+  - Release includes breaking changes → `/oss:analyse` (requires `oss` plugin) for downstream ecosystem impact
   - Notes/changelog written → see Publish for release-create gate (`gh release create` must be user-run via project tooling)
   - `migration` content written → add to project docs and link from CHANGELOG entry (see inputs table for mode/flag summary)
 

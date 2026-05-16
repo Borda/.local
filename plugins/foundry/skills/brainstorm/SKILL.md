@@ -5,7 +5,7 @@ argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] | 
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
-when_to_use: Use when idea is fuzzy and needs exploration before a solution is known; NOT for well-scoped features with a known approach (use develop:feature) or code generation.
+when_to_use: "Use when idea is fuzzy and needs exploration before a solution is known; NOT for well-scoped features with a known approach (use develop:feature) or code generation."
 ---
 
 <objective>
@@ -304,7 +304,8 @@ Before spawning, pre-compute output path:
 ```bash
 # timeout: 3000
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
-OUTPUT_PATH=".temp/output-brainstorm-review-$BRANCH-$(date +%Y-%m-%d).md"
+mkdir -p .reports/brainstorm  # timeout: 3000
+OUTPUT_PATH=".reports/brainstorm/review-$BRANCH-$(date +%Y-%m-%d).md"
 ```
 
 Spawn **foundry:curator** with tree-focused prompt. Substitute `$OUTPUT_PATH` value (pre-computed above) for `<output-path>` placeholder before passing prompt — do NOT pass literal `$OUTPUT_PATH` variable name in prompt string. Also replace `<tree-file>` with actual file path written in Step 4 (e.g., `.plans/blueprint/<slug>.md`):
@@ -316,7 +317,17 @@ Read .plans/blueprint/<tree-file>. Audit for tree quality only (do NOT audit `.c
 - Closure quality: are closure reasons substantive (not just "not chosen" or "skipped")?
 - Coverage: are there obvious high-level directions completely missing from the tree?
 - Open threads: are there unresolved questions worth capturing?
-Write your full findings to <output-path> using the Write tool.
+Write your full findings to <output-path> using the Write tool. The file must begin with a YAML metadata block:
+---
+Brainstorm Review — [tree topic]
+Date:     [YYYY-MM-DD]
+Verdict:  READY | NEEDS_REFINEMENT | BLOCKED
+Findings: [N]
+Confidence: [score] — [key gaps]
+Next steps: /foundry:manage create | /develop:feature
+Path:       → .reports/brainstorm/review-<branch>-<date>.md
+---
+Then the full findings below.
 Return ONLY a compact JSON envelope: {"status":"done","findings":N,"file":"<path>","confidence":0.N,"summary":"<one-line>"}
 ```
 

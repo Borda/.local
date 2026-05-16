@@ -19,11 +19,15 @@ NOT for: interactive planning (use `/research:plan`); methodology review only (u
 
 ## Agent Resolution
 
-> **Foundry plugin check**:
-> ```bash
-> ls ~/.claude/plugins/cache/foundry* 2>/dev/null | head -1  # timeout: 3000
-> ```
-> Non-empty = foundry installed. If check fails, treat foundry as available — common case; fall back only if agent dispatch explicitly fails.
+<!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
+
+```bash
+# Locate research plugin shared dir — installed first, local workspace fallback
+_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
+[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
+```
+
+Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`.
 
 Sweep delegates to plan (S2), judge (S3), run (S5) — see each skill's Agent Resolution for fallback handling.
 

@@ -2,7 +2,7 @@
 name: review
 description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Python files only — non-Python files are out of scope."
 when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse)."
-argument-hint: '[python-file|dir] [--no-challenge] [--codemap] [--semble]'
+argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
 disable-model-invocation: true
@@ -57,7 +57,7 @@ EXTENSION_ADVISORY=300          # +5 min extension — reference only; not enfor
 
 <!-- Shared pattern with oss:review — coordinate on agent spawn logic, file-handoff, consolidation changes -->
 
-<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
 
 ## Agent Resolution
 
@@ -66,10 +66,10 @@ EXTENSION_ADVISORY=300          # +5 min extension — reference only; not enfor
 _DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shared 2>/dev/null | head -1)
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
 _FOUNDRY_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED=".claude/skills/_shared"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 

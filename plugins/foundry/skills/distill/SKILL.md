@@ -5,7 +5,7 @@ argument-hint: "[review | prune | lessons | \"external <url-or-path>\" | \"<recu
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: high
-when_to_use: Run periodically (e.g., monthly) or after a burst of corrections to extract patterns and distill improvements — new agent/skill suggestions, roster gaps, memory pruning, lesson consolidation. NOT for single-file agent/skill edits (use /foundry:manage) or config quality auditing (use /foundry:audit).
+when_to_use: "Run periodically (e.g., monthly) or after a burst of corrections to extract patterns and distill improvements — new agent/skill suggestions, roster gaps, memory pruning, lesson consolidation. NOT for single-file agent/skill edits (use /foundry:manage) or config quality auditing (use /foundry:audit)."
 ---
 
 <objective>
