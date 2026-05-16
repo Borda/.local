@@ -1,7 +1,7 @@
 ---
 name: distill
 description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, or consolidating lessons and feedback into rules and agent/skill updates."
-argument-hint: "[review | prune | lessons | \"external <url-or-path>\" | \"<recurring task description>\"]"
+argument-hint: '[review | prune | lessons | "external <url-or-path>" | "<recurring task description>"]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: high

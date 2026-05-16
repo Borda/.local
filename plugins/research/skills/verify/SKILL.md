@@ -1,7 +1,7 @@
 ---
 name: verify
-description: Paper-vs-code consistency audit. After research:scientist implements a method from a paper, verify the implementation matches paper claims across five dimensions — formula matching [F], hyperparameter parity [H], eval protocol [E], notation consistency [N], and citation chain [C]. Reads paper (PDF path / arXiv URL / pasted text), maps claims to codebase, emits verification table with match status and severity.
-argument-hint: '<paper> [--scope <glob>] [--program <program.md>] [--strict] [--dim <F,H,E,N,C>]'
+description: "Paper-vs-code consistency audit. After research:scientist implements a method from a paper, verify the implementation matches paper claims across five dimensions — formula matching [F], hyperparameter parity [H], eval protocol [E], notation consistency [N], and citation chain [C]. Reads paper (PDF path / arXiv URL / pasted text), maps claims to codebase, emits verification table with match status and severity."
+argument-hint: "<paper> [--scope <glob>] [--program <program.md>] [--strict] [--dim <F,H,E,N,C>]"
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true

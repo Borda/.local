@@ -1,7 +1,7 @@
 ---
 name: manage
 description: "Create, update, or delete agents, skills, rules, and hooks with full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing code changes (use develop:feature or develop:fix)."
-argument-hint: "create <agent|skill|rule> <name> \"desc\" | update <name> [new-name|\"change\"|spec.md] | delete <name> | add perm <rule> \"desc\" \"use-case\" | remove perm <rule>"
+argument-hint: 'create <agent|skill|rule> <name> "desc" | update <name> [new-name|"change"|spec.md] | delete <name> | add perm <rule> "desc" "use-case" | remove perm <rule>'
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
 effort: high

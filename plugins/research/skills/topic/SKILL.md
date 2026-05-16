@@ -1,7 +1,7 @@
 ---
 name: topic
-description: Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Delegates deep analysis to the research:scientist agent and codebase mapping to foundry:solution-architect.
-argument-hint: '<topic> [--team] | plan [<output.md>]'
+description: "Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Delegates deep analysis to the research:scientist agent and codebase mapping to foundry:solution-architect."
+argument-hint: "<topic> [--team] | plan [<output.md>]"
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 effort: high
 disable-model-invocation: true

@@ -1,7 +1,7 @@
 ---
 name: retro
-description: Post-run retrospective analysis of experiment history. Reads .experiments/ JSONL, computes statistical significance of improvements (Wilcoxon signed-rank), detects dead iterations, flags suspicious metric jumps, generates learning summary with next-hypothesis queue compatible with --hypothesis flag of research:run.
-argument-hint: '[<run-id>] [--compare <run-id-2>] [--threshold <delta>] [--alpha <significance>]'
+description: "Post-run retrospective analysis of experiment history. Reads .experiments/ JSONL, computes statistical significance of improvements (Wilcoxon signed-rank), detects dead iterations, flags suspicious metric jumps, generates learning summary with next-hypothesis queue compatible with --hypothesis flag of research:run."
+argument-hint: "[<run-id>] [--compare <run-id-2>] [--threshold <delta>] [--alpha <significance>]"
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true

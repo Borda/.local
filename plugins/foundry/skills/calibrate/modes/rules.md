@@ -50,7 +50,7 @@ awk '/^---$/{c++; if(c==2)exit} c==1 && /^paths:/{found=1} END{print found+0}' <
 
 Read `.claude/skills/calibrate/templates/rules-pipeline-prompt.md`. For each rule file, substitute `<RULE_BASENAME>`, `<RULE_CONTENT>`, `<TIMESTAMP>`, `<MODE>`, `<N>`, `<IS_PATH_SCOPED>` and spawn **single** `general-purpose` pipeline subagent.
 
-**Issue all spawns in single response** — rule files independent, run concurrently.
+**Spawn in batches of `$PIPELINE_BATCH_SIZE` (default 5)**: issue up to 5 rule pipeline spawns per response, wait for all in the batch to return their compact JSON results, then spawn the next batch. Rule files within a batch run concurrently; batches are sequential.
 
 Run dir: `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/` (where `RULE_DIR="${RULE_BASENAME%.md}"` — `.md` stripped to avoid permission-matcher conflicts)
 
