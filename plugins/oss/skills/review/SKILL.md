@@ -3,7 +3,6 @@ name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design."
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
-model: sonnet
 effort: high
 when_to_use: "Use when the user asks to review a GitHub Pull Request (Python source, documentation (Markdown/RST), and CI/CD config PRs), wants multi-agent code review feedback, or needs a structured review with severity-graded findings."
 ---
@@ -52,7 +51,7 @@ _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 # Verify $_OSS_SHARED is resolved before any step that uses it (Step 8 reads shepherd-reply-protocol.md)
-[ -z "$_OSS_SHARED" ] && echo "⚠ Could not resolve _OSS_SHARED — Step 8 --reply will fail; verify oss plugin installed" || true
+[ -d "$_OSS_SHARED" ] || { echo "⚠ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — Step 8 --reply will fail; verify oss plugin installed"; exit 1; }
 
 Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
@@ -144,7 +143,7 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
         exit 0
     fi
     [ -z "$PY_FILES" ] && [ -z "$DOC_FILES" ] && [ -n "$CICD_FILES" ] && CICD_ONLY_MODE=true || CICD_ONLY_MODE=false
-    [ -z "$PY_FILES" ] && [ -n "$DOC_FILES" ] && DOCS_ONLY_MODE=true || DOCS_ONLY_MODE=false
+    [ -z "$PY_FILES" ] && [ -z "$CICD_FILES" ] && [ -n "$DOC_FILES" ] && DOCS_ONLY_MODE=true || DOCS_ONLY_MODE=false
 fi
 ```
 
@@ -331,19 +330,9 @@ EXPECTED+=("$RUN_DIR/foundry--sw-engineer.md")
 [ "$CHALLENGE_ENABLED" = "true" ] && EXPECTED+=("$RUN_DIR/foundry--challenger.md")
 # solution-architect added conditionally when spawned
 
-for EXPECTED_FILE in "${EXPECTED[@]}"; do
-    until [ -f "$EXPECTED_FILE" ]; do
-        sleep 15
-        ELAPSED=$(( $(date +%s) - POLL_START ))
-        if [ "$ELAPSED" -gt "$HARD_CUTOFF" ]; then
-            printf "⏱ %s timed out after %ds — proceeding without it\n" "$(basename "$EXPECTED_FILE")" "$ELAPSED"
-            break
-        fi
-    done
-done
 ```
 
-Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. Refreshing checkpoint after each successful poll ensures stalls detected relative to last activity, not launch. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
+Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
 
 After all outputs collected (or timed out), proceed to post-agent checks.
 

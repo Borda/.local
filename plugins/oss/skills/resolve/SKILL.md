@@ -207,7 +207,7 @@ Report : Read <path to report file>
 Building action items…
 ```
 
-Read report. Parse findings from each `###` header (`### [blocking] Critical`, `### Architecture & Quality`, `### Test Coverage Gaps`, `### Performance Concerns`, `### Documentation Gaps`, `### Static Analysis`, `### API Design`, `### Codex Co-Review`). Skip `### OSS Checks`, `### Recommended Next Steps`, `### Review Confidence`, `### Issue Root Cause Alignment`.
+Read report. Parse findings from each `###` header matching any of: `Critical` or `[blocking]`, `Architecture`, `Test Coverage`, `Performance`, `Documentation`, `Static Analysis`, `API Design`, `Codex Co-Review`. Use contains-match (`grep -E '^### .*(Critical|Architecture|Test Coverage|Performance Concerns|Documentation|Static Analysis|API Design|Codex Co-Review)'`) — headers may carry a `⚠ LOW CONFIDENCE — ` prefix (e.g. `### ⚠ LOW CONFIDENCE — Architecture & Quality`) that exact-match misses. Skip headers matching: `OSS Checks`, `Recommended Next Steps`, `Review Confidence`, `Issue Root Cause Alignment`.
 
 Map each finding to action item schema:
 

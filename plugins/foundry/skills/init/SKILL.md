@@ -164,7 +164,7 @@ Write back with Write tool. Report: "Added N new permissions.deny entries (M alr
 Note: this step writes to `.claude/permissions-guide.md` relative to the current working directory — init must be run from project root (a git repository root). Guard:
 
 ```bash
-[ -d ".git" ] || { echo "! Run /foundry:init from project root (git repository root)"; exit 1; }
+[ -e ".git" ] || { echo "! Run /foundry:init from project root (git repository root)"; exit 1; }
 ```
 
 Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — only if destination absent (preserves project-local edits via `/manage`):
@@ -325,21 +325,35 @@ Options:
 - b) Skip all conflicts — keep existing files unchanged
 - c) Review one by one
 
-On **c**: loop with `AskUserQuestion` — "Replace `<name>`? (y) Yes / (n) Skip".
+On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
+On **(c)**: loop with `AskUserQuestion` — "Replace `<name>`? (y) Yes / (n) Skip". Append approved names to `APPROVED_CONFLICT_ENTRIES` array.
 
-**Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently):
+**Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard: if `SKIP_CONFLICTS_MODE=true`, skip real files (`[ -f "$dest" ] && [ ! -L "$dest" ]`) — those were entries user declined:
 
 ```bash
 for src in "$PLUGIN_ROOT/rules/"*.md; do
-    unlink "$HOME/.claude/rules/$(basename "$src")" 2>/dev/null || true; ln -sf "$src" "$HOME/.claude/rules/$(basename "$src")"  # timeout: 5000
+    dest="$HOME/.claude/rules/$(basename "$src")"
+    if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
+        echo "  skipped (user choice b): $(basename "$src")"; continue
+    fi
+    unlink "$dest" 2>/dev/null || true; ln -sf "$src" "$dest"  # timeout: 5000
     echo "  linked: $(basename "$src")"
 done  # timeout: 10000
-unlink ~/.claude/TEAM_PROTOCOL.md 2>/dev/null || true; ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" ~/.claude/TEAM_PROTOCOL.md  # timeout: 5000
-echo "  linked: TEAM_PROTOCOL.md"
+dest="$HOME/.claude/TEAM_PROTOCOL.md"
+if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
+    echo "  skipped (user choice b): TEAM_PROTOCOL.md"
+else
+    unlink "$dest" 2>/dev/null || true; ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" "$dest"  # timeout: 5000
+    echo "  linked: TEAM_PROTOCOL.md"
+fi
 # Skills — ln -sf each skills/ subdir; handles stale foundry and absent entries
 for src_dir in "$PLUGIN_ROOT/skills/"*/; do
     skill=$(basename "${src_dir%/}")
-    unlink "$HOME/.claude/skills/$skill" 2>/dev/null || true; ln -sf "${src_dir%/}" "$HOME/.claude/skills/$skill"  # timeout: 5000
+    dest="$HOME/.claude/skills/$skill"
+    if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
+        echo "  skipped (user choice b): skill:$skill"; continue
+    fi
+    unlink "$dest" 2>/dev/null || true; ln -sf "${src_dir%/}" "$dest"  # timeout: 5000
     echo "  linked skill: $skill"
 done  # timeout: 10000
 ```

@@ -5,7 +5,6 @@ argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
-when_to_use: "Use for sweeping quality checks of .claude/ config or plugin source — NOT for creating/modifying agents (use manage) or measuring behavioral accuracy (use calibrate)."
 ---
 
 <objective>
@@ -85,15 +84,16 @@ Surface progress at milestones: after system-wide checks ("✓ Checks 1-21 compl
 **Context budget**: full audit (12+ agents, 14+ skills, 12 system checks) runs close to context limits. File-based handoff mandatory — every sub-agent writes full output to file, returns only compact JSON envelope. Sub-agent echoing findings to context = compaction before audit completes.
 
 ```bash
-LOCAL_MODE=false;      [[ "$ARGUMENTS" == *"--local"*      ]] && LOCAL_MODE=true
-ADVERSARIAL_MODE=false; [[ "$ARGUMENTS" == *"--adversarial"* ]] && ADVERSARIAL_MODE=true
-EFFICIENCY_MODE=false;  [[ "$ARGUMENTS" == *"--efficiency"*  ]] && EFFICIENCY_MODE=true
-UPGRADE_MODE=false;     [[ "$ARGUMENTS" == *"--upgrade"*     ]] && UPGRADE_MODE=true
-SKIP_GATE=false;        [[ "$ARGUMENTS" == *"--skip-gate"*   ]] && SKIP_GATE=true
-ARGUMENTS="${ARGUMENTS//--local/}"; ARGUMENTS="${ARGUMENTS//--adversarial/}"
-ARGUMENTS="${ARGUMENTS//--efficiency/}"; ARGUMENTS="${ARGUMENTS//--upgrade/}"
-ARGUMENTS="${ARGUMENTS//--skip-gate/}"; ARGUMENTS="${ARGUMENTS//--challenge/}"
-ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
+LOCAL_MODE=false;       [[ " $ARGUMENTS " == *" --local "* ]]       && LOCAL_MODE=true
+ADVERSARIAL_MODE=false; [[ " $ARGUMENTS " == *" --adversarial "* ]] && ADVERSARIAL_MODE=true; [[ " $ARGUMENTS " == *" --challenge "* ]] && ADVERSARIAL_MODE=true
+EFFICIENCY_MODE=false;  [[ " $ARGUMENTS " == *" --efficiency "* ]]  && EFFICIENCY_MODE=true
+UPGRADE_MODE=false;     [[ " $ARGUMENTS " == *" --upgrade "* ]]     && UPGRADE_MODE=true
+SKIP_GATE=false;        [[ " $ARGUMENTS " == *" --skip-gate "* ]]   && SKIP_GATE=true
+ARGUMENTS=" $ARGUMENTS "
+ARGUMENTS="${ARGUMENTS// --local / }"; ARGUMENTS="${ARGUMENTS// --adversarial / }"
+ARGUMENTS="${ARGUMENTS// --efficiency / }"; ARGUMENTS="${ARGUMENTS// --upgrade / }"
+ARGUMENTS="${ARGUMENTS// --skip-gate / }"; ARGUMENTS="${ARGUMENTS// --challenge / }"
+ARGUMENTS="${ARGUMENTS# }"; ARGUMENTS="${ARGUMENTS% }"
 
 RED='\033[1;31m'
 YEL='\033[1;33m'
@@ -246,7 +246,7 @@ Spawn **foundry:curator** agents in batches of up to `BATCH_SIZE` (grouping algo
 
 > "Write your FULL findings (all severity levels, Confidence block) to `<RUN_DIR>/<file-slug>.md` using the Write tool — where `<file-slug>` is a unique identifier combining plugin prefix and filename (e.g. `foundry-shepherd.md`, `oss-analyse-SKILL.md`, `develop-fix-SKILL.md`) to avoid collisions between cross-plugin files sharing the same basename. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/<file-slug>.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<filename>: N critical, N high, N medium, N low\"}`"
 
-Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique slug (e.g. `foundry-shepherd`, `oss-analyse-SKILL`, `develop-fix-SKILL`).
+Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique slug (e.g. `foundry-shepherd`, `oss-analyse-SKILL`, `develop-fix-SKILL`). Slug chars: `[a-zA-Z0-9-]` only — no slashes, spaces, or dots.
 
 **Critical context discipline**: response body = JSON envelope on final line only. No other text, output summaries, or findings. All content to file.
 
@@ -373,6 +373,38 @@ After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/syst
 
 Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate.md` in full — 200–600 lines, overflows context on large audits. Use `$RUN_DIR/summary.jsonl` for all dispatch decisions in Steps 7 and 8.
 
+## Step 5b: Low-confidence remediation
+
+Parse confidence scores from each file's `## Confidence` block in `<RUN_DIR>/<slug>.md` output files (use Glob + Read — batch envelopes carry aggregate confidence, not per-file scores; individual file reports are the authoritative source). For each slug where `Score` < **0.80**, run three parallel passes:
+
+**A — Double-reasoning pass** (curator re-run with gaps called out):
+
+Spawn **foundry:curator** with the prior report and its `Gaps:` block:
+
+> "Re-audit `<original-source-file>` targeting these specific gaps from the prior pass: `<Gaps block content>`. Address each gap explicitly — do not repeat prior findings verbatim; focus on what was uncertain. Write updated findings to `<RUN_DIR>/<slug>-rerun.md`. Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"...\"}`"
+
+**B — Docs consultation** (verify findings against current Claude Code schema):
+
+Spawn **foundry:web-explorer**:
+
+> "Fetch current Claude Code docs for `[agent|skill|hook]` schema — navigate from `https://code.claude.com/docs/en/` to the `[sub-agents|skills|hooks]` page. Verify that findings about frontmatter fields or documented behavior in `<RUN_DIR>/<slug>-rerun.md` are accurate against current docs. List any corrections. Write to `<RUN_DIR>/docs-recheck-<slug>.md`. Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"corrections\":N,\"confidence\":0.N}`"
+
+**C — Codex adversarial pass** (requires `codex` plugin):
+
+```bash
+CODEX_AVAILABLE=$(find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1 | grep -q . && echo true || echo false)  # timeout: 5000
+```
+
+If `CODEX_AVAILABLE=true`: spawn `Agent(subagent_type="codex:codex-rescue")`:
+
+> "Adversarial review of low-confidence findings for `<original-source-file>`. Prior foundry:curator pass scored confidence=<N> — gaps: `<Gaps>`. Challenge each finding: real? severity correct? missed issues? Read source file + prior report `<RUN_DIR>/<slug>-rerun.md`. Write to `<RUN_DIR>/codex-recheck-<slug>.md`. Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}`"
+
+If `CODEX_AVAILABLE=false`: log `[Step 5b] Codex unavailable — adversarial pass skipped; install codex plugin for full low-confidence remediation.` Include note in final report `## Confidence` section.
+
+**After all three passes complete** for a slug: spawn **foundry:curator** mini-consolidator to merge `<slug>-rerun.md`, `docs-recheck-<slug>.md`, `codex-recheck-<slug>.md` → append `### Low-Confidence Remediation — <slug>` section to `aggregate.md` with reconciled findings (promoted corrections, confirmed findings, refuted findings). Update `summary.jsonl` with any net-new findings.
+
+**Skip Step 5b entirely** when no Step 3 files scored below 0.80.
+
 ## Step 6: Cross-validate critical findings
 
 ```bash
@@ -386,7 +418,7 @@ Read and follow cross-validation protocol from `$_SHARED/cross-validation-protoc
 
 ## Step 7: Report findings
 
-Emit report (omit Upgrade Proposals if none passed genuine-value filter):
+Before emitting, read current `$RUN_DIR/summary.jsonl` (may have been updated by Step 5b with net-new promoted findings) and recompute severity totals. Then emit report (omit Upgrade Proposals if none passed genuine-value filter):
 
 ```markdown
 ## Audit Report
@@ -510,7 +542,7 @@ For every file changed in Step 8, spawn **foundry:curator** to confirm fix resol
 grep -n "<broken-name>" <fixed-file>
 ```
 
-**Confidence re-run**: apply per quality-gates.md standard protocol. Parse confidence scores from Step 3 and Step 10 summaries. **Score < 0.7**: re-spawn foundry:curator on that file with specific `Gaps:` field gap addressed; still < 0.7 after retry → flag with ⚠, include gap in final report. Recurring low-confidence gaps (same gap, same file, multiple runs) → candidate for foundry:curator `\<antipatterns_to_flag>` or agent instructions.
+**Confidence re-run**: parse confidence scores from Step 3 and Step 10 summaries. **Score < 0.80**: Step 5b already ran a three-pass remediation (double-reasoning, docs consultation, Codex adversarial) — if Step 10 re-audit still scores < 0.80 after Step 5b, flag with ⚠, include gap in final report. Recurring low-confidence gaps (same gap, same file, multiple runs) → candidate for foundry:curator `\<antipatterns_to_flag>` or agent instructions.
 
 **Convergence loop**: re-audit surfaces new fixable findings within gate-selected severity threshold → loop back to Step 8. Repeat until:
 

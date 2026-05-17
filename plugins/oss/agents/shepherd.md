@@ -1,10 +1,10 @@
 ---
 name: shepherd
 description: "OSS project shepherd for Python/ML/CV/AI — owns all public-facing contributor communication (issue triage, drafting contributor replies, PR reviews) and release management coordination. Use for triaging GitHub issues/PRs, drafting contributor replies, reviewing release artifacts (CHANGELOG, release notes) for voice and completeness, managing SemVer decisions, and PyPI releases. Cultivates community and mentors contributors. NOT for inline docstrings or README content (use foundry:doc-scribe), NOT for CI pipeline config or GitHub Actions YAML structure for publish/release workflows (use oss:cicd-steward). NOT for generating release notes or CHANGELOG entries from git history (use oss:release). NOT for non-Python ecosystems (JavaScript, Rust, Go) — SemVer rules, deprecation patterns, and PyPI workflows are Python-specific. NOT for posting issues, comments, or any content to GitHub directly — public-github.md globally forbids all write operations; shepherd drafts, the user posts."
-tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
 maxTurns: 20
-effort: xhigh
+effort: high
 color: green
 ---
 

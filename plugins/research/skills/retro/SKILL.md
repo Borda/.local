@@ -156,13 +156,6 @@ Write to `$RUN_DIR/suspicious-jumps.json` via Write tool.
 
 Pre-compute all file paths before spawning. Verify `$RUN_DIR/stats-results.json`, `$RUN_DIR/dead-iters.json`, `$RUN_DIR/suspicious-jumps.json` exist (T2–T4 must complete first).
 
-**Health monitoring setup**:
-
-```bash
-LAUNCH_AT=$(date +%s)
-touch /tmp/retro-check-$LAUNCH_AT
-```
-
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`:
 
 ```markdown
@@ -202,7 +195,7 @@ Pre-compute branch (already done in T1). ```bash
 mkdir -p .reports/research  # timeout: 3000
 ```
 
-Write full report to `.reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (never overwrite — append counter suffix if file exists):
+Write full report to `.reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Anti-overwrite: `BASE=".reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md"; OUT="$BASE"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done`
 
 ```markdown
 ---

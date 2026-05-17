@@ -242,7 +242,9 @@ $PYTEST_CMD <test_file> -v
 
 ```bash
 GATE_EXIT=$?
-if [ $GATE_EXIT -ne 0 ]; then
+if [ "${GATE_EXIT:-0}" -eq 5 ]; then
+    echo "GATE WARN: no tests collected (exit 5) — characterization test file missing or not detected by pytest; fix collection, not the code"
+elif [ $GATE_EXIT -ne 0 ]; then
     echo "GATE FAIL: characterization test(s) failed (exit $GATE_EXIT) — fix the test, not the code"
     # The test is wrong if it fails on unmodified code
 fi
@@ -263,7 +265,7 @@ For each change:
 3. Tests pass: proceed to next change
 4. Tests fail: revert, try different approach
 
-**Safety break**: after `MAX_INNER_CYCLES` change-test cycles, stop — report what succeeded, what broke, what remains.
+**Safety break**: track cycle count in scratch (`INNER_CYCLE=0`; increment after each change-test pair). After `MAX_INNER_CYCLES` cycles, stop — report what succeeded, what broke, what remains.
 
 **Refactoring categories:**
 

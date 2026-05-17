@@ -343,7 +343,7 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 mkdir -p .reports/research  # timeout: 3000
 ```
 
-Write full report to `.reports/research/fortify-$BRANCH-$(date +%Y-%m-%d).md` via Write tool (never overwrite — append counter suffix if slug exists, e.g. `-2.md`):
+Write full report to `.reports/research/fortify-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Anti-overwrite: `BASE=".reports/research/fortify-$BRANCH-$(date +%Y-%m-%d).md"; OUT="$BASE"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done`
 
 ```markdown
 ---

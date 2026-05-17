@@ -34,7 +34,7 @@ _FOUNDRY_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_
 [ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED=".claude/skills/_shared"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:challenger`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
 
 ## Anti-Rationalizations
 
@@ -234,7 +234,7 @@ Surface archaeology verdict before any writing:
 
 ### Part B — Write new reproduction test (only when outcome C)
 
-Spawn **foundry:qa-specialist** agent to write two reproduction tests:
+Spawn **foundry:qa-specialist** agent (outcome C only — no existing tests found) to write two reproduction tests:
 
 Spawn with context:
 - Bug description: [symptom from $ARGUMENTS or issue]

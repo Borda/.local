@@ -53,6 +53,12 @@ fi
 # Auth preflight — fail fast before any API calls
 gh auth status 2>/dev/null || { echo "[gh-scraper] ERROR: not authenticated — run gh auth login"; exit 1; }  # timeout: 6000
 
+# Rate-limit preflight — warn if too few calls remain for a full scrape (~80 API calls needed)
+RATE_REMAINING=$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo "unknown")  # timeout: 6000
+if [ "$RATE_REMAINING" != "unknown" ] && [ "$RATE_REMAINING" -lt 80 ]; then
+    echo "[gh-scraper] WARN: only $RATE_REMAINING core API calls remaining — results may be incomplete; reset at $(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null | xargs -I{} date -r {} 2>/dev/null || echo 'unknown time')"  # timeout: 6000
+fi
+
 echo "[gh-scraper] analysing $GH_OWNER/$GH_REPO"  # timeout: 5000
 mkdir -p "$(dirname "$DATA_FILE")"  # timeout: 5000
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000

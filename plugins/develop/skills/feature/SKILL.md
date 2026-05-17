@@ -84,6 +84,8 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight if flag se
 
 When `TEAM_MODE=true`:
 
+Guard: `[ -f "${HOME}/.claude/TEAM_PROTOCOL.md" ] || { echo "⚠ --team requires foundry plugin (TEAM_PROTOCOL.md absent — run /foundry:init first)"; TEAM_MODE=false; }` — if TEAM_MODE reverts to false, continue with solo workflow below (Steps 1–5).
+
 Run Step 1 scope analysis inline (same analysis as solo Step 1) — teammates need orientation context. After Step 1 completes, broadcast to teammates: `{feature: <desc>, scope: <modules>, API: <proposed signature>}`.
 
 Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template to get spawn prompt template. Replace `[ROLE_PHRASE]` with feature description, `[FILE_SLUG]` with `feature`.

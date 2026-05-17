@@ -30,11 +30,14 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
 
 ```bash
 if [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]]; then
-    echo "Integer argument detected — invoking AskUserQuestion"
+    echo "Integer argument detected — checking oss plugin availability"
+    [ -f "$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review/SKILL.md 2>/dev/null | head -1)" ] && OSS_AVAILABLE=true || OSS_AVAILABLE=false  # timeout: 5000
 fi
 ```
 
-Call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → invoke `oss:review` skill with number; (b) "No — review local code at a path instead" → ask for path to review.
+If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → invoke `oss:review` skill with number; (b) "No — review local code at a path instead" → ask for path to review.
+
+If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but the oss plugin is not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — provide a local file or directory path to review"; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
 
 </inputs>
 

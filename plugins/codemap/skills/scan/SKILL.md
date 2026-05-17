@@ -5,6 +5,7 @@ when_to_use: "Use when scanning or re-indexing a repository into the codemap. Ru
 argument-hint: "[--root <path>] [--incremental]"
 effort: medium
 allowed-tools: Bash, AskUserQuestion
+disable-model-invocation: true
 ---
 
 <objective>

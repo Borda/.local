@@ -538,7 +538,7 @@ Pre-compute branch before writing: `BRANCH=$(git branch --show-current 2>/dev/nu
 mkdir -p .reports/research  # timeout: 3000
 ```
 
-Write full report to `.reports/research/run-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Do not print to terminal. Anti-overwrite: if file exists, append counter suffix (e.g. `-2.md`): `OUT=".reports/research/run-$BRANCH-$(date +%Y-%m-%d).md"; if [ -f "$OUT" ]; then OUT="${OUT%.md}-2.md"; fi`
+Write full report to `.reports/research/run-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Do not print to terminal. Anti-overwrite: if file exists, append counter suffix (e.g. `-2.md`): `OUT=".reports/research/run-$BRANCH-$(date +%Y-%m-%d).md"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done`
 
 Read `${CLAUDE_SKILL_DIR}/modes/report.md`
 `state.json`: `status = completed`.
