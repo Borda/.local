@@ -5,7 +5,6 @@ argument-hint: 'create <agent|skill|rule> <name> "desc" | update <name> [new-nam
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
 effort: high
-when_to_use: "Use to create, rename, or delete agents/skills/rules/hooks and keep cross-references in sync; NOT for validating existing config quality (use audit) or implementing code changes (use develop:feature or develop:fix — requires `develop` plugin)."
 ---
 
 > **Note:** `disable-model-invocation: true` — `/manage` user-invoked only, no `Skill()` chaining from orchestrators. When suggesting `/manage` as follow-up, invoking skill must present as user-run command, not auto step.

@@ -141,6 +141,6 @@ created: YYYY-MM-DD
 - Refuse FAQs / comparison tables / ref docs at Step 1 gate; name `foundry:doc-scribe` as redirect.
 - Write outline exactly once after approval — no second draft unless user requests.
 - `foundry:creator` reads output outline file and generates full artifact autonomously.
-- See brainstorm/create workflow design notes (blueprint files in .plans/blueprint/ are TTL-30d).
+- Blueprint spec files written to `.plans/blueprint/` — see `artifact-lifecycle.md` for TTL policy (30d).
 
 </notes>

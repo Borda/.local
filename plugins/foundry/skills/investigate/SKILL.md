@@ -5,7 +5,6 @@ argument-hint: "<symptom, question, or failing command> [--fast]"
 allowed-tools: Read, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opusplan
 effort: high
-when_to_use: "Use when the cause of a failure is unknown — environment, tooling, CI divergence, hooks; NOT for known code bugs with a traceback (use develop:debug) or config quality sweeps (use audit)."
 ---
 
 <objective>

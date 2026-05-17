@@ -14,7 +14,7 @@ Validate agents and skills by measuring outputs against synthetic problems with 
 
 Calibration data drives improvement loop: systematic gaps → instruction updates; persistent overconfidence → adjusted re-run thresholds in MEMORY.md.
 
-NOT for: static routing overlap analysis (use /foundry:audit); manually reviewing skill output quality (use /develop:review).
+NOT for: static routing overlap analysis (use /foundry:audit); manually reviewing skill output quality (use /develop:review (requires `develop` plugin)).
 
 </objective>
 
@@ -157,7 +157,11 @@ Create tasks before proceeding:
 > **Pre-flight**: mode files at `<plugin-cache>/foundry/<v>/skills/calibrate/modes/` — resolve via plugin cache scan below.
 > `/foundry:init` does NOT symlink these (only `rules/*.md` and `TEAM_PROTOCOL.md`); if not found, re-install foundry plugin.
 > ```bash
-> CALIB_MODES_DIR="$(find ${HOME}/.claude/plugins/cache -path "*/calibrate/modes" -type d 2>/dev/null | head -1)" # timeout: 5000
+> if [ "$LOCAL_MODE" = "true" ] && [ -d "plugins/foundry/skills/calibrate/modes" ]; then
+>     CALIB_MODES_DIR="plugins/foundry/skills/calibrate/modes"
+> else
+>     CALIB_MODES_DIR="$(find ${HOME}/.claude/plugins/cache -path "*/calibrate/modes" -type d 2>/dev/null | head -1)" # timeout: 5000
+> fi
 > [ -d "$CALIB_MODES_DIR" ] || { printf "! BREAKING: calibrate/modes/ not found — re-install foundry plugin: claude plugin install foundry@borda-ai-rig\n"; exit 1; }
 > ```
 
@@ -302,16 +306,20 @@ Stop. `--apply` without pace flag is documented as "skip benchmark, apply propos
 
 **Spawn one `foundry:curator` subagent per found target (`.md` files — agents and skills). Issue ALL spawns in single response — no waiting between spawns.**
 
-**`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. Project-local override first, then plugin cache, then source-tree fallback (plugin-dev only):
+**`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. When `LOCAL_MODE=true`, source tree takes priority; otherwise project-local override first, then plugin cache, then source-tree fallback:
 ```bash
 # Agent target — parse plugin prefix from target name (<plugin>:<agent> pattern)
 # e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default)
 PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')
 AGENT_BARE=$(echo "<name>" | sed 's/^[^:]*://')
 [ -z "$PLUGIN_PREFIX" ] && PLUGIN_PREFIX="foundry"
-AGENT_FILE=".claude/agents/$AGENT_BARE.md"
-[ -f "$AGENT_FILE" ] || AGENT_FILE="$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/$PLUGIN_PREFIX" -maxdepth 4 -name "$AGENT_BARE.md" -path "*/agents/*" 2>/dev/null | sort -Vr | head -1)"
-[ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
+if [ "$LOCAL_MODE" = "true" ] && [ -f "plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md" ]; then
+    AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
+else
+    AGENT_FILE=".claude/agents/$AGENT_BARE.md"
+    [ -f "$AGENT_FILE" ] || AGENT_FILE="$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/$PLUGIN_PREFIX" -maxdepth 4 -name "$AGENT_BARE.md" -path "*/agents/*" 2>/dev/null | sort -Vr | head -1)"
+    [ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
+fi
 # Skill target — substitute skills/<name>/SKILL.md in the same pattern (plugin prefix applies equally)
 
 # Proposal path (same TIMESTAMP used throughout skill)

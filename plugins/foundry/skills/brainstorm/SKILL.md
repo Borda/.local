@@ -14,21 +14,13 @@ Turn unformed idea into branching exploration tree, then distill into spec. Idea
 
 NOT for implementation or code-gen — see `develop` plugin.
 
-<HARD-GATE>
-
-Do NOT take any implementation action — writing code, creating files, scaffolding — until user approves design (spec). Applies regardless of perceived simplicity. Simple idea can have short tree and spec, but process never skipped.
-
-</HARD-GATE>
+> **HARD GATE:** Do NOT take any implementation action — writing code, creating files, scaffolding — until user approves design (spec). Applies regardless of perceived simplicity. Simple idea can have short tree and spec, but process never skipped.
 
 </objective>
 
 <inputs>
 
 - **$ARGUMENTS**: required — fuzzy idea, goal, or feature request in any form; one sentence enough
-
-Examples:
-
-- `/brainstorm I want users to be able to export results as CSV`
 
 - **`--tight`** — reduced-ceremony mode: see per-step caps below — 5/5/1 bounds vs default 10/10/2. Good for well-scoped ideas where problem already understood.
 

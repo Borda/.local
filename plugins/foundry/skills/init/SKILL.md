@@ -3,7 +3,6 @@ name: init
 description: "Post-install setup for foundry plugin. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
-when_to_use: "Use once after installing the foundry plugin on a new machine; NOT for editing project .claude/ config (use manage) or re-running audits (use audit)."
 model: sonnet
 argument-hint: "[--approve]"
 ---

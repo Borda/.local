@@ -177,8 +177,9 @@ Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overl
 
 **Memory-write gate** — project CLAUDE.md `Memory Policy` prohibits auto-writes to MEMORY.md. Prune mode runs read-only by default and produces advisory diff/report rather than applying edits silently:
 
-1. Read memory file and analyse for stale, redundant, and verbose entries.
-2. Print proposed prune report to terminal (sections to drop + sections to trim, with line ranges and reasoning):
+**P1**: Read memory file and analyse for stale, redundant, and verbose entries.
+
+**P2**: Print proposed prune report to terminal (sections to drop + sections to trim, with line ranges and reasoning):
 
    ```text
    Prune proposals (apply manually unless explicitly approved below):
@@ -187,7 +188,7 @@ Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overl
      ...
    ```
 
-3. Call `AskUserQuestion` — do NOT write question as plain text. Map options directly into tool call:
+**P3**: Call `AskUserQuestion` — do NOT write question as plain text. Map options directly into tool call:
    - question: "Apply prune edits to MEMORY.md?"
    - (a) label: `Apply now` — description: use Edit tool to apply all proposals to memory file
    - (b) label: `Show diff first` — description: print line-by-line preview before applying any change
@@ -513,7 +514,7 @@ If critical findings returned: surface to user before marking complete. Non-crit
   - Security findings appearing in reviews for non-auth code → suggests qa-specialist teammate scope too broad; narrow it
   - Model tier mismatches (e.g., heavy analysis assigned to `sonnet` teammates) → flag for tier adjustment
 
-- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | sort -Vr | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
+- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"* -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | sort -Vr | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
   - **caveman plugin** — narrow, self-contained communication mode, no local structural overlap → GT: install-as-is recommended, Group A empty or thin
   - **Karpathy autoresearch** — research automation tool, strong overlap with `research:` plugin structure → GT: Group A candidates map to research plugin, digest recommended, install-as-is not triggered
   - Ground truth = static snapshot of each tool's agent/skill/rule files (no live fetch needed); score adoption-table lane assignments against GT outcomes

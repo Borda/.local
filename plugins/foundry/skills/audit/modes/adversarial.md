@@ -17,6 +17,15 @@ For each file in scope (Step 2 inventory; default all agents + skills if no expl
 
 Use same `BATCH_SIZE` grouping as Step 3 — same plugin-aware batching applies.
 
+**Phase A-prime — Unconstrained curator pass** (parallel with Phase A and Phase B):
+
+For each file in scope, spawn **foundry:curator** with no scope constraint:
+
+> "Audit this file. Read `$AUDIT_TPL/curator-prompt.md` as your baseline checklist — apply all those checks. Then go beyond: report ANY additional issue you observe that falls outside the explicit checklist. Look especially for: execution continuing after a confirmed failure path with no `exit 1`; incomplete specifications that would leave an agent uncertain at a branch point; undocumented implicit dependencies (env vars, files, network) not declared in inputs; workflow logic that is self-consistent but would silently produce wrong results on a valid non-happy-path input. No scope constraint — senior-engineer judgment applies."
+> Write full findings to `<RUN_DIR>/deep-curator-<file-slug>.md` using same `<file-slug>` convention as Phase A. Return ONLY: `{"status":"done","file":"<path>","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N}`
+
+Use same `BATCH_SIZE` grouping. Phase C deduplicates against standard audit findings — only net-new deep-curator findings carried forward.
+
 **Phase B — Codex adversarial pass** (parallel with Phase A):
 
 ```bash
@@ -31,7 +40,7 @@ Codex writes per-file findings to `<RUN_DIR>/codex-adversarial-<file-basename>.m
 
 **Phase C — Aggregate and deduplicate**:
 
-Spawn **foundry:curator** consolidator to merge Phase A + Phase B findings. Cross-reference against standard audit `summary.jsonl` (same RUN_DIR). Surface only findings NOT already in standard audit — adversarial adds signal, not noise.
+Spawn **foundry:curator** consolidator to merge Phase A + Phase A-prime + Phase B findings. Cross-reference against standard audit `summary.jsonl` (same RUN_DIR). Surface only findings NOT already in standard audit — adversarial adds signal, not noise.
 
 In adversarial-only mode (`--adversarial` flag without preceding standard audit), Steps 3–6 are skipped so no `summary.jsonl` exists in RUN_DIR. Dedup against most recent standard audit `summary.jsonl` within the same RUN_DIR or from any run within the last 24h (check `.reports/audit/` for recent dirs). If no standard audit found within 24h, skip dedup and surface all adversarial findings without overlap filtering.
 
@@ -42,9 +51,9 @@ Write deduplicated findings to `<RUN_DIR>/adversarial-aggregate.md` and `<RUN_DI
 ```markdown
 ## Adversarial Audit — <date> — <scope>
 
-| File | Challenger | Codex | New Findings | Top Issue |
-|------|-----------|-------|--------------|-----------|
-| agents/curator.md | 3 | 1 | 2 | NOT-for gap: accepts task X |
+| File | Challenger | Deep-curator | Codex | New Findings | Top Issue |
+|------|-----------|--------------|-------|--------------|-----------|
+| agents/curator.md | 3 | 1 | 1 | 2 | NOT-for gap: accepts task X |
 ```
 
 Adversarial findings feed into standard fix pipeline (Steps 7–10) when user picks fix level from follow-up gate.

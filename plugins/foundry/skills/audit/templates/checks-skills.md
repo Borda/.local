@@ -419,6 +419,27 @@ printf "✓: Check 30e scan complete\n"  # timeout: 5000
 
 Severity: **high** — heredoc triggers permission prompt; user deny = workflow block; violates CLAUDE.md §Pre-Authorized Operations.
 
+### 30f — Missing exit on confirmed failure path
+
+```bash
+printf "=== Check 30f: Missing exit on confirmed failure ===\n"
+# Find "GENUINE FAILURE" / "all retries failed" / "failed — abort" markers NOT followed by exit within 3 lines
+grep -rn 'GENUINE.FAILURE\|all retries failed\|failed.*abort\|error.*critical\|cannot continue' \
+  $_SKILL_DIR_ROOT 2>/dev/null |
+  grep -v '^Binary' | grep -v '^\s*#' | while IFS= read -r match; do
+    file=$(echo "$match" | cut -d: -f1)
+    line=$(echo "$match" | cut -d: -f2)
+    context=$(awk "NR>=$line && NR<=$((line+3))" "$file" 2>/dev/null)
+    echo "$context" | grep -q 'exit [1-9]' ||
+      printf "${YEL}⚠ missing exit${NC}: %s:%s — failure detected but execution continues\n" "$file" "$line"
+  done
+printf "${GRN}✓${NC}: Check 30f scan complete\n"  # timeout: 5000
+```
+
+Severity: **high** — workflow continues past a detected failure; downstream steps produce misleading output or incorrect partial results.
+
+Fix pattern: add `exit 1` (or appropriate non-zero exit) immediately after the failure is confirmed; do NOT continue to next step.
+
 | Sub-check | Pattern | Severity | Auto-fix |
 | --- | --- | --- | --- |
 | 30a — pipe exit code | `\ | tail` / `\ | head` without PIPESTATUS | critical | no |
@@ -426,6 +447,7 @@ Severity: **high** — heredoc triggers permission prompt; user deny = workflow 
 | 30c — filename mismatch | spawn filename ≠ consolidator filename (model reasoning) | high | no |
 | 30d — TEST_CMD+pytest flags | `$TEST_CMD --tb` / `--co` / `::` / `--cov` without PYTEST_CMD | high | no |
 | 30e — heredoc python | `python <<` in skill body | high | no |
+| 30f — missing exit | confirmed failure with no `exit 1` within 3 lines | high | no |
 
 ## Check 31 — Skill tool call vs allowed-tools consistency
 
