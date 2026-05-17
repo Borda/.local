@@ -20,9 +20,7 @@ NOT for: running experiments (use `/research:run`); designing experiments (use `
 ## Agent Resolution
 
 ```bash
-# Locate research plugin shared dir — installed first, local workspace fallback
-_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
+_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
@@ -63,8 +61,8 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 ```
 
 ```bash
-RUN_DIR=".experiments/retro-$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 3000  # flat pattern (retro-<ts>/) for backwards-compat with existing run references in notes/docs
-mkdir -p "$RUN_DIR/scripts"
+RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "retro" ".experiments" 2>/dev/null)  # timeout: 5000
+mkdir -p "$RUN_DIR/scripts"  # timeout: 3000
 ```
 
 ### Step T2: Statistical significance analysis

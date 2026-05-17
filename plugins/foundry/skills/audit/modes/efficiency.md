@@ -96,7 +96,7 @@ Scope: per plugin — compare blocks within same plugin only (cross-plugin overl
 
 Spawn **foundry:curator** per plugin with this prompt:
 
-> Enumerate every fenced code block (` ```bash `, ` ```python `, ` ```sh `, etc.) in all SKILL.md files under `plugins/<name>/skills/`. Assign each a block ID: `<plugin-abbrev>-<skill-slug>-B<n>` (e.g. `fnd-audit-B3`). Record: ID, source file, start line, language, line count.
+> Enumerate every fenced code block (` ```bash `, ` ```python `, ` ```sh `, etc.) in all SKILL.md files under `plugins/<name>/skills/`. Assign each a block ID: `<plugin-abbrev>-<skill-slug>-B<n>` (e.g. `fnd-audit-B3`). Record: ID, source file, start line, language, line count, total lines across cluster.
 >
 > **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what the block does functionally (not how) — e.g., "resolves `_shared/` path from plugin cache", "detects codex plugin availability", "sets LOCAL_MODE-aware glob vars", "emits boilerplate-duplication counts". Same wording of different goal = different cluster. Different wording of same goal = same cluster.
 >
@@ -106,8 +106,9 @@ Spawn **foundry:curator** per plugin with this prompt:
 >
 > **Table 1 — Purpose clusters**:
 > ```
-> | Cluster | Block IDs | Files | Lang | Lines each | Purpose | Max-sim | Duplicate? |
+> | Cluster | Block IDs | Files | Lang | Lines each | Total lines | Est. tokens/call | Purpose | Max-sim | Duplicate? |
 > ```
+> (Total lines = sum of Lines each across all instances; Est. tokens/call = (lines_per_instance − 1) × ~4 — tokens saved per calling-skill invocation when block extracted to bin/)
 >
 > **Table 2 — Extraction feasibility**: for each cluster, compute:
 > - **ParamSlots**: count of distinct `<ARG>` placeholder slots after normalization = how many CLI parameters the extracted script would need.

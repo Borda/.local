@@ -99,6 +99,7 @@ iostat -x 1 # file I/O stats
 
 </profiling_tools>
 
+<!-- ML/GPU tasks only — skip for CPU profiling -->
 <ml_gpu_profiling>
 
 ## PyTorch Profiler

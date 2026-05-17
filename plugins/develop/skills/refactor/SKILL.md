@@ -34,11 +34,9 @@ NOT for:
 ## Agent Resolution
 
 ```bash
-# Locate develop plugin shared dir — installed first, local workspace fallback
-_DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
-_FOUNDRY_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED=".claude/skills/_shared"
+_PATHS=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" --foundry 2>/dev/null)  # timeout: 5000
+_DEV_SHARED=$(echo "$_PATHS" | head -1)
+_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
@@ -63,16 +61,14 @@ Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: create `.developments/<TS>/checkpoint.md` (where `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)`). After each major step (1, 2, 3, 4, 5), append `step: N — completed`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
+**Checkpoint init**: run `DEV_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-run-dir.sh" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
 ## Flag parsing
 
 **Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
 
 ```bash
-CODEMAP_ENABLED=auto   # use when available, skip silently when absent
-[[ "$ARGUMENTS" == *"--no-codemap"* ]] && CODEMAP_ENABLED=off
-[[ "$ARGUMENTS" == *"--codemap"* ]] && CODEMAP_ENABLED=strict
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-flags.sh" "$ARGUMENTS" 2>/dev/null)  # timeout: 5000
 ```
 
 **Set `SEMBLE_ENABLED=false`**. If `--semble` in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.

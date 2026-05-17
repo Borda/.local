@@ -22,9 +22,7 @@ NOT for: running experiments (use `/research:run`); designing hypotheses (use `r
 ## Agent Resolution
 
 ```bash
-# Locate research plugin shared dir — installed first, local workspace fallback
-_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
+_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
@@ -113,19 +111,18 @@ Goodhart findings are `critical` (not just methodology notes) because a broken m
 Pre-compute run dir before spawning:
 
 ```bash
-RUN_DIR=".experiments/judge-$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
-mkdir -p "$RUN_DIR"                                                # timeout: 5000
+RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "judge" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
 **Health monitoring** (CLAUDE.md §8) — create both checkpoints BEFORE dispatching any agents:
 
 ```bash
-LAUNCH_AT=$(date +%s)
-CHECKPOINT="/tmp/judge-check-architect-$LAUNCH_AT"
-touch "$CHECKPOINT"
-LAUNCH_AT_SCI=$(date +%s)
-CHECKPOINT_SCI="/tmp/judge-check-scientist-$LAUNCH_AT_SCI"
-touch "$CHECKPOINT_SCI"
+_HM_ARCH=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "judge-architect" 2>/dev/null)  # timeout: 5000
+LAUNCH_AT=$(echo "$_HM_ARCH" | grep '^LAUNCH_AT=' | cut -d= -f2)
+CHECKPOINT=$(echo "$_HM_ARCH" | grep '^SENTINEL=' | cut -d= -f2)
+_HM_SCI=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "judge-scientist" 2>/dev/null)  # timeout: 5000
+LAUNCH_AT_SCI=$(echo "$_HM_SCI" | grep '^LAUNCH_AT=' | cut -d= -f2)
+CHECKPOINT_SCI=$(echo "$_HM_SCI" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
 Then dispatch both agents (architect + scientist) in a single response.

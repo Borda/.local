@@ -2,7 +2,8 @@
 name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design."
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
-allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
+allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+model: sonnet
 effort: high
 when_to_use: "Use when the user asks to review a GitHub Pull Request (Python source, documentation (Markdown/RST), and CI/CD config PRs), wants multi-agent code review feedback, or needs a structured review with severity-graded findings."
 ---
@@ -47,8 +48,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 ## Agent Resolution
 
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
-_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
-[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 # Verify $_OSS_SHARED is resolved before any step that uses it (Step 8 reads shepherd-reply-protocol.md)
 [ -d "$_OSS_SHARED" ] || { echo "⚠ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — Step 8 --reply will fail; verify oss plugin installed"; exit 1; }
@@ -110,7 +110,7 @@ fi
 ```
 
 ```bash
-FOUNDRY_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | sort -V | tail -1); [ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+FOUNDRY_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve-shared-path.sh" foundry skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$FOUNDRY_SHARED" ] && echo "⚠ Could not resolve FOUNDRY_SHARED — Steps 5/7/consolidator will fail; verify foundry plugin installed" || true
 ```
 
@@ -406,9 +406,8 @@ Spawn verifier agent per critical/blocking finding (or per batch when capped). A
 
 Before output path, extract:
 ```bash
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-')
-[ -z "$BRANCH" ] && BRANCH="main"  # fallback: detached HEAD or empty slug
-DATE=$(date +%Y-%m-%d)
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
+DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 ```
 
 **IMPORTANT**: expand `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt — same rule as Step 2. Un-expanded variables create wrong paths.
@@ -502,14 +501,12 @@ End with `## Confidence` block per CLAUDE.md output standards.
 ```bash
 # Check oss:shepherd availability — verify installed cache path specifically
 # Cannot use _OSS_SHARED as signal: its bare-path fallback is always non-empty even when oss plugin absent
-SHEPHERD_AVAILABLE=0
-ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/agents/shepherd.md 2>/dev/null | grep -q . && SHEPHERD_AVAILABLE=1
-[ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
+SHEPHERD_AVAILABLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check-agent.sh" oss shepherd 2>/dev/null)  # timeout: 5000
 ```
 
-`$SHEPHERD_AVAILABLE` equals 0: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip shepherd spawn.
+`$SHEPHERD_AVAILABLE` equals `false`: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip shepherd spawn.
 
-`$SHEPHERD_AVAILABLE` equals 1: read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
+`$SHEPHERD_AVAILABLE` equals `true`: read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
 
 Spawn with:
 - Report path: review output file from Step 5

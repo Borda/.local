@@ -3,7 +3,6 @@ name: topic
 description: "Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Delegates deep analysis to the research:scientist agent and codebase mapping to foundry:solution-architect."
 argument-hint: "<topic> [--team] | plan [<output.md>]"
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
-effort: high
 disable-model-invocation: true
 ---
 
@@ -40,9 +39,7 @@ HARD_CUTOFF: 900   # 15 min — if researcher does not return, surface partial r
 ## Agent Resolution
 
 ```bash
-# Locate research plugin shared dir — installed first, local workspace fallback
-_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="plugins/research/skills/_shared"
+_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`.
@@ -187,7 +184,7 @@ Confidence:  [aggregate score] — [key gaps]
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
-## Team Mode
+## Team Mode — only when `--team` flag present
 
 Use when topic warrants exploring multiple competing method families with adversarial cross-evaluation.
 
@@ -226,7 +223,7 @@ Task tracking: call TaskUpdate(in_progress) when you start your assigned task; c
 
 Lead synthesizes by reading teammate file paths from delta messages. Pre-compute: `SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"` `SPAWN_DATE="$(date -u +%Y-%m-%d)"`. For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.reports/research/topic-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
 
-## Plan Mode
+## Plan Mode — only when `$ARGUMENTS` begins with `plan`
 
 Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method — needed before `/develop:feature` (requires `develop` plugin).
 

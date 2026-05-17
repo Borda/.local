@@ -229,6 +229,7 @@ For ML/PyTorch ecosystem libraries:
 
 \</oss_python_patterns>
 
+<!-- PyTorch ecosystem CI tasks only -->
 \<pytorch_ecosystem_tracking>
 
 ## PyTorch Release & Nightly Monitoring

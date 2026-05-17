@@ -142,8 +142,7 @@ RANGE="${RANGE/->/../}"
 Run this first — cold-start fallback (sets `$_OSS_SHARED`):
 
 ```bash
-_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
-[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 ```
 
@@ -153,8 +152,8 @@ SKILL_DIR="$(find ~/.claude/plugins -path "*/oss/skills/release" -type d 2>/dev/
 [ -z "$SKILL_DIR" ] && SKILL_DIR="plugins/oss/skills/release"
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")  # timeout: 3000
 # BRANCH and DATE — computed once here; all phases use these variables, never re-compute
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
-DATE=$(date +%Y-%m-%d)
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
+DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 # Branch-aware range detection — sets LAST_TAG for all modes
 # rc/dev/alpha/beta tags excluded — base must be last stable release
 BRANCH_TAG=$(git describe --tags --abbrev=0 --first-parent --exclude='*rc*' --exclude='*dev*' --exclude='*alpha*' --exclude='*beta*' 2>/dev/null)
@@ -427,9 +426,7 @@ After polishing, dispatch shepherd for public-facing voice/tone review before wr
 
 ```bash
 # Check oss:shepherd availability (may not be installed in partial setups)
-SHEPHERD_AVAILABLE=0
-find ~/.claude/plugins -name "shepherd.md" -path "*/oss/agents/*" 2>/dev/null | grep -q . && SHEPHERD_AVAILABLE=1
-[ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
+SHEPHERD_AVAILABLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check-agent.sh" oss shepherd 2>/dev/null)  # timeout: 5000
 # Pre-compute shepherd run dir (file-handoff protocol)
 SHEPHERD_DIR=".temp/release-shepherd-$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')-$(date +%Y-%m-%d)"
 mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
@@ -437,12 +434,12 @@ mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
 # IMPORTANT: expand $SHEPHERD_DIR to its literal computed value before inserting into the spawn prompt — do not pass the variable name literally.
 ```
 
-If `$SHEPHERD_AVAILABLE` equals 1:
+If `$SHEPHERD_AVAILABLE` equals `true`:
 ```bash
-[ -f "$_OSS_SHARED/shepherd-voice.md" ] || { echo "⚠ shepherd-voice.md not found at $_OSS_SHARED — verify oss plugin installation; falling back to draft without shepherd review"; SHEPHERD_AVAILABLE=0; }  # timeout: 5000
+[ -f "$_OSS_SHARED/shepherd-voice.md" ] || { echo "⚠ shepherd-voice.md not found at $_OSS_SHARED — verify oss plugin installation; falling back to draft without shepherd review"; SHEPHERD_AVAILABLE=false; }  # timeout: 5000
 ```
 
-If `$SHEPHERD_AVAILABLE` still equals 1, write Write release draft output to `$SHEPHERD_DIR/draft.md`, then spawn shepherd:
+If `$SHEPHERD_AVAILABLE` still equals `true`, write Write release draft output to `$SHEPHERD_DIR/draft.md`, then spawn shepherd:
 
 ```text
 Agent(subagent_type="oss:shepherd", prompt="Review the full release draft at <$SHEPHERD_DIR/draft.md> for public-facing voice and tone. Apply shepherd voice guidelines: human and direct, no internal jargon, no staff names, no internal maintenance details. Write the revised content to <$SHEPHERD_DIR/shepherd-revised.md>. Return ONLY: {\"status\":\"done\",\"changes\":N,\"file\":\"<$SHEPHERD_DIR/shepherd-revised.md>\"}")
@@ -454,7 +451,7 @@ Read `$SHEPHERD_DIR/shepherd-revised.md` → validate before use: `[ -s "$SHEPHE
 
 Write to disk: (`BRANCH` and `DATE` from Shared setup block.)
 
-Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == 1`):
+Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == true`):
 - **notes** (always): shepherd review → write to `DRAFT.md` at repo root. Notify: `→ written to DRAFT.md`
 - **`--changelog`** (if set): no shepherd (structured, internal) → invoke `AskUserQuestion`: "Ready to prepend to `$CHANGELOG_FILE`?" Options: (a) Proceed · (b) Preview only. On (a): prepend to `CHANGELOG.md` after `# Changelog` heading (create if missing). Notify: `→ prepended to CHANGELOG.md`
 - **`--summary`** (if set): no shepherd (internal) → Draft executive summary saved to `.temp/output-release-summary-$BRANCH-$DATE.md` — confirm written. Notify: `→ saved to .temp/output-release-summary-<branch>-<date>.md`

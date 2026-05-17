@@ -2,7 +2,7 @@
 name: session
 description: "Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks \"what was I working on\", \"any pending items\", \"what's in the parking lot\", \"remind me where we left off\", \"what did we defer\"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only)."
 argument-hint: "resume | archive <text> | summary"
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 effort: low
 model: sonnet
 context: fork
@@ -46,7 +46,7 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 **Task hygiene**:
 ```bash
-_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
@@ -70,15 +70,7 @@ Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 
 ### Substep 1a: Resolve the memory directory
 
-Derive MEMORY_DIR using canonical snippet from `<constants>`.
-
-```bash
-# Use canonical MEMORY_DIR from <constants>
-PROJECT="$(git rev-parse --show-toplevel)"
-SLUG="$(echo "$PROJECT" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')"
-MEMORY_DIR="$HOME/.claude/projects/$SLUG/memory/"
-echo "$MEMORY_DIR"
-```
+Derive `MEMORY_DIR` using the canonical snippet defined in `<constants>` above. Run that snippet here; do not duplicate it. `echo "$MEMORY_DIR"` to surface the resolved path.
 
 ### Substep 1b: Age-out expired items (≥ 30 days) silently
 

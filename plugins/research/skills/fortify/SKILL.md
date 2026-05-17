@@ -139,9 +139,9 @@ Return ONLY: {"status":"done","components":N,"file":"<FORTIFY_DIR>/ablation-cand
 **Health monitoring** (CLAUDE.md §8):
 
 ```bash
-LAUNCH_AT_F2=$(date +%s)
-CHECKPOINT_F2="/tmp/fortify-check-$LAUNCH_AT_F2"
-touch "$CHECKPOINT_F2"  # timeout: 3000
+_HM_F2=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "fortify-f2" 2>/dev/null)  # timeout: 5000
+LAUNCH_AT_F2=$(echo "$_HM_F2" | grep '^LAUNCH_AT=' | cut -d= -f2)
+CHECKPOINT_F2=$(echo "$_HM_F2" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
 Poll every 5 min: `find <FORTIFY_DIR> -newer "$CHECKPOINT_F2" -type f | wc -l` (`timeout: 5000`) — new files = alive; zero = stalled.
@@ -303,9 +303,9 @@ Skip entirely if no `--venue` flag. Supported venues: `CVPR`, `NeurIPS`, `ICML`,
 **Health monitoring setup** (same pattern as F2 — create checkpoint before spawn):
 
 ```bash
-LAUNCH_AT_F6=$(date +%s)
-CHECKPOINT_F6="/tmp/fortify-check-$LAUNCH_AT_F6"
-touch "$CHECKPOINT_F6"  # timeout: 3000
+_HM_F6=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "fortify-f6" 2>/dev/null)  # timeout: 5000
+LAUNCH_AT_F6=$(echo "$_HM_F6" | grep '^LAUNCH_AT=' | cut -d= -f2)
+CHECKPOINT_F6=$(echo "$_HM_F6" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (same 15-min cutoff, one 5-min extension — poll `find <FORTIFY_DIR> -name "reviewer-qa.md" -newer "$CHECKPOINT_F6" | wc -l`):

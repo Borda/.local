@@ -3,7 +3,6 @@ name: scan
 description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics)."
 when_to_use: "Use when scanning or re-indexing a repository into the codemap. Run after significant code changes or on first setup."
 argument-hint: "[--root <path>] [--incremental]"
-effort: medium
 allowed-tools: Bash, AskUserQuestion
 disable-model-invocation: true
 ---

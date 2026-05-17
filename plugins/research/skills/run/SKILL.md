@@ -68,10 +68,7 @@ CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  
 ## Agent Resolution
 
 ```bash
-# Locate research plugin shared dir — installed first, local workspace fallback
-_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
-# shared resolution block — canonical source: skills/_shared/agent-resolution.md
+_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
 ```
 
 **`CLAUDE_SKILL_DIR` resolution** — constants block provides default `plugins/research/skills/run` (source-tree path). Resolve to installed path before use:
@@ -570,7 +567,7 @@ Triggered by `--resume` flag (with optional `<file.md>` argument).
 4. Validate git HEAD: if diverged from `state.json.best_commit` unexpectedly, invoke `AskUserQuestion` tool — question: "HEAD has diverged from best_commit in state.json. Continue anyway?", (a) label: `yes, continue from current HEAD`, (b) label: `no, abort`. If (b), stop.
 5. Continue loop from `state.json.iteration + 1`. `diary.md` NOT re-initialized — entries append to existing file.
 
-## Colab MCP Integration (`--colab`)
+## Colab MCP Integration — only with `--colab` flag
 
 **Purpose**: route metric verification and GPU code testing to Colab runtime instead of local. Essential for ML training metrics, CUDA benchmarks, GPU-required workloads.
 

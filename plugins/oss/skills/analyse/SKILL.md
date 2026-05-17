@@ -8,7 +8,7 @@ argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report
 allowed-tools: Read, Bash, Write, Agent
 context: fork
 model: sonnet
-effort: high
+effort: medium
 when_to_use: "Use when the user asks to analyze a GitHub issue, PR, or discussion thread, needs repo vitality stats, or wants to triage/summarize OSS contributor threads."
 ---
 
@@ -48,10 +48,8 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ```bash
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
-_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
-[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
-FOUNDRY_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | sort -V | tail -1)
-[ -z "$FOUNDRY_SHARED" ] && FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+FOUNDRY_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve-shared-path.sh" foundry skills/_shared 2>/dev/null)  # timeout: 5000
 ```
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
@@ -332,10 +330,8 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 ```bash
 # Shepherd availability guard — oss plugin may not be installed
 # Check installed cache path specifically (bare _OSS_SHARED fallback is always non-empty — cannot use it as availability signal)
-SHEPHERD_AVAILABLE=0
-ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/agents/shepherd.md 2>/dev/null | grep -q . && SHEPHERD_AVAILABLE=1
-[ -f ".claude/agents/shepherd.md" ] && SHEPHERD_AVAILABLE=1
-if [ "$SHEPHERD_AVAILABLE" = "0" ]; then
+SHEPHERD_AVAILABLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check-agent.sh" oss shepherd 2>/dev/null)  # timeout: 5000
+if [ "$SHEPHERD_AVAILABLE" = "false" ]; then
     echo "⚠ oss:shepherd not available — --reply requires the oss plugin. Install: claude plugin install oss@borda-ai-rig"
     exit 1
 fi # timeout: 5000

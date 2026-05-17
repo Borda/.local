@@ -2,7 +2,6 @@
 name: verify
 description: "Paper-vs-code consistency audit. After research:scientist implements a method from a paper, verify the implementation matches paper claims across five dimensions — formula matching [F], hyperparameter parity [H], eval protocol [E], notation consistency [N], and citation chain [C]. Reads paper (PDF path / arXiv URL / pasted text), maps claims to codebase, emits verification table with match status and severity."
 argument-hint: "<paper> [--scope <glob>] [--program <program.md>] [--strict] [--dim <F,H,E,N,C>]"
-effort: high
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -58,8 +57,7 @@ From paper content, extract:
 
 ```bash
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
-RUN_DIR=".experiments/verify-$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-mkdir -p "$RUN_DIR"  # timeout: 3000
+RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
 ### Step V2: Resolve codebase scope
@@ -208,13 +206,7 @@ Path:        → .reports/research/verify-<branch>-<date>.md
 
 Full audit: <RUN_DIR>/audit-raw.md
 
-## Confidence
-**Score**: 0.N
-**Gaps**:
-- [specific limitation]
-
-**Refinements**: N passes.
-- Pass 1: [gap addressed]
+<!-- Add ## Confidence block here per quality-gates.md -->
 ```
 
 ### Step V6: Terminal summary

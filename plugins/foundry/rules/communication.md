@@ -23,10 +23,51 @@ Rules:
 - Never use table or pipe-delimited format for anchor line — pipe chars pollute copy-paste
 - No exceptions — apply to every response including short ones
 
+## Reply Visibility
+
+Terminal output mixes tool calls, hook output, and intermediate logging. To make the actual reply easy to find when scrolling:
+
+**Anchor line**: bold magenta; **response body**: cyan:
+
+```
+\033[1;35m**Re: [one-sentence summary]**\033[0m
+
+\033[0;36m[full response here]\033[0m
+```
+
+Anchor in magenta makes it visually distinct from tool output; body in cyan separates prose from tool/hook logging. Apply to every response. Reset (`\033[0m`) after anchor line and at end of response body.
+
+**Exemption — machine-parsed responses**: skip ANSI wrapping when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator, not displayed to user. ANSI codes in machine output corrupt JSON parsing.
+
+Example:
+```
+\033[1;35m**Re: adding error handling to auth middleware**\033[0m
+
+\033[0;36mHere's the fix: ...\033[0m
+```
+
 ## Progress and Transparency
 
 - Narrate at milestones; print `[→ what and why]` before significant Bash calls
 - 5+ min silence warrants status note
+
+## Execution Failure Signaling
+
+When unable to execute or proceed with any part of a request (unsupported flag, `disable-model-invocation` block, parse error, missing prerequisite, permission denied, tool unavailable):
+
+**Mandatory**: lead the response with a RED-colored block — never bury the failure at the end, never silently skip it:
+
+```
+\033[1;31m! BLOCKED — [one-line reason]\033[0m
+\033[1;31m! UNSUPPORTED — [what and why]\033[0m
+\033[1;31m! MISSING — [what is needed]\033[0m
+```
+
+Rules:
+- Color+! block is the FIRST content in the response — not a footnote, not a trailing note
+- State: what was asked · what cannot proceed · what alternative is available (if any)
+- Applies to partial failures too: if 3 of 4 sub-tasks fail, color-flag the 3 at top before reporting the 1 success
+- Never use grey prose ("note: X was skipped") as a substitute — that's what gets missed
 
 ## Tone
 

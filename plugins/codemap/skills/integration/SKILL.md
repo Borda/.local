@@ -70,6 +70,7 @@ fi
 
 ```bash
 # timeout: 5000
+# PROJ/INDEX resolution — also used in Step I1 (init mode); keep in sync
 # NOTE: uses single-strategy basename lookup; scan-query uses three-strategy walk-up
 # If index not found here but scan-query works, run with explicit --index flag or re-run /codemap:scan from project root
 GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -190,6 +191,7 @@ printf "  • /codemap:integration check — re-run after fixes\n"
 
 ```bash
 # timeout: 5000
+# PROJ/INDEX resolution (mirrors block in Step C2 — keep in sync)
 GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 PROJ=${GIT_ROOT:+$(basename "$GIT_ROOT")}; PROJ=${PROJ:-$(basename "$PWD")}
 INDEX="${GIT_ROOT:-.}/.cache/scan/${PROJ}.json"

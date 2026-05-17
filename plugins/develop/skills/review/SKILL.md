@@ -4,7 +4,6 @@ description: "Multi-agent code review of local Python files, directories, or the
 when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse)."
 argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
-effort: high
 disable-model-invocation: true
 ---
 
@@ -65,11 +64,9 @@ EXTENSION_ADVISORY=300          # +5 min extension — reference only; not enfor
 ## Agent Resolution
 
 ```bash
-# Locate develop plugin shared dir — installed first, local workspace fallback
-_DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
-_FOUNDRY_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED=".claude/skills/_shared"
+_PATHS=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" --foundry 2>/dev/null)  # timeout: 5000
+_DEV_SHARED=$(echo "$_PATHS" | head -1)
+_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.

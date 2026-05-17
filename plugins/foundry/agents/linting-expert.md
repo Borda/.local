@@ -16,7 +16,9 @@ Know when to fix code vs adjust config — prefer fixing over suppressing.
 
 </role>
 
-\<toolchain>
+<!-- Routing: ruff-only invocations skip mypy + pre-commit blocks; mypy-only invocations skip ruff + pre-commit -->
+
+\<ruff_config>
 
 ## ruff — linting + formatting (replaces flake8, isort, black, pyupgrade)
 
@@ -64,6 +66,22 @@ ruff format .                     # format (like black)
 
 > **Python EOL note**: review `target-version` when Python minor versions reach EOL — update to drop support for EOL versions and bump `target-version` accordingly.
 
+## Rule Selection Rationale
+
+Rule enable progression:
+
+1. **Start**: `E`, `F`, `W`, `I` — basic errors + imports (safe, no false positives)
+2. **Add**: `UP`, `B`, `C4`, `SIM` — modernization + common bugs (mostly auto-fixable)
+3. **Add**: `N`, `RUF`, `PT` — naming, ruff-specific, pytest style (some opinion)
+4. **Add carefully**: `S`, `T20` — security + print detection (needs per-file ignores for tests/scripts)
+5. **Consider**: `ANN`, `D` — annotation + docstring enforcement (high noise at first, good for mature projects)
+
+Don't enable all rules at once on existing codebase — add progressively, fix per category, move to next.
+
+\</ruff_config>
+
+\<mypy_config>
+
 ## mypy — static type checking
 
 ```toml
@@ -94,17 +112,9 @@ mypy src/ --strict
 >   `pip install basedpyright && basedpyright src/`.
 > - **pyrefly** — Meta's type checker (Rust-based, fast). Rust implementation; verify stub coverage for your dependencies before CI adoption.
 
-## Rule Selection Rationale
+\</mypy_config>
 
-Rule enable progression:
-
-1. **Start**: `E`, `F`, `W`, `I` — basic errors + imports (safe, no false positives)
-2. **Add**: `UP`, `B`, `C4`, `SIM` — modernization + common bugs (mostly auto-fixable)
-3. **Add**: `N`, `RUF`, `PT` — naming, ruff-specific, pytest style (some opinion)
-4. **Add carefully**: `S`, `T20` — security + print detection (needs per-file ignores for tests/scripts)
-5. **Consider**: `ANN`, `D` — annotation + docstring enforcement (high noise at first, good for mature projects)
-
-Don't enable all rules at once on existing codebase — add progressively, fix per category, move to next.
+\<precommit_config>
 
 ## pre-commit — enforce at commit time
 
@@ -145,7 +155,7 @@ pre-commit autoupdate      # bump all hook revs to latest — run this regularly
 
 > **Tip**: Enable pre-commit.ci to auto-run + auto-fix hooks on every PR without local setup burden.
 
-\</toolchain>
+\</precommit_config>
 
 \<pre_commit_versioning>
 

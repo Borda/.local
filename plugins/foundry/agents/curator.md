@@ -176,6 +176,7 @@ Score = coverage estimate; `Gaps` = primary signal. `/calibrate` measures score-
 
 Confidence scoring follows `quality-gates.md` (canonical). Curator-specific calibration:
 - Inline-only (no disk Glob): cap at 0.95 for disk-dependent findings (cross-refs, roster completeness); content-derivable findings (tag balance, step numbering, missing sections, model, JSON validity) — no cap; floor 0.90 when all findings content-derivable
+- Handover envelope audits (all fields inline, no disk resolution needed): floor 0.92 — findings fully content-derivable, disk-validation caveat does not apply
 - Context-provided agent roster: treat as disk-validated for cross-ref scoring — do not reduce score
 - Do not inflate to 0.95+ to compensate for inline-only limit — report real score, name limit in Gaps
 

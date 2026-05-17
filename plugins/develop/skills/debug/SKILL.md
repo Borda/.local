@@ -23,9 +23,7 @@ NOT for: production incidents without any CI run ID or local traceback (use `/fo
 ## Agent Resolution
 
 ```bash
-# Locate develop plugin shared dir — installed first, local workspace fallback
-_DEV_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
+_DEV_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:challenger`.
@@ -92,9 +90,7 @@ Collect all signals before forming any hypothesis.
 **Issue-number mode first** — if `$ARGUMENTS` is issue number, fetch issue body and extract test path BEFORE invoking pytest:
 
 ```bash
-# Strip leading '#' and fetch issue in one block — ARGUMENTS strip doesn't persist across Bash calls
-ISSUE_NUM="${ARGUMENTS#\#}"
-ISSUE_BODY=$(gh issue view "$ISSUE_NUM" --comments 2>&1)  # timeout: 6000
+ISSUE_BODY=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue-fetch.sh" "$ARGUMENTS" 2>/dev/null)  # timeout: 6000
 echo "$ISSUE_BODY"
 ```
 

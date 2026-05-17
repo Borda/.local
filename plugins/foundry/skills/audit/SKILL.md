@@ -4,7 +4,6 @@ description: "Full-sweep quality audit of .claude/ config — cross-references, 
 argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate]"
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
-effort: high
 ---
 
 <objective>

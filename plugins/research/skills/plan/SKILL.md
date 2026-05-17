@@ -22,9 +22,7 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 ## Agent Resolution
 
 ```bash
-# Locate research plugin shared dir — installed first, local workspace fallback
-_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
+_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`.
@@ -119,16 +117,15 @@ After user confirms, run expert agent review before writing `program.md`. Dispat
 **Pre-spawn — create plan run dir** (review files share single timestamped dir):
 
 ```bash
-PLAN_RUN_DIR=".experiments/plan-$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
-mkdir -p "$PLAN_RUN_DIR"  # timeout: 5000
+PLAN_RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "plan" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
 **Health monitoring** (CLAUDE.md §8) — create checkpoint before spawning agents:
 
 ```bash
-LAUNCH_AT=$(date +%s)
-CHECKPOINT="/tmp/plan-check-$LAUNCH_AT"
-touch "$CHECKPOINT"  # timeout: 3000
+_HM=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "plan" 2>/dev/null)  # timeout: 5000
+LAUNCH_AT=$(echo "$_HM" | grep '^LAUNCH_AT=' | cut -d= -f2)
+CHECKPOINT=$(echo "$_HM" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
 Poll every 5 min: `find $PLAN_RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min. One extension (+5 min) if partial output visible. On timeout: surface partial results with ⏱, continue to P-P3 with available advisor output.

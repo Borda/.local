@@ -281,6 +281,7 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 
 \</output_format>
 
+<!-- Hook authoring tasks only (JS .js files) — skip for Python implementation -->
 \<hook_authoring>
 
 Hook authoring and editing owned exclusively by `foundry:sw-engineer` (per curator NOT-for boundary — curator does not touch hook files). `foundry:curator` reviews hook-adjacent markdown config files only. For hook creation or modification, `foundry:sw-engineer` owns the work end-to-end.

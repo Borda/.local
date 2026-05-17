@@ -1,7 +1,7 @@
 ---
 name: gh-scraper
 description: "Fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL data file for consumption by oss:repo-warden axis scorers. NOT for axis scoring or report generation. NOT for direct user invocation."
-tools: Read, Write, Bash
+tools: Write, Bash
 model: sonnet
 effort: medium
 color: cyan

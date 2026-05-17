@@ -67,6 +67,7 @@ Mirror `src/` layout in `tests/unit/`: `src/foo/bar.py` → `tests/unit/foo/test
 
 \</core_principles>
 
+<!-- Project setup tasks only — skip for test-writing invocations -->
 \<pytest_config>
 
 ## pyproject.toml Configuration
@@ -183,6 +184,7 @@ Fixtures return minimal valid object needed for test scope — only fields test 
 
 \</test_patterns>
 
+<!-- ML/PyTorch codebases only — skip for non-ML projects -->
 \<ml_testing>
 
 ## Tensor Assertions (PyTorch)

@@ -5,7 +5,6 @@ when_to_use: "Run to measure agent/skill routing accuracy, validate confidence c
 argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]"
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Agent, Glob, Grep, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
-effort: high
 ---
 
 <objective>
@@ -86,7 +85,7 @@ Domain tables per mode: see `modes/agents.md`, `modes/skills.md`, `modes/routing
 
 **Task hygiene**:
 ```bash
-_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 

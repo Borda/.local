@@ -4,7 +4,6 @@ description: "Iterative brainstorming skill for turning fuzzy ideas into approve
 argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] | breakdown <tree-or-spec-file>"
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
-effort: high
 when_to_use: "Use when idea is fuzzy and needs exploration before a solution is known; NOT for well-scoped features with a known approach (use develop:feature) or code generation."
 ---
 
@@ -38,7 +37,7 @@ NOT for implementation or code-gen — see `develop` plugin.
 
 **Task hygiene**:
 ```bash
-_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 

@@ -3,7 +3,6 @@ name: resolve
 description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for drafting contributor replies (use /oss:analyse --reply). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin)."
 argument-hint: "<PR number or URL> [report] | report | <review comment text>"
 disable-model-invocation: true
-effort: high
 when_to_use: "Use when closing out a GitHub PR — implementing review action items, resolving conflicts, and pushing to contributor fork. Also accepts bare review comment text for single-comment dispatch."
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
@@ -51,8 +50,7 @@ CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §8 default 300s
 ## Agent Resolution
 
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
-_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
-[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
 ```bash

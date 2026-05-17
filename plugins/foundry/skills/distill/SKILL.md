@@ -4,7 +4,6 @@ description: "One-time snapshot extracting patterns from work history and accumu
 argument-hint: '[review | prune | lessons | "external <url-or-path>" | "<recurring task description>"]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
-effort: high
 when_to_use: "Run periodically (e.g., monthly) or after a burst of corrections to extract patterns and distill improvements — new agent/skill suggestions, roster gaps, memory pruning, lesson consolidation. NOT for single-file agent/skill edits (use /foundry:manage) or config quality auditing (use /foundry:audit)."
 ---
 
@@ -32,7 +31,7 @@ NOT for single-file edits or quality checks — see `when_to_use`.
 
 **Task hygiene**:
 ```bash
-_FS=$(ls -td "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"*/skills/_shared 2>/dev/null | head -1); [ -z "$_FS" ] && _FS="plugins/foundry/skills/_shared"  # timeout: 5000
+_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
@@ -151,7 +150,7 @@ Anti-pattern checklist — reject candidate if any apply:
 **Refinements**: N passes. [Pass 1: <what improved>. Pass 2: <what improved>.] — omit if 0 passes
 ```
 
-## Mode: Memory Pruning (prune)
+## Mode: Memory Pruning — only when `$ARGUMENTS == "prune"`
 
 Locate, evaluate, and trim project memory file.
 
@@ -208,7 +207,7 @@ Pruned MEMORY.md — <date>
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
-## Mode: Lessons Distillation (lessons)
+## Mode: Lessons Distillation — only when `$ARGUMENTS == "lessons"`
 
 Read accumulated lessons and feedback, identify patterns to promote into durable governance — rule files, agent instruction updates, or skill workflow changes.
 
@@ -383,13 +382,13 @@ Surface curator findings as advisory block in terminal output. Do not block on c
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
-## Mode: External Distillation (external)
+## Mode: External Distillation — only when `$ARGUMENTS` begins with `external`
 
 Analyse external plugin, skill, or agentic resource and produce structured adoption proposal for local Claude Code setup.
 
 ```bash
-RUN_DIR=".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-mkdir -p "$RUN_DIR"  # timeout: 5000
+EXT_RUN_DIR=".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+mkdir -p "$EXT_RUN_DIR"  # timeout: 5000
 ```
 
 **E1: Classify and plan**
@@ -489,7 +488,7 @@ Print changed files. Run `git diff HEAD -- <files>` and show output. Surface unr
 Spawn `foundry:curator` to review applied External Distillation changes for config quality:
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to $RUN_DIR/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/curator-external-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to $EXT_RUN_DIR/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"$EXT_RUN_DIR/curator-external-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
 
 If critical findings returned: surface to user before marking complete. Non-critical findings: advisory only.

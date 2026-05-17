@@ -2,7 +2,6 @@
 name: sweep
 description: "Non-interactive end-to-end pipeline — auto-configure program.md (accept defaults), run judge+refine loop (up to 3 iterations), then run the campaign. Single command from goal to result."
 argument-hint: '"<goal>" [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--skip-validation] [--out <path>]'
-effort: high
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -22,9 +21,7 @@ NOT for: interactive planning (use `/research:plan`); methodology review only (u
 <!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
 
 ```bash
-# Locate research plugin shared dir — installed first, local workspace fallback
-_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
+_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`.
@@ -36,9 +33,9 @@ Sweep delegates to plan (S2), judge (S3), run (S5) — see each skill's Agent Re
 Triggered by `sweep "goal" [--flags]`. Non-interactive end-to-end: auto-plan → judge gate → run.
 
 **Shared path resolution** (always runs before S1):
+
+`_RESEARCH_SHARED` already resolved above (Agent Resolution block); reuse it here. Additionally resolve `_RESEARCH_SKILLS`:
 ```bash
-_RESEARCH_SHARED=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/_shared 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SHARED" ] && _RESEARCH_SHARED="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/_shared"
 _RESEARCH_SKILLS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills 2>/dev/null | head -1)
 [ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills"
 ```
