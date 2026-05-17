@@ -70,6 +70,8 @@ Unsynced change = incomplete.
 
 ## Versioning
 
+> **Commit gate**: any `plugins/<name>/` file in `git diff HEAD` → run pre-bump checklist before `git add`. Each plugin touched gets its own independent bump. Baseline = HEAD every time — post-compaction sessions have no memory of prior bumps; always re-read HEAD version, never trust session recall.
+
 Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 
 | Change type | Bump |

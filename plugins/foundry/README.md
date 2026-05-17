@@ -154,7 +154,7 @@ Full-sweep quality audit of `.claude/` configuration and all `plugins/*/` agent 
 /foundry:audit                      # full sweep, report only — gate offers fix options
 /foundry:audit --upgrade            # fetch latest Claude Code docs, apply improvements with A/B testing
 /foundry:audit --adversarial        # adversarial review with foundry:challenger + Codex
-/foundry:audit --efficiency         # cost and efficiency sweep: model tiers, effort levels, unbounded spawn patterns, token bloat, boilerplate duplication; outputs prioritized P1-P4 improvement plan
+/foundry:audit --efficiency         # cost and efficiency sweep: model tiers, effort levels, unbounded spawn patterns, token bloat, boilerplate duplication; outputs P1–4 plan + code-block extraction candidates; extraction gate offers EXTRACT / EXTRACT+RECOMMENDED / skip
 
 # Tier 1 — group scopes
 /foundry:audit agents               # all agents

@@ -4,7 +4,7 @@ description: "Calibration testing for agents and skills. Generates synthetic pro
 when_to_use: "Run to measure agent/skill routing accuracy, validate confidence calibration, or A/B test agent changes after editing descriptions or workflows."
 argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Bash, Agent, Glob, Grep, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Read, Write, Bash, Agent, Glob, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 ---
 
 <objective>

@@ -5,6 +5,7 @@ when_to_use: "Use for reviewing local Python files or the current working-tree d
 argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
+effort: high
 ---
 
 <objective>

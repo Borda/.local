@@ -482,7 +482,7 @@ For `no-op` iterations (no file changes):
 
 #### Phase 8 — Write log
 
-Append one JSONL record to `experiments.jsonl`:
+Append one JSONL record to `experiments.jsonl` (same schema as baseline record in Step R4, plus `ideation_source`):
 
 ```json
 {

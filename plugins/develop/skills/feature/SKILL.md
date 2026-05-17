@@ -76,6 +76,7 @@ CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") 
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight if flag set.
 
+<!-- Only active when --team flag passed (~10% of invocations) -->
 ## Team Mode Branch
 
 **Run immediately after flag parsing when `TEAM_MODE=true`. Runs Step 1 inline (teammates need scope context), then spawns parallel teammates for Steps 2-4. Exit after synthesis.**

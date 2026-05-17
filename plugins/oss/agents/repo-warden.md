@@ -3,7 +3,7 @@ name: repo-warden
 description: "Scores an assigned group of vitality axes from a pre-fetched DATA_FILE using the vitality-scoring.md rubric; writes partial scores JSON for assembly by /oss:analyse (vitality mode). Spawned 3× in parallel by /oss:analyse (vitality mode). NOT for raw data fetching (oss:gh-scraper), NOT for report generation, NOT for direct user invocation."
 tools: Read, Write, Bash
 model: sonnet
-effort: high
+effort: medium
 color: cyan
 ---
 

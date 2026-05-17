@@ -6,63 +6,62 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 
 from parse_review_args import parse_review_args  # loaded by conftest.py
 
 _BIN = Path(__file__).resolve().parents[1] / "bin" / "parse-review-args.py"
 
 
-def test_no_challenge_flag() -> None:
-    result = parse_review_args("--no-challenge 42")
-    assert result["CHALLENGE_ENABLED"] == "false"
-    assert result["CLEAN_ARGS"] == "42"
+class TestFlagParsing:
+    """parse_review_args: individual flags and combinations — CHALLENGE, CODEMAP, SEMBLE, REPLY."""
+
+    def test_no_challenge_flag(self) -> None:
+        result = parse_review_args("--no-challenge 42")
+        assert result["CHALLENGE_ENABLED"] == "false"
+        assert result["CLEAN_ARGS"] == "42"
+
+    def test_codemap_flag(self) -> None:
+        result = parse_review_args("--codemap 7")
+        assert result["CODEMAP_ENABLED"] == "true"
+        assert result["CLEAN_ARGS"] == "7"
+
+    def test_semble_flag(self) -> None:
+        result = parse_review_args("--semble 7")
+        assert result["SEMBLE_ENABLED"] == "true"
+        assert result["CLEAN_ARGS"] == "7"
+
+    def test_multiple_flags(self) -> None:
+        result = parse_review_args("--reply --no-challenge --codemap --semble 99")
+        assert result["REPLY_MODE"] == "true"
+        assert result["CHALLENGE_ENABLED"] == "false"
+        assert result["CODEMAP_ENABLED"] == "true"
+        assert result["SEMBLE_ENABLED"] == "true"
+        assert result["CLEAN_ARGS"] == "99"
 
 
-def test_codemap_flag() -> None:
-    result = parse_review_args("--codemap 7")
-    assert result["CODEMAP_ENABLED"] == "true"
-    assert result["CLEAN_ARGS"] == "7"
+class TestInputNormalization:
+    """parse_review_args: hash stripping, empty input, flags-only — CLEAN_ARGS normalization."""
 
+    def test_hash_stripping(self) -> None:
+        result = parse_review_args("#123")
+        assert result["CLEAN_ARGS"] == "123"
 
-def test_semble_flag() -> None:
-    result = parse_review_args("--semble 7")
-    assert result["SEMBLE_ENABLED"] == "true"
-    assert result["CLEAN_ARGS"] == "7"
+    def test_hash_stripping_with_flag(self) -> None:
+        result = parse_review_args("--reply #456")
+        assert result["REPLY_MODE"] == "true"
+        assert result["CLEAN_ARGS"] == "456"
 
+    def test_empty_input(self) -> None:
+        result = parse_review_args("")
+        assert result["CLEAN_ARGS"] == ""
+        assert result["REPLY_MODE"] == "false"
+        assert result["CHALLENGE_ENABLED"] == "true"
 
-def test_multiple_flags() -> None:
-    result = parse_review_args("--reply --no-challenge --codemap --semble 99")
-    assert result["REPLY_MODE"] == "true"
-    assert result["CHALLENGE_ENABLED"] == "false"
-    assert result["CODEMAP_ENABLED"] == "true"
-    assert result["SEMBLE_ENABLED"] == "true"
-    assert result["CLEAN_ARGS"] == "99"
-
-
-def test_hash_stripping() -> None:
-    result = parse_review_args("#123")
-    assert result["CLEAN_ARGS"] == "123"
-
-
-def test_hash_stripping_with_flag() -> None:
-    result = parse_review_args("--reply #456")
-    assert result["REPLY_MODE"] == "true"
-    assert result["CLEAN_ARGS"] == "456"
-
-
-def test_empty_input() -> None:
-    result = parse_review_args("")
-    assert result["CLEAN_ARGS"] == ""
-    assert result["REPLY_MODE"] == "false"
-    assert result["CHALLENGE_ENABLED"] == "true"
-
-
-def test_flags_only_no_arg() -> None:
-    """Flag-only invocation leaves CLEAN_ARGS empty (after whitespace trim)."""
-    result = parse_review_args("--reply")
-    assert result["REPLY_MODE"] == "true"
-    assert result["CLEAN_ARGS"] == ""
+    def test_flags_only_no_arg(self) -> None:
+        """Flag-only invocation leaves CLEAN_ARGS empty (after whitespace trim)."""
+        result = parse_review_args("--reply")
+        assert result["REPLY_MODE"] == "true"
+        assert result["CLEAN_ARGS"] == ""
 
 
 def test_output_is_eval_safe() -> None:
@@ -102,7 +101,3 @@ def test_main_invocation_via_subprocess() -> None:
     assert assignments["REPLY_MODE"] == "true"
     assert assignments["CODEMAP_ENABLED"] == "true"
     assert assignments["CLEAN_ARGS"] == "42"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

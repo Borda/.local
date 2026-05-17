@@ -244,14 +244,7 @@ Every 5 min: `find .claude/agents -newer /tmp/manage-check-curator-agent-$LAUNCH
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
 
-2. Resolve template path (if not already set from Create Agent mode):
-
-```bash
-MANAGE_TPL="${MANAGE_TPL:-${CLAUDE_PLUGIN_ROOT}/skills/manage/templates}"
-[ -d "$MANAGE_TPL" ] || MANAGE_TPL=".claude/skills/manage/templates"
-[ -z "$MANAGE_TPL" ] && MANAGE_TPL="$(find "${HOME}/.claude/plugins/cache" -name "templates" -path "*/manage/templates" -type d 2>/dev/null | sort -Vr | head -1)"
-[ -d "$MANAGE_TPL" ] || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
-```
+2. `MANAGE_TPL` already resolved in Create Agent step 4 above — reuse. If Create Skill runs without Agent mode, re-run the resolution block from step 4 above.
 
 3. Spawn **foundry:curator** subagent to create directory and generate skill file:
 
@@ -259,6 +252,7 @@ MANAGE_TPL="${MANAGE_TPL:-${CLAUDE_PLUGIN_ROOT}/skills/manage/templates}"
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
 Read the skill scaffold template at `$MANAGE_TPL/skill-scaffold.md`.
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
+Read `$_FOUNDRY_SHARED/bin-authoring-guide.md` — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is RECOMMENDED or EXTRACT.
 Create `.claude/skills/<name>/SKILL.md` with:
 - Frontmatter: name=<name>, description=<description>; add other fields per schema and scaffold guidance
 - Body: rich workflow scaffold derived from the description, following all content rules in the scaffold template
@@ -356,6 +350,7 @@ Rules:
 - Preserve frontmatter fields (name, description, tools, model, color) unless the change explicitly targets them
 - Preserve XML tags (<role>, <core_knowledge>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the agent's purpose: update the description: frontmatter field
+- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is RECOMMENDED or EXTRACT
 - After editing: verify XML tag balance, step numbering, cross-ref validity
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -375,6 +370,7 @@ Rules:
 - Preserve frontmatter fields (name, description, argument-hint, disable-model-invocation, allowed-tools)
 - Preserve XML tags (<objective>, <inputs>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the skill's purpose: update the description: frontmatter field
+- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is RECOMMENDED or EXTRACT
 - After editing: verify XML tag balance, step numbering, workflow gate completeness
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","edits":N,"description_changed":true|false,"confidence":0.N}

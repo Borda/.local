@@ -110,19 +110,28 @@ Spawn **foundry:curator** per plugin with this prompt:
 > ```
 > (Total lines = sum of Lines each across all instances; Est. tokens/call = (lines_per_instance − 1) × ~4 — tokens saved per calling-skill invocation when block extracted to bin/)
 >
-> **Table 2 — Extraction feasibility**: for each cluster, compute:
+> **Table 2 — Extraction scoring**: for each cluster, apply gate then score:
 > - **ParamSlots**: count of distinct `<ARG>` placeholder slots after normalization = how many CLI parameters the extracted script would need.
-> - **CallerScopeDeps**: env vars referenced in block that are set outside the block (e.g. `$RUN_DIR`, `$LOCAL_MODE`, `$AUDIT_TPL`) — count of non-convertible upstream deps.
-> - **Feasibility**: HIGH (ParamSlots ≤ 3 AND CallerScopeDeps ≤ 1 AND ≤ 30 lines) · MED (ParamSlots 4–6 OR CallerScopeDeps 2 OR 30–60 lines) · LOW (ParamSlots > 6 OR CallerScopeDeps ≥ 3 OR > 60 lines).
-> - **Pos impact**: select all: `DRY (N files × K lines)` · `testable in bin/` · `standalone CLI reuse` · `reduces skill file size`.
-> - **Neg impact**: select all: `PATH dep (CLAUDE_PLUGIN_ROOT must resolve)` · `allow-list entry (Bash(bin/*:*))` · `inline readability loss` · `Python → approval prompt per-invocation` · `context coupling (CallerScopeDeps not convertible)`.
+> - **Tokens**: estimated token count of one block instance.
+> - **Gate** = `G1:P/F · G2:P/F · G3:P/F` — all must pass or Verdict = SKIP:
+>   - G1 (Size): block > 100 tokens — else overhead ≥ savings
+>   - G2 (Independence): no branch on prior LLM decision that cannot become explicit arg
+>   - G3 (Identity): has computational meaning outside orchestration prose (high env-var coupling = G3 fail)
+> - **Score** = sum of applicable positive-dimension weights when gate passes:
+>   - Testable (deterministic I/O, writable pytest/shellcheck test) +2
+>   - Reuse (same logic in 2+ .md files) +2
+>   - Token drain (block > 300 tokens) +2
+>   - Lintable (shellcheck/ruff directly applicable) +1
+>   - Run frequency (executes >1× per skill invocation) +1
+>   - Standalone debuggable (runnable with no SKILL.md context) +1
+> - **Verdict**: SKIP (any gate fail) · OPTIONAL (0–1) · RECOMMENDED (2–3) · EXTRACT (≥4)
 >
 > ```
-> | Cluster | ParamSlots | CallerScopeDeps | Feasibility | Differs-by (arg names) | Pos impact | Neg impact | Recommendation |
+> | Cluster | ParamSlots | Tokens | Gate | Score | Verdict | Differs-by | Recommended extraction |
 > ```
 > **Differs-by**: list the concrete `<ARG>` slot values that vary across cluster instances — these become named CLI parameters in the extracted script signature. Recommendation = concrete: e.g. `Extract → bin/find-plugin.sh <plugin-name>; N call sites become $(find-plugin.sh codex)`.
 >
-> **Severity**: DUPLICATE cluster (max-sim ≥ 0.90) → **high** regardless of size; purpose cluster ≥ 3 members AND HIGH feasibility AND not DUPLICATE → **medium**; 2-member OR MED feasibility → **low**; LOW feasibility → Table 2 only (not a finding). Python blocks with HIGH feasibility → medium + note approval-prompt impact.
+> **Severity**: DUPLICATE cluster (max-sim ≥ 0.90) → **high** regardless of gate/score; EXTRACT verdict → **medium**; RECOMMENDED verdict → **low**; OPTIONAL or SKIP → Table 2 only (not a finding). Python blocks with EXTRACT verdict → medium + note approval-prompt impact.
 > Write to `<RUN_DIR>/efficiency-check33-<plugin>.md`. Return ONLY: `{"status":"done","file":"<path>","clusters":N,"findings":N,"severity":{"high":N,"medium":N,"low":N},"confidence":0.N}`
 
 **Phase C — Aggregate, score, and plan** (after A+B+B2 complete):
@@ -140,18 +149,33 @@ Spawn **foundry:curator** consolidator to merge all findings:
 > 7. **Prioritized Improvement Plan** — P1 (critical: correctness/highest cost), P2 (high: model downgrades), P3 (medium: hygiene/dedup), P4 (low: compression); each item: file + exact change + estimated saving + `performance_risk: low|medium|high`. Items with `performance_risk: high` are automatically downgraded to P-HOLD (do not apply without empirical benchmarking). Items with `performance_risk: medium` stay in plan but carry a `⚠ validate first` marker.
 > 8. **Estimated Combined Savings** — rough directional reduction for most common workflows if all P1+P2 applied; note: savings are heuristic estimates only — no live cost measurement performed; treat as directional guidance, not engineering targets
 > Write full report to `<RUN_DIR>/efficiency-report.md`.
-> Return ONLY: `{"status":"done","file":"<RUN_DIR>/efficiency-report.md","critical":N,"high":N,"medium":N,"low":N,"total_issues":N,"top_saving":"<description>","confidence":0.N}`
+> Return ONLY: `{"status":"done","file":"<RUN_DIR>/efficiency-report.md","critical":N,"high":N,"medium":N,"low":N,"total_issues":N,"clusters":N,"extract_count":N,"recommended_count":N,"top_saving":"<description>","confidence":0.N}`
 
 **Report format** (terminal summary):
 
 ```
-verdict: EFFICIENCY_ISSUES · critical: N · high: N · medium: N · low: N · confidence: 0.N
+verdict: EFFICIENCY_ISSUES · critical: N · high: N · medium: N · low: N
+code-blocks: clusters: N · EXTRACT: N · RECOMMENDED: N
+confidence: 0.N
 → <RUN_DIR>/efficiency-report.md
 
 Critical: [list each]
 Estimated savings (P1+P2): ~X%
 ```
 
+Omit `code-blocks:` line when no clusters found (all SKIP verdicts or no Check 33 data available).
+
 Efficiency findings feed into standard fix pipeline (Steps 7–10). **Step 8 override**: model-tier mismatch findings are NOT subject to Step 8's "report-only" bypass — user opted into auto-fix by invoking `--efficiency`. Fix agents will apply model-tier changes.
+
+**Extraction gate** (fires after main follow-up gate, `--efficiency` only): when Phase C envelope reports `clusters > 0` (EXTRACT or RECOMMENDED verdicts present), fire a second `AskUserQuestion`:
+
+- question: "Found N bin/ extraction candidates (EXTRACT: N, RECOMMENDED: N). Extract now?" — substitute N from Phase C envelope `clusters`, `extract_count`, `recommended_count`
+- (a) label: `EXTRACT only` — extract only EXTRACT-verdict blocks to bin/ scripts
+- (b) label: `EXTRACT + RECOMMENDED` — extract all EXTRACT and RECOMMENDED blocks to bin/ scripts
+- (c) label: `Skip extractions` — no extraction now; review candidates in efficiency report manually
+
+When user picks (a) or (b): spawn `foundry:sw-engineer` to create bin/ scripts following `$_FS/bin-authoring-guide.md`; provide cluster list from `<RUN_DIR>/efficiency-check33-*.md`; for each extracted block replace inline content in source SKILL.md with reference to the new bin/ script.
+
+Skip gate if `clusters == 0` or `--skip-gate` active.
 
 **Flag aliases**: `--efficiency` only (no alias).

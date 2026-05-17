@@ -103,6 +103,7 @@ CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") 
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.
 
+<!-- Only active when --team flag passed (~10% of invocations) -->
 ## Team Mode Branch
 
 **If `TEAM_MODE=true`**: execute team workflow now — do not proceed to Step 1.

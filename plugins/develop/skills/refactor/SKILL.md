@@ -188,6 +188,7 @@ Before writing characterization tests, evaluate audit output critically:
 
 If audit incomplete: re-examine before Step 3. Gaps found mid-refactoring (Step 4) costly.
 
+<!-- Only active when --team flag passed (~10% of invocations) -->
 **Team mode branch** — if `TEAM_MODE=true`: Steps 1–2 complete solo (teammates need scope + coverage context). Spawn both teammates now; skip Steps 3–5, proceed to Final Report after results received.
 
 When `TEAM_MODE=true`:
