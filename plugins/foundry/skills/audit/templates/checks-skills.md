@@ -5,12 +5,19 @@
 `context:fork + disable-model-invocation:true` is broken combination.
 
 ```bash
+# LOCAL_MODE-aware path globs (defined once, reused across all checks in this file)
+[ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
+[ "$LOCAL_MODE" = "true" ] && _SKILL_DIR_GLOB="plugins/*/skills/*/" || _SKILL_DIR_GLOB=".claude/skills/*/"
+[ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
+[ "$LOCAL_MODE" = "true" ] && _RULE_GLOB="plugins/*/rules/*.md" || _RULE_GLOB=".claude/rules/*.md"
+[ "$LOCAL_MODE" = "true" ] && _SKILL_DIR_ROOT="plugins/*/skills/" || _SKILL_DIR_ROOT=".claude/skills/"
+
 RED='\033[1;31m'
 YEL='\033[1;33m'
 GRN='\033[0;32m'
 CYN='\033[0;36m'
 NC='\033[0m'
-for f in .claude/skills/*/SKILL.md; do # timeout: 5000
+for f in $_SKILL_GLOB; do # timeout: 5000
     name=$(basename "$(dirname "$f")")
     if awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'context: fork' &&
     awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'disable-model-invocation: true'; then
@@ -41,7 +48,7 @@ Mode is calibratable when ALL three signals present:
 
 **Step 5 — Read agents domain table**: Read `.claude/skills/calibrate/modes/agents.md`, extract all agent names from `### Domain table`. Build registered-agent-names set.
 
-**Step 6 — Scan all agent files on disk**: Use Glob (`plugins/*/agents/*.md`, path project root) for plugin agent files; Glob (`agents/*.md`, path `.claude/`) for directly installed agents. Derive qualified name per file: `plugins/<plugin>/agents/<name>.md` → `<plugin>:<name>`; `.claude/agents/<name>.md` → `<name>`. Build full discovered-agent set.
+**Step 6 — Scan all agent files on disk**: (When `LOCAL_MODE=false`, skip `plugins/*/agents/*.md` — scan `.claude/agents/` only.) Use Glob (`plugins/*/agents/*.md`, path project root) for plugin agent files; Glob (`agents/*.md`, path `.claude/`) for directly installed agents. Derive qualified name per file: `plugins/<plugin>/agents/<name>.md` → `<plugin>:<name>`; `.claude/agents/<name>.md` → `<name>`. Build full discovered-agent set.
 
 **Step 7 — Validate registered agents exist on disk**: For each registered agent in domain table, verify it resolves to discovered file. Bare name (e.g. `sw-engineer`) matches `foundry:sw-engineer` when no `.claude/agents/sw-engineer.md` exists — apply model reasoning to resolve bare names against plugin-qualified discoveries. Registered agent with no matching file → **medium** (stale entry causes calibrate to fail at runtime; remove from domain table or correct prefix).
 
@@ -89,11 +96,11 @@ After scan, apply model reasoning to each match — exclude cases where shell co
 
 ```bash
 printf "=== Check 23e: python inline policy ===\n"
-grep -rn 'python -c\b' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
+grep -rn 'python -c\b' $_SKILL_GLOB 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: python not in allow list by design — move logic to bin/*.py or use native tools (Read/Write/Edit/Bash with jq)\n" || true
 printf "=== Check 23e: heredoc python policy ===\n"
-grep -rn "python << '\|python <<\"" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
+grep -rn "python << '\|python <<\"" $_SKILL_GLOB 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: CLAUDE.md bans heredoc python; use bin/*.py instead\n" || true
 printf "✓: Check 23e scan complete\n"  # timeout: 5000
@@ -232,18 +239,28 @@ Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depe
 
 ```bash
 # Map each plugin skill file to its owning plugin  # timeout: 5000
-for f in plugins/*/skills/*/SKILL.md; do
-    plugin=$(echo "$f" | cut -d/ -f2)
-    skill=$(echo "$f" | cut -d/ -f4)
-    echo "$plugin $skill $f"
-done
+# Note: cross-plugin dispatch analysis is only meaningful against plugin source tree;
+# in non-LOCAL mode the .claude/skills/ directory has no plugin-prefixed structure to scan.
+if [ "$LOCAL_MODE" != "true" ]; then
+    echo "[Check 28 Step 1] Skipped in non-local mode (no plugin source tree)"
+else
+    for f in plugins/*/skills/*/SKILL.md; do
+        plugin=$(echo "$f" | cut -d/ -f2)
+        skill=$(echo "$f" | cut -d/ -f4)
+        echo "$plugin $skill $f"
+    done
+fi
 ```
 
 **Step 2 — Collect cross-plugin dispatches per skill:**
 
 ```bash
 # Find all subagent_type values across plugin skill files  # timeout: 5000
-grep -rn 'subagent_type' plugins/*/skills/*/SKILL.md 2>/dev/null | grep -v '^Binary'
+if [ "$LOCAL_MODE" != "true" ]; then
+    echo "[Check 28 Step 2] Skipped in non-local mode (no plugin source tree)"
+else
+    grep -rn 'subagent_type' plugins/*/skills/*/SKILL.md 2>/dev/null | grep -v '^Binary'
+fi
 ```
 
 For each match: extract `(skill_file, dispatched_plugin, dispatched_agent)`. Dispatch is **cross-plugin** when `dispatched_plugin ≠ owning_plugin`. Build map: `skill_file → [cross-plugin agents]`.
@@ -283,21 +300,26 @@ Skills may reference other plugins' skills in `<notes>`, follow-up chains, and p
 
 ```bash
 printf "=== Check 28c: Cross-plugin prose refs ===\n"
-for f in plugins/*/skills/*/SKILL.md; do
-  [ -f "$f" ] || continue
-  skill_plugin=$(echo "$f" | cut -d/ -f2)
-  # Find refs to other plugins in prose (backtick-wrapped /plugin:skill or /plugin:skill in plain text)
-  matches=$(grep -nE '`/[a-z]+:[a-z]|/oss:|/develop:|/research:|/codemap:|/foundry:' "$f" 2>/dev/null |
-    grep -v "subagent_type\|#.*requires\|requires.*plugin\|plugin.*installed\|if.*plugin" |
-    grep -v "$(echo "$skill_plugin" | sed 's/[^a-z]//g'):" || true)
-  if [ -n "$matches" ]; then
-    echo "$matches" | while IFS= read -r line; do
-      printf "⚠ 28c: %s — cross-plugin ref without availability guard: %s\n" "$f" "$line"
-      printf "  fix: add '(requires <plugin> plugin)' inline, or wrap in availability check\n"
+# Cross-plugin prose-ref analysis only meaningful against plugin source tree
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check 28c skipped in non-local mode (no plugin source tree)\n"
+else
+    for f in plugins/*/skills/*/SKILL.md; do
+      [ -f "$f" ] || continue
+      skill_plugin=$(echo "$f" | cut -d/ -f2)
+      # Find refs to other plugins in prose (backtick-wrapped /plugin:skill or /plugin:skill in plain text)
+      matches=$(grep -nE '`/[a-z]+:[a-z]|/oss:|/develop:|/research:|/codemap:|/foundry:' "$f" 2>/dev/null |
+        grep -v "subagent_type\|#.*requires\|requires.*plugin\|plugin.*installed\|if.*plugin" |
+        grep -v "$(echo "$skill_plugin" | sed 's/[^a-z]//g'):" || true)
+      if [ -n "$matches" ]; then
+        echo "$matches" | while IFS= read -r line; do
+          printf "⚠ 28c: %s — cross-plugin ref without availability guard: %s\n" "$f" "$line"
+          printf "  fix: add '(requires <plugin> plugin)' inline, or wrap in availability check\n"
+        done
+      fi
     done
-  fi
-done
-printf "✓: Check 28c scan complete\n"  # timeout: 5000
+    printf "✓: Check 28c scan complete\n"
+fi  # timeout: 5000
 ```
 
 Severity: **medium** — user sees broken command in follow-up gate or documentation prose.
@@ -322,7 +344,7 @@ CYN='\033[0;36m'
 NC='\033[0m'
 printf "=== Check 30a: Pipe exit code capture ===\n"
 # Find | tail or | head followed by $? assignment within 3 lines — tail/head always exit 0
-grep -rn '| tail\b\|| head\b' plugins/*/skills/ .claude/skills/ 2>/dev/null |
+grep -rn '| tail\b\|| head\b' $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v 'PIPESTATUS\|pipefail\|#.*tail\|#.*head' |
   grep -v '^Binary' &&
 printf "  ${CYN}hint${NC}: use \${PIPESTATUS[0]} or set -o pipefail; \$? captures tail/head exit (always 0)\n" || true
@@ -338,7 +360,7 @@ Fix pattern: `cmd 2>&1 | tail -N; EXIT=${PIPESTATUS[0]}`
 ```bash
 printf "=== Check 30b: SKIP variable guard ===\n"
 # Find SKIP_X=1 detection lines; check whether subsequent runner commands have a guard
-grep -rn 'SKIP_[A-Z_]*=1' plugins/*/skills/ .claude/skills/ 2>/dev/null |
+grep -rn 'SKIP_[A-Z_]*=1' $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v '^Binary' | grep -v '#' | while IFS= read -r match; do
     file=$(echo "$match" | cut -d: -f1)
     # Check if any guard exists in same file
@@ -371,7 +393,7 @@ Fix: standardize to bare agent name in both spawn prompt and consolidator read p
 ```bash
 printf "=== Check 30d: TEST_CMD/PYTEST_CMD split ===\n"
 grep -rn '\$TEST_CMD.*--tb\b\|\$TEST_CMD.*--co\b\|\$TEST_CMD.*::\|\$TEST_CMD.*--cov\b\|\$TEST_CMD.*--doctest' \
-  plugins/*/skills/ .claude/skills/ 2>/dev/null |
+  $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v 'PYTEST_CMD\|#' | grep -v '^Binary' &&
 printf "  ${CYN}hint${NC}: derive PYTEST_CMD for pytest-specific flags; TEST_CMD=tox or make won't accept --tb/--co/::/--cov\n" || true
 printf "${GRN}✓${NC}: Check 30d scan complete\n"  # timeout: 5000
@@ -389,7 +411,7 @@ Heredoc python blocks (`python << 'EOF'`) banned by CLAUDE.md. Distinct from 23e
 
 ```bash
 printf "=== Check 30e: Heredoc python ===\n"
-grep -rn "python <<\|python << '" plugins/*/skills/ .claude/skills/ 2>/dev/null |
+grep -rn "python <<\|python << '" $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: CLAUDE.md bans python heredoc; use bin/*.py script instead\n" || true
 printf "✓: Check 30e scan complete\n"  # timeout: 5000
@@ -424,7 +446,7 @@ CYN='\033[0;36m'
 NC='\033[0m'
 
 found=0
-for f in plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md; do  # timeout: 5000
+for f in $_SKILL_GLOB; do  # timeout: 5000
     [ -f "$f" ] || continue
     skill_name=$(basename "$(dirname "$f")")
     allowed=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null | grep '^allowed-tools:' | sed 's/allowed-tools:[[:space:]]*//')
@@ -461,7 +483,7 @@ GRN='\033[0;32m'
 NC='\033[0m'
 printf "=== Check 31b: Frontmatter completeness ===\n"
 found=0
-for f in plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md; do  # timeout: 5000
+for f in $_SKILL_GLOB; do  # timeout: 5000
     [ -f "$f" ] || continue
     skill=$(basename "$(dirname "$f")")
     fm=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null)
@@ -497,7 +519,7 @@ CLAUDE.md §8 requires every skill spawning background agents to implement: (1) 
 
 ```bash
 printf "=== Check C35: Background agent health monitoring ===\n"
-BG_SKILLS=$(grep -rl 'run_in_background.*true\|run_in_background=true' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null)
+BG_SKILLS=$(grep -rl 'run_in_background.*true\|run_in_background=true' $_SKILL_GLOB 2>/dev/null)
 if [ -z "$BG_SKILLS" ]; then
     printf "✓: No background agent spawns found — C35 N/A\n"
 fi  # timeout: 5000
@@ -548,7 +570,7 @@ NC='\033[0m'
 
 printf "=== Check 32a: Dead mode files ===\n"
 found=0
-for skill_dir in plugins/*/skills/*/ .claude/skills/*/; do  # timeout: 5000
+for skill_dir in $_SKILL_DIR_GLOB; do  # timeout: 5000
     [ -d "${skill_dir}modes" ] || continue
     skill_md="${skill_dir}SKILL.md"
     [ -f "$skill_md" ] || continue
@@ -574,7 +596,7 @@ Template files in `*/skills/*/templates/` not referenced from the parent `SKILL.
 ```bash
 printf "=== Check 32b: Dead template files ===\n"
 found=0
-for skill_dir in plugins/*/skills/*/ .claude/skills/*/; do  # timeout: 5000
+for skill_dir in $_SKILL_DIR_GLOB; do  # timeout: 5000
     [ -d "${skill_dir}templates" ] || continue
     skill_md="${skill_dir}SKILL.md"
     [ -f "$skill_md" ] || continue
@@ -600,7 +622,7 @@ Rule files with `paths:` frontmatter that match no existing project files are ne
 ```bash
 printf "=== Check 32c: Dead rule files ===\n"
 found=0
-for rule_file in plugins/*/rules/*.md .claude/rules/*.md; do  # timeout: 5000
+for rule_file in $_RULE_GLOB; do  # timeout: 5000
     [ -f "$rule_file" ] || continue
     # Extract paths: list from frontmatter
     paths_block=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$rule_file" 2>/dev/null | awk '/^paths:/{p=1;next} p && /^[^ ]/{p=0} p{print}')
@@ -654,26 +676,26 @@ printf "=== Check 33b Phase 1: Cross-file code block quick scan ===\n"
 
 # Known bash cross-file patterns
 # Mode-dispatch: find .../plugins/cache.../audit/modes/<x>.md (bash)
-MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
 [ "${MODE_DISPATCH:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: bash mode-dispatch pattern in %s files — bin/ extraction candidate: resolve-skill-mode.sh <mode>\n" "$MODE_DISPATCH"
 
 # _shared/ resolution: find .../foundry.../_shared or ls -td .../foundry/*/skills/_shared (bash)
-SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
 [ "${SHARED_RES:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: bash _shared resolution pattern in %s files (variants may be inconsistent) — bin/ extraction candidate\n" "$SHARED_RES"
 
 # Python heredoc pattern (bin/ python script candidate)
-PY_HEREDOC=$(grep -rl 'python -c' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+PY_HEREDOC=$(grep -rl 'python -c' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
 [ "${PY_HEREDOC:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: python -c one-liner in %s files — evaluate if any cluster repeats across skills\n" "$PY_HEREDOC"
 
 # Unsupported-flag-check (intentional resilience replication — info only)
-FLAG_CHECK=$(grep -rl 'Unknown flag' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+FLAG_CHECK=$(grep -rl 'Unknown flag' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
 [ "${FLAG_CHECK:-0}" -ge 3 ] && printf "${CYN}ℹ 33b${NC}: unsupported-flag-check boilerplate in %s files — known intentional per-plugin resilience\n" "$FLAG_CHECK"
 
 # Count code blocks by language marker — identifies files for Phase 2 curator NxN
 echo "--- Code block language distribution across skills (Phase 2 trigger signals) ---"
 NEEDS_CURATOR_NXN=false
 for lang in bash python sh perl ruby node js; do
-  count=$(grep -rl "^\`\`\`${lang}" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+  count=$(grep -rl "^\`\`\`${lang}" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
   [ "${count:-0}" -ge 5 ] && { echo "  ${lang}: ${count} files — TRIGGER Phase 2 curator NxN"; NEEDS_CURATOR_NXN=true; }
   [ "${count:-0}" -ge 2 ] && [ "${count:-0}" -lt 5 ] && echo "  ${lang}: ${count} files"
 done
@@ -685,7 +707,19 @@ printf "${GRN}✓${NC}: Check 33b Phase 1 complete\n"  # timeout: 5000
 
 **Phase 2 — Curator NxN delegation**: run when Phase 1 finds any known pattern in ≥3 files OR any language marker appears in ≥5 SKILL.md files. Spawn **foundry:curator** with all flagged files:
 
-> "Perform Check 33b cross-file NxN code block similarity analysis on: <list all SKILL.md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language). Build a cross-file NxN similarity matrix: for each pair of blocks across different files, normalize (strip comments → variable names to `<VAR>` → string literals to `<STR>`) then compute structural similarity. Report clusters where similarity ≥ 0.8 appears in 3+ files as 33b findings. For each cluster: language, purpose, affected files, similarity score, what differs between instances, context savings estimate (block_lines × occurrence_count), and suggested bin/ extraction path. Skip blocks explicitly marked as intentional resilience replications."
+> "Perform Check 33b cross-file code block analysis on: <list all SKILL.md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language) ≥ 5 lines. Skip blocks explicitly marked as intentional resilience replications.
+>
+> **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what it does functionally (not how) — e.g. 'resolves `_shared/` path from plugin cache', 'detects codex plugin availability', 'emits boilerplate-duplication counts'. Syntactic line-intersection alone is blind to conditional-inversion and variable renaming — purpose grouping catches duplicates that normalization misses.
+>
+> **Step 2 — Purpose clusters**: group blocks with equivalent purpose. This is the primary grouping. Singletons omitted. Assign cluster ID `C<n>`.
+>
+> **Step 3 — Syntactic similarity (secondary)**: within each cluster, normalize: strip `#` comment lines → replace path segments / slugs / numeric literals with `<STR>` → **replace ALL argument/parameter values (flag values, option strings, concrete command arguments) with `<ARG>`** — e.g. `CODEX_AVAILABLE=$(find ~/.claude/plugins/cache -name "codex*" -type d ...)` and `FOUNDRY_AVAILABLE=$(find ~/.claude/plugins/cache -name "foundry*" -type d ...)` both normalize to `<VAR>=$(find ~/.claude/plugins/cache -name "<ARG>" -type d ...)`. Compute `sim(A,B) = 2 × |lines(A_norm) ∩ lines(B_norm)| / (|A| + |B|)`. Record max-sim per cluster. Mark **DUPLICATE** when max-sim ≥ 0.90.
+>
+> Write Table 1 and Table 2 to `$RUN_DIR/similarity-check33.md` using the Write tool.
+> Table 1 format: `| Cluster | Block IDs | Files | Lang | Lines each | Purpose | Max-sim | Duplicate? |`
+> Table 2 format: `| Cluster | ParamSlots | CallerScopeDeps | Feasibility | Differs-by (arg names) | Pos impact | Neg impact | Recommendation |`
+> Where: **ParamSlots** = count of distinct `<ARG>` slots after normalization; **CallerScopeDeps** = count of env vars referenced in block set outside block (non-convertible deps); **Feasibility** = HIGH (ParamSlots ≤ 3 AND CallerScopeDeps ≤ 1 AND ≤ 30 lines) · MED (4–6 OR 2 OR 30–60) · LOW (>6 OR ≥3 OR >60); **Differs-by** = concrete `<ARG>` slot values varying across instances (become CLI parameters in extracted script).
+> Return ONLY: `{\"status\":\"done\",\"file\":\"$RUN_DIR/similarity-check33.md\",\"clusters\":N,\"duplicates\":N,\"similar\":N,\"findings\":N,\"confidence\":0.N}`"
 
 Severity: **medium** for actionable extraction candidates (mode-dispatch, _shared resolution, multi-file python clusters); **low/info** for known intentional replications (unsupported-flag-check, health-monitoring constants — per-plugin resilience by design per `plugins/CLAUDE.md`).
 

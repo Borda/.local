@@ -144,50 +144,46 @@ Classify each example block via model reasoning:
 
 Report per-file: `N examples total, K high-value, M low-value (est. ~X tokens wasted)`.
 
-## Check 17 — Cross-file content duplication (>40% consecutive step overlap)
+## Check 17 — Cross-file code block duplication
+
+Near-identical fenced code blocks across files in scope — same functional purpose AND syntactically close. When `--efficiency` also active, skip Check 17 — Phase B2 subsumes it with full tables.
 
 ```bash
-printf "%-30s %s\n" "FILE" "STEPS"
-for f in .claude/skills/*/SKILL.md; do # timeout: 5000
+[ "$LOCAL_MODE" = "true" ] && _C17_SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _C17_SKILL_GLOB=".claude/skills/*/SKILL.md"
+[ "$LOCAL_MODE" = "true" ] && _C17_AGENT_GLOB="plugins/*/agents/*.md" || _C17_AGENT_GLOB=".claude/agents/*.md"
+printf "%-30s %s\n" "FILE" "BLOCKS"
+for f in $_C17_SKILL_GLOB; do # timeout: 5000
     name="skills/$(basename "$(dirname "$f")")"
-    steps=$(grep -c '^## Step' "$f" 2>/dev/null || echo 0)
-    printf "%-30s %d\n" "$name" "$steps"
+    blocks=$(grep -c '^\`\`\`' "$f" 2>/dev/null || echo 0)
+    blocks=$(( blocks / 2 ))
+    printf "%-30s %d\n" "$name" "$blocks"
 done
-for f in .claude/agents/*.md; do
+for f in $_C17_AGENT_GLOB; do
     name="agents/$(basename "$f" .md)"
-    sections=$(grep -c '^## ' "$f" 2>/dev/null || echo 0)
-    printf "%-30s %d\n" "$name" "$sections"
+    blocks=$(grep -c '^\`\`\`' "$f" 2>/dev/null || echo 0)
+    blocks=$(( blocks / 2 ))
+    printf "%-30s %d\n" "$name" "$blocks"
 done
 ```
 
-Via model reasoning, compare workflow body of each file against all others in its class. Per pair:
+Via model reasoning — for each fenced code block ≥ 5 lines:
 
-1. Count steps: N_A and N_B
-2. Find longest consecutive run of substantially similar steps: N_run
-3. Compute run fraction: `max(N_run / N_A, N_run / N_B)`
-4. Flag if run fraction ≥ 0.4 (40%)
+1. Write a one-sentence **purpose statement** (what it does functionally, not how)
+2. Group blocks with equivalent purpose — primary grouping signal
+3. Within each purpose group, normalize: strip `#` comment lines → collapse whitespace → replace path segments / slugs / numeric literals with `<STR>` → replace ALL concrete argument/parameter values with `<ARG>`; keep structural tokens
+4. Compute `sim(A,B) = 2 × |lines(A_norm) ∩ lines(B_norm)| / (|A| + |B|)`; mark pair **DUPLICATE** when sim ≥ 0.90
+5. Report as findings list — no table file; include: block IDs, files, purpose, similarity score, suggested canonical owner or `_shared/` extraction
 
-Scattered similarity doesn't count — only contiguous block triggers. **Severity**: **medium** — report only, never auto-fix.
+**Why purpose-first**: syntactic line-intersection misses conditional-inversion and variable renaming — two blocks doing the same thing written differently have low syntactic overlap but are still duplicates. Purpose grouping catches what normalization misses.
 
-For flagged agent pairs, name canonical owner of duplicated content. If no clear owner because both files describe same role, route pair to Check 20 as `merge-prune` candidate instead of leaving duplication ambiguous.
+Scattered single-line matches don't count — only blocks ≥ 5 lines qualify. **Severity**: DUPLICATE (same purpose + sim ≥ 0.90) → **high**; same purpose only (sim < 0.90) → **medium** (same-purpose divergence, consider unification); report only, never auto-fix.
 
-### Sub-check 17b — Identical bash block in 3+ files (high)
+For 17a (step-level prose overlap, ≥40% consecutive steps): flag pair, name canonical owner; route to Check 20 `merge-prune` if no clear owner.
 
-Bash blocks ≥8 lines appearing verbatim in 3+ skill/agent files indicate missing `_shared/` extraction. Unlike step-overlap (17a), catches copy-pasted operational blocks before they drift independently.
-
-Model reasoning step — compare bash blocks across all skill files in scope:
-
-1. Per fenced bash block (` ```bash ` … ` ``` `) in every scanned SKILL.md, compute fingerprint (content stripped of leading/trailing whitespace, comments removed)
-2. Track file-count per fingerprint
-3. Fingerprint in ≥3 distinct files AND block length ≥8 lines → **[high] 17b**: `Bash block (~N lines) appears verbatim in K files: <file1>, <file2>, … — extract to _shared/<name>.md`
-
-Severity: **high** — duplicated operational blocks drift independently; N fixes required per change instead of 1.
-Fix: extract to `plugins/foundry/skills/_shared/<descriptive-name>.md`; replace in-file copies with `Read $_FOUNDRY_SHARED/<name>.md — execute <block-purpose>`.
-
-| Sub-check | Threshold | Severity | Auto-fix |
-| --- | --- | --- | --- |
-| 17a — consecutive step overlap | ≥40% of steps | medium | no |
-| 17b — identical bash block | ≥8 lines, ≥3 files | high | no |
+| Sub-check | Algorithm | Threshold | Severity | Output |
+| --- | --- | --- | --- | --- |
+| 17a — step overlap | consecutive step fraction | ≥40% steps | medium | findings list only |
+| 17b — block duplicate | purpose grouping + sim(A,B) normalized | same purpose + sim ≥ 0.90, ≥5 lines | high | findings list only |
 
 ## Check C32 — Hardcoded source-tree paths (install-path regression)
 
@@ -199,19 +195,24 @@ CYN='\033[0;36m'
 GRN='\033[0;32m'
 NC='\033[0m'
 printf "=== Check C32: Hardcoded source-tree paths ===\n"
-# Find bare plugins/ primary paths — not inside comments, not inside fallback guards
-grep -rn ' plugins/[a-z]' plugins/*/skills/*/SKILL.md plugins/*/agents/*.md 2>/dev/null |
-  grep -v '^Binary' |
-  grep -v '^\s*#' |
-  grep -v '&& .*plugins/' |
-  grep -v ':-.*plugins/' |
-  grep -v '"plugins/' | grep -v "'plugins/" | while IFS= read -r hit; do
-    printf "${RED}! BREAKING${NC} C32: %s\n" "$hit"
-    printf "  ${CYN}fix${NC}: replace with installed-path resolution:\n"
-    printf "        VAR=\"\$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)\"\n"
-    printf "        [ -z \"\$VAR\" ] && VAR=\"plugins/<plugin>/skills/_shared\"\n"
-done
-printf "${GRN}✓${NC}: Check C32 scan complete\n"  # timeout: 5000
+# C32 inherently scans plugin source tree — only meaningful in LOCAL mode
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "${GRN}✓${NC} [Check C32/shared] Skipped in non-local mode (no plugin source tree)\n"
+else
+    # Find bare plugins/ primary paths — not inside comments, not inside fallback guards
+    grep -rn ' plugins/[a-z]' plugins/*/skills/*/SKILL.md plugins/*/agents/*.md 2>/dev/null |
+      grep -v '^Binary' |
+      grep -v '^\s*#' |
+      grep -v '&& .*plugins/' |
+      grep -v ':-.*plugins/' |
+      grep -v '"plugins/' | grep -v "'plugins/" | while IFS= read -r hit; do
+        printf "${RED}! BREAKING${NC} C32: %s\n" "$hit"
+        printf "  ${CYN}fix${NC}: replace with installed-path resolution:\n"
+        printf "        VAR=\"\$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)\"\n"
+        printf "        [ -z \"\$VAR\" ] && VAR=\"plugins/<plugin>/skills/_shared\"\n"
+    done
+    printf "${GRN}✓${NC}: Check C32 scan complete\n"
+fi  # timeout: 5000
 ```
 
 Severity: **high** — skill silently fails for any user who installed via marketplace (primary install path).

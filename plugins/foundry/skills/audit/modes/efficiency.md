@@ -36,9 +36,13 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 **Phase B — System-wide spawn pattern + duplication scan** (parallel with Phase A):
 
 ```bash
+# LOCAL_MODE-aware path globs: --local scans source tree; default scans installed config
+[ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
+[ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
+
 # Unbounded spawn patterns: Agent() inside for/while loop without BATCH_SIZE guard
 echo "=== Unbounded spawn patterns ==="
-for f in plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md; do
+for f in $_SKILL_GLOB; do
   [ -f "$f" ] || continue
   if grep -q 'Agent(' "$f" 2>/dev/null; then
     grep -B5 'Agent(' "$f" 2>/dev/null | grep -qE '^\s*(for|while)\b' || continue
@@ -49,52 +53,88 @@ done
 
 # Dead model specs: model: declared + disable-model-invocation: true
 echo "=== Dead model specs ==="
-for f in plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md; do
+for f in $_SKILL_GLOB; do
   [ -f "$f" ] || continue
   grep -q "^model:" "$f" && grep -q "disable-model-invocation: true" "$f" && echo "DEAD_SPEC: $f"
 done
 
 # Skills missing model declaration (and not disable-model-invocation)
 echo "=== Missing model declarations ==="
-for f in plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md; do
+for f in $_SKILL_GLOB; do
   [ -f "$f" ] || continue
   grep -q "disable-model-invocation: true" "$f" && continue
   grep -q "^model:" "$f" || echo "NO_MODEL: $f"
 done
 
 # Agents missing model declaration
-for f in plugins/*/agents/*.md .claude/agents/*.md; do
+for f in $_AGENT_GLOB; do
   [ -f "$f" ] || continue
   grep -q "^model:" "$f" || echo "NO_MODEL: $f"
 done
 
 # Boilerplate duplication counts
 echo "=== Boilerplate duplication ==="
-AGENT_RES=$(grep -rl "=\$(ls -td.*plugins/cache" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-FLAG_CHECK=$(grep -rl "Unknown flag" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-HEALTH_MON=$(grep -rl "MONITOR_INTERVAL=" plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+AGENT_RES=$(grep -rl "=\$(ls -td.*plugins/cache" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
+FLAG_CHECK=$(grep -rl "Unknown flag" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
+HEALTH_MON=$(grep -rl "MONITOR_INTERVAL=" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
 echo "agent-resolution boilerplate: $AGENT_RES files"
 echo "unsupported-flag-check boilerplate: $FLAG_CHECK files"
 echo "health-monitoring constants: $HEALTH_MON files"
 # Bin/ extraction candidates: self-contained bash patterns appearing in multiple files
 echo "=== Bin/ extraction candidates ==="
-MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
 echo "mode-dispatch pattern: $MODE_DISPATCH files"
-SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
 echo "_shared resolution pattern: $SHARED_RES files"
 ```
 
-**Phase C — Aggregate, score, and plan** (after A+B complete):
+**Phase B2 — Code block purpose-grouping + extraction feasibility (Check 33, parallel with Phase A+B)**:
+
+Scope: per plugin — compare blocks within same plugin only (cross-plugin overlap also captured here). When `--efficiency` is active, **skip Check 17** — Phase B2 subsumes it: DUPLICATE clusters (max-sim ≥ 0.90) are the Check 17 findings at higher resolution.
+
+**Primary signal: functional purpose, not syntactic similarity.** Syntactic line-intersection is blind to conditional-inversion and variable renaming — two blocks implementing the same logic written differently will have low syntactic overlap but identical purpose. Group by purpose first; use syntactic overlap only as a secondary confirmation and DUPLICATE label.
+
+Spawn **foundry:curator** per plugin with this prompt:
+
+> Enumerate every fenced code block (` ```bash `, ` ```python `, ` ```sh `, etc.) in all SKILL.md files under `plugins/<name>/skills/`. Assign each a block ID: `<plugin-abbrev>-<skill-slug>-B<n>` (e.g. `fnd-audit-B3`). Record: ID, source file, start line, language, line count.
+>
+> **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what the block does functionally (not how) — e.g., "resolves `_shared/` path from plugin cache", "detects codex plugin availability", "sets LOCAL_MODE-aware glob vars", "emits boilerplate-duplication counts". Same wording of different goal = different cluster. Different wording of same goal = same cluster.
+>
+> **Step 2 — Purpose clusters**: group blocks with equivalent purpose into clusters. This is the primary grouping. Singletons omitted. Assign cluster ID `C<n>`.
+>
+> **Step 3 — Syntactic similarity (secondary)**: for each cluster, normalize each member block: strip `#` comment lines → collapse whitespace → replace path segments / slugs / numeric literals with `<STR>` → **replace ALL concrete argument/parameter values** (flag values after `--flag`, option strings, RHS of variable assignments `FOO="val"`) with `<ARG>`; keep structural tokens. Compute `sim(A,B) = 2 × |lines(A_norm) ∩ lines(B_norm)| / (|A| + |B|)`. Record max-sim within cluster. Mark cluster **DUPLICATE** if max-sim ≥ 0.90 (blocks are near-identical, not just same-purpose).
+>
+> **Table 1 — Purpose clusters**:
+> ```
+> | Cluster | Block IDs | Files | Lang | Lines each | Purpose | Max-sim | Duplicate? |
+> ```
+>
+> **Table 2 — Extraction feasibility**: for each cluster, compute:
+> - **ParamSlots**: count of distinct `<ARG>` placeholder slots after normalization = how many CLI parameters the extracted script would need.
+> - **CallerScopeDeps**: env vars referenced in block that are set outside the block (e.g. `$RUN_DIR`, `$LOCAL_MODE`, `$AUDIT_TPL`) — count of non-convertible upstream deps.
+> - **Feasibility**: HIGH (ParamSlots ≤ 3 AND CallerScopeDeps ≤ 1 AND ≤ 30 lines) · MED (ParamSlots 4–6 OR CallerScopeDeps 2 OR 30–60 lines) · LOW (ParamSlots > 6 OR CallerScopeDeps ≥ 3 OR > 60 lines).
+> - **Pos impact**: select all: `DRY (N files × K lines)` · `testable in bin/` · `standalone CLI reuse` · `reduces skill file size`.
+> - **Neg impact**: select all: `PATH dep (CLAUDE_PLUGIN_ROOT must resolve)` · `allow-list entry (Bash(bin/*:*))` · `inline readability loss` · `Python → approval prompt per-invocation` · `context coupling (CallerScopeDeps not convertible)`.
+>
+> ```
+> | Cluster | ParamSlots | CallerScopeDeps | Feasibility | Differs-by (arg names) | Pos impact | Neg impact | Recommendation |
+> ```
+> **Differs-by**: list the concrete `<ARG>` slot values that vary across cluster instances — these become named CLI parameters in the extracted script signature. Recommendation = concrete: e.g. `Extract → bin/find-plugin.sh <plugin-name>; N call sites become $(find-plugin.sh codex)`.
+>
+> **Severity**: DUPLICATE cluster (max-sim ≥ 0.90) → **high** regardless of size; purpose cluster ≥ 3 members AND HIGH feasibility AND not DUPLICATE → **medium**; 2-member OR MED feasibility → **low**; LOW feasibility → Table 2 only (not a finding). Python blocks with HIGH feasibility → medium + note approval-prompt impact.
+> Write to `<RUN_DIR>/efficiency-check33-<plugin>.md`. Return ONLY: `{"status":"done","file":"<path>","clusters":N,"findings":N,"severity":{"high":N,"medium":N,"low":N},"confidence":0.N}`
+
+**Phase C — Aggregate, score, and plan** (after A+B+B2 complete):
 
 Spawn **foundry:curator** consolidator to merge all findings:
 
-> Read all per-file reports from `<RUN_DIR>/efficiency-*.md`. Also read Phase B bash output passed as context. Deduplicate findings by `(file, finding_type)` pair — Phase A curator and Phase B bash both scan for missing-model and dead-model-spec conditions; prefer Phase A curator finding (has file context) over Phase B bash line (no context) when both report same file+condition.
+> Read all per-file reports from `<RUN_DIR>/efficiency-*.md` and all Check 33 reports from `<RUN_DIR>/efficiency-check33-*.md`. Also read Phase B bash output passed as context. Deduplicate findings by `(file, finding_type)` pair — Phase A curator and Phase B bash both scan for missing-model and dead-model-spec conditions; prefer Phase A curator finding (has file context) over Phase B bash line (no context) when both report same file+condition.
 > Produce a cost-reduction report with these sections:
 > 1. **Cheapest Viable Model table** — one row per agent/skill with cost issue: `| file | current model+effort | minimum viable | rationale | estimated saving |`; saving = opus→sonnet: LARGE, opusplan→sonnet: LARGE, xhigh→high: MEDIUM, xhigh→medium: MEDIUM (heuristic tiers — not measured against live run costs)
 > 2. **Dead Model Specs** — list files with contradictory model+disable-model-invocation; exact fix (remove `model:` line)
 > 3. **Unbounded Spawn Patterns** — list files with uncapped per-item agent dispatch; recommended cap and batch strategy
 > 4. **Token Bloat Hotspots** — top 5 files by redundant inline content; section name, line count, suggested action
-> 5. **Boilerplate Duplication + Bin/ Extraction Candidates** — pattern name × occurrence count × total redundant lines × extraction target; for each bin/ candidate from Phase A+B: block purpose, occurrence count, suggested `bin/<script-name>.sh`, estimated line reduction
+> 5. **Boilerplate Duplication + Bin/ Extraction Candidates** — pattern name × occurrence count × total redundant lines × extraction target; for each bin/ candidate from Phase A+B: block purpose, occurrence count, suggested `bin/<script-name>.sh`, estimated line reduction. Merge with Check 33 (Phase B2) similarity clusters: include Table 1 and Table 2 per plugin inline in this section, sorted by feasibility HIGH→LOW
 > 6. **Missing Model Declarations** — list files inheriting session model; recommended tier per file
 > 7. **Prioritized Improvement Plan** — P1 (critical: correctness/highest cost), P2 (high: model downgrades), P3 (medium: hygiene/dedup), P4 (low: compression); each item: file + exact change + estimated saving + `performance_risk: low|medium|high`. Items with `performance_risk: high` are automatically downgraded to P-HOLD (do not apply without empirical benchmarking). Items with `performance_risk: medium` stay in plan but carry a `⚠ validate first` marker.
 > 8. **Estimated Combined Savings** — rough directional reduction for most common workflows if all P1+P2 applied; note: savings are heuristic estimates only — no live cost measurement performed; treat as directional guidance, not engineering targets

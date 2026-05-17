@@ -335,7 +335,7 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 | 14 | Orphaned follow-up references | medium | agents/skills | Skill-name refs in SKILL.md vs disk inventory |
 | 15 | Hardcoded user paths | high | agents/skills | /Users/ and /home/ in config files + settings.json |
 | 16 | Example value vs. token cost | low | agents/skills | Inline examples: high-value vs. low-value (prose restatement) |
-| 17 | Cross-file content duplication | medium | agents/skills | 40%+ consecutive step overlap; recommend canonical owner or merge path |
+| 17 | Cross-file code block duplication | medium | agents/skills | Same similarity algorithm as Check 33 (efficiency) but threshold sim ≥ 0.90 only — at that score blocks are near-identical duplicates; recommend canonical owner or `_shared/` extraction. Check 33 (sim ≥ 0.50) subsumes this when `--efficiency` also passed — skip Check 17 in that case |
 | 18 | Rules integrity | high/medium | rules | 18a inventory, 18b frontmatter, 18c redundancy, 18d cross-ref integrity |
 | 19 | Model tier appropriateness | medium/high | agents | Tier policy: opusplan/opus/sonnet/haiku - report only |
 | 20 | Agent description routing | medium/low | agents | 20a overlap pairs, 20b NOT-for coverage, 20c trigger specificity, 20d keep/sharpen/prune |
@@ -351,7 +351,7 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 | 30 | Config token overhead | medium/low | setup | 30a CLAUDE.md + global + rules/ > 100 KB; 30b single rules file > 10 KB |
 | 31 | Tool-body consistency | medium | skills | Skill `allowed-tools` must include every tool the workflow body invokes; see `checks-skills.md` for full spec |
 | 32 | Dead file detection | medium/low | skills/rules | 32a mode files in `*/modes/` not referenced from parent SKILL.md; 32b template files in `*/templates/` not referenced; 32c rule files whose `paths:` globs match no project files |
-| 33 | Code block duplication | medium/low | skills | 33a within-file: same code block (any language — bash, python, sh, perl, etc.) 3+ times with only constant differences — extraction candidate; 33b cross-file: same block in 3+ SKILL.md files across plugins |
+| 33 | Code block similarity + extraction feasibility | medium/low | skills | `--efficiency` only — Table 1: pairwise similarity per plugin; Table 2: rigidity + extraction feasibility + pos/neg impact. See `modes/efficiency.md` Phase B2 |
 
 ### Claude Code docs freshness (within Step 4)
 
@@ -622,6 +622,18 @@ Or if limit hit:
 
 - [low findings that were not auto-fixed]
 - [any infinite loops flagged for user decision]
+
+### Code Block Similarity
+
+Include when `$RUN_DIR/similarity-check33.md` exists (`--efficiency` mode only). Read the file and embed both tables verbatim — do NOT summarize. Label:
+
+```markdown
+#### Purpose-based similarity clusters — Check 33 / --efficiency only
+<Table 1 from similarity-check33.md verbatim>
+<Table 2 from similarity-check33.md verbatim>
+```
+
+Omit section entirely if `similarity-check33.md` absent (efficiency not active or no clusters found).
 
 ### Agent Confidence
 
