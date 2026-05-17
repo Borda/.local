@@ -12,18 +12,13 @@
 [ "$LOCAL_MODE" = "true" ] && _RULE_GLOB="plugins/*/rules/*.md" || _RULE_GLOB=".claude/rules/*.md"
 [ "$LOCAL_MODE" = "true" ] && _SKILL_DIR_ROOT="plugins/*/skills/" || _SKILL_DIR_ROOT=".claude/skills/"
 
-RED='\033[1;31m'
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-CYN='\033[0;36m'
-NC='\033[0m'
 for f in $_SKILL_GLOB; do # timeout: 5000
     name=$(basename "$(dirname "$f")")
     if awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'context: fork' &&
     awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'disable-model-invocation: true'; then
-        printf "${RED}! BREAKING${NC} skills/%s: context:fork + disable-model-invocation:true\n" "$name"
-        printf "  ${RED}→${NC} forked skill has no model to coordinate agents or synthesize results\n"
-        printf "  ${CYN}fix${NC}: remove disable-model-invocation:true (or remove context:fork if purely tool-only)\n"
+        printf "! BREAKING skills/%s: context:fork + disable-model-invocation:true\n" "$name"
+        printf "  → forked skill has no model to coordinate agents or synthesize results\n"
+        printf "  fix: remove disable-model-invocation:true (or remove context:fork if purely tool-only)\n"
     fi
 done
 ```
@@ -57,27 +52,23 @@ Mode is calibratable when ALL three signals present:
 ## Check 23 — Bash command misuse / native tool substitution
 
 ```bash
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-CYN='\033[0;36m'
-NC='\033[0m'
 printf "=== Check 23: Bash misuse candidates ===\n"
 grep -rn '\bcat \|`cat ' .claude/agents/ .claude/skills/ .claude/rules/ 2>/dev/null |
 grep -v '^Binary' | grep -v '# ' &&
-printf "  ${CYN}hint${NC}: replace cat with Read tool\n" || true
+printf "  hint: replace cat with Read tool\n" || true
 grep -rn '\bgrep \|\brg \b' .claude/agents/ .claude/skills/ .claude/rules/ 2>/dev/null |
 grep -v '^Binary' | grep -v '# .*grep\|Grep tool\|Use Grep' &&
-printf "  ${CYN}hint${NC}: replace grep/rg with Grep tool\n" || true
+printf "  hint: replace grep/rg with Grep tool\n" || true
 grep -rn '\bfind \b.*-name\|\bls \b.*\*' .claude/agents/ .claude/skills/ .claude/rules/ 2>/dev/null |
 grep -v '^Binary' | grep -v '# .*Glob\|Use Glob\|Glob tool' &&
-printf "  ${CYN}hint${NC}: replace find/ls with Glob tool\n" || true
+printf "  hint: replace find/ls with Glob tool\n" || true
 grep -rn 'echo .* >\|tee ' .claude/agents/ .claude/skills/ .claude/rules/ 2>/dev/null |
 grep -v '^Binary' | grep -v '# .*Write tool\|Use Write' &&
-printf "  ${CYN}hint${NC}: replace echo-redirect/tee with Write tool\n" || true
+printf "  hint: replace echo-redirect/tee with Write tool\n" || true
 grep -rn '\bsed \b\|\bawk \b' .claude/agents/ .claude/skills/ .claude/rules/ 2>/dev/null |
 grep -v '^Binary' | grep -v '# .*Edit tool\|Use Edit\|awk.*{print\|awk.*BEGIN' &&
-printf "  ${CYN}hint${NC}: replace sed/awk text-substitution with Edit tool\n" || true
-printf "${GRN}✓${NC}: Check 23 scan complete\n"
+printf "  hint: replace sed/awk text-substitution with Edit tool\n" || true
+printf "✓: Check 23 scan complete\n"
 ```
 
 After scan, apply model reasoning to each match — exclude cases where shell command genuinely necessary. Flag only where native tool is direct drop-in.
@@ -338,17 +329,13 @@ Four static-grep patterns catching silent failures in skill SKILL.md bash blocks
 ### 30a — Pipe exit code capture (PIPESTATUS)
 
 ```bash
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-CYN='\033[0;36m'
-NC='\033[0m'
 printf "=== Check 30a: Pipe exit code capture ===\n"
 # Find | tail or | head followed by $? assignment within 3 lines — tail/head always exit 0
 grep -rn '| tail\b\|| head\b' $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v 'PIPESTATUS\|pipefail\|#.*tail\|#.*head' |
   grep -v '^Binary' &&
-printf "  ${CYN}hint${NC}: use \${PIPESTATUS[0]} or set -o pipefail; \$? captures tail/head exit (always 0)\n" || true
-printf "${GRN}✓${NC}: Check 30a scan complete\n"  # timeout: 5000
+printf "  hint: use \${PIPESTATUS[0]} or set -o pipefail; \$? captures tail/head exit (always 0)\n" || true
+printf "✓: Check 30a scan complete\n"  # timeout: 5000
 ```
 
 Severity: **critical** — gate commands appear to pass on genuine failure; `$?` after `cmd | tail -N` = tail's exit code (0), not cmd's.
@@ -365,9 +352,9 @@ grep -rn 'SKIP_[A-Z_]*=1' $_SKILL_DIR_ROOT 2>/dev/null |
     file=$(echo "$match" | cut -d: -f1)
     # Check if any guard exists in same file
     grep -q '\[ "\${SKIP_' "$file" 2>/dev/null ||
-      printf "${YEL}⚠ SKIP guard missing${NC}: %s — SKIP variable set but no conditional guard found\n" "$file"
+      printf "⚠ SKIP guard missing: %s — SKIP variable set but no conditional guard found\n" "$file"
 done
-printf "${GRN}✓${NC}: Check 30b scan complete\n"  # timeout: 5000
+printf "✓: Check 30b scan complete\n"  # timeout: 5000
 ```
 
 Severity: **critical** — `SKIP_RUFF=1` set by tool detection, but `$RUNNER ruff check` runs unconditionally; detection is cosmetic.
@@ -395,8 +382,8 @@ printf "=== Check 30d: TEST_CMD/PYTEST_CMD split ===\n"
 grep -rn '\$TEST_CMD.*--tb\b\|\$TEST_CMD.*--co\b\|\$TEST_CMD.*::\|\$TEST_CMD.*--cov\b\|\$TEST_CMD.*--doctest' \
   $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v 'PYTEST_CMD\|#' | grep -v '^Binary' &&
-printf "  ${CYN}hint${NC}: derive PYTEST_CMD for pytest-specific flags; TEST_CMD=tox or make won't accept --tb/--co/::/--cov\n" || true
-printf "${GRN}✓${NC}: Check 30d scan complete\n"  # timeout: 5000
+printf "  hint: derive PYTEST_CMD for pytest-specific flags; TEST_CMD=tox or make won't accept --tb/--co/::/--cov\n" || true
+printf "✓: Check 30d scan complete\n"  # timeout: 5000
 ```
 
 Severity: **high** — skill fails silently on tox/make projects when pytest-specific flags appended to TEST_CMD.
@@ -431,9 +418,9 @@ grep -rn 'GENUINE.FAILURE\|all retries failed\|failed.*abort\|error.*critical\|c
     line=$(echo "$match" | cut -d: -f2)
     context=$(awk "NR>=$line && NR<=$((line+3))" "$file" 2>/dev/null)
     echo "$context" | grep -q 'exit [1-9]' ||
-      printf "${YEL}⚠ missing exit${NC}: %s:%s — failure detected but execution continues\n" "$file" "$line"
+      printf "⚠ missing exit: %s:%s — failure detected but execution continues\n" "$file" "$line"
   done
-printf "${GRN}✓${NC}: Check 30f scan complete\n"  # timeout: 5000
+printf "✓: Check 30f scan complete\n"  # timeout: 5000
 ```
 
 Severity: **high** — workflow continues past a detected failure; downstream steps produce misleading output or incorrect partial results.
@@ -462,11 +449,6 @@ For each SKILL.md, verify every **gating or dispatch tool** called in workflow b
 | `Agent` | Sub-agent spawns blocked; orchestration phase fails silently |
 
 ```bash
-RED='\033[1;31m'
-GRN='\033[0;32m'
-CYN='\033[0;36m'
-NC='\033[0m'
-
 found=0
 for f in $_SKILL_GLOB; do  # timeout: 5000
     [ -f "$f" ] || continue
@@ -477,14 +459,14 @@ for f in $_SKILL_GLOB; do  # timeout: 5000
     for tool in Skill AskUserQuestion Agent; do
         if echo "$body" | grep -qE "\b${tool}\(" 2>/dev/null; then
             if ! echo "$allowed" | grep -qw "$tool"; then
-                printf "${RED}! BREAKING${NC} skills/%s: body calls %s() but '%s' absent from allowed-tools\n" "$skill_name" "$tool" "$tool"
-                printf "  ${CYN}fix${NC}: add '%s' to allowed-tools: in %s\n" "$tool" "$f"
+                printf "! BREAKING skills/%s: body calls %s() but '%s' absent from allowed-tools\n" "$skill_name" "$tool" "$tool"
+                printf "  fix: add '%s' to allowed-tools: in %s\n" "$tool" "$f"
                 found=1
             fi
         fi
     done
 done
-[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 31 — all gating tool calls covered by allowed-tools\n"  # timeout: 5000
+[ "$found" -eq 0 ] && printf "✓: Check 31 — all gating tool calls covered by allowed-tools\n"  # timeout: 5000
 ```
 
 Severity: **critical** — blocked gating tool = entire workflow phase silently broken at runtime.
@@ -500,9 +482,6 @@ Auto-fix: append missing tool name to `allowed-tools:` frontmatter line.
 Verify required frontmatter fields present in every SKILL.md. Missing fields cause undocumented default behavior or miscategorized routing.
 
 ```bash
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-NC='\033[0m'
 printf "=== Check 31b: Frontmatter completeness ===\n"
 found=0
 for f in $_SKILL_GLOB; do  # timeout: 5000
@@ -511,18 +490,18 @@ for f in $_SKILL_GLOB; do  # timeout: 5000
     fm=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null)
     # effort: — required always; no documented default
     echo "$fm" | grep -q '^effort:' || {
-        printf "${YEL}⚠${NC} 31b: %s — missing effort: field (required; no default)\n" "$skill"
+        printf "⚠ 31b: %s — missing effort: field (required; no default)\n" "$skill"
         found=1
     }
     # when_to_use: — required when disable-model-invocation absent (routing signal)
     has_dmi=$(echo "$fm" | grep -c 'disable-model-invocation: true' || true)
     has_wtu=$(echo "$fm" | grep -c '^when_to_use:' || true)
     [ "$has_dmi" -eq 0 ] && [ "$has_wtu" -eq 0 ] && {
-        printf "${YEL}⚠${NC} 31b: %s — missing when_to_use: (needed when auto-invocation allowed)\n" "$skill"
+        printf "⚠ 31b: %s — missing when_to_use: (needed when auto-invocation allowed)\n" "$skill"
         found=1
     }
 done
-[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 31b — frontmatter complete across all skills\n"
+[ "$found" -eq 0 ] && printf "✓: Check 31b — frontmatter complete across all skills\n"
 ```
 
 Severity: **medium** for `effort:` (no default documented); **low** for `when_to_use:` (routing impact).
@@ -585,11 +564,6 @@ Surfaces skill subdirectory files and rule files that exist on disk but are neve
 Mode files in `*/skills/*/modes/` that are not referenced from the parent skill's `SKILL.md` are never executed. They create maintenance confusion and may contain outdated logic that silently diverges from the live mode.
 
 ```bash
-RED='\033[1;31m'
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-NC='\033[0m'
-
 printf "=== Check 32a: Dead mode files ===\n"
 found=0
 for skill_dir in $_SKILL_DIR_GLOB; do  # timeout: 5000
@@ -600,12 +574,12 @@ for skill_dir in $_SKILL_DIR_GLOB; do  # timeout: 5000
         [ -f "$mode_file" ] || continue
         mode_name=$(basename "$mode_file")
         if ! /usr/bin/grep -qF "$mode_name" "$skill_md" 2>/dev/null; then
-            printf "${YEL}⚠ 32a${NC}: %s — not referenced in %s\n" "$mode_file" "$skill_md"
+            printf "⚠ 32a: %s — not referenced in %s\n" "$mode_file" "$skill_md"
             found=1
         fi
     done
 done
-[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 32a — all mode files referenced in parent SKILL.md\n"
+[ "$found" -eq 0 ] && printf "✓: Check 32a — all mode files referenced in parent SKILL.md\n"
 ```
 
 Severity: **medium** — dead mode file = unreachable code; may diverge silently from live workflow.
@@ -626,12 +600,12 @@ for skill_dir in $_SKILL_DIR_GLOB; do  # timeout: 5000
         [ -f "$tpl_file" ] || continue
         tpl_name=$(basename "$tpl_file")
         if ! /usr/bin/grep -qF "$tpl_name" "$skill_md" 2>/dev/null; then
-            printf "${YEL}⚠ 32b${NC}: %s — not referenced in %s\n" "$tpl_file" "$skill_md"
+            printf "⚠ 32b: %s — not referenced in %s\n" "$tpl_file" "$skill_md"
             found=1
         fi
     done
 done
-[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 32b — all template files referenced in parent SKILL.md\n"
+[ "$found" -eq 0 ] && printf "✓: Check 32b — all template files referenced in parent SKILL.md\n"
 ```
 
 Severity: **low** — templates may be referenced indirectly via agent spawn prompts that mention the filename inline; human review required before deletion.
@@ -658,11 +632,11 @@ for rule_file in $_RULE_GLOB; do  # timeout: 5000
         [ -n "$found_file" ] && { matched=1; break; }
     done <<< "$paths_block"
     if [ "$matched" -eq 0 ]; then
-        printf "${YEL}⚠ 32c${NC}: %s — paths: patterns match no project files (rule never applied)\n" "$rule_file"
+        printf "⚠ 32c: %s — paths: patterns match no project files (rule never applied)\n" "$rule_file"
         found=1
     fi
 done
-[ "$found" -eq 0 ] && printf "${GRN}✓${NC}: Check 32c — all scoped rules match at least one project file\n"
+[ "$found" -eq 0 ] && printf "✓: Check 32c — all scoped rules match at least one project file\n"
 ```
 
 Severity: **medium** — rule with non-matching paths is never applied; may represent outdated scope (e.g., `src/**/*.py` when project no longer has Python files).
@@ -677,59 +651,62 @@ Auto-fix: remove `paths:` to make the rule global, or delete the file if rule is
 
 ## Check 33 — Code block duplication (NxN similarity matrix)
 
-Full-spectrum detection of duplicate or near-duplicate fenced code blocks across SKILL.md files — any language (bash, python, sh, perl, ruby, js, etc.). Produces NxN pairwise similarity matrix to surface extraction candidates: 33a within-file (same block 3+ times — bin/ script or helper function candidate); 33b cross-file NxN (same block in 3+ SKILL.md files — shared bin/ script candidate).
+Full-spectrum detection of duplicate or near-duplicate fenced code blocks across all .md files (SKILL.md, agents, rules, templates, modes) — any language (bash, python, sh, perl, ruby, js, etc.). Produces NxN pairwise similarity matrix to surface extraction candidates: 33a within-file (same block 3+ times — bin/ script or helper function candidate); 33b cross-file NxN (same block in 3+ .md files — shared bin/ script candidate).
 
 **33a — Within-file repetition**: delegate to Phase A foundry:curator (has full file context). Curator prompt must include:
 
 > "Extract every fenced code block (any language marker — ` ```bash `, ` ```python `, ` ```sh `, ` ```perl `, ` ```ruby `, ` ```js `, etc.) from this file. For each pair of blocks, compute normalized similarity: strip comments → normalize variable names to `<VAR>` → normalize string literals to `<STR>` → compare structure. Report any pair with similarity ≥ 0.8 that appears 3+ times (within this file) as a 33a finding. For each candidate: block language, purpose, occurrence count, similarity score, what differs between instances, and suggested extraction (bash function / `bin/<name>.sh` / `bin/<name>.py`). Context saving estimate: (block_lines − 1) × occurrence_count. Skip: blocks with comments marking them as intentional resilience replications."
 
-**33b — Cross-file NxN** — two phases: bash quick scan identifies known hotspots; curator NxN delegation runs when clusters found.
+**33b — Cross-file NxN** — two phases: bash quick scan identifies known hotspots; curator NxN delegation runs when clusters found. Scope: all .md files in plugin tree (SKILL.md, agents, rules, templates, modes).
 
 **Phase 1 — Bash quick scan** (known duplication hotspots):
 
 ```bash
-RED='\033[1;31m'
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-CYN='\033[0;36m'
-NC='\033[0m'
+# Scope: all .md files in plugin tree — templates, _shared/, agents, rules, modes included
+if [ "$LOCAL_MODE" = "true" ]; then
+    _C33_DIR="plugins/"
+else
+    # Installed: scan plugin cache (has templates/_shared) + .claude/ (symlinked runtime files)
+    _PLUGIN_CACHE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/ 2>/dev/null | head -1)
+    _C33_DIR="${_PLUGIN_CACHE:-.claude/}"
+fi
 
 printf "=== Check 33b Phase 1: Cross-file code block quick scan ===\n"
 
 # Known bash cross-file patterns
 # Mode-dispatch: find .../plugins/cache.../audit/modes/<x>.md (bash)
-MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
-[ "${MODE_DISPATCH:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: bash mode-dispatch pattern in %s files — bin/ extraction candidate: resolve-skill-mode.sh <mode>\n" "$MODE_DISPATCH"
+MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
+[ "${MODE_DISPATCH:-0}" -ge 3 ] && printf "⚠ 33b: bash mode-dispatch pattern in %s files — bin/ extraction candidate: resolve-skill-mode.sh <mode>\n" "$MODE_DISPATCH"
 
 # _shared/ resolution: find .../foundry.../_shared or ls -td .../foundry/*/skills/_shared (bash)
-SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
-[ "${SHARED_RES:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: bash _shared resolution pattern in %s files (variants may be inconsistent) — bin/ extraction candidate\n" "$SHARED_RES"
+SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
+[ "${SHARED_RES:-0}" -ge 3 ] && printf "⚠ 33b: bash _shared resolution pattern in %s files (variants may be inconsistent) — bin/ extraction candidate\n" "$SHARED_RES"
 
 # Python heredoc pattern (bin/ python script candidate)
-PY_HEREDOC=$(grep -rl 'python -c' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
-[ "${PY_HEREDOC:-0}" -ge 3 ] && printf "${YEL}⚠ 33b${NC}: python -c one-liner in %s files — evaluate if any cluster repeats across skills\n" "$PY_HEREDOC"
+PY_HEREDOC=$(grep -rl 'python -c' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
+[ "${PY_HEREDOC:-0}" -ge 3 ] && printf "⚠ 33b: python -c one-liner in %s files — evaluate if any cluster repeats\n" "$PY_HEREDOC"
 
 # Unsupported-flag-check (intentional resilience replication — info only)
-FLAG_CHECK=$(grep -rl 'Unknown flag' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
-[ "${FLAG_CHECK:-0}" -ge 3 ] && printf "${CYN}ℹ 33b${NC}: unsupported-flag-check boilerplate in %s files — known intentional per-plugin resilience\n" "$FLAG_CHECK"
+FLAG_CHECK=$(grep -rl 'Unknown flag' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
+[ "${FLAG_CHECK:-0}" -ge 3 ] && printf "ℹ 33b: unsupported-flag-check boilerplate in %s files — known intentional per-plugin resilience\n" "$FLAG_CHECK"
 
 # Count code blocks by language marker — identifies files for Phase 2 curator NxN
-echo "--- Code block language distribution across skills (Phase 2 trigger signals) ---"
+echo "--- Code block language distribution across all .md files (Phase 2 trigger signals) ---"
 NEEDS_CURATOR_NXN=false
 for lang in bash python sh perl ruby node js; do
-  count=$(grep -rl "^\`\`\`${lang}" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
+  count=$(grep -rl "^\`\`\`${lang}" "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
   [ "${count:-0}" -ge 5 ] && { echo "  ${lang}: ${count} files — TRIGGER Phase 2 curator NxN"; NEEDS_CURATOR_NXN=true; }
   [ "${count:-0}" -ge 2 ] && [ "${count:-0}" -lt 5 ] && echo "  ${lang}: ${count} files"
 done
 
 # Emit trigger signal for Phase 2 decision
-[ "$NEEDS_CURATOR_NXN" = "true" ] && printf "${YEL}→ Phase 2${NC}: curator NxN delegation triggered — see 33b Phase 2 instructions below\n"
-printf "${GRN}✓${NC}: Check 33b Phase 1 complete\n"  # timeout: 5000
+[ "$NEEDS_CURATOR_NXN" = "true" ] && printf "→ Phase 2: curator NxN delegation triggered — see 33b Phase 2 instructions below\n"
+printf "✓: Check 33b Phase 1 complete\n"  # timeout: 5000
 ```
 
-**Phase 2 — Curator NxN delegation**: run when Phase 1 finds any known pattern in ≥3 files OR any language marker appears in ≥5 SKILL.md files. Spawn **foundry:curator** with all flagged files:
+**Phase 2 — Curator NxN delegation**: run when Phase 1 finds any known pattern in ≥3 files OR any language marker appears in ≥5 .md files. Spawn **foundry:curator** with all flagged files:
 
-> "Perform Check 33b cross-file code block analysis on: <list all SKILL.md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language) ≥ 5 lines. Skip blocks explicitly marked as intentional resilience replications.
+> "Perform Check 33b cross-file code block analysis on: <list all .md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language) ≥ 5 lines. Skip blocks explicitly marked as intentional resilience replications.
 >
 > **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what it does functionally (not how) — e.g. 'resolves `_shared/` path from plugin cache', 'detects codex plugin availability', 'emits boilerplate-duplication counts'. Syntactic line-intersection alone is blind to conditional-inversion and variable renaming — purpose grouping catches duplicates that normalization misses.
 >
@@ -753,5 +730,5 @@ Auto-fix guidance:
 
 | Sub-check | Target | Condition | Severity | Auto-fix |
 | --- | --- | --- | --- | --- |
-| 33a — within-file repetition | single SKILL.md | same code block (any language) 3+ times, constants only differ | medium | inline helper function or bin/ script |
-| 33b — cross-file repetition | 3+ SKILL.md files | same block (excluding known resilience replications) | medium/low | bin/ script with fallback chain |
+| 33a — within-file repetition | single .md file | same code block (any language) 3+ times, constants only differ | medium | inline helper function or bin/ script |
+| 33b — cross-file repetition | 3+ .md files | same block (excluding known resilience replications) | medium/low | bin/ script with fallback chain |

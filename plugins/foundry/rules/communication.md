@@ -6,45 +6,28 @@ paths:
 
 ## Re: Anchor
 
-Start every reply with bold anchor summarising request, then response on next line.
+Start every reply with bold anchor summarising request, then response as blockquote.
 
 Example (actual template — copy structure, replace bracketed text):
 
 ```markdown
 **Re: [one-sentence summary of what was asked]**
 
-[full response here]
+> [full response here]
 ```
 
 Rules:
 
 - Bold line: neutral factual gist of what user asked — not full restatement, no labels
-- Blank line between bold summary and response
+- Response body in blockquote (`>`) — visually distinct from tool/hook output in terminal
 - Never use table or pipe-delimited format for anchor line — pipe chars pollute copy-paste
 - No exceptions — apply to every response including short ones
 
 ## Reply Visibility
 
-Terminal output mixes tool calls, hook output, and intermediate logging. To make the actual reply easy to find when scrolling:
+Bold anchor + blockquote body creates a clear visual boundary from surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.
 
-**Anchor line**: bold magenta; **response body**: cyan:
-
-```
-\033[1;35m**Re: [one-sentence summary]**\033[0m
-
-\033[0;36m[full response here]\033[0m
-```
-
-Anchor in magenta makes it visually distinct from tool output; body in cyan separates prose from tool/hook logging. Apply to every response. Reset (`\033[0m`) after anchor line and at end of response body.
-
-**Exemption — machine-parsed responses**: skip ANSI wrapping when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator, not displayed to user. ANSI codes in machine output corrupt JSON parsing.
-
-Example:
-```
-\033[1;35m**Re: adding error handling to auth middleware**\033[0m
-
-\033[0;36mHere's the fix: ...\033[0m
-```
+**Exemption — machine-parsed responses**: omit Re: anchor and blockquote when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator.
 
 ## Progress and Transparency
 
@@ -55,12 +38,12 @@ Example:
 
 When unable to execute or proceed with any part of a request (unsupported flag, `disable-model-invocation` block, parse error, missing prerequisite, permission denied, tool unavailable):
 
-**Mandatory**: lead the response with a RED-colored block — never bury the failure at the end, never silently skip it:
+**Mandatory**: lead the response with a bold failure block — never bury the failure at the end, never silently skip it:
 
 ```
-\033[1;31m! BLOCKED — [one-line reason]\033[0m
-\033[1;31m! UNSUPPORTED — [what and why]\033[0m
-\033[1;31m! MISSING — [what is needed]\033[0m
+**! BLOCKED — [one-line reason]**
+**! UNSUPPORTED — [what and why]**
+**! MISSING — [what is needed]**
 ```
 
 Rules:
@@ -104,4 +87,4 @@ Compliant example — this is the only valid form:
 
 ## Output Routing
 
-Full rules (including anti-overwrite counter-suffix and branch-slug format), breaking-findings format, and terminal colors: see `quality-gates.md`.
+Full rules (including anti-overwrite counter-suffix and branch-slug format) and breaking-findings format: see `quality-gates.md`.

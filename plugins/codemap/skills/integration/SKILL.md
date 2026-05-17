@@ -48,7 +48,6 @@ Three-tier fallback: PATH → plugin root → cache glob.
 
 ```bash
 # timeout: 5000
-GRN='\033[0;32m'; RED='\033[1;31m'; YEL='\033[1;33m'; NC='\033[0m'
 if command -v scan-query >/dev/null 2>&1; then
     SQ=$(command -v scan-query); SRC="PATH"
 elif [ -x "${CLAUDE_PLUGIN_ROOT}/bin/scan-query" ]; then
@@ -58,9 +57,9 @@ else
     SRC="cache glob"
 fi
 if [ -n "$SQ" ] && [ -x "$SQ" ]; then
-    printf "${GRN}✓${NC} scan-query: %s (via %s)\n" "$SQ" "$SRC"
+    printf "✓ scan-query: %s (via %s)\n" "$SQ" "$SRC"
 else
-    printf "${RED}✗${NC} scan-query: not found\n"
+    printf "✗ scan-query: not found\n"
     printf "  → Install: claude plugin install codemap@borda-ai-rig\n"
     exit 1
 fi
@@ -78,9 +77,9 @@ PROJ=${GIT_ROOT:+$(basename "$GIT_ROOT")}; PROJ=${PROJ:-$(basename "$PWD")}
 INDEX="${GIT_ROOT:-.}/.cache/scan/${PROJ}.json"
 printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
 if [ -f "$INDEX" ]; then
-    printf "${GRN}✓${NC} index: exists\n"
+    printf "✓ index: exists\n"
 else
-    printf "${RED}✗${NC} index: not found\n"
+    printf "✗ index: not found\n"
     printf "  → Run /codemap:scan to build the index\n"
     exit 1
 fi
@@ -92,20 +91,20 @@ fi
 # timeout: 10000
 SCANNED_AT=$(jq -r '.scanned_at // empty' "$INDEX" 2>/dev/null)
 if [ -z "$SCANNED_AT" ]; then
-    printf "${YEL}⚠${NC} freshness: scanned_at missing — index may be corrupted\n  → Re-run /codemap:scan\n"
+    printf "⚠ freshness: scanned_at missing — index may be corrupted\n  → Re-run /codemap:scan\n"
 else
     SCANNED_AT_CLEAN=$(echo "$SCANNED_AT" | cut -c1-19)
     SCAN_EPOCH=$(date -d "$SCANNED_AT_CLEAN" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%S" "$SCANNED_AT_CLEAN" +%s 2>/dev/null)
     if [ -z "$SCAN_EPOCH" ]; then
-        printf "${YEL}⚠${NC} freshness: could not parse scanned_at timestamp (%s) — run /codemap:scan\n" "$SCANNED_AT"
+        printf "⚠ freshness: could not parse scanned_at timestamp (%s) — run /codemap:scan\n" "$SCANNED_AT"
     else
         NOW_EPOCH=$(date +%s)
         AGE_DAYS=$(( (NOW_EPOCH - SCAN_EPOCH) / 86400 ))
         SCAN_DATE="${SCANNED_AT:0:10}"
         if [ "$AGE_DAYS" -gt 7 ]; then
-            printf "${YEL}⚠${NC} freshness: %s day(s) ago (%s)\n  → Run /codemap:scan to refresh\n" "$AGE_DAYS" "$SCAN_DATE"
+            printf "⚠ freshness: %s day(s) ago (%s)\n  → Run /codemap:scan to refresh\n" "$AGE_DAYS" "$SCAN_DATE"
         else
-            printf "${GRN}✓${NC} freshness: %s day(s) ago (%s)\n" "$AGE_DAYS" "$SCAN_DATE"
+            printf "✓ freshness: %s day(s) ago (%s)\n" "$AGE_DAYS" "$SCAN_DATE"
         fi
     fi
 fi
@@ -117,14 +116,14 @@ fi
 # timeout: 15000
 OUT=$("$SQ" central --top 3 2>/tmp/cmc_err); RC=$?
 if [ $RC -ne 0 ]; then
-    printf "${RED}✗${NC} smoke test: exit %s\n" "$RC"
+    printf "✗ smoke test: exit %s\n" "$RC"
     [ -s /tmp/cmc_err ] && printf "  stderr: %s\n" "$(cat /tmp/cmc_err)"
     printf "  → Check index with: %s list\n" "$SQ"
 else
     STALE=$(echo "$OUT" | jq -r '.index.stale // false' 2>/dev/null)
-    printf "${GRN}✓${NC} smoke test: central query OK (git-stale=%s)\n" "$STALE"
+    printf "✓ smoke test: central query OK (git-stale=%s)\n" "$STALE"
     if [ "$STALE" = "true" ]; then
-        printf "  ${YEL}⚠${NC} Python files changed since scan — run /codemap:scan to update\n"
+        printf "  ⚠ Python files changed since scan — run /codemap:scan to update\n"
     fi
 fi
 rm -f /tmp/cmc_err
@@ -135,10 +134,10 @@ rm -f /tmp/cmc_err
 ```bash
 # timeout: 20000
 if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
-    printf "${YEL}⚠${NC} CLAUDE_PLUGIN_ROOT unset — falling back to installed cache discovery\n"
+    printf "⚠ CLAUDE_PLUGIN_ROOT unset — falling back to installed cache discovery\n"
     CLAUDE_PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/integration 2>/dev/null | head -1)
     if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
-        printf "${RED}✗${NC} Could not locate codemap plugin — injection audit skipped. Run: claude plugin install codemap@borda-ai-rig\n"
+        printf "✗ Could not locate codemap plugin — injection audit skipped. Run: claude plugin install codemap@borda-ai-rig\n"
         # degrade gracefully — skip C5 without aborting full skill run
     fi
 fi
@@ -148,10 +147,10 @@ printf "\n--- Skill injection audit (cache: %s) ---\n" "$CACHE"
 FILES=$(find "$CACHE" -name "SKILL.md" -exec grep -l "command -v scan-query" {} \; 2>/dev/null | sort)
 COUNT=$(echo "$FILES" | grep -c . 2>/dev/null || echo 0)
 if [ "$COUNT" -eq 0 ]; then
-    printf "${YEL}⚠${NC} 0 SKILL.md files have injection block — codemap not integrated into any skill\n"
+    printf "⚠ 0 SKILL.md files have injection block — codemap not integrated into any skill\n"
     printf "  → Run /codemap:integration init to add injection\n"
 else
-    printf "${GRN}✓${NC} %s SKILL.md file(s) have the injection block:\n" "$COUNT"
+    printf "✓ %s SKILL.md file(s) have the injection block:\n" "$COUNT"
     echo "$FILES" | while read -r f; do
         [ -n "$f" ] && printf "  • %s\n" "${f#$CACHE/}"
     done
@@ -161,14 +160,14 @@ fi
 # cicd-steward and shepherd are agents (agents/*.md), not skills — no SKILL.md to check; omitted intentionally
 for exp in "develop/.*/skills/fix" "develop/.*/skills/feature" "develop/.*/skills/refactor" "develop/.*/skills/plan" "develop/.*/skills/review" "develop/.*/skills/debug" "oss/.*/skills/review" "oss/.*/skills/resolve" "oss/.*/skills/analyse" "oss/.*/skills/release" "research/.*/skills/run" "research/.*/skills/topic"; do
     echo "$FILES" | grep -q "$exp" \
-        || printf "  ${YEL}⚠${NC} missing injection in: %s/SKILL.md\n" "$exp"
+        || printf "  ⚠ missing injection in: %s/SKILL.md\n" "$exp"
 done
 AGENT_FILES=$(find "$CACHE" -name "*.md" -path "*/agents/*" -exec grep -l "Structural context (codemap" {} \; 2>/dev/null | sort)
 AGENT_COUNT=$(echo "$AGENT_FILES" | grep -c . 2>/dev/null || echo 0)
 if [ "$AGENT_COUNT" -eq 0 ]; then
-    printf "  ${YEL}⚠${NC} 0 agent .md files have codemap injection block\n"
+    printf "  ⚠ 0 agent .md files have codemap injection block\n"
 else
-    printf "${GRN}✓${NC} %s agent file(s) have codemap injection block\n" "$AGENT_COUNT"
+    printf "✓ %s agent file(s) have codemap injection block\n" "$AGENT_COUNT"
 fi
 
 printf "\n--- check complete ---\n"
@@ -212,7 +211,7 @@ If **a** (or auto-approved): verify binary exists first, then run scanner:
 
 ```bash
 # timeout: 5000
-[ -x "${CLAUDE_PLUGIN_ROOT}/bin/scan-index" ] || { printf "${RED}✗${NC} scan-index not found at ${CLAUDE_PLUGIN_ROOT}/bin/scan-index\nTry: /codemap:scan to install and rebuild.\n"; exit 1; }
+[ -x "${CLAUDE_PLUGIN_ROOT}/bin/scan-index" ] || { printf "✗ scan-index not found at ${CLAUDE_PLUGIN_ROOT}/bin/scan-index\nTry: /codemap:scan to install and rebuild.\n"; exit 1; }
 # timeout: 360000
 ${CLAUDE_PLUGIN_ROOT}/bin/scan-index
 ```
@@ -334,7 +333,7 @@ If **a** (or auto-approved): write `.git/hooks/post-commit`. Idempotent — chec
 HOOKS_DIR=$(git config core.hooksPath 2>/dev/null || echo ".git/hooks")
 HOOK_FILE="$HOOKS_DIR/post-commit"
 if grep -qF '# codemap: incremental' "$HOOK_FILE" 2>/dev/null; then
-    printf "${GRN}✓${NC} post-commit hook: already installed (%s)\n" "$HOOK_FILE"
+    printf "✓ post-commit hook: already installed (%s)\n" "$HOOK_FILE"
 elif [ -f "$HOOK_FILE" ]; then
     # Marker absent, file exists — check shebang before appending
     # Only append if shebang is sh/bash/zsh compatible; warn if unusual interpreter
@@ -344,7 +343,7 @@ elif [ -f "$HOOK_FILE" ]; then
             # Compatible shebang or no shebang — safe to append
             ;;
         *)
-            printf "${YLW}⚠${NC} post-commit hook uses unusual interpreter: %s — appending anyway; verify compatibility\n" "$SHEBANG"
+            printf "⚠ post-commit hook uses unusual interpreter: %s — appending anyway; verify compatibility\n" "$SHEBANG"
             ;;
     esac
     # Note: this append is confirmed by user in Step I5a (AskUserQuestion option a)
@@ -355,7 +354,7 @@ if command -v scan-index >/dev/null 2>&1; then
     scan-index --incremental >> /tmp/codemap-hook.log 2>&1 &
 fi
 HOOKEOF
-    printf "${GRN}✓${NC} post-commit hook: appended to %s\n" "$HOOK_FILE"
+    printf "✓ post-commit hook: appended to %s\n" "$HOOK_FILE"
 else
     # File does not exist — create
     cat > "$HOOK_FILE" << 'HOOKEOF'
@@ -366,7 +365,7 @@ if command -v scan-index >/dev/null 2>&1; then
 fi
 HOOKEOF
     chmod +x "$HOOK_FILE"
-    printf "${GRN}✓${NC} post-commit hook: created %s\n" "$HOOK_FILE"
+    printf "✓ post-commit hook: created %s\n" "$HOOK_FILE"
 fi
 ```
 

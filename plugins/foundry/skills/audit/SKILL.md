@@ -94,11 +94,6 @@ ARGUMENTS="${ARGUMENTS// --efficiency / }"; ARGUMENTS="${ARGUMENTS// --upgrade /
 ARGUMENTS="${ARGUMENTS// --skip-gate / }"; ARGUMENTS="${ARGUMENTS// --challenge / }"
 ARGUMENTS="${ARGUMENTS# }"; ARGUMENTS="${ARGUMENTS% }"
 
-RED='\033[1;31m'
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-NC='\033[0m'
-
 # Canonical source: foundry _shared/preflight-helpers.md (deployed by /foundry:init to .claude/skills/_shared/)
 # Keep in sync with that file when updating
 # From _shared/preflight-helpers.md — TTL 4 hours, keyed per binary
@@ -113,7 +108,7 @@ preflight_pass() {
 
 # .claude/ directory must exist (not cached — filesystem state)
 if [ ! -d ".claude" ]; then
-    printf "${RED}! BREAKING${NC}: .claude/ directory not found — nothing to audit\n"
+    printf "! BREAKING: .claude/ directory not found — nothing to audit\n"
     exit 1
 fi
 
@@ -124,13 +119,13 @@ elif command -v jq &>/dev/null; then # timeout: 5000
     preflight_pass jq
     JQ_AVAILABLE=true
 else
-    printf "${YEL}⚠ MISSING${NC}: jq not found — Check 4 (permissions-guide drift) will be skipped\n"
+    printf "⚠ MISSING: jq not found — Check 4 (permissions-guide drift) will be skipped\n"
     JQ_AVAILABLE=false
 fi
 
 # git availability — used in path portability check and baseline context
 if ! preflight_ok git && ! command -v git &>/dev/null; then # timeout: 5000
-    printf "${YEL}⚠ MISSING${NC}: git not found — path portability check may miss repo-root references\n"
+    printf "⚠ MISSING: git not found — path portability check may miss repo-root references\n"
 else
     preflight_ok git || preflight_pass git
 fi
@@ -142,7 +137,7 @@ elif command -v node &>/dev/null; then # timeout: 5000
     preflight_pass node
     NODE_AVAILABLE=true
 else
-    printf "${YEL}⚠ MISSING${NC}: node not found — Check 10 (RTK hook parsing) and upgrade hook syntax check will be skipped\n"
+    printf "⚠ MISSING: node not found — Check 10 (RTK hook parsing) and upgrade hook syntax check will be skipped\n"
     NODE_AVAILABLE=false
 fi
 
@@ -699,11 +694,6 @@ After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this
 <notes>
 
 - **`!` Breaking findings**: when skill or agent completely non-functional (check #7, broken cross-refs, invalid hook events), prefix finding with `!` and state impact + fix in one place — don't bury in table row. Surfaces as **`! BREAKING`** in bash output and as prominent callout in final report. **`! BREAKING` findings require user acknowledgment before audit proceeds past that check**: call `AskUserQuestion` — state what is broken and impact; user must explicitly confirm awareness before continuing. One question per distinct breaking finding; group only when logically one atomic issue. Prose acknowledgment in response body does NOT count — `AskUserQuestion` mandatory.
-- **Terminal color conventions** (used in Step 4 bash output):
-  - `RED` (`\033[1;31m`) — breaking/critical: `! BREAKING`, `ERROR`
-  - `YELLOW` (`\033[1;33m`) — warnings/medium: `⚠ MISSING`, `⚠ ORPHANED`, `⚠ DIFFERS`
-  - `GREEN` (`\033[0;32m`) — pass status: `✓ OK`, `✓ IDENTICAL`
-  - `CYAN` (`\033[0;36m`) — source agent name or fix hint
 - **settings.json is hands-off**: missing permissions always reported, never auto-edited — structural JSON edits risk breaking Claude Code config loading
 - **Dead loops need human judgment**: cycle in follow-up chains might be intentional (e.g., refactor → review → fix → refactor) — flag and explain, don't auto-remove
 - **Convergence loop replaces cycle cap**: fix loop runs until zero fixable findings or 5-pass hard limit — see Step 10 for full protocol

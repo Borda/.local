@@ -103,4 +103,4 @@ After the required fields, add **skill-specific fields** relevant to the report 
 Fix: <concrete action to resolve>
 ```
 
-- Terminal colors: RED = critical · YELLOW = warnings · GREEN = pass · CYAN = fix hint
+- Severity markers: `!` = critical · `⚠` = warnings · `✓` = pass · hint = fix hint

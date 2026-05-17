@@ -7,9 +7,6 @@ Thresholds: agents > 300 lines (~4 k tokens) · skill SKILL.md > 600 lines (~8 k
 > **Line count = human-readable proxy; token count = true measure.** Thresholds guide human review — not actual context budget. Short sentences + short lines preferred: easier to read AND cheaper per logical unit. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines not a fix.
 
 ```bash
-YEL='\033[1;33m'
-GRN='\033[0;32m'
-NC='\033[0m'
 # Token estimate: wc -c (bytes) / 4 — rough but consistent proxy (1 token ≈ 4 bytes in English markdown)
 printf "%-52s %8s %8s\n" "FILE" "~TOKENS" "LINES"
 for f in .claude/agents/*.md; do # timeout: 5000
@@ -18,7 +15,7 @@ for f in .claude/agents/*.md; do # timeout: 5000
     bytes=$(wc -c <"$f" | tr -d ' ')
     est=$((bytes / 4))
     [ "$est" -gt 4000 ] &&
-    printf "${YEL}⚠ OVER BUDGET${NC}: agents/%s — ~%d tokens / %d lines (limit: ~4 k)\n" "$(basename "$f")" "$est" "$lines" ||
+    printf "⚠ OVER BUDGET: agents/%s — ~%d tokens / %d lines (limit: ~4 k)\n" "$(basename "$f")" "$est" "$lines" ||
     printf "  %-50s %8d %8d\n" "agents/$(basename "$f")" "$est" "$lines"
 done
 for f in .claude/skills/*/SKILL.md; do
@@ -27,7 +24,7 @@ for f in .claude/skills/*/SKILL.md; do
     bytes=$(wc -c <"$f" | tr -d ' ')
     est=$((bytes / 4))
     [ "$est" -gt 8000 ] &&
-    printf "${YEL}⚠ OVER BUDGET${NC}: skills/%s/SKILL.md — ~%d tokens / %d lines (limit: ~8 k)\n" "$(basename "$(dirname "$f")")" "$est" "$lines" ||
+    printf "⚠ OVER BUDGET: skills/%s/SKILL.md — ~%d tokens / %d lines (limit: ~8 k)\n" "$(basename "$(dirname "$f")")" "$est" "$lines" ||
     printf "  %-50s %8d %8d\n" "skills/$(basename "$(dirname "$f")")/SKILL.md" "$est" "$lines"
 done
 for f in .claude/rules/*.md; do
@@ -36,7 +33,7 @@ for f in .claude/rules/*.md; do
     bytes=$(wc -c <"$f" | tr -d ' ')
     est=$((bytes / 4))
     [ "$est" -gt 2500 ] &&
-    printf "${YEL}⚠ OVER BUDGET${NC}: rules/%s — ~%d tokens / %d lines (limit: ~2.5 k)\n" "$(basename "$f")" "$est" "$lines" ||
+    printf "⚠ OVER BUDGET: rules/%s — ~%d tokens / %d lines (limit: ~2.5 k)\n" "$(basename "$f")" "$est" "$lines" ||
     printf "  %-50s %8d %8d\n" "rules/$(basename "$f")" "$est" "$lines"
 done
 ```
@@ -46,9 +43,6 @@ done
 ## Check 13 — Markdown heading hierarchy continuity
 
 ````bash
-GRN='\033[0;32m'
-YEL='\033[1;33m'
-NC='\033[0m'
 printf "=== Check 13: Heading hierarchy continuity ===\n"
 violations=0
 for f in .claude/agents/*.md .claude/skills/*/SKILL.md .claude/rules/*.md; do # timeout: 5000
@@ -60,7 +54,7 @@ for f in .claude/agents/*.md .claude/skills/*/SKILL.md .claude/rules/*.md; do # 
       n = 0; s = $0
       while (substr(s,1,1) == "#") { n++; s = substr(s,2) }
       if (prev > 0 && n > prev + 1) {
-        printf "  \033[1;33m⚠ HEADING JUMP\033[0m: %s:%d — h%d followed by h%d (skipped h%d)\n", \
+        printf "  ⚠ HEADING JUMP: %s:%d — h%d followed by h%d (skipped h%d)\n", \
           file, NR, prev, n, prev+1
         found++
       }
@@ -70,7 +64,7 @@ for f in .claude/agents/*.md .claude/skills/*/SKILL.md .claude/rules/*.md; do # 
   ' "$f" || violations=$((violations + 1))
 done
 if [ "$violations" -eq 0 ]; then
-    printf "${GRN}✓${NC}: Check 13 — no heading hierarchy violations found\n"
+    printf "✓: Check 13 — no heading hierarchy violations found\n"
 fi
 ````
 
@@ -83,9 +77,6 @@ Structural tags with only whitespace between open and close = dead markup left a
 Scan all agent and skill files:
 
 ```bash
-RED='\033[1;31m'
-GRN='\033[0;32m'
-NC='\033[0m'
 printf "=== Check 14: Orphaned empty structural blocks ===\n"
 violations=0
 for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
@@ -96,12 +87,12 @@ for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
         }
     ' "$f" 2>/dev/null)
     if [ -n "$hits" ]; then
-        printf "${RED}! C14${NC}: empty block — %s\n" "$hits"
+        printf "! C14: empty block — %s\n" "$hits"
         violations=$((violations + 1))
     fi
 done
 if [ "$violations" -eq 0 ]; then
-    printf "${GRN}✓${NC}: Check 14 — no orphaned empty structural blocks\n"
+    printf "✓: Check 14 — no orphaned empty structural blocks\n"
 fi
 ```
 
@@ -190,14 +181,10 @@ For 17a (step-level prose overlap, ≥40% consecutive steps): flag pair, name ca
 Plugin skill and agent files must not contain bare `plugins/<name>/` paths as primary references. Resolve in source tree but break post-install where `plugins/` absent. Install-path resolution pattern (cache + fallback) mandatory.
 
 ```bash
-RED='\033[1;31m'
-CYN='\033[0;36m'
-GRN='\033[0;32m'
-NC='\033[0m'
 printf "=== Check C32: Hardcoded source-tree paths ===\n"
 # C32 inherently scans plugin source tree — only meaningful in LOCAL mode
 if [ "$LOCAL_MODE" != "true" ]; then
-    printf "${GRN}✓${NC} [Check C32/shared] Skipped in non-local mode (no plugin source tree)\n"
+    printf "✓ [Check C32/shared] Skipped in non-local mode (no plugin source tree)\n"
 else
     # Find bare plugins/ primary paths — not inside comments, not inside fallback guards
     grep -rn ' plugins/[a-z]' plugins/*/skills/*/SKILL.md plugins/*/agents/*.md 2>/dev/null |
@@ -206,12 +193,12 @@ else
       grep -v '&& .*plugins/' |
       grep -v ':-.*plugins/' |
       grep -v '"plugins/' | grep -v "'plugins/" | while IFS= read -r hit; do
-        printf "${RED}! BREAKING${NC} C32: %s\n" "$hit"
-        printf "  ${CYN}fix${NC}: replace with installed-path resolution:\n"
+        printf "! BREAKING C32: %s\n" "$hit"
+        printf "  fix: replace with installed-path resolution:\n"
         printf "        VAR=\"\$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)\"\n"
         printf "        [ -z \"\$VAR\" ] && VAR=\"plugins/<plugin>/skills/_shared\"\n"
     done
-    printf "${GRN}✓${NC}: Check C32 scan complete\n"
+    printf "✓: Check C32 scan complete\n"
 fi  # timeout: 5000
 ```
 
