@@ -3,7 +3,7 @@ name: plan
 description: "Interactive wizard that scans the codebase, proposes a metric/guard/agent config, and writes a program.md run spec. Also runs cProfile on a file path to surface bottlenecks before prompting for optimization goal."
 argument-hint: "<goal> | <file.py> [out.md] [--team]"
 effort: medium
-allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
 
@@ -51,12 +51,20 @@ Run baseline profiling:
 ```bash
 python -m cProfile -s cumtime "$ARGUMENTS" > /tmp/cprofile-out.txt 2>&1  # timeout: 60000
 PROFILE_EXIT=$?
-[ $PROFILE_EXIT -ne 0 ] && echo "cProfile failed (exit $PROFILE_EXIT)" && exit 1
-head -40 /tmp/cprofile-out.txt  # timeout: 5000
-time python "$ARGUMENTS"  # timeout: 60000
+if [ $PROFILE_EXIT -ne 0 ]; then
+    echo "⚠ cProfile failed (exit $PROFILE_EXIT) — continuing without profile data."
+    echo "  Wizard will prompt for an optimization goal from the goal-string path instead of bottleneck selection."
+    PROFILE_AVAILABLE=false
+else
+    PROFILE_AVAILABLE=true
+    head -40 /tmp/cprofile-out.txt  # timeout: 5000
+    time python "$ARGUMENTS"  # timeout: 60000
+fi
 ```
 
-Present top 5 bottleneck functions:
+**Fallback path** — if `PROFILE_AVAILABLE=false`: skip the bottleneck selection menu; invoke `AskUserQuestion` with a single open-ended option: "Describe the optimization goal for `<file>` (cProfile data unavailable — provide goal string directly)". Use the user's response as `<goal>` and proceed to P-P1. Never hard-exit on cProfile failure — degraded mode (goal-string only) is always available.
+
+**Profile-available path** — when `PROFILE_AVAILABLE=true`, present top 5 bottleneck functions:
 
 ```markdown
 Top bottleneck functions:

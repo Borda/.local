@@ -478,7 +478,7 @@ Analyzes the experiment history after `/research:run` completes. Computes statis
 
 **What it produces**:
 
-- **Statistical significance**: Wilcoxon signed-rank test comparing kept iteration metrics against the baseline. Requires N >= 6 kept iterations; falls back to descriptive stats otherwise. Requires `scipy` — install with `pip install scipy` if missing.
+- **Statistical significance**: Wilcoxon signed-rank test comparing kept iteration metrics against the baseline. Direction-aware: higher-is-better metrics use standard direction; lower-is-better metrics (e.g. loss, latency) flip the comparison. Requires N >= 6 kept iterations; falls back to descriptive stats otherwise. Requires `scipy` — install with `pip install scipy` if missing.
 - **Dead iteration detection**: windows of 3+ consecutive iterations where `abs(delta) < threshold`. Classified as `dead-plateau` (kept iterations going nowhere) or `dead-churn` (mixed kept/reverted with no progress).
 - **Suspicious jump detection**: single-iteration improvements more than 2 standard deviations above the running mean. Flagged as "suspicious — investigate"; never auto-labeled as data leakage.
 - **Strategy effectiveness**: which agent type (perf/code/ml/arch) had the highest keep-rate and mean delta.
@@ -768,7 +768,11 @@ This plugin is part of the Borda-AI-Rig project. The skills and agents are in `p
 
 The skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) are the canonical source of truth — this README must stay in sync with them. Any change to a skill's behavior (flags, NOT-for scope, trigger conditions) requires an update here.
 
-Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.3.2`.
+Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.5.0`.
+
+**Mode-dispatch layout**: large conditional sections are externalised under `skills/<skill>/modes/*.md` and loaded on demand. Run's hypothesis pipeline, team, and report modes live under `skills/run/modes/`. The ML-concepts reference for `research:scientist` lives under `agents/scientist/ml-concepts.md` — loaded only when the task is ML-domain.
+
+**Shared bin/ scripts** (`plugins/research/bin/`): `resolve-shared.sh`, `make-run-dir.sh`, `health-monitor-start.sh`, `docker_sandbox_run.py` (`--mode explore|verify` — sandboxed metric and script execution under `python:3.11-slim`).
 
 ______________________________________________________________________
 

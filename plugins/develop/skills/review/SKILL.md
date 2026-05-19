@@ -1,9 +1,9 @@
 ---
 name: review
 description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Python files only — non-Python files are out of scope."
-when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review) or PR thread analysis (use oss:analyse)."
+when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review (requires oss plugin)) or PR thread analysis (use oss:analyse (requires oss plugin))."
 argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--semble]"
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 effort: high
 ---
@@ -12,7 +12,7 @@ effort: high
 
 Comprehensive code review of local files or working-tree diff. Spawn specialized sub-agents in parallel, consolidate findings into structured feedback with severity levels.
 
-NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>`); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` or `/foundry:audit`); non-Python projects (JS/TS/Go/Rust) — review toolchain assumes Python/pytest.
+NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>` (requires oss plugin)); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` (requires foundry plugin) or `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — review toolchain assumes Python/pytest.
 
 </objective>
 
@@ -35,7 +35,7 @@ if [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]]; then
 fi
 ```
 
-If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → invoke `oss:review` skill with number; (b) "No — review local code at a path instead" → ask for path to review.
+If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → call `Skill(skill="oss:review", args="$ARGUMENTS")`; (b) "No — review local code at a path instead" → ask for path to review.
 
 If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but the oss plugin is not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — provide a local file or directory path to review"; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
 

@@ -1,6 +1,6 @@
 ---
 name: shepherd
-description: "OSS project shepherd for Python/ML/CV/AI — owns all public-facing contributor communication (issue triage, drafting contributor replies, PR reviews) and release management coordination. Use for triaging GitHub issues/PRs, drafting contributor replies, reviewing release artifacts (CHANGELOG, release notes) for voice and completeness, managing SemVer decisions, and PyPI releases. Cultivates community and mentors contributors. NOT for inline docstrings or README content (use foundry:doc-scribe), NOT for CI pipeline config or GitHub Actions YAML structure for publish/release workflows (use oss:cicd-steward). NOT for generating release notes or CHANGELOG entries from git history (use oss:release). NOT for non-Python ecosystems (JavaScript, Rust, Go) — SemVer rules, deprecation patterns, and PyPI workflows are Python-specific. NOT for posting issues, comments, or any content to GitHub directly — public-github.md globally forbids all write operations; shepherd drafts, the user posts."
+description: "OSS project shepherd for Python/ML/CV/AI — owns all public-facing contributor communication (issue triage, drafting contributor replies, PR reviews) and release management coordination. Use for triaging GitHub issues/PRs, drafting contributor replies, reviewing release artifacts (CHANGELOG, release notes) for voice and completeness, managing SemVer decisions, and PyPI releases. Cultivates community and mentors contributors. NOT for inline docstrings or README content (use foundry:doc-scribe), NOT for CI pipeline config or GitHub Actions YAML structure for publish/release workflows (use oss:cicd-steward). NOT for generating release notes or CHANGELOG entries from git history (use `/oss:release` (requires `oss` plugin)). NOT for non-Python ecosystems (JavaScript, Rust, Go) — SemVer rules, deprecation patterns, and PyPI workflows are Python-specific. NOT for posting issues, comments, or any content to GitHub directly — public-github.md globally forbids all write operations; shepherd drafts, the user posts."
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
 maxTurns: 20
@@ -31,6 +31,8 @@ Experienced OSS maintainer, mentor, community builder in Python/ML/CV/AI. Shephe
 Resolve shared dir before any section uses it:
 
 ```bash
+# loads: oss-shared-resolver.md
+# shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in gh-scraper.md, repo-warden.md)
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
@@ -93,23 +95,16 @@ PACKAGE=$(gh repo view --json name --jq .name 2>/dev/null || echo "mypackage")
 
 # Extract CHANGED_SYMBOLS: added or removed public names in __init__.py exports.
 # Covers both src-layout (src/**/__init__.py) and flat-layout/namespace packages.
-# Diff range: most recent merge into the default branch (HEAD~1..HEAD); adapt to your release range.
-INIT_FILES=$(find . -name '__init__.py' -not -path '*/\.*' -not -path '*/node_modules/*' 2>/dev/null | head -50)
-# Adapt range to your branch: HEAD~N HEAD for N commits, or origin/main..HEAD for branch
-# Guard: git diff HEAD~1 fails on initial commit — check parent exists first
-git rev-parse HEAD~1 >/dev/null 2>&1 || { echo "No changed symbols — initial commit, skipping ecosystem check"; CHANGED_SYMBOLS=""; }
-CHANGED_SYMBOLS=$(git diff HEAD~1 HEAD -- "$INIT_FILES" \
-    | grep -E '^[+-][^+-]' \
-    | grep -oE '(class|def)\s+[A-Za-z_][A-Za-z0-9_]*' \
-    | awk '{print $2}' | sort -u)
+# Adapt range: HEAD~N..HEAD for N commits, or origin/main..HEAD for branch.
+# bin/ script handles initial-commit guard and multi-file path quoting.
+CHANGED_SYMBOLS=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_changed_symbols.sh" "HEAD~1..HEAD")
 
 if [ -z "$CHANGED_SYMBOLS" ]; then
     echo "No changed symbols — skipping ecosystem check"
 else
-    for symbol in $CHANGED_SYMBOLS; do
-        gh api "search/code" --field "q=from $PACKAGE import $symbol language:python" --paginate \
-            --jq '.items[].repository.full_name' 2>/dev/null
-    done | sort -u
+    # search_downstream_consumers.sh accepts symbols on stdin (one per line);
+    # loops `gh api search/code` and prints sorted, deduplicated repo full_names.
+    echo "$CHANGED_SYMBOLS" | "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/search_downstream_consumers.sh" --package "$PACKAGE"  # timeout: 60000
 fi
 ```
 

@@ -1,7 +1,7 @@
 ---
 name: sweep
 description: "Non-interactive end-to-end pipeline — auto-configure program.md (accept defaults), run judge+refine loop (up to 3 iterations), then run the campaign. Single command from goal to result."
-argument-hint: '"<goal>" [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--skip-validation] [--out <path>]'
+argument-hint: '"<goal>" [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--skip-validation] [--out <path>]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -52,12 +52,14 @@ Extract flags:
 - `--compute=local|colab|docker` — passed through
 - `--team` — passed through to run
 - `--codex` — passed through to run
-- `--researcher` — passed through to run; combine with `--architect` for dual-agent SOTA + architectural hypothesis pipeline (`--journal` and `--hypothesis` not available in sweep mode)
+- `--researcher` — passed through to run; combine with `--architect` for dual-agent SOTA + architectural hypothesis pipeline
 - `--architect` — passed through to run; enables architectural hypothesis pass via `foundry:solution-architect`
+- `--journal` — passed through to run when present; preserves per-iteration journal entries (requires `--researcher` or `--architect` — enforced by run R2)
+- `--hypothesis <path>` — passed through to run when present; preloads hypothesis queue from the given file
 - `--skip-validation` — passed to judge step (S3)
 - `--out <path>` — optional: write program.md here instead of project root
 
-**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--skip-validation\`, \`--out\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--journal\`, \`--hypothesis\`, \`--skip-validation\`, \`--out\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 If `<goal>` missing or empty, stop:
 
@@ -138,8 +140,10 @@ Run Default Mode (R1–R7 from `$_RESEARCH_SKILLS/run/SKILL.md`) passing program
 - `--team`
 - `--codex`
 - `--researcher` / `--architect` (combine for dual-agent pipeline)
+- `--journal` — forward when present in the original sweep invocation
+- `--hypothesis <path>` — forward when present in the original sweep invocation
 
-> Note: `--journal` and `--hypothesis` not available in sweep mode (see S1).
+> **Flag-forwarding invariant**: any of `--journal` / `--hypothesis` set at sweep entry MUST appear in the S5 run invocation. Dropping them silently breaks resume continuity and the hypothesis queue.
 
 > **`--team` and interactivity**: when `--team` passed, sweep semi-interactive — run mode Phase B presents user confirmation gate before Phase C. Gate cannot be bypassed from sweep context; sweep pauses and waits. Expected behavior.
 
@@ -154,7 +158,7 @@ sweep: complete — plan → judge → run pipeline finished
 <notes>
 
 - **`.bak` backup behavior** (S2): when output path exists, sweep renames to `<path>.<UTC-ISO-safe (dashes)>.bak` before overwriting. Timestamped suffix prevents collision on successive runs. `.bak` = undo path for S3 edits.
-- **`--journal` and `--hypothesis` not available in sweep**: require interactive setup and per-run state sweep cannot provide. Use `/research:run` directly.
+- **`--journal` and `--hypothesis` forwarded when present**: both flags pass through to S5 verbatim; sweep does not strip them. `--journal` requires `--researcher` or `--architect` (validated at run R2). `--hypothesis <path>` preloads the hypothesis queue.
 - **`--team` and interactivity**: sweep non-interactive except when `--team` active. Team mode Phase B presents user confirmation gate before Phase C — sweep pauses and waits. Expected; sweep cannot bypass Phase B gate.
 - **`--skip-validation`**: passes through to judge step (S3). Useful for cross-machine workflows where metric/guard commands run only on target machine.
 - **Metric direction conventions** (S2 auto-config): minimize for loss/error/latency metrics (loss, error_rate, mse, mae, latency, time); maximize for quality metrics (accuracy, f1, precision, recall, auc, throughput). When goal string is ambiguous, default to `minimize` and note assumption in config comment.

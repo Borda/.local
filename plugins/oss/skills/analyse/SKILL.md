@@ -49,8 +49,9 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 ```bash
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
-FOUNDRY_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve-shared-path.sh" foundry skills/_shared 2>/dev/null)  # timeout: 5000
+FOUNDRY_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/)
 ```
+# loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
 ## Step 1: Flag parsing
@@ -372,7 +373,7 @@ Calibratable modes: thread (duplicate detection recall), vitality (repo vitality
 Scenarios:
 1. Thread — duplicate detection: synthetic issue with identical symptoms to existing closed issue → root cause match ≥0.9; duplicate link surfaced
 2. Thread — actionable response quality: feature request with no linked PRs → concrete scope + next step; no vague suggestions
-3. Vitality — metric accuracy: repo with known issue/PR/response-time counts → numeric values within ±10% of ground truth
+3. Vitality — metric accuracy: repo with known issue/PR/response-time counts → numeric values within ±10% of ground truth; archetype scenario matrix with expected score ranges per repo type: `vitality-calibration.md`
 
 </calibration>
 

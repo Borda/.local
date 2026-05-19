@@ -1,7 +1,7 @@
 ---
 name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop."
-argument-hint: "<goal> [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team]"
+argument-hint: "<goal> [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
 effort: high
 when_to_use: "Use when adding new capability that doesn't exist yet; NOT for fixing broken existing behaviour (use fix) or restructuring without changing behaviour (use refactor)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
@@ -92,16 +92,17 @@ Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template to get spawn prom
 Compute run directory:
 
 ```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-TEAM_DIR=".temp/develop/${TS}"
-mkdir -p "$TEAM_DIR"
+# timeout: 5000
+mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.sh")
+TS="${_run[0]}"
+TEAM_DIR="${_run[1]}"
 ```
 
 Spawn 3 teammates in parallel using Agent() tool:
 
 **Teammate 1 — foundry:sw-engineer (model=opus)**: implements the feature (Steps 2-3: demo test, TDD loop). Prompt: "You are a foundry:sw-engineer teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: implement the feature (Steps 2-3: demo test, TDD loop). Scope constraint: only edit files in `src/`, the target module directory, and non-test Python files. Do NOT edit files under `tests/`. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-sw-engineer-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
 
-**Teammate 2 — foundry:qa-specialist (model=opus)**: writes TDD tests in parallel + security checks for auth/payment/data scope. Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: write TDD tests in parallel with SW implementation; include security checks for any auth/payment/data-handling code. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-qa-specialist-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+**Teammate 2 — foundry:qa-specialist (model=opus)**: audits test coverage, adds edge-case and regression tests in parallel + security checks for auth/payment/data scope (TDD demo/red-green tests stay with sw-engineer per qa-specialist NOT-for). Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: audit test coverage and add edge-case, boundary, and regression tests around the SW implementation; include security checks for any auth/payment/data-handling code. Do NOT write the primary TDD demo/red-green tests — those stay with sw-engineer (Teammate 1) as part of the TDD loop. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-qa-specialist-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
 
 **Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepares documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README). Prompt: "You are a foundry:doc-scribe teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: prepare documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README). Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-doc-scribe-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
 
@@ -285,8 +286,8 @@ Drive implementation by making tests pass, one cycle at a time:
 
 ```bash
 # Baseline: confirm existing suite is green before adding any new code
-$PYTEST_CMD --tb=short <target_test_dir> -v 2>&1 | tail -20
-GATE_EXIT=${PIPESTATUS[0]}
+"${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/run-pytest-short.sh" "$PYTEST_CMD" <target_test_dir>  # timeout: 600000
+GATE_EXIT=$?
 ```
 
 **Gate**: all existing tests must pass before proceeding. If any fail, stop — don't add new code on broken baseline. Use `/develop:fix` to address pre-existing failures first, then return here.

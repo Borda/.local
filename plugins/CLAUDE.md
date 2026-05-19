@@ -18,6 +18,17 @@ Use `/caveman` compression for all agent, skill, rule file edits — drop articl
   - **Language policy — inline blocks in SKILL.md**: bash default; Python only when bash version requires JSON parsing, multi-line string manipulation, or numeric computation (and note: `Bash(python:*)` not in allow list — inline Python triggers approval prompt every invocation)
 - `rules/`, `hooks/` — foundry only
 
+## Shared File Authoring Rule (modes/, templates/, _shared/)
+
+Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`, or `plugins/*/skills/_shared/` **must** satisfy at least one of:
+
+1. Its **basename appears as a literal string** in at least one consumer `.md` file (SKILL.md, agent `.md`, or another shared file) — e.g. `# loads: upgrade.md` or inline in prose
+2. The file itself contains a `<!-- file: <basename> — consumers: ... -->` header declaring cross-plugin consumers (use when all consumers are in a different plugin)
+
+**Why**: grep-based orphan checks find zero hits → agent concludes file is dead → deletes it. This has happened to `adversarial.md`, `upgrade.md`, `vitality-calibration.md`. A single comment line prevents deletion. Check R2 (`/foundry:audit plugins`) detects violations.
+
+**At authoring time**: before writing the file, identify its consumer SKILL.md and add the `# loads:` comment there first, then create the file. If consumer is in a different plugin, add the `<!-- file: ... -->` header to the file itself.
+
 ## Installability
 
 - Every file must be installable via `claude plugin install <name>@borda-ai-rig`
@@ -107,3 +118,4 @@ Before any edit, delete, or addition to plugin files — self-challenge:
 - **No side effects?** Cross-refs still resolve, existing callers unaffected, no behavior regression introduced
 - **Complete and clean?** No gaps/TODOs, no dead instructions, no orphaned cross-refs, no leftover stubs
 - **Verified?** Every claim backed by code/disk evidence — no hypothesis or assumption stated as fact
+- **bin/ scripts wired?** Created/edited a `bin/` script? Consumer `.md` references basename before commit (inline invocation or `<!-- file: ... consumers: ... -->` header in owning plugin). Run `check_orphaned_bin.py` — must exit 0.

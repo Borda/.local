@@ -49,9 +49,9 @@ Attack target across 6 dimensions:
 
 1. **Codex pre-flight**
    - Instructions contain `--no-codex` → set `CODEX_ENABLED=false`; skip all codex steps
-   - Otherwise: read `enabledPlugins` from `~/.claude/settings.json` (codex is always-on opt-out design), then check local `.claude/settings.json` for project-level override (local value wins):
+   - Otherwise: check settings opt-out then installed state via `check_codex.py` (local `.claude/settings.json` wins over global; if explicitly disabled → false; otherwise checks installed_plugins.json, cache dirs, PATH):
      ```bash
-     CODEX_ENABLED=$(python -c "import json,os; g=(json.load(open(os.path.expanduser('~/.claude/settings.json'))) if os.path.exists(os.path.expanduser('~/.claude/settings.json')) else {}); l=(json.load(open('.claude/settings.json')) if os.path.exists('.claude/settings.json') else {}); p={**g.get('enabledPlugins',{}),**l.get('enabledPlugins',{})}; print('true' if p.get('codex@openai-codex',g.get('enabledPlugins',{}).get('codex@openai-codex',False)) else 'false')" 2>/dev/null || echo 'true')  # timeout: 5000
+     CODEX_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_codex.py" 2>/dev/null || echo 'true')  # timeout: 5000
      ```
    - `CODEX_ENABLED=false` → skip Codex step with note "Codex disabled in settings.json"
    - `CODEX_ENABLED=true` → find companion path:

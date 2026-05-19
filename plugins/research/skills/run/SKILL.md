@@ -139,10 +139,10 @@ After clarification extraction, remaining non-flag tokens (not starting `--`) ar
 
 `colab_hw` in `## Config` sets hardware preference (`H100`, `L4`, `T4`, `A100`); CLI `--colab=HW` overrides.
 
-Generate `run-id` = `$(date +%Y%m%d-%H%M%S)`. Assign immediately:
+Generate `run-id` = `$(date -u +%Y-%m-%dT%H-%M-%SZ)`. Assign immediately:
 
 ```bash
-RUN_ID=$(date +%Y%m%d-%H%M%S)
+RUN_ID=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".experiments/${RUN_ID}"  # hypothesis pipeline + journal outputs (per <constants> note)
 mkdir -p "$RUN_DIR"  # timeout: 5000
 ```

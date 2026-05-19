@@ -13,6 +13,7 @@ Problem domain by agent:
 - `foundry:doc-scribe` → docs gaps: missing docstrings, missing Google style sections, broken examples
 - `foundry:perf-optimizer` → perf issues: unnecessary loops, repeated computation, wrong dtype, missing vectorisation
 - `oss:cicd-steward` → Continuous Integration (CI) issues: non-pinned action Secure Hash Algorithms (SHAs), missing cache, inefficient matrix *(oss plugin required — skip if `$OSS_AVAILABLE` empty)*
+- `oss:gh-scraper` → GitHub metadata extraction: pagination truncation, axis data completeness, rate-limit handling, scrape envelope correctness *(oss plugin required — skip if `$OSS_AVAILABLE` empty)*
 - `oss:repo-warden` → vitality scoring issues: incorrect bus-factor approximation, bot-filtering inconsistency, axis scoring errors, PARTIAL_FILE overwrite conflicts *(oss plugin required — skip if `$OSS_AVAILABLE` empty)*
 - `research:data-steward` → data issues: label leakage, split contamination, augmentation order bugs, API pagination truncation, dataset completeness, provenance gaps *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
 - `research:scientist` → paper analysis: missed contributions, wrong method attribution *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*

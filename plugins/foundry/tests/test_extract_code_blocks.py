@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "bin"))
 
 import extract_code_blocks as ecb
 

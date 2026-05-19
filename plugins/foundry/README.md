@@ -698,6 +698,7 @@ plugins/foundry/
     ├── teammate-quality.js      TaskCompleted/TeammateIdle teammate output quality gate
     ├── lint-on-save.js          runs pre-commit after every Write/Edit; async + cross-session lock; 15s timeout
     ├── rtk-rewrite.js           transparently rewrites CLI calls for token compression
+    ├── agent-router.js          PreToolUse Agent hook; 3-tier routing fallback (worktree → cache → local)
     ├── commit-guard.js          PreToolUse Bash guard that blocks git commit unless authorized by a skill sentinel
     └── md-compress.js           compresses large markdown files before they enter context
 ```

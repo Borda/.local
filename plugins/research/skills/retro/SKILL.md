@@ -67,34 +67,36 @@ mkdir -p "$RUN_DIR/scripts"  # timeout: 3000
 
 ### Step T2: Statistical significance analysis
 
-Write analysis script to `$RUN_DIR/scripts/analyze.py` via Write tool, then execute in two separate Bash calls. Never inline Python.
+Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python with scipy.stats:
 
-**Script requirements**:
-
-1. Load `experiments.jsonl`, filter iterations where `status == "kept"`, extract metric values into `kept_metrics` list.
-2. Read `baseline_metric` from iteration 0 entry (`status == "baseline"`).
-3. Read `direction` from `state.json` config (or infer from goal text: "higher"/"lower").
-
-**If `len(kept_metrics) < 6`**: compute descriptive stats only (mean, median, min, max, std of kept_metrics). Print `"insufficient data for significance testing (N=<N>, minimum 6 required)"`. Do NOT compute or report p-value.
-
-**If N >= 6**: run Wilcoxon signed-rank test:
-
-```python
-from scipy.stats import wilcoxon
-# Compare kept metrics against baseline repeated N times
-baseline_repeated = [baseline_metric] * len(kept_metrics)
-alternative = "greater" if direction == "higher" else "less"
-stat, pvalue = wilcoxon(kept_metrics, baseline_repeated, alternative=alternative)
-# Effect size: rank-biserial correlation r = 1 - (2W / (n*(n+1)))
-n = len(kept_metrics)
-r = 1 - (2 * stat) / (n * (n + 1))
+```bash
+RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl ".experiments/state/<run-id>/experiments.jsonl" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
 ```
 
-**If `--compare`**: also run Wilcoxon between kept metrics of run-1 vs run-2 (paired if same length; warn if different lengths — use min length with truncation note).
+**Contract** — script reads JSONL, extracts metric values for ALL iterations with `status == "kept"`, pairs each against the baseline record (`status == "baseline"`), runs a one-sided Wilcoxon signed-rank test, and prints a single line of JSON to stdout:
 
-**Error handling**: if `scipy` not installed, print `"pip install scipy required for significance testing, reporting descriptive stats only"` and fall back to descriptive stats. Handle empty JSONL (0 kept iterations) — report `"no kept iterations found"`.
+- `{"significant": bool, "p_value": float, "statistic": float, "n": int}` on success
+- `{"significant": false, "p_value": null, "statistic": null, "n": <N>, "reason": "<msg>"}` when `N < 6` or scipy missing
+- `{"error": "<msg>"}` on input error (exit 2 — missing file, malformed JSON, no baseline record)
 
-Write results JSON to `$RUN_DIR/stats-results.json`. Execute script with `python $RUN_DIR/scripts/analyze.py` via Bash (`timeout: 30000`).
+Exit codes: `0` = significant · `1` = not significant (or insufficient data) · `2` = input error.
+
+**Direction handling** — script branches on `--direction`:
+
+- `higher` → `alternative = "greater"` (improvement = candidate > baseline)
+- `lower` → `alternative = "less"` (improvement = candidate < baseline — for loss, latency, error)
+
+Read `direction` from `state.json` config (or infer from goal text); pass via `$METRIC_DIRECTION`.
+
+**Effect size** — script does not return rank-biserial `r` directly. Compute in shell from `statistic` and `n`:
+
+```bash
+EFFECT_R=$(echo "$RETRO_RESULT" | python -c "import json,sys; d=json.loads(sys.stdin.read()); n=d['n']; s=d.get('statistic'); print('' if s is None else 1 - (2*s)/(n*(n+1)))")  # timeout: 5000
+```
+
+**If `--compare`**: invoke the script a second time on the second run's `experiments.jsonl`; downstream report renders a second row.
+
+Write the combined results (parsed JSON plus computed `r`) to `$RUN_DIR/stats-results.json` via Write tool.
 
 ### Step T3: Dead iteration detection
 
@@ -108,7 +110,7 @@ Write results JSON to `$RUN_DIR/stats-results.json`. Execute script with `python
 ```
 Apply advisory threshold automatically only when `--threshold` not explicitly provided by user.
 
-**Timeout detection**: when scanning reverted iterations, check for `timeout:true` field. If present: classify as `timeout-as-revert` (see Notes). If field absent: flag any reverted iteration where `delta` is in the correct improvement direction (i.e., metric moved toward goal) as "possible timeout — verify commit [sha]"; do not count delta as valid.
+**Timeout detection**: when scanning reverted iterations, check `status` field. If `status == "timeout"`: classify as `timeout-as-revert` (see Notes). Otherwise: flag any reverted iteration where `delta` is in the correct improvement direction (i.e., metric moved toward goal) as "possible timeout — verify commit [sha]"; do not count delta as valid.
 
 Scan `experiments.jsonl` sequentially, skipping iteration 0 (baseline). For each window of 3+ consecutive iterations where `abs(delta) < threshold`:
 
@@ -318,7 +320,7 @@ Call `AskUserQuestion` tool after summary — do NOT write options as plain text
 - **Named anomaly patterns** (use consistently across reports):
   - `kept-regression`: a kept iteration where metric moved in wrong direction (positive delta for higher-is-better, negative delta for lower-is-better)
   - `reverted-improvement`: a reverted iteration where metric moved in correct direction — reverted for non-metric reasons (performance, OOM, instability); flag as "improvement-when-reverted — consider revisiting with adjusted constraints"
-  - `timeout-as-revert`: a reverted iteration with `timeout:true` field — metric value unreliable; never count delta as valid improvement
+  - `timeout-as-revert`: a reverted iteration with `status: "timeout"` — metric value unreliable; never count delta as valid improvement
   - `config-repetition`: same agent + same file(s) attempted 3+ times without crossing threshold — flag as "repeated-failure pattern"
 
 </notes>

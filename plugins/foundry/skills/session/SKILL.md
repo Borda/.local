@@ -2,7 +2,7 @@
 name: session
 description: 'Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks "what was I working on", "any pending items", "what''s in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only).'
 argument-hint: "resume | archive <text> | summary"
-allowed-tools: Read, Write, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Glob, Grep, Bash, TaskList, AskUserQuestion
 effort: low
 model: sonnet
 context: fork
@@ -46,6 +46,7 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 **Task hygiene**:
 ```bash
+# audit-skip: resilience-replication
 _FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
@@ -84,17 +85,11 @@ echo "cleanup done"
 
 Use Glob with pattern `session-open-*.md` in memory directory. For each file, read with Read tool to extract `name` and `description` frontmatter fields and item body.
 
-Compute age in days per file:
+Compute age in days per file using `session_age_files.py` (cross-platform; output is `<age>\t<path>` per line): <!-- file: session_age_files.py — consumers: foundry:session Substep 1c -->
 
 ```bash
 # MEMORY_DIR derived in Substep 1a — reuse that value
-NOW=$(date +%s)
-for f in "$MEMORY_DIR"/session-open-*.md; do
-    [ -f "$f" ] || continue
-    MTIME=$(if [ "$(uname -s)" = "Darwin" ]; then stat -f "%m" "$f"; else stat -c "%Y" "$f"; fi) # timeout: 5000
-    AGE=$(((NOW - MTIME) / 86400))
-    echo "$AGE $f"
-done
+python "${CLAUDE_PLUGIN_ROOT}/bin/session_age_files.py" "$MEMORY_DIR" # timeout: 5000
 ```
 
 ### Substep 1d: Render grouped list
@@ -135,11 +130,17 @@ Extract `<partial-text>` from `$ARGUMENTS` (everything after `archive `).
 
 Use Grep with partial text against memory directory, pattern `session-open-*.md`. Also match against file basenames. Select best match — if ambiguous (2+ equally close matches), list them and ask user to disambiguate before proceeding.
 
-Read matched file with Read tool to extract its `name` field.
+Read matched file with Read tool to extract its `name:` frontmatter field. Set shell variable `ITEM_NAME` to that value (fall back to the file basename stripped of `session-open-` prefix and `.md` suffix if the frontmatter `name` field is missing or empty). `ITEM_NAME` is consumed by Substeps 2d (audit log) and 2e (terminal confirmation):
+
+```bash
+# Set these from the Read tool output in this substep:
+MATCHED_FILE="<full path of matched file>"
+ITEM_NAME="<name: from frontmatter, or basename fallback>"
+```
 
 ### Substep 2c: Delete the memory file
 
-Set `MATCHED_FILE` to full path of matched file from Substep 2b, then:
+Using `MATCHED_FILE` resolved in Substep 2b:
 
 ```bash
 rm "$MATCHED_FILE"  # timeout: 5000
@@ -154,7 +155,7 @@ Ensure log directory exists:
 mkdir -p .claude/logs # timeout: 5000
 ```
 
-Append one-line JSON entry atomically with bash redirection. Entry format: `{"ts":"<ISO8601-UTC>","item":"<name>","action":"archived"}`
+Append one-line JSON entry atomically with bash redirection, using `ITEM_NAME` resolved in Substep 2b. Entry format: `{"ts":"<ISO8601-UTC>","item":"<name>","action":"archived"}`
 
 ```bash
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -163,7 +164,7 @@ printf '{"ts":"%s","item":"%s","action":"archived"}\n' "$TS" "$ITEM_NAME" >> .cl
 
 ### Substep 2e: Confirm to user
 
-Print: `Archived: <item name>` — one line, terminal only.
+Print: `Archived: $ITEM_NAME` (substituting the value resolved in Substep 2b) — one line, terminal only.
 
 End with `## Confidence` block per quality-gates.md — score based on match quality (did fuzzy-match find right item; was archive entry written cleanly).
 
@@ -242,7 +243,9 @@ Follow-up gate (`AskUserQuestion`):
 
 **Automatic parking behavior (core behavioral rule — no command needed)**
 
-During any session, Claude proactively parks open-loop items to project-scoped memory as they arise:
+During any session, Claude proactively appends open-loop items to **`.claude/state/session-context.md`** (the project-scoped state file maintained by the PreCompact hook) as they arise.
+
+> **Why not auto-memory?** Project CLAUDE.md `Memory Policy` forbids auto-writes under `~/.claude/projects/.../memory/`. Session state belongs in the project-scoped state file so it stays with the repo, survives compaction, and never pollutes auto-memory. The `resume` / `archive` / `summary` modes above continue to read the **legacy** `session-open-*.md` files (created by older versions) for backwards compatibility, but **new items are never written there**.
 
 | Item type | Trigger | Entry format |
 | --- | --- | --- |
@@ -252,26 +255,17 @@ During any session, Claude proactively parks open-loop items to project-scoped m
 
 **Topic-shift detection rule**: trigger strictly behavioural — user submits new top-level request without answering Claude's prior question (not follow-up or clarification). No semantic similarity scoring.
 
-**File format**: each parked item = standard memory file:
+**Entry format**: append a bullet under a `## Parked items` section (create the section if absent):
 
 ```markdown
----
-name: <short slug>
-description: <one-line summary of the parked item>
-type: project
----
+## Parked items
 
-<item text>
-
-**Why:** <one sentence on why it was deferred or what triggered it>
-**How to apply:** <what question to ask or action to take when revisiting>
+- **<short slug>** — <one-line summary>. Raised: <YYYY-MM-DD>. Why: <one sentence>. How to apply: <what to ask or do when revisiting>.
 ```
 
-Written to: `~/.claude/projects/<project-slug>/memory/session-open-<slug>-<YYYY-MM-DD>.md`
+Written to: `.claude/state/session-context.md` (project-local; tracked or gitignored per project policy).
 
-Derive project slug via: `git rev-parse --show-toplevel | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//'`
-
-**Memory pollution guard**: before parking new item, count existing `session-open-*.md` files. If count ≥ 10, surface full list and ask user to archive some before writing new one.
+**Pollution guard**: before parking new item, count bullets under `## Parked items`. If count ≥ 10, surface full list and ask user to archive some (via `/session archive <slug>`) before appending a new one.
 
 **TTL policy**: items ≥ 14 days listed with `⚠ stale`. Items ≥ 30 days deleted silently during `resume`. TTL thresholds fixed global values — not configurable.
 
@@ -279,6 +273,6 @@ Derive project slug via: `git rev-parse --show-toplevel | tr '[:upper:]' '[:lowe
 
 **Resolution log**: `.claude/logs/session-archive.jsonl` is project-local, append-only. Stays in git-tracked project directory as audit trail; separate from home-scoped memory files intentionally.
 
-**Scope**: parked ideas scoped to current project only — don't appear across projects. Memory isolation enforced by per-project slug directory under `~/.claude/projects/`.
+**Scope**: parked ideas scoped to current project only — don't appear across projects. Project isolation enforced by file location (`.claude/state/session-context.md` lives inside the project's working tree).
 
 </notes>

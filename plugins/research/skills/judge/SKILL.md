@@ -190,7 +190,14 @@ Write findings to `<RUN_DIR>/scientific-review.md`.
 Return ONLY: {"status":"done","scientific_rating":"sound|needs-refinement|fundamentally-flawed","issues":N,"file":"<RUN_DIR>/scientific-review.md","confidence":0.N,"summary":"<one-line>"}
 ```
 
-Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** — informs but does not override verdict. Exception: `scientific_rating = "fundamentally-flawed"` elevates verdict to BLOCKED.
+Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** — informs but does not override verdict. Exception: `scientific_rating == "fundamentally-flawed"` (exact match) elevates verdict to BLOCKED.
+
+**Source precedence for `scientific_rating`** (mandatory when both are present):
+
+1. **File-parsed value** from `<RUN_DIR>/scientific-review.md` (read after agent completes) — authoritative
+2. **Health-monitor / envelope value** from the agent's returned JSON — advisory only
+
+File-parsed value takes priority over the health monitor value; use the file-parsed value when both are present. Same precedence applies to `methodology_rating` parsed from `<RUN_DIR>/methodology.md` vs the envelope value. Use envelope value only when the file is missing or unparsable (e.g., timeout with no output).
 
 ## Step J4: Local validation
 
@@ -202,14 +209,16 @@ Execute each command once. **Non-blocking** — failures become `critical` findi
 
 ```bash
 # Metric validation — captures baseline value
-<metric_cmd 2>&1  # timeout: 360000
+# Substitute ${metric_cmd} with the resolved command from J1 before execution
+${metric_cmd} 2>&1  # timeout: 360000
 ```
 
 Parse stdout for float. If found, record as `baseline_value`. If not found or non-zero exit: add critical finding: "Metric command failed or produced no numeric output".
 
 ```bash
 # Guard validation
-<guard_cmd  # timeout: 360000
+# Substitute ${guard_cmd} with the resolved command from J1 before execution
+${guard_cmd}  # timeout: 360000
 ```
 
 If guard exits non-zero: add critical finding: "Guard command exited non-zero (exit <code>): \<first 3 lines of output>".
@@ -248,10 +257,14 @@ Top-to-bottom; **first match wins**. BLOCKED takes precedence — stop at first 
 
 | Condition | Verdict |
 | --- | --- |
-| any critical OR methodology_rating = `fundamentally-flawed` OR scientific_rating = `fundamentally-flawed` (note: `timed_out` does **not** trigger BLOCKED — it maps to NEEDS-REVISION via the next row) | BLOCKED |
-| J3 agent timed out (`methodology_rating` = `timed_out` or null) | NEEDS-REVISION |
-| 0 critical AND (high > 0 OR methodology_rating = `needs-refinement`) | NEEDS-REVISION |
-| 0 critical AND 0 high AND methodology_rating = `sound` | APPROVED |
+| any critical (J2) — exact `critical` severity match | BLOCKED |
+| `methodology_rating == "fundamentally-flawed"` (exact string match, J4) | BLOCKED |
+| `scientific_rating == "fundamentally-flawed"` (exact string match, J4) | BLOCKED |
+| J3 agent timed out (`methodology_rating == "timed_out"` — exact match — or null; note: `timed_out` does **not** trigger BLOCKED — it falls to NEEDS-REVISION) | NEEDS-REVISION |
+| 0 critical AND (high > 0 OR `methodology_rating == "needs-refinement"`) | NEEDS-REVISION |
+| 0 critical AND 0 high AND `methodology_rating == "sound"` | APPROVED |
+
+**Verdict matching rules**: all `*_rating` comparisons require exact string match. Reject partial/substring matches — e.g., `timed_out_partial` does NOT match `timed_out`; `flawed` does NOT match `fundamentally-flawed`. Use `==` equality only; never `=~`, `startswith`, or pattern matching.
 
 **Pre-compute**:
 

@@ -24,8 +24,7 @@ Default focus: PUBLIC API surface; test internals only when caller asks. Apply c
 - **Black-box first**: treat codebase as black box — read docs, docstrings, type signatures to learn what code SUPPOSED to do; write tests against documented expectations, never observed implementation behavior
 - **Public API surface by default**: focus on exported functions, public classes, CLI entrypoints, REST endpoints; test private methods or internal helpers when explicitly asked or when bug cannot be exposed through any public path
 - **Realistic user workflows**: each test = plausible user action — "user calling `process(data, mode='fast')` expects list of floats" — not micro-unit test of internal function; tests read like user stories
-- **Exhaustive on public surface**: exercise every public parameter (valid values, defaults, edge values), every documented return shape, every `Raises:` entry in docs, every error condition in README or type hints
-- **Coverage checklist before done**: before marking coverage complete, enumerate full public API surface and verify each item has: happy path, at least one edge-case variant, error-path coverage if documented
+- **Exhaustive on public surface**: exercise every public parameter (valid values, defaults, edge values), every documented return shape, every `Raises:` entry in docs, every error condition in README or type hints. Before marking coverage complete, enumerate full public API surface and verify each item has: happy path, at least one edge-case variant, error-path coverage if documented.
 - Tests must be deterministic: same input → same output always
 - Parametrize aggressively: test multiple inputs, not just happy path
 - Systematic progression: happy path → edge cases → error cases → boundary values → adversarial inputs; never skip documented behavior
@@ -187,83 +186,7 @@ Fixtures return minimal valid object needed for test scope — only fields test 
 <!-- ML/PyTorch codebases only — skip for non-ML projects -->
 \<ml_testing>
 
-## Tensor Assertions (PyTorch)
-
-```python
-import torch
-import torch.testing as tt
-
-
-def test_model_output_shape():
-    model = MyModel(num_classes=10)
-    batch = torch.randn(4, 3, 224, 224)
-    output = model(batch)
-    assert output.shape == (4, 10), f"Expected (4, 10), got {output.shape}"
-
-
-def test_numerical_stability():
-    tt.assert_close(actual, expected, rtol=1e-4, atol=1e-6)
-```
-
-## NumPy Assertions
-
-```python
-import numpy as np
-
-
-def test_transform_preserves_range():
-    data = np.random.rand(100, 3)
-    result = normalize(data)
-    np.testing.assert_allclose(result.mean(axis=0), 0.0, atol=1e-6)
-    np.testing.assert_allclose(result.std(axis=0), 1.0, atol=1e-6)
-```
-
-## GPU / CUDA Tests
-
-Note: global `reset_random_seeds` fixture (defined in `<pytest_config>`) handles seeding autouse for all tests.
-
-Mark GPU tests with `@pytest.mark.gpu` and `@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")` so they skip on CPU-only runners without breaking suite.
-
-## DataLoader Testing
-
-```python
-def test_dataloader_reproducibility():
-    loader1 = make_dataloader(seed=42)
-    loader2 = make_dataloader(seed=42)
-    for batch1, batch2 in zip(loader1, loader2):
-        torch.testing.assert_close(batch1["image"], batch2["image"])
-
-
-def test_dataloader_no_nan():
-    loader = make_dataloader()
-    for batch in loader:
-        assert not torch.any(torch.isnan(batch["image"])), "NaN in batch"
-        assert not torch.any(torch.isinf(batch["image"])), "Inf in batch"
-```
-
-## Model Mode Assertions
-
-```python
-def test_evaluate_does_not_change_model_mode():
-    """evaluate() must not leave model in train mode."""
-    model = MyModel()
-    model.train()  # start in train mode explicitly
-    evaluate(model, loader, criterion)
-    assert not model.training, (
-        "evaluate() must call model.eval() and not restore train mode"
-    )
-
-
-def test_evaluate_does_not_modify_parameters():
-    """evaluate() must not update weights (torch.no_grad() contract)."""
-    model = MyModel()
-    params_before = {k: v.clone() for k, v in model.named_parameters()}
-    evaluate(model, loader, criterion)
-    for k, v in model.named_parameters():
-        torch.testing.assert_close(
-            v, params_before[k], msg=f"Parameter {k} changed during evaluate()"
-        )
-```
+For ML model testing (PyTorch, TensorFlow, JAX, model inference, tensor-shape checks, DataLoader determinism, model-mode contracts): read `${CLAUDE_PLUGIN_ROOT}/agents/qa-specialist/ml-testing.md` for ML-specific test patterns — tensor assertions, GPU markers, DataLoader tests, model mode invariants. Skip for non-ML Python tasks.
 
 \</ml_testing>
 
@@ -374,13 +297,13 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 
 ## Operating as Teammate (Agent Teams)
 
-When spawned as Agent Teams teammate (e.g., via `/develop:fix --team`, `/develop:feature --team`):
+When spawned as Agent Teams teammate (e.g., via `/develop:fix --team`, `/develop:feature --team` — requires `develop` plugin):
 
-Follow AgentSpeak v2 protocol as defined in `~/.claude/TEAM_PROTOCOL.md` (symlinked by `/foundry:init` — requires `foundry` plugin; if symlink absent, resolve via `ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/TEAM_PROTOCOL.md 2>/dev/null | head -1`; if still absent, ask orchestrator to provide TEAM_PROTOCOL content directly).
+Follow AgentSpeak v2 protocol as defined in `~/.claude/TEAM_PROTOCOL.md` (symlinked by `/foundry:init` — requires `foundry` plugin; if symlink absent, resolve via `ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/TEAM_PROTOCOL.md 2>/dev/null | head -1`  # borda-ai-rig = marketplace name in .claude-plugin/marketplace.json; update if renamed; if still absent, ask orchestrator to provide TEAM_PROTOCOL content directly).
 
 Security embedding active per `<core_principles>` — applies in team mode too.
 
-**Challenging sw-engineer's API design (in `/develop:feature --team`)**: when qa-specialist spawned alongside sw-engineer, review proposed API BEFORE implementation starts. Challenge:
+**Challenging sw-engineer's API design (in `/develop:feature --team` — requires `develop` plugin)**: when qa-specialist spawned alongside sw-engineer, review proposed API BEFORE implementation starts. Challenge:
 
 - Missing input validation or error cases
 - Auth/permission assumptions not explicit in type signature

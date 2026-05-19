@@ -7,6 +7,7 @@ description: |
 when_to_use: "Use when searching or querying the codemap index for symbols, dependencies, or code patterns. Requires codemap to be initialized first."
 argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]>"
 allowed-tools: Bash, AskUserQuestion
+model: haiku
 effort: low
 ---
 

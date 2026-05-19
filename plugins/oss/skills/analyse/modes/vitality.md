@@ -59,80 +59,14 @@ SCORING_FILE="$_OSS_SHARED/vitality-scoring.md"
 ```
 
 ```bash
-python -c "
-import json, sys, re
-
-# Load weights from vitality-scoring.md (single source of truth)
-weights = {}
-try:
-    with open('$SCORING_FILE') as f:
-        for line in f:
-            m = re.match(r'\|\s*(\d+)\s+[^|]+\|\s*(0\.\d+)\s*\|', line)
-            if m:
-                weights[int(m.group(1))] = float(m.group(2))
-except Exception:
-    pass
-if len(weights) != 9:
-    weights = {1:0.17, 2:0.18, 3:0.14, 4:0.11, 5:0.09, 6:0.07, 7:0.09, 8:0.07, 9:0.08}
-
-files = ['$PARTIAL_A', '$PARTIAL_B', '$PARTIAL_C']
-axes = {}
-for f in files:
-    d = json.load(open(f))
-    axes.update(d['axes'])
-
-# renormalize weights for unavailable axes (score==null or label==⚪)
-available_axes = {k: v for k, v in axes.items() if v.get('label') != '⚪' and v.get('score') is not None}
-total_w = sum(weights[int(k)] for k in available_axes)
-health = (sum(weights[int(k)] * v['score'] / 10.0 for k, v in available_axes.items()) / total_w * 100) if total_w else 0
-conf_vals = [v['conf'] for v in available_axes.values() if v.get('conf', 0) > 0]
-overall_conf = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
-
-# axis3_weeks from Group C partial (for display in terminal)
-axis3_weeks = json.load(open('$PARTIAL_C')).get('axis3_weeks')
-
-result = {
-    'analysis_now': json.load(open('$PARTIAL_A'))['scored_at'],
-    'health_score_pct': round(health, 1),
-    'overall_confidence': round(overall_conf, 2),
-    'axes': {str(k): v for k, v in axes.items()},
-    'weights': {str(k): v for k, v in weights.items()},
-    'axis3_weeks': axis3_weeks,
-    'axis3_202_pending': any(
-        axes.get(str(k), {}).get('label') == '⚪' and 'stats' in axes.get(str(k), {}).get('unavailable_reason', '')
-        for k in [3]
-    ),
-    'total_passes': 1,
-    'confidence_history': str(round(overall_conf, 2))
-}
-json.dump(result, open('$SCORES_FILE', 'w'), indent=2)
-print(f'[vitality] assembled: health={health:.1f}% conf={overall_conf:.2f}')
-" 2>&1  # timeout: 15000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/assemble_vitality_scores.py" \
+    "$PARTIAL_A" "$PARTIAL_B" "$PARTIAL_C" "$SCORING_FILE" "$SCORES_FILE"  # timeout: 15000
 ```
 
 Extract variables from `$SCORES_FILE` for use in Steps 4–7:
 
 ```bash
-ANALYSIS_NOW=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['analysis_now'])" 2>/dev/null || echo "$(date +%s)")  # timeout: 5000
-OVERALL_CONFIDENCE=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['overall_confidence'])" 2>/dev/null || echo "0.0")  # timeout: 5000
-HEALTH_SCORE_PCT=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['health_score_pct'])" 2>/dev/null || echo "0")  # timeout: 5000
-AXIS3_202_PENDING=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print('true' if d.get('axis3_202_pending') else 'false')" 2>/dev/null || echo "false")  # timeout: 5000
-TOTAL_PASSES=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d.get('total_passes',1))" 2>/dev/null || echo "1")  # timeout: 5000
-CONFIDENCE_HISTORY=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d.get('confidence_history','0.0'))" 2>/dev/null || echo "$OVERALL_CONFIDENCE")  # timeout: 5000
-
-for AX in 1 2 3 4 5 6 7 8 9; do
-    score=$(python -c "import json; d=json.load(open('$SCORES_FILE')); v=d['axes']['$AX']; print(v['score'] if v['score'] is not None else -1)" 2>/dev/null || echo "-1")  # timeout: 5000
-    conf=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['conf'])" 2>/dev/null || echo "-1")  # timeout: 5000
-    status=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX']['label'])" 2>/dev/null || echo "⚪")  # timeout: 5000
-    signal=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(d['axes']['$AX'].get('signal',''))" 2>/dev/null || echo "")  # timeout: 5000
-    weight=$(python -c "import json; d=json.load(open('$SCORES_FILE')); print(int(round(d['weights']['$AX'] * 100)))" 2>/dev/null || echo "0")  # timeout: 5000
-    eval "AXIS${AX}_SCORE='$score'"
-    eval "AXIS${AX}_CONF='$conf'"
-    eval "AXIS${AX}_STATUS='$status'"
-    eval "AXIS${AX}_SIGNAL='$signal'"
-    eval "WEIGHT_${AX}=${weight}"
-done
-
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_vitality_vars.py" "$SCORES_FILE")"  # timeout: 5000
 echo "[vitality] scorer complete: health=${HEALTH_SCORE_PCT}% conf=${OVERALL_CONFIDENCE} passes=${TOTAL_PASSES}"
 ```
 

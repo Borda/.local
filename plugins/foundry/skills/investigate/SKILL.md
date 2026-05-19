@@ -2,7 +2,7 @@
 name: investigate
 description: 'Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug) or config quality (/foundry:audit). TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: "not working but config looks right", "hook not triggering", "why isn''t X running". SKIP: Python traceback present (use develop:debug); known code bug with repro (use develop:fix); pure config quality check (use foundry:audit).'
 argument-hint: "<symptom, question, or failing command> [--fast]"
-allowed-tools: Read, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opusplan
 effort: high
 ---
@@ -34,6 +34,7 @@ If $ARGUMENTS empty or too vague, use AskUserQuestion: "What exactly is failing 
 
 **Task hygiene**:
 ```bash
+# audit-skip: resilience-replication
 _FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
@@ -197,7 +198,7 @@ End with a `## Confidence` block:
 
 ```markdown
 ## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
 **Gaps**:
 - [e.g., root cause unconfirmed — probe was inconclusive; external service logs inaccessible]
 

@@ -5,6 +5,7 @@ when_to_use: "Use when scanning or re-indexing a repository into the codemap. Ru
 argument-hint: "[--root <path>] [--incremental]"
 allowed-tools: Bash, AskUserQuestion
 disable-model-invocation: true
+effort: medium
 ---
 
 <objective>
@@ -26,24 +27,17 @@ NOT for querying existing index (use `/codemap:query`).
 Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `--incremental` if provided. Construct args conditionally — never pass literal placeholder strings:
 
 ```bash
-# timeout: 360000
 # scan-index handles v2→v3 fallback internally
 # NOTE: if --incremental is passed but no existing index found, falls back to full scan silently — no user warning
 SCAN_BIN="${CLAUDE_PLUGIN_ROOT}/bin/scan-index"
-SCAN_ARGS=()
-if echo "$ARGUMENTS" | grep -q -- '--root'; then
-    # Extract --root value; handle single-quoted, double-quoted, and unquoted paths (space-safe)
-    ROOT_VAL=$(echo "$ARGUMENTS" | sed "s/.*--root[[:space:]]\+'\\([^']*\\)'.*/\\1/;t;s/.*--root[[:space:]]\\+\"\\([^\"]*\\)\".*/\\1/;t;s/.*--root[[:space:]]\\+\\([^[:space:]]*\\).*/\\1/")
-    SCAN_ARGS+=(--root "$ROOT_VAL")
-fi
-echo "$ARGUMENTS" | grep -q -- '--incremental' && SCAN_ARGS+=(--incremental)
+eval "SCAN_ARGS=( $(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS") )"  # timeout: 5000
 ```
 
 **Unsupported flag check** — after supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # timeout: 360000
-"$SCAN_BIN" "${SCAN_ARGS[@]}"
+timeout 360 "$SCAN_BIN" "${SCAN_ARGS[@]}"
 ```
 
 Scanner writes to `<root>/.cache/scan/<project>.json` and prints summary line:

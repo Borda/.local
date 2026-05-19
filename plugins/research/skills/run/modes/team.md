@@ -80,12 +80,12 @@
    Call TaskUpdate(in_progress) when starting; TaskUpdate(completed) when done.
    ```
 
-**Health monitoring** (CLAUDE.md §8): after spawning all agents in step 4, create checkpoint:
+**Health monitoring** (CLAUDE.md §8): after spawning all agents in step 4, create checkpoint via shared helper:
 
 ```bash
-LAUNCH_AT=$(date +%s)
-CHECKPOINT="/tmp/optimize-check-$LAUNCH_AT"
-touch "$CHECKPOINT"
+_HM=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "optimize-team" 2>/dev/null)  # timeout: 5000
+LAUNCH_AT=$(echo "$_HM" | grep '^LAUNCH_AT=' | cut -d= -f2)
+CHECKPOINT=$(echo "$_HM" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
 <!-- Note: single checkpoint covers all axes — a stalled individual agent is masked by peers still writing files.

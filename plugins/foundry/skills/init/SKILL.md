@@ -3,7 +3,7 @@ name: init
 description: "Post-install setup for foundry plugin. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
-model: sonnet
+model: haiku
 argument-hint: "[--approve]"
 ---
 
@@ -114,13 +114,16 @@ On **(a)**: use jq to strip `hooks` key, write back with Write tool, continue. O
 
 ## Step 4: Merge statusLine
 
-Check if statusLine already points to statusline.js:
+Check if statusLine already points to the **current** plugin's statusline.js (filename match alone is insufficient — a stale entry from an older plugin version survives upgrades and silently runs the previous hook). Verify both that the command contains `statusline.js` AND that the `$PLUGIN_ROOT` path (with its version segment) appears in the command string:
 
 ```bash
-jq -e '(.statusLine.command // "") | contains("statusline.js")' ~/.claude/settings.json >/dev/null 2>&1  # timeout: 5000
+jq --arg root "$PLUGIN_ROOT" -e '
+    (.statusLine.command // "") as $cmd
+    | ($cmd | contains("statusline.js")) and ($cmd | contains($root))
+' ~/.claude/settings.json >/dev/null 2>&1  # timeout: 5000
 ```
 
-If already set: report "statusLine already set — skipping." Otherwise:
+If already set to the current `$PLUGIN_ROOT`: report "statusLine already set to current plugin version — skipping." If a stale entry exists (statusline.js present but `$PLUGIN_ROOT` does not match), the check returns non-zero and the merge below overwrites with the current path. Otherwise:
 
 Writes `statusLine` key to `~/.claude/settings.json`:
 
@@ -215,94 +218,19 @@ mkdir -p ~/.claude/rules  # timeout: 5000
 **Phase 1 — Remove obsolete foundry-managed symlinks** (file/dir removed from current plugin version, or dangling target):
 
 ```bash
-# timeout: 15000
-for dest in "$HOME/.claude/rules/"*.md; do
-    [ -L "$dest" ] || continue
-    target=$(readlink "$dest")
-    echo "$target" | grep -q "borda-ai-rig/foundry/" || continue  # not foundry-managed — skip
-    echo "$target" | grep -q "$PLUGIN_ROOT" && continue           # already current — skip
-    base=$(basename "$dest")
-    if [ ! -f "$PLUGIN_ROOT/rules/$base" ]; then
-        rm "$dest"
-        printf "  removed obsolete: %s\n" "$base"
-    fi
-done
-if [ -L "$HOME/.claude/TEAM_PROTOCOL.md" ]; then
-    target=$(readlink "$HOME/.claude/TEAM_PROTOCOL.md")
-    if echo "$target" | grep -q "borda-ai-rig/foundry/" \
-    && ! echo "$target" | grep -q "$PLUGIN_ROOT" \
-    && [ ! -f "$PLUGIN_ROOT/TEAM_PROTOCOL.md" ]; then
-        unlink "$HOME/.claude/TEAM_PROTOCOL.md"
-        printf "  removed obsolete: TEAM_PROTOCOL.md\n"
-    fi
-fi
-# Skills — remove symlinks for dirs no longer in current plugin version
-for dest in "$HOME/.claude/skills/"*/; do
-    skill_link="${dest%/}"
-    [ -L "$skill_link" ] || continue
-    target=$(readlink "$skill_link")
-    echo "$target" | grep -q "borda-ai-rig/foundry/" || continue  # not foundry-managed — skip
-    echo "$target" | grep -q "$PLUGIN_ROOT" && continue           # already current — skip
-    skill=$(basename "$skill_link")
-    if [ ! -d "$PLUGIN_ROOT/skills/$skill" ]; then
-        unlink "$skill_link"
-        printf "  removed obsolete skill: %s\n" "$skill"
-    fi
-done
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/symlink_with_guard.py" cleanup --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
 ```
+
+The script iterates rules (`*.md`), `TEAM_PROTOCOL.md`, and skill dirs; removes any foundry-managed symlink (target contains `borda-ai-rig/foundry/`) that is both stale (target does not contain `$PLUGIN_ROOT`) and whose source no longer exists in the current plugin tree. Each removal prints `  removed obsolete: <name>` / `  removed obsolete skill: <name>`.
 
 **Phase 2 — Conflict scan** — identify entries needing user confirmation. Stale foundry symlinks (old version → current) are auto-replaced in Phase 4 without prompt:
 
 ```bash
-LINK_CONFLICTS=()
-# timeout: 30000
-for src in "$PLUGIN_ROOT/rules/"*.md; do
-    dest="$HOME/.claude/rules/$(basename "$src")"
-    if [ -L "$dest" ]; then
-        target=$(readlink "$dest")
-        if echo "$target" | grep -q "$PLUGIN_ROOT"; then
-            : # current — skip
-        elif echo "$target" | grep -q "borda-ai-rig/foundry/"; then
-            : # stale foundry version — auto-replace in Phase 4 (no prompt)
-        else
-            LINK_CONFLICTS+=("rules/$(basename "$src") → $target")
-        fi
-    elif [ -f "$dest" ]; then
-        LINK_CONFLICTS+=("rules/$(basename "$src")  (real file)")
-    fi
-done
-src="$PLUGIN_ROOT/TEAM_PROTOCOL.md"; dest="$HOME/.claude/TEAM_PROTOCOL.md"
-if [ -L "$dest" ]; then
-    target=$(readlink "$dest")
-    if echo "$target" | grep -q "$PLUGIN_ROOT"; then
-        : # current — skip
-    elif echo "$target" | grep -q "borda-ai-rig/foundry/"; then
-        : # stale foundry version — auto-replace in Phase 4 (no prompt)
-    else
-        LINK_CONFLICTS+=("TEAM_PROTOCOL.md → $target")
-    fi
-elif [ -f "$dest" ]; then
-    LINK_CONFLICTS+=("TEAM_PROTOCOL.md  (real file)")
-fi
-# Skills conflict scan
 mkdir -p "$HOME/.claude/skills"  # timeout: 5000
-for src_dir in "$PLUGIN_ROOT/skills/"*/; do
-    skill=$(basename "${src_dir%/}")
-    dest="$HOME/.claude/skills/$skill"
-    if [ -L "$dest" ]; then
-        target=$(readlink "$dest")
-        if echo "$target" | grep -q "$PLUGIN_ROOT"; then
-            : # current — skip
-        elif echo "$target" | grep -q "borda-ai-rig/foundry/"; then
-            : # stale foundry version — auto-replace in Phase 4 (no prompt)
-        else
-            LINK_CONFLICTS+=("skills/$skill → $target")
-        fi
-    elif [ -e "$dest" ]; then
-        LINK_CONFLICTS+=("skills/$skill  (real entry)")
-    fi
-done
+mapfile -t LINK_CONFLICTS < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
 ```
+
+The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
 
 **Phase 3 — Handle remaining conflicts** (real files or symlinks to non-foundry paths):
 
@@ -325,22 +253,50 @@ Options:
 - c) Review one by one
 
 On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: loop with `AskUserQuestion` — "Replace `<name>`? (y) Yes / (n) Skip". Append approved names to `APPROVED_CONFLICT_ENTRIES` array.
+On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. Items not in `LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
-**Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard: if `SKIP_CONFLICTS_MODE=true`, skip real files (`[ -f "$dest" ] && [ ! -L "$dest" ]`) — those were entries user declined:
+**Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
+
+- `SKIP_CONFLICTS_MODE=true` (option b): skip every entry that is a real file or non-foundry symlink — those are conflicts the user declined.
+- `PER_ITEM_REVIEW_MODE=true` (option c): for entries that appear in `$LINK_CONFLICTS`, only replace when the entry's identifier is in `APPROVED_CONFLICT_ENTRIES`; otherwise skip. Entries not in `$LINK_CONFLICTS` (current / stale foundry / absent) always replace.
+- Neither flag (option a or no conflicts): replace unconditionally.
 
 ```bash
+# Helper: is identifier in APPROVED_CONFLICT_ENTRIES?
+_approved() {
+    local needle="$1"
+    for e in "${APPROVED_CONFLICT_ENTRIES[@]:-}"; do
+        [ "$e" = "$needle" ] && return 0
+    done
+    return 1
+}
+# Helper: is this dest listed as a conflict in Phase 2?
+_in_conflicts() {
+    local needle="$1"
+    for c in "${LINK_CONFLICTS[@]:-}"; do
+        # LINK_CONFLICTS entries start with "rules/<base>", "TEAM_PROTOCOL.md", or "skills/<name>"
+        case "$c" in "$needle"*) return 0 ;; esac
+    done
+    return 1
+}
+
 for src in "$PLUGIN_ROOT/rules/"*.md; do
     dest="$HOME/.claude/rules/$(basename "$src")"
-    if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
-        echo "  skipped (user choice b): $(basename "$src")"; continue
+    base="$(basename "$src")"
+    if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
+        echo "  skipped (user choice b): $base"; continue
+    fi
+    if [ "${PER_ITEM_REVIEW_MODE:-false}" = "true" ] && _in_conflicts "rules/$base" && ! _approved "rules/$base"; then
+        echo "  skipped (user choice c — not approved): $base"; continue
     fi
     unlink "$dest" 2>/dev/null || true; ln -sf "$src" "$dest"  # timeout: 5000
-    echo "  linked: $(basename "$src")"
+    echo "  linked: $base"
 done  # timeout: 10000
 dest="$HOME/.claude/TEAM_PROTOCOL.md"
-if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
+if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
     echo "  skipped (user choice b): TEAM_PROTOCOL.md"
+elif [ "${PER_ITEM_REVIEW_MODE:-false}" = "true" ] && _in_conflicts "TEAM_PROTOCOL.md" && ! _approved "TEAM_PROTOCOL.md"; then
+    echo "  skipped (user choice c — not approved): TEAM_PROTOCOL.md"
 else
     unlink "$dest" 2>/dev/null || true; ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" "$dest"  # timeout: 5000
     echo "  linked: TEAM_PROTOCOL.md"
@@ -351,6 +307,9 @@ for src_dir in "$PLUGIN_ROOT/skills/"*/; do
     dest="$HOME/.claude/skills/$skill"
     if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
         echo "  skipped (user choice b): skill:$skill"; continue
+    fi
+    if [ "${PER_ITEM_REVIEW_MODE:-false}" = "true" ] && _in_conflicts "skills/$skill" && ! _approved "skill:$skill"; then
+        echo "  skipped (user choice c — not approved): skill:$skill"; continue
     fi
     unlink "$dest" 2>/dev/null || true; ln -sf "${src_dir%/}" "$dest"  # timeout: 5000
     echo "  linked skill: $skill"

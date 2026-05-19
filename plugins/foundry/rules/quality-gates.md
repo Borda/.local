@@ -10,7 +10,7 @@ Every analysis agent **must** end with:
 
 ```markdown
 ## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
 **Gaps**:
 - [specific limitation]
                           ← blank line required; Refinements is a peer field, not a sub-bullet
@@ -22,7 +22,7 @@ Every analysis agent **must** end with:
 
 - Omit **Refinements** if 0 passes (don't write "0 passes") — omit individual **Gaps** bullets if none, but keep **Gaps** header
 - **Score**, **Gaps**, **Refinements** = peer top-level fields — never nest Refinements under Gaps; blank line before **Refinements** required
-- Score < 0.8 → ⚠ on score line AND on the line immediately after (standalone line, not a Gaps bullet): "orchestrator may re-run with the specific gap addressed"
+- Score < 0.85 → ⚠ on score line AND on the line immediately after (standalone line, not a Gaps bullet): "orchestrator may re-run with the specific gap addressed"
 - Gaps = primary signal — surfaces implicit limitations for re-run decisions
 
 ## Internal Quality Loop (analysis tasks only)
@@ -36,7 +36,7 @@ Before returning, self-review:
 
 ## Pre-Handover Check
 
-Confidence < 0.9 and `codex` plugin available → spawn `Agent(subagent_type="codex:codex-rescue")` naming low-confidence area for adversarial review — incorporate before handover. Codex unavailable → state gap and score explicitly so user can decide to re-run.
+Confidence < 0.9 → push back on the analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → also spawn `Agent(subagent_type="codex:codex-rescue")` naming the low-confidence area for adversarial review — incorporate findings before handover. After re-examination (and codex review if available): if confidence still < 0.9 → state the specific gap explicitly so user can decide to re-run.
 
 ## Link Verification
 

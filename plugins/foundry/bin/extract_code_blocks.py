@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """extract_code_blocks.py — extract fenced code blocks from Markdown files.
 
 Walks a directory tree, extracts every fenced code block (``` ... ```) and

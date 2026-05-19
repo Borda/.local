@@ -1,5 +1,7 @@
+<!-- file: audit-checks.md — consumers: oss skills/release/modes/audit.md (Phase B), oss skills/release SKILL.md (Write release draft phase pre-flight) -->
+
 ```bash
-TARGET=$(echo "$ARGUMENTS" | awk '{print $2}') # optional target version
+TARGET=$(echo "$ARGUMENTS" | awk '{print $2}')  # optional target version
 # Accept $RANGE from caller if already set (branch-aware detection in skill's Shared setup)
 # Fallback: simple git describe with stable-tag-only filter — consistent with skill's detection logic
 if [ -z "$RANGE" ]; then
@@ -8,84 +10,29 @@ if [ -z "$RANGE" ]; then
 fi
 ```
 
-### Pre-flight: gh authentication
+### Data gathering (Checks 1, 2, 3, 4, 5, 6 + gh-auth preflight)
+
+Extracted to `bin/run_audit_checks.sh` — emits sectioned output (`--- check: <name> ---` banners) covering: repository state (`git status`, unreleased commits), CI health (`gh run list`), open issues + PRs, files changed in range, version-declaration grep, release-blocking TODO/FIXME/HACK grep, pip-audit CVE scan. Caller captures into one buffer for parsing:
 
 ```bash
-# Fail fast with a clear message if gh is not authenticated
-gh auth status 2>&1 || {
-    echo "gh not authenticated — run 'gh auth login' first"
-    exit 1
-}
+AUDIT_OUT=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/run_audit_checks.sh" \
+    --repo "$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" \
+    ${TARGET:+--tag "$TARGET"} \
+    ${RANGE:+--range "$RANGE"})  # timeout: 60000
+echo "$AUDIT_OUT"
 ```
 
-### Check 1: Repository state
+The script exits `2` when `gh` is not authenticated — surface this as a `BLOCKED` verdict immediately and skip the interpretive steps below.
 
-```bash
-# Uncommitted changes
-git status --short
-
-# Unreleased commits
-git log $RANGE --oneline --no-merges
-```
-
-### Check 2: CI health
-
-```bash
-gh run list --branch "$(git rev-parse --abbrev-ref HEAD)" --limit 5 \
-    --json status,conclusion,name 2>/dev/null || true
-```
-
-### Check 3: Open issues and PRs
-
-```bash
-# Issues with blocker or bug labels (high-severity candidates)
-gh issue list --state open --limit 100 \
-    --json number,title,labels 2>/dev/null || echo "[]"
-
-# Open PRs targeting default branch — anything that should land before the release?
-TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | { read -r _ _ val; echo "${val:-main}"; })
-gh pr list --state open --base "${TRUNK:-main}" --limit 20 \
-    --json number,title,draft,reviewDecision 2>/dev/null || echo "[]"
-```
-
-### Check 4: Documentation alignment
-
-```bash
-# What files changed since last tag?
-git diff $RANGE --name-only
-
-# Did README or any docs change? If not, flag for manual review.
-git diff $RANGE --name-only | grep -iE 'readme|\.md$|docs/' || echo "no docs changed"
-```
+### Check 4 interpretation (after data is in `$AUDIT_OUT`)
 
 Read `README.md`: install/usage match current API, version refs not stale, deprecated APIs have notes. `docs/` exists → read all changed public API sections.
 
 Check `CHANGELOG.md`: `[Unreleased]` or `$TARGET` section covers `$RANGE` commits?
 
-### Check 5: Version consistency
+### Check 5 interpretation
 
-```bash
-grep -rn '__version__\|^version\s*=' --include="*.py" --include="*.toml" \
-    --include="*.cfg" --include="*.json" . 2>/dev/null | grep -v ".git" | head -15
-```
-
-All declarations must match. `$TARGET` given → verify or flag needs bump.
-
-### Check 6: Critical code signals
-
-```bash
-# Release-blocking TODOs outside test files
-grep -rn "TODO.*release\|FIXME\|HACK\|XXX" --include="*.py" \
-    --exclude-dir=".git" --exclude-dir="tests" . 2>/dev/null | head -10
-
-# Dependency CVE scan
-if command -v pip-audit &>/dev/null; then
-    pip-audit --format=json 2>/dev/null |
-    python -c "import sys,json; d=json.load(sys.stdin); print(f'{len(d[\"dependencies\"])} deps, {sum(len(x[\"vulns\"]) for x in d[\"dependencies\"])} vulns')"
-else
-    echo "pip-audit not installed — CVE scan skipped; install with: pip install pip-audit"
-fi
-```
+All version declarations from the `version-consistency` section must match. `$TARGET` given → verify or flag needs bump.
 
 ### Output
 

@@ -143,41 +143,17 @@ Run this first — cold-start fallback (sets `$_OSS_SHARED`):
 
 ```bash
 _OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+# loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 ```
 
+Extracted to `bin/release_setup.sh` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, and the branch-aware `LAST_TAG` / `CHERRY_PICK_SUBJECTS` / `SOURCE_TAG_REF`. Emits `KEY=value` lines for `eval`; stable-branch banner and "no stable tag" warnings go to stderr.
+
 ```bash
-# Resolve skill directory — used by all modes for templates and guidelines
-SKILL_DIR="$(find ~/.claude/plugins -path "*/oss/skills/release" -type d 2>/dev/null | head -1)"  # timeout: 5000
-[ -z "$SKILL_DIR" ] && SKILL_DIR="plugins/oss/skills/release"
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo ".")  # timeout: 3000
-# BRANCH and DATE — computed once here; all phases use these variables, never re-compute
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
-DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
-# Branch-aware range detection — sets LAST_TAG for all modes
-# rc/dev/alpha/beta tags excluded — base must be last stable release
-BRANCH_TAG=$(git describe --tags --abbrev=0 --first-parent --exclude='*rc*' --exclude='*dev*' --exclude='*alpha*' --exclude='*beta*' 2>/dev/null)
-if [ -n "$BRANCH_TAG" ]; then
-    LAST_TAG="$BRANCH_TAG"
-    CHERRY_PICK_SUBJECTS=""
-    SOURCE_TAG_REF=""
-else
-    SOURCE_TAG=$(git describe --tags --abbrev=0 --exclude='*rc*' --exclude='*dev*' --exclude='*alpha*' --exclude='*beta*' 2>/dev/null)
-    if [ -z "$SOURCE_TAG" ]; then
-        SOURCE_TAG=$(git rev-list --max-parents=0 HEAD)
-        # First release: invoke AskUserQuestion — full history may be large
-        # AskUserQuestion: "No stable tags found. Range base is initial commit — this covers ALL commits in repo history. Proceed?" (a) Proceed · (b) Specify manual range instead
-        echo "ℹ No stable tags found — using initial commit as range base (first release; range covers full history)"
-    fi
-    SOURCE_COMMIT=$(git rev-list -n1 "refs/tags/$SOURCE_TAG" 2>/dev/null || echo "$SOURCE_TAG")
-    COMMON_COMMIT=$(git merge-base HEAD "$SOURCE_COMMIT" 2>/dev/null)
-    [ -z "$COMMON_COMMIT" ] && { echo "Warning: no common ancestor found — range may span full history"; COMMON_COMMIT=$(git rev-list --max-parents=0 HEAD 2>/dev/null || echo ""); }
-    LAST_TAG=$(git describe --tags --abbrev=0 --exclude='*rc*' --exclude='*dev*' --exclude='*alpha*' --exclude='*beta*' "$COMMON_COMMIT" 2>/dev/null || echo "$COMMON_COMMIT")
-    CHERRY_PICK_SUBJECTS=$(git log "$LAST_TAG..$SOURCE_TAG" --no-merges --format="%s" 2>/dev/null)
-    SOURCE_TAG_REF="$SOURCE_TAG"
-    echo "ℹ Stable-branch mode: base=$LAST_TAG  source=$SOURCE_TAG"
-fi
+eval "$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/release_setup.sh")"  # timeout: 10000
 ```
+
+When no stable tags exist, `LAST_TAG` resolves to the initial commit — surface this to the user via `AskUserQuestion` ("No stable tags found. Range base is initial commit — proceed?") before any phase that consumes the range.
 
 ## Gather changes
 

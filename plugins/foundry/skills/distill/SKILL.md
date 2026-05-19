@@ -1,10 +1,11 @@
 ---
 name: distill
-description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, or consolidating lessons and feedback into rules and agent/skill updates."
-argument-hint: '[review | prune | lessons | "external <url-or-path>" | "<recurring task description>"]'
+description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates."
+argument-hint: '[review | prune | lessons | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
-when_to_use: "Run periodically (e.g., monthly) or after a burst of corrections to extract patterns and distill improvements — new agent/skill suggestions, roster gaps, memory pruning, lesson consolidation. NOT for single-file agent/skill edits (use /foundry:manage) or config quality auditing (use /foundry:audit)."
+effort: low
+when_to_use: "Run periodically (e.g., monthly) or after a burst of corrections to extract patterns and distill improvements — new agent/skill suggestions, roster gaps, memory pruning, lesson consolidation. Run `executables` after /audit --efficiency finds HIGH/MEDIUM bin/ extraction candidates. NOT for single-file agent/skill edits (use /foundry:manage) or config quality auditing (use /foundry:audit)."
 ---
 
 <objective>
@@ -23,6 +24,7 @@ NOT for single-file edits or quality checks — see `when_to_use`.
   - `prune` — evaluate project memory file for stale, redundant, or verbose entries and apply trimmed version.
   - `lessons` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes.
   - `external <source>` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory.
+  - `executables [<run-dir-or-report-path>]` — perform bin/ extraction from `/audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Gates on verdict (HIGH/MEDIUM), spawns `foundry:sw-engineer` per cluster to create bin/ scripts and replace inline blocks. Skip to **Mode: Executables Extraction** below.
   - Description of recurring task — use description as context when generating suggestions (e.g. "I keep doing X manually").
 
 </inputs>
@@ -31,6 +33,7 @@ NOT for single-file edits or quality checks — see `when_to_use`.
 
 **Task hygiene**:
 ```bash
+# audit-skip: resilience-replication
 _FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
@@ -46,6 +49,8 @@ Use Glob tool to enumerate agents and skills across all sources — project-loca
 For each agent/skill found, extract: name, description, tools, purpose. Tag each entry with plugin namespace (e.g. `foundry:sw-engineer`, `oss:resolve`) — used in Step 3 gap analysis to prevent recommending duplicates of plugin-namespaced agents/skills.
 
 ## Step 2: Analyze work patterns
+
+**If `$ARGUMENTS` is `executables`**: skip Steps 2–5 entirely and go to "Mode: Executables Extraction" below.
 
 **If `$ARGUMENTS` is `prune`**: skip Steps 2–5 entirely and go to "Mode: Memory Pruning" below.
 
@@ -162,9 +167,16 @@ Locate, evaluate, and trim project memory file.
 # timeout: 3000
 PROJECT="$(git rev-parse --show-toplevel)"
 MEMORY_FILE="$HOME/.claude/projects/$(echo "$PROJECT" | sed 's|[/.]|-|g')/memory/MEMORY.md"
-[ -f "$MEMORY_FILE" ] || { echo "MEMORY_FILE not found at $MEMORY_FILE — skipping memory analysis"; exit 0; }
-echo "Memory file located."
+if [ -f "$MEMORY_FILE" ]; then
+    echo "Memory file located: $MEMORY_FILE"
+    MEMORY_FILE_FOUND=true
+else
+    echo "MEMORY_FILE not found at $MEMORY_FILE — skipping prune mode"
+    MEMORY_FILE_FOUND=false
+fi
 ```
+
+> **Short-circuit**: `exit 0` inside this bash block would terminate only the bash subprocess, **not** the surrounding skill — so without the explicit gate below the skill would continue into the prune-evaluation steps with no memory file to operate on. After the block above runs, **stop the prune mode entirely if `MEMORY_FILE_FOUND=false`**: skip every remaining prune step (read, evaluate, P1–P3, summary) and end the response with the Confidence block. The remaining prune-mode prose below assumes `MEMORY_FILE_FOUND=true`.
 
 Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md need not live in memory.
 
@@ -372,10 +384,12 @@ Print diff. If anything unexpected appears, revert individual files before proce
 
 **Quality gate**: After edits in L4, proceed to L5 (`foundry:curator` review) before considering the lesson applied. For agent or skill file edits specifically (not rule files), treat L5 curator findings as advisory — address any structural issues found before finalizing.
 
-**Step L5: curator review** — after applying changes, dispatch curator to audit created and modified config files:
+**Step L5: curator review** — **conditional on the L4 gate choice**. Run L5 only when the user's choice in the L4 `AskUserQuestion` was (a) `Apply non-conflicting` or (b) `Review first` followed by an approval that resulted in at least one write. If the user picked (c) `Skip` (no files were modified), **skip L5 entirely** and proceed straight to the Confidence block — there is nothing to review.
+
+After applying changes, dispatch curator to audit created and modified config files. Substitute `$RUN_DIR` with its actual computed path from the `RUN_DIR=` block above:
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to $RUN_DIR/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"$RUN_DIR/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to ${RUN_DIR}/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"${RUN_DIR}/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
 
 Surface curator findings as advisory block in terminal output. Do not block on curator findings — quality recommendations, not release gates.
@@ -481,17 +495,34 @@ Present source report + adoption table + install-as-is recommendation (when appl
 
 **E15: Verify and report**
 
-Print changed files. Run `git diff HEAD -- <files>` and show output. Surface unresolved Group B items as open questions for future distill runs. End with `## Confidence` block per CLAUDE.md output standards.
+Print changed files. Run `git diff HEAD -- <files>` (`# timeout: 5000`) and show output. Surface unresolved Group B items as open questions for future distill runs. End with `## Confidence` block per CLAUDE.md output standards.
 
-**E16: curator quality review**
+**E16: quality review — by file type**
 
-Spawn `foundry:curator` to review applied External Distillation changes for config quality:
+Split the changed file list from E14 into two groups; dispatch each to the right reviewer (curator's NOT-for excludes hook/`.js` files):
+
+- **`.md` files** (agents, skills, rules, READMEs, modes/templates): spawn `foundry:curator`
+- **`.js` files** (hooks, helpers) and other code files (`.py`, `.ts`, `.sh`): spawn `foundry:sw-engineer` with the hook-authoring specialization
+
+Substitute `$EXT_RUN_DIR` with its actual computed path from the `EXT_RUN_DIR=` block above. Issue both spawns in a single response when both groups are non-empty (parallel review):
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to $EXT_RUN_DIR/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"$EXT_RUN_DIR/curator-external-review.md\",\"issues\":N,\"confidence\":0.N}")
+# .md files only
+Agent(subagent_type="foundry:curator", prompt="Review Claude config files modified by /distill external mode: <list .md files changed in E14>. Check: (1) structural integrity — XML tag balance, step numbering; (2) cross-ref validity — no broken agent/skill references; (3) content quality — no duplication of existing canonical content. Write your full findings to ${EXT_RUN_DIR}/curator-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"${EXT_RUN_DIR}/curator-external-review.md\",\"issues\":N,\"confidence\":0.N}")
+
+# .js / code files only — curator NOT-for excludes hooks; use sw-engineer
+Agent(subagent_type="foundry:sw-engineer", prompt="Apply the <hook_authoring> specialization from your agent definition. Review code files modified by /distill external mode: <list .js/.py/.ts/.sh files changed in E14>. Check: (1) file-header block present (PURPOSE, HOW IT WORKS, EXIT CODES); (2) exit-code semantics correct; (3) stdin pattern uses event-based accumulation; (4) subprocess calls use execFileSync/spawnSync with args array — no shell-string injection; (5) no unhandled exceptions escape. Write your full findings to ${EXT_RUN_DIR}/sw-engineer-external-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"${EXT_RUN_DIR}/sw-engineer-external-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
 
-If critical findings returned: surface to user before marking complete. Non-critical findings: advisory only.
+If critical findings returned by either reviewer: surface to user before marking complete. Non-critical findings: advisory only.
+
+## Mode: Executables Extraction — only when `$ARGUMENTS == "executables"`
+
+```bash
+EXEC_MD="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/executables.md"
+```
+
+Read and execute `$EXEC_MD`.
 
 </workflow>
 
@@ -523,5 +554,6 @@ If critical findings returned: surface to user before marking complete. Non-crit
   - Suggestion accepted for new agent/skill → `/foundry:manage create` to scaffold and register it
   - Suggestion to enhance existing → edit agent/skill directly, then `/foundry:init`
   - `lessons` proposals applied → `/foundry:init` to propagate; `/audit rules` to verify new rule files structurally sound
+  - `executables` extraction complete → `/foundry:init` to propagate bin/ scripts; run `/audit --efficiency` to confirm `clusters == 0`
 
 </notes>

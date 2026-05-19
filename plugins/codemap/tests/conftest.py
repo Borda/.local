@@ -10,6 +10,11 @@ from pathlib import Path
 import pytest
 
 BIN = Path(__file__).parent.parent / "bin"
+
+# Add bin/ to sys.path so new Python scripts can be imported directly in tests.
+_BIN_DIR = Path(__file__).resolve().parent.parent / "bin"
+if str(_BIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_BIN_DIR))
 SCAN_INDEX = BIN / "scan-index"
 SCAN_QUERY = BIN / "scan-query"
 

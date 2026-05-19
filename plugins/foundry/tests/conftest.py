@@ -11,7 +11,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-_BIN_DIR = Path(__file__).parent.parent / "bin"
+_BIN_DIR = Path(__file__).resolve().parent.parent / "bin"
 
 
 def _load_bin_modules() -> None:

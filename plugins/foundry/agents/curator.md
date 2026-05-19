@@ -88,9 +88,9 @@ When **editing or creating** any agent/skill file that contains or will contain 
 2. Apply extraction gate to any inline code block being added or already present:
    - G1 (Size) > 100 tokens · G2 no LLM-decision branch · G3 has independent computational identity
    - Score positives: testable +2 · reuse +2 · token drain +2 · lintable +1 · run-frequency +1 · standalone-debuggable +1
-3. Flag inline blocks that score EXTRACT (≥4) as **P2** — must be extracted to `bin/` script
-4. Flag inline blocks that score RECOMMENDED (2–3) as **P3** — prefer `bin/` script
-5. When adding a new code block during an edit: apply gate first; write `bin/` script instead of inline if verdict is RECOMMENDED or EXTRACT
+3. Flag inline blocks that score HIGH (≥4) as **P2** — must be extracted to `bin/` script
+4. Flag inline blocks that score MEDIUM (2–3) as **P3** — prefer `bin/` script
+5. When adding a new code block during an edit: apply gate first; write `bin/` script instead of inline if verdict is MEDIUM or HIGH
 
 ## Frontmatter Schema Freshness
 
@@ -194,6 +194,7 @@ Confidence scoring follows `quality-gates.md` (canonical). Curator-specific cali
 
 </output_format>
 
+<!-- Fix-mode only: section applies when foundry:curator is invoked to apply fixes from an audit report. Skip when running read-only audit. -->
 <improvement_workflow>
 
 ## How to Apply Fixes
@@ -222,7 +223,7 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
 1. Glob all agent files: `.claude/agents/*.md` and skill files: `.claude/skills/**/*.md` — **post-install only**: these paths only exist after `/foundry:init`; in plugin-dev context (working directly in `plugins/*/`) derive plugin name from argument or task context: if a specific plugin is named, glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; if no specific plugin is named, glob all plugins: `plugins/*/agents/*.md` and `plugins/*/skills/**/*.md`
 2. Read each file and evaluate: structure, cross-refs, line count, duplication — when evaluating handoff envelope compliance specifically, read `.claude/skills/_shared/file-handoff-protocol.md` first to verify required fields from live source rather than memory
 3. For cross-refs: `Grep("See .* agent", ".claude/agents/")` — validate each target exists on disk
-4. For URLs: `WebFetch` each URL found in agent/skill files — confirm resolves and content matches description; flag any 404 or mismatch as P4 (outdated content). **Cache WebFetch results** in `.cache/gh/curator-url-<slug>.md` (TTL 24h) — reuse cached copy if < 24h old. Pre-fetch setup: `mkdir -p .cache/gh # timeout: 5000`. Per-URL cache pattern:
+4. For URLs: `WebFetch` each URL found in agent/skill files — confirm resolves and content matches description; flag any 404 or mismatch as P4 (outdated content). **In-session URL cache (mandatory for batch/audit invocations)**: maintain an in-memory set of URLs already fetched in this invocation — never re-fetch the same URL twice in one session, even across different files; batch/audit runs spawning multiple curator subagents over the same agent corpus must each honour this rule (one URL → one WebFetch per invocation). **Persistent disk cache** in `.cache/gh/curator-url-<slug>.md` (TTL 24h) — reuse cached copy if < 24h old. Pre-fetch setup: `mkdir -p .cache/gh # timeout: 5000`. Per-URL cache pattern:
    ```bash
    CACHE_DIR=".cache/gh"
    CACHE_KEY=$(echo "$URL" | tr -cd 'a-zA-Z0-9' | cut -c1-32)

@@ -1,3 +1,4 @@
+<!-- Loaded by research:data-steward (sonnet + medium) -->
 # Reference document — NOT an agent definition. Used by research:data-steward as contextual material.
 # Storage and Loading Patterns — data-steward reference
 

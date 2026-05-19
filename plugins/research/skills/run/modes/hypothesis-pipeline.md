@@ -50,3 +50,12 @@ Poll every 5 min: `find <RUN_DIR> -newer "$CHECKPOINT" -type f | wc -l` (`timeou
 3. **Resume skip** — if `<RUN_DIR>/checkpoint.json` exists (resuming crashed run), read it. Skip any hypothesis whose 0-indexed position matches `hypothesis_id` in checkpoint.
 
 4. Store active queue in memory as `RESEARCH_QUEUE`.
+
+5. **Codex availability re-check** — if any downstream review skill is dispatched after this pipeline (Step 6+), re-verify codex is reachable before invoking. Silent stalls happen when codex is absent at dispatch time despite being present at run start.
+
+   ```bash
+   CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
+   [ -z "$CODEX_AVAILABLE" ] && { echo "⚠ codex unavailable — skipping codex review step"; }
+   ```
+
+   On empty `CODEX_AVAILABLE`: skip review dispatch, continue with claude-only pipeline. Never block — fall back to single-source review.

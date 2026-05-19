@@ -312,6 +312,7 @@ Resolve runs in three phases:
 
 - More than 15 required items → pauses and asks you to confirm before continuing
 - More than 20 conflicted files → aborts and reports; you review manually
+- Git push requires explicit confirmation via before executing
 - Core invariant: uses `git merge`, never `git rebase` — preserves history
 
 Every resolve cycle closes with parallel `foundry:linting-expert` + `foundry:qa-specialist` passes before the final report.

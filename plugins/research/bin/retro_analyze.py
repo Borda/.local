@@ -1,0 +1,241 @@
+#!/usr/bin/env python
+"""retro_analyze.py — Wilcoxon signed-rank significance test for retro analysis.
+
+Reads an experiments JSONL file produced by /research:run, extracts metric values
+for kept iterations, and compares them against a baseline using the Wilcoxon
+signed-rank test from scipy.stats.
+
+Usage:
+    python "${CLAUDE_PLUGIN_ROOT}/bin/retro_analyze.py" \\
+        --jsonl <path>.jsonl \\
+        --baseline <label> \\
+        [--alpha 0.05] \\
+        [--direction higher|lower] \\
+        [--timeout 30]
+
+Inputs:
+    JSONL file with one record per iteration. Each record must contain:
+        - ``status``: ``"baseline"`` for iteration 0, ``"kept"`` / ``"reverted"`` / etc.
+        - ``metric``: numeric metric value for the iteration.
+
+Output (stdout):
+    Single line of JSON:
+        {"significant": bool, "p_value": float, "statistic": float, "n": int}
+
+    Additional keys on partial / failure paths:
+        - ``"error"`` (str) on input error (exit 2).
+        - ``"reason"`` (str) when N < 6 or scipy unavailable.
+
+Exit codes:
+    0   improvement is statistically significant at the given alpha.
+    1   not significant (or insufficient data / scipy unavailable).
+    2   input error (missing file, malformed JSON, no baseline record).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any, Final
+
+MIN_SAMPLES_FOR_TEST: Final[int] = 6
+
+
+def run_wilcoxon(
+    baseline_scores: list[float],
+    candidate_scores: list[float],
+    alpha: float = 0.05,
+    direction: str = "higher",
+) -> dict[str, Any]:
+    """Run a Wilcoxon signed-rank test comparing candidate scores to baseline.
+
+    Pairs each candidate score against the corresponding baseline score (same index).
+    Uses the one-sided alternative matching ``direction``:
+
+    - ``"higher"`` → ``alternative="greater"`` (improvement = candidate > baseline)
+    - ``"lower"`` → ``alternative="less"`` (improvement = candidate < baseline)
+
+    Args:
+        baseline_scores: Baseline metric values; must equal length of ``candidate_scores``.
+        candidate_scores: Candidate metric values (e.g. all kept iterations).
+        alpha: Significance threshold (typically 0.05).
+        direction: ``"higher"`` (higher-is-better) or ``"lower"`` (lower-is-better).
+
+    Returns:
+        Dict with keys ``significant`` (bool), ``p_value`` (float), ``statistic`` (float),
+        ``n`` (int). On insufficient data or missing scipy, returns
+        ``{"significant": False, "p_value": None, "statistic": None, "n": N, "reason": "<msg>"}``.
+
+    Raises:
+        ValueError: if ``direction`` is not ``"higher"`` or ``"lower"`` or the score
+            lengths differ.
+
+    Examples:
+        >>> # Insufficient data (< 6 paired samples) returns a reason rather than a p-value.
+        >>> out = run_wilcoxon([1.0, 1.0, 1.0], [2.0, 2.0, 2.0], alpha=0.05, direction="higher")
+        >>> out["significant"]
+        False
+        >>> out["n"]
+        3
+        >>> "reason" in out
+        True
+        >>> # Bad direction raises.
+        >>> run_wilcoxon([1.0], [2.0], direction="sideways")
+        Traceback (most recent call last):
+            ...
+        ValueError: direction must be 'higher' or 'lower', got: 'sideways'
+    """
+    if direction not in {"higher", "lower"}:
+        raise ValueError(f"direction must be 'higher' or 'lower', got: {direction!r}")
+    if len(baseline_scores) != len(candidate_scores):
+        raise ValueError(
+            f"baseline_scores ({len(baseline_scores)}) and candidate_scores "
+            f"({len(candidate_scores)}) must have the same length"
+        )
+
+    n = len(candidate_scores)
+    if n < MIN_SAMPLES_FOR_TEST:
+        return {
+            "significant": False,
+            "p_value": None,
+            "statistic": None,
+            "n": n,
+            "reason": f"insufficient data for significance testing (N={n}, minimum {MIN_SAMPLES_FOR_TEST} required)",
+        }
+
+    try:
+        from scipy.stats import wilcoxon
+    except ImportError:
+        return {
+            "significant": False,
+            "p_value": None,
+            "statistic": None,
+            "n": n,
+            "reason": "scipy not installed — run: pip install scipy",
+        }
+
+    alternative = "greater" if direction == "higher" else "less"
+    result = wilcoxon(candidate_scores, baseline_scores, alternative=alternative)
+    statistic = float(result.statistic)
+    p_value = float(result.pvalue)
+    return {
+        "significant": p_value < alpha,
+        "p_value": p_value,
+        "statistic": statistic,
+        "n": n,
+    }
+
+
+def _load_jsonl(path: Path) -> list[dict[str, Any]]:
+    """Read a JSONL file; return list of parsed records.
+
+    Tolerates a trailing truncated line by silently skipping it (matches retro
+    SKILL.md behaviour). Raises ``ValueError`` on the first non-final malformed line.
+    """
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as fh:
+        lines = fh.readlines()
+    for idx, raw in enumerate(lines):
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        try:
+            records.append(json.loads(stripped))
+        except json.JSONDecodeError as exc:
+            if idx == len(lines) - 1:
+                # Trailing truncated line — tolerate.
+                break
+            raise ValueError(f"malformed JSON at line {idx + 1}: {exc.msg}") from exc
+    return records
+
+
+def _extract_scores(records: list[dict[str, Any]], baseline_label: str) -> tuple[float, list[float]]:
+    """Return (baseline_metric, candidate_metrics) parsed from records.
+
+    Baseline record is the first entry with ``status == baseline_label`` (default
+    label per retro SKILL.md is ``"baseline"``). Candidate records are every entry
+    with ``status == "kept"``. Records lacking a numeric ``metric`` are skipped.
+    """
+    baseline_metric: float | None = None
+    candidates: list[float] = []
+    for rec in records:
+        status = rec.get("status")
+        metric = rec.get("metric")
+        if not isinstance(metric, int | float):
+            continue
+        if baseline_metric is None and status == baseline_label:
+            baseline_metric = float(metric)
+            continue
+        if status == "kept":
+            candidates.append(float(metric))
+    if baseline_metric is None:
+        raise ValueError(f"no baseline record found (looking for status == {baseline_label!r})")
+    return baseline_metric, candidates
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point. Returns process exit code."""
+    parser = argparse.ArgumentParser(
+        prog="retro_analyze",
+        description="Wilcoxon signed-rank significance test for /research:retro JSONL output.",
+    )
+    parser.add_argument(
+        "--jsonl",
+        required=True,
+        metavar="PATH",
+        help="Path to experiments.jsonl produced by /research:run.",
+    )
+    parser.add_argument(
+        "--baseline",
+        default="baseline",
+        metavar="LABEL",
+        help="Status label that marks the baseline record (default: 'baseline').",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.05,
+        help="Significance threshold (default: 0.05).",
+    )
+    parser.add_argument(
+        "--direction",
+        choices=("higher", "lower"),
+        default="higher",
+        help="Improvement direction for the metric (default: higher).",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=30,
+        help="Max wall-clock seconds (advisory; default: 30). Currently unused: the "
+        "test is pure-CPU and bounded by N — kept for API parity with bash callers.",
+    )
+    args = parser.parse_args(argv)
+
+    path = Path(args.jsonl)
+    if not path.is_file():
+        print(json.dumps({"error": f"jsonl not found: {args.jsonl}"}))
+        return 2
+
+    try:
+        records = _load_jsonl(path)
+        baseline_metric, candidate_scores = _extract_scores(records, args.baseline)
+    except ValueError as exc:
+        print(json.dumps({"error": str(exc)}))
+        return 2
+
+    baseline_repeated = [baseline_metric] * len(candidate_scores)
+    result = run_wilcoxon(
+        baseline_repeated,
+        candidate_scores,
+        alpha=args.alpha,
+        direction=args.direction,
+    )
+    print(json.dumps(result))
+    return 0 if result["significant"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

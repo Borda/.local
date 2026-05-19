@@ -76,9 +76,16 @@ if [ -z "$JUDGE_VERDICT_FILE" ]; then
   exit 1
 fi
 JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//;s/[[:space:]].*//')
+
+# Program-file cross-check: verdict alone is insufficient — confirm the referenced program.md still exists on disk.
+PROGRAM_FILE=$(grep -i '^[*]*Scope[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed -E 's/.*Scope[: *]+//;s/[[:space:]].*//')
+if [ -n "$PROGRAM_FILE" ] && [ ! -f "$PROGRAM_FILE" ]; then
+    printf "! F1 FAIL: program file %s not found\n" "$PROGRAM_FILE"
+    exit 1
+fi
 ```
 
-Verify `JUDGE_VERDICT == "APPROVED"` AND verdict file references same `program_file` (grep for program path). If not APPROVED or mismatch:
+Verify `JUDGE_VERDICT == "APPROVED"` AND verdict file references same `program_file` (grep for program path). The cross-check above also guarantees the program file referenced by the judge verdict still exists — fortify cannot ablate against a missing baseline. If not APPROVED or mismatch:
 
 ```text
 fortify: BLOCKED — no APPROVED judge verdict found for this program.
@@ -139,6 +146,8 @@ Return ONLY: {"status":"done","components":N,"file":"<FORTIFY_DIR>/ablation-cand
 **Health monitoring** (CLAUDE.md §8):
 
 ```bash
+# audit-skip: resilience-replication
+# Per-phase checkpoint required — F2 + F6 dispatch independent scientist agents that may both be in scope; separate variables prevent cross-phase masking.
 _HM_F2=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "fortify-f2" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT_F2=$(echo "$_HM_F2" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_F2=$(echo "$_HM_F2" | grep '^SENTINEL=' | cut -d= -f2)
@@ -175,7 +184,7 @@ Run each variant **sequentially** — parallel worktrees would conflict.
 ORIG_DIR="$(pwd)"  # timeout: 3000
 ```
 
-**On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting.
+**On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. The trap below makes interrupt cleanup automatic — never rely on prose-only cleanup discipline.
 
 For each variant in `variants.jsonl`:
 
@@ -184,6 +193,15 @@ For each variant in `variants.jsonl`:
 ```bash
 git worktree add "$WORKTREE_BASE/<variant_name>" <best_commit>  # timeout: 15000
 ```
+
+**4a-trap. Register cleanup trap immediately after worktree creation** (guarantees removal on EXIT / INT / TERM, even on uncaught error):
+
+```bash
+WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/<variant_name>}"
+trap '[ -n "$WORKTREE_PATH" ] && git worktree remove --force "$WORKTREE_PATH" 2>/dev/null' EXIT INT TERM
+```
+
+Trap runs once; subsequent variants re-register their own `WORKTREE_PATH` before the trap fires. The explicit `git worktree remove` in 4f remains for happy-path cleanup; the trap is a safety net for interrupted loops only.
 
 **4b. Navigate into worktree** (two separate Bash calls — cd first, then command):
 
@@ -303,6 +321,8 @@ Skip entirely if no `--venue` flag. Supported venues: `CVPR`, `NeurIPS`, `ICML`,
 **Health monitoring setup** (same pattern as F2 — create checkpoint before spawn):
 
 ```bash
+# audit-skip: resilience-replication
+# Per-phase checkpoint required — F6 reviewer Q&A is an independent scientist dispatch from F2; shared variables would mask phase-specific stalls.
 _HM_F6=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "fortify-f6" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT_F6=$(echo "$_HM_F6" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_F6=$(echo "$_HM_F6" | grep '^SENTINEL=' | cut -d= -f2)

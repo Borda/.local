@@ -3,7 +3,7 @@ name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file."
 argument-hint: "<symptom or failing test> [--no-challenge] [--team] [--ci-run <run-id-or-url>]"
 effort: medium
-when_to_use: "Use when root cause unknown and evidence must be gathered first; CI-only failures: pass `--ci-run <run-id>` to fetch GitHub Actions logs instead of local pytest; NOT for applying known fix (use fix) or production incidents without any CI run or traceback (use foundry:investigate)."
+when_to_use: "Use when root cause unknown and evidence must be gathered first; CI-only failures: pass `--ci-run <run-id>` to fetch GitHub Actions logs instead of local pytest; NOT for applying known fix (use fix) or production incidents without any CI run or traceback (use foundry:investigate (requires foundry plugin))."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -131,6 +131,16 @@ Spawn **foundry:sw-engineer** agent to map execution path and produce:
 **Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
 
 Present agent's analysis summary before proceeding.
+
+**Flaky-test branch** — if symptom is intermittent (passes alone, fails in full suite): run binary-search isolation:
+
+```bash
+_FOUNDRY_BIN=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 2 -type d -name "bin" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
+[ -z "$_FOUNDRY_BIN" ] && _FOUNDRY_BIN="plugins/foundry/bin"
+python "$_FOUNDRY_BIN/find-polluter.py" <failing-test-node-id>  # timeout: 60000
+```
+
+Output names the polluting upstream test. Cross-plugin call — `find-polluter.py` ships in `foundry/bin/`. Run only when CI shows non-deterministic failure pattern.
 
 ## Step 2: Pattern analysis
 

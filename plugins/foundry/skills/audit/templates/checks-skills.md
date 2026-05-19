@@ -83,7 +83,7 @@ After scan, apply model reasoning to each match — exclude cases where shell co
 
 ### Sub-check 23e — python inline policy (CLAUDE.md / MEMORY.md violation)
 
-`python` intentionally absent from allow list (MEMORY.md: "Allow List Policy — python* excluded by design"). Any `python -c` in skill body pauses for permission prompt mid-workflow; user deny = phase fails.
+`Bash(python:*)` IS in the allow list, covering bare `python script.py` calls. However, `python -c "..."` does NOT match `Bash(python:*)` — Claude Code's permission matcher tokenizes the full prefix, so `python -c` requires a separate `Bash(python -c:*)` entry (intentionally absent). Any `python -c` in a skill body still pauses for a permission prompt mid-workflow; user deny = phase fails. This is the enforcement mechanism for the inline-Python antipattern, not a coverage gap.
 
 ```bash
 printf "=== Check 23e: python inline policy ===\n"
@@ -105,6 +105,56 @@ Severity: **high** — permission prompt mid-workflow blocks automation; user de
 | 23e — python heredoc | `python << '` in skill body | high |
 
 **Report only** — never auto-fix; some Bash invocations in example/illustration code blocks intentional.
+
+### Sub-check 23f — `# timeout:` annotation without shell enforcement
+
+`# timeout: N` on a bash line is a hint to Claude Code's Bash tool — it has no effect when the command runs outside the tool (bin/ scripts, CI, direct shell). Hard enforcement requires `timeout S <cmd>` prefix (bash) or `--timeout S` via argparse + passed to every blocking call (Python subprocess). See `bin-authoring-guide.md` §Timeout Policy for canonical patterns and ms→s conversion table.
+
+Rules:
+- **Bash call sites**: line with `# timeout: N` must have `timeout S` shell prefix (S = N ÷ 1000); no internal fallback exists.
+- **Python call sites**: shell `timeout S` wrapper optional — timeout enforced internally via `--timeout` argparse parameter whose `default=` must equal N ÷ 1000 (from the calling site's `# timeout: N` annotation).
+- **Python `bin/` scripts with subprocess**: must expose `--timeout SECS` and pass it to every `subprocess.*` call.
+
+```bash
+printf "=== Check 23f: # timeout: comment without shell enforcement ===\n"
+# Bash call sites: # timeout: N without timeout S shell prefix
+# Exempt: python invocations (timeout enforced by --timeout default inside script)
+# (colon in timeout: distinguishes comment from command)
+grep -rn '# timeout: [0-9]' $_SKILL_GLOB $_AGENT_GLOB $_RULE_GLOB 2>/dev/null |
+  grep -v '^Binary' |
+  grep -v '^\s*#' |
+  grep -v 'timeout [0-9][0-9]* ' |
+  grep -v 'python ' &&
+printf "  hint: prepend 'timeout S' (S = ms ÷ 1000) — e.g. 'timeout 5 \$(command 2>/dev/null || echo fallback)'\n" || true
+
+# Python bin/ scripts: subprocess without timeout= (hard enforcement missing even with --timeout default)
+[ "$LOCAL_MODE" = "true" ] && _BIN_PY_GLOB="plugins/*/bin/*.py" || _BIN_PY_GLOB=".claude/bin/*.py"
+printf "=== Check 23f: Python subprocess missing timeout= ===\n"
+grep -rn 'subprocess\.\(check_output\|run\|call\|Popen\)' $_BIN_PY_GLOB 2>/dev/null |
+  grep -v 'timeout=' |
+  grep -v '^\s*#' &&
+printf "  hint: add timeout=args.timeout to every subprocess call; --timeout default must equal # timeout: N ÷ 1000\n" || true
+
+# Python bin/ scripts: --timeout argparse default missing or zero
+printf "=== Check 23f: Python --timeout default compliance ===\n"
+grep -rln 'subprocess\.' $_BIN_PY_GLOB 2>/dev/null | while read -r f; do
+  grep -q 'add_argument.*--timeout' "$f" ||
+    printf "  %s: --timeout argparse argument absent; add with default= matching call site # timeout: N ÷ 1000\n" "$f"
+done || true
+printf "✓: Check 23f scan complete\n"  # timeout: 5000
+```
+
+After scan, apply model reasoning — exclude lines inside illustration/example code blocks (marked `# ✗`, surrounded by explanatory prose, or not reachable as actual tool-call commands). Flag only live executable lines.
+
+Severity: **medium** — bash comment-only timeout silently ignored at runtime; Python script missing `--timeout` default has no internal enforcement.
+
+| Sub-check | Pattern | Severity |
+| --- | --- | --- |
+| 23f — bash comment-only timeout | `# timeout: N` without `timeout S` shell prefix (non-python invocations) | medium |
+| 23f — subprocess no timeout= | `subprocess.*` call without `timeout=` in `bin/*.py` | medium |
+| 23f — missing --timeout default | Python `bin/` script uses subprocess but no `--timeout` argparse arg | medium |
+
+**Report only** — flag for human review; timeout default values must match `# timeout: N` at call site (N ÷ 1000).
 
 ## Check 24 — Skill sequence compatibility
 
@@ -643,11 +693,61 @@ Severity: **medium** — rule with non-matching paths is never applied; may repr
 Note: false positives possible if project files are in a non-standard location or generated at runtime. Human review before deletion.
 Auto-fix: remove `paths:` to make the rule global, or delete the file if rule is obsolete.
 
+### Sub-check 32d — Orphaned bin/ scripts
+
+`bin/` scripts that exist in the plugin source tree but are not referenced by any `.md` file in that plugin (SKILL.md, agents, rules, modes, templates, _shared) are unreachable at runtime. Common cause: script authored as scaffolding but never wired into its caller SKILL.md.
+
+```bash
+printf "=== Check 32d: Orphaned bin/ scripts ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check 32d skipped in non-local mode (no plugin source tree)\n"
+else
+    python "${CLAUDE_PLUGIN_ROOT}/bin/check_orphaned_bin.py" --plugins-dir plugins  # timeout: 10000
+fi
+```
+
+Severity: **high** — orphaned script = either dead code or incomplete extraction; both are runtime gaps, not stylistic noise. An extraction that creates a bin/ script without wiring it into the caller leaves the inline twin active and the new script unreachable.
+Auto-fix: no — each category requires human judgment: (a) zero plausible consumer: confirm no in-progress branch before deleting; (b) cross-plugin consumer: search other plugins for the basename — if found, add `<!-- file: <basename> — consumers: <plugin> skills/<name> -->` doc header; (c) extraction started but wire-in skipped: identify the correct consumer SKILL.md and replace inline twin with bin/ invocation.
+
+> Note: search covers the entire plugins tree — cross-plugin callers are found correctly. False negatives possible only if the caller references the script by a dynamic path or alias that does not include the basename.
+
 | Sub-check | Target | Condition | Severity | Auto-fix |
 | --- | --- | --- | --- | --- |
 | 32a — dead mode file | `*/modes/*.md` | file exists but not referenced in parent SKILL.md | medium | delete file or add reference |
 | 32b — dead template file | `*/templates/*` | file exists but not referenced in parent SKILL.md | low | human review — may be indirect ref |
 | 32c — dead rule file | `*/rules/*.md` | `paths:` set but matches no project files | medium | remove `paths:` or delete file |
+| 32d — orphaned bin/ script | `plugins/*/bin/*.py`, `*.sh` | script not referenced in any plugin .md file | high | yes — see severity guidance above |
+| 32e — bin/ script cross-similarity | `plugins/*/bin/*.py` | ≥ 2 scripts with structural similarity ≥ 0.8 after normalization | medium | no — semantic review required |
+
+### Sub-check 32e — Cross-similarity between bin/ scripts
+
+bin/ scripts sharing structural patterns (≥ 0.8 similarity after normalizing identifiers and string literals) across or within plugins are merge candidates — one parametrized script replaces both, reducing duplicated maintenance surface. Common case: per-plugin helpers differing only in a path constant, plugin name, or threshold.
+
+Skip in non-local mode (no source tree). Skip when fewer than 2 non-private bin/ Python scripts exist.
+
+```bash
+printf "=== Check 32e: bin/ script cross-similarity ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check 32e skipped in non-local mode (no plugin source tree)\n"
+else
+    # collect non-private Python bin/ scripts
+    mapfile -t _C32E_SCRIPTS < <(find plugins -path '*/bin/*.py' -not -name '_*.py' 2>/dev/null | sort)  # timeout: 5000
+    _C32E_N=${#_C32E_SCRIPTS[@]}
+    if [ "$_C32E_N" -lt 2 ]; then
+        printf "✓: Check 32e — fewer than 2 bin/ scripts, skip\n"
+    else
+        printf "⚙ Check 32e — %d bin/ scripts found; delegating similarity analysis to foundry:curator\n" "$_C32E_N"
+        # pass file list to curator (see delegation prompt below)
+    fi
+fi
+```
+
+**Delegation prompt** (when `_C32E_N ≥ 2`): spawn foundry:curator with the `_C32E_SCRIPTS` file list and this instruction:
+
+> "Scan these bin/ Python scripts for cross-similarity. For each pair: strip docstrings and inline comments → normalize variable names to `<VAR>` → normalize string literals and path constants to `<STR>` → compare AST-level structure. Report pairs with structural similarity ≥ 0.8. For each candidate pair: script names, plugin origin, similarity score, what differs (constant, path, plugin name, threshold), lines saved by merge, and suggested parametrization (e.g. `--plugin-root` flag, `--output-dir` arg, or move shared logic to `_shared/` helper). Skip pairs serving clearly different semantic roles despite structural overlap. Skip pairs marked `# audit-skip: resilience-replication` in their module docstring (intentional per-plugin independence)."
+
+Severity: **medium** — near-duplicate scripts = duplicated maintenance; a bug fix in one copy likely missed in the other.
+Auto-fix: no — merge requires semantic review of both scripts and all callers; confirm no behavioral difference before merging.
 
 ## Check 33 — Code block duplication (NxN similarity matrix)
 
@@ -655,7 +755,7 @@ Full-spectrum detection of duplicate or near-duplicate fenced code blocks across
 
 **33a — Within-file repetition**: delegate to Phase A foundry:curator (has full file context). Curator prompt must include:
 
-> "Extract every fenced code block (any language marker — ` ```bash `, ` ```python `, ` ```sh `, ` ```perl `, ` ```ruby `, ` ```js `, etc.) from this file. For each pair of blocks, compute normalized similarity: strip comments → normalize variable names to `<VAR>` → normalize string literals to `<STR>` → compare structure. Report any pair with similarity ≥ 0.8 that appears 3+ times (within this file) as a 33a finding. For each candidate: block language, purpose, occurrence count, similarity score, what differs between instances, and suggested extraction (bash function / `bin/<name>.sh` / `bin/<name>.py`). Context saving estimate: (block_lines − 1) × occurrence_count. Skip: blocks with comments marking them as intentional resilience replications."
+> "Extract every fenced code block (any language marker — ` ```bash `, ` ```python `, ` ```sh `, ` ```perl `, ` ```ruby `, ` ```js `, etc.) from this file. For each pair of blocks, compute normalized similarity: strip comments → normalize variable names to `<VAR>` → normalize string literals to `<STR>` → compare structure. Report any pair with similarity ≥ 0.8 that appears 3+ times (within this file) as a 33a finding. For each candidate: block language, purpose, occurrence count, similarity score, what differs between instances, and suggested extraction (bash function / `bin/<name>.sh` / `bin/<name>.py`). Context saving estimate: (block_lines − 1) × occurrence_count. Skip: blocks marked `# audit-skip: resilience-replication` (first line of block) or prose annotation matching 'intentional resilience replication'."
 
 **33b — Cross-file NxN** — two phases: bash quick scan identifies known hotspots; curator NxN delegation runs when clusters found. Scope: all .md files in plugin tree (SKILL.md, agents, rules, templates, modes).
 
@@ -666,10 +766,12 @@ Full-spectrum detection of duplicate or near-duplicate fenced code blocks across
 if [ "$LOCAL_MODE" = "true" ]; then
     _C33_DIR="plugins/"
 else
-    # Installed: scan plugin cache (has templates/_shared) + .claude/ (symlinked runtime files)
-    _PLUGIN_CACHE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/ 2>/dev/null | head -1)
-    _C33_DIR="${_PLUGIN_CACHE:-.claude/}"
+    # Resolve to latest foundry version dir — avoids scanning all cached versions × all plugins
+    _C33_DIR=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/ 2>/dev/null | head -1)
+    _C33_DIR="${_C33_DIR:-.claude/}"
 fi
+printf "=== Check 33b: scope=%s files=%d ===\n" "$_C33_DIR" \
+    "$(find "$_C33_DIR" -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')"
 
 printf "=== Check 33b Phase 1: Cross-file code block quick scan ===\n"
 
@@ -686,7 +788,7 @@ SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cac
 PY_HEREDOC=$(grep -rl 'python -c' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 [ "${PY_HEREDOC:-0}" -ge 3 ] && printf "⚠ 33b: python -c one-liner in %s files — evaluate if any cluster repeats\n" "$PY_HEREDOC"
 
-# Unsupported-flag-check (intentional resilience replication — info only)
+# audit-skip: resilience-replication (unsupported-flag-check — intentional per-plugin resilience)
 FLAG_CHECK=$(grep -rl 'Unknown flag' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 [ "${FLAG_CHECK:-0}" -ge 3 ] && printf "ℹ 33b: unsupported-flag-check boilerplate in %s files — known intentional per-plugin resilience\n" "$FLAG_CHECK"
 
@@ -706,7 +808,7 @@ printf "✓: Check 33b Phase 1 complete\n"  # timeout: 5000
 
 **Phase 2 — Curator NxN delegation**: run when Phase 1 finds any known pattern in ≥3 files OR any language marker appears in ≥5 .md files. Spawn **foundry:curator** with all flagged files:
 
-> "Perform Check 33b cross-file code block analysis on: <list all .md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language) ≥ 5 lines. Skip blocks explicitly marked as intentional resilience replications.
+> "Perform Check 33b cross-file code block analysis on: <list all .md files that contain flagged language markers from Phase 1>. For each file, extract every fenced code block (any language) ≥ 5 lines. Skip: blocks marked `# audit-skip: resilience-replication` (first line) or prose annotation matching 'intentional resilience replication'.
 >
 > **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what it does functionally (not how) — e.g. 'resolves `_shared/` path from plugin cache', 'detects codex plugin availability', 'emits boilerplate-duplication counts'. Syntactic line-intersection alone is blind to conditional-inversion and variable renaming — purpose grouping catches duplicates that normalization misses.
 >
@@ -717,7 +819,7 @@ printf "✓: Check 33b Phase 1 complete\n"  # timeout: 5000
 > Write Table 1 and Table 2 to `$RUN_DIR/similarity-check33.md` using the Write tool.
 > Table 1 format: `| Cluster | Block IDs | Files | Lang | Lines each | Purpose | Max-sim | Duplicate? |`
 > Table 2 format: `| Cluster | ParamSlots | Tokens | Gate | Score | Verdict | Differs-by | Recommended extraction |`
-> Where: **ParamSlots** = count of distinct `<ARG>` slots after normalization; **Tokens** = estimated token count of block; **Gate** = `G1:P/F · G2:P/F · G3:P/F` (all must pass or Verdict = SKIP) — G1 (Size): block > 100 tokens; G2 (Independence): no branch on prior LLM decision that cannot become explicit arg; G3 (Identity): has computational meaning outside orchestration prose (high CallerScopeDeps = G3 fail indicator); **Score** = sum of applicable positive-dimension weights when gate passes — Testable (deterministic I/O, writable pytest/shellcheck test) +2 · Reuse (same logic in 2+ .md files) +2 · Token drain (block > 300 tokens) +2 · Lintable (shellcheck/ruff applicable) +1 · Run frequency (executes >1× per skill invocation) +1 · Standalone debuggable (runnable with no SKILL.md context) +1; **Verdict** = SKIP (any gate fail) · OPTIONAL (0–1) · RECOMMENDED (2–3) · EXTRACT (≥4); **Differs-by** = concrete `<ARG>` slot values varying across instances (become CLI parameters in extracted script).
+> Where: **ParamSlots** = count of distinct `<ARG>` slots after normalization; **Tokens** = estimated token count of block; **Gate** = `G1:P/F · G2:P/F · G3:P/F` (all must pass or Verdict = SKIP) — G1 (Size): block > 100 tokens; G2 (Independence): no branch on prior LLM decision that cannot become explicit arg; G3 (Identity): has computational meaning outside orchestration prose (high CallerScopeDeps = G3 fail indicator); **Score** = sum of applicable positive-dimension weights when gate passes — Testable (deterministic I/O, writable pytest/shellcheck test) +2 · Reuse (same logic in 2+ .md files) +2 · Token drain (block > 300 tokens) +2 · Lintable (shellcheck/ruff applicable) +1 · Run frequency (executes >1× per skill invocation) +1 · Standalone debuggable (runnable with no SKILL.md context) +1; **Verdict** = HOLD (any gate fail) · LOW (0–1) · MEDIUM (2–3) · HIGH (≥4); **Differs-by** = concrete `<ARG>` slot values varying across instances (become CLI parameters in extracted script).
 > Return ONLY: `{\"status\":\"done\",\"file\":\"$RUN_DIR/similarity-check33.md\",\"clusters\":N,\"duplicates\":N,\"similar\":N,\"findings\":N,\"confidence\":0.N}`"
 
 Severity: **medium** for actionable extraction candidates (mode-dispatch, _shared resolution, multi-file python clusters); **low/info** for known intentional replications (unsupported-flag-check, health-monitoring constants — per-plugin resilience by design per `plugins/CLAUDE.md`).

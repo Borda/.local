@@ -6,7 +6,7 @@ Triggered by `/audit --adversarial` (alias: `--challenge`). Read+executed by `/a
 
 **Trigger**: `/audit [<scope>...] --adversarial`
 
-Adversarial review of all agents + skills in scope. Runs parallel with or after standard per-file audit (Step 3). Surfaces issues curator pass misses: subtle logic flaws, inconsistent claims, NOT-for gaps, scope leakage, cross-file contradictions.
+Adversarial review of all agents + skills in scope. Runs parallel with or after standard per-file audit (Step 3). Surfaces issues curator pass misses: subtle logic flaws, inconsistent claims, NOT-for gaps, scope leakage, cross-file contradictions, and security vulnerabilities in bin/ executables.
 
 **Phase A — Challenger sweep** (parallel with Phase B):
 
@@ -38,9 +38,25 @@ If `[ -n "$CODEX_AVAILABLE" ]`: read `$_SHARED/codex-prepass.md`, run Codex pass
 
 Codex writes per-file findings to `<RUN_DIR>/codex-adversarial-<file-basename>.md`. Return compact JSON envelope per file.
 
+**Phase D — Security & Vulnerability Review** (parallel with Phases A, A-prime, B):
+
+Scope resolution — map audit scope tokens to plugin directories, collect all bin/ scripts:
+- Default (full sweep): all `plugins/*/bin/*.py` and `plugins/*/bin/*.sh`
+- Named scope (e.g. `foundry`, `oss`, `codemap`): `plugins/<name>/bin/*.py` and `plugins/<name>/bin/*.sh`
+- `--local` mode: same paths from `plugins/` source tree; non-local: same paths under `~/.claude/plugins/cache/borda-ai-rig/`
+- Zero bin/ scripts found for scope: skip Phase D, note in report
+
+Per-plugin security sweep — for each plugin in scope with bin/ scripts, spawn **foundry:qa-specialist**:
+
+> "Security and vulnerability review of all bin/ scripts in `plugins/<name>/bin/`. You are a black-box security reviewer — focus on executable surface only, not callers. Review every `.py` and `.sh` file in the directory. For Python scripts: check OWASP Top 10 applicability, specifically: (1) injection — `subprocess` calls with `shell=True` or string-concatenated command args; (2) path traversal — unvalidated file paths from argv; (3) insecure deserialization — `pickle.load`, `yaml.load` without `Loader`; (4) hardcoded secrets — API keys, tokens, passwords in source; (5) uncontrolled resource consumption — unbounded loops or file reads without size check. For shell scripts: (1) unquoted variable expansion in command positions; (2) `eval` with external input; (3) `rm -rf` with unvalidated variable path; (4) hardcoded credentials. Write full findings per file to `<RUN_DIR>/security-<plugin-name>.md`. Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"scripts_reviewed\":N,\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N}`"
+
+Use same `BATCH_SIZE` as other phases — plugin with ≤5 bin/ scripts: one foundry:qa-specialist spawn covers all; larger sets batch by 5.
+
+Phase D runs parallel with Phases A, A-prime, and B — same async launch pattern.
+
 **Phase C — Aggregate and deduplicate**:
 
-Spawn **foundry:curator** consolidator to merge Phase A + Phase A-prime + Phase B findings. Cross-reference against standard audit `summary.jsonl` (same RUN_DIR). Surface only findings NOT already in standard audit — adversarial adds signal, not noise.
+Spawn **foundry:curator** consolidator to merge Phase A + Phase A-prime + Phase B + Phase D findings. Cross-reference against standard audit `summary.jsonl` (same RUN_DIR). Surface only findings NOT already in standard audit — adversarial adds signal, not noise.
 
 In adversarial-only mode (`--adversarial` flag without preceding standard audit), Steps 3–6 are skipped so no `summary.jsonl` exists in RUN_DIR. Dedup against most recent standard audit `summary.jsonl` within the same RUN_DIR or from any run within the last 24h (check `.reports/audit/` for recent dirs). If no standard audit found within 24h, skip dedup and surface all adversarial findings without overlap filtering.
 
@@ -51,13 +67,13 @@ Write deduplicated findings to `<RUN_DIR>/adversarial-aggregate.md` and `<RUN_DI
 ```markdown
 ## Adversarial Audit — <date> — <scope>
 
-| File | Challenger | Deep-curator | Codex | New Findings | Top Issue |
-|------|-----------|--------------|-------|--------------|-----------|
-| agents/curator.md | 3 | 1 | 1 | 2 | NOT-for gap: accepts task X |
+| File | Challenger | Deep-curator | Codex | Security | New Findings | Top Issue |
+|------|-----------|--------------|-------|----------|--------------|-----------|
+| agents/curator.md | 3 | 1 | 1 | 0 | 2 | NOT-for gap: accepts task X |
 ```
 
 Adversarial findings feed into standard fix pipeline (Steps 7–10) when user picks fix level from follow-up gate.
 
-**Adversarial-only runs** (no standard audit): skip Steps 3–6; run only Phases A–C above; report adversarial findings only.
+**Adversarial-only runs** (no standard audit): skip Steps 3–6; run only Phases A–D above; report adversarial findings only.
 
 **Flag aliases**: `--adversarial` and `--challenge` are identical — either triggers this mode.

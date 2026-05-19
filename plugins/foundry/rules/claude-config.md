@@ -55,6 +55,8 @@ cd /path || uv run pytest tests/
 
 Working directory persists between Bash calls — two sequential calls equivalent.
 
+**Worktrees**: same rule applies inside `isolation: "worktree"` agents (CWD = worktree root — no `cd` prefix needed). Settings in worktrees are a snapshot from worktree-creation time — permissions added to main project after worktree created are NOT reflected; worktree agent hitting unexpected permission prompts → check if `settings.local.json` was updated since worktree creation.
+
 ## List Range Label Discipline
 
 When editing file with lettered/numbered list range labels (e.g. `**Close-scenario archetypes (A–G):**`):

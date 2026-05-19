@@ -131,3 +131,100 @@ fi
 ```
 
 **Severity**: broken symlinks → **high** (agents/skills silently unavailable at root namespace). Fix: re-run `/foundry:init link` — detects and replaces stale symlinks.
+
+## Check R1 — Computed path resolution (local + installed duality)
+
+Root cause guard for the `adversarial.md` / `upgrade.md` silent-deletion class of bugs. Skill `.md` files construct file paths via variable substitution (`$AUDIT_TPL/../modes/upgrade.md`, `$_FS/task-hygiene.md`, `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>`). Those paths only exist as literal strings if the target filename appears somewhere visible to grep. A file that exists locally but was never copied to the installed plugin cache will silently fail for users who install the plugin.
+
+**What it checks**: for every computed-path reference in `plugins/*/skills/*/SKILL.md`, `plugins/*/skills/*/modes/*.md`, and `plugins/*/agents/*.md` — verify the resolved target exists both locally (`plugins/<plugin>/...`) and in the installed cache (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/<path>`).
+
+Skip if `LOCAL_MODE != true` (no plugin source tree to scan).
+
+```bash
+printf "=== Check R1: Computed path resolution (local + installed duality) ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check R1 skipped in non-local mode (no plugin source tree)\n"
+else
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_routing_links.py" \
+        --plugins-dir plugins \
+        --installed-plugins-json ~/.claude/plugins/installed_plugins.json \
+        --check R1  # timeout: 15000
+fi
+```
+
+**Severity**:
+- `R1-FAIL` (file exists locally but absent from installed cache) → **high** — users who install the plugin get broken dispatch at runtime; likely means file was added locally but plugin was not re-installed
+- `R1-WARN` (file exists in installed cache but absent locally) → **medium** — stale installed copy; will break after plugin update
+- `R1-INFO` (plugin not installed) → **low/info** — cannot verify installed state; note in report only
+
+Fix: re-install plugin with `claude plugin install <plugin>@borda-ai-rig` to sync installed state with local source tree. For WARN: restore missing local file or remove reference.
+
+## Check R2 — Grep-visible referencing (orphan-risk detection)
+
+Structural guard: for every `.md` file in `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`, and `plugins/*/skills/_shared/` — verify its **basename** appears as a literal string in at least one consumer `.md` file in the same plugin.
+
+**Scope**: `modes/`, `templates/`, `_shared/` only. SKILL.md and agent `.md` files themselves are covered by Check 32a (checks-skills.md); R2 is complementary — it covers subdirectories that 32a does not walk.
+
+**Why**: grep-based dead-file checks (Check 32a, 32b) and agent zero-hit analysis work by searching for the filename. A file loaded exclusively via computed path (e.g. `$AUDIT_TPL/../modes/adversarial.md`) has zero literal-basename hits → grep tools conclude it is unreferenced → deletion risk.
+
+Skip if `LOCAL_MODE != true`.
+
+```bash
+printf "=== Check R2: Grep-visible referencing (orphan-risk detection) ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check R2 skipped in non-local mode (no plugin source tree)\n"
+else
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_routing_links.py" \
+        --plugins-dir plugins \
+        --check R2  # timeout: 15000
+fi
+```
+
+**Severity**: `R2-ORPHAN-RISK` → **medium** — file is grep-invisible; any automated or agent-assisted dead-file sweep will incorrectly flag it as unreferenced and may delete it.
+
+Fix: add a comment in the consumer `SKILL.md` that makes the basename a literal string, e.g.:
+```
+# loads: adversarial.md  (via $AUDIT_TPL/../modes/adversarial.md)
+```
+This single-line comment costs ~5 tokens and permanently protects the file from grep-based false-positive orphan detection.
+
+## Check R3 — bin/ script reference integrity (reverse of Check 32d)
+
+Check 32d walks `bin/` scripts and flags those unreferenced by any `.md` file (orphaned scripts). R3 is the reverse: for every `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>` reference in any plugin `.md` file, verify the script actually exists locally — catches typos, deleted scripts, and refactor leftovers that leave dangling references.
+
+Skip if `LOCAL_MODE != true`.
+
+```bash
+printf "=== Check R3: bin/ script existence (local + installed) ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check R3 skipped in non-local mode (no plugin source tree)\n"
+else
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_routing_links.py" \
+        --plugins-dir plugins \
+        --installed-plugins-json ~/.claude/plugins/installed_plugins.json \
+        --check R3  # timeout: 15000
+fi
+```
+
+**Severity**:
+- `R3-FAIL` (script referenced but missing locally) → **high** — skill dispatch will fail immediately at the `python ...` call site
+- `R3-WARN` (script exists locally but absent from installed cache) → **high** — same as R1-FAIL but for bin/ scripts; users get broken skill at runtime after install
+
+Fix: create the missing script locally (FAIL) or re-install plugin to sync (WARN).
+
+> **Convenience shortcut**: run all three checks together:
+> ```bash
+> python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_routing_links.py" \
+>     --plugins-dir plugins \
+>     --installed-plugins-json ~/.claude/plugins/installed_plugins.json  # timeout: 20000
+> ```
+> Omitting `--check` runs R1, R2, R3 in one pass.
+
+| Sub-check | Condition | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| R1-FAIL — local-only file | resolved file exists locally but absent from installed cache | high | no — re-install plugin |
+| R1-WARN — installed-only file | file exists in cache but missing locally | medium | no — restore local file or remove ref |
+| R1-INFO — plugin not installed | cannot verify installed state | info | n/a |
+| R2-ORPHAN-RISK — grep-invisible | basename not literal in any consumer .md file | medium | no — add `# loads: <basename>` comment |
+| R3-FAIL — bin/ script missing locally | script referenced but local file absent | high | no — create script |
+| R3-WARN — bin/ script missing from cache | script local but absent from installed cache | high | no — re-install plugin |

@@ -14,6 +14,7 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         python-version: ["3.10", "3.12"]
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
@@ -27,4 +28,4 @@ jobs:
 
       - name: Run plugin's bin tests
         working-directory: plugins/
-        run: pytest -v --color=yes
+        run: pytest --color=yes --doctest-modules

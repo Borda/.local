@@ -44,20 +44,12 @@ Parse `$ARGUMENTS` (case-insensitive):
 
 ### C1 — Locate scan-query
 
-Three-tier fallback: PATH → plugin root → cache glob.
+Three-tier fallback (PATH → CLAUDE_PLUGIN_ROOT → newest cache install) handled by `bin/locate-scan-query.sh`.
 
 ```bash
-# timeout: 5000
-if command -v scan-query >/dev/null 2>&1; then
-    SQ=$(command -v scan-query); SRC="PATH"
-elif [ -x "${CLAUDE_PLUGIN_ROOT}/bin/scan-query" ]; then
-    SQ="${CLAUDE_PLUGIN_ROOT}/bin/scan-query"; SRC="CLAUDE_PLUGIN_ROOT"
-else
-    SQ=$(ls "$HOME/.claude/plugins/cache"/*/codemap/*/bin/scan-query 2>/dev/null | sort -V | tail -1)
-    SRC="cache glob"
-fi
+SQ=$("${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate-scan-query.sh" 2>/dev/null || true)  # timeout: 5000
 if [ -n "$SQ" ] && [ -x "$SQ" ]; then
-    printf "✓ scan-query: %s (via %s)\n" "$SQ" "$SRC"
+    printf "✓ scan-query: %s\n" "$SQ"
 else
     printf "✗ scan-query: not found\n"
     printf "  → Install: claude plugin install codemap@borda-ai-rig\n"
@@ -72,9 +64,9 @@ fi
 # PROJ/INDEX resolution — also used in Step I1 (init mode); keep in sync
 # NOTE: uses single-strategy basename lookup; scan-query uses three-strategy walk-up
 # If index not found here but scan-query works, run with explicit --index flag or re-run /codemap:scan from project root
-GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-PROJ=${GIT_ROOT:+$(basename "$GIT_ROOT")}; PROJ=${PROJ:-$(basename "$PWD")}
-INDEX="${GIT_ROOT:-.}/.cache/scan/${PROJ}.json"
+mapfile -t _idx < <("${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve-proj-index.sh")
+PROJ="${_idx[0]:-}"
+INDEX="${_idx[1]:-}"
 printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
 if [ -f "$INDEX" ]; then
     printf "✓ index: exists\n"
@@ -89,93 +81,35 @@ fi
 
 ```bash
 # timeout: 10000
-SCANNED_AT=$(jq -r '.scanned_at // empty' "$INDEX" 2>/dev/null)
-if [ -z "$SCANNED_AT" ]; then
-    printf "⚠ freshness: scanned_at missing — index may be corrupted\n  → Re-run /codemap:scan\n"
-else
-    SCANNED_AT_CLEAN=$(echo "$SCANNED_AT" | cut -c1-19)
-    SCAN_EPOCH=$(date -d "$SCANNED_AT_CLEAN" +%s 2>/dev/null || date -jf "%Y-%m-%dT%H:%M:%S" "$SCANNED_AT_CLEAN" +%s 2>/dev/null)
-    if [ -z "$SCAN_EPOCH" ]; then
-        printf "⚠ freshness: could not parse scanned_at timestamp (%s) — run /codemap:scan\n" "$SCANNED_AT"
-    else
-        NOW_EPOCH=$(date +%s)
-        AGE_DAYS=$(( (NOW_EPOCH - SCAN_EPOCH) / 86400 ))
-        SCAN_DATE="${SCANNED_AT:0:10}"
-        if [ "$AGE_DAYS" -gt 7 ]; then
-            printf "⚠ freshness: %s day(s) ago (%s)\n  → Run /codemap:scan to refresh\n" "$AGE_DAYS" "$SCAN_DATE"
-        else
-            printf "✓ freshness: %s day(s) ago (%s)\n" "$AGE_DAYS" "$SCAN_DATE"
-        fi
-    fi
-fi
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" "$INDEX"
 ```
 
-### C4 — Smoke test and git-staleness check
+### C4 — Smoke test and mtime-staleness check
+
+`smoke_test_index.py` validates that the index file is loadable JSON and reports mtime age vs `--max-age-hours` (default 24).
 
 ```bash
-# timeout: 15000
-OUT=$("$SQ" central --top 3 2>/tmp/cmc_err); RC=$?
-if [ $RC -ne 0 ]; then
-    printf "✗ smoke test: exit %s\n" "$RC"
-    [ -s /tmp/cmc_err ] && printf "  stderr: %s\n" "$(cat /tmp/cmc_err)"
-    printf "  → Check index with: %s list\n" "$SQ"
+SMOKE_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/smoke_test_index.py" --index-path "$INDEX")  # timeout: 10000
+OK=$(echo "$SMOKE_RESULT" | jq -r '.ok')
+STALE=$(echo "$SMOKE_RESULT" | jq -r '.stale')
+AGE=$(echo "$SMOKE_RESULT" | jq -r '.age_hours')
+if [ "$OK" != "true" ]; then
+    ERR=$(echo "$SMOKE_RESULT" | jq -r '.error // "unknown"')
+    printf "✗ smoke test: %s\n" "$ERR"
+    printf "  → Re-run /codemap:scan to rebuild index\n"
 else
-    STALE=$(echo "$OUT" | jq -r '.index.stale // false' 2>/dev/null)
-    printf "✓ smoke test: central query OK (git-stale=%s)\n" "$STALE"
+    printf "✓ smoke test: index valid (mtime-age=%sh)\n" "$AGE"
     if [ "$STALE" = "true" ]; then
-        printf "  ⚠ Python files changed since scan — run /codemap:scan to update\n"
+        printf "  ⚠ Index older than freshness threshold — run /codemap:scan to update\n"
     fi
 fi
-rm -f /tmp/cmc_err
 ```
 
 ### C5 — Skill injection audit
 
 ```bash
 # timeout: 20000
-if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
-    printf "⚠ CLAUDE_PLUGIN_ROOT unset — falling back to installed cache discovery\n"
-    CLAUDE_PLUGIN_ROOT=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/integration 2>/dev/null | head -1)
-    if [ -z "$CLAUDE_PLUGIN_ROOT" ]; then
-        printf "✗ Could not locate codemap plugin — injection audit skipped. Run: claude plugin install codemap@borda-ai-rig\n"
-        # degrade gracefully — skip C5 without aborting full skill run
-    fi
-fi
-[ -z "$CLAUDE_PLUGIN_ROOT" ] && { printf "  Skipping injection audit.\n"; } || {
-CACHE=$(dirname "$(dirname "$CLAUDE_PLUGIN_ROOT")")
-printf "\n--- Skill injection audit (cache: %s) ---\n" "$CACHE"
-FILES=$(find "$CACHE" -name "SKILL.md" -exec grep -l "command -v scan-query" {} \; 2>/dev/null | sort)
-COUNT=$(echo "$FILES" | grep -c . 2>/dev/null || echo 0)
-if [ "$COUNT" -eq 0 ]; then
-    printf "⚠ 0 SKILL.md files have injection block — codemap not integrated into any skill\n"
-    printf "  → Run /codemap:integration init to add injection\n"
-else
-    printf "✓ %s SKILL.md file(s) have the injection block:\n" "$COUNT"
-    echo "$FILES" | while read -r f; do
-        [ -n "$f" ] && printf "  • %s\n" "${f#$CACHE/}"
-    done
-fi
-# keep this list in sync with develop, oss, and research plugin skill directories
-# NOTE: grep uses regex — glob '*' becomes '.*'; list must be maintained when plugins add skills
-# cicd-steward and shepherd are agents (agents/*.md), not skills — no SKILL.md to check; omitted intentionally
-for exp in "develop/.*/skills/fix" "develop/.*/skills/feature" "develop/.*/skills/refactor" "develop/.*/skills/plan" "develop/.*/skills/review" "develop/.*/skills/debug" "oss/.*/skills/review" "oss/.*/skills/resolve" "oss/.*/skills/analyse" "oss/.*/skills/release" "research/.*/skills/run" "research/.*/skills/topic"; do
-    echo "$FILES" | grep -q "$exp" \
-        || printf "  ⚠ missing injection in: %s/SKILL.md\n" "$exp"
-done
-AGENT_FILES=$(find "$CACHE" -name "*.md" -path "*/agents/*" -exec grep -l "Structural context (codemap" {} \; 2>/dev/null | sort)
-AGENT_COUNT=$(echo "$AGENT_FILES" | grep -c . 2>/dev/null || echo 0)
-if [ "$AGENT_COUNT" -eq 0 ]; then
-    printf "  ⚠ 0 agent .md files have codemap injection block\n"
-else
-    printf "✓ %s agent file(s) have codemap injection block\n" "$AGENT_COUNT"
-fi
-
-printf "\n--- check complete ---\n"
-printf "If any check failed:\n"
-printf "  • /codemap:scan    — build or refresh the index\n"
-printf "  • /codemap:integration init — add injection to more skills/agents\n"
-printf "  • /codemap:integration check — re-run after fixes\n"
-}  # end CLAUDE_PLUGIN_ROOT guard
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_PLUGIN_ROOT"
 ```
 
 ## INIT MODE (Steps I0–I6)
@@ -191,9 +125,9 @@ printf "  • /codemap:integration check — re-run after fixes\n"
 ```bash
 # timeout: 5000
 # PROJ/INDEX resolution (mirrors block in Step C2 — keep in sync)
-GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
-PROJ=${GIT_ROOT:+$(basename "$GIT_ROOT")}; PROJ=${PROJ:-$(basename "$PWD")}
-INDEX="${GIT_ROOT:-.}/.cache/scan/${PROJ}.json"
+mapfile -t _idx < <("${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve-proj-index.sh")
+PROJ="${_idx[0]:-}"
+INDEX="${_idx[1]:-}"
 ```
 
 Index exists: report and proceed. Index missing:
@@ -276,7 +210,9 @@ Reply with letters (e.g. "a b"), "all" (all High+Medium), or "none".
 
 Per selected file, determine insertion point and content:
 
-**For SKILL.md files** — find step that first spawns agent. Insert hardened soft-check block immediately before it, blank line before and after:
+**For SKILL.md files** — find step that first spawns agent. Insert hardened soft-check block immediately before it, blank line before and after.
+
+> **No Agent() spawn step in target SKILL.md?** Inject the block as a **pre-step before the first tool call** in the workflow (typically at the top of `<workflow>` or right after Project Detection / Flag parsing). Structural context still informs subsequent reasoning even when no agent is spawned.
 
 ```bash
 # Structural context (codemap — Python projects only, silent skip if absent)
@@ -293,9 +229,7 @@ For skills where target module derives from `$ARGUMENTS` (refactor, fix with mod
 
 ```bash
 # Derive TARGET_MODULE from the file/path argument (e.g. src/foo/bar.py → foo.bar)
-# Fall back to a basename-only module if the argument is not under src/.
-TARGET_MODULE=$(printf '%s\n' "$ARGUMENTS" | sed 's|^\./||;s|^src/||;s|\.py$||;s|/|.|g')
-[ -z "$TARGET_MODULE" ] && TARGET_MODULE=$(basename "${ARGUMENTS%.py}" 2>/dev/null || echo "")
+TARGET_MODULE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_target_module.py" "$ARGUMENTS")  # timeout: 5000
 if [ -z "$TARGET_MODULE" ]; then
     echo "⚠ TARGET_MODULE empty — skipping rdeps/deps soft-check"
 else
@@ -329,44 +263,7 @@ If **a** (or auto-approved): write `.git/hooks/post-commit`. Idempotent — chec
 
 ```bash
 # timeout: 5000
-# Detect hooks dir — respect core.hooksPath override if set
-HOOKS_DIR=$(git config core.hooksPath 2>/dev/null || echo ".git/hooks")
-HOOK_FILE="$HOOKS_DIR/post-commit"
-if grep -qF '# codemap: incremental' "$HOOK_FILE" 2>/dev/null; then
-    printf "✓ post-commit hook: already installed (%s)\n" "$HOOK_FILE"
-elif [ -f "$HOOK_FILE" ]; then
-    # Marker absent, file exists — check shebang before appending
-    # Only append if shebang is sh/bash/zsh compatible; warn if unusual interpreter
-    SHEBANG=$(head -1 "$HOOK_FILE" 2>/dev/null || echo "")
-    case "$SHEBANG" in
-        "#!/bin/sh"|"#!/bin/bash"|"#!/usr/bin/env bash"|"#!/usr/bin/env sh"|"#!/bin/zsh"|"#!/usr/bin/env zsh"|"")
-            # Compatible shebang or no shebang — safe to append
-            ;;
-        *)
-            printf "⚠ post-commit hook uses unusual interpreter: %s — appending anyway; verify compatibility\n" "$SHEBANG"
-            ;;
-    esac
-    # Note: this append is confirmed by user in Step I5a (AskUserQuestion option a)
-    cat >> "$HOOK_FILE" << 'HOOKEOF'
-
-# codemap: incremental index rebuild — do not remove this line
-if command -v scan-index >/dev/null 2>&1; then
-    scan-index --incremental >> /tmp/codemap-hook.log 2>&1 &
-fi
-HOOKEOF
-    printf "✓ post-commit hook: appended to %s\n" "$HOOK_FILE"
-else
-    # File does not exist — create
-    cat > "$HOOK_FILE" << 'HOOKEOF'
-#!/bin/sh
-# codemap: incremental index rebuild — do not remove this line
-if command -v scan-index >/dev/null 2>&1; then
-    scan-index --incremental >> /tmp/codemap-hook.log 2>&1 &
-fi
-HOOKEOF
-    chmod +x "$HOOK_FILE"
-    printf "✓ post-commit hook: created %s\n" "$HOOK_FILE"
-fi
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/install_post_commit_hook.py" --plugin-root "${CLAUDE_PLUGIN_ROOT}"
 ```
 
 Report: `✓ post-commit hook installed: <path>` or `✓ already installed` if marker present. Hook logs to `/tmp/codemap-hook.log` — failures and version-upgrade full scans visible there.

@@ -14,13 +14,10 @@ Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-
 When task touches multiple modules or changes public API surface, run per-affected-module reverse-dependency scan:
 
 ```bash
-# For each affected module <mod>:
-scan-query rdeps <mod> --top 10 2>/dev/null || true
-# Interpret: any result = external callers affected by changes to <mod>
-
-# Coupling scan — find co-change pairs:
-scan-query coupled --top 10 2>/dev/null || true
-# Interpret: high-coupling files should be reviewed together
+# Diff-mode: auto-derive affected modules from git diff HEAD and run rdeps + coupled in one call
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_scan.py" --source=diff  # timeout: 15000
+# Interpret: any rdeps output = external callers affected; coupled output = co-change pairs
+# Fallback (specific known module): scan-query rdeps <mod> --top 10 2>/dev/null || true
 
 # Risk tier based on rdep_count:
 # rdep_count >= 5  → HIGH blast radius — flag to user before proceeding

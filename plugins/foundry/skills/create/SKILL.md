@@ -5,6 +5,7 @@ argument-hint: "[topic]"
 disable-model-invocation: true
 allowed-tools: Write, TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Agent
 when_to_use: "Use when creating developer advocacy content — blog posts, Marp slides, social threads, talk abstracts, or lightning talk outlines."
+effort: medium
 ---
 
 <objective>
@@ -122,8 +123,20 @@ created: YYYY-MM-DD
 ```
 
 - Confirm file path to user.
+- Derive the artifact extension `<ext>` from the format selected in Step 2 — substitute the literal value into the spawn prompt before invoking `Agent()`; do not pass the literal `<ext>` placeholder. Mapping:
+
+  | Format (Step 2 choice) | `<ext>` |
+  | --- | --- |
+  | a) blog post | `md` |
+  | b) conference / meetup talk with Marp slide deck | `md` (Marp markdown) |
+  | c) social thread (Twitter/LinkedIn) | `md` |
+  | d) talk abstract (CFP submission) | `md` |
+  | e) lightning talk | `md` |
+
+  Every supported format currently renders to a markdown source file, so `<ext>` resolves to `md` in every branch — but the substitution must still happen explicitly so the artifact path on disk is `.plans/content/<slug>.md`, not `.plans/content/<slug>.<ext>`. If a future format uses a different extension, extend the table.
+
 - End with an `AskUserQuestion` gate with two options:
-  (a) **Generate the full artifact now** — spawn `foundry:creator` via `Agent(subagent_type='foundry:creator', prompt='Read .plans/content/<slug>-outline.md and generate the complete [format] artifact. Output file path: .plans/content/<slug>.<ext>')` where slug and format come from the generated outline.
+  (a) **Generate the full artifact now** — spawn `foundry:creator` via `Agent(subagent_type='foundry:creator', prompt='Read .plans/content/<slug>-outline.md and generate the complete <format> artifact. Output file path: .plans/content/<slug>.<ext>')` where `<slug>`, `<format>`, and `<ext>` are substituted from the generated outline (see extension table above) before the call — never pass literal angle-bracket placeholders to the spawned agent.
   (b) **Stop here** — I'll invoke `foundry:creator` manually when ready.
 
   If the user selects (a), issue the Agent() call in the same response turn. Do not narrate intent — call the tool.
@@ -140,6 +153,6 @@ created: YYYY-MM-DD
 - Refuse FAQs / comparison tables / ref docs at Step 1 gate; name `foundry:doc-scribe` as redirect.
 - Write outline exactly once after approval — no second draft unless user requests.
 - `foundry:creator` reads output outline file and generates full artifact autonomously.
-- Blueprint spec files written to `.plans/blueprint/` — see `artifact-lifecycle.md` for TTL policy (30d).
+- Outline spec files written to `.plans/content/` — see `artifact-lifecycle.md` for TTL policy (30d).
 
 </notes>

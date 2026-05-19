@@ -53,6 +53,15 @@
       {
         "hooks": [
           {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/agent-router.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Agent"
+      },
+      {
+        "hooks": [
+          {
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-log.js\"",
             "statusMessage": "Logging tool",
             "type": "command"

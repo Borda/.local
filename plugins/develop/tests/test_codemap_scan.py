@@ -1,0 +1,222 @@
+"""Tests for ``codemap_scan.py``.
+
+Covers:
+    - Pure module-derivation helpers (find/diff rules, flat-layout fallback).
+    - ``main()`` entry point: missing ``scan-query`` silent skip, missing index silent skip,
+      ``--source=find`` end-to-end with subprocess monkeypatching, ``--source=diff`` modes,
+      bad-arg exit codes.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+import codemap_scan as cs
+
+
+# ---------- Pure helpers ----------
+
+
+@pytest.mark.parametrize(
+    ("inp", "expected"),
+    [
+        ("./src/pkg/mod.py", "pkg.mod"),
+        ("src/pkg/mod.py", "pkg.mod"),
+        ("./pkg/mod.py", "pkg.mod"),
+        ("pkg/mod.py", "pkg.mod"),
+        ("mod.py", "mod"),
+        ("pkg/__init__.py", "pkg.__init__"),
+        ("./src/a/b/c.py", "a.b.c"),
+    ],
+)
+def test_derive_module_from_path(inp: str, expected: str) -> None:
+    assert cs.derive_module_from_path(inp) == expected
+
+
+def test_derive_modules_from_find_drops_empty() -> None:
+    files = ["./src/a.py", "", "./src/pkg/b.py"]
+    assert cs.derive_modules_from_find(files) == ["a", "pkg.b"]
+
+
+def test_derive_modules_from_find_empty_input() -> None:
+    assert cs.derive_modules_from_find([]) == []
+
+
+def test_derive_modules_from_diff_strips_src_and_init() -> None:
+    files = ["src/pkg/a.py", "src/pkg/__init__.py", "README.md", "src/other/b.py"]
+    assert cs.derive_modules_from_diff(files, limit=10) == ["pkg.a", "other.b"]
+
+
+def test_derive_modules_from_diff_filters_non_py() -> None:
+    files = ["docs.md", "config.yaml", "src/a.py"]
+    assert cs.derive_modules_from_diff(files, limit=10) == ["a"]
+
+
+def test_derive_modules_from_diff_flat_layout_fallback() -> None:
+    # All inputs would map to __init__ → primary list empty → fallback to dirs.
+    files = ["lib/__init__.py", "other/__init__.py", "lib/__init__.py"]
+    out = cs.derive_modules_from_diff(files, limit=10)
+    assert out == ["lib", "other"]
+
+
+def test_derive_modules_from_diff_flat_layout_respects_limit() -> None:
+    files = [f"d{i}/__init__.py" for i in range(20)]
+    out = cs.derive_modules_from_diff(files, limit=3)
+    assert len(out) == 3
+    assert out == sorted(out)
+
+
+def test_derive_modules_from_diff_empty() -> None:
+    assert cs.derive_modules_from_diff([], limit=10) == []
+
+
+# ---------- main() ----------
+
+
+@pytest.fixture
+def in_tmp_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Chdir into an isolated tmp dir for each test."""
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def _stub_scan_query_present(monkeypatch: pytest.MonkeyPatch, present: bool = True) -> None:
+    monkeypatch.setattr(cs.shutil, "which", lambda name: "/usr/bin/scan-query" if present else None)
+
+
+def _stub_git(monkeypatch: pytest.MonkeyPatch, project_name: str, diff_files: list[str] | None = None) -> None:
+    def fake_check_output(cmd: list[str], **_kw: Any) -> str:
+        if cmd[:2] == ["git", "rev-parse"]:
+            return f"/fake/{project_name}\n"
+        if cmd[:2] == ["git", "diff"]:
+            return "\n".join(diff_files or []) + ("\n" if diff_files else "")
+        raise AssertionError(f"Unexpected cmd: {cmd}")
+
+    monkeypatch.setattr(cs.subprocess, "check_output", fake_check_output)
+
+
+def test_main_missing_source_returns_1(in_tmp_cwd: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    rc = cs.main([])
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "--source=find|diff required" in err
+
+
+def test_main_missing_scan_query_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_scan_query_present(monkeypatch, present=False)
+    rc = cs.main(["--source=diff"])
+    assert rc == 0
+
+
+def test_main_missing_index_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_scan_query_present(monkeypatch, present=True)
+    _stub_git(monkeypatch, project_name="myproj")
+    # No .cache/scan/myproj.json created → exit 0.
+    rc = cs.main(["--source=diff"])
+    assert rc == 0
+
+
+def test_main_find_mode_invokes_scan_query_per_module_and_coupled(
+    in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange filesystem: project + index + .py target tree.
+    project = in_tmp_cwd
+    (project / ".cache" / "scan").mkdir(parents=True)
+    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+
+    target = project / "src" / "pkg"
+    target.mkdir(parents=True)
+    (target / "a.py").write_text("")
+    (target / "b.py").write_text("")
+
+    _stub_scan_query_present(monkeypatch, present=True)
+    _stub_git(monkeypatch, project_name=project.name)
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **_kw: Any) -> Any:
+        calls.append(cmd)
+        return type("CP", (), {"returncode": 0})()
+
+    monkeypatch.setattr(cs.subprocess, "run", fake_run)
+
+    rc = cs.main(["--source=find", "--target", "src/pkg", "--limit", "7"])
+    assert rc == 0
+
+    # Each module → one scan-query rdeps call; plus one coupled --top N at end.
+    rdep_calls = [c for c in calls if c[:2] == ["scan-query", "rdeps"]]
+    coupled_calls = [c for c in calls if c[:2] == ["scan-query", "coupled"]]
+    rdep_modules = {c[2] for c in rdep_calls}
+    assert rdep_modules == {"pkg.a", "pkg.b"}
+    assert coupled_calls == [["scan-query", "coupled", "--top", "7"]]
+
+
+def test_main_find_missing_target_returns_1(
+    in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    project = in_tmp_cwd
+    (project / ".cache" / "scan").mkdir(parents=True)
+    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+
+    _stub_scan_query_present(monkeypatch, present=True)
+    _stub_git(monkeypatch, project_name=project.name)
+
+    rc = cs.main(["--source=find"])
+    assert rc == 1
+    assert "--target required" in capsys.readouterr().err
+
+
+def test_main_diff_mode_invokes_per_module(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = in_tmp_cwd
+    (project / ".cache" / "scan").mkdir(parents=True)
+    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+
+    _stub_scan_query_present(monkeypatch, present=True)
+    _stub_git(monkeypatch, project_name=project.name, diff_files=["src/pkg/a.py", "src/pkg/b.py"])
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cs.subprocess, "run", lambda cmd, **_kw: calls.append(cmd) or type("CP", (), {})())
+
+    rc = cs.main(["--source=diff", "--limit", "10"])
+    assert rc == 0
+    modules = {c[2] for c in calls if c[:2] == ["scan-query", "rdeps"]}
+    assert modules == {"pkg.a", "pkg.b"}
+    # diff mode does NOT call coupled.
+    assert not any(c[:2] == ["scan-query", "coupled"] for c in calls)
+
+
+def test_main_diff_flat_layout_fallback(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = in_tmp_cwd
+    (project / ".cache" / "scan").mkdir(parents=True)
+    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+
+    _stub_scan_query_present(monkeypatch, present=True)
+    # Only __init__.py files → primary derivation drops them → flat-layout fallback kicks in.
+    _stub_git(monkeypatch, project_name=project.name, diff_files=["lib/__init__.py", "other/__init__.py"])
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cs.subprocess, "run", lambda cmd, **_kw: calls.append(cmd) or type("CP", (), {})())
+
+    rc = cs.main(["--source=diff"])
+    assert rc == 0
+    modules = sorted({c[2] for c in calls if c[:2] == ["scan-query", "rdeps"]})
+    assert modules == ["lib", "other"]
+
+
+def test_main_diff_empty_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = in_tmp_cwd
+    (project / ".cache" / "scan").mkdir(parents=True)
+    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+
+    _stub_scan_query_present(monkeypatch, present=True)
+    _stub_git(monkeypatch, project_name=project.name, diff_files=[])
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cs.subprocess, "run", lambda cmd, **_kw: calls.append(cmd) or type("CP", (), {})())
+
+    rc = cs.main(["--source=diff"])
+    assert rc == 0
+    assert calls == []

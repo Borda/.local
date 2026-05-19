@@ -121,10 +121,10 @@ Root cause unclear after initial triage, OR bug spans 3+ modules and user accept
 Compute run directory and create health sentinel:
 
 ```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-FIX_TEAM_DIR=".temp/develop/${TS}"
-mkdir -p "$FIX_TEAM_DIR"
-touch /tmp/fix-team-check-$TS
+# timeout: 5000
+mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.sh" --sentinel fix-team-check)
+TS="${_run[0]}"
+FIX_TEAM_DIR="${_run[1]}"
 ```
 
 Spawn 2 teammates in parallel using Agent() tool:
@@ -145,7 +145,7 @@ Gather all available context about bug:
 
 ```bash
 # If issue number: fetch the full issue with comments
-"${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue-fetch.sh" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+timeout 6 "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue-fetch.sh" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
 ```
 
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
@@ -208,7 +208,7 @@ Parse result:
    Run any candidate tests found to see if they currently pass or fail:
 
    ```bash
-   $PYTEST_CMD --tb=short <candidate_test_file>::<candidate_test_name> -v
+   "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/pytest-gate.sh" "$PYTEST_CMD" <candidate_test_file>::<candidate_test_name>  # timeout: 120000
    ```
 
 2. For each candidate test found — critically assess coverage quality:
@@ -344,7 +344,7 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 3. Re-run test suite:
 
    ```bash
-   $PYTEST_CMD --tb=short <test_dir> -v 2>&1 >/tmp/pytest-out.txt; PYTEST_EXIT=$?; tail -20 /tmp/pytest-out.txt; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
+   "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/run-pytest-short.sh" "$PYTEST_CMD" <test_dir>; PYTEST_EXIT=$?; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"  # timeout: 600000
    ```
 
 4. **Adjacent bugs** (observation only): scan for similar patterns; document in Follow-up — do not fix here, avoids scope creep.

@@ -116,11 +116,24 @@ For `create`, check only relevant type's path.
 jq -e --arg rule '<rule>' '.permissions.allow | index($rule) != null' .claude/settings.json >/dev/null 2>&1  # timeout: 5000
 ```
 
-**Update second-argument discrimination** — apply after type resolved:
+**Update second-argument discrimination** — apply after type resolved. Set the shell variable `MODE` from the parsed operation; it is consumed by the delete confirmation gate above, the edit-complexity classifier below, and the per-mode workflow branches in Step 4. Recognised values: `create`, `rename`, `content-edit`, `delete`, `add-perm`, `remove-perm`.
 
-- Two bare kebab-case arguments (second arg no spaces, no `.md` extension) → **rename mode**: validate new-name does NOT already exist
-- One name + quoted string → **content-edit mode**: validate spec non-empty; no new-name uniqueness check; set `DIRECTIVE` = the quoted string
-- One name + path ending in `.md` → **content-edit mode**: validate spec file exists on disk; no new-name uniqueness check; set `DIRECTIVE` = contents of the spec file (Read it)
+| Argument shape | `MODE` |
+| --- | --- |
+| `create <type> <name> "..."` | `create` |
+| `update <name> <new-name>` (two bare kebab-case args; second has no spaces, no `.md`) | `rename` (validate new-name does NOT already exist) |
+| `update <name> "<change>"` (one name + quoted string) | `content-edit` (validate spec non-empty; set `DIRECTIVE` = the quoted string) |
+| `update <name> <spec>.md` (one name + path ending in `.md`) | `content-edit` (validate spec file exists on disk; set `DIRECTIVE` = contents of the spec file via Read tool) |
+| `delete <name>` | `delete` |
+| `add perm <rule> "..." "..."` | `add-perm` |
+| `remove perm <rule>` | `remove-perm` |
+
+Assign `MODE` in shell before the edit-complexity classification below so the `[[ "$MODE" == "content-edit" ]]` guard fires correctly:
+
+```bash
+# Set MODE from the operation parsed above. Example for an update invocation:
+# MODE="content-edit"   # or "rename" / "create" / "delete" / "add-perm" / "remove-perm"
+```
 
 If validation fails, report error and stop.
 
@@ -181,10 +194,11 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 
    **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
    ```bash
-   LAUNCH_AT=$(date +%s)
-   touch /tmp/manage-check-web-explorer-$LAUNCH_AT
+   eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer 2>/dev/null)"  # timeout: 5000
+   [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
+   # Sets LAUNCH_AT + SENTINEL; use $SENTINEL in 5-min find -newer poll on /tmp for manage-schema-*.md files.
    ```
-   Every 5 min: `find /tmp -newer /tmp/manage-check-web-explorer-$LAUNCH_AT -name "manage-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+   Every 5 min: `find /tmp -newer "$SENTINEL" -name "manage-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `effort`, `initialPrompt`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `isolation`, `color`), current model shorthands, new fields
    - Note new fields worth including. Adjust template to reflect current schema. If new field broadly useful for agent's role (e.g. `maxTurns` for long-running agents), include with sensible default and inline comment.
@@ -195,38 +209,35 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 
    - `opusplan` — plan-gated roles (solution-architect, oss:shepherd, foundry:curator)
    - `opus` — complex implementation roles (foundry:sw-engineer, foundry:qa-specialist, research:scientist, foundry:perf-optimizer)
-   - `sonnet` — focused execution roles (research:data-steward, foundry:web-explorer, foundry:doc-scribe, oss:cicd-steward)
+   - `sonnet` — focused execution roles (research:data-steward, foundry:web-explorer, foundry:doc-scribe, foundry:creator, oss:cicd-steward)
    - `haiku` — high-frequency diagnostics ONLY (e.g. linting-expert); NOT for analysis/auditing roles that require substantive reasoning
 
-4. Resolve template path:
+4. Resolve template path (cascade primary → project-local → cache scan; only the cache scan runs if neither of the cheaper paths exists, since each candidate must satisfy `-d` before being assigned):
 
 ```bash
-MANAGE_TPL="${CLAUDE_PLUGIN_ROOT}/skills/manage/templates"
-[ -d "$MANAGE_TPL" ] || MANAGE_TPL=".claude/skills/manage/templates"
-[ -z "$MANAGE_TPL" ] && MANAGE_TPL="$(find "${HOME}/.claude/plugins/cache" -name "templates" -path "*/manage/templates" -type d 2>/dev/null | sort -Vr | head -1)"
-[ -d "$MANAGE_TPL" ] || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
+MANAGE_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" manage templates) || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
 ```
 
-5. Spawn **foundry:curator** subagent to generate and write agent file:
+5. Spawn **foundry:sw-engineer** subagent to scaffold and write the agent file. `foundry:curator` is the wrong delegate here — its NOT-for explicitly excludes creating or scaffolding agents/skills; curator only reviews and edits existing config. `foundry:sw-engineer` owns scaffolding (treat agent `.md` as a config artifact whose authoring is a software task — frontmatter schema, tool selection, structural completeness).
 
-> Before passing schema file path to curator: verify file exists on disk using Read tool (limit=1). If schema file path from JSON envelope does not exist, proceed with default frontmatter fields (name, description, model, color) — note omission in Step 10 report.
+> Before passing schema file path to sw-engineer: verify file exists on disk using Read tool (limit=1). If schema file path from JSON envelope does not exist, proceed with default frontmatter fields (name, description, model, color) — note omission in Step 10 report.
 
 ```markdown
 Read the agent scaffold template at `$MANAGE_TPL/agent-scaffold.md`.
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields (skip if schema file not found — use default frontmatter fields: name, description, model, color).
-Create `.claude/agents/<name>.md` with:
+Scaffold `.claude/agents/<name>.md` with:
 - Frontmatter: name=<name>, description=<description>, model=<model>, color=<color>; add any broadly-useful new fields from the schema
 - Body: rich domain-specific content for the role described by the description, following all content rules and tool selection guidelines in the scaffold template
 Write the file using the Write tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §8): After spawning foundry:curator agent:
+**Health monitoring** (CLAUDE.md §8): After spawning foundry:sw-engineer agent:
 ```bash
-LAUNCH_AT=$(date +%s)
-touch /tmp/manage-check-curator-agent-$LAUNCH_AT
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-agent 2>/dev/null)"  # timeout: 5000
+[ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
 ```
-Every 5 min: `find .claude/agents -newer /tmp/manage-check-curator-agent-$LAUNCH_AT -name "<name>.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+Every 5 min: `find .claude/agents -newer "$SENTINEL" -name "<name>.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
 ### Mode: Create Skill
 
@@ -236,36 +247,36 @@ Every 5 min: `find .claude/agents -newer /tmp/manage-check-curator-agent-$LAUNCH
 
    **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
    ```bash
-   LAUNCH_AT=$(date +%s)
-   touch /tmp/manage-check-web-explorer-skill-$LAUNCH_AT
+   eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer-skill 2>/dev/null)"  # timeout: 5000
+   [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
    ```
-   Every 5 min: `find /tmp -newer /tmp/manage-check-web-explorer-skill-$LAUNCH_AT -name "manage-skill-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+   Every 5 min: `find /tmp -newer "$SENTINEL" -name "manage-skill-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
 
-2. `MANAGE_TPL` already resolved in Create Agent step 4 above — reuse. If Create Skill runs without Agent mode, re-run the resolution block from step 4 above.
+2. **Re-resolve `MANAGE_TPL` at the start of each skill invocation**; do not assume it is set from a prior step. Most `/foundry:manage create skill ...` invocations enter Create Skill mode directly without going through Create Agent first, so the variable will be unset. Run the resolution block from Create Agent step 4 above (cascade primary → project-local → cache scan with the `-d` guards) before reading any template path.
 
-3. Spawn **foundry:curator** subagent to create directory and generate skill file:
+3. Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skill file (`foundry:curator` NOT-for excludes scaffolding new agents/skills — see Create Agent rationale above):
 
 ```markdown
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
 Read the skill scaffold template at `$MANAGE_TPL/skill-scaffold.md`.
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
-Read `$_FOUNDRY_SHARED/bin-authoring-guide.md` — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is RECOMMENDED or EXTRACT.
-Create `.claude/skills/<name>/SKILL.md` with:
+Read `$_FOUNDRY_SHARED/bin-authoring-guide.md` — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH.
+Scaffold `.claude/skills/<name>/SKILL.md` with:
 - Frontmatter: name=<name>, description=<description>; add other fields per schema and scaffold guidance
 - Body: rich workflow scaffold derived from the description, following all content rules in the scaffold template
 Write using the Write tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §8): After spawning foundry:curator agent:
+**Health monitoring** (CLAUDE.md §8): After spawning foundry:sw-engineer agent:
 ```bash
-LAUNCH_AT=$(date +%s)
-touch /tmp/manage-check-curator-skill-$LAUNCH_AT
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-skill 2>/dev/null)"  # timeout: 5000
+[ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
 ```
-Every 5 min: `find .claude/skills -newer /tmp/manage-check-curator-skill-$LAUNCH_AT -name "SKILL.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+Every 5 min: `find .claude/skills -newer "$SENTINEL" -name "SKILL.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
 
 ### Mode: Update Agent (rename)
 
@@ -350,7 +361,7 @@ Rules:
 - Preserve frontmatter fields (name, description, tools, model, color) unless the change explicitly targets them
 - Preserve XML tags (<role>, <core_knowledge>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the agent's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is RECOMMENDED or EXTRACT
+- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
 - After editing: verify XML tag balance, step numbering, cross-ref validity
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -370,7 +381,7 @@ Rules:
 - Preserve frontmatter fields (name, description, argument-hint, disable-model-invocation, allowed-tools)
 - Preserve XML tags (<objective>, <inputs>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the skill's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is RECOMMENDED or EXTRACT
+- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
 - After editing: verify XML tag balance, step numbering, workflow gate completeness
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -461,7 +472,30 @@ Return ONLY: {"status":"done","file":".claude/hooks/<name>.js","edits":N,"confid
 rm .claude/hooks/<name>.js # timeout: 5000
 ```
 
-> After deleting hook, also remove its entry from `.claude/settings.json` hooks configuration so Claude Code does not invoke missing file.
+After deleting the hook file, also remove its entry from `.claude/settings.json` so Claude Code does not invoke a missing script. Identify the hook's matcher pattern (the entry's `matcher` field, or `command` substring containing the deleted filename) and run jq to strip every block referencing it. Substitute `<name>` with the deleted hook's basename (no `.js` suffix):
+
+```bash
+# timeout: 5000
+HOOK_NAME="<name>"        # e.g. "rtk-rewrite" — basename of deleted hook, no .js suffix
+# Remove every PreToolUse / PostToolUse / SessionStart / etc. entry whose hooks[].command references this file
+jq --arg hook "$HOOK_NAME" '
+    .hooks //= {}
+    | .hooks |= with_entries(
+        .value |= map(
+            .hooks |= map(select((.command // "") | test("/" + $hook + "\\.js"; "i") | not))
+        )
+        | .value |= map(select((.hooks // []) | length > 0))
+    )
+    | .hooks |= with_entries(select((.value // []) | length > 0))
+' .claude/settings.json > /tmp/settings-tmp.json && mv /tmp/settings-tmp.json .claude/settings.json
+```
+
+Verify the entry is gone:
+
+```bash
+jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook + "\\.js"))] | length' .claude/settings.json  # timeout: 5000
+# Expected output: 0
+```
 
 ### Mode: Add Permission
 
@@ -478,11 +512,11 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
    - `Bash(brew ...)`, `Bash(codex:*)` → `## macOS / ecosystem`
    - All other `Bash(...)` → `## Shell utilities`
 
-2. Update `settings.json` — parse, append, write back:
+2. Update `settings.json` — atomic jq edit via shared helper:
 
     ```bash
     # timeout: 15000
-    jq --arg rule "<rule>" '.permissions.allow += [$rule]' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/jq_write.py" .claude/settings.json '.permissions.allow += [$rule]' --arg rule "<rule>"
     ```
 
 3. Also append to plugin's `permissions-allow.json` so `/foundry:init` syncs it to `~/.claude/settings.json` on reinstall:
@@ -491,7 +525,7 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
     # timeout: 5000
     PERM_FILE="${CLAUDE_PLUGIN_ROOT}/.claude-plugin/permissions-allow.json"
     if [ -f "$PERM_FILE" ]; then
-        jq --arg rule "<rule>" '. += [$rule] | unique' "$PERM_FILE" > "${PERM_FILE}.tmp" && mv "${PERM_FILE}.tmp" "$PERM_FILE"
+        python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/jq_write.py" "$PERM_FILE" '. += [$rule] | unique' --arg rule "<rule>"
     fi
     ```
 
@@ -507,19 +541,19 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
 
     ```bash
     # timeout: 5000
-    jq -e '.permissions.allow | contains(["<rule>"])' .claude/settings.json && echo "OK" || echo "MISSING"
-    grep -F '`<rule>`' .claude/permissions-guide.md
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/verify_perm.py" "<rule>" .claude/settings.json .claude/permissions-guide.md present
+    # Exits 0 if both consistent; prints "settings: OK|MISSING" + "guide: OK|MISSING"
     ```
 
 ### Mode: Remove Permission
 
 Removes rule from both `settings.json` and `permissions-guide.md` atomically.
 
-1. Update `settings.json` — parse, filter, write back:
+1. Update `settings.json` — atomic jq edit via shared helper:
 
     ```bash
     # timeout: 15000
-    jq --arg rule "<rule>" 'del(.permissions.allow[] | select(. == $rule))' .claude/settings.json > .claude/settings.json.tmp && mv .claude/settings.json.tmp .claude/settings.json
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/jq_write.py" .claude/settings.json 'del(.permissions.allow[] | select(. == $rule))' --arg rule "<rule>"
     ```
 
 2. Update `permissions-guide.md` — use Edit tool to remove table row containing `` `<rule>` ``.
@@ -528,8 +562,8 @@ Removes rule from both `settings.json` and `permissions-guide.md` atomically.
 
     ```bash
     # timeout: 5000
-    jq -e '.permissions.allow | contains(["<rule>"]) | not' .claude/settings.json && echo "OK" || echo "STILL PRESENT"
-    grep -qF '`<rule>`' .claude/permissions-guide.md && echo "STILL IN GUIDE" || echo "OK"
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/verify_perm.py" "<rule>" .claude/settings.json .claude/permissions-guide.md absent
+    # Exits 0 if both consistent; prints "settings: OK|STILL_PRESENT" + "guide: OK|STILL_PRESENT"
     ```
 
 ## Step 5: Propagate cross-references

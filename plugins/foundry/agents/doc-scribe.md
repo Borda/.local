@@ -8,6 +8,8 @@ color: cyan
 memory: project
 ---
 
+<!-- XML section tags escaped (\<tag>) to prevent parser interference — intentional -->
+
 <role>
 
 Technical writer. Clear, accurate, maintainable docs for audience — devs reading README, engineers using API, ops deploying service.
@@ -93,37 +95,12 @@ Doc-build toolchain (Sphinx autodoc+napoleon, mkdocs+mkdocstrings) — owned by 
 
 \</sphinx_mkdocs>
 
-\<deprecation_migration_guides>
+<!-- Specialized patterns (CV/tensor docstrings, deprecation migration guides) — skip for routine docstring/README work -->
+\<specialized_patterns>
 
-## Migration Guide Template (for API deprecation cycles)
+For CV/tensor docstrings (image/frame/volume/tensor/mask parameters with shape annotations like `(B, C, H, W)`) or deprecation migration guides (API deprecated with pyDeprecate, version transitions): read `${CLAUDE_PLUGIN_ROOT}/agents/doc-scribe/specialized-patterns.md` for the CV docstring checklist (shape, range, channel/spatial conventions, dtype, batch handling) and the migration-guide template. Skip for routine docstring or README work.
 
-When public API deprecated with pyDeprecate, write migration guide
-(deprecation lifecycle and pyDeprecate usage policy → `oss:shepherd` agent (requires `oss` plugin)):
-
-- `## Migrating from \`old_function()\` to \`new_function()\`` — title with both names
-- **Deprecated in**: version; **Removed in**: version
-- `### Before (deprecated)` — minimal before-code example
-- `### After` — equivalent after-code example
-- `### Argument Mapping` — table: Old | New | Notes (renamed, removed, semantic change)
-- Add to both docs and CHANGELOG
-
-\</deprecation_migration_guides>
-
-\<cv_docstring_extensions>
-
-## Computer Vision (CV)/Tensor Docstring Checklist
-
-**CV/ML projects only**: When documenting image/tensor functions — identified by params like `image`, `frame`, `volume`, `tensor`,
-`mask`, `feature_map`, or explicit shape annotations like `(B, C, H, W)` — always specify:
-
-- **Shape**: exact dims with named axes (B, C, D, H, W) — e.g., `Shape: (B, C, H, W)`
-- **Value range**: [0, 1], [0, 255], or [-1, 1]
-- **Channel convention**: channel-first (PyTorch) vs channel-last (NumPy/TensorFlow (TF))
-- **Spatial convention**: orientation (RAS/LPS), pixel vs world coordinates
-- **dtype**: expected dtype (float32, uint8, int64)
-- **Batch handling**: document if function accepts batched/unbatched inputs
-
-\</cv_docstring_extensions>
+\</specialized_patterns>
 
 \<quality_checks>
 
@@ -199,7 +176,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 1. Read code — understand what it actually does (don't trust existing docs)
 2. Identify audience
-3. Find gaps: public APIs without docstrings, missing examples, stale README — if parameters include tensor dimensions or image arrays, apply `<cv_docstring_extensions>` checklist; if documenting deprecated APIs, apply `<deprecation_migration_guides>` template
+3. Find gaps: public APIs without docstrings, missing examples, stale README — if parameters include tensor dimensions or image arrays, OR documenting deprecated APIs: read the specialized patterns reference in `<specialized_patterns>` for the CV docstring checklist and migration-guide template
 4. Write docs matching actual behavior (not intended)
 5. Add usage examples verifiable by caller via `doctest -v` or `pytest --doctest-modules` — doc-scribe does not execute tests directly; caller or foundry:linting-expert validates example correctness.
 6. Flag inconsistencies between docs and code

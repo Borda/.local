@@ -3,6 +3,7 @@ name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design."
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+model: sonnet
 effort: high
 when_to_use: "Use when the user asks to review a GitHub Pull Request (Python source, documentation (Markdown/RST), and CI/CD config PRs), wants multi-agent code review feedback, or needs a structured review with severity-graded findings."
 ---
@@ -46,11 +47,20 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ## Agent Resolution
 
+# loads: oss-shared-resolver.md
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
-# Verify $_OSS_SHARED is resolved before any step that uses it (Step 8 reads shepherd-reply-protocol.md)
-[ -d "$_OSS_SHARED" ] || { echo "⚠ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — Step 8 --reply will fail; verify oss plugin installed"; exit 1; }
+# $_OSS_SHARED is required by --reply mode (Step 8 reads shepherd-reply-protocol.md). For non-reply
+# flows the helpers are nice-to-have but not load-bearing — degrade gracefully instead of exiting.
+if [ ! -d "$_OSS_SHARED" ]; then
+    if [[ "$ARGUMENTS" == *--reply* ]]; then
+        echo "⛔ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — --reply requires oss plugin shared dir; verify oss plugin installed"
+        exit 1
+    else
+        echo "⚠ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — continuing with degraded functionality (oss skill-specific shared helpers unavailable; --reply mode will not work in this run)"
+    fi
+fi
 
 Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
@@ -141,8 +151,15 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
         echo "No Python, documentation, or CI/CD files changed in PR #$CLEAN_ARGS — skipping review (oss:review covers Python source, docs, and CI/CD config)"
         exit 0
     fi
+    # Single-domain "only" modes
     [ -z "$PY_FILES" ] && [ -z "$DOC_FILES" ] && [ -n "$CICD_FILES" ] && CICD_ONLY_MODE=true || CICD_ONLY_MODE=false
     [ -z "$PY_FILES" ] && [ -z "$CICD_FILES" ] && [ -n "$DOC_FILES" ] && DOCS_ONLY_MODE=true || DOCS_ONLY_MODE=false
+    # Mixed docs+CI/CD (no Python) — keep both lanes alive without falling through to full Python mode
+    if [ -z "$PY_FILES" ] && [ -n "$DOC_FILES" ] && [ -n "$CICD_FILES" ]; then
+        DOCS_CICD_MODE=true
+    else
+        DOCS_CICD_MODE=false
+    fi
 fi
 ```
 
@@ -152,11 +169,40 @@ fi
 
 **Docs-only mode** (`DOCS_ONLY_MODE=true`): PR changes only `.md`/`.rst` files, no `.py`. Spawn Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 7 (challenger, if `CHALLENGE_ENABLED=true`), and Codex (if available); skip Agents 2 (qa-specialist), 3 (perf-optimizer), 5 (linting-expert), 6 (solution-architect). Skip scope classification below — proceed directly to agent launch.
 
-Before spawning agents (Python mode only), classify diff:
+**Docs + CI/CD mode** (`DOCS_CICD_MODE=true`): PR changes only `.md`/`.rst` and CI/CD config — no Python source. Spawn `oss:cicd-steward` (Agent 8) + `foundry:doc-scribe` (Agent 4) only; optionally `foundry:challenger` (Agent 7) when `CHALLENGE_ENABLED=true`. Skip Agents 1, 2, 3, 5, 6 — there is no Python source to analyse. Skip scope classification below — proceed directly to agent launch. The 7-agent Python fan-out is incorrect for CI+docs PRs and would produce mostly empty findings.
+
+Before spawning agents (Python mode only — `CICD_ONLY_MODE`, `DOCS_ONLY_MODE`, `DOCS_CICD_MODE` all false), classify diff:
 
 - Count files changed, lines added/removed, new classes/modules
 - Classify: **FIX** (\<3 files, \<50 lines), **REFACTOR** (internal restructure, no new public API), **FEATURE** (new public API or module), **CHORE** (deps, config, tooling — no logic changes), or **MIXED**
 - **Complexity smell**: 8+ files changed → note in report header
+
+H6 — assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) can branch on it without comparing to an undefined value:
+
+```bash
+# Count Python files + total Python LOC delta for the classification heuristic
+PY_FILE_COUNT=$(echo "$PY_FILES" | grep -c . 2>/dev/null || echo 0)
+PY_LOC_DELTA=$(gh pr diff $CLEAN_ARGS 2>/dev/null | grep -E '^[+-][^+-]' | grep -vE '^[+-]{3}' | wc -l | tr -d ' ')  # timeout: 6000
+
+# Detect new public API surface: added lines in src/**/__init__.py
+NEW_API_LINES=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -c '^+[^+]' || echo 0)  # timeout: 6000
+
+# Detect pure config/deps changes (no .py logic changes)
+NON_CONFIG_PY=$(echo "$PY_FILES" | grep -vE '(pyproject\.toml|setup\.cfg|setup\.py|requirements.*\.txt|conftest\.py)' || true)
+
+if [ -z "$NON_CONFIG_PY" ] && [ "$PY_FILE_COUNT" -eq 0 ]; then
+    SCOPE=CHORE
+elif [ "$NEW_API_LINES" -gt 0 ]; then
+    SCOPE=FEATURE
+elif [ "$PY_FILE_COUNT" -lt 3 ] && [ "$PY_LOC_DELTA" -lt 50 ]; then
+    SCOPE=FIX
+elif [ "$PY_FILE_COUNT" -ge 3 ]; then
+    SCOPE=REFACTOR
+else
+    SCOPE=MIXED
+fi
+echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$NEW_API_LINES)"
+```
 
 Skip optional agents by classification:
 
@@ -320,12 +366,15 @@ POLL_START=$(date +%s)
 EXPECTED=()
 [ "$CODEX_AVAILABLE" = "1" ] && EXPECTED+=("$RUN_DIR/foundry--codex.md")
 for N in $ISSUE_NUMS; do EXPECTED+=("$RUN_DIR/issue-$N.md"); done
-[ "$CICD_ONLY_MODE" = "true" ] && EXPECTED+=("$RUN_DIR/oss--cicd-steward.md")
-EXPECTED+=("$RUN_DIR/foundry--sw-engineer.md")
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && EXPECTED+=("$RUN_DIR/foundry--qa-specialist.md")
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && EXPECTED+=("$RUN_DIR/foundry--perf-optimizer.md")
+# cicd-steward runs in CI/CD-only mode AND in docs+CI/CD mode
+{ [ "$CICD_ONLY_MODE" = "true" ] || [ "$DOCS_CICD_MODE" = "true" ]; } && EXPECTED+=("$RUN_DIR/oss--cicd-steward.md")
+# sw-engineer (Agent 1) runs in Python modes and docs-only (light reviewer); skipped for docs+CI/CD (no Python source)
+[ "$DOCS_CICD_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--sw-engineer.md")
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && EXPECTED+=("$RUN_DIR/foundry--qa-specialist.md")
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && EXPECTED+=("$RUN_DIR/foundry--perf-optimizer.md")
+# doc-scribe runs whenever docs exist (DOCS_ONLY, DOCS_CICD, Python with docs) — only skipped in pure CI/CD-only mode
 [ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--doc-scribe.md")
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--linting-expert.md")
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--linting-expert.md")
 [ "$CHALLENGE_ENABLED" = "true" ] && EXPECTED+=("$RUN_DIR/foundry--challenger.md")
 # solution-architect added conditionally when spawned
 

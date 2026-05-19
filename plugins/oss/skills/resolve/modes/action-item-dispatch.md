@@ -17,7 +17,7 @@ IMPL_AGENT="codex:codex-rescue"
 IMPL_DIR="/tmp/resolve-impl-$$"
 mkdir -p "$IMPL_DIR"  # timeout: 5000
 
-SENTINEL="/tmp/claude-commit-auth-$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')-$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')"
+SENTINEL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/compute_commit_sentinel.py")  # timeout: 5000
 touch "$SENTINEL"  # timeout: 3000
 trap 'rm -f "$SENTINEL"; rm -rf "$IMPL_DIR"' EXIT INT TERM
 CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
@@ -86,8 +86,19 @@ Append to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=<VALID|REJECT> res
 ### Phase 2: Implementation
 
 ```bash
-# Ensure clean state before each item — substitute <id> with item.id
-test -z "$(git status --porcelain)" || { echo "⚠ dirty tree before item #<id> — stashing"; git stash push -m "resolve-pre-item-<id>"; }  # timeout: 3000
+# Ensure clean state before each item — substitute <id> with item.id.
+# Stash with a trap so we never leave the working tree dirty when the
+# implementation agent makes no changes (no pop in that branch).
+STASHED=false
+if [ -n "$(git status --porcelain)" ]; then
+    echo "⚠ dirty tree before item #<id> — stashing"
+    git stash push -m "resolve-pre-item-<id>" && STASHED=true  # timeout: 3000
+fi
+# Pop on any exit path; STASHED=false after a successful pop makes the
+# trap body a no-op. This appends to the EXIT/INT/TERM traps already set
+# in the loop header (sentinel + IMPL_DIR cleanup) — fold the stash-pop
+# into the existing single trap line rather than overwriting it.
+trap '[ "$STASHED" = "true" ] && git stash pop >/dev/null 2>&1; rm -f "$SENTINEL"; rm -rf "$IMPL_DIR"' EXIT INT TERM
 git diff HEAD --stat  # timeout: 3000
 ```
 
@@ -116,23 +127,23 @@ Return ONLY compact JSON as your FINAL message (nothing after it):
 git diff HEAD --stat  # timeout: 3000
 ```
 
-Code changed → pop stash BEFORE committing, then stage and commit per `COMMIT_MODE`:
+Code changed → pop stash BEFORE committing (and clear `STASHED` so the EXIT trap is a no-op), then stage and commit per `COMMIT_MODE`:
 
 ```bash
-if git stash list --quiet | grep -q "resolve-pre-item-<id>"; then
+if [ "$STASHED" = "true" ]; then
     git stash pop || { echo "⚠ stash pop conflict — resolve conflicts in $(git stash list | head -1) before item #<id>"; exit 1; }  # timeout: 3000
+    STASHED=false
 fi
 
-git add $(git diff HEAD --name-only)                                                     # timeout: 3000
-UNTRACKED=$(git ls-files --others --exclude-standard | grep -E '\.(py|md|yaml|yml|toml|cfg|ini|json|txt|sh|js|ts|go|rs|rb|java|c|cpp|h|hpp)$' 2>/dev/null)
-[ -n "$UNTRACKED" ] && echo "$UNTRACKED" | xargs git add -- 2>/dev/null || true         # timeout: 3000
+"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/stage_item_changes.sh" "<id>"  # timeout: 5000
 ```
 
-**`COMMIT_MODE=each`** (commit-each, default) — commit immediately after each item:
+**`COMMIT_MODE=each`** (commit-each, default) — commit immediately after each item. Write the per-item commit message to a temp file, then dispatch to `bin/commit_action_item.sh` (handles sentinel touch + `git add` + `git commit` and cleans the sentinel on every exit path). Omit the Codex co-author line when `IMPL_AGENT ≠ codex:codex-rescue`:
 
 ```bash
-git commit -m "$(
-    cat <<'EOF'
+COMMIT_MSG=$(mktemp)  # timeout: 3000
+trap 'rm -f "$COMMIT_MSG"' RETURN
+cat >"$COMMIT_MSG" <<EOF
 <imperative short summary of the change>
 
 [resolve #<item_id>] Review by @<author> (PR #<PR_NUMBER>):
@@ -143,8 +154,10 @@ Challenge: evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|sel
 Co-authored-by: Claude Code <noreply@anthropic.com>
 Co-authored-by: OpenAI Codex <codex@openai.com>
 EOF
-)"  # timeout: 3000
-# Omit Codex co-author line when IMPL_AGENT ≠ codex:codex-rescue
+
+"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.sh" \
+    --message-file "$COMMIT_MSG" \
+    --files <files-changed-by-this-item>  # timeout: 10000
 ```
 
 **`COMMIT_MODE=all`** — stage only here; commit once after all items (see end of loop section).
@@ -159,19 +172,16 @@ Mark item's task completed:
 TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
 
-**After loop — `COMMIT_MODE=all` only**: create single commit referencing all implemented items:
+**After loop — `COMMIT_MODE=all` only**: derive counters from `CHALLENGE_LOG`, then create single commit:
 
 ```bash
-git commit -m "$(
-    cat <<'EOF'
-Resolve N review items for PR #<PR_NUMBER>
-
-<bullet list of item summaries>
-Challenge log: <N> as-suggested, <M> self-resolved, <K> rejected
-
----
-Co-authored-by: Claude Code <noreply@anthropic.com>
-Co-authored-by: OpenAI Codex <codex@openai.com>
-EOF
-)"  # timeout: 3000
+N_AS_SUGGESTED=0; N_SELF_RESOLVED=0; N_REJECTED=0; SUMMARIES_FILE=""
+for _entry in "${CHALLENGE_LOG[@]}"; do
+    case "$_entry" in
+        *resolution=as-suggested*) N_AS_SUGGESTED=$(( N_AS_SUGGESTED + 1 )) ;;
+        *resolution=self-resolved*) N_SELF_RESOLVED=$(( N_SELF_RESOLVED + 1 )) ;;
+        *evidence=REJECT*) N_REJECTED=$(( N_REJECTED + 1 )) ;;
+    esac
+done
+"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_all_items.sh" "$PR_NUMBER" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
 ```

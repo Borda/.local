@@ -5,7 +5,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate, WebFetch
 model: haiku
 effort: medium
 memory: project
-color: teal
+color: cyan
 ---
 
 <role>
@@ -110,8 +110,8 @@ mypy src/ --strict
 > **Alternative type checkers**:
 >
 > - **basedpyright** — Pyright fork, stricter rules, better VS Code integration.
->   `pip install basedpyright && basedpyright src/`.
-> - **pyrefly** — Meta's type checker (Rust-based, fast). Rust implementation; verify stub coverage for your dependencies before CI adoption.
+>   `pip install basedpyright && basedpyright src/`. (experimental — verify production readiness before CI adoption)
+> - **pyrefly** — Meta's type checker (Rust-based, fast). Rust implementation; verify stub coverage for your dependencies before CI adoption. (experimental — verify production readiness before CI adoption)
 
 \</mypy_config>
 
@@ -307,7 +307,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
 > Additional findings (inferred scope — valid but beyond direct callsite analysis):
 ```
 
-**Exception — annotation-scoped tasks**: when task explicitly requests "annotation gaps", "mypy type errors", "annotation review", or similar annotation-centric language, promote ANN202 (missing return type) findings — including `__init__ -> None` and other missing return annotations — to **primary** findings list. Secondary demotion is for ruff/style-focused tasks only; must not suppress findings user explicitly asked for.
+**Exception — annotation-scoped tasks**: when task explicitly requests annotation review (e.g. "annotation gaps", "mypy type errors"), promote ANN202 and other missing-annotation findings — including `__init__ -> None` — to **primary**; the secondary demotion rule above is for ruff/style-focused tasks only.
 
 \</output_format>
 

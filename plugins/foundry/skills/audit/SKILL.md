@@ -1,9 +1,10 @@
 ---
 name: audit
-description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, and boilerplate duplication. Fix level chosen via always-fire follow-up gate after report."
+description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, boilerplate duplication, and bin/ extraction candidates (extraction performed separately via /distill executables). Fix level chosen via always-fire follow-up gate after report."
 argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+effort: high
 ---
 
 <objective>
@@ -20,7 +21,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
   - `--local` — audit source tree (`plugins/*/`) not user setup (`.claude/` + installed cache); plugin-dev workflows where local edits not yet installed; sets `LOCAL_MODE=true`
   - `--upgrade` — fetch latest Claude Code docs, filter new features by genuine value, apply: **config** changes (apply + correctness check), **capability** changes (calibrate before → apply → calibrate after → accept if Δrecall ≥ 0 and ΔF1 ≥ 0). Skip to **Mode: upgrade**. Mutually exclusive with `--adversarial` and `--efficiency` — error if combined with either.
   - `--adversarial` (alias: `--challenge`) — adversarial review of all agents + skills in scope using `foundry:challenger` (Phase A) + Codex adversarial pass (Phase B); surfaces issues beyond standard per-file audit; see **Mode: adversarial**. Mutually exclusive with `--upgrade` only; combinable with `--efficiency`.
-  - `--efficiency` — cost and efficiency sweep: model tier validation, token bloat detection, unbounded spawn patterns, cross-file boilerplate duplication, missing model declarations, dead model specs. Generates prioritized cost-reduction plan with estimated savings per change. Skip to **Mode: efficiency**. Mutually exclusive with `--upgrade` only; combinable with `--adversarial`.
+  - `--efficiency` — cost and efficiency sweep: model tier validation, token bloat detection, unbounded spawn patterns, cross-file boilerplate duplication, missing model declarations, dead model specs, bin/ extraction candidates (Check 33). Generates prioritized cost-reduction plan with estimated savings. Detection only — run `/distill executables` to act on extraction candidates. Skip to **Mode: efficiency**. Mutually exclusive with `--upgrade` only; combinable with `--adversarial`.
   - `--skip-gate` — suppress follow-up gate (for automation pipelines)
 
   **Legacy positional tokens** (`fix`, `upgrade`, `adversarial`, `challenge`, `ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`fix medium` removed — run `/audit` and pick fix level from gate, or pass `--upgrade` / `--adversarial` as flags."
@@ -94,6 +95,12 @@ ARGUMENTS="${ARGUMENTS// --efficiency / }"; ARGUMENTS="${ARGUMENTS// --upgrade /
 ARGUMENTS="${ARGUMENTS// --skip-gate / }"; ARGUMENTS="${ARGUMENTS// --challenge / }"
 ARGUMENTS="${ARGUMENTS# }"; ARGUMENTS="${ARGUMENTS% }"
 
+# Mutual exclusion: --upgrade cannot be combined with --adversarial or --efficiency
+if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFFICIENCY_MODE" = "true" ]; }; then
+    printf "! --upgrade is mutually exclusive with --adversarial and --efficiency\n"
+    exit 1
+fi
+
 # Canonical source: foundry _shared/preflight-helpers.md (deployed by /foundry:init to .claude/skills/_shared/)
 # Keep in sync with that file when updating
 # From _shared/preflight-helpers.md — TTL 4 hours, keyed per binary
@@ -141,17 +148,7 @@ else
     NODE_AVAILABLE=false
 fi
 
-# AUDIT_TPL path resolution — needed by Step 3 (curator-prompt.md) and Step 4 (scope check files)
-# .claude/skills/audit/templates/ is populated by plugin system; if absent, fall back to plugin cache
-AUDIT_TPL=".claude/skills/audit/templates"
-if [ "$LOCAL_MODE" = "true" ] && [ -d "plugins/foundry/skills/audit/templates" ]; then
-    AUDIT_TPL="plugins/foundry/skills/audit/templates"
-elif [ -d "$AUDIT_TPL" ]; then
-    : # keep .claude/ path
-else
-    AUDIT_TPL="$(find ${HOME}/.claude/plugins/cache -path "*/audit/templates" -type d 2>/dev/null | head -1)" # timeout: 5000
-fi
-[ -d "$AUDIT_TPL" ] || { printf "! BREAKING: audit/templates not found — run /foundry:init first\n"; exit 1; }
+AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local}) || { printf "! BREAKING: audit/templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
 ```
 
 If `.claude/` missing, abort immediately. Missing `jq` is warning — audit continues with Check 4 skipped.
@@ -164,7 +161,7 @@ If `.claude/` missing, abort immediately. Missing `jq` is warning — audit cont
 # Check whether pre-commit is installed and a config exists
 if (preflight_ok pre-commit || { command -v pre-commit &>/dev/null && preflight_pass pre-commit; }) &&
 [ -f .pre-commit-config.yaml ]; then
-    pre-commit run --all-files # timeout: 600000
+    timeout 600 pre-commit run --all-files # timeout: 600000
 fi
 ```
 
@@ -208,7 +205,7 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 - `setup`/`plugin` (bare) scope — no agent/skill collection from plugins; see setup/plugin notes below
 - Full sweep (no scope) — collect per `LOCAL_MODE` source selection above
 
-**Setup scope**: when `$SCOPE` is `setup`, also collect `plugins/foundry/skills/init/SKILL.md` for Step 3 foundry:curator spawn — only per-file spawn in setup scope. Checks I1–I3 (from `checks-install.md`) run in Step 4 against `~/.claude/` to validate post-install user state.
+**Setup scope**: when `$SCOPE` is `setup`, also collect `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/init/SKILL.md` for Step 3 foundry:curator spawn — only per-file spawn in setup scope. Checks I1–I3 (from `checks-install.md`) run in Step 4 against `~/.claude/` to validate post-install user state.
 
 **`plugins <name>` scope**: verify `plugins/<name>/` exists — abort `! BREAKING: plugins/<name>/ not found` if absent. Collect `plugins/<name>/skills/init/SKILL.md` for Step 3 plus all agents/skills in that plugin. **`plugins` (no name)**: iterate all subdirs under `plugins/` with `agents/` or `skills/` dir.
 
@@ -218,11 +215,11 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 
 **Hard rule — no pre-reading**: Never call Read on agent/skill file before spawning foundry:curator. Spawned agent does the reading. Orchestrator reads only returned JSON envelope. Pre-reading 41 KB files into main context = defeats delegation + causes context overflow at scale.
 
-**Batching rule**: Group files into batches of up to `BATCH_SIZE` — never spawn one agent per file at scale; N parallel agents inflate coordinator context with JSON envelopes. One-per-file only when total files ≤ `BATCH_SIZE`.
+**Batching rule**: Always apply the grouping algorithm — group files into batches of up to `BATCH_SIZE` regardless of total file count. Never spawn one agent per file. Total files ≤ `BATCH_SIZE` produces one batch containing all files, not N batches of one file each.
 
 **Grouping algorithm**: (1) sort by plugin origin (`plugins/<name>/` prefix); (2) assign each plugin's files to batches, fill to `BATCH_SIZE` before next — keeps same-plugin files together; (3) remaining files (`.claude/` and mixed) fill open slots. Grouping plugin-first, not strictly ordered — unconnected files assigned randomly to reach `BATCH_SIZE`.
 
-**Scope-restricted runs**: fewer than `BATCH_SIZE` files → spawn one foundry:curator for ALL files in scope. Read only relevant template file(s) for active scope, not all 4.
+**Scope-restricted runs**: fewer than `BATCH_SIZE` files → one batch containing ALL files in scope (single foundry:curator spawn). Read only relevant template file(s) for active scope, not all 4.
 
 Set up the run directory once before spawning any agents:
 
@@ -238,7 +235,7 @@ Spawn **foundry:curator** agents in batches of up to `BATCH_SIZE` (grouping algo
 2. Include the disk inventory from Step 2 (agent/skill list for cross-reference validation)
 3. End with:
 
-> "Write your FULL findings (all severity levels, Confidence block) to `<RUN_DIR>/<file-slug>.md` using the Write tool — where `<file-slug>` is a unique identifier combining plugin prefix and filename (e.g. `foundry-shepherd.md`, `oss-analyse-SKILL.md`, `develop-fix-SKILL.md`) to avoid collisions between cross-plugin files sharing the same basename. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/<file-slug>.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<filename>: N critical, N high, N medium, N low\"}`"
+> "Write your FULL findings (all severity levels) to `<RUN_DIR>/<file-slug>.md` using the Write tool — where `<file-slug>` is a unique identifier combining plugin prefix and filename (e.g. `foundry-shepherd.md`, `oss-analyse-SKILL.md`, `develop-fix-SKILL.md`) to avoid collisions between cross-plugin files sharing the same basename. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/<file-slug>.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<filename>: N critical, N high, N medium, N low\"}`"
 
 Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique slug (e.g. `foundry-shepherd`, `oss-analyse-SKILL`, `develop-fix-SKILL`). Slug chars: `[a-zA-Z0-9-]` only — no slashes, spaces, or dots.
 
@@ -265,7 +262,7 @@ Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$AUDIT_CHECKPOINT" -ty
 > | --- | --- |
 > | `setup` | `checks-setup.md` + `checks-install.md` (Checks 1–11, I1–I3) |
 > | `plugin` | `checks-setup.md` (Checks 7, 8 only) |
-> | `plugins` | `checks-setup.md` (Checks 7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 29) + checks 32, 33 |
+> | `plugins` | `checks-setup.md` (Checks 7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 29) + checks 32, 32d, 33 + `checks-install.md` (R1, R2, R3 — LOCAL_MODE only) |
 > | `plugins <name>` | same as `plugins` — scoped to one plugin directory |
 > | `agents` | `checks-agents.md` + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) + `checks-skills.md` (Check 22 only) |
 > | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) |
@@ -294,11 +291,11 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 
 - `agents` — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
 - `skills` — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
-- `rules` — Checks 18, 12, 13, 29, 32c
+- `rules` — Checks 18, 12, 13, 29, 32c (32d skipped — no plugin bin/ in rules scope)
 - `communication` — Checks 15, 16, 12, 13, 29
 - `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, I1, I2, I3 (Step 3: one foundry:curator spawn for `init` SKILL.md only; I1–I3 read `~/.claude/`)
-- `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `plugins/foundry/skills/init/SKILL.md` only)
-- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 33 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md)
+- `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/init/SKILL.md` only)
+- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, R1, R2, R3 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md; 32d always LOCAL_MODE — skip in non-local; R1/R2/R3 always LOCAL_MODE — skip in non-local)
 - `plugins <name>` or `<plugin-name>` (tier 2) — same check list as `plugins`, scoped to `plugins/<name>/` only
 - `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29 (one file only; no cross-plugin Checks 7/8)
 - `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a (one file only)
@@ -329,13 +326,13 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 | 14 | Orphaned follow-up references | medium | agents/skills | Skill-name refs in SKILL.md vs disk inventory |
 | 15 | Hardcoded user paths | high | agents/skills | /Users/ and /home/ in config files + settings.json |
 | 16 | Example value vs. token cost | low | agents/skills | Inline examples: high-value vs. low-value (prose restatement) |
-| 17 | Cross-file code block duplication | medium | agents/skills | Same similarity algorithm as Check 33 (efficiency) but threshold sim ≥ 0.90 only — at that score blocks are near-identical duplicates; recommend canonical owner or `_shared/` extraction. Check 33 (sim ≥ 0.50) subsumes this when `--efficiency` also passed — skip Check 17 in that case |
+| 17 | Cross-file code block inventory | low | agents/skills | Block count table across all .md files (skills, modes, _shared, templates, agents, rules); flag files with ≥10 blocks for `--efficiency` run. NxN similarity analysis moved to `--efficiency` Phase B2 (expensive) |
 | 18 | Rules integrity | high/medium | rules | 18a inventory, 18b frontmatter, 18c redundancy, 18d cross-ref integrity |
 | 19 | Model tier appropriateness | medium/high | agents | Tier policy: opusplan/opus/sonnet/haiku - report only |
 | 20 | Agent description routing | medium/low | agents | 20a overlap pairs, 20b NOT-for coverage, 20c trigger specificity, 20d keep/sharpen/prune |
 | 21 | Skill frontmatter conflicts | critical | skills | context:fork + disable-model-invocation:true is broken |
 | 22 | Calibration coverage gap | medium/low | agents/skills | Unregistered calibratable skills/agents; stale domain table entries |
-| 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools |
+| 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools; 23e python inline; 23f `# timeout: N` without `timeout S` shell prefix or Python `subprocess.*` without `timeout=` |
 | 24 | Skill sequence compatibility | high/medium | skills | 24a target skill not on disk; 24b argument absent from argument-hint; scans skills, agents, READMEs |
 | 25 | Implicit agent references | high | agents/skills | subagent_type without plugin prefix; exempt: built-in types |
 | 26 | Symbol and shortcut consistency | medium/low | agents/skills | 26a same-concept emoji conflict, 26b slash notation mixed, 26c body contradicts legend |
@@ -344,13 +341,16 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 | 29 | LLM context minimality | medium/low | agents/skills/rules | Within-file repetition, prose inflation, obvious-consequence restatement — report only |
 | 30 | Config token overhead | medium/low | setup | 30a CLAUDE.md + global + rules/ > 100 KB; 30b single rules file > 10 KB |
 | 31 | Tool-body consistency | medium | skills | Skill `allowed-tools` must include every tool the workflow body invokes; see `checks-skills.md` for full spec |
-| 32 | Dead file detection | medium/low | skills/rules | 32a mode files in `*/modes/` not referenced from parent SKILL.md; 32b template files in `*/templates/` not referenced; 32c rule files whose `paths:` globs match no project files |
+| 32 | Dead file detection | medium/low | skills/rules | 32a mode files in `*/modes/` not referenced from parent SKILL.md; 32b template files in `*/templates/` not referenced; 32c rule files whose `paths:` globs match no project files; 32d orphaned bin/ scripts not referenced by any plugin .md file (LOCAL_MODE only) |
 | 33 | Code block similarity + extraction feasibility | medium/low | skills | `--efficiency` only — Table 1: pairwise similarity per plugin; Table 2: rigidity + extraction feasibility + pos/neg impact. See `modes/efficiency.md` Phase B2 |
+| R1 | Computed path resolution (local + installed duality) | high/medium/info | plugins (LOCAL_MODE only) | R1-FAIL: file exists locally but absent from installed cache; R1-WARN: installed-only file; R1-INFO: plugin not installed. Root cause guard for silent-deletion class of bugs |
+| R2 | Grep-visible referencing (orphan-risk detection) | medium | plugins (LOCAL_MODE only) | Basename of indirect-load .md file (modes/, templates/, _shared/) not literal in any consumer .md — deletion-prone; fix: add `# loads: <basename>` comment |
+| R3 | bin/ script existence at local + installed | high | plugins (LOCAL_MODE only) | R3-FAIL: script referenced but missing locally; R3-WARN: script local but absent from installed cache |
 
 ### Claude Code docs freshness (within Step 4)
 
 ```text
-Agent(subagent_type="foundry:web-explorer", prompt="Fetch current Claude Code docs (https://code.claude.com/docs). Check: hook event names + type field vs documented schema (deprecated decision:/reason: fields); agent frontmatter fields + model values; skill frontmatter fields; new features passing genuine-value filter → Upgrade Proposals table (max 5, classify config or capability). Write full findings to $RUN_DIR/docs-freshness.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/docs-freshness.md\",\"findings\":N,\"deprecated\":N,\"new_features\":N,\"confidence\":0.N,\"summary\":\"N findings, N deprecated, N new features\"}")
+Agent(subagent_type="foundry:web-explorer", prompt="Fetch current Claude Code docs (https://code.claude.com/docs). Check: hook event names + type field vs documented schema (deprecated decision:/reason: fields); agent frontmatter fields + model values; skill frontmatter fields; new features passing genuine-value filter → Upgrade Proposals table (max 5, classify config or capability). Write full findings to $RUN_DIR/docs-freshness.md using the Write tool. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/docs-freshness.md\",\"findings\":N,\"deprecated\":N,\"new_features\":N,\"confidence\":0.N,\"summary\":\"N findings, N deprecated, N new features\"}")
 ```
 
 <!-- URLs fetched live by web-explorer at runtime; graceful degradation: if any 404, instruct navigation from code.claude.com homepage. -->
@@ -363,7 +363,7 @@ After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/syst
 
 **Delegate aggregation** to consolidator agent to avoid flooding main context. Spawn **foundry:curator** consolidator:
 
-> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: C critical, H high, M medium, L low\"}`"
+> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: C critical, H high, M medium, L low\"}`"
 
 Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate.md` in full — 200–600 lines, overflows context on large audits. Use `$RUN_DIR/summary.jsonl` for all dispatch decisions in Steps 7 and 8.
 
@@ -375,13 +375,13 @@ Parse confidence scores from each file's `## Confidence` block in `<RUN_DIR>/<sl
 
 Spawn **foundry:curator** with the prior report and its `Gaps:` block:
 
-> "Re-audit `<original-source-file>` targeting these specific gaps from the prior pass: `<Gaps block content>`. Address each gap explicitly — do not repeat prior findings verbatim; focus on what was uncertain. Write updated findings to `<RUN_DIR>/<slug>-rerun.md`. Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"...\"}`"
+> "Re-audit `<original-source-file>` targeting these specific gaps from the prior pass: `<Gaps block content>`. Address each gap explicitly — do not repeat prior findings verbatim; focus on what was uncertain. Write updated findings to `<RUN_DIR>/<slug>-rerun.md`. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"...\"}`"
 
 **B — Docs consultation** (verify findings against current Claude Code schema):
 
 Spawn **foundry:web-explorer**:
 
-> "Fetch current Claude Code docs for `[agent|skill|hook]` schema — navigate from `https://code.claude.com/docs/en/` to the `[sub-agents|skills|hooks]` page. Verify that findings about frontmatter fields or documented behavior in `<RUN_DIR>/<slug>-rerun.md` are accurate against current docs. List any corrections. Write to `<RUN_DIR>/docs-recheck-<slug>.md`. Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"corrections\":N,\"confidence\":0.N}`"
+> "Fetch current Claude Code docs for `[agent|skill|hook]` schema — navigate from `https://code.claude.com/docs/en/` to the `[sub-agents|skills|hooks]` page. Verify that findings about frontmatter fields or documented behavior in `<RUN_DIR>/<slug>-rerun.md` are accurate against current docs. List any corrections. Write to `<RUN_DIR>/docs-recheck-<slug>.md`. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"corrections\":N,\"confidence\":0.N}`"
 
 **C — Codex adversarial pass** (requires `codex` plugin):
 
@@ -391,7 +391,7 @@ CODEX_AVAILABLE=$(find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/nul
 
 If `CODEX_AVAILABLE=true`: spawn `Agent(subagent_type="codex:codex-rescue")`:
 
-> "Adversarial review of low-confidence findings for `<original-source-file>`. Prior foundry:curator pass scored confidence=<N> — gaps: `<Gaps>`. Challenge each finding: real? severity correct? missed issues? Read source file + prior report `<RUN_DIR>/<slug>-rerun.md`. Write to `<RUN_DIR>/codex-recheck-<slug>.md`. Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}`"
+> "Adversarial review of low-confidence findings for `<original-source-file>`. Prior foundry:curator pass scored confidence=<N> — gaps: `<Gaps>`. Challenge each finding: real? severity correct? missed issues? Read source file + prior report `<RUN_DIR>/<slug>-rerun.md`. Write to `<RUN_DIR>/codex-recheck-<slug>.md`. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: `{\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}`"
 
 If `CODEX_AVAILABLE=false`: log `[Step 5b] Codex unavailable — adversarial pass skipped; install codex plugin for full low-confidence remediation.` Include note in final report `## Confidence` section.
 
@@ -529,7 +529,7 @@ Treat findings as additional issues entering Step 10 re-audit scope. Skip if Ste
 
 ## Step 10: Re-audit modified files + confidence check
 
-For every file changed in Step 8, spawn **foundry:curator** to confirm fix resolved finding and no new issues introduced. Write full re-audit findings to `<RUN_DIR>/<file-basename>-reaudit.md`; return ONLY compact JSON envelope: `{"status":"done","file":"<RUN_DIR>/<file-basename>-reaudit.md","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N,"summary":"<filename>: fix confirmed, N residual findings"}`
+For every file changed in Step 8, spawn **foundry:curator** to confirm fix resolved finding and no new issues introduced. Write full re-audit findings to `<RUN_DIR>/<file-basename>-reaudit.md`; end the full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements); return ONLY compact JSON envelope: `{"status":"done","file":"<RUN_DIR>/<file-basename>-reaudit.md","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N,"summary":"<filename>: fix confirmed, N residual findings"}`
 
 ```bash
 # Spot-check: confirm the previously broken reference no longer appears
@@ -649,7 +649,7 @@ Run `/foundry:init` to propagate clean config to ~/.claude/
 **Trigger**: `/audit --upgrade`
 
 ```bash
-UPGRADE_MD=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-audit-mode.sh" upgrade)  # timeout: 5000
+UPGRADE_MD="$AUDIT_TPL/../modes/upgrade.md"
 ```
 
 Read and execute `$UPGRADE_MD`.
@@ -659,7 +659,7 @@ Read and execute `$UPGRADE_MD`.
 **Trigger**: `/audit [<scope>...] --adversarial`
 
 ```bash
-ADVERSARIAL_MD=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-audit-mode.sh" adversarial)  # timeout: 5000
+ADVERSARIAL_MD="$AUDIT_TPL/../modes/adversarial.md"
 ```
 
 Read and execute `$ADVERSARIAL_MD`.
@@ -669,7 +669,7 @@ Read and execute `$ADVERSARIAL_MD`.
 **Trigger**: `/audit [<scope>...] --efficiency`
 
 ```bash
-EFFICIENCY_MD=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-audit-mode.sh" efficiency)  # timeout: 5000
+EFFICIENCY_MD="$AUDIT_TPL/../modes/efficiency.md"
 ```
 
 Read and execute `$EFFICIENCY_MD`.
@@ -714,5 +714,6 @@ After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this
   - Audit Check 22 found unregistered calibratable mode → update `calibrate/modes/skills.md` domain table and run `/foundry:calibrate skills` to verify new target works
   - Audit Check 22 found stale domain table entry → remove from `calibrate/modes/skills.md`
   - `/audit --efficiency` found model over-provisioning → apply P1+P2 changes from efficiency report → re-run `/audit --efficiency` to confirm savings estimate; run `/foundry:calibrate routing --fast` to verify no routing regression from model changes
+  - `/audit --efficiency` found bin/ extraction candidates (HIGH or MEDIUM verdict) → run `/distill executables` to perform extraction; then re-run `/audit --efficiency` to confirm `clusters == 0`
 
 </notes>

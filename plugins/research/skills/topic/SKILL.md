@@ -4,6 +4,7 @@ description: "Research State of the Art (SOTA) literature for an Artificial Inte
 argument-hint: "<topic> [--team] | plan [<output.md>]"
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
+effort: medium
 ---
 
 <objective>
@@ -115,7 +116,7 @@ Outcome:     EXPLORATORY | PROMISING | CONSENSUS
 Best method: [recommended approach / architecture]
 Papers:      [N papers analyzed]
 Confidence:  [aggregate score] — [key gaps]
-Next steps:  /research:topic plan → /develop:feature
+Next steps:  /research:topic plan → /develop:feature (requires `develop` plugin)
 Path:        → .reports/research/topic-<branch>-<date>.md
 ---
 

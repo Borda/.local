@@ -35,6 +35,8 @@ Prompt supplies key=value pairs (space-separated):
 Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE`, `PARTIAL_FILE`, `AXIS_GROUP` from prompt key=value pairs.
 
 ```bash
+# loads: oss-shared-resolver.md
+# shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in gh-scraper.md, shepherd.md)
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
@@ -160,7 +162,7 @@ Write `$PARTIAL_FILE` via Write tool. Format:
     "7": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
     "8": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." }
   },
-  "axis3_weeks": null
+  "axis3_weeks": null  // null for Groups A and B; only Group C emits the array — see notes:204
 }
 ```
 

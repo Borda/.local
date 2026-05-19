@@ -1,5 +1,7 @@
 # Compact Terminal Summary Templates
 
+<!-- file: terminal-summaries.md — cross-plugin shared (foundry _shared/); consumers via $FOUNDRY_SHARED: oss/skills/analyse/modes/vitality.md, oss/skills/analyse/modes/ecosystem.md, oss/skills/analyse/modes/thread.md, oss/skills/review/SKILL.md -->
+
 Shared compact terminal summary templates for `/analyse` and `/oss:review`. All templates: `---` delimiters, entity identifier line, key-value fields, `→ saved to [skill-specific path]`.
 
 ## PR Summary

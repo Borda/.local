@@ -61,117 +61,27 @@ fi
 
 echo "[gh-scraper] analysing $GH_OWNER/$GH_REPO"  # timeout: 5000
 mkdir -p "$(dirname "$DATA_FILE")"  # timeout: 5000
+# loads: oss-shared-resolver.md
+# shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in repo-warden.md, shepherd.md)
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
 
 ## Step 2 — Data Fetch Group 1 (all parallel)
 
-Run all calls simultaneously — independent:
+Run all calls simultaneously — independent. Extracted to `bin/fetch_gh_data_group1.sh` (parallel `gh api` + `gh issue list` + `gh pr list` calls; one JSON file per dataset under `$GROUP1_DIR`). Pre-compute output dir tied to `$DATA_FILE` so Step 4 can read each file back:
 
 ```bash
-# --- run all in parallel ---
-
-# Axis 1: open issues (triage, stale, labels)
-# Truncation detection: set --limit to target+1; if length == target+1, limit was hit
-# e.g. for issues: --limit 501; if 501 returned → truncated at 500, mark partial
-gh issue list -R "$GH_OWNER/$GH_REPO" --state open --json number,title,createdAt,updatedAt,labels --limit 501  # timeout: 30000
-
-# Axis 1: closed issues — time-bounded to last 3 years (no numeric cap; large repos have 900+ closed)
-# Truncation detection: --limit 1001; if 1001 returned → truncated at 1000, note partial
-gh issue list -R "$GH_OWNER/$GH_REPO" --state closed --search "closed:>=$CUTOFF_3Y" --json number,title,createdAt,closedAt --limit 1001  # timeout: 60000
-
-# Axis 2: open PRs (review, CI, age)
-gh pr list -R "$GH_OWNER/$GH_REPO" --state open --json number,title,createdAt,updatedAt,reviews,statusCheckRollup --limit 201  # timeout: 15000
-
-# Axis 2: closed PRs recent (merge rate)
-gh pr list -R "$GH_OWNER/$GH_REPO" --state closed --json number,title,createdAt,closedAt,mergedAt --limit 201  # timeout: 30000
-
-# Axis 3: recent commits (last 100, paginate back 90d)
-gh api "repos/$GH_OWNER/$GH_REPO/commits?per_page=100" --jq '.[].commit.author.date'  # timeout: 15000
-
-# Axis 3 + 8A: releases (cadence + downloads) — REUSE for both axes
-gh api "repos/$GH_OWNER/$GH_REPO/releases?per_page=10" \
-    --jq '[.[] | {tag: .tag_name, published: .published_at, downloads: ([.assets[].download_count] | add // 0)}]'  # timeout: 15000
-
-# Axis 4: contributor stats (may return 202 — retry logic below)
-gh api "repos/$GH_OWNER/$GH_REPO/stats/contributors" \
-    --jq '[.[] | {author: .author.login, total: .total, weeks: .weeks}]'  # timeout: 30000
-# If 202: retry up to 6 times with 10s sleep (60s total — GitHub recompute typically <30s)
-# If still 202 after 6 retries: mark Axis 4 ⚪; note in terminal score line with ⚠
-
-# Axis 5 + 6: repo root file list — REUSE for both axes
-gh api "repos/$GH_OWNER/$GH_REPO/contents" --jq '[.[] | .name]'  # timeout: 10000
-
-# Axis 6 + 8 baseline: repo metadata
-gh api "repos/$GH_OWNER/$GH_REPO" \
-    --jq '{default_branch, has_issues, has_projects, allow_forking, stargazers_count, forks_count, subscribers_count, open_issues_count}'  # timeout: 10000
-
-# Axis 7: Dependabot alerts (403 = push access required — graceful fallback)
-gh api "repos/$GH_OWNER/$GH_REPO/dependabot/alerts?state=open&per_page=100" 2>/dev/null  # timeout: 15000
-
-# Axis 7: secret scanning (same access requirement — graceful fallback)
-gh api "repos/$GH_OWNER/$GH_REPO/secret-scanning/alerts?state=open" 2>/dev/null  # timeout: 15000
-
-# Axis 8D: fork velocity
-gh api "repos/$GH_OWNER/$GH_REPO/forks?sort=newest&per_page=100" \
-    --jq '[.[] | .created_at]'  # timeout: 15000
-
-# Duplicate clustering: all issues+PRs (open+closed)
-gh issue list -R "$GH_OWNER/$GH_REPO" --state all --json number,title,state,labels,createdAt --limit 200  # timeout: 30000
-gh pr list -R "$GH_OWNER/$GH_REPO" --state all --json number,title,state,createdAt --limit 100  # timeout: 30000
-gh api graphql -f query='
-  query($owner:String!,$repo:String!){
-    repository(owner:$owner,name:$repo){
-      discussions(first:100,orderBy:{field:UPDATED_AT,direction:DESC}){
-        nodes { number title closed createdAt }
-      }
-    }
-  }' -f owner="$GH_OWNER" -f repo="$GH_REPO"  # timeout: 15000
-# Note: do not suppress errors on discussions call — 2>/dev/null hides auth failures AND disabled-discussions errors; write null dataset on error instead
-
-# Axis 1: Responsiveness — sample 20 recent issues + 20 recent PRs for time-to-first-response
-gh api graphql -f query='
-  query($owner:String!,$repo:String!){
-    repository(owner:$owner,name:$repo){
-      issues(first:20,orderBy:{field:CREATED_AT,direction:DESC},states:OPEN){
-        nodes{ number createdAt author{login} comments(first:1){nodes{createdAt author{login}}} }
-      }
-      pullRequests(first:20,orderBy:{field:CREATED_AT,direction:DESC},states:[OPEN,MERGED]){
-        nodes{ number createdAt author{login} reviews(states:[APPROVED,CHANGES_REQUESTED,COMMENTED],first:1){nodes{createdAt author{login}}} comments(first:1){nodes{createdAt author{login}}} }
-      }
-    }
-  }' -f owner="$GH_OWNER" -f repo="$GH_REPO"  # timeout: 30000
-
-# Axis 4: Code-review coverage — last 30 merged PRs with approval data
-gh api graphql -f query='
-  query($owner:String!,$repo:String!){
-    repository(owner:$owner,name:$repo){
-      pullRequests(last:30,states:MERGED,orderBy:{field:UPDATED_AT,direction:DESC}){
-        nodes{ number author{login} reviews(states:APPROVED){nodes{author{login}}} }
-      }
-    }
-  }' -f owner="$GH_OWNER" -f repo="$GH_REPO"  # timeout: 30000
-
-# Axis 5: CI/CD — workflow count and recent run health
-gh api "repos/$GH_OWNER/$GH_REPO/actions/workflows" --jq '{count: (.workflows | length), names: [.workflows[].name]}' 2>/dev/null  # timeout: 10000
-gh api "repos/$GH_OWNER/$GH_REPO/actions/runs?per_page=21" --jq '[.workflow_runs[] | {conclusion: .conclusion, name: .name}]' 2>/dev/null  # timeout: 15000
-
-# Axis 9A: merged PRs last 90d with timing data (time-to-merge trend + reviewer pool drift)
-# --limit 201: truncation detection — if 201 returned, pool data incomplete (confidence -0.2)
-gh pr list -R "$GH_OWNER/$GH_REPO" --state closed \
-    --search "merged:>=$CUTOFF_90D" \
-    --json number,createdAt,mergedAt,author \
-    --limit 201  # timeout: 30000
-
-# Axis 9B: last 50 commit messages (commit substance ratio)
-# author: .author.login = GitHub user (null for detached push); fallback to .commit.author.name as display name
-gh api "repos/$GH_OWNER/$GH_REPO/commits?per_page=50" \
-    --jq '[.[] | {sha:.sha[:7], message:(.commit.message | split("\n")[0]), author:(.author.login // .commit.author.name // "unknown"), date:.commit.author.date}]'  # timeout: 15000
-
-# NOTE — no new fetch for open issues (reuse Axis 4 open issues list for queue staleness P90)
-# NOTE — no new fetch for contributor stats (reuse Axis 3 weeks[] data for reviewer pool drift)
+GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000
+"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/fetch_gh_data_group1.sh" \
+    --repo "$GH_OWNER/$GH_REPO" \
+    --output-dir "$GROUP1_DIR" \
+    --cutoff-3y "$CUTOFF_3Y" \
+    --cutoff-90d "$CUTOFF_90D" \
+    --cutoff-180d "$CUTOFF_180D"  # timeout: 90000
 ```
+
+The script handles truncation-detection limits (`--limit 501`/`1001`/`201`), 403 fallbacks for security APIs, and disabled-discussions error swallowing. Per-call failures emit `⚠` to stderr; the corresponding output file is left empty so Step 4 marks the dataset as unavailable instead of crashing. Retry of contributor stats 202s and pagination of forks/issues stays inline below — those need iterative LLM-driven state.
 
 ## Step 3 — Data Fetch Group 2 (depends on Group 1)
 
@@ -179,17 +89,26 @@ After Group 1 complete — root file list and default_branch now known. Run all 
 
 ```bash
 # Axis 5: README content (decode base64; --ignore-garbage tolerates padded/partial base64 from API)
-gh api "repos/$GH_OWNER/$GH_REPO/readme" --jq '.content' | base64 -d --ignore-garbage 2>/dev/null || base64 -D 2>/dev/null  # timeout: 10000
+_README_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/readme" --jq '.content' 2>/dev/null)  # timeout: 10000
+echo "$_README_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_README_RAW" | base64 -D 2>/dev/null
 
 # Axis 5 checkpoints 8–10: CONTRIBUTING.md content (only if checkpoint 5 ✓ — CONTRIBUTING.md in root file list)
-gh api "repos/$GH_OWNER/$GH_REPO/contents/CONTRIBUTING.md" --jq '.content' 2>/dev/null | base64 -d --ignore-garbage 2>/dev/null || base64 -D 2>/dev/null  # timeout: 10000
+if echo "$ROOT_FILES" | grep -q '"CONTRIBUTING.md"'; then  # M29: only fetch if present in root file list from Group 1
+    _CONTRIB_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/CONTRIBUTING.md" --jq '.content' 2>/dev/null)  # timeout: 10000
+    echo "$_CONTRIB_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CONTRIB_RAW" | base64 -D 2>/dev/null
+fi
 
 # Axis 6: .github/ directory contents
 gh api "repos/$GH_OWNER/$GH_REPO/contents/.github" --jq '[.[] | .name]' 2>/dev/null  # timeout: 10000
 
 # Axis 6 checkpoint 5+7: CODEOWNERS content (check .github/CODEOWNERS first, then root)
-gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/CODEOWNERS" --jq '.content' 2>/dev/null | base64 -d --ignore-garbage 2>/dev/null || \
-gh api "repos/$GH_OWNER/$GH_REPO/contents/CODEOWNERS" --jq '.content' 2>/dev/null | base64 -d --ignore-garbage 2>/dev/null  # timeout: 10000
+_CO_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/CODEOWNERS" --jq '.content' 2>/dev/null)  # timeout: 10000
+if [ -n "$_CO_RAW" ]; then
+    echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null
+else
+    _CO_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/CODEOWNERS" --jq '.content' 2>/dev/null)
+    echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null
+fi
 
 # Axis 6: branch protection on default branch
 gh api "repos/$GH_OWNER/$GH_REPO/branches/{default_branch}/protection" 2>/dev/null  # timeout: 10000

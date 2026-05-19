@@ -1,9 +1,9 @@
 ---
 name: solution-architect
-description: 'Architectural specification specialist — produces ADRs, API surface design, interface specs, migration plans, component diagrams, hypothesis architectural feasibility assessment, and evaluation of architectural feasibility of AI/ML hypotheses from research:scientist. Use for evaluating architectural trade-offs, designing public API contracts, planning deprecation strategies, and filtering AI-generated hypotheses against codebase constraints — reads code and produces specs only. NOT for writing implementation code (use foundry:sw-engineer), NOT for release management (use oss:shepherd), NOT for adversarial challenge of plans or architectural decisions (use foundry:challenger), NOT for performance profiling, CPU/GPU bottleneck analysis, or DataLoader throughput tuning (use foundry:perf-optimizer). TRIGGER when: user asks about architecture, system design, or high-level approach for a non-trivial system involving 3+ components; phrases: "how should I structure this", "what''s the architecture for", "design a system that", "write an ADR for", "migration plan". SKIP: simple design question answerable inline; user asking about existing architecture read-only; implementation task (use foundry:sw-engineer); 1-2 component design.'
+description: 'Architectural specification specialist — produces ADRs, API surface design, interface specs, migration plans, component diagrams, hypothesis architectural feasibility assessment, and evaluation of architectural feasibility of AI/ML hypotheses from research:scientist. Use for evaluating architectural trade-offs, designing public API contracts, planning deprecation strategies, and filtering AI-generated hypotheses against codebase constraints — reads code and produces specs only. NOT for writing implementation code (use foundry:sw-engineer), NOT for release management (use oss:shepherd — requires `oss` plugin), NOT for adversarial challenge of plans or architectural decisions (use foundry:challenger), NOT for performance profiling, CPU/GPU bottleneck analysis, or DataLoader throughput tuning (use foundry:perf-optimizer). TRIGGER when: user asks about architecture, system design, or high-level approach for a non-trivial system involving 3+ components; phrases: "how should I structure this", "what''s the architecture for", "design a system that", "write an ADR for", "migration plan". SKIP: simple design question answerable inline; user asking about existing architecture read-only; implementation task (use foundry:sw-engineer); 1-2 component design.'
 tools: Read, Write, Edit, Glob, Grep, Bash, TaskCreate, TaskUpdate
 model: opusplan
-effort: xhigh
+effort: high
 maxTurns: 40
 color: blue
 memory: project
@@ -218,33 +218,7 @@ Reviewing code with no inline comments:
 <!-- research:run pipeline invocations only — skip for standalone design tasks -->
 \<architectural_feasibility>
 
-## Hypothesis Architectural Feasibility
-
-When invoked by `/research:run --researcher` (requires `research` plugin) to filter AI-generated experiment hypotheses:
-
-### Input
-
-- JSONL list of hypotheses from `research:scientist` (requires `research` plugin), each with:
-  `{hypothesis, rationale, confidence, expected_delta, priority}`
-- Project codebase (read root + `src/` + existing `.experiments/<run>/` if present)
-
-### Assessment per hypothesis
-
-For each hypothesis:
-
-1. **Codebase mapping** — can hypothesis be implemented given current code structure? Name specific files, classes, functions that would change
-2. **Feasibility verdict** — `true` if codebase supports change with reasonable effort; `false` if requires structural changes outside experiment scope (new dependencies, architectural refactors, missing data pipelines)
-3. **Blocker** — if `feasible: false`, name specific blocker (e.g., "requires adding new DataLoader class not present in codebase")
-
-### Output
-
-Annotate each hypothesis with `{feasible: bool, blocker: str?, codebase_mapping: str}` and write combined queue to `.experiments/<YYYY-MM-DDTHH-MM-SSZ>/hypotheses.jsonl`.
-
-### Constraints
-
-- **Don't evaluate scientific merit** — `research:scientist` (requires `research` plugin)'s domain; assess architectural feasibility only
-- **Don't write implementation code** — map where changes go, don't produce them
-- **Preserve hypothesis order** — annotate in place; don't re-rank
+For `research:scientist` hypothesis architectural-feasibility assessment (invoked by `/research:run --researcher` — requires `research` plugin): read `${CLAUDE_PLUGIN_ROOT}/agents/solution-architect/architectural-feasibility.md` for the hypothesis annotation protocol — codebase mapping, feasibility verdict, blocker labelling, JSONL output schema. Skip for standalone ADR / API-design / migration-plan tasks.
 
 \</architectural_feasibility>
 
@@ -261,6 +235,9 @@ Annotate each hypothesis with `{feasible: bool, blocker: str?, codebase_mapping:
     Don't proceed until question crisp.
 
 03. **Alignment check ⏸** (wait for user confirmation before Step 4) —
+
+    > **Pipeline-subagent guard**: skip this pause when spawned as a pipeline subagent — proceed directly to Step 4 if the input prompt contains a `[pipeline]` tag or `AUTO_PROCEED=true` marker. No interactive user is present in pipeline mode; waiting would block indefinitely.
+
     Assess whether request aligns with existing API and design direction:
 
     - Contradicts established patterns (naming conventions, module structure, existing ABCs/Protocols)?

@@ -70,35 +70,23 @@ fi
 
 **Severity**: **medium** — heading jumps impair navigation. Fix: insert missing intermediate heading level, or demote/promote offending heading. **Report only** — never auto-fix.
 
-## Check 14 — Orphaned empty structural blocks
+## Check 14 — Structural tag symmetry
 
-Structural tags with only whitespace between open and close = dead markup left after content moved or removed. No content loss on removal — safe to auto-fix.
+Checks two failure modes: (1) empty blocks — `<tag></tag>` with only whitespace between open and close; (2) unbalanced tags — open count differs from close count. Both leave files structurally broken.
 
-Scan all agent and skill files:
+Scan all agent and skill files via deterministic bin/ script:
 
 ```bash
-printf "=== Check 14: Orphaned empty structural blocks ===\n"
-violations=0
-for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
-    [ -f "$f" ] || continue
-    hits=$(perl -0777 -ne '
-        while (/<(constants|notes|calibration|inputs|not-for|role|initialization|antipatterns_to_flag)>\s*<\/\1>/g) {
-            print "$ARGV: <$1>\n"
-        }
-    ' "$f" 2>/dev/null)
-    if [ -n "$hits" ]; then
-        printf "! C14: empty block — %s\n" "$hits"
-        violations=$((violations + 1))
-    fi
-done
-if [ "$violations" -eq 0 ]; then
-    printf "✓: Check 14 — no orphaned empty structural blocks\n"
-fi
+printf "=== Check 14: Structural tag symmetry ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_tag_symmetry.py" \
+    .claude/agents/*.md .claude/skills/*/SKILL.md  # timeout: 10000
 ```
 
-**Severity**: **medium** — gate-level; must fix before audit passes. **Auto-fix: YES** — remove empty open+close tag pair entirely; no content to lose.
+**Severity**: **medium** — gate-level; must fix before audit passes.
+- **Empty block**: **Auto-fix: YES** — remove empty open+close tag pair entirely; no content to lose.
+- **Unbalanced tag**: **Auto-fix: NO** — missing open or close tag requires manual inspection to determine intended structure.
 
-> Root cause: prior fix moved or removed block content but left container tags. Empty `<constants>` most common; also applies to `<notes>`, `<calibration>`, `<inputs>`, `<not-for>`, `<role>`, `<initialization>`, `<antipatterns_to_flag>`.
+> Root cause: prior fix moved or removed block content but left container tags (empty block); or copy-paste error dropped closing tag (unbalanced). Empty `<constants>` most common empty-block case.
 
 ## Check 15 — Hardcoded user paths
 
@@ -135,46 +123,35 @@ Classify each example block via model reasoning:
 
 Report per-file: `N examples total, K high-value, M low-value (est. ~X tokens wasted)`.
 
-## Check 17 — Cross-file code block duplication
+## Check 17 — Cross-file code block inventory
 
-Near-identical fenced code blocks across files in scope — same functional purpose AND syntactically close. When `--efficiency` also active, skip Check 17 — Phase B2 subsumes it with full tables.
+Block count across all .md files in scope. NxN similarity analysis is expensive — runs in `--efficiency` mode only (Phase B2), which subsumes this check. When `--efficiency` active, skip Check 17.
 
 ```bash
-[ "$LOCAL_MODE" = "true" ] && _C17_SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _C17_SKILL_GLOB=".claude/skills/*/SKILL.md"
-[ "$LOCAL_MODE" = "true" ] && _C17_AGENT_GLOB="plugins/*/agents/*.md" || _C17_AGENT_GLOB=".claude/agents/*.md"
-printf "%-30s %s\n" "FILE" "BLOCKS"
-for f in $_C17_SKILL_GLOB; do # timeout: 5000
-    name="skills/$(basename "$(dirname "$f")")"
+if [ "$LOCAL_MODE" = "true" ]; then
+    _C17_GLOBS="plugins/*/skills/*/SKILL.md plugins/*/skills/*/modes/*.md plugins/*/skills/_shared/*.md plugins/*/skills/*/templates/*.md plugins/*/agents/*.md plugins/*/rules/*.md"
+else
+    _C17_GLOBS=".claude/skills/*/SKILL.md .claude/agents/*.md"
+fi
+printf "%-55s %s\n" "FILE" "BLOCKS"
+for f in $_C17_GLOBS; do # timeout: 5000
+    [ -f "$f" ] || continue
+    name="${f#plugins/}"
+    name="${name#.claude/}"
     blocks=$(grep -c '^\`\`\`' "$f" 2>/dev/null || echo 0)
     blocks=$(( blocks / 2 ))
-    printf "%-30s %d\n" "$name" "$blocks"
-done
-for f in $_C17_AGENT_GLOB; do
-    name="agents/$(basename "$f" .md)"
-    blocks=$(grep -c '^\`\`\`' "$f" 2>/dev/null || echo 0)
-    blocks=$(( blocks / 2 ))
-    printf "%-30s %d\n" "$name" "$blocks"
+    printf "%-55s %d\n" "$name" "$blocks"
 done
 ```
 
-Via model reasoning — for each fenced code block ≥ 5 lines:
-
-1. Write a one-sentence **purpose statement** (what it does functionally, not how)
-2. Group blocks with equivalent purpose — primary grouping signal
-3. Within each purpose group, normalize: strip `#` comment lines → collapse whitespace → replace path segments / slugs / numeric literals with `<STR>` → replace ALL concrete argument/parameter values with `<ARG>`; keep structural tokens
-4. Compute `sim(A,B) = 2 × |lines(A_norm) ∩ lines(B_norm)| / (|A| + |B|)`; mark pair **DUPLICATE** when sim ≥ 0.90
-5. Report as findings list — no table file; include: block IDs, files, purpose, similarity score, suggested canonical owner or `_shared/` extraction
-
-**Why purpose-first**: syntactic line-intersection misses conditional-inversion and variable renaming — two blocks doing the same thing written differently have low syntactic overlap but are still duplicates. Purpose grouping catches what normalization misses.
-
-Scattered single-line matches don't count — only blocks ≥ 5 lines qualify. **Severity**: DUPLICATE (same purpose + sim ≥ 0.90) → **high**; same purpose only (sim < 0.90) → **medium** (same-purpose divergence, consider unification); report only, never auto-fix.
+Flag files with block count ≥ 10 as extraction candidates — recommend `--efficiency` run for full NxN analysis.
 
 For 17a (step-level prose overlap, ≥40% consecutive steps): flag pair, name canonical owner; route to Check 20 `merge-prune` if no clear owner.
 
 | Sub-check | Algorithm | Threshold | Severity | Output |
 | --- | --- | --- | --- | --- |
 | 17a — step overlap | consecutive step fraction | ≥40% steps | medium | findings list only |
-| 17b — block duplicate | purpose grouping + sim(A,B) normalized | same purpose + sim ≥ 0.90, ≥5 lines | high | findings list only |
+| 17b — block duplicate | NxN similarity (moved) | run `--efficiency` for full analysis | — | Phase B2 in efficiency.md |
 
 ## Check C32 — Hardcoded source-tree paths (install-path regression)
 

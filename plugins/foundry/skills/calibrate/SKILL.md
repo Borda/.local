@@ -85,6 +85,7 @@ Domain tables per mode: see `modes/agents.md`, `modes/skills.md`, `modes/routing
 
 **Task hygiene**:
 ```bash
+# audit-skip: resilience-replication — _FS resolver intentionally duplicated across foundry skills (cannot self-locate)
 _FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
@@ -156,12 +157,7 @@ Create tasks before proceeding:
 > **Pre-flight**: mode files at `<plugin-cache>/foundry/<v>/skills/calibrate/modes/` — resolve via plugin cache scan below.
 > `/foundry:init` does NOT symlink these (only `rules/*.md` and `TEAM_PROTOCOL.md`); if not found, re-install foundry plugin.
 > ```bash
-> if [ "$LOCAL_MODE" = "true" ] && [ -d "plugins/foundry/skills/calibrate/modes" ]; then
->     CALIB_MODES_DIR="plugins/foundry/skills/calibrate/modes"
-> else
->     CALIB_MODES_DIR="$(find ${HOME}/.claude/plugins/cache -path "*/calibrate/modes" -type d 2>/dev/null | head -1)" # timeout: 5000
-> fi
-> [ -d "$CALIB_MODES_DIR" ] || { printf "! BREAKING: calibrate/modes/ not found — re-install foundry plugin: claude plugin install foundry@borda-ai-rig\n"; exit 1; }
+> CALIB_MODES_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local)) || exit 1  # timeout: 5000
 > ```
 
 For each target mode in resolved target list, read corresponding mode file and execute spawn instructions. Spawn pipelines **sequentially** — execute one mode category at a time; wait for it to fully complete and collect its compact JSON results before starting the next. Do **not** issue multiple mode category spawns in a single response — each mode runs N×agents pipelines and concurrent mode execution spikes agent count and context.

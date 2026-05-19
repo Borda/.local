@@ -3,7 +3,7 @@ name: refactor
 description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop."
 argument-hint: '<target file or directory> <goal> [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: high
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 when_to_use: "Restructure existing code without changing behaviour — NOT for bug fixes (use fix) or new capabilities (use feature)."
 ---
@@ -196,10 +196,10 @@ When `TEAM_MODE=true`:
 Compute run directory and create health sentinel:
 
 ```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-RUN_DIR=".temp/develop/${TS}"
-mkdir -p "$RUN_DIR"
-touch /tmp/refactor-team-check-$TS
+# timeout: 5000
+mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.sh" --sentinel refactor-team-check)
+TS="${_run[0]}"
+RUN_DIR="${_run[1]}"
 ```
 
 Spawn 2 teammates in parallel using Agent() tool:

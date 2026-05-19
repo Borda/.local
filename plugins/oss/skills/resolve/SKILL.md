@@ -51,6 +51,7 @@ CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §8 default 300s
 
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+# loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
 ```bash
@@ -70,60 +71,13 @@ Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 
 ## Step 1: Pre-flight
 
+Extracted to `bin/resolve_preflight.sh` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Emits `CODEX_AVAILABLE=<bool>` and `GH_OK=true` on stdout for `eval`; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
+
 ```bash
-# Adapted from foundry:_shared/preflight-helpers.md — TTL 4 hours, keyed per binary
-preflight_ok() {
-    local f=".claude/state/preflight/$1.ok"
-    [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]
-}
-preflight_pass() {
-    mkdir -p .claude/state/preflight
-    date +%s >".claude/state/preflight/$1.ok"
-}
-
-# codex — optional; intelligence + conflict resolution work without it
-CODEX_AVAILABLE=false
-if preflight_ok codex; then
-    CODEX_AVAILABLE=true && echo "codex (openai-codex): ok (cached)"
-elif claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'; then # timeout: 15000
-    preflight_pass codex && CODEX_AVAILABLE=true && echo "codex (openai-codex): ok"
-else
-    echo "codex (openai-codex): missing — complex multi-file action items will be skipped; simple items implemented via foundry:sw-engineer (see Step 8 degradation)"
-fi
-
-# gh binary + auth — required; cached for 4h (auth won't change within a session)
-if preflight_ok gh; then
-    echo "gh: ok (cached)"
-elif which gh &>/dev/null && gh auth status &>/dev/null; then
-    preflight_pass gh && echo "gh: ok ($(gh auth status 2>&1 | grep 'Logged in' | head -1 | xargs))"
-elif which gh &>/dev/null; then
-    echo "Pre-flight failed: gh found but not authenticated — run: gh auth login" && exit 1
-else
-    echo "Pre-flight failed: gh not found — install: brew install gh" && exit 1
-fi
-
-# Show current remotes — confirms we are in the right repo and surfaces any existing fork remotes
-git remote -v # timeout: 3000
-
-# Sync with remote — prevents git merge --continue from being called out of state
-UPSTREAM=$(git rev-parse --abbrev-ref @{u} 2>/dev/null)
-if [ -n "$UPSTREAM" ]; then
-    git fetch origin 2>/dev/null || true # timeout: 6000
-    REMOTE_AHEAD=$(git log HEAD..@{u} --oneline 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$REMOTE_AHEAD" -gt 0 ]; then
-        echo "Remote is $REMOTE_AHEAD commit(s) ahead — running git pull..."
-        git pull || {
-            echo "Pre-flight failed: git pull had conflicts — resolve manually before running /resolve"
-            exit 1
-        } # timeout: 6000
-        echo "✓ git pull: merged"
-    else
-        echo "✓ git: up to date"
-    fi
-fi
+eval "$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_preflight.sh")"  # timeout: 30000
 ```
 
-gh missing or not authenticated → stop (error printed above).
+gh missing or not authenticated → script exits 1 (error printed above).
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
@@ -157,7 +111,20 @@ Parse $ARGUMENTS:
 ```bash
 [ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" ] || { echo "Error: parse-resolve-args.py not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
-eval "$(python "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" "$ARGUMENTS")"
+# Defence-in-depth: capture parser output to a temp file and validate that every
+# line is a plain VAR=value assignment (no shell metacharacters that could trigger
+# command substitution, pipelines, or backgrounding) before sourcing. parse-resolve-args.py
+# uses shlex.quote so its output is already safe, but validating here protects against
+# future regressions or a tampered binary.
+tmpenv=$(mktemp)  # timeout: 3000
+trap 'rm -f "$tmpenv"' EXIT INT TERM
+python "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" "$ARGUMENTS" >"$tmpenv"  # timeout: 5000
+if grep -qvE "^[A-Z_][A-Z0-9_]*=([A-Za-z0-9_./:#@+-]*|'[^']*')$" "$tmpenv"; then
+    echo "Error: parse-resolve-args.py emitted unexpected output — refusing to source"
+    cat "$tmpenv"
+    exit 1
+fi
+. "$tmpenv"
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
 ```
 
@@ -416,7 +383,15 @@ Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`.
 
 *Runs only when `SELECTED_ITEMS` non-empty (set in Step 3e). Empty → skip to Step 9.*
 
+**Branch-safety pre-check** — must run BEFORE `gh pr checkout` so a wrong-branch commit is impossible (per `git-commit.md` Gate 2). Verify the PR's `headRefName` is not the repo's default branch — `gh pr checkout` of a same-repo PR whose HEAD = default branch would land us on default and any later commit (Step 8) would violate Gate 2:
+
 ```bash
+DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')  # timeout: 6000
+PR_HEAD_REF=$(gh pr view "<PR#>" --json headRefName --jq .headRefName 2>/dev/null)  # timeout: 6000
+if [ -n "$DEFAULT_BRANCH" ] && [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
+    echo "⛔ PR HEAD ref ($PR_HEAD_REF) equals default branch — refusing to check out and commit on default branch"
+    exit 1
+fi
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
 gh pr checkout <PR#>   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
 ```
@@ -480,7 +455,25 @@ if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
 fi
 git branch --set-upstream-to="$FORK_REMOTE/$HEAD_REF" 2>/dev/null || true # timeout: 3000
 PUSH_COUNT=$(git rev-list "$FORK_REMOTE/$HEAD_REF..HEAD" --count 2>/dev/null || git rev-list "origin/$BASE_REF..HEAD" --count) # timeout: 3000
-echo "→ $PUSH_COUNT commits ready to push to $FORK_REMOTE/$HEAD_REF — approve the git push request in the toolbar ↑ to complete"
+PUSH_STAT=$(git diff "$FORK_REMOTE/$HEAD_REF..HEAD" --stat 2>/dev/null | tail -1 || git diff "origin/$BASE_REF..HEAD" --stat | tail -1) # timeout: 3000
+LAST_SUBJECT=$(git log -1 --format=%s 2>/dev/null) # timeout: 3000
+echo "→ $PUSH_COUNT commits ready to push to $FORK_REMOTE/$HEAD_REF ($PUSH_STAT); last commit: \"$LAST_SUBJECT\""
+```
+
+**Push authorization gate** — per `git-commit.md` push-safety rule ("Never push without explicit user confirmation"), invoke `AskUserQuestion` before any `git push`. The question must surface:
+
+- Target remote and branch: `$FORK_REMOTE/$HEAD_REF`
+- Diff stat: `$PUSH_STAT` (e.g. `3 files changed, 47 insertions(+), 12 deletions(-)`)
+- Commit count and last subject: `$PUSH_COUNT commits — last: "$LAST_SUBJECT"`
+
+Options:
+
+- (a) **Push** — proceed with `git push` below (default)
+- (b) **Skip push** — stop after Step 9; user pushes manually later
+
+Only proceed to the `git push` below on option (a). On option (b): print `→ Push skipped — run \`git push\` manually when ready.` and jump to Step 11.
+
+```bash
 git push # timeout: 30000
 ```
 

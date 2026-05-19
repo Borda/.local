@@ -1,5 +1,7 @@
 # Efficiency Mode — foundry:audit
 
+<!-- file: efficiency.md — consumers: audit/SKILL.md -->
+
 Triggered by `/audit --efficiency`. Read+executed by `/audit` when `--efficiency` flag present.
 
 ## Mode: efficiency
@@ -8,7 +10,7 @@ Triggered by `/audit --efficiency`. Read+executed by `/audit` when `--efficiency
 
 Sweeps agents and skills for cost inefficiency signals. Does NOT run standard per-file quality audit (Steps 3–6) — efficiency-only analysis. Generates prioritized cost-reduction plan with estimated savings. Note: mode produces heuristic estimates only — no live token-cost baseline is measured and no post-fix delta is computed. Savings figures are directional guidance.
 
-**Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Exclusion: skip files matching `*/modes/*`, `*/templates/*`, `*/_shared/*` — these are prompt fragments without model frontmatter by design.
+**Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Fragment files (`*/modes/*`, `*/templates/*`, `*/_shared/*`): skip checks 1–4 and 6 (no model frontmatter); run checks 5 (token bloat) and 7 (bin/ extraction) only.
 
 ```bash
 RUN_DIR=".reports/audit/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
@@ -36,29 +38,31 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 **Phase B — System-wide spawn pattern + duplication scan** (parallel with Phase A):
 
 ```bash
-# LOCAL_MODE-aware path globs: --local scans source tree; default scans installed config
+# LOCAL_MODE-aware globs: SKILL/AGENT for frontmatter checks; SCAN_DIR for all .md (spawn/boilerplate/extraction)
 [ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
 [ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
+[ "$LOCAL_MODE" = "true" ] && _SCAN_DIR="plugins/" || _SCAN_DIR=".claude/"
 
 # Unbounded spawn patterns: Agent() inside for/while loop without BATCH_SIZE guard
+# Scope: all .md files — modes/ can also spawn agents
 echo "=== Unbounded spawn patterns ==="
-for f in $_SKILL_GLOB; do
+while IFS= read -r f; do
   [ -f "$f" ] || continue
   if grep -q 'Agent(' "$f" 2>/dev/null; then
     grep -B5 'Agent(' "$f" 2>/dev/null | grep -qE '^\s*(for|while)\b' || continue
     grep -q 'BATCH_SIZE\|head -n [0-9]\|head -[0-9]' "$f" 2>/dev/null && continue
     echo "UNBOUNDED_SPAWN: $f — Agent() inside for/while without BATCH_SIZE guard"
   fi
-done
+done < <(find "$_SCAN_DIR" -name "*.md" 2>/dev/null)
 
-# Dead model specs: model: declared + disable-model-invocation: true
+# Dead model specs: model: declared + disable-model-invocation: true (SKILL.md only — modes/ have no frontmatter)
 echo "=== Dead model specs ==="
 for f in $_SKILL_GLOB; do
   [ -f "$f" ] || continue
   grep -q "^model:" "$f" && grep -q "disable-model-invocation: true" "$f" && echo "DEAD_SPEC: $f"
 done
 
-# Skills missing model declaration (and not disable-model-invocation)
+# Skills missing model declaration (SKILL.md only)
 echo "=== Missing model declarations ==="
 for f in $_SKILL_GLOB; do
   [ -f "$f" ] || continue
@@ -72,19 +76,19 @@ for f in $_AGENT_GLOB; do
   grep -q "^model:" "$f" || echo "NO_MODEL: $f"
 done
 
-# Boilerplate duplication counts
+# Boilerplate duplication counts — all .md files (modes/ and _shared/ contain these patterns too)
 echo "=== Boilerplate duplication ==="
-AGENT_RES=$(grep -rl "=\$(ls -td.*plugins/cache" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
-FLAG_CHECK=$(grep -rl "Unknown flag" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
-HEALTH_MON=$(grep -rl "MONITOR_INTERVAL=" $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
+AGENT_RES=$(grep -rl "=\$(ls -td.*plugins/cache" "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
+FLAG_CHECK=$(grep -rl "Unknown flag" "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
+HEALTH_MON=$(grep -rl "MONITOR_INTERVAL=" "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 echo "agent-resolution boilerplate: $AGENT_RES files"
 echo "unsupported-flag-check boilerplate: $FLAG_CHECK files"
 echo "health-monitoring constants: $HEALTH_MON files"
-# Bin/ extraction candidates: self-contained bash patterns appearing in multiple files
+# Bin/ extraction candidates — all .md files including modes/, templates/, _shared/
 echo "=== Bin/ extraction candidates ==="
-MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
+MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 echo "mode-dispatch pattern: $MODE_DISPATCH files"
-SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' $_SKILL_GLOB 2>/dev/null | wc -l | tr -d ' ')
+SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 echo "_shared resolution pattern: $SHARED_RES files"
 ```
 
@@ -96,7 +100,7 @@ Scope: per plugin — compare blocks within same plugin only (cross-plugin overl
 
 Spawn **foundry:curator** per plugin with this prompt:
 
-> Enumerate every fenced code block (` ```bash `, ` ```python `, ` ```sh `, etc.) in all SKILL.md files under `plugins/<name>/skills/`. Assign each a block ID: `<plugin-abbrev>-<skill-slug>-B<n>` (e.g. `fnd-audit-B3`). Record: ID, source file, start line, language, line count, total lines across cluster.
+> Enumerate every fenced code block (` ```bash `, ` ```python `, ` ```sh `, etc.) in all `.md` files under `plugins/<name>/` — including `modes/`, `templates/`, and `_shared/` subdirs. Assign each a block ID: `<plugin-abbrev>-<skill-slug>-B<n>` (e.g. `fnd-audit-B3`, `fnd-audit-modes-efficiency-B2`). Record: ID, source file, start line, language, line count, total lines across cluster.
 >
 > **Step 1 — Purpose statements**: for each block, write a one-sentence purpose statement describing what the block does functionally (not how) — e.g., "resolves `_shared/` path from plugin cache", "detects codex plugin availability", "sets LOCAL_MODE-aware glob vars", "emits boilerplate-duplication counts". Same wording of different goal = different cluster. Different wording of same goal = same cluster.
 >
@@ -124,14 +128,14 @@ Spawn **foundry:curator** per plugin with this prompt:
 >   - Lintable (shellcheck/ruff directly applicable) +1
 >   - Run frequency (executes >1× per skill invocation) +1
 >   - Standalone debuggable (runnable with no SKILL.md context) +1
-> - **Verdict**: SKIP (any gate fail) · OPTIONAL (0–1) · RECOMMENDED (2–3) · EXTRACT (≥4)
+> - **Verdict**: HOLD (any gate fail) · LOW (0–1) · MEDIUM (2–3) · HIGH (≥4)
 >
 > ```
 > | Cluster | ParamSlots | Tokens | Gate | Score | Verdict | Differs-by | Recommended extraction |
 > ```
 > **Differs-by**: list the concrete `<ARG>` slot values that vary across cluster instances — these become named CLI parameters in the extracted script signature. Recommendation = concrete: e.g. `Extract → bin/find-plugin.sh <plugin-name>; N call sites become $(find-plugin.sh codex)`.
 >
-> **Severity**: DUPLICATE cluster (max-sim ≥ 0.90) → **high** regardless of gate/score; EXTRACT verdict → **medium**; RECOMMENDED verdict → **low**; OPTIONAL or SKIP → Table 2 only (not a finding). Python blocks with EXTRACT verdict → medium + note approval-prompt impact.
+> **Severity**: DUPLICATE cluster (max-sim ≥ 0.90) → **high** regardless of gate/score; HIGH verdict → **medium**; MEDIUM verdict → **low**; LOW or HOLD → Table 2 only (not a finding). Python blocks with HIGH verdict → medium + note approval-prompt impact.
 > Write to `<RUN_DIR>/efficiency-check33-<plugin>.md`. Return ONLY: `{"status":"done","file":"<path>","clusters":N,"findings":N,"severity":{"high":N,"medium":N,"low":N},"confidence":0.N}`
 
 **Phase C — Aggregate, score, and plan** (after A+B+B2 complete):
@@ -155,7 +159,7 @@ Spawn **foundry:curator** consolidator to merge all findings:
 
 ```
 verdict: EFFICIENCY_ISSUES · critical: N · high: N · medium: N · low: N
-code-blocks: clusters: N · EXTRACT: N · RECOMMENDED: N
+code-blocks: clusters: N · HIGH: N · MEDIUM: N
 confidence: 0.N
 → <RUN_DIR>/efficiency-report.md
 
@@ -163,19 +167,12 @@ Critical: [list each]
 Estimated savings (P1+P2): ~X%
 ```
 
-Omit `code-blocks:` line when no clusters found (all SKIP verdicts or no Check 33 data available).
+Omit `code-blocks:` line when no clusters found (all HOLD verdicts or no Check 33 data available).
 
 Efficiency findings feed into standard fix pipeline (Steps 7–10). **Step 8 override**: model-tier mismatch findings are NOT subject to Step 8's "report-only" bypass — user opted into auto-fix by invoking `--efficiency`. Fix agents will apply model-tier changes.
 
-**Extraction gate** (fires after main follow-up gate, `--efficiency` only): when Phase C envelope reports `clusters > 0` (EXTRACT or RECOMMENDED verdicts present), fire a second `AskUserQuestion`:
+**Next step**: when Phase C envelope reports `clusters > 0` (HIGH or MEDIUM verdicts present), run `/distill executables` — reads latest efficiency report, presents candidates, and spawns `foundry:sw-engineer` to perform extraction.
 
-- question: "Found N bin/ extraction candidates (EXTRACT: N, RECOMMENDED: N). Extract now?" — substitute N from Phase C envelope `clusters`, `extract_count`, `recommended_count`
-- (a) label: `EXTRACT only` — extract only EXTRACT-verdict blocks to bin/ scripts
-- (b) label: `EXTRACT + RECOMMENDED` — extract all EXTRACT and RECOMMENDED blocks to bin/ scripts
-- (c) label: `Skip extractions` — no extraction now; review candidates in efficiency report manually
-
-When user picks (a) or (b): spawn `foundry:sw-engineer` to create bin/ scripts following `$_FS/bin-authoring-guide.md`; provide cluster list from `<RUN_DIR>/efficiency-check33-*.md`; for each extracted block replace inline content in source SKILL.md with reference to the new bin/ script.
-
-Skip gate if `clusters == 0` or `--skip-gate` active.
+**Post-extraction orphan check**: after `/distill executables` completes, run `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_orphaned_bin.py"` — must exit 0. New orphan introduced (bin/ script created without consumer rewire) = HIGH finding; abort extraction phase, require wire-in before commit.
 
 **Flag aliases**: `--efficiency` only (no alias).

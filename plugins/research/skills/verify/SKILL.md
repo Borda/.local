@@ -121,7 +121,7 @@ Include ## Confidence block.
 Return ONLY: {"status":"done","claims_verified":N,"mismatches":N,"high":N,"medium":N,"low":N,"fidelity":0.N,"file":"<RUN_DIR>/audit-raw.md","confidence":0.N}
 ```
 
-Use `timeout: 900000` for Agent call (15-min budget).
+`timeout` is not a valid parameter on `Agent()` — do NOT pass it. Liveness enforced via the `HARD_CUTOFF: 900` constant (15-min budget) declared in the `<constants>` block; if a real Bash-polled cutoff is required, follow the health-monitoring sentinel + 15-min cutoff pattern from CLAUDE.md §8 (synchronous `Agent()` calls cannot be polled mid-flight — same exemption documented in `<constants>`).
 
 On timeout: read `tail -100 $RUN_DIR/audit-raw.md`; if empty set `fidelity = null`, continue to V4 with `timed_out` status.
 

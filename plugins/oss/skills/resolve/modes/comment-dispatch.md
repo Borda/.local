@@ -28,8 +28,14 @@ and stop.
 
 ### 12a: Dispatch
 
+Compute the scoped sentinel path (matches `git-commit.md` Path A pattern — `/tmp/claude-commit-auth-<repo-slug>-<branch-slug>`), touch it, and register a cleanup trap so the authorization is revoked on completion or abort:
+
 ```bash
-touch /tmp/claude-commit-authorized  # timeout: 3000
+REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
+BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
+SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
+touch "$SENTINEL"  # timeout: 3000
+trap 'rm -f "$SENTINEL"' EXIT INT TERM
 ```
 
 ```bash
@@ -77,7 +83,9 @@ RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
 mkdir -p "$RUN_DIR"                                          # timeout: 5000
 ```
 
-Apply **Step 9 lint and QA gate pattern** from main resolve workflow — same parallel spawn of `foundry:linting-expert` + `foundry:qa-specialist`, commit lint fixes, surface blocking QA issues. Use `$RUN_DIR/linting-expert-step12c.md` and `$RUN_DIR/qa-specialist-step12c.md` as output paths. Revoke commit authorization after gate.
+Apply **Step 9 lint and QA gate pattern** from main resolve workflow — same parallel spawn of `foundry:linting-expert` + `foundry:qa-specialist`, commit lint fixes, surface blocking QA issues. Use `$RUN_DIR/linting-expert-step12c.md` and `$RUN_DIR/qa-specialist-step12c.md` as output paths.
+
+Commit authorization is revoked automatically by the `trap 'rm -f "$SENTINEL"' EXIT INT TERM` registered in Step 12a — `$SENTINEL` stays in scope for the entire dispatch + review + gate sequence. Do **not** issue a separate `rm -f /tmp/claude-commit-authorized` here; that path is no longer used (sentinel is now scoped per repo + branch per `git-commit.md`).
 
 Mark task `completed`:
 

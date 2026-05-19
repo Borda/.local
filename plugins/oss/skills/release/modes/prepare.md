@@ -32,22 +32,7 @@ Set up release directory, back up existing artifacts:
 
 ```bash
 RELEASE_DIR="releases/$VERSION"
-mkdir -p "$RELEASE_DIR"  # timeout: 5000
-
-# Symlink canonical changelog into release dir — no duplication, single source of truth.
-# $CHANGELOG_FILE resolved by Phase 2b Audit changelog step.
-ln -sf "$(realpath "$CHANGELOG_FILE")" "$RELEASE_DIR/CHANGELOG.md"
-
-# Overwrite guard — back up any existing release artifacts before re-running prepare.
-# Re-running /release prepare for the same version is legitimate (post-audit-fix retry),
-# but silently overwriting hand-edited notes is destructive.
-# CHANGELOG.md excluded — symlink; re-linking on re-run is safe and intentional.
-for f in HIGHLIGHTS.md DRAFT.md SUMMARY.md MIGRATION.md demo.py; do
-    if [ -f "$RELEASE_DIR/$f" ]; then
-        cp "$RELEASE_DIR/$f" "$RELEASE_DIR/$f.bak"
-        echo "⚠ $RELEASE_DIR/$f exists — backed up to $f.bak before overwrite"
-    fi
-done
+bash "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/setup_release_dir.sh" "$RELEASE_DIR" "$CHANGELOG_FILE"  # timeout: 5000
 ```
 
 **a. Identify highlights** — apply **Identify highlights** logic using classified changes from `$GATHER_FILE`: rank top 3–5 most significant changes (breaking > new public API > major UX > notable fixes), pull one concrete code example per highlight from diff. Write to `releases/$VERSION/HIGHLIGHTS.md`. Source of truth for demo, executive summary, release draft spotlights.

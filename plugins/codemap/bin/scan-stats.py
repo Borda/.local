@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 
-def _resolve_root(scan_args: str) -> str:
+def _resolve_root(scan_args: str, timeout: int = 15) -> str:
     """Return project root: --root arg → git toplevel → cwd."""
     with contextlib.suppress(Exception):
         args = shlex.split(scan_args) if scan_args else []
@@ -18,6 +18,7 @@ def _resolve_root(scan_args: str) -> str:
             subprocess.check_output(
                 ["git", "rev-parse", "--show-toplevel"],
                 stderr=subprocess.DEVNULL,
+                timeout=timeout,
             )
             .decode()
             .strip()
@@ -38,9 +39,12 @@ def _load_index(root: str) -> dict:
         sys.exit(1)
 
 
+_DEFAULT_TIMEOUT = 15
+
+
 def main() -> None:
     """Print codemap index summary: module count, symbols, top central modules."""
-    root = _resolve_root(os.environ.get("SCAN_ARGS", ""))
+    root = _resolve_root(os.environ.get("SCAN_ARGS", ""), timeout=_DEFAULT_TIMEOUT)
     d = _load_index(root)
 
     ok = [m for m in d["modules"] if m.get("status") == "ok"]

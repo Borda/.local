@@ -94,6 +94,7 @@
   "Bash(python -m doctest:*)",
   "Bash(python -m pre_commit run:*)",
   "Bash(python -m pytest:*)",
+  "Bash(python:*)",
   "Bash(rsync:*)",
   "Bash(ruff:*)",
   "Bash(scan-query:*)",
