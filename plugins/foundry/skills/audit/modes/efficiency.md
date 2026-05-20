@@ -13,8 +13,7 @@ Sweeps agents and skills for cost inefficiency signals. Does NOT run standard pe
 **Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Fragment files (`*/modes/*`, `*/templates/*`, `*/_shared/*`): skip checks 1–4 and 6 (no model frontmatter); run checks 5 (token bloat) and 7 (bin/ extraction) only.
 
 ```bash
-RUN_DIR=".reports/audit/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
-mkdir -p "$RUN_DIR"                                        # timeout: 5000
+RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make-run-dir.sh" .reports/audit)  # timeout: 5000
 ```
 
 This RUN_DIR replaces Step 3 setup (skipped in efficiency mode).
@@ -45,6 +44,7 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 
 ```bash
 # LOCAL_MODE-aware globs: SKILL/AGENT for frontmatter checks; SCAN_DIR for all .md (spawn/boilerplate/extraction)
+# canonical: LOCAL_MODE is set in audit/SKILL.md pre-flight; these glob vars are efficiency-mode-specific
 [ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
 [ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
 [ "$LOCAL_MODE" = "true" ] && _SCAN_DIR="plugins/" || _SCAN_DIR=".claude/"
@@ -159,7 +159,7 @@ Spawn **foundry:curator** consolidator to merge all findings:
 > 7. **Prioritized Improvement Plan** — P1 (critical: correctness/highest cost), P2 (high: model downgrades), P3 (medium: hygiene/dedup), P4 (low: compression); each item: file + exact change + estimated saving + `performance_risk: low|medium|high`. Items with `performance_risk: high` are automatically downgraded to P-HOLD (do not apply without empirical benchmarking). Items with `performance_risk: medium` stay in plan but carry a `⚠ validate first` marker.
 > 8. **Estimated Combined Savings** — rough directional reduction for most common workflows if all P1+P2 applied; note: savings are heuristic estimates only — no live cost measurement performed; treat as directional guidance, not engineering targets
 > 9. **Instruction Quality Issues** — table of E8/E9 findings aggregated from per-file envelopes (`e8_complexity` + `e9_noise` fields) and detailed findings in `efficiency-*.md` reports: `| file | check | location | issue | impact | suggested simplification |`; sorted by estimated noise reduction (high→low). NON_AUTO_FIXABLE — E8 findings contribute to `medium` count; E9 findings contribute to `low` count; both enter the follow-up gate under option (c) "Fix ALL" as a separate "instruction-quality" AskUserQuestion category. Do not auto-fix instruction-quality findings via options (a) or (b). Omit section entirely when both E8 and E9 totals are zero.
-> Write full report to `<RUN_DIR>/efficiency-report.md`.
+> Write full report to `<RUN_DIR>/efficiency-report.md`. End report with `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements).
 > Return ONLY: `{"status":"done","file":"<RUN_DIR>/efficiency-report.md","critical":N,"high":N,"medium":N,"low":N,"total_issues":N,"clusters":N,"extract_count":N,"recommended_count":N,"e8_complexity":N,"e9_noise":N,"top_saving":"<description>","confidence":0.N}`
 
 **Report format** (terminal summary):
@@ -179,7 +179,7 @@ Omit `code-blocks:` line when no clusters found (all HOLD verdicts or no Check 3
 
 Efficiency findings feed into standard fix pipeline (Steps 7–10). **Step 8 override**: model-tier mismatch findings are NOT subject to Step 8's "report-only" bypass — user opted into auto-fix by invoking `--efficiency`. Fix agents will apply model-tier changes.
 
-**Next step**: when Phase C envelope reports `clusters > 0` (HIGH or MEDIUM verdicts present), run `/distill executables` — reads latest efficiency report, presents candidates, and spawns `foundry:sw-engineer` to perform extraction.
+**Extraction routing**: when Phase C envelope `extract_count > 0` (HIGH or MEDIUM verdict clusters), the follow-up gate replaces option (d) with a `/distill executables` choice — user selects from gate; do NOT auto-run. Gate substitution logic is in main SKILL.md follow-up gate section.
 
 **Post-extraction orphan check**: after `/distill executables` completes, run `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_orphaned_bin.py"` — must exit 0. New orphan introduced (bin/ script created without consumer rewire) = HIGH finding; abort extraction phase, require wire-in before commit.
 

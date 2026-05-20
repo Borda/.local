@@ -3,7 +3,7 @@ name: audit
 description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, boilerplate duplication, and bin/ extraction candidates (extraction performed separately via /distill executables). Fix level chosen via always-fire follow-up gate after report."
 argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
 ---
 
@@ -64,6 +64,7 @@ BATCH_SIZE=5           # max files per foundry:curator spawn in Step 3; keep sma
 _FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
+Read `$_FS/preflight-helpers.md` — defines `preflight_ok()` and `preflight_pass()` used in Pre-flight checks below.
 
 **Orchestration contract**: orchestrator is thin coordinator — issues Glob/Grep for inventory, spawns agents, reads JSON envelopes, aggregates findings. Must NOT read agent/skill/rule file bodies directly. Inline read of non-template file = protocol violation; causes context overflow at scale.
 
@@ -101,17 +102,7 @@ if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFF
     exit 1
 fi
 
-# Canonical source: foundry _shared/preflight-helpers.md (deployed by /foundry:init to .claude/skills/_shared/)
-# Keep in sync with that file when updating
-# From _shared/preflight-helpers.md — TTL 4 hours, keyed per binary
-preflight_ok() {
-    local f=".claude/state/preflight/$1.ok"
-    [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]
-} # timeout: 5000
-preflight_pass() {
-    mkdir -p .claude/state/preflight
-    date +%s >".claude/state/preflight/$1.ok"
-} # timeout: 5000
+# canonical: _shared/preflight-helpers.md — loaded by audit/SKILL.md at session start
 
 # .claude/ directory must exist (not cached — filesystem state)
 if [ ! -d ".claude" ]; then
@@ -224,8 +215,7 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 Set up the run directory once before spawning any agents:
 
 ```bash
-RUN_DIR=".reports/audit/$(date -u +%Y-%m-%dT%H-%M-%SZ)" # timeout: 5000
-mkdir -p "$RUN_DIR"                                     # timeout: 5000
+RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make-run-dir.sh" .reports/audit)  # timeout: 5000
 echo "Run dir: $RUN_DIR"
 ```
 
@@ -593,7 +583,9 @@ When user picks fix option (a–c): run Steps 8–10 inline (state on disk in `s
 - (c) label: `Fix ALL` — fix all auto-fixable then prompt about each NON_AUTO_FIXABLE category via grouped `AskUserQuestion` (max 4 calls); most thorough option
 - (d) label: `Skip` — no fixes now; for other modes run `/audit --upgrade`, `/audit --adversarial`, `/audit --efficiency`, or `/foundry:init` manually
 
-After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate (omit the option(s) just run — no point repeating). When `--adversarial --efficiency` combined: fire gate once after both modes complete with merged finding counts; omit both options (d) and (e).
+After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate. Fix options (a)–(c) always present — never omit. For (d) Skip hint: remove the mode just run from the "for other modes" list. When `--adversarial --efficiency` combined: fire gate once after both modes complete with merged finding counts; remove both from (d) hint.
+
+**Efficiency mode — extraction override**: when `--efficiency` ran AND Phase C envelope `extract_count > 0` (HIGH or MEDIUM verdict clusters exist): replace option (d) label with `` `Run /distill executables (N HIGH, M MEDIUM candidates)` `` where N and M come from Phase C envelope; selecting this option invokes `/distill executables` → `foundry:sw-engineer` extraction then `/audit --efficiency` re-run to confirm savings. User may type "skip" via Other to defer.
 
 </workflow>
 
@@ -620,6 +612,6 @@ After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this
   - Audit Check 22 found unregistered calibratable mode → update `calibrate/modes/skills.md` domain table and run `/foundry:calibrate skills` to verify new target works
   - Audit Check 22 found stale domain table entry → remove from `calibrate/modes/skills.md`
   - `/audit --efficiency` found model over-provisioning → apply P1+P2 changes from efficiency report → re-run `/audit --efficiency` to confirm savings estimate; run `/foundry:calibrate routing --fast` to verify no routing regression from model changes
-  - `/audit --efficiency` found bin/ extraction candidates (HIGH or MEDIUM verdict) → run `/distill executables` to perform extraction; then re-run `/audit --efficiency` to confirm `clusters == 0`
+  - `/audit --efficiency` found bin/ extraction candidates (HIGH or MEDIUM verdict) → select `Run /distill executables` from follow-up gate to perform extraction; then re-run `/audit --efficiency` to confirm `extract_count == 0`
 
 </notes>

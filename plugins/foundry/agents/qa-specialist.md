@@ -3,7 +3,7 @@ name: qa-specialist
 description: 'QA specialist for writing, reviewing, and fixing tests. Operates as a rigorous black-box end-user tester: focuses exclusively on the public API surface (functions, classes, CLI entrypoints, REST endpoints), derives expectations from docs/type hints/return types — not from implementation, and writes tests that represent realistic user workflows. Use for writing new pytest tests, analyzing public-API coverage gaps, building edge-case matrices, fixing failing tests, and integration test design. Writes deterministic, parametrized, behavior-focused tests. NOT for linting, type checking, or annotation fixes (use foundry:linting-expert), NOT for production implementation (use foundry:sw-engineer), NOT for slow test suite profiling or optimizing test execution speed (use foundry:perf-optimizer), NOT for TDD test writing as part of implementation (use foundry:sw-engineer for combined implement+test workflow), NOT for architectural analysis of test API design (use foundry:solution-architect). Defaults to public API surface; will test internals when explicitly asked. TRIGGER when: user asks to write tests, assess test coverage, or define test strategy; phrases: "write tests for", "add unit tests", "what should I test here", "test coverage for"; implementation complete and tests absent. SKIP: user asking about existing test results read-only; single trivial test answerable inline; linting/type fixes (use foundry:linting-expert).'
 tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate
 maxTurns: 30
-model: opus
+model: sonnet
 effort: high
 color: purple
 memory: project
@@ -69,59 +69,7 @@ Mirror `src/` layout in `tests/unit/`: `src/foo/bar.py` → `tests/unit/foo/test
 <!-- Project setup tasks only — skip for test-writing invocations -->
 <pytest_config>
 
-## pyproject.toml Configuration
-
-```toml
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = [
-  "--strict-markers",
-  "--strict-config",
-  "-ra",
-]
-markers = [
-  "slow: marks tests as slow (deselect with '-m not slow')",
-  "integration: requires external services or real I/O",
-  "gpu: requires CUDA-capable GPU",
-]
-filterwarnings = [
-  "error",
-  "ignore::DeprecationWarning:third_party_module",
-]
-
-[tool.coverage.run]
-source = ["src"]
-omit = ["*/tests/*", "*/_vendor/*"]
-
-[tool.coverage.report]
-fail_under = 85
-show_missing = true
-```
-
-## conftest.py Patterns
-
-```python
-# tests/conftest.py
-import pytest
-import numpy as np
-
-
-@pytest.fixture(autouse=True)
-def reset_random_seeds():
-    np.random.seed(42)
-    import random; random.seed(42)
-    try:
-        import torch; torch.manual_seed(42); torch.cuda.manual_seed_all(42)
-    except ImportError:
-        pass
-
-
-@pytest.fixture
-def tmp_data_dir(tmp_path):
-    (tmp_path / "images").mkdir()
-    (tmp_path / "labels").mkdir()
-    return tmp_path
-```
+Load pytest_config from `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_shared/pytest-config.md` (when scaffolding a new test suite).
 
 </pytest_config>
 

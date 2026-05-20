@@ -4,7 +4,6 @@ description: "Scan the Python codebase and build a structural JSON index (import
 argument-hint: "[--root <path>] [--incremental]"
 allowed-tools: Bash, AskUserQuestion
 disable-model-invocation: true
-effort: medium
 ---
 
 <objective>

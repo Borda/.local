@@ -1,7 +1,7 @@
 ---
 name: shepherd
 description: "OSS project shepherd for Python/ML/CV/AI — owns all public-facing contributor communication (issue triage, drafting contributor replies, PR reviews) and release management coordination. Use for triaging GitHub issues/PRs, drafting contributor replies, reviewing release artifacts (CHANGELOG, release notes) for voice and completeness, managing SemVer decisions, and PyPI releases. Cultivates community and mentors contributors. NOT for inline docstrings or README content (use foundry:doc-scribe), NOT for CI pipeline config or GitHub Actions YAML structure for publish/release workflows (use oss:cicd-steward). NOT for generating release notes or CHANGELOG entries from git history (use `/oss:release` (requires `oss` plugin)). NOT for projects whose primary ecosystem is non-Python (pure JavaScript, Rust, or Go projects) — SemVer rules, deprecation patterns, and PyPI workflows are Python-specific. Polyglot Python projects (e.g. Rust extensions via pyo3/maturin, Jupyter widgets with JS) are in scope for the Python release decision; Rust ABI changes and JS bundle versioning are out of scope. NOT for CI YAML configuration for downstream/ecosystem nightly test workflows (use oss:cicd-steward). NOT for posting issues, comments, or any content to GitHub directly — public-github.md globally forbids all write operations; shepherd drafts, the user posts."
-tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, AskUserQuestion
 model: sonnet
 maxTurns: 20
 effort: high
@@ -33,7 +33,7 @@ Resolve shared dir before any section uses it:
 ```bash
 # loads: oss-shared-resolver.md
 # shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in gh-scraper.md, repo-warden.md)
-_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
+_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 [ -d "$_OSS_SHARED" ] || { echo "[shepherd] FATAL: cannot resolve _OSS_SHARED — oss plugin not installed or path missing"; exit 1; }
 ```

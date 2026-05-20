@@ -26,11 +26,10 @@
 3. Lead creates run output directory:
 
    ```bash
-   RUN_DIR=".experiments/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-   mkdir -p "$RUN_DIR"
+   RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "run-team" ".experiments")  # timeout: 5000
    ```
 
-   Store `RUN_DIR` as run-level variable — do not re-evaluate `date` at later phases. All `<RUN_DIR>` refs in Phases B, C, D use same value.
+   Store `RUN_DIR` as run-level variable — do not re-evaluate at later phases. All `<RUN_DIR>` refs in Phases B, C, D use same value.
 
    Write `phase: "A"` to `state.json` immediately after creating `RUN_DIR` — enables Phase A resume:
 

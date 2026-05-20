@@ -399,13 +399,13 @@ Read `${CLAUDE_SKILL_DIR}/modes/codex-copilot.md` — contains full Phase 2c log
 
 #### Phase 4 — Commit change
 
-Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentinel TTL set in R5 setup; recompute path because the R5 bash variable is lost between calls:
+Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentinel TTL set in R5 setup. Slug computation unavoidably re-run (bash state lost between tool calls); path pattern identical to R5 setup block above:
 
 ```bash
-# Refresh commit sentinel — R5 loop can exceed 15-min TTL
+# Refresh commit sentinel — bash state lost between calls; re-derive slug (same formula as R5 setup)
 REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
 BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
-touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000
+touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # sentinel pattern: /tmp/claude-commit-auth-<repo>-<branch>; timeout: 3000
 ```
 
 Stage only modified files (never `git add -A`):
@@ -441,7 +441,7 @@ No resource limits. Use Bash tool `timeout` parameter (not shell `timeout`): `ti
 
 <!-- Colab assertion: MCP call, not Bash — exempt from the script-file rule; correct as an inline one-liner. -->
 
-If timeout expires: refresh sentinel (`touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"`), append `status: timeout`, revert via `git revert HEAD --no-edit`, continue loop.
+If timeout expires: refresh sentinel (same slug formula as R5/Phase 4: `touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"`), append `status: timeout`, revert via `git revert HEAD --no-edit`, continue loop.
 
 #### Phase 6 — Run guard
 
@@ -585,7 +585,9 @@ Triggered by `--resume` flag (with optional `<file.md>` argument).
 4. Validate git HEAD: if diverged from `state.json.best_commit` unexpectedly, invoke `AskUserQuestion` tool — question: "HEAD has diverged from best_commit in state.json. Continue anyway?", (a) label: `yes, continue from current HEAD`, (b) label: `no, abort`. If (b), stop.
 5. Continue loop from `state.json.iteration + 1`. `diary.md` NOT re-initialized — entries append to existing file.
 
-## Colab MCP Integration — only with `--colab` flag
+## Mode: colab
+
+Execute this section only when `--colab` flag is set. Skip entirely for local or docker runs.
 
 **Purpose**: route metric verification and GPU code testing to Colab runtime instead of local. Essential for ML training metrics, CUDA benchmarks, GPU-required workloads.
 

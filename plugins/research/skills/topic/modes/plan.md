@@ -1,0 +1,104 @@
+<!-- file: plan.md — consumers: topic/SKILL.md -->
+
+## Plan Mode
+
+Only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode).
+
+Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method — needed before `/develop:feature` (requires `develop` plugin).
+
+**Input detection** (parse argument after `plan`):
+
+- No argument → **auto-detect**: use Glob (pattern `topic-*.md`, path `.reports/research/`) to find recent research outputs; exclude paths containing `-plan-` or `-codebase-`; sort by modification time descending; pick most recent. Print `→ Using: <path>` before proceeding. If no file found, stop: "No recent research output found — run `/research:topic <topic>` first."
+- Ends in `.md` → treat as path to existing research output file; skip to Step P1-B
+
+### Step P1: Gather research findings
+
+**P1-A — From fresh research**: After Steps 1–3 complete, read generated `.reports/research/topic-<date>.md`. Extract: Recommendation section, Implementation Plan, Key Hyperparameters, Gotchas, Integration with Current Codebase.
+
+**P1-B — From existing output**: Read file at given path directly. Extract same sections.
+
+**Validation**: file must contain clear **Recommendation** section naming specific method. If missing or ambiguous, stop: "Research output does not contain a clear method recommendation — run `/research:topic <topic>` first, then pass the output path."
+
+Before spawning in Steps P2–P3, pre-compute output path components:
+```bash
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
+DATE=$(date +%Y-%m-%d)  # timeout: 3000
+# Anti-overwrite: resolve counter-suffix before each spawn (quality-gates.md rule)
+CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE.md"
+_N=2; while [ -e "$CODEBASE_OUT" ]; do CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
+mkdir -p .temp  # timeout: 3000
+```
+<!-- same branch/date pattern as Step 2a block -->
+
+### Step P2: Codebase analysis
+
+Call `Agent(subagent_type="foundry:solution-architect", prompt=...)`:
+
+```markdown
+Read the research findings file at <path from P1>.
+Analyze the current codebase to map the recommended method against existing code:
+1. Identify all files and modules relevant to the recommended method's domain
+2. Map existing abstractions: interfaces, base classes, patterns the codebase already uses
+3. Identify integration points: where does the new method plug in?
+4. Flag conflicts: existing patterns that would need to change
+5. Estimate complexity per integration point (low/medium/high)
+
+Write your full analysis to `<$CODEBASE_OUT>` using the Write tool. (Substitute resolved path — not template variable.)
+Return ONLY a compact JSON envelope on your final line — nothing else after it:
+{"status":"done","integration_points":N,"conflicts":N,"file":"<$CODEBASE_OUT>","confidence":0.N,"summary":"N integration points, N conflicts"}
+```
+
+### Step P3: Synthesize plan
+
+Read both files (research findings from P1 + codebase analysis from P2). Produce phased plan, write to `.reports/research/topic-plan-$BRANCH-$DATE.md`:
+
+```markdown
+## Implementation Roadmap: [method name]
+Topic: [original $ARGUMENTS]
+
+### Prerequisites
+- [dependency, environment requirement, or data prerequisite]
+
+### Phase 1: Foundation — [description]
+**Goal**: [what this phase achieves and why it must come first]
+| Task | Files | Depends On | Complexity | Verification |
+|------|-------|------------|------------|--------------|
+| ...  | ...   | —          | low/med/hi | [how to verify done] |
+
+### Phase 2: Core Implementation — [description]
+**Goal**: [what this phase achieves]
+| Task | Files | Depends On | Complexity | Verification |
+|------|-------|------------|------------|--------------|
+| ...  | ...   | Phase 1    | ...        | ...          |
+
+### Phase 3: Integration & Validation — [description]
+**Goal**: wire into existing pipeline, validate end-to-end
+[same table format]
+
+### Risks
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| ...  | low/med/hi | ...    | ...        |
+
+### Estimated Effort
+| Phase | Tasks | Complexity Mix | Estimate |
+|-------|-------|----------------|----------|
+| 1     | N     | N low, M med   | X days   |
+
+### Next Steps
+- Phase 1 ready → `/develop:feature <first task from Phase 1>` (requires `develop` plugin)
+- Full plan approved → create `.plans/active/todo_<method>.md` with phases as task groups
+```
+
+Print compact terminal summary:
+
+```text
+---
+Research Plan — [method name]
+Phases:      [N] phases, [M] tasks total
+Complexity:  [N low / M medium / K high]
+Top risk:    [one-line from risks table]
+Confidence:  [score] — [key gaps]
+→ saved to .reports/research/topic-plan-[date].md
+---
+```

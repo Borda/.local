@@ -88,11 +88,10 @@ Exit codes: `0` = significant · `1` = not significant (or insufficient data) ·
 
 Read `direction` from `state.json` config (or infer from goal text); pass via `$METRIC_DIRECTION`.
 
-**Effect size** — script does not return rank-biserial `r` directly. Compute in shell from `statistic` and `n`:
+**Effect size** — script does not return rank-biserial `r` directly. Compute via the bundled bin/ script:
 
 ```bash
-# TODO: extract to bin/ script — Check 23e violation (inline python -c); add "r" field to retro_analyze.py output and remove this line
-EFFECT_R=$(echo "$RETRO_RESULT" | python -c "import json,sys; d=json.loads(sys.stdin.read()); n=d['n']; s=d.get('statistic'); print('' if s is None else 4*s/(n*(n+1)) - 1)")  # timeout: 5000
+EFFECT_R=$(echo "$RETRO_RESULT" | python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/compute_effect_size.py")  # timeout: 5000
 ```
 
 **If `--compare`**: invoke the script a second time on the second run's `experiments.jsonl`; downstream report renders a second row.
