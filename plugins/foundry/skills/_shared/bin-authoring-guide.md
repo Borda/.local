@@ -1,3 +1,4 @@
+<!-- R3: placeholder paths below (e.g. /Users/<name>/, /path/to/) are illustrative examples, not hardcoded user paths — Check R3 false positives -->
 # bin/ Authoring Guide
 
 Reference from any skill or scaffolding step that needs to decide whether to write a `bin/` script vs keep code inline, which language to use, and how to structure it.
@@ -61,7 +62,7 @@ Before writing ANY inline code block, apply this gate. All three must pass — i
 4. Score < 2? Inline acceptable — stop here.
 5. Score 2–3? Prefer bin/ (MEDIUM verdict); use language policy to pick bash vs Python.
 6. Score ≥ 4? bin/ required (HIGH verdict); use language policy; write tests.
-7. Wire into consumer — before commit: edit consumer SKILL.md, replace inline twin with `"${CLAUDE_PLUGIN_ROOT}/bin/<script>" …`; run `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_orphaned_bin.py"`; must exit 0. Cross-plugin consumer (script in plugin A, called from plugin B)? Add `<!-- file: <basename> — consumers: <plugin> skills/<name> -->` doc header in any `.md` in the owning plugin (e.g. this guide); the detector now searches all plugins, so the script won't be flagged. Known cross-plugin utilities: `resolve-shared-path.sh` (foundry bin/ → oss skills/review, resolve, release), `find-polluter.py` (foundry bin/ → develop skills/debug).
+7. Wire into consumer — before commit: edit consumer SKILL.md, replace inline twin with `"${CLAUDE_PLUGIN_ROOT}/bin/<script>" …`; run `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_orphaned_bin.py"`; must exit 0. Cross-plugin consumer (script in plugin A, called from plugin B)? Add `<!-- file: <basename> — consumers: <plugin> skills/<name> -->` doc header in any `.md` in the owning plugin (e.g. this guide); the detector now searches all plugins, so the script won't be flagged. Known cross-plugin utilities: `resolve-shared-path.sh` (foundry bin/ → oss skills/review, resolve, release), `find-polluter.py` (foundry bin/ → develop skills/debug), `get_plugin_install_path.py` (foundry bin/ → consumed by `find-foundry-shared.sh` and `resolve-shared-path.sh` for registry-authoritative install-path lookup).
 
 ---
 
@@ -224,6 +225,69 @@ For the three allowed cases only (see language policy above):
 set -euo pipefail
 ...
 ```
+
+---
+
+## Bash Script Testing
+
+Naming: `test_<basename_normalized>_sh.py` in `tests/` alongside `bin/`. Normalize: dashes → underscores, drop `.sh`, append `_sh` suffix. `_sh` suffix permanently distinguishes bash tests from Python tests with same base name.
+
+Example: `resolve-shared-path.sh` → `test_resolve_shared_path_sh.py`.
+
+**Self-contained helper** — each test file defines own `SCRIPT` path and `sh()` helper; no `conftest.py` changes needed for bash tests:
+
+```python
+import os, subprocess
+from pathlib import Path
+import pytest
+
+SCRIPT = Path(__file__).parent.parent / "bin" / "script-name.sh"
+
+def sh(*args: str, env: dict | None = None, cwd: str | None = None) -> subprocess.CompletedProcess:
+    e = {**os.environ, **(env or {})}
+    return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=e, cwd=cwd)
+```
+
+**Three mandatory tests per script:**
+
+- Missing/wrong args → non-zero exit
+- Invalid input (path traversal `..`, special chars, non-integer where integer expected) → exit 2 + stderr message
+- Happy path with isolated `HOME` via `tmp_path` (prevents cache-dir reads from real `~`)
+
+Template:
+
+```python
+def test_missing_args() -> None:
+    assert sh().returncode != 0
+
+def test_invalid_input_traversal() -> None:
+    r = sh("../evil", "skills/_shared")
+    assert r.returncode == 2
+    assert "invalid" in r.stderr
+
+def test_happy_path(tmp_path: Path) -> None:
+    env = {"HOME": str(tmp_path)}
+    r = sh("foundry", "skills/_shared", env=env)
+    assert r.returncode == 0
+    assert "skills/_shared" in r.stdout
+```
+
+**HOME isolation** — always pass `HOME=str(tmp_path)` for scripts doing cache lookups. Never rely on real `~/.claude/` in tests.
+
+**Integration marking** — scripts requiring real git repo with history, `gh` auth, or network calls use module-level `pytestmark`:
+
+```python
+pytestmark = pytest.mark.skipif(
+    not os.getenv("RUN_INTEGRATION"),
+    reason="requires real git/gh env — set RUN_INTEGRATION=1"
+)
+```
+
+Apply at module level for fully-integration files; on individual tests for mixed files (arg-validation unit + happy-path integration).
+
+Integration-requiring conditions: `git describe`, `git log` on real history, `gh` auth/API, network calls.
+
+**Audit enforcement** — Check 34 (`/audit plugins`) verifies every `bin/*.sh` has corresponding `tests/test_<name>_sh.py`. Missing test files flagged as MEDIUM severity.
 
 ---
 

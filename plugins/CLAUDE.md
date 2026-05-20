@@ -34,6 +34,7 @@ Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`
 - Every file must be installable via `claude plugin install <name>@borda-ai-rig`
 - No file depend on source tree — assume installed path only
 - No hardcoded paths to sibling plugins or `plugins/<name>/` directories
+- **No hardcoded absolute user paths** (`/Users/<name>/`, `/home/<name>/`, `/tmp/`) in any plugin file — critical installability violation; breaks on every other machine. Always use `~/`, `$(git rev-parse --show-toplevel)`, or `$CLAUDE_PLUGIN_ROOT`. Check R3 flags violations.
 - Validate: after `claude plugin install`, all agents/skills/rules/hooks resolve without local `plugins/` tree
 - **Bare `plugins/` path = only valid as final fallback** after cache-path resolution: `VAR="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)"; [ -z "$VAR" ] && VAR="plugins/<plugin>/skills/_shared"`. Never use bare `plugins/` as primary path. Check C32 flags violations.
 - **Health monitoring mandatory for background agents**: any skill spawning `Agent(..., run_in_background=true)` must implement CLAUDE.md §8 (sentinel + 5-min poll + 15-min cutoff). Reference `_FOUNDRY_SHARED/agent-spawn-protocol.md` rather than reproducing inline. Check C35 flags violations.
@@ -89,8 +90,9 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 | --- | --- |
 | Fix, wording, refactor, cleanup, or restoring behaviour to original design intent | `Y` |
 | New capability, new agent/skill, new designed behaviour (not intended before) | `X` |
+| Test-only changes (adding/editing `tests/*.py` or `tests/*_sh.py`, no source file changes) | none — skip |
 
-> **Rule**: Ask "was this *supposed* to work this way?" Yes + it didn't → `Y` (fix). No, new intent → `X` (feature). Internal restructuring always `Y` regardless of size or visibility.
+> **Rule**: Ask "was this *supposed* to work this way?" Yes + it didn't → `Y` (fix). No, new intent → `X` (feature). Internal restructuring always `Y` regardless of size or visibility. Test-only commits (no changes outside `tests/`) need no bump.
 
 **Bump at commit, not per edit** — single bump per commit, highest-magnitude change wins:
 

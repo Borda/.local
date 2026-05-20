@@ -5,7 +5,6 @@ argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--code
 allowed-tools: Read, Write, Edit, Bash, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
 effort: high
-when_to_use: "Use when the user asks to review a GitHub Pull Request (Python source, documentation (Markdown/RST), and CI/CD config PRs), wants multi-agent code review feedback, or needs a structured review with severity-graded findings."
 ---
 
 <objective>
@@ -95,13 +94,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
 fi
 ```
 
-```bash
-if [ "$SEMBLE_ENABLED" = "true" ]; then
-    # mcp__semble__search availability confirmed at runtime by checking available tools list
-    # Not found → stop:
-    printf "! --semble requested but semble MCP server not configured.\n  Configure: claude mcp add semble -s user -- uvx --from \"semble[mcp]\" semble\n"; exit 1
-fi
-```
+If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -376,7 +369,8 @@ for N in $ISSUE_NUMS; do EXPECTED+=("$RUN_DIR/issue-$N.md"); done
 [ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--doc-scribe.md")
 [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--linting-expert.md")
 [ "$CHALLENGE_ENABLED" = "true" ] && EXPECTED+=("$RUN_DIR/foundry--challenger.md")
-# solution-architect added conditionally when spawned
+# solution-architect spawned for FEATURE/MIXED/REFACTOR Python-mode PRs (not FIX, CHORE, or single-domain modes)
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "FIX" ] && [ "$SCOPE" != "CHORE" ] && EXPECTED+=("$RUN_DIR/foundry--solution-architect.md")
 
 ```
 

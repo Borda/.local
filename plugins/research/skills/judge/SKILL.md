@@ -29,8 +29,8 @@ Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback 
 
 | Agent | Fallback if absent |
 | --- | --- |
-| `foundry:solution-architect` | `general-purpose` (methodology review quality reduced) |
-| `research:scientist` | `general-purpose` (scientific rigor review quality reduced) |
+| `foundry:solution-architect` | `general-purpose` (methodology review quality reduced — **⚠ general-purpose agent may not emit `methodology_rating` in required format; verdict defaults to NEEDS-REVISION**) |
+| `research:scientist` | `general-purpose` (scientific rigor review quality reduced — **⚠ general-purpose agent may not emit `scientific_rating`; verdict defaults to NEEDS-REVISION**) |
 
 ## Judge Mode (Steps J1–J6)
 
@@ -83,7 +83,7 @@ Check 12 items. Produce findings list with severity. Each finding has: `id`, `ch
 | C8 | `max_iterations` in bounds (1–50) | medium | Missing defaults to 20 (acceptable); >50 violates SKILL.md constants. Additionally: if value is within bounds but >20 AND combined with risk factors (C4 fails / guard empty, OR C6 fails / scope non-existent), add a separate `low` finding: "max_iterations=N is elevated; with no functioning guard/scope, runaway iterations amplify risk — consider reducing to ≤15 until guard/scope is fixed" |
 | C9 | `agent_strategy` is valid (`auto`/`perf`/`code`/`ml`/`arch`) | medium | Invalid value silently falls back to `auto` |
 | C10 | `compute` is valid (`local`/`colab`/`docker`) | low | Invalid defaults to `local` |
-| C11 | `colab_hw` valid (if present) | low | `colab_hw` absent OR is one of `H100, L4, T4, A100` — fail detail: `"colab_hw '<value>' is not in known set {H100, L4, T4, A100} — may cause GPU identity check failure in run mode"` |
+| C11 | `colab_hw` valid (if present) | low | `colab_hw` absent OR is one of `H100, L4, T4, A100, V100, A10G, TPUv2, TPUv3, TPUv4` — fail detail: `"colab_hw '<value>' is not in known set {H100, L4, T4, A100, V100, A10G, TPUv2, TPUv3, TPUv4} — may cause GPU identity check failure in run mode"`. Note: this check is a minimum-capability floor — new Colab hardware tiers may exist beyond this list; unknown values are flagged for user verification, not blocked. |
 | C12 | `## Notes` section present | low | Notes optional but improve ideation quality |
 
 **Scope adequacy sub-rule (C6b)** — after C6 passes, assess whether `scope_files` is *sufficient* for the stated goal. If the goal type implies known bottleneck locations outside the declared scope, add a `medium` finding:
@@ -139,7 +139,7 @@ Also read the codebase (Glob **/*.py, **/*.ts, **/*.js at project root, limit 50
 Review the experimental protocol across seven dimensions:
 
 1. **Hypothesis clarity**: Is the `## Goal` a clear, testable hypothesis? Can you tell what constitutes success vs failure? Vague goals produce unfocused experiments — flag if the hypothesis is ambiguous.
-2. **Measurement validity**: Does `<metric_cmd>` correctly operationalize the hypothesis? Does it measure what the goal actually intends? Could the metric move in the right direction while the underlying goal is NOT achieved (Goodhart's Law)? Could noise dominate signal at the expected delta scale?
+2. **Measurement validity**: Does `<metric_cmd>` correctly operationalize the hypothesis? Does it measure what the goal actually intends? Could the metric move in the right direction while the underlying goal is NOT achieved (Goodhart's Law)? Could noise dominate signal at the expected delta scale? **Goodhart's Law is a verdict-level issue** — if this metric could improve while the actual goal is NOT achieved, rate `methodology_rating` as `fundamentally-flawed`, not `needs-refinement`.
 3. **Control adequacy**: Does `<guard_cmd>` serve as a valid control condition? Does it catch regressions that an ideation agent could inadvertently introduce? Is it too strict (would block valid improvements) or too permissive (would miss real breakage)? **Exit-code check**: verify that the guard command's exit code actually depends on test outcomes. Commands using awk with print (not exit), grep -c piped to a shell ignoring the count, or other patterns where exit code is always 0 = critical guard flaw regardless of semantic intent. Flag as critical, not medium.
 4. **Experimental scope**: Do the `scope_files` define a coherent experimental boundary? Are there known dependencies outside scope that could confound results? Is the scope too broad (unfocused changes) or too narrow (the real lever is outside scope)?
 5. **Protocol consistency**: Is `agent_strategy: <strategy>` logically consistent with the hypothesis type? (e.g., using `perf` strategy to improve code quality is a methodology mismatch — flag it)
@@ -182,7 +182,7 @@ Read the campaign program file at <path_to_program.md>.
 
 Review across four dimensions:
 1. **Hypothesis falsifiability**: Is the goal precisely stated — can you tell unambiguously when the experiment has succeeded or failed?
-2. **Goodhart's Law**: Could the metric improve while the actual goal is NOT achieved? Name any specific proxy-gaming risks.
+2. **Goodhart's Law**: Could the metric improve while the actual goal is NOT achieved? Name any specific proxy-gaming risks. **If yes, rate `scientific_rating` as `fundamentally-flawed`** — a Goodhart metric invalidates the entire feedback loop, equivalent to having no metric at all.
 3. **Missing baselines**: What standard controls, ablations, or baselines would a peer reviewer expect that are absent?
 4. **Reproducibility risks**: List concrete factors that could produce non-reproducible results (randomness seeds, dataset splits, flaky tests, environment dependencies).
 
@@ -201,7 +201,7 @@ File-parsed value takes priority over the health monitor value; use the file-par
 
 ## Step J4: Local validation
 
-> Skip if `$SKIP_VALIDATION` is `true` (parsed in J1). Print: `→ Validation skipped (--skip-validation passed)` and continue to J5.
+> Skip if `$SKIP_VALIDATION` is `true` (parsed in J1). Print: `→ Validation skipped (--skip-validation passed)` and continue to J5. Add a `high` finding: "Executability unverified — metric_cmd and guard_cmd not tested on local machine." This finding persists into J6 — APPROVED is not achievable when `--skip-validation` is set (high > 0 → NEEDS-REVISION at best).
 
 Execute each command once. **Non-blocking** — failures become `critical` findings, not hard stops.
 
@@ -238,6 +238,7 @@ claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'
 **If available**: invoke adversarial review on top 3 critical/high gaps from J2 and J3. Example (replace `<top finding N>` with actual findings):
 
 ```text
+# codex:codex-rescue = dispatchable adversarial agent; codex:adversarial-review is user-only (/codex:adversarial-review slash command)
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of run program: check <top finding 1>, <top finding 2>, and <top finding 3> in the program.md. Read-only: do not apply fixes.")
 ```
 
@@ -265,6 +266,8 @@ Top-to-bottom; **first match wins**. BLOCKED takes precedence — stop at first 
 | 0 critical AND 0 high AND `methodology_rating == "sound"` | APPROVED |
 
 **Verdict matching rules**: all `*_rating` comparisons require exact string match. Reject partial/substring matches — e.g., `timed_out_partial` does NOT match `timed_out`; `flawed` does NOT match `fundamentally-flawed`. Use `==` equality only; never `=~`, `startswith`, or pattern matching.
+
+**Goodhart consolidation rule**: Goodhart's Law findings can surface via two paths — J2 C2b (static, produces `critical` finding) and J3 agents (dynamic review, produces `methodology_rating` or `scientific_rating`). Before applying the verdict table, apply this rule: if J3 architect or scientist explicitly flags Goodhart's Law as an issue AND J2 did not already flag it as `critical`, promote it to a `critical` finding in the J2 list (source: "J3-Goodhart"). This ensures both paths produce BLOCKED for Goodhart issues. The architect and scientist prompts already instruct `fundamentally-flawed` for Goodhart — this consolidation handles edge cases where the rating falls below `fundamentally-flawed` but Goodhart is still mentioned.
 
 **Pre-compute**:
 

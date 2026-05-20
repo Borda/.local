@@ -110,7 +110,10 @@ def is_referenced(script_name: str, search_dir: Path) -> bool:
         ...     is_referenced("foo.py", p)
         False
     """
-    for dirpath, _dirs, filenames in os.walk(search_dir):
+    for dirpath, dirs, filenames in os.walk(search_dir):
+        depth = len(Path(dirpath).relative_to(search_dir).parts)
+        if depth >= 10:
+            dirs.clear()  # don't recurse deeper
         for fn in filenames:
             if not fn.endswith(".md"):
                 continue

@@ -3,7 +3,6 @@ name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file."
 argument-hint: "<symptom or failing test> [--no-challenge] [--team] [--ci-run <run-id-or-url>]"
 effort: medium
-when_to_use: "Use when root cause unknown and evidence must be gathered first; CI-only failures: pass `--ci-run <run-id>` to fetch GitHub Actions logs instead of local pytest; NOT for applying known fix (use fix) or production incidents without any CI run or traceback (use foundry:investigate (requires foundry plugin))."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---

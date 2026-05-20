@@ -108,8 +108,9 @@ Steps:
 3. Diff gate — for each modified source file run: git diff HEAD -- <file> | grep "^[+-]" | grep -v "^[+-][+-][+-]"
    Count non-target changed lines. If any lines outside the target block changed: revert the file (git checkout HEAD -- <file>) and re-apply edit targeting only the block. Report diff line counts in summary.
 4. Verify: grep source files to confirm old block body absent; confirm bin/ script exists; run python plugins/foundry/bin/check_orphaned_bin.py and confirm exit 0.
+5. Create test file: write `plugins/<plugin>/tests/test_<script-basename>.py` (or the matching `tests/` dir for the plugin) with at minimum pytest tests covering the public CLI entry point (use monkeypatch/capsys/tmp_path). Follow the test style in `tests/` alongside the bin/ script — check existing tests for fixture and import patterns. Non-empty file required; empty file fails Check R4.
 Write extraction summary to $RUN_DIR/extract-<cluster-id>.md. Include: diff line counts per file, any reverts performed, incidental issues noticed but NOT fixed.
-Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/extract-<cluster-id>.md\",\"bin_script\":\"<path>\",\"source_files_updated\":N,\"confidence\":0.N}
+Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/extract-<cluster-id>.md\",\"bin_script\":\"<path>\",\"source_files_updated\":N,\"test_file_created\":bool,\"confidence\":0.N}
 ")
 ```
 

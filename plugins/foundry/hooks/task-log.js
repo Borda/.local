@@ -221,7 +221,8 @@ process.stdin.on("end", () => {
           let count = 1;
           try {
             const existing = JSON.parse(fs.readFileSync(toolFile, "utf8"));
-            count = (existing.count || 0) + 1;
+            const prevAge = Date.now() - new Date(existing.since || 0).getTime();
+            count = prevAge <= 30000 ? (existing.count || 0) + 1 : 1;
           } catch (_) {}
           fs.writeFileSync(toolFile, JSON.stringify({ tool: tool_name, since: ts, count }));
         } catch (_) {}

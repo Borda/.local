@@ -75,18 +75,22 @@ Note: pre-compute output paths before spawning — orchestrator must extract bra
 
 ```bash
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main') # timeout: 3000
-DATE=$(date +%Y-%m-%d)
+DATE=$(date +%Y-%m-%d)  # timeout: 3000
+# Anti-overwrite: resolve counter-suffix before spawn (quality-gates.md rule)
+AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE.md"
+_N=2; while [ -e "$AGENT_OUT" ]; do AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
+mkdir -p .temp  # timeout: 3000
 ```
 
-**Note**: Substitute pre-computed values — do not pass raw $(date) expressions into spawn prompts.
+**Note**: Substitute pre-computed values — do not pass raw $(date) expressions into spawn prompts. Substitute resolved `$AGENT_OUT` path (not template) so agent writes to correct non-conflicting file.
 
 ```text
 Research the literature on: <$ARGUMENTS>
 Codebase constraints: <framework, Python version, compute budget, existing dependencies from Step 1>
 Deliver: comparison table (method, key idea, benchmarks, compute, code available), recommendation for best method, a 3-step implementation plan for this codebase, key hyperparameters (name, typical range, what it controls) for the recommended method, and common gotchas (failure modes and how to avoid them).
-Write your full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `.temp/output-research-agent-$BRANCH-$DATE.md` using the Write tool.
+Write your full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `<$AGENT_OUT>` using the Write tool.
 Then return ONLY a compact JSON envelope on your final line — nothing else after it:
-{"status":"done","papers":N,"recommendation":"<method name>","file":".temp/output-research-agent-$BRANCH-$DATE.md","confidence":0.N}
+{"status":"done","papers":N,"recommendation":"<method name>","file":"<$AGENT_OUT>","confidence":0.N}
 ```
 
 **Health monitoring** — Agent tool synchronous; Claude awaits researcher response natively (no Bash checkpoint available). If researcher doesn't return within `$HARD_CUTOFF` seconds (~15 min), use Read tool to surface partial results from `.temp/`, continue with what found; mark timed-out agents with ⏱ in report.
@@ -101,7 +105,7 @@ Use Grep tool to search codebase for existing related code:
 - Pattern: `$ARGUMENTS` (literal)
 - Glob: `**/*.py`
 - Output mode: `files_with_matches`
-- Limit to 10 results
+- Limit to 1000 results (per external-data.md — never cap at default 10)
 
 ## Step 3: Report
 
@@ -222,9 +226,18 @@ Compact Instructions: preserve paper titles, benchmarks, code links. Discard pro
 Task tracking: call TaskUpdate(in_progress) when you start your assigned task; call TaskUpdate(completed) when done, before sending your delta message.
 ```
 
-Lead synthesizes by reading teammate file paths from delta messages. Pre-compute: `SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"` `SPAWN_DATE="$(date -u +%Y-%m-%d)"`. For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.reports/research/topic-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
+Lead synthesizes by reading teammate file paths from delta messages. Pre-compute:
+```bash
+SPAWN_BRANCH="$(git branch --show-current 2>/dev/null | tr "/" "-" || echo "main")"  # timeout: 3000
+SPAWN_DATE="$(date -u +%Y-%m-%d)"  # timeout: 3000
+# Anti-overwrite per teammate: resolve counter-suffix before each spawn
+# For teammate N with name TNAME: _TOUT=".temp/output-research-$TNAME-$SPAWN_BRANCH-$SPAWN_DATE.md"; _TN=2; while [ -e "$_TOUT" ]; do _TOUT=".temp/output-research-$TNAME-$SPAWN_BRANCH-$SPAWN_DATE-$_TN.md"; _TN=$((_TN+1)); done  # timeout: 5000
+# Substitute resolved path (not template) into each teammate spawn prompt
+mkdir -p .temp  # timeout: 3000
+```
+For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.reports/research/topic-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
 
-## Plan Mode — only when `$ARGUMENTS` begins with `plan`
+## Plan Mode — only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode)
 
 Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method — needed before `/develop:feature` (requires `develop` plugin).
 
@@ -241,7 +254,16 @@ Produce sequenced, dependency-ordered implementation plan from SOTA research fin
 
 **Validation**: file must contain clear **Recommendation** section naming specific method. If missing or ambiguous, stop: "Research output does not contain a clear method recommendation — run `/research:topic <topic>` first, then pass the output path."
 
-Before spawning in Steps P2–P3, pre-compute output path components: `YYYY=$(date +%Y); MM=$(date +%m); DATE=$(date +%Y-%m-%d)` `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` <!-- same pattern as Step 2a date/branch block -->
+Before spawning in Steps P2–P3, pre-compute output path components:
+```bash
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
+DATE=$(date +%Y-%m-%d)  # timeout: 3000
+# Anti-overwrite: resolve counter-suffix before each spawn (quality-gates.md rule)
+CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE.md"
+_N=2; while [ -e "$CODEBASE_OUT" ]; do CODEBASE_OUT=".temp/output-research-codebase-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
+mkdir -p .temp  # timeout: 3000
+```
+<!-- same branch/date pattern as Step 2a block -->
 
 ### Step P2: Codebase analysis
 
@@ -256,9 +278,9 @@ Analyze the current codebase to map the recommended method against existing code
 4. Flag conflicts: existing patterns that would need to change
 5. Estimate complexity per integration point (low/medium/high)
 
-Write your full analysis to `.temp/output-research-codebase-$BRANCH-$DATE.md` using the Write tool.
+Write your full analysis to `<$CODEBASE_OUT>` using the Write tool. (Substitute resolved path — not template variable.)
 Return ONLY a compact JSON envelope on your final line — nothing else after it:
-{"status":"done","integration_points":N,"conflicts":N,"file":".temp/output-research-codebase-$BRANCH-$DATE.md","confidence":0.N,"summary":"N integration points, N conflicts"}
+{"status":"done","integration_points":N,"conflicts":N,"file":"<$CODEBASE_OUT>","confidence":0.N,"summary":"N integration points, N conflicts"}
 ```
 
 ### Step P3: Synthesize plan

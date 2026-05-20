@@ -3,7 +3,6 @@ name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop."
 argument-hint: "<goal> [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
 effort: high
-when_to_use: "Use when adding new capability that doesn't exist yet; NOT for fixing broken existing behaviour (use fix) or restructuring without changing behaviour (use refactor)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
@@ -50,7 +49,18 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
-**Optional `--plan <path>`**: if `$ARGUMENTS` ends with `--plan <path>`, read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
+**Language preflight gate**: after runner-detection.md, check project type:
+
+```bash
+# Abort early on non-Python repos — toolchain assumes pytest  # timeout: 5000
+if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; then
+    NON_PY=$(ls package.json Cargo.toml go.mod 2>/dev/null | head -1)
+fi
+```
+
+If `NON_PY` is non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
+
+**Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
@@ -69,7 +79,7 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 **Codemap auto-detection** — run after flag parsing:
 
 ```bash
-CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") || exit 1
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1
 ```
 
 **Semble preflight** — if `SEMBLE_ENABLED=true`:
@@ -83,7 +93,7 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight if flag se
 
 When `TEAM_MODE=true`:
 
-Guard: `[ -f "${HOME}/.claude/TEAM_PROTOCOL.md" ] || { echo "⚠ --team requires foundry plugin (TEAM_PROTOCOL.md absent — run /foundry:init first)"; TEAM_MODE=false; }` — if TEAM_MODE reverts to false, continue with solo workflow below (Steps 1–5).
+Guard: `[ -f "${HOME}/.claude/TEAM_PROTOCOL.md" ] || echo "TEAM_PROTOCOL_ABSENT"` — if output contains `TEAM_PROTOCOL_ABSENT`: invoke `AskUserQuestion` — question: "foundry plugin not installed (TEAM_PROTOCOL.md absent) — cannot run team mode. Continue solo instead?" · (a) Continue solo — fall back to Steps 1–5 solo workflow · (b) Abort — stop and run `/foundry:init` first. On (b): stop. On (a): set `TEAM_MODE=false` and continue.
 
 Run Step 1 scope analysis inline (same analysis as solo Step 1) — teammates need orientation context. After Step 1 completes, broadcast to teammates: `{feature: <desc>, scope: <modules>, API: <proposed signature>}`.
 
@@ -97,6 +107,8 @@ mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.s
 TS="${_run[0]}"
 TEAM_DIR="${_run[1]}"
 ```
+
+**IMPORTANT**: in spawn prompts below, replace `$TS` and `$TEAM_DIR` with the actual computed values from the bash block above — literal resolved strings, not shell variable references.
 
 Spawn 3 teammates in parallel using Agent() tool:
 
@@ -117,6 +129,8 @@ After all teammates complete: read their output files from `.temp/develop/$TS/`,
 Gather full context before writing any code:
 
 > **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text, treat as feature description.
+>
+> **Issue ID parsing rule**: Issue IDs must be prefixed with `#`; bare numbers ≥1000 are treated as issue IDs only if the `--issue` flag is present. Bare numbers <1000 without `#` prefix are treated as issue IDs unconditionally (legacy behavior). To avoid ambiguity when numeric goals appear, prefer descriptive text arguments or use `#<N>` prefix for issue references.
 
 ```bash
 # Strip leading '#' so both '123' and '#123' work; only fetch if numeric
@@ -257,13 +271,20 @@ $PYTEST_CMD --doctest-modules <module>.py -v 2>&1 | tail -10; GATE_EXIT=${PIPEST
 # Script form (use instead of doctest when applicable):
 # python examples/demo_<feature>.py 2>&1 | tail -5; GATE_EXIT=$?
 
-if [ "${GATE_EXIT:-0}" -eq 0 ]; then
-    echo "⚠ GATE FAIL: demo passed (exit 0) — feature may already exist; revisit Step 1"
-elif [ "${GATE_EXIT}" -eq 5 ]; then
-    # exit 5 = no tests collected = demo file missing = GATE FAIL
-    echo "⚠ GATE FAIL: no demo tests collected (exit 5) — demo file missing or doctest not detected"
-else
-    echo "✓ GATE OK: demo failed as expected (exit $GATE_EXIT)"
+# Pre-check: verify ≥1 doctest collected before treating exit 0 as "feature exists"
+$PYTEST_CMD --collect-only --doctest-modules <module>.py -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}  # timeout: 30000
+if [ "$COLLECT_EXIT" -eq 5 ]; then
+    echo "⚠ GATE FAIL: no demo tests collected — demo file missing or doctest malformed"
+elif [ "$COLLECT_EXIT" -ne 0 ]; then
+    echo "⚠ Cannot collect doctests — check module for import errors (collect exit $COLLECT_EXIT)"
+fi
+# Only run full gate if doctests were found
+if [ "${COLLECT_EXIT:-0}" -eq 0 ]; then
+    if [ "${GATE_EXIT:-0}" -eq 0 ]; then
+        echo "⚠ GATE FAIL: demo passed (exit 0) — feature may already exist; revisit Step 1"
+    else
+        echo "✓ GATE OK: demo failed as expected (exit $GATE_EXIT)"
+    fi
 fi
 ```
 
@@ -281,6 +302,8 @@ Before proceeding to implementation, critically evaluate demo:
 If issue found: revise demo and re-run gate. Don't proceed to Step 3 with flawed API contract — entire TDD loop anchored to this.
 
 ## Step 3: TDD implementation loop
+
+**TDD test ownership**: lead (or foundry:sw-engineer if delegated) writes all red-green demo and TDD tests in Steps 2–3. foundry:qa-specialist must NOT write the primary demo or red-green tests in any mode — qa-specialist adds edge-case, boundary, and regression tests after implementation is complete (Step 4). This rule applies in both solo and team mode.
 
 Drive implementation by making tests pass, one cycle at a time:
 
@@ -413,6 +436,8 @@ GATE_EXIT=${PIPESTATUS[0]}
 ```
 
 Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
+
+**Branch Safety Guard — no test suite**: if no test suite found (pytest collects 0 tests or `$TEST_CMD` not set), log `⚠ No test suite detected — Branch Safety Guard weakened` and require explicit user confirmation before proceeding past the guard.
 
 ## Final Report
 

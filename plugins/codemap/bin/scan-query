@@ -41,7 +41,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import pickle
 import re
 import subprocess
 import sys
@@ -142,28 +141,13 @@ def find_index() -> Path:
 def load_index(path: Path) -> dict:
     """Load and return the JSON index from path; exit with a clear error if missing.
 
-    Uses a pickle sidecar (.pkl) when fresh for a 3-5x load speedup.
-
     Args:
         path: filesystem path to the index JSON file.
     """
     if not path.exists():
         _exit_error(f"Index not found at {path}. Run /codemap:scan first.")
-    pkl_path = path.with_suffix(".pkl")
-    if pkl_path.exists() and pkl_path.stat().st_mtime >= path.stat().st_mtime:
-        try:
-            with pkl_path.open("rb") as f:
-                return pickle.load(f)
-        except Exception:
-            pass  # fall through to JSON load on corrupt pickle
     with path.open() as f:
-        index = json.load(f)
-    try:
-        with pkl_path.open("wb") as f:
-            pickle.dump(index, f, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception:
-        pass  # pickle write failure is non-fatal
-    return index
+        return json.load(f)
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +673,18 @@ def cmd_symbols(index: dict, module: str) -> None:
     )
 
 
+_DANGEROUS_PATTERN = re.compile(
+    r"""
+    # adjacent quantifiers: a++, a**, a*+, a+{2,}
+    (?:\+|\*|\{[0-9]+,?\})\s*(?:\+|\*|\{[0-9]+,?\})
+    |
+    # group with inner quantifier then outer quantifier: (a+)+, (a+)*, (.+){2,}
+    \([^)]*(?:\+|\*|\?|\{[0-9])[^)]*\)\s*(?:\+|\*|\?|\{[0-9])
+    """,
+    re.VERBOSE,
+)
+
+
 def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: bool = False) -> None:
     """Regex search across all symbol qualified_names in the index.
 
@@ -697,6 +693,13 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
         pattern: Python regex pattern matched against each symbol's qualified name.
         limit: max results to return (0 = unlimited).
     """
+    # ReDoS guard — nested quantifiers (e.g. `(a+)+`, `(.*){2,}`) can cause catastrophic backtracking.
+    if _DANGEROUS_PATTERN.search(pattern):
+        print(
+            f"find-symbol: pattern '{pattern}' may cause ReDoS — use a simpler pattern",
+            file=sys.stderr,
+        )
+        return
     try:
         rx = re.compile(pattern, re.IGNORECASE)
     except re.error as exc:
@@ -941,7 +944,24 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    index_path = Path(args.index) if args.index else find_index()
+    if args.index:
+        # Path traversal guard — restrict --index to within CWD or git root.
+        resolved = Path(args.index).resolve()
+        cwd = Path.cwd().resolve()
+        try:
+            git_root = Path(
+                subprocess.check_output(
+                    ["git", "rev-parse", "--show-toplevel"], text=True, stderr=subprocess.DEVNULL
+                ).strip()
+            ).resolve()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            git_root = cwd
+        if not (resolved.is_relative_to(cwd) or resolved.is_relative_to(git_root)):
+            print(f"scan-query: --index path outside project root: {resolved}", file=sys.stderr)
+            sys.exit(2)
+        index_path = resolved
+    else:
+        index_path = find_index()
     index = load_index(index_path)
     warn_if_stale(index)
 

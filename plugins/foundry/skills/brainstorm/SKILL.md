@@ -5,14 +5,13 @@ argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] | 
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: medium
-when_to_use: "Use when idea is fuzzy and needs exploration before a solution is known; NOT for well-scoped features with a known approach (use develop:feature) or code generation."
 ---
 
 <objective>
 
 Turn unformed idea into branching exploration tree, then distill into spec. Idea mode = pure divergence — grow tree of directions, deepen promising branches, prune others, save result. No premature convergence. Run `breakdown` on tree when ready: asks distillation questions, writes spec section-by-section.
 
-NOT for implementation or code-gen — see `develop` plugin.
+NOT for implementation or code-gen — see `develop` plugin (requires `develop` plugin).
 
 > **HARD GATE:** Do NOT take any implementation action — writing code, creating files, scaffolding — until user approves design (spec). Applies regardless of perceived simplicity. Simple idea can have short tree and spec, but process never skipped.
 
@@ -111,7 +110,7 @@ Print launch note:
 > _BRAINSTORM_SCRIPTS=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -type d -name "scripts" -path "*/brainstorm/*" 2>/dev/null | sort -Vr | head -1)
 > [ -z "$_BRAINSTORM_SCRIPTS" ] && _BRAINSTORM_SCRIPTS="plugins/foundry/skills/brainstorm/scripts"
 > ```
-> Serve from project root with a static-file server (e.g. `npx serve .`, `npx http-server .`). Then open `http://localhost:<PORT>/<path-to-tree-viewer.html>?state=<sidecar-path>`.
+> Serve from project root with a static-file server (e.g. `npx serve .`, `npx http-server .`). If `npx` unavailable, serve via `python -m http.server 8080` from the output directory. Then open `http://localhost:<PORT>/<path-to-tree-viewer.html>?state=<sidecar-path>`.
 
 ## Step 2: Clarifying questions
 
@@ -197,7 +196,7 @@ After seeding, enter operations loop. Each iteration:
    - g) back to idea stacking — free-form exchange, then return here
    - h) ready — save tree and proceed
 
-4. **Write viewer state** (after any operation except Ready): overwrite `$SIDECAR` with current full tree state using Write tool; set `ui.active_node_id` to just-operated node's `id`; update `updated_at` to current ISO timestamp; update `session.title` to current brainstorm title. All branch objects in JSON — regardless of status (open, rejected, merged, resolved) — must retain `core_idea`, `tension`, and `trades_away` fields; these are set at seeding time and must not be dropped when branch status changes. On write failure: log `> Viewer write failed: <reason>` inline and continue; on next successful write, set `ui.last_error: "<reason>"`.
+4. **Write viewer state** (after any operation except Ready; skip entirely if `$SIDECAR` is empty — viewer opt-out): overwrite `$SIDECAR` with current full tree state using Write tool; set `ui.active_node_id` to just-operated node's `id`; update `updated_at` to current ISO timestamp; update `session.title` to current brainstorm title. All branch objects in JSON — regardless of status (open, rejected, merged, resolved) — must retain `core_idea`, `tension`, and `trades_away` fields; these are set at seeding time and must not be dropped when branch status changes. On write failure: log `> Viewer write failed: <reason>` inline and continue; on next successful write, set `ui.last_error: "<reason>"`.
 
 **Operations**:
 
@@ -288,7 +287,7 @@ Assemble tree state and write to `.plans/blueprint/YYYY-MM-DD-<slug>.md` using W
 
 **Gate**: do not proceed to Step 5 until file written and path confirmed.
 
-**Sidecar finalise**: using Write tool, write full current JSON content (same as `$SIDECAR`) with `session_status: "complete"` to `.plans/blueprint/<final-slug>.json` (same slug as `.md` file, `.json` extension). Then also overwrite `$SIDECAR` with `session_status: "complete"`. Do NOT move or rename `$SIDECAR` — open browser tabs keep polling original timestamp-slug path.
+**Sidecar finalise** (skip if `$SIDECAR` is empty — viewer opt-out): using Write tool, write full current JSON content (same as `$SIDECAR`) with `session_status: "complete"` to `.plans/blueprint/<final-slug>.json` (same slug as `.md` file, `.json` extension). Then also overwrite `$SIDECAR` with `session_status: "complete"`. Do NOT move or rename `$SIDECAR` — open browser tabs keep polling original timestamp-slug path.
 
 ## Step 5: Tree review
 
@@ -301,7 +300,7 @@ mkdir -p .reports/brainstorm
 OUTPUT_PATH=".reports/brainstorm/review-$BRANCH-$(date +%Y-%m-%d).md"
 ```
 
-Spawn **foundry:curator** with tree-focused prompt. Substitute `$OUTPUT_PATH` value (pre-computed above) for `<output-path>` placeholder before passing prompt — do NOT pass literal `$OUTPUT_PATH` variable name in prompt string. Also replace `<tree-file>` with actual file path written in Step 4 (e.g., `.plans/blueprint/<slug>.md`):
+Spawn **foundry:curator** with tree-focused prompt. Substitute `$OUTPUT_PATH` value (pre-computed above) for `<output-path>` template slot and the actual tree file path for `<tree-file>` before passing prompt — do NOT pass literal `$OUTPUT_PATH` variable name or the bare `<output-path>` / `<tree-file>` placeholder strings in the prompt string. Example substitutions: `<output-path>` → `.reports/brainstorm/review-main-2026-05-20.md`; `<tree-file>` → `.plans/blueprint/2026-05-20-my-idea.md`:
 
 ```markdown
 Read .plans/blueprint/<tree-file>. Audit for tree quality only (do NOT audit `.claude/` config files — scope is the brainstorm tree only):
@@ -328,7 +327,7 @@ Return ONLY a compact JSON envelope: {"status":"done","findings":N,"file":"<path
 
 > Note: synchronous Agent calls do not support mid-call extensions per CLAUDE.md §8 — simplified monitoring is intentional for synchronous spawns.
 
-If `findings > 0`: add missing details, improve closure reasons, or add open threads as needed — loop back to Step 5 (max 2 revision cycles). After 2 cycles with remaining findings, surface unresolved issues to user and proceed to Step 6 anyway.
+If `findings > 0`: add missing details, improve closure reasons, or add open threads as needed — loop back to Step 5 (max 2 revision cycles per Step 6 approval cycle; counter resets each time Step 3 re-entry is triggered from Step 6 option b). After 2 cycles with remaining findings, surface unresolved issues to user and proceed to Step 6 anyway.
 
 **Gate**: do not proceed to Step 6 until `findings == 0` or 2 revision cycles exhausted.
 

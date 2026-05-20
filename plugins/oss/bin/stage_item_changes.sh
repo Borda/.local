@@ -15,9 +15,11 @@ if git stash list --quiet | grep -q "resolve-pre-item-${ITEM_ID}"; then
 fi
 
 CHANGED=$(timeout 3 git diff HEAD --name-only 2>/dev/null) || true
-[ -n "$CHANGED" ] && echo "$CHANGED" | timeout 3 xargs git add --
+[ -n "$CHANGED" ] && git diff HEAD -z --name-only 2>/dev/null | timeout 3 xargs -0 git add -- || true
 
 UNTRACKED=$(git ls-files --others --exclude-standard \
     | grep -E '\.(py|md|yaml|yml|toml|cfg|ini|json|txt|sh|js|ts|go|rs|rb|java|c|cpp|h|hpp)$' \
     2>/dev/null) || true
-[ -n "$UNTRACKED" ] && echo "$UNTRACKED" | timeout 3 xargs git add -- 2>/dev/null || true
+[ -n "$UNTRACKED" ] && git ls-files -z --others --exclude-standard \
+    | grep -zE '\.(py|md|yaml|yml|toml|cfg|ini|json|txt|sh|js|ts|go|rs|rb|java|c|cpp|h|hpp)$' \
+    2>/dev/null | timeout 3 xargs -0 git add -- 2>/dev/null || true

@@ -61,8 +61,7 @@ Collect evidence in parallel — do NOT form hypotheses yet.
 which python && python --version                                                                   # timeout: 5000
 which uv 2>/dev/null && uv --version 2>/dev/null || echo "uv: not found"                             # timeout: 5000
 node --version 2>/dev/null || echo "node: not found"                                                 # timeout: 5000
-CODEX_AVAILABLE=false
-jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && CODEX_AVAILABLE=true || echo "codex (openai-codex): not found"  # timeout: 5000
+jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . || echo "codex (openai-codex): not found"  # timeout: 5000
 ```
 
 ```bash
@@ -130,6 +129,13 @@ mkdir -p "$INVESTIGATE_RUN"  # timeout: 5000
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
 ```
 
+Re-check Codex availability at point of use (bash variables don't persist across tool calls):
+
+```bash
+CODEX_AVAILABLE=false
+jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && CODEX_AVAILABLE=true  # timeout: 5000
+```
+
 If `[ "$CODEX_AVAILABLE" = "true" ]`:
 
 ```text
@@ -187,8 +193,8 @@ If `$INVESTIGATE_RUN/codex-review.md` or `$INVESTIGATE_RUN/challenger-review.md`
 
 **Recommended next action**: <one of:>
   - `/develop:fix` — code regression confirmed (application code only — NOT for `.claude/` changes) (requires `develop` plugin — check plugin availability before following this recommendation)
-  - `/manage update <name> "<change directive>"` — `.claude/` agent/skill/rule content needs updating (use this, NOT `/develop:feature or /develop:fix` (requires `develop` plugin), for any proposed change to `.claude/`)
-  - `/foundry:audit` — structural/quality issue in `.claude/` config confirmed (pick fix level from gate)
+  - `/manage update <name> "<change directive>"` — `.claude/` agent/skill content needs adding or updating (NOT for structural/quality sweeps — use `/foundry:audit` for that)
+  - `/foundry:audit` — structural/quality issue in `.claude/` config confirmed (e.g. broken cross-refs, missing blocks, tag imbalance); NOT for content additions — use `/manage update` for those
   - `/foundry:init` — propagate project `.claude/` to `~/.claude/` (foundry plugin is the distribution path)
   - Manual step: <exact command to run>
   - Further investigation needed: <what additional info would resolve it>
@@ -222,5 +228,6 @@ Invoke `AskUserQuestion` as follow-up gate:
 - **Broad first**: always complete Step 2 before hypothesising — premature anchoring = most common investigation failure
 - **Parallel probes**: run independent probes in single response, avoid serial latency
 - **Inconclusiveness valid**: report what ruled out and what info would close remaining gap — don't fabricate root cause to appear decisive
+- **Root-cause discipline**: drill to confirmed root cause before handoff — never hand off "likely cause"; if fix applied and symptoms persist, re-invoke investigate with residual symptom to continue the loop; full protocol in `rules/debugging.md`
 
 </notes>

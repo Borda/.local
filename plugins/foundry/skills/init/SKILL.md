@@ -24,7 +24,7 @@ Set up foundry on new machine:
 
 **Why symlink skills explicitly?** `claude plugin install` creates `~/.claude/skills/` symlinks on first install but does NOT update them on upgrade — old version directory stays in cache, symlinks go stale. Init's stale-version detection (same pattern as rules) replaces them silently on every re-run.
 
-**Why not symlink agents?** Agents must always use full plugin prefix (`foundry:sw-engineer`, not `sw-engineer`) for unambiguous dispatch. Plugin system exposes agents at `foundry:` namespace — no `~/.claude/agents/` symlinks needed.
+**Why not symlink agents?** Agents must always use full plugin prefix (`foundry:sw-engineer`, not `sw-engineer`) for unambiguous dispatch. Plugin system exposes agents at `foundry:` namespace — no `~/.claude/agents/` symlinks needed. (Stale agent symlinks from prior installs are removed by init's Phase 1 cleanup.)
 
 **Why hooks need no action?** `hooks/hooks.json` inside plugin registers automatically when plugin enabled. Init's only hook-adjacent step: write `statusLine.command` path (Step 4) — `statusLine` is top-level settings key, not part of `hooks.json`.
 
@@ -44,6 +44,15 @@ NOT for: editing project `.claude/settings.json`.
 ## Flag detection
 
 Parse `$ARGUMENTS` for `--approve` (case-insensitive). If found, set `APPROVE_ALL=true`; else `APPROVE_ALL=false`.
+
+**Early git repository check** — Step 6 requires a git repository. In `--approve` mode there is no interactive fallback, so check immediately before Step 1:
+
+```bash
+if [ "$APPROVE_ALL" = "true" ] && [ ! -e ".git" ]; then
+    printf "! --approve requires git repository — run from project root\n"
+    exit 1
+fi
+```
 
 When `APPROVE_ALL=true`, every `AskUserQuestion` below **skipped** — ★ recommended option applied automatically. Print `[--approve] auto-accepting recommended option` in place of question.
 
@@ -166,8 +175,10 @@ Write back with Write tool. Report: "Added N new permissions.deny entries (M alr
 Note: this step writes to `.claude/permissions-guide.md` relative to the current working directory — init must be run from project root (a git repository root). Guard:
 
 ```bash
-[ -e ".git" ] || { echo "! Run /foundry:init from project root (git repository root)"; exit 1; }
+[ -e ".git" ] || printf "! BLOCKED — /foundry:init must run from project root (git repository root)\n"
 ```
+
+If `! BLOCKED` printed above: stop — do not proceed with Step 6 or subsequent steps.
 
 Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — only if destination absent (preserves project-local edits via `/manage`):
 
@@ -221,13 +232,17 @@ mkdir -p ~/.claude/rules  # timeout: 5000
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/symlink_with_guard.py" cleanup --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
 ```
 
-The script iterates rules (`*.md`), `TEAM_PROTOCOL.md`, and skill dirs; removes any foundry-managed symlink (target contains `borda-ai-rig/foundry/`) that is both stale (target does not contain `$PLUGIN_ROOT`) and whose source no longer exists in the current plugin tree. Each removal prints `  removed obsolete: <name>` / `  removed obsolete skill: <name>`.
+The script iterates rules (`*.md`), `TEAM_PROTOCOL.md`, and skill dirs; removes any foundry-managed symlink (target contains `borda-ai-rig/foundry/`) that is both stale (target does not resolve under `$PLUGIN_ROOT`) and whose source no longer exists in the current plugin tree. Each removal prints `  removed obsolete: <name>` / `  removed obsolete skill: <name>`.
+
+The same cleanup also scans `~/.claude/agents/` for any foundry-managed symlinks (targets containing `borda-ai-rig/foundry/`) and removes them unconditionally — foundry agents are served directly from the plugin namespace, not via `~/.claude/agents/` symlinks. Each removal prints `  removed obsolete agent: <name>`.
 
 **Phase 2 — Conflict scan** — identify entries needing user confirmation. Stale foundry symlinks (old version → current) are auto-replaced in Phase 4 without prompt:
 
 ```bash
 mkdir -p "$HOME/.claude/skills"  # timeout: 5000
 mapfile -t LINK_CONFLICTS < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
+# Persist for Phase 4 — Bash tool calls don't share shell state
+printf '%s\n' "${LINK_CONFLICTS[@]}" > /tmp/foundry-init-conflicts.txt  # timeout: 3000
 ```
 
 The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
@@ -253,7 +268,7 @@ Options:
 - c) Review one by one
 
 On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. Items not in `LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
+On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > /tmp/foundry-init-approved.txt`. Items not in `LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
 **Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
 
@@ -262,6 +277,10 @@ On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=
 - Neither flag (option a or no conflicts): replace unconditionally.
 
 ```bash
+# Restore arrays from Phase 2/3 — Bash tool calls don't share shell state
+mapfile -t LINK_CONFLICTS < /tmp/foundry-init-conflicts.txt 2>/dev/null || LINK_CONFLICTS=()
+mapfile -t APPROVED_CONFLICT_ENTRIES < /tmp/foundry-init-approved.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
+
 # Helper: is identifier in APPROVED_CONFLICT_ENTRIES?
 _approved() {
     local needle="$1"
@@ -324,6 +343,8 @@ Print summary:
 - permissions.allow: N entries added
 - enabledPlugins: set / skipped
 - Rules removed obsolete: N (files no longer in current plugin version)
+- Skills removed obsolete: N (skill dirs no longer in current plugin version)
+- Agent symlinks removed from ~/.claude/agents/: N (stale foundry-managed symlinks purged)
 - Rules linked: N → ~/.claude/rules/
 - TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
 - Skills linked: N → ~/.claude/skills/

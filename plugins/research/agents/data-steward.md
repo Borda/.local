@@ -186,11 +186,11 @@ _FOUNDRY_AVAILABLE=$(find ~/.claude/plugins/cache -path "*/foundry*" -name "web-
 
 ## Mode: acquisition
 
-Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR=$(find ~/.claude/plugins/cache -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1); [ -z "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/agents/data-steward"`. Read `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — storage and loading patterns for this mode.
+Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR=$(find ~/.claude/plugins/cache -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1); [ -z "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/agents/data-steward"`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop. Read `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — storage and loading patterns for this mode. If Read fails or file not found: emit `⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only.` and continue.
 
 1. **Identify sources** — review data requirements: note which sources have known URLs (handle directly) vs unknown URLs or HTML pages (delegate to `foundry:web-explorer`); document expected volume and completeness signal (pagination mechanism, `total_count` field)
 
-2. **Fetch with completeness enforcement** — known endpoints: WebFetch with pagination loop (follow `Link` headers, `pageInfo.hasNextPage`, or cursor fields); unknown sources or HTML scraping: spawn `foundry:web-explorer` with handoff format from `<collaboration>`; never stop after first page
+2. **Fetch with completeness enforcement** — known endpoints: WebFetch with pagination loop (follow `Link` headers, `pageInfo.hasNextPage`, or cursor fields); unknown sources or HTML scraping: if `_FOUNDRY_AVAILABLE` non-empty, spawn `foundry:web-explorer` with handoff format from `\<collaboration>`; if `_FOUNDRY_AVAILABLE` empty, use WebFetch/WebSearch directly per Agent Resolution table; never stop after first page
 
 3. **Validate** — run completeness verification checklist from `<core_principles>` (count, schema, boundaries, dedup); check for NaN/Inf, malformed values, encoding errors; flag gaps before proceeding
 
@@ -202,7 +202,7 @@ Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR=$(find ~/.claude/plug
 
 ## Mode: pipeline-audit
 
-Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR=$(find ~/.claude/plugins/cache -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1); [ -z "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/agents/data-steward"`. Read `${_RESEARCH_AGENT_DIR}/ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode.
+Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR=$(find ~/.claude/plugins/cache -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1); [ -z "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/agents/data-steward"`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop. Read `${_RESEARCH_AGENT_DIR}/ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode. If Read fails or file not found: emit `⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only.` and continue.
 
 1. **Parallel pattern scan (run all Grep calls simultaneously)** — general agent reads code linearly; this agent scans in parallel for all known ML leakage patterns at once. Launch six Grep calls together — independent:
 

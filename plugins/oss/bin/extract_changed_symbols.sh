@@ -52,18 +52,19 @@ case "$RANGE" in
 esac
 
 # Collect __init__.py paths excluding hidden dirs and node_modules.
-# head -50 caps pathological monorepos; preserves prior behaviour.
-INIT_FILES=$(find . -name '__init__.py' -not -path '*/\.*' -not -path '*/node_modules/*' 2>/dev/null | head -50)
+# Use NUL-delimited output to handle paths containing whitespace.
+# head -c caps pathological monorepos at ~50 paths (avg path length 200 bytes).
+INIT_FILES=$(find . -name '__init__.py' -not -path '*/\.*' -not -path '*/node_modules/*' -print0 2>/dev/null \
+    | head -c 10000)
 
 # No __init__.py present — nothing to extract.
 [ -z "$INIT_FILES" ] && exit 0
 
-# Pass paths as separate arguments via xargs (handles >ARG_MAX and
-# preserves multi-file diffs — prior `"$INIT_FILES"` quoting collapsed
-# them into a single argument; see M28).
-# shellcheck disable=SC2086  # word-splitting intentional — INIT_FILES is newline-separated paths
-printf '%s\n' $INIT_FILES \
-    | xargs git diff "$RANGE" -- 2>/dev/null \
+# Pass NUL-delimited paths to xargs -0 (handles paths with spaces/newlines
+# and >ARG_MAX). Prior whitespace-splitting silently dropped paths with
+# spaces; see F-04 in security audit 2026-05-19.
+printf '%s' "$INIT_FILES" \
+    | xargs -0 git diff "$RANGE" -- 2>/dev/null \
     | grep -E '^[+-][^+-]' \
     | grep -oE '(class|def)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' \
     | awk '{print $2}' \

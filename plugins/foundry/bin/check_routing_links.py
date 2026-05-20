@@ -656,6 +656,12 @@ def is_basename_grep_visible(basename: str, plugin_dir: Path) -> bool:
     """
     for md_file in plugin_dir.rglob("*.md"):
         try:
+            depth = len(md_file.relative_to(plugin_dir).parts)
+        except ValueError:
+            depth = 0
+        if depth > 10:
+            continue
+        try:
             text = md_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
@@ -749,6 +755,12 @@ def run_bin_ref_integrity(
         plugin = plugin_dir.name
 
         for md_file in sorted(plugin_dir.rglob("*.md")):
+            try:
+                depth = len(md_file.relative_to(plugin_dir).parts)
+            except ValueError:
+                depth = 0
+            if depth > 10:
+                continue
             for source_file, bin_plugin, script_name, explicit_plugin in extract_bin_refs(md_file, plugin):
                 key = (bin_plugin, script_name)
                 if key in seen:

@@ -169,10 +169,30 @@ def _git_project_name(timeout: int = 15) -> str:
     return Path.cwd().name
 
 
+_MAX_FIND_FILES = 2000
+
+
 def _find_py_files(target: str) -> list[str]:
-    """Walk ``target`` and return ``./``-prefixed paths of regular ``.py`` files."""
+    """Walk ``target`` and return ``./``-prefixed paths of regular ``.py`` files.
+
+    Security guards:
+        * ``target`` must resolve to a path inside the current working directory;
+          paths escaping CWD (e.g. ``/``, ``~/.ssh``) are refused.
+        * Walk is capped at ``_MAX_FIND_FILES`` to prevent resource exhaustion.
+    """
     root = Path(target)
     if not root.exists():
+        return []
+    # Restrict scans to CWD subtree — refuse arbitrary filesystem paths.
+    resolved_root = root.resolve()
+    cwd = Path.cwd().resolve()
+    try:
+        resolved_root.relative_to(cwd)
+    except ValueError:
+        print(
+            f"codemap_scan: --target path outside project root: {resolved_root}",
+            file=sys.stderr,
+        )
         return []
     paths: list[str] = []
     for p in sorted(root.rglob("*.py")):
@@ -182,6 +202,8 @@ def _find_py_files(target: str) -> list[str]:
             if target.startswith("./") and not s.startswith("./"):
                 s = "./" + s
             paths.append(s)
+            if len(paths) >= _MAX_FIND_FILES:
+                break
     return paths
 
 

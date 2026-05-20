@@ -109,6 +109,7 @@ def _resolve_pytest_cmd() -> list[str] | None:
         [sys.executable, "-c", "import pytest"],
         capture_output=True,
         text=True,
+        timeout=300,
     )
     if probe.returncode == 0:
         return [sys.executable, "-m", "pytest"]
@@ -121,6 +122,7 @@ def _run_pytest(pytest_cmd: Sequence[str], args: Sequence[str]) -> str:
         [*pytest_cmd, *args],
         capture_output=True,
         text=True,
+        timeout=300,
     )
     return (result.stdout or "") + (result.stderr or "")
 
@@ -160,6 +162,7 @@ def collect_candidates(
         [*pytest_cmd, test_dir, "--collect-only", "-q"],
         capture_output=True,
         text=True,
+        timeout=300,
     )
     # Mirror bash: `grep "::" | grep -v failing | grep -v ^$`. pytest writes
     # its collection lines to stdout; ignore stderr noise.

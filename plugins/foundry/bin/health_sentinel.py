@@ -28,9 +28,12 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
+
+_SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def create_sentinel(skill_id: str, tmp_dir: Path | None = None, now: int | None = None) -> tuple[int, Path]:
@@ -109,6 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.mode == "start":
+        if not _SAFE_ID.match(args.skill_id):
+            print(
+                f"health_sentinel: invalid skill_id {args.skill_id!r} — must match [a-zA-Z0-9_-]+",
+                file=sys.stderr,
+            )
+            return 2
         return _cmd_start(args.skill_id)
     if args.mode == "check":
         return _cmd_check(args.sentinel, args.run_dir)

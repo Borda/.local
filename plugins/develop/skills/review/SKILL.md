@@ -1,7 +1,6 @@
 ---
 name: review
-description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Python files only — non-Python files are out of scope."
-when_to_use: "Use for reviewing local Python files or the current working-tree diff; NOT for GitHub PR review (use oss:review (requires oss plugin)) or PR thread analysis (use oss:analyse (requires oss plugin))."
+description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope."
 argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -12,7 +11,7 @@ effort: high
 
 Comprehensive code review of local files or working-tree diff. Spawn specialized sub-agents in parallel, consolidate findings into structured feedback with severity levels.
 
-NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>` (requires oss plugin)); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` (requires foundry plugin) or `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — review toolchain assumes Python/pytest.
+NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>` (requires oss plugin)); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` (requires foundry plugin) or `/foundry:audit` (requires foundry plugin)); non-Python-only projects (zero Python source files — pure JS/TS/Go/Rust) — review toolchain assumes Python/pytest; for polyglot projects with Python source, reviews Python files only.
 
 </objective>
 
@@ -29,7 +28,7 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
 **Integer detection gate** (execute BEFORE Step 1): if `$ARGUMENTS` is positive integer or matches `#\d+`:
 
 ```bash
-if [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]]; then
+if [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]] && [ ! -e "$ARGUMENTS" ]; then
     echo "Integer argument detected — checking oss plugin availability"
     [ -f "$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review/SKILL.md 2>/dev/null | head -1)" ] && OSS_AVAILABLE=true || OSS_AVAILABLE=false  # timeout: 5000
 fi
@@ -46,13 +45,6 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CODEMAP_ENABLED=false   # set to true via --codemap
 SEMBLE_ENABLED=false    # set to true via --semble
-<!-- Note: timeout thresholds below are reference values for documentation and health-monitoring
-     guidance only — the skill cannot actively poll between synchronous Agent calls. These are
-     NOT active enforcement timers. If an agent appears stalled, read $RUN_DIR/<agent-name>.md
-     for partial output and mark ⏱ in the final report. -->
-MONITOR_INTERVAL_ADVISORY=300   # 5 min — reference only; not enforced by skill
-HARD_CUTOFF_ADVISORY=900        # 15 min — reference only; not enforced by skill
-EXTENSION_ADVISORY=300          # +5 min extension — reference only; not enforced by skill
 
 </constants>
 
@@ -258,7 +250,7 @@ Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts with resol
 
 **Pre-expansion required**: `$REVIEW_CHECKLIST` must be substituted with literal resolved value before inserting into any Agent spawn prompt string — same as `$RUN_DIR_LITERAL`. Never pass bare variable name `$REVIEW_CHECKLIST` inside quoted Agent prompt; subshell won't expand it.
 
-**Visible-degradation rule** — `$REVIEW_CHECKLIST` empty → consolidator prompt (Step 5) **must** insert into final report Findings section: "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides gap from reviewers, makes severity drift invisible.
+**Visible-degradation rule** — `$REVIEW_CHECKLIST` empty → print `⚠ REVIEW_CHECKLIST is empty — review scope undefined` at the TOP of the review output (before Findings), and consolidator prompt (Step 5) **must** insert into the report header (YAML `---` block or first line before Findings): "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides gap from reviewers, makes severity drift invisible.
 
 Launch agents simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional). Every agent prompt must end with:
 
@@ -297,15 +289,15 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Agent 5 — foundry:linting-expert**: Static analysis audit. Check ruff and mypy pass. Type annotation gaps on public APIs, suppressed violations without explanation, missing pre-commit hooks. Flag mismatched target Python version.
 
-**Security augmentation (conditional — fold into Agent 1 prompt, not separate spawn)**: Target touches authentication, user input handling, dependency updates, or serialization → add to foundry:sw-engineer prompt (Agent 1): check SQL injection, XSS, insecure deserialization, hardcoded secrets, missing input validation. Run `pip-audit` if dependency files changed. Skip for purely internal refactoring.
+**Security augmentation (conditional — fold into Agent 1 prompt, not separate spawn)**: Target touches authentication, user input handling, dependency updates, or serialization → add to foundry:sw-engineer prompt (Agent 1): check SQL injection, XSS, insecure deserialization, hardcoded secrets, missing input validation. If dependency files changed: check pip-audit availability first — `if ! command -v pip-audit >/dev/null 2>&1; then echo "⚠ pip-audit not found — dependency vulnerability check skipped"; else <run pip-audit>; fi`. Skip for purely internal refactoring.
 
 **Agent 6 — foundry:solution-architect (optional, for changes touching public API boundaries)**: Target touches `__init__.py` exports, adds/modifies Protocols or ABCs, changes module structure, or introduces new public classes → evaluate API design quality, coupling impact, backward compatibility. Skip for internal implementation changes.
 
 **Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR_LITERAL/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR_LITERAL/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
 
-**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. `$HARD_CUTOFF_ADVISORY` and `$EXTENSION_ADVISORY` are reference values only — not active timers.
+**Challenger severity propagation**: when consolidator (Step 5) reads `challenger.md`, map challenger severity labels to review severity labels before merging — CRITICAL → `critical`, HIGH → `high`, MEDIUM → `medium`, LOW → `low`. Do not drop severity; if challenger uses non-standard labels (e.g. "blocker", "concern"), apply the mapping: blockers → `high`, concerns → `medium`.
 
-If agent does not return within `$HARD_CUTOFF_ADVISORY` seconds: use Read tool on `$RUN_DIR/<agent-name>.md` to surface partial results. Mark timed-out agents with ⏱ in final report. Grant one `$EXTENSION_ADVISORY` extension if output file tail explains delay. Never silently omit timed-out agents.
+**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. If an agent returns partial results or errors, use Read tool on `$RUN_DIR/<agent-name>.md` for details. Mark agents that returned empty or error with ⏱ in final report. Never silently omit agents that failed.
 
 ## Step 4: Cross-validate critical/blocking findings
 
@@ -327,7 +319,7 @@ Extract branch and date before constructing output path: `BRANCH=$(git branch --
 
 Spawn **foundry:sw-engineer** consolidator:
 
-> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert top-level note into consolidated report Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `$REPORT_DIR_LITERAL/review-report.md` using Write tool. After the `## Confidence` block, append `## Source Files` section: use `Glob(pattern="*.md", path="$RUN_DIR")` to list every handover file present (paths relative to repo root, one per line). Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=$REPORT_DIR_LITERAL/review-report.md`"
+> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert top-level note into consolidated report Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Check `$RUN_DIR_LITERAL/cross-validation.md` — if it contains "Cross-Validation: SKIPPED", prepend "⚠ Critical findings unverified — cross-validation protocol unavailable." to the YAML `---` header as `Cross-validation: skipped` field and to the report executive summary. Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `$REPORT_DIR_LITERAL/review-report.md` using Write tool. After the `## Confidence` block, append `## Source Files` section: use `Glob(pattern="*.md", path="$RUN_DIR")` to list every handover file present (paths relative to repo root, one per line). Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=$REPORT_DIR_LITERAL/review-report.md`"
 
 Main context receives only one-liner verdict.
 

@@ -26,7 +26,7 @@ Know when to fix code vs adjust config — prefer fixing over suppressing.
 # pyproject.toml
 [tool.ruff]
 line-length = 120
-target-version = "py310" # Python 3.10+ — check endoflife.date/python for current EOL dates
+target-version = "py310" # Match to project's requires-python (e.g. py311 for >=3.11); check endoflife.date/python for current EOL
 
 [tool.ruff.lint]
 select = [
@@ -133,7 +133,7 @@ repos:
     rev: <CURRENT> # run `pre-commit autoupdate` to set; verify version at pypi.org/project/mypy
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-PyYAML]
+        additional_dependencies: [types-requests, types-PyYAML]  # Update versions when upgrading ruff/mypy — these are pinned for reproducibility
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: <CURRENT> # run `pre-commit autoupdate` to set
@@ -335,12 +335,12 @@ For general reviews, apply same discipline: report direct violations (parameter 
 
 **Model note**: `haiku` handles straightforward rule configs and deterministic violations well. If annotation-gap detection returns incomplete results or complex type inference gaps are missed, re-run with `model: sonnet`.
 
-**Auto-escalation**: when dispatched with "add annotations" or "annotate" in the prompt and initial results are incomplete, signal the orchestrator to re-spawn `foundry:linting-expert` with `model: sonnet` for a focused follow-up pass. Do not silently produce incomplete results — escalate before returning.
+**Auto-escalation**: when dispatched with "add annotations" or "annotate" in the prompt and initial results are incomplete (files processed < files in scope, or type inference gaps remain after first pass), include in the Confidence block: `"escalate_to": "sonnet"` and list specific files/functions that need follow-up. Do not silently produce incomplete results — end response with the concrete directive: "Orchestrator: re-spawn `foundry:linting-expert` with `model: sonnet` targeting: `<file-list>`."
 
-**Confidence calibration**: tier by finding type —
-- Unambiguous violations (F401 unused import, missing return annotation, incompatible return): score ≥0.90
-- Rule-ID sub-precision (e.g. S602 vs S603 shell injection variants): 0.80
-- Inferred type proposals (_cache type, IO[str] precision): 0.70–0.75
+**Confidence calibration**: tier by finding type — thresholds align with `quality-gates.md` (`high ≥0.90 | moderate 0.85–0.90 | low <0.85`):
+- Unambiguous violations (F401 unused import, missing return annotation, incompatible return): score ≥0.90 (high)
+- Rule-ID sub-precision (e.g. S602 vs S603 shell injection variants): 0.80 (low ⚠)
+- Inferred type proposals (_cache type, IO[str] precision): 0.70–0.75 (low ⚠)
 - **Tie-breaker — mixed-tier findings**: when a report contains findings from multiple tiers (some deterministic, some inferred), score at the lowest applicable tier — not the average.
 Don't apply uniform hedge — produces systematic calibration bias. Only list Gap when it represents genuine limitation; don't add "Rule IDs from static recall" when violations are deterministic (F401, E711, ANN001).
 

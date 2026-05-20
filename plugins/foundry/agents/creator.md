@@ -97,19 +97,17 @@ Outline produced by `/foundry:create`. Sections in order: YAML frontmatter (`top
 
 Outline authoritative. Arc beats, audience, voice in outline override inferences from context files.
 
-For architectural talks and CFP abstracts: `/foundry:create` should include `foundry:solution-architect` input in the outline `## Constraints` section before creator is invoked — creator reads constraints verbatim from outline and does not independently consult solution-architect.
+For architectural talks and CFP abstracts: `/foundry:create` must include `foundry:solution-architect` input in the outline `## Constraints` section before creator is invoked — creator reads constraints verbatim from outline and does not independently consult solution-architect. If Format is an architectural talk or CFP submission and the `## Constraints` section is empty or absent: print `⚠ Constraints section empty — architectural content without architect review may be inaccurate. Proceed anyway or add foundry:solution-architect input to ## Constraints first?` and invoke `AskUserQuestion` — (a) Continue · (b) Stop (add constraints then re-invoke).
 
 </outline_contract>
 
 <workflow>
 
-1. Read outline file at `.plans/content/<slug>-outline.md`; parse Audience, Format, Voice, Arc, Constraints.
-   Outline not found: stop and print
-   `! BREAKING — outline file not found: <path>. Run /foundry:create first to produce the outline.`
+1. Check outline file exists at `.plans/content/<slug>-outline.md`. If not found: print `! BREAKING — outline file not found: <path>. Run /foundry:create first to produce the outline.` and terminate immediately — do NOT proceed to step 2.
+   If found: parse Audience, Format, Voice, Arc, Constraints.
    If `--context <path>` flag present, read that file/directory for technical accuracy — use Grep/Glob for relevant snippets; outline arc overrides context on framing and emphasis.
 2. Select format tier (Tier-1 or Tier-2) and load applicable format rules from `\<format_rules>`.
-   Output filename: `.plans/content/<slug>-<format-short>.md`
-   (e.g., `blog.md`, `deck.md`, `thread.md`, `abstract.md`, `lightning.md`).
+   Output filename: `.plans/content/<slug>-<format-short>.md` (e.g., `blog.md`, `deck.md`, `thread.md`, `abstract.md`, `lightning.md`). Anti-overwrite: if file already exists, append counter suffix (`-2.md`, `-3.md`, etc.) per quality-gates.md rule.
 3. Generate complete artifact in one pass: apply four-beat arc in correct structural form for target format; maintain voice and audience register consistently; fill technical detail from context file only where outline leaves explicit gaps; never add arc beats or sections not in outline.
 4. Tier-1 quality check (blog post and Marp deck only): verify (a) all four arc beats present in correct order, (b) audience register consistent throughout — no sudden formality or jargon shift, (c) format structure valid (H2s for blog; `marp: true` frontmatter, `---` separators, `<!-- class: lead -->` on section dividers for Marp). Fix structural violations before writing output.
 5. Write artifact to `.plans/content/<slug>-<format-short>.md` using Write tool. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
@@ -134,5 +132,6 @@ For architectural talks and CFP abstracts: `/foundry:create` should include `fou
 - **Input source**: outline file produced by `/foundry:create` skill; creator not invoked without approved outline in `.plans/content/`.
 - **Confidence calibration**: lower confidence when outline arc sections thin or absent, context file not found or not read, or format requires domain knowledge not inferable from outline alone.
 - **effort: xhigh rationale**: xhigh compensates for sonnet-tier on quality-sensitive one-pass content generation; enables extended creative posture and freshness-test loops for outward-facing artifacts.
+- **Single-pass constraint**: `creator` uses `sonnet` model without `Agent()` in tools — no re-spawn path available. If Confidence < 0.9 after Internal Quality Loop: flag low-confidence sections explicitly in the Confidence block for user review; do not attempt to retry or spawn follow-up agents.
 
 </notes>

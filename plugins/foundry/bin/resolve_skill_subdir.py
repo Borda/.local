@@ -171,6 +171,48 @@ def _version_sort_key(path: Path) -> tuple:
     return tuple(keys)
 
 
+def _find_version_dir(match_path: Path, marker: str = "borda-ai-rig") -> Path | None:
+    """Walk up from a cache match to the plugin's version-level directory.
+
+    A cache match path follows the layout
+    ``.../borda-ai-rig/<plugin>/<version>/.../<skill>/<subdir>``. The version
+    segment is the one whose **grandparent's** basename equals ``marker``
+    (i.e. version dir is `<marker>/<plugin>/<version>` — two levels below the
+    marker). Walks upward from ``match_path`` and returns the deepest such
+    ancestor. When ``marker`` isn't found above ``match_path`` (i.e. the
+    match is in some other layout), returns ``None`` — the caller treats this
+    as "no orphan check possible, include the match".
+
+    Args:
+        match_path: A directory beneath the version dir to start from.
+        marker: Marketplace segment that sits two levels above the version
+            directory (default ``"borda-ai-rig"``).
+
+    Returns:
+        The version-level directory, or ``None`` when no ancestor has
+        ``marker`` as its grandparent's basename.
+
+    Examples:
+        >>> _find_version_dir(Path("/x/borda-ai-rig/foundry/0.18.0/skills/_shared"))
+        PosixPath('/x/borda-ai-rig/foundry/0.18.0')
+        >>> _find_version_dir(Path("/x/borda-ai-rig/oss/0.9.0/skills/_shared/inner"))
+        PosixPath('/x/borda-ai-rig/oss/0.9.0')
+        >>> _find_version_dir(Path("/x/elsewhere/skills/_shared")) is None
+        True
+    """
+    current = match_path
+    # Bound the walk so a path that never contains the marker terminates.
+    for _ in range(20):
+        if current.parent == current:
+            return None
+        # current is the version dir when current.parent.parent.name == marker.
+        grandparent = current.parent.parent
+        if grandparent != current.parent and grandparent.name == marker:
+            return current
+        current = current.parent
+    return None
+
+
 def _from_cache_scan(skill: str, subdir: str, home: Path) -> Path | None:
     """Resolve via ``find ~/.claude/plugins/cache -path '*/<skill>/<subdir>'``.
 
@@ -181,7 +223,10 @@ def _from_cache_scan(skill: str, subdir: str, home: Path) -> Path | None:
 
     Returns:
         The version-greatest matching directory (matches ``sort -Vr | head -1``
-        behaviour for semantic-version path segments) or ``None``.
+        behaviour for semantic-version path segments) or ``None``. Matches
+        whose version directory carries a ``.orphaned_at`` sentinel are
+        filtered out before ranking — they represent versions superseded by a
+        later install and Claude Code no longer dispatches to them.
     """
     cache_root = home / ".claude" / "plugins" / "cache"
     if not cache_root.is_dir():
@@ -196,7 +241,11 @@ def _from_cache_scan(skill: str, subdir: str, home: Path) -> Path | None:
             continue
         # Match dirs whose path ends with /<skill>/<subdir>
         if dirpath.endswith(suffix):
-            matches.append(Path(dirpath))
+            match_path = Path(dirpath)
+            version_dir = _find_version_dir(match_path)
+            if version_dir is not None and (version_dir / ".orphaned_at").exists():
+                continue
+            matches.append(match_path)
     if not matches:
         return None
     matches.sort(key=_version_sort_key, reverse=True)

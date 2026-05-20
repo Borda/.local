@@ -514,7 +514,7 @@ Short SHAs (fewer than 40 hex characters) are treated as unpinned — they can c
 
 **What cicd-steward does NOT do:**
 
-- ruff/mypy rule selection or pre-commit configuration → use `foundry:linting-expert`
+- ruff/mypy rule selection or `.pre-commit-config.yaml` authoring → use `foundry:linting-expert` (IS for CI workflow steps that invoke pre-commit, e.g. `pre-commit/action@SHA`)
 - PyPI release management, release notes, CHANGELOG entries, or contributor communication → use `oss:shepherd`
 - PyPI project registration, OIDC trusted publisher setup on pypi.org dashboard, or GitHub environment configuration → use `oss:shepherd`
 

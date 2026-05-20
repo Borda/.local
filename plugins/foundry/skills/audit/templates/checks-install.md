@@ -228,3 +228,76 @@ Fix: create the missing script locally (FAIL) or re-install plugin to sync (WARN
 | R2-ORPHAN-RISK — grep-invisible | basename not literal in any consumer .md file | medium | no — add `# loads: <basename>` comment |
 | R3-FAIL — bin/ script missing locally | script referenced but local file absent | high | no — create script |
 | R3-WARN — bin/ script missing from cache | script local but absent from installed cache | high | no — re-install plugin |
+
+## Check R4 — bin/ Python test coverage
+
+For every `plugins/<plugin>/bin/<script>.py`, verify a corresponding `plugins/<plugin>/tests/test_<script>.py` exists and is non-empty. Skip if `LOCAL_MODE != true`.
+
+**Implementation note**: `check_orphaned_bin.py` does not yet have `--check-tests`; until that flag is added, run the check inline:
+
+```bash
+printf "=== Check R4: bin/ Python test coverage ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check R4 skipped in non-local mode\n"
+else
+    _FAIL=0
+    while IFS= read -r script; do
+        plugin_dir=$(dirname "$(dirname "$script")")
+        base=$(basename "$script" .py)
+        test_file="$plugin_dir/tests/test_${base}.py"
+        if [ ! -f "$test_file" ]; then
+            printf "R4-FAIL (no test file): %s → expected %s\n" "$script" "$test_file"
+            _FAIL=1
+        elif [ ! -s "$test_file" ]; then
+            printf "R4-FAIL (empty test file): %s\n" "$test_file"
+            _FAIL=1
+        fi
+    done < <(find plugins -path "*/bin/*.py" -not -name "_*.py" 2>/dev/null | sort)  # timeout: 5000
+    [ "$_FAIL" -eq 0 ] && printf "✓: all bin/ Python scripts have non-empty test files\n"
+fi
+```
+
+**Severity**:
+- `R4-FAIL` (no test file or empty test file) → **medium** — plugin policy violation; new bin/ scripts must ship with tests
+
+Fix: create `tests/test_<basename>.py` with at minimum one test class covering the public API of the script.
+
+| Sub-check | Condition | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| R4-FAIL — missing test file | `bin/*.py` with no matching `tests/test_*.py` | medium | no — write tests |
+| R4-FAIL — empty test file | `tests/test_*.py` exists but has zero size | medium | no — populate test file |
+
+Note: the `_*.py` exclusion (e.g., `_schema.py`) is intentional only for files that are pure type-definition modules with no runnable logic. Files with `__name__ == "__main__"` guards must have tests regardless of leading underscore. Auditor should verify exclusion is appropriate per file when `_FAIL` reports are absent.
+
+## Check R5 — Consumer→template orphan (reverse of R2)
+
+Check R2 verifies every template file has its basename visible in a consumer `.md` file. R5 is the reverse: for every `<!-- loads: X -->` or `# loads: X` comment in any `.md` file, verify that `X` actually exists as a file on disk (locally or in the installed cache).
+
+This catches deleted or renamed templates where the consumer `<!-- loads: -->` comment was not updated — silent runtime failure when audit tries to `Read $AUDIT_TPL/X`.
+
+Skip if `LOCAL_MODE != true`.
+
+```bash
+printf "=== Check R5: Consumer→template orphan ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check R5 skipped in non-local mode\n"
+else
+    grep -rn "loads:\s\+\([a-zA-Z0-9_-]\+\.md\)" plugins/ \
+        --include="*.md" -o 2>/dev/null \
+    | sed 's/.*loads:[[:space:]]*//' \
+    | sort -u \
+    | while IFS= read -r target; do
+        found=$(find plugins -name "$target" 2>/dev/null | head -1)
+        if [ -z "$found" ]; then
+            printf "R5-FAIL: loads: %s — file not found in plugins/ tree\n" "$target"
+        fi
+    done  # timeout: 10000
+fi
+```
+
+**Severity**: medium — audit itself may crash at runtime trying to read missing template; silent breakage for users.
+Fix: either restore the missing template file or remove/update the stale `<!-- loads: -->` comment in the consumer.
+
+| Sub-check | Condition | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| R5-FAIL — missing template | `loads: X` comment but `X` not found on disk | medium | no — restore file or remove dead comment |

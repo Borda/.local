@@ -1,7 +1,6 @@
 ---
 name: scan
 description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics)."
-when_to_use: "Use when scanning or re-indexing a repository into the codemap. Run after significant code changes or on first setup."
 argument-hint: "[--root <path>] [--incremental]"
 allowed-tools: Bash, AskUserQuestion
 disable-model-invocation: true
@@ -16,7 +15,7 @@ Index captures per module: import graph, blast-radius metrics, **symbol list** (
 
 Agents + develop skills query index via `scan-query` for module deps, blast radius, coupling, symbol source before editing.
 
-NOT for querying existing index (use `/codemap:query`).
+NOT for querying existing index (use `/codemap:query`); NOT for integration health checks or injection (use `/codemap:integration`).
 
 </objective>
 
@@ -29,11 +28,11 @@ Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `
 ```bash
 # scan-index handles v2→v3 fallback internally
 # NOTE: if --incremental is passed but no existing index found, falls back to full scan silently — no user warning
-SCAN_BIN="${CLAUDE_PLUGIN_ROOT}/bin/scan-index"
-eval "SCAN_ARGS=( $(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS") )"  # timeout: 5000
+SCAN_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index"
+read -ra SCAN_ARGS <<< "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS")"  # timeout: 5000 — parse_scan_args.py validates $ARGUMENTS (allowlist: --root, --incremental); word-splitting safe because output is controlled flag tokens only
 ```
 
-**Unsupported flag check** — after supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after supported flags extracted, scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # timeout: 360000
@@ -56,10 +55,10 @@ After scan, read index and report compact summary:
 # SCAN_ARGS provides root-path context for stats script to resolve relative module paths.
 # CLAUDE_PLUGIN_ROOT is set automatically by Claude Code when plugin is active.
 # timeout: 15000
-SCAN_ARGS="$ARGUMENTS" python "${CLAUDE_PLUGIN_ROOT}/bin/scan-stats.py"
+SCAN_ARGS="$ARGUMENTS" python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-stats.py"
 ```
 
-Degraded files exist: list with reason. Not failure — index still useful.
+Degraded count reported — `scan-stats.py` reports module counts only, no per-file list. Not failure — index still useful.
 
 If `--incremental` passed and scan-stats reports 0 modules indexed (or same count as before), note: `--incremental` no-op when no existing index — full scan ran instead.
 

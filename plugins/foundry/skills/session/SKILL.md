@@ -27,11 +27,11 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 <constants>
 
-- Memory dir: `$HOME/.claude/projects/$(git rev-parse --show-toplevel | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')/memory/`
+- Memory dir: `$HOME/.claude/projects/$(git rev-parse --show-toplevel | sed 's|[/.]|-|g')/memory/`
 - Canonical MEMORY_DIR snippet (use in every bash block that needs the path):
   ```bash
   PROJECT="$(git rev-parse --show-toplevel)"
-  SLUG="$(echo "$PROJECT" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')"
+  SLUG="$(echo "$PROJECT" | sed 's|[/.]|-|g')"
   MEMORY_DIR="$HOME/.claude/projects/$SLUG/memory/"
   ```
 - File pattern: `session-open-*.md`
@@ -77,19 +77,25 @@ Derive `MEMORY_DIR` using the canonical snippet defined in `<constants>` above. 
 
 ```bash
 # MEMORY_DIR derived in Substep 1a — reuse that value
-find "$MEMORY_DIR" -name "session-open-*.md" -mtime +30 -delete 2>/dev/null # timeout: 5000
+# Log files before deleting so removals are auditable
+find "$MEMORY_DIR" -name "session-open-*.md" -mtime +30 2>/dev/null | while IFS= read -r f; do
+    echo "Removing aged file: $f"
+    rm "$f"
+done # timeout: 5000
 echo "cleanup done"
 ```
 
 ### Substep 1c: Collect remaining items and compute age
 
-Use Glob with pattern `session-open-*.md` in memory directory. For each file, read with Read tool to extract `name` and `description` frontmatter fields and item body.
+**Primary source (current)**: Read `.claude/state/session-context.md` if it exists. Extract all bullets under `## Parked items` section — each is a current parked item. Use item's `Raised:` date for age computation.
+
+**Legacy source (backwards-compat)**: Use Glob with pattern `session-open-*.md` in memory directory. For each file, read with Read tool to extract `name` and `description` frontmatter fields and item body. Show legacy items alongside current items in output.
 
 Compute age in days per file using `session_age_files.py` (cross-platform; output is `<age>\t<path>` per line): <!-- file: session_age_files.py — consumers: foundry:session Substep 1c -->
 
 ```bash
 # MEMORY_DIR derived in Substep 1a — reuse that value
-python "${CLAUDE_PLUGIN_ROOT}/bin/session_age_files.py" "$MEMORY_DIR" # timeout: 5000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/session_age_files.py" "$MEMORY_DIR" # timeout: 5000
 ```
 
 ### Substep 1d: Render grouped list
@@ -122,30 +128,37 @@ If no files exist, print: `No pending session items.`
 
 ### Substep 2a: Locate memory directory and list candidates
 
-Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with pattern `session-open-*.md` in MEMORY_DIR to list candidates.
+Derive MEMORY_DIR using canonical snippet from `<constants>`. Candidates come from two sources:
+1. **Current**: bullets under `## Parked items` in `.claude/state/session-context.md` (if exists)
+2. **Legacy**: Glob tool with pattern `session-open-*.md` in MEMORY_DIR
+
+Combine both into a single candidate list for fuzzy matching in Substep 2b.
 
 ### Substep 2b: Fuzzy-match the target item
 
 Extract `<partial-text>` from `$ARGUMENTS` (everything after `archive `).
 
-Use Grep with partial text against memory directory, pattern `session-open-*.md`. Also match against file basenames. Select best match — if ambiguous (2+ equally close matches), list them and ask user to disambiguate before proceeding.
+Search candidates from Substep 2a. For `session-open-*.md` files: Grep with partial text, match against file basenames. For session-context.md bullets: match `<partial-text>` against the slug or summary text. Select best match — if ambiguous (2+ equally close matches), list them and ask user to disambiguate before proceeding.
 
-Read matched file with Read tool to extract its `name:` frontmatter field. Set shell variable `ITEM_NAME` to that value (fall back to the file basename stripped of `session-open-` prefix and `.md` suffix if the frontmatter `name` field is missing or empty). `ITEM_NAME` is consumed by Substeps 2d (audit log) and 2e (terminal confirmation):
-
+Track match source:
 ```bash
-# Set these from the Read tool output in this substep:
-MATCHED_FILE="<full path of matched file>"
-ITEM_NAME="<name: from frontmatter, or basename fallback>"
+# Set these from the match result:
+MATCHED_SOURCE="file"          # "file" for session-open-*.md, "context" for session-context.md
+MATCHED_FILE="<full path>"     # only when MATCHED_SOURCE="file"
+MATCHED_SLUG="<slug>"          # the item's short slug (from bullet or filename)
+ITEM_NAME="<name>"             # name from frontmatter or slug
 ```
 
-### Substep 2c: Delete the memory file
+### Substep 2c: Remove the matched item
 
-Using `MATCHED_FILE` resolved in Substep 2b:
-
+**If `MATCHED_SOURCE="file"`** (legacy `session-open-*.md`):
 ```bash
 rm "$MATCHED_FILE"  # timeout: 5000
 echo "deleted"
 ```
+
+**If `MATCHED_SOURCE="context"`** (bullet in `session-context.md`):
+Use Edit tool to remove the matched bullet line from `.claude/state/session-context.md`. Remove only the bullet matching `MATCHED_SLUG` — leave other bullets unchanged.
 
 ### Substep 2d: Append audit entry to resolution log
 

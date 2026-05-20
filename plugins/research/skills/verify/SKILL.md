@@ -57,6 +57,7 @@ From paper content, extract:
 
 ```bash
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
+DATE=$(date -u +%Y-%m-%d)  # timeout: 3000
 RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
@@ -66,15 +67,26 @@ RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "verify"
 
 1. `--scope <glob>` flag — use directly
 2. `--program <program.md>` flag — Read file, extract `scope_files` from `## Config` fenced block
-3. Auto-detect — `Glob(pattern="**/*.py")` up to 100 files; prefer files with ML-relevant imports (`torch`, `tensorflow`, `sklearn`, `numpy`, `jax`)
+3. Auto-detect — `Glob(pattern="**/*.py")` up to 100 files; prefer files with ML-relevant imports (`torch`, `tensorflow`, `sklearn`, `numpy`, `jax`). If Glob returns 100 files and additional `.py` files exist (i.e., total may exceed 100): print `⚠ Scope truncated at 100 files — large codebase. Fidelity score reflects verified subset only. Use --scope or --program to narrow to relevant modules.`
 
 Apply `--dim` filter: if `--dim F,H` specified, only audit those dimensions. Default: all five (`F,H,E,N,C`).
+
+**`--dim` validation**: validate each specified dimension token against the known set before proceeding:
+
+```bash
+for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
+  case "$_DIM_VAL" in
+    F|H|E|N|C) ;;
+    *) echo "verify: unknown dimension: '$_DIM_VAL' — valid: F,H,E,N,C" >&2; exit 2 ;;
+  esac
+done
+```
 
 ### Step V3: Five-dimension audit via scientist
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`. Single agent handles all five dimensions — cross-dimension context requires holistic paper understanding.
 
-<!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is the sole liveness mechanism. On timeout: surface partial results from `$RUN_DIR/audit-raw.md` (see <constants> block). Same pattern as research:topic. -->
+<!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is declared as a reference constant but is NOT enforceable within the skill — Agent() has no timeout parameter. If scientist does not return: surface whatever is in `$RUN_DIR/audit-raw.md` (may be empty); mark result "TIMED OUT (unconfirmed)". Same limitation as research:topic. -->
 
 **Scientist prompt**:
 
@@ -88,6 +100,8 @@ Claims to verify (from V1 extraction):
 
 Codebase scope files:
 <list of files from V2>
+
+Read each file listed in `Codebase scope files` using the Read tool before beginning your audit.
 
 Active dimensions: <F,H,E,N,C or subset from --dim>
 
@@ -148,9 +162,10 @@ Stop — do not proceed to V5/V6. Report specific mismatches to terminal and exi
 
 ```bash
 mkdir -p .reports/research  # timeout: 3000
+BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
 ```
 
-Write to `.reports/research/verify-$BRANCH-$(date -u +%Y-%m-%d).md` via Write tool (`BRANCH` computed in V1):
+Write to `$OUT` via Write tool (`BRANCH` and `DATE` computed in V1):
 
 ```markdown
 ---

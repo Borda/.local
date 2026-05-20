@@ -36,7 +36,7 @@
 
 ### 6. Autonomous Bug Fixing
 
-Just fix it — use logs, errors, failing tests; no hand-holding, including CI
+Trivial/mechanical (typo, single-file): just fix it — logs, errors, failing tests; no hand-holding. Multi-file or behaviour-changing: follow Root Cause protocol (`rules/debugging.md`).
 
 ### 7. Agent Teamwork
 
@@ -140,5 +140,6 @@ After compaction, re-read `.claude/state/session-context.md` if exists.
 
 - **Simplicity First**: touch only what's necessary; smallest change that works
 - **No Laziness**: find root causes; no temp fixes; senior developer standards
+- **Root Cause**: post-fix verify all symptoms resolved; if remain → root cause incomplete; loop (max 3, then AskUser); invoke `foundry:challenger` post-fix (non-trivial changes) to confirm resolution + no new regressions. Protocol: `rules/debugging.md`.
 - **Reversibility check**: before any action that cannot restore pre-session state (deleting pre-existing files, pushing, dropping tables, external messages), pause — confirm scope matches what was asked; prefer reversible alternatives
 - **Tool-first**: use declared tools fully and creatively — if tool can do job indirectly, use it

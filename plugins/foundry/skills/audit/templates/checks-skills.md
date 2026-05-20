@@ -834,3 +834,48 @@ Auto-fix guidance:
 | --- | --- | --- | --- | --- |
 | 33a — within-file repetition | single .md file | same code block (any language) 3+ times, constants only differ | medium | inline helper function or bin/ script |
 | 33b — cross-file repetition | 3+ .md files | same block (excluding known resilience replications) | medium/low | bin/ script with fallback chain |
+
+## Check 38 — AskUserQuestion cap violation
+
+`communication.md` §Interactive Questions hard-caps `AskUserQuestion` at 4 questions per call, and skills must not ask >4 questions across a single decision branch. Violations cause UX breakage (silent truncation or tool error).
+
+Scan all SKILL.md files in scope. For each file, count the total number of `AskUserQuestion` occurrences. Apply the following heuristic:
+
+- ≤4 calls → `✓` (likely safe; one branch per call is typical)
+- 5–8 calls → flag **medium** — review that no single decision branch asks >4 sequentially
+- >8 calls → flag **high** — almost certainly some branch exceeds the cap
+
+```bash
+printf "=== Check 38: AskUserQuestion cap ===\n"
+for f in $(find . -path "*/skills/*/SKILL.md" 2>/dev/null | sort); do
+    count=$(grep -c "AskUserQuestion" "$f" 2>/dev/null || echo 0)
+    if [ "$count" -gt 8 ]; then
+        printf "C38-HIGH: %d AskUserQuestion calls in %s — review for >4-per-branch\n" "$count" "$f"
+    elif [ "$count" -gt 4 ]; then
+        printf "C38-MEDIUM: %d AskUserQuestion calls in %s — review for >4-per-branch\n" "$count" "$f"
+    fi
+done  # timeout: 5000
+```
+
+**Severity**: high (>8 calls) / medium (5–8 calls) — functional regression; gate prompts that exceed cap silently drop later questions.
+Fix: collapse related sub-questions into one `AskUserQuestion` call (max 4 options per call, max 4 calls per skill workflow branch).
+
+## Check 40 — Health monitoring gap
+
+Any SKILL.md that spawns `Agent(...)` with `run_in_background=True` (or the Agent tool's equivalent) **must** implement the CLAUDE.md §8 health monitoring protocol: sentinel file creation + 5-min find-newer poll + 15-min hard cutoff + one extension.
+
+Scan all SKILL.md files in scope. For each file, detect `run_in_background` (case-insensitive). If found, verify that the SAME file also contains `health_sentinel` OR (`find ... -newer` AND `wc -l`). If not → flag.
+
+```bash
+printf "=== Check 40: Health monitoring gap ===\n"
+for f in $(find . -path "*/skills/*/SKILL.md" 2>/dev/null | sort); do
+    if grep -qi "run_in_background" "$f" 2>/dev/null; then
+        if ! grep -q "health_sentinel\|find.*-newer.*wc -l" "$f" 2>/dev/null; then
+            printf "C40-HIGH: background agent without monitoring protocol: %s\n" "$f"
+        fi
+    fi
+done  # timeout: 5000
+```
+
+**Severity**: high — background agents can silently time out with no user notification; lost work and false-progress indicators result.
+Fix: add CLAUDE.md §8 sentinel + poll protocol immediately after every `Agent(..., run_in_background=True)` spawn call.

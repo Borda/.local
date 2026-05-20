@@ -5,7 +5,6 @@ argument-hint: '[review | prune | lessons | executables [<run-dir-or-report-path
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: low
-when_to_use: "Run periodically (e.g., monthly) or after a burst of corrections to extract patterns and distill improvements — new agent/skill suggestions, roster gaps, memory pruning, lesson consolidation. Run `executables` after /audit --efficiency finds HIGH/MEDIUM bin/ extraction candidates. NOT for single-file agent/skill edits (use /foundry:manage) or config quality auditing (use /foundry:audit)."
 ---
 
 <objective>
@@ -13,6 +12,7 @@ when_to_use: "Run periodically (e.g., monthly) or after a burst of corrections t
 Analyze how Claude Code is used and surface concrete improvements — new agents/skills to reduce repetition, or consolidate lessons into governance files (rules, agent instructions, skill updates) — without duplicating what exists.
 
 NOT for single-file edits or quality checks — see `when_to_use`.
+NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficiency` instead of `distill executables` for detection-only).
 
 </objective>
 
@@ -50,11 +50,13 @@ For each agent/skill found, extract: name, description, tools, purpose. Tag each
 
 ## Step 2: Analyze work patterns
 
-**If `$ARGUMENTS` is `executables`**: skip Steps 2–5 entirely and go to "Mode: Executables Extraction" below.
+**If `$ARGUMENTS` begins with `executables`**: skip Steps 2–5 entirely and go to "Mode: Executables Extraction" below.
 
 **If `$ARGUMENTS` is `prune`**: skip Steps 2–5 entirely and go to "Mode: Memory Pruning" below.
 
 **If `$ARGUMENTS` is `lessons`**: skip Steps 2–5 entirely and go to "Mode: Lessons Distillation" below.
+
+**If `$ARGUMENTS` begins with `external`**: skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
 
 **If `$ARGUMENTS` is `review`**: skip git analysis below and go directly to Step 3 (Gap analysis). Use agent/skill descriptions from Step 1 as sole input — goal is to assess quality and coverage of existing roster, not look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries.
 
@@ -168,15 +170,13 @@ Locate, evaluate, and trim project memory file.
 PROJECT="$(git rev-parse --show-toplevel)"
 MEMORY_FILE="$HOME/.claude/projects/$(echo "$PROJECT" | sed 's|[/.]|-|g')/memory/MEMORY.md"
 if [ -f "$MEMORY_FILE" ]; then
-    echo "Memory file located: $MEMORY_FILE"
-    MEMORY_FILE_FOUND=true
+    echo "PRUNE_FOUND: $MEMORY_FILE"
 else
-    echo "MEMORY_FILE not found at $MEMORY_FILE — skipping prune mode"
-    MEMORY_FILE_FOUND=false
+    echo "PRUNE_ABORT: no memory file at $MEMORY_FILE — skipping prune mode"
 fi
 ```
 
-> **Short-circuit**: `exit 0` inside this bash block would terminate only the bash subprocess, **not** the surrounding skill — so without the explicit gate below the skill would continue into the prune-evaluation steps with no memory file to operate on. After the block above runs, **stop the prune mode entirely if `MEMORY_FILE_FOUND=false`**: skip every remaining prune step (read, evaluate, P1–P3, summary) and end the response with the Confidence block. The remaining prune-mode prose below assumes `MEMORY_FILE_FOUND=true`.
+> **Short-circuit**: `exit 0` inside this bash block would terminate only the bash subprocess, **not** the surrounding skill — so without the explicit gate below the skill would continue into the prune-evaluation steps with no memory file to operate on. After the block above runs, **stop the prune mode entirely if the bash output contains `PRUNE_ABORT`**: skip every remaining prune step (read, evaluate, P1–P3, summary) and end the response with the Confidence block. Extract the memory file path from the `PRUNE_FOUND: <path>` output line for use in subsequent Read calls. The remaining prune-mode prose below assumes `PRUNE_FOUND` was in output.
 
 Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md need not live in memory.
 
@@ -401,7 +401,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 Analyse external plugin, skill, or agentic resource and produce structured adoption proposal for local Claude Code setup.
 
 ```bash
-EXT_RUN_DIR=".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+EXT_RUN_DIR=".temp/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$EXT_RUN_DIR"  # timeout: 5000
 ```
 
@@ -483,10 +483,16 @@ After scoring, apply this judgement:
 
 Present source report + adoption table + install-as-is recommendation (when applicable). Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "Apply external source candidates?"
+When install-as-is IS recommended, include all four options:
 - (a) label: `Apply Group A candidates` — description: adopt-as-is and tweak items only
-- (b) label: `Install as standalone plugin` — description: install external source as standalone plugin (include only when install-as-is recommended)
+- (b) label: `Install as standalone plugin` — description: install external source as standalone plugin
 - (c) label: `Review first` — description: walk through each candidate interactively
 - (d) label: `Skip` — description: exit without changes
+
+When install-as-is is NOT recommended, omit (b) and re-label to avoid gaps:
+- (a) label: `Apply Group A candidates` — description: adopt-as-is and tweak items only
+- (b) label: `Review first` — description: walk through each candidate interactively
+- (c) label: `Skip` — description: exit without changes
 
 **E14: Apply**
 

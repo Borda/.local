@@ -3,7 +3,6 @@ name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop."
 argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: medium
-when_to_use: "Use when specific bug known and reproducible; NOT for unknown failures without traceback (use debug) or adding new capabilities (use feature)."
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
@@ -58,25 +57,10 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 
 ## Fix Mode
 
-**Optional `--diagnosis <path>`**: if provided (from preceding `/develop:debug` session), read diagnosis file first. Skip codebase analysis — root cause, suspect files, and evidence pre-populated. Proceed directly to Step 2 (regression test).
+**Optional `--diagnosis <path>`**: if provided (from preceding `/develop:debug` session), read diagnosis file first. Skip Step 1 codebase analysis — root cause, suspect files, and evidence pre-populated from diagnosis file. The Challenger gate still applies: proceed from pre-populated root cause through challenger gate, then to Step 2. Do NOT skip the challenger gate — it reviews the fix approach, not just root cause discovery.
 
 ```bash
-# Extract --diagnosis path from arguments (supports both --diagnosis <path> and --diagnosis=<path>)
-DIAG_FILE=""
-set -- $ARGUMENTS
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --diagnosis=*) DIAG_FILE="${1#--diagnosis=}" ;;
-    --diagnosis) shift; DIAG_FILE="${1:-}" ;;
-  esac
-  shift
-done
-# Existence guard — fail fast if path supplied but missing
-if [ -n "$DIAG_FILE" ] && [ ! -f "$DIAG_FILE" ]; then
-  echo "! BREAKING — diagnosis file not found: $DIAG_FILE"
-  echo "Fix: run /develop:debug first to produce a diagnosis file, or omit --diagnosis"
-  exit 1
-fi
+DIAG_FILE=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/diagnosis-parse.sh" "$ARGUMENTS" 2>&1) || { echo "$DIAG_FILE"; exit 1; }  # timeout: 5000
 ```
 
 Diagnosis file format: see `/develop:debug` Final Report section for canonical field definitions (Root Cause, Suspect Files, Evidence).
@@ -91,7 +75,7 @@ CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-flags.sh" 
 ```
 
 ```bash
-CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") || exit 1
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1  # timeout: 5000
 ```
 
 **Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
@@ -125,6 +109,7 @@ Compute run directory and create health sentinel:
 mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.sh" --sentinel fix-team-check)
 TS="${_run[0]}"
 FIX_TEAM_DIR="${_run[1]}"
+trap 'rm -f /tmp/fix-team-check-$TS' EXIT
 ```
 
 Spawn 2 teammates in parallel using Agent() tool:
@@ -145,7 +130,7 @@ Gather all available context about bug:
 
 ```bash
 # If issue number: fetch the full issue with comments
-timeout 6 "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue-fetch.sh" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+"${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue-fetch.sh" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
 ```
 
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
@@ -166,6 +151,13 @@ Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 - Minimal code surface needing change — exact files and functions
 - Related code possibly affected by fix — blast radius
 - Recent commits touching this path (from git log output, if provided)
+
+**Cannot-reproduce gate**: if sw-engineer was unable to identify root cause, traceback, or any failing test, invoke `AskUserQuestion` — do NOT proceed to Step 2 with no reproduction path:
+- question: "Cannot confirm root cause from available information. How to proceed?"
+- (a) Use `/develop:debug` — investigate interactively first
+- (b) Provide additional context (traceback, logs, minimal reproduction)
+- (c) Use `/foundry:investigate` (requires foundry plugin) — for production incidents with no CI trace
+Stop until user provides option (b) context or selects a redirect.
 
 If root cause not definitively established after analysis, surface assumptions before proceeding:
 
@@ -272,10 +264,11 @@ If either gate exit is 0: stop. Bug not reproduced on that path. Do not apply fi
 **Outcome B gate** (weak test fixed path): after fixing existing test, run it to confirm it now fails:
 
 ```bash
-$PYTEST_CMD --tb=short <existing_test_file>::<existing_test_name> -v
-GATE_EXIT=$?
+$PYTEST_CMD --tb=long <existing_test_file>::<existing_test_name> -v 2>&1 | tail -30; GATE_EXIT=${PIPESTATUS[0]}  # timeout: 30000
 [ $GATE_EXIT -eq 0 ] && echo "GATE FAIL: fixed test still passes — weak test not corrected; revisit" || echo "GATE OK: fixed test fails as expected (exit $GATE_EXIT)"
 ```
+
+**Outcome B failure-mode verification**: scan the traceback output above for the expected error string from the reported symptom. If traceback does NOT contain a recognizable match to the reported bug symptom, surface: `⚠ Test fails but failure mode may differ from reported symptom — verify the test captures the actual bug before proceeding.`
 
 ### Review: Validate the reproduction
 
@@ -296,6 +289,7 @@ If issue found: revise test(s) before applying fix. Flawed reproduction = fix va
 ```bash
 # Resolve oss plugin shared dir (undefined if oss plugin absent)
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
+[ -z "$_OSS_SHARED" ] && _OSS_SHARED=$(ls -d plugins/oss/skills/_shared 2>/dev/null | head -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED=""  # oss plugin absent — semver-rules.md unavailable
 ```
 
@@ -385,7 +379,7 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 
 ### Follow-up
 - [any related issues or code that should be reviewed]
-- [if no test runner: `rm <test_file>` — no test suite will re-execute it; it served the gate, now expendable]
+- [if no test runner: `rm <test_file>` — no test suite will re-execute it; it served the gate, now expendable. **Exception**: if test was introduced in this session and is definitively wrong, delete it. Never delete pre-existing regression tests — they represent captured behavior that predates this session.]
 
 ## Confidence
 **Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]

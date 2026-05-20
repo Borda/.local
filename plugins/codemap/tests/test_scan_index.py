@@ -16,20 +16,18 @@ import json
 import subprocess
 import sys
 
-from conftest import ALPHA_SRC, BETA_SRC, DELTA_SRC, GAMMA_SRC, SCAN_INDEX
 
-
-def test_creates_index(tmp_path):
+def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):
     """scan-index writes .cache/scan/<name>.json containing all modules."""
-    (tmp_path / "gamma.py").write_text(GAMMA_SRC)
-    (tmp_path / "beta.py").write_text(BETA_SRC)
-    (tmp_path / "alpha.py").write_text(ALPHA_SRC)
+    (tmp_path / "gamma.py").write_text(gamma_src)
+    (tmp_path / "beta.py").write_text(beta_src)
+    (tmp_path / "alpha.py").write_text(alpha_src)
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "__init__.py").write_text("")
-    (tmp_path / "pkg" / "delta.py").write_text(DELTA_SRC)
+    (tmp_path / "pkg" / "delta.py").write_text(delta_src)
 
     result = subprocess.run(
-        [sys.executable, str(SCAN_INDEX), "--root", str(tmp_path)],
+        [sys.executable, str(scan_index), "--root", str(tmp_path)],
         capture_output=True,
         text=True,
         cwd=str(tmp_path),
@@ -43,11 +41,11 @@ def test_creates_index(tmp_path):
     assert {"alpha", "beta", "gamma", "pkg", "pkg.delta"}.issubset(names)
 
 
-def test_incremental_picks_up_new_file(tmp_path):
+def test_incremental_picks_up_new_file(tmp_path, scan_index):
     """Adding a file after initial scan; --incremental indexes it."""
     (tmp_path / "base.py").write_text("def f(): pass\n")
     subprocess.run(
-        [sys.executable, str(SCAN_INDEX), "--root", str(tmp_path)],
+        [sys.executable, str(scan_index), "--root", str(tmp_path)],
         capture_output=True,
         cwd=str(tmp_path),
         check=True,
@@ -55,7 +53,7 @@ def test_incremental_picks_up_new_file(tmp_path):
 
     (tmp_path / "new_mod.py").write_text("import base\n")
     result = subprocess.run(
-        [sys.executable, str(SCAN_INDEX), "--root", str(tmp_path), "--incremental"],
+        [sys.executable, str(scan_index), "--root", str(tmp_path), "--incremental"],
         capture_output=True,
         text=True,
         cwd=str(tmp_path),

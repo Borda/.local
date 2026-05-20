@@ -1,6 +1,6 @@
 ---
 name: gh-scraper
-description: "Fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL data file for consumption by oss:repo-warden axis scorers. NOT for axis scoring or report generation. NOT for direct user invocation."
+description: "Fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL data file for consumption by oss:repo-warden axis scorers. TRIGGER when: spawned by /oss:analyse (vitality mode) to fetch raw GitHub data. NOT for axis scoring or report generation. NOT for direct user invocation."
 tools: Write, Bash
 model: sonnet
 effort: medium
@@ -36,8 +36,8 @@ Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE` from prompt key=value pairs. Compute ti
 ANALYSIS_NOW=$(TZ=UTC date +%s)  # timeout: 5000
 TODAY=$(TZ=UTC date +%Y-%m-%d)   # timeout: 5000
 # Compute cutoff dates using date (cross-platform: macOS BSD and GNU/Linux)
-if date -v-1d +%Y-%m-%d >/dev/null 2>&1; then
-    # macOS BSD date (-v relative offset)
+if date -v-1d +%Y-%m-%d 2>/dev/null | grep -q '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$'; then
+    # macOS BSD date (-v relative offset) — verify output shape, not just exit code
     CUTOFF_30D=$(date -u -v-30d +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
     CUTOFF_90D=$(date -u -v-90d +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
     CUTOFF_180D=$(date -u -v-180d +%Y-%m-%dT%H:%M:%SZ)  # timeout: 5000
@@ -85,17 +85,25 @@ The script handles truncation-detection limits (`--limit 501`/`1001`/`201`), 403
 
 ## Step 3 — Data Fetch Group 2 (depends on Group 1)
 
-After Group 1 complete — root file list and default_branch now known. Run all calls simultaneously — independent (Group 1 must finish first):
+After Group 1 complete — root file list and default_branch now known. Run all calls below sequentially in one Bash call (Group 2 as a whole runs after Group 1 completes — the parallelism is Group 1 vs later calls, not within Group 2):
+
+Read Group 1 outputs before the bash block:
+
+```bash
+# ROOT_FILES: JSON array of filenames in repo root, written by fetch_gh_data_group1.sh to $GROUP1_DIR/root_contents.json
+ROOT_FILES=$(cat "${GROUP1_DIR}/root_contents.json" 2>/dev/null || echo "[]")  # timeout: 5000
+DEFAULT_BRANCH=$(jq -r '.[]|select(.name=="default_branch")|.data' "${GROUP1_DIR}/repo_meta.json" 2>/dev/null || echo "main")  # timeout: 5000
+```
 
 ```bash
 # Axis 5: README content (decode base64; --ignore-garbage tolerates padded/partial base64 from API)
 _README_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/readme" --jq '.content' 2>/dev/null)  # timeout: 10000
-echo "$_README_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_README_RAW" | base64 -D 2>/dev/null
+_README_DECODED=$(echo "$_README_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_README_RAW" | base64 -D 2>/dev/null)
 
 # Axis 5 checkpoints 8–10: CONTRIBUTING.md content (only if checkpoint 5 ✓ — CONTRIBUTING.md in root file list)
 if echo "$ROOT_FILES" | grep -q '"CONTRIBUTING.md"'; then  # M29: only fetch if present in root file list from Group 1
     _CONTRIB_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/CONTRIBUTING.md" --jq '.content' 2>/dev/null)  # timeout: 10000
-    echo "$_CONTRIB_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CONTRIB_RAW" | base64 -D 2>/dev/null
+    _CONTRIB_DECODED=$(echo "$_CONTRIB_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CONTRIB_RAW" | base64 -D 2>/dev/null)
 fi
 
 # Axis 6: .github/ directory contents
@@ -165,12 +173,13 @@ Rules:
 - Set `"partial": true` when truncation detected
 - Set `"records"` to item count in `data`
 - After writing: `echo "[gh-scraper] raw data: N datasets → $DATA_FILE"`
+- Include text-content records for README and CONTRIBUTING using captured `_README_DECODED` / `_CONTRIB_DECODED` variables — set `"type":"readme_text"` / `"type":"contributing_text"` with `"data"` as plain string; skip if variable empty
 
 ## Step 5 — Return Envelope
 
 ```bash
 DATASET_COUNT=$(grep -c '' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000  # grep -c counts lines including files without trailing newline
-PARTIAL_COUNT=$(grep -c '"partial":true' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000
+PARTIAL_COUNT=$(jq -c 'select(.partial == true)' "$DATA_FILE" 2>/dev/null | wc -l || echo 0)  # timeout: 5000
 if [ "$PARTIAL_COUNT" -eq 0 ]; then CONFIDENCE=0.95
 elif [ "$PARTIAL_COUNT" -le 2 ]; then CONFIDENCE=0.88
 else CONFIDENCE=0.78; fi

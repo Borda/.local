@@ -5,7 +5,6 @@ argument-hint: '<target file or directory> <goal> [--plan <path>] [--no-challeng
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
-when_to_use: "Restructure existing code without changing behaviour — NOT for bug fixes (use fix) or new capabilities (use feature)."
 ---
 
 <objective>
@@ -80,7 +79,7 @@ CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-flags.sh" 
 **Codemap auto-detection** — run after flag parsing:
 
 ```bash
-CODEMAP_ENABLED=$(${CLAUDE_PLUGIN_ROOT}/bin/codemap-resolve "$CODEMAP_ENABLED") || exit 1
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1
 ```
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
@@ -128,7 +127,9 @@ Spawn **foundry:sw-engineer** agent to analyze code and identify:
 - Dependencies and coupling between modules
 - **Complexity smell**: directory or cross-module scope — flag it; consider team mode
 
-**Scope gate**: if target is directory-wide scope (10+ files) regardless of goal, flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
+**Goal classification gate**: after sw-engineer analysis completes, scan goal text for mixed signals — if goal contains both refactor keywords (rename, extract, restructure, decouple, consolidate) AND feature keywords (add, implement, new, support), invoke `AskUserQuestion`: "Goal mixes refactoring and feature work — split into two runs." · (a) Abort — run refactor first, then feature · (b) Continue as refactor-only — treat feature additions as out of scope.
+
+**Scope gate**: if target spans 3+ modules OR 5+ files OR goal mentions any public-API rename — flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
 
 Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **refactor** context from the Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
@@ -160,7 +161,7 @@ $PYTEST_CMD --co -q 2>&1 | head -5
 # Check pytest-cov available
 SKIP_COV=0
 if $PYTEST_CMD --co -q --cov=. 2>&1 | grep -q "ModuleNotFoundError\|No module named.*cov"; then
-    echo "WARNING: pytest-cov not installed — coverage data unavailable; classifying all public functions as UNCOVERED (conservative)"
+    echo "⚠ coverage tool not found — coverage gate skipped"
     SKIP_COV=1
 fi
 
@@ -168,10 +169,12 @@ fi
 $PYTEST_CMD --co -q 2>&1 | grep -i "<module_name>" || echo "No tests found for <module_name>"
 
 # Run coverage (only if pytest-cov available)
-[ "${SKIP_COV}" -eq 0 ] && $PYTEST_CMD --cov=<target_module> -q --cov-report=term-missing
+[ "${SKIP_COV}" -eq 0 ] && { $PYTEST_CMD --cov=<target_module> -q --cov-report=term-missing || true; }
 ```
 
-Classify each public function/method:
+If `SKIP_COV=1`: skip coverage classification entirely — do not classify any function as UNCOVERED; note "coverage tool absent — coverage audit skipped" in the audit output and proceed to Step 3 with unknown coverage state.
+
+Classify each public function/method (only when `SKIP_COV=0`):
 
 - **Covered**: at least one test for happy path + one edge case
 - **Partially covered**: test exists but missing edge cases or failure paths
@@ -244,8 +247,9 @@ if [ "${GATE_EXIT:-0}" -eq 5 ]; then
 elif [ $GATE_EXIT -ne 0 ]; then
     echo "GATE FAIL: characterization test(s) failed (exit $GATE_EXIT) — fix the test, not the code"
     # The test is wrong if it fails on unmodified code
+else
+    echo "GATE OK: all characterization tests pass on unmodified code"
 fi
-echo "GATE OK: all characterization tests pass on unmodified code"
 ```
 
 If `GATE_EXIT -ne 0`: characterization test is wrong — must document *current* behavior, not desired. Fix test to match what code actually does, then re-run.
@@ -262,7 +266,15 @@ For each change:
 3. Tests pass: proceed to next change
 4. Tests fail: revert, try different approach
 
-**Safety break**: track cycle count in scratch (`INNER_CYCLE=0`; increment after each change-test pair). After `MAX_INNER_CYCLES` cycles, stop — report what succeeded, what broke, what remains.
+**Safety break**: track cycle count and wall time in scratch:
+
+```bash
+INNER_CYCLE=0
+START_TIME=$(date +%s)
+MAX_WALL_SECONDS=1800  # 30 min hard cap (5 outer × MAX_INNER_CYCLES inner worst case)
+```
+
+After each change-test pair: `INNER_CYCLE=$((INNER_CYCLE+1))`. After `MAX_INNER_CYCLES` cycles, stop — report what succeeded, what broke, what remains. Also check wall time at each inner iteration: `if [ $(( $(date +%s) - START_TIME )) -ge $MAX_WALL_SECONDS ]; then echo "⚠ wall-time cap reached (30 min) — stopping refactor loop"; break; fi`
 
 **Refactoring categories:**
 

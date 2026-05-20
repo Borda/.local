@@ -4,7 +4,6 @@ description: "Interactive outline co-creation for developer advocacy content —
 argument-hint: "[topic]"
 disable-model-invocation: true
 allowed-tools: Write, TaskCreate, TaskUpdate, TaskList, AskUserQuestion, Agent
-when_to_use: "Use when creating developer advocacy content — blog posts, Marp slides, social threads, talk abstracts, or lightning talk outlines."
 effort: medium
 ---
 

@@ -4,7 +4,6 @@ description: |
   Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, and function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
   TRIGGER when: user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of".
   SKIP: codemap index not built (skill self-checks and no-ops gracefully); simple grep would suffice; non-Python repo.
-when_to_use: "Use when searching or querying the codemap index for symbols, dependencies, or code patterns. Requires codemap to be initialized first."
 argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]>"
 allowed-tools: Bash, AskUserQuestion
 model: haiku
@@ -35,7 +34,7 @@ Query codemap structural index for import-graph analysis, symbol-level source ex
 
 Use `module::function` format for qname, e.g. `mypackage.auth::validate_token`. Requires v3 index — v2 returns clear upgrade prompt.
 
-NOT for: building or rebuilding index (use `/codemap:scan`). If subcommand roster expands significantly, run `/foundry:calibrate routing` to verify no routing collisions.
+NOT for: building or rebuilding index (use `/codemap:scan`). All query subcommands are **read-only** — any request that modifies the index or project files belongs to `/codemap:scan` (index writes) or `/codemap:integration` (file injection). Ambiguous prompts like "show me the call graph" that imply read → query is correct; "update the call graph" → scan. If subcommand roster expands significantly, run `/foundry:calibrate routing` to verify no routing collisions.
 
 </objective>
 
@@ -115,8 +114,10 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 
 `{"error": "..."}`: surface error, suggest re-running `/codemap:scan`.
 
+**Partial JSON handling**: if output is truncated (does not parse as complete JSON object — e.g., ends mid-value or missing closing `}`), log `⚠ partial JSON response — results may be incomplete` and attempt to parse only complete top-level fields present before truncation. Surface whatever was recovered; do not silently discard partial results.
+
 **Flags available on multiple commands** (`--exclude-tests`, `--limit`, `--index`):
-- `--exclude-tests` — drop test modules from results; applies to: `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central`
+- `--exclude-tests` — drop test modules from results; applies to: `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central`; **not supported on `path`** (see `path` row in table above)
 - `--limit N` (default 20, use `0` for all) — caps results on `symbol` and `find-symbol`; pass `--limit 0` before counting or ranking to avoid silent truncation
 - `--index <path>` — explicit index file path (bypasses auto-discovery; useful for monorepos or comparing two indexes)
 

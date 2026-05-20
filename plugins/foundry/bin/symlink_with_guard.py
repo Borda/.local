@@ -9,16 +9,21 @@ Two modes, both consume the same input:
 
 * ``cleanup`` — remove foundry-managed symlinks whose targets no longer exist
   in the current plugin version. Side-effect: deletes stale symlinks. Prints
-  ``removed obsolete: <name>`` lines to stdout for each removal.
+  ``removed obsolete: <name>`` lines to stdout for each removal. Also purges
+  any foundry-managed symlinks lingering under ``~/.claude/agents/`` — agents
+  are dispatched directly from the plugin namespace and never need a symlink
+  there, so every foundry-managed entry there is by definition obsolete.
 * ``scan`` — identify symlink/file entries needing user confirmation. Prints
   one conflict descriptor per line to stdout (ready for bash array consumption
   via ``mapfile -t LINK_CONFLICTS < <(... scan ...)``).
 
-Three iteration patterns are evaluated by both modes:
+Three iteration patterns are evaluated by both modes (cleanup adds a fourth
+agent-purge scope):
 
 1. ``<plugin>/rules/*.md`` ↔ ``$HOME/.claude/rules/*.md``
 2. ``<plugin>/TEAM_PROTOCOL.md`` ↔ ``$HOME/.claude/TEAM_PROTOCOL.md`` (single file)
 3. ``<plugin>/skills/*/`` ↔ ``$HOME/.claude/skills/*/`` (subdir entries)
+4. (cleanup only) ``$HOME/.claude/agents/`` — purge any foundry-managed symlink
 
 Foundry-management is detected by substring match on the readlink target:
 default marker ``borda-ai-rig/foundry/``.
@@ -103,20 +108,29 @@ def _is_foundry_managed(target: str, marker: str) -> bool:
 def _is_current(target: str, plugin_root: Path) -> bool:
     """True when the readlink target lives inside the current plugin root.
 
+    Performs a proper path-prefix comparison (``Path.is_relative_to``) instead
+    of a substring match, so a plugin root like ``…/foundry/0.1`` doesn't
+    spuriously match a target under ``…/foundry/0.10``. Falls back to the
+    substring check when the resolution itself fails (e.g. unresolvable
+    symlink target on a foreign filesystem) so the cleanup pass is no more
+    aggressive than the legacy behaviour.
+
     Args:
         target: ``readlink`` output.
         plugin_root: Absolute path of the currently-installed plugin version.
 
     Returns:
-        True iff ``str(plugin_root)`` is a substring of ``target``.
+        True iff ``target`` resolves to a path under ``plugin_root``.
 
     Examples:
-        >>> _is_current("/home/x/.claude/plugins/cache/borda-ai-rig/foundry/0.18.0/rules/a.md", Path("/home/x/.claude/plugins/cache/borda-ai-rig/foundry/0.18.0"))
-        True
         >>> _is_current("/old/0.17.0/rules/a.md", Path("/new/0.18.0"))
         False
     """
-    return str(plugin_root) in target
+    try:
+        resolved = Path(os.path.realpath(target) if not os.path.isabs(target) else target)
+        return resolved.is_relative_to(plugin_root.resolve())
+    except (ValueError, OSError):
+        return str(plugin_root) in target  # fallback if resolution fails
 
 
 def _list_rule_files(plugin_root: Path) -> list[Path]:
@@ -151,6 +165,12 @@ def _list_skill_dirs(plugin_root: Path) -> list[Path]:
 
 def _build_entries(plugin_root: Path, home: Path) -> list[_Entry]:
     """Build the union of (source, dest, kind) triples for current plugin contents.
+
+    Agents are intentionally absent from this list — they are dispatched
+    directly from the plugin's installed namespace (``foundry:sw-engineer``)
+    and require no ``~/.claude/agents/`` entry. Stale agent symlinks from
+    pre-design installs are purged separately by :func:`cleanup` and are
+    therefore never re-created here.
 
     Args:
         plugin_root: Plugin install root.
@@ -239,13 +259,18 @@ def _existing_dest_symlinks(target_dir: Path) -> list[Path]:
 def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
     """Remove foundry-managed symlinks whose source no longer exists.
 
-    Three scopes evaluated (rules files, TEAM_PROTOCOL.md, skill dirs). For each
-    symlink in the destination, the link is removed when ALL three predicates
-    hold:
+    Four scopes evaluated. Three are conditional (rules files, TEAM_PROTOCOL.md,
+    skill dirs) — the link is removed only when ALL three predicates hold:
 
     * the readlink target contains the foundry ``marker`` substring,
-    * the readlink target does NOT contain ``str(plugin_root)`` (stale, not current),
+    * the readlink target does NOT resolve under ``plugin_root`` (stale, not current),
     * the matching source does not exist in the current plugin tree.
+
+    The fourth scope (``~/.claude/agents/``) is unconditional: every foundry-managed
+    symlink there is obsolete by design. Agents are dispatched directly from the
+    plugin namespace and never need an entry under ``~/.claude/agents/``; any
+    such symlink is left over from an earlier install flow and is purged on
+    every cleanup pass with no source-existence check.
 
     Args:
         plugin_root: Currently-installed plugin root.
@@ -253,12 +278,14 @@ def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
         marker: Substring identifying foundry-managed targets.
 
     Returns:
-        List of ``"removed obsolete: <name>"`` log lines (also implies stdout
+        List of ``"removed obsolete: <name>"`` / ``"removed obsolete skill: <name>"``
+        / ``"removed obsolete agent: <name>"`` log lines (also implies stdout
         side-effect when invoked via :func:`main`).
     """
     log: list[str] = []
     rules_dest = home / ".claude" / "rules"
     skills_dest = home / ".claude" / "skills"
+    agents_dest = home / ".claude" / "agents"
     team_dest = home / ".claude" / "TEAM_PROTOCOL.md"
 
     # --- rules/*.md ---
@@ -299,6 +326,26 @@ def cleanup(plugin_root: Path, home: Path, marker: str) -> list[str]:
             except OSError:
                 continue
             log.append(f"removed obsolete skill: {link_path.name}")
+
+    # --- agents/ (unconditional purge) ---
+    # No source-existence check — agents are dispatched from the plugin
+    # namespace and are never (re-)created in ~/.claude/agents/. Any
+    # foundry-managed symlink lingering here is by definition obsolete.
+    for link_path in _existing_dest_symlinks(agents_dest):
+        target = _readlink(link_path)
+        if target is None or not _is_foundry_managed(target, marker):
+            continue
+        if _is_current(target, plugin_root):
+            # A symlink under the current plugin root would still be obsolete
+            # by design — we never create them — but leaving it gives a clear
+            # signal that something outside init is staging it. Skip removal
+            # so the operator can investigate.
+            continue
+        try:
+            link_path.unlink()
+        except OSError:
+            continue
+        log.append(f"removed obsolete agent: {link_path.name}")
 
     return log
 
@@ -367,6 +414,10 @@ def main(argv: list[str] | None = None) -> int:
         help=f"Substring identifying foundry-managed symlink targets (default: {_DEFAULT_MARKER!r}).",
     )
     args = parser.parse_args(argv)
+
+    if not args.marker:
+        print("symlink_with_guard: --marker cannot be empty", file=sys.stderr)
+        return 2
 
     plugin_root = Path(args.plugin_root)
     if not plugin_root.is_dir():

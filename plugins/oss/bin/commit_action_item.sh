@@ -46,6 +46,11 @@ REPO_SLUG=$(_slug "$(basename "$(git rev-parse --show-toplevel)")")
 BRANCH_SLUG=$(_slug "$(git branch --show-current)")
 SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
 
+# Note: sentinel path is predictable by design for cross-process coordination
+# with the pre-commit hook (Gate 1, see git-commit.md). On multi-user hosts,
+# use $XDG_RUNTIME_DIR instead of /tmp for improved isolation (F-07 in
+# security audit 2026-05-19). TOCTOU risk on single-user workstations
+# accepted as low-severity.
 touch "$SENTINEL"
 trap 'rm -f "$SENTINEL"' EXIT INT TERM
 

@@ -91,7 +91,8 @@ Read `direction` from `state.json` config (or infer from goal text); pass via `$
 **Effect size** — script does not return rank-biserial `r` directly. Compute in shell from `statistic` and `n`:
 
 ```bash
-EFFECT_R=$(echo "$RETRO_RESULT" | python -c "import json,sys; d=json.loads(sys.stdin.read()); n=d['n']; s=d.get('statistic'); print('' if s is None else 1 - (2*s)/(n*(n+1)))")  # timeout: 5000
+# TODO: extract to bin/ script — Check 23e violation (inline python -c); add "r" field to retro_analyze.py output and remove this line
+EFFECT_R=$(echo "$RETRO_RESULT" | python -c "import json,sys; d=json.loads(sys.stdin.read()); n=d['n']; s=d.get('statistic'); print('' if s is None else 4*s/(n*(n+1)) - 1)")  # timeout: 5000
 ```
 
 **If `--compare`**: invoke the script a second time on the second run's `experiments.jsonl`; downstream report renders a second row.
@@ -129,7 +130,7 @@ Write summary to `$RUN_DIR/dead-iters.json` via Write tool. Format:
 }
 ```
 
-Write dead-iteration scan script to `$RUN_DIR/scripts/dead-iter-scan.py` via Write tool, then execute in separate Bash call. Never inline. Same pattern as T2.
+Write dead-iteration scan script to `$RUN_DIR/scripts/dead-iter-scan.py` via Write tool, then execute in a separate Bash call. Never inline Python in the Bash command. (Different from T2: T3 writes a fresh dynamic script per invocation; T2 invokes a static bin/ script.)
 
 ### Step T4: Suspicious jump detection
 
@@ -148,7 +149,7 @@ For each flagged jump, record:
 - Label: `"suspicious — investigate"` — NEVER auto-label `"data leakage"` or imply causation
 - Include corresponding `diary.md` entry for that iteration if present
 
-**Minimum data**: require at least 6 kept iterations before flagging (need 5 for window + 1 to test). Fewer → write `"insufficient data for jump detection (N=<N>)"`.
+**Minimum data**: require at least 6 kept iterations before flagging (need 5 for window + 1 to test). Fewer → skip suspicious-jump detection entirely and write `"⚠ Insufficient data for trend analysis (need ≥6 data points, have <N>)"` in the Suspicious Metric Jumps section of the report.
 
 Write to `$RUN_DIR/suspicious-jumps.json` via Write tool.
 
@@ -173,7 +174,7 @@ Produce a retrospective analysis covering:
 1. **Strategy effectiveness**: which agent types (perf/code/ml/arch) had highest kept-rate and average delta? Rank them. Include per-agent iteration count, kept count, and mean delta.
 2. **Failure pattern analysis**: what approaches were repeatedly tried and reverted? Common failure modes? Group by pattern, not individual iteration.
 3. **Diminishing returns**: at which iteration did improvement rate drop below 0.5% per iteration? Was the stopping point appropriate?
-4. **Next hypotheses**: based on what worked and failed, generate 3–5 concrete next hypotheses. Write them as a hypotheses.jsonl-compatible file to <RUN_DIR>/hypotheses.jsonl — one JSON object per line with fields: hypothesis (str), rationale (str), confidence (float 0–1), expected_delta (str like "+2%"), priority (int 1=highest), source: "retro". Do NOT include feasible/blocker/codebase_mapping — retro entries skip the feasibility-annotation pass; /research:run treats absent feasibility fields as feasible:true.
+4. **Next hypotheses**: based on what worked and failed, generate 3–5 concrete next hypotheses. Write them as a hypotheses.jsonl-compatible file to <RUN_DIR>/hypotheses.jsonl — one JSON object per line with fields: hypothesis (str), rationale (str), confidence (float 0–1), expected_delta (str like "+2%"), priority (int 1=highest), source: "retro". Do NOT include feasible/blocker/codebase_mapping — feasibility annotation is optional in this context; /research:run treats absent feasibility fields as feasible:true. Note: full feasibility-annotation workflow is defined in research:scientist — see that agent for complete annotation spec.
 5. **Cross-run insights** (only if compare data present in stats-results.json): which run's strategy was more effective and why?
 
 Write full retrospective to <RUN_DIR>/retrospective.md using Write tool.
@@ -275,10 +276,10 @@ Next hypotheses queue: <RUN_DIR>/hypotheses.jsonl
 
 ## Confidence
 **Score**: 0.N — [high|moderate|low]
-**Finding confidence** (dead windows, suspicious jumps, classification errors, pattern detection): [high|moderate|low] — independent of statistical test availability
-**Statistical confidence** (Wilcoxon p-value): [available: p=X | unavailable: scipy not installed — descriptive stats only]
 **Gaps**:
-- [specific limitation]
+- Finding confidence (dead windows, suspicious jumps, classification errors, pattern detection): [high|moderate|low] — independent of statistical test availability
+- Statistical confidence (Wilcoxon p-value): [available: p=X | unavailable: scipy not installed — descriptive stats only]
+- [other specific limitations]
 ```
 
 ### Step T7: Terminal summary and follow-up gate

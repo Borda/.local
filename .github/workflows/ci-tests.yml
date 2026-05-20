@@ -28,4 +28,6 @@ jobs:
 
       - name: Run plugin's bin tests
         working-directory: plugins/
-        run: pytest --color=yes --doctest-modules
+        env:
+          RUN_INTEGRATION: "1"
+        run: pytest .

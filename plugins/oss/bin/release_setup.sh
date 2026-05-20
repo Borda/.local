@@ -68,6 +68,8 @@ fi
 
 # --- emit KEY=value to stdout -------------------------------------------------
 # Quote values that may contain spaces or shell-special characters.
+# Note: printf '%q' is bash-specific ($'...' ANSI-C quoting) — caller must
+# `eval` this output under bash, not POSIX sh (F-06 in security audit 2026-05-19).
 printf 'SKILL_DIR=%q\n' "$SKILL_DIR"
 printf 'REPO_ROOT=%q\n' "$REPO_ROOT"
 printf 'BRANCH=%q\n' "$BRANCH"

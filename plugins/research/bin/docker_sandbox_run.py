@@ -58,6 +58,9 @@ def build_explore_command(arg: str, network: str, workdir: str) -> list[str]:
         "--rm",
         "--network",
         network,
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--read-only",
         "-v",
         f"{workdir}:/workspace:ro",
         "--tmpfs",
@@ -92,12 +95,16 @@ def build_verify_command(arg: str, network: str, workdir: str) -> list[str]:
         >>> any("experiments:rw" in c for c in cmd)
         True
     """
+    # arg in verify mode is treated as shell string — Docker container is primary isolation boundary
     return [
         "docker",
         "run",
         "--rm",
         "--network",
         network,
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--read-only",
         "-v",
         f"{workdir}:/workspace:ro",
         "-v",

@@ -1,3 +1,4 @@
+<!-- file: team-spawn-prompt.md — consumers: feature/SKILL.md (team mode branch), fix/SKILL.md (team mode), refactor/SKILL.md (team mode) -->
 # Team Spawn Prompts
 
 Shared spawn-prompt templates for develop skill team-mode branches. Replace `<ROLE>`, `<TASK>`, `<SCOPE>`, `<RUN_DIR>`, `<OUTPUT_NAME>`, `<HYPOTHESIS_LABEL>`, and `<TS>` placeholders before insertion.

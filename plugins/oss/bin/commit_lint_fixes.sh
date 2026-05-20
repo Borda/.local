@@ -11,7 +11,7 @@ if [ -z "$CHANGED" ]; then
     exit 0
 fi
 
-echo "$CHANGED" | timeout 3 xargs git add --
+git diff HEAD -z --name-only 2>/dev/null | timeout 3 xargs -0 git add --
 
 timeout 3 git commit -m "$(cat <<'EOF'
 lint: auto-fix violations after resolve cycle

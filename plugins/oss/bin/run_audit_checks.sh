@@ -37,6 +37,10 @@ if [ -z "$RANGE" ]; then
     LAST_TAG="${LAST_TAG:-$(git describe --tags --abbrev=0 \
         --exclude='*rc*' --exclude='*dev*' --exclude='*alpha*' --exclude='*beta*' 2>/dev/null \
         || git rev-list --max-parents=0 HEAD 2>/dev/null | head -1)}"
+    # Reject tags starting with `-` to prevent git option injection (F-05).
+    if [[ "$LAST_TAG" == -* ]]; then
+        echo "run_audit_checks: invalid tag: '$LAST_TAG'" >&2; exit 2
+    fi
     RANGE="$LAST_TAG..HEAD"
 fi
 
@@ -52,7 +56,7 @@ printf -- '--- check: repo-state ---\n'
 echo "## uncommitted changes:"
 git status --short || true
 echo "## unreleased commits in range $RANGE:"
-git log "$RANGE" --oneline --no-merges 2>/dev/null || true
+git log --oneline --no-merges "$RANGE" -- 2>/dev/null || true
 
 # --- Check 2: CI health -------------------------------------------------------
 printf -- '--- check: ci-health ---\n'
@@ -74,9 +78,9 @@ gh pr list --state open --base "${TRUNK:-main}" --limit 20 \
 # --- Check 4: Documentation alignment (data only — interpretation in template) ---
 printf -- '--- check: docs-alignment ---\n'
 echo "## files changed since $RANGE:"
-git diff "$RANGE" --name-only 2>/dev/null || true
+git diff --name-only "$RANGE" -- 2>/dev/null || true
 echo "## docs/README touched:"
-git diff "$RANGE" --name-only 2>/dev/null | grep -iE 'readme|\.md$|docs/' || echo "no docs changed"
+git diff --name-only "$RANGE" -- 2>/dev/null | grep -iE 'readme|\.md$|docs/' || echo "no docs changed"
 
 # --- Check 5: Version consistency ---------------------------------------------
 printf -- '--- check: version-consistency ---\n'
@@ -94,7 +98,7 @@ grep -rn "TODO.*release\|FIXME\|HACK\|XXX" --include="*.py" \
 echo "## dependency CVE scan:"
 if command -v pip-audit >/dev/null 2>&1; then
     pip-audit --format=json 2>/dev/null \
-        | python -c "import sys, json; d=json.load(sys.stdin); print(f'{len(d[\"dependencies\"])} deps, {sum(len(x[\"vulns\"]) for x in d[\"dependencies\"])} vulns')" \
+        | python "${OSS_BIN_DIR:-$(dirname "$0")}/parse_audit_json.py" \
         || echo "pip-audit ran but JSON parsing failed"
 else
     echo "pip-audit not installed — CVE scan skipped; install with: pip install pip-audit"

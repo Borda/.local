@@ -41,15 +41,17 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 
 Parse `<input>` from arguments. Determine: **file path** or **goal string**:
 
-1. No spaces AND `test -f <argument>` succeeds → **file path**. Enter profiling flow.
+First, extract first positional token (strip all `--<flag>` tokens from `$ARGUMENTS`, take first remaining token as `FILE_ARG`). Then:
+
+1. `test -f "$FILE_ARG"` succeeds → **file path**. `FILE_ARG` is the script to profile. Enter profiling flow.
 2. Otherwise → **goal string**. Skip to Step P-P1.
 
 **Profiling flow** (file path detected):
 
-Run baseline profiling:
+Run baseline profiling using `FILE_ARG` only — never use raw `$ARGUMENTS` in cProfile command:
 
 ```bash
-python -m cProfile -s cumtime "$ARGUMENTS" > /tmp/cprofile-out.txt 2>&1  # timeout: 60000
+python -m cProfile -s cumtime "$FILE_ARG" > /tmp/cprofile-out.txt 2>&1  # timeout: 600000
 PROFILE_EXIT=$?
 if [ $PROFILE_EXIT -ne 0 ]; then
     echo "⚠ cProfile failed (exit $PROFILE_EXIT) — continuing without profile data."
@@ -58,7 +60,7 @@ if [ $PROFILE_EXIT -ne 0 ]; then
 else
     PROFILE_AVAILABLE=true
     head -40 /tmp/cprofile-out.txt  # timeout: 5000
-    time python "$ARGUMENTS"  # timeout: 60000
+    time python "$FILE_ARG"  # timeout: 600000
 fi
 ```
 
@@ -141,7 +143,7 @@ Poll every 5 min: `find $PLAN_RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — 
 **Always** — spawn architect to validate scope coverage. Before constructing the Agent() call, substitute the actual computed value of `$PLAN_RUN_DIR` into the prompt string (e.g. `.experiments/plan-2026-05-13T10-00-00Z`):
 
 ```text
-Agent(subagent_type="foundry:solution-architect", prompt="Review a proposed research experiment scope.\n\nGoal: <goal>\nScope files: <scope_files>\nMetric command: <metric_cmd>\n\nCheck: (1) Do scope_files cover the components relevant to the goal? List architectural dependencies outside scope that the ideation agent would need to touch. (2) Are there shared abstractions (base classes, imports, shared state) outside scope required for changes within it?\n\nWrite your full review to `<PLAN_RUN_DIR>/plan-review-architect.md` using the Write tool.\nReturn ONLY: {\"ok\":true|false,\"gaps\":[\"...\"],\"suggestions\":[\"...\"],\"file\":\"<PLAN_RUN_DIR>/plan-review-architect.md\",\"confidence\":0.N}")
+Agent(subagent_type="foundry:solution-architect", prompt="Review a proposed research experiment scope.\n\nGoal: <goal>\nScope files (newline-separated paths in a markdown code block):\n```\n<scope_files — one path per line>\n```\nMetric command: <metric_cmd>\n\nCheck: (1) Do scope_files cover the components relevant to the goal? List architectural dependencies outside scope that the ideation agent would need to touch. (2) Are there shared abstractions (base classes, imports, shared state) outside scope required for changes within it?\n\nWrite your full review to `<PLAN_RUN_DIR>/plan-review-architect.md` using the Write tool.\nReturn ONLY: {\"ok\":true|false,\"gaps\":[\"...\"],\"suggestions\":[\"...\"],\"file\":\"<PLAN_RUN_DIR>/plan-review-architect.md\",\"confidence\":0.N}")
 ```
 
 **If `agent_strategy = ml` or goal contains ML keywords (accuracy, loss, model, training, inference, classification, regression)** — also spawn research:scientist. Substitute computed `$PLAN_RUN_DIR` before spawning:
@@ -201,7 +203,7 @@ scope_files:
   - <path or glob>
 compute: local | colab | docker
 colab_hw: # optional: H100 | L4 | T4 | A100 (used when compute: colab)
-sandbox_network: none | bridge
+sandbox_network: none | bridge  # ⚠ not validated by judge.md C-checks — manually verify before running
 ```
 
 ## Notes

@@ -5,7 +5,6 @@ argument-hint: "[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepa
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion
 model: sonnet
 effort: high
-when_to_use: "Use when user says \"prepare release\", \"write changelog\", \"what changed since vX.Y\", \"write release notes\", \"am I ready to release\", \"check release readiness\", or wants to announce version to users."
 ---
 
 <objective>

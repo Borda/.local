@@ -42,8 +42,8 @@ def slugify(project_path: str) -> str:
         Slug: lowercase, non-alphanumerics collapsed to ``-``, trailing ``-`` stripped.
 
     Examples:
-        >>> slugify("/Users/jirka/Workspace/Borda.local")
-        '-users-jirka-workspace-borda-local'
+        >>> slugify("/home/user/MyProject")
+        '-home-user-myproject'
         >>> slugify("MyProject")
         'myproject'
         >>> slugify("foo/bar_baz!")

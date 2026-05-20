@@ -10,6 +10,6 @@ dev_path=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/develop" -maxdepth 3
 echo "$dev_path"
 if [ "${1:-}" = "--foundry" ]; then
     foundry_path=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 3 -type d -name "_shared" 2>/dev/null | sort -Vr | head -1)
-    [ -z "$foundry_path" ] && foundry_path=".claude/skills/_shared"
+    [ -z "$foundry_path" ] && { printf "dev-shared-resolve: foundry plugin not in cache — using source-tree fallback\n" >&2; foundry_path="plugins/foundry/skills/_shared"; }
     echo "$foundry_path"
 fi

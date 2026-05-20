@@ -35,10 +35,9 @@ STATE_DIR_BASE:           .experiments/state
 
 ## Agent Resolution
 
-> **Foundry plugin check**: run `Glob(pattern="foundry*", path="$HOME/.claude/plugins/cache/")` returning results = installed. If check fails, proceed as if foundry available — common case; only fall back if agent dispatch explicitly fails.
+<!-- Foundry plugin check retained for resilience: run `Glob(pattern="foundry*", path="$HOME/.claude/plugins/cache/")` to confirm foundry installed before dispatching foundry:* agents (not used in fortify directly, but Glob kept for consistency with other research skills that do). If check fails, proceed — fortify only dispatches research:scientist (same plugin). -->
 
 `research:scientist` in same plugin as this skill — no fallback needed if research plugin installed.
-<!-- fortify dispatches same-plugin research:scientist only; no cross-plugin foundry fallback needed — agent-resolution.md not required -->
 
 ## CRITICAL: Worktree-based isolation
 
@@ -75,17 +74,25 @@ if [ -z "$JUDGE_VERDICT_FILE" ]; then
   echo "Ablation studies require an approved baseline. Run: /research:judge <program.md>"
   exit 1
 fi
-JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//;s/[[:space:]].*//')
+# Preserve multi-word verdicts (e.g. "NEEDS REVISION") — strip trailing whitespace only, not internal spaces
+JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//' | sed 's/[[:space:]]*$//')
 
-# Program-file cross-check: verdict alone is insufficient — confirm the referenced program.md still exists on disk.
-PROGRAM_FILE=$(grep -i '^[*]*Scope[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed -E 's/.*Scope[: *]+//;s/[[:space:]].*//')
+# Program cross-match: confirm verdict was issued for the current experiment's program, not a different one
+PROGRAM_FILE=$(grep -iE '^[*]*(Program(_file)?|Program file)[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+STATE_PROGRAM=$(python -c "import json; d=json.load(open('state.json')); print(d.get('program_file',''))" 2>/dev/null)
+if [ -n "$STATE_PROGRAM" ] && [ -n "$PROGRAM_FILE" ] && [ "$PROGRAM_FILE" != "$STATE_PROGRAM" ]; then
+    printf "! BLOCKED — judge verdict references program '%s' but current experiment is for '%s'\n" "$PROGRAM_FILE" "$STATE_PROGRAM"
+    printf "Run: /research:judge %s\n" "$STATE_PROGRAM"
+    exit 1
+fi
+# Confirm program file still exists on disk
 if [ -n "$PROGRAM_FILE" ] && [ ! -f "$PROGRAM_FILE" ]; then
-    printf "! F1 FAIL: program file %s not found\n" "$PROGRAM_FILE"
+    printf "! BLOCKED — program file %s referenced by judge verdict not found on disk\n" "$PROGRAM_FILE"
     exit 1
 fi
 ```
 
-Verify `JUDGE_VERDICT == "APPROVED"` AND verdict file references same `program_file` (grep for program path). The cross-check above also guarantees the program file referenced by the judge verdict still exists — fortify cannot ablate against a missing baseline. If not APPROVED or mismatch:
+Verify `JUDGE_VERDICT == "APPROVED"`. The program cross-match above guarantees the verdict was issued for the current experiment — fortify cannot ablate against a different program's verdict. If not APPROVED:
 
 ```text
 fortify: BLOCKED — no APPROVED judge verdict found for this program.
@@ -159,7 +166,7 @@ Poll every 5 min: `find <FORTIFY_DIR> -newer "$CHECKPOINT_F2" -type f | wc -l` (
 - **One extension (+5 min)**: if `tail -20 <FORTIFY_DIR>/candidates-analysis.md` shows active progress, grant one extension; second stall = hard cutoff
 - **On timeout**: stop with `"fortify: Scientist timed out. Check <FORTIFY_DIR>/ for partial output."`; surface with ⏱
 
-Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations <M>` specified and component count + 1 (for full variant) exceeds M: sort by `expected_importance` (HIGH first, then MEDIUM, then LOW), keep top M-1 components plus always include `full` sanity-check variant.
+Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations <M>` specified and component count + 1 (for full variant) exceeds M: sort by `expected_importance` (HIGH first, then MEDIUM, then LOW), keep top M-1 components plus always include `full` sanity-check variant. **Log dropped components**: print a warning listing each dropped component by `component_id` and `expected_importance` so users can verify the scientist's importance estimates before proceeding. Include this list in the F7 report under `## Dropped Variants`.
 
 **`--skip-run` early exit**: if `--skip-run` flag present, print candidate table (component_id, name, description, files, expected_importance) and exit. No ablation execution. Mark tasks F3, F4, F5, F6, F7 as `skipped` via TaskUpdate. Print: `"fortify: --skip-run — <N> candidates identified. Next: /research:fortify without --skip-run"`. Jump to F8 (skip-run variant).
 
@@ -198,10 +205,13 @@ git worktree add "$WORKTREE_BASE/<variant_name>" <best_commit>  # timeout: 15000
 
 ```bash
 WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/<variant_name>}"
-trap '[ -n "$WORKTREE_PATH" ] && git worktree remove --force "$WORKTREE_PATH" 2>/dev/null' EXIT INT TERM
+# Append path to accumulator file — file persists across Bash calls; array variables do not
+echo "$WORKTREE_PATH" >> /tmp/fortify-worktree-paths-$$.txt
+# Trap reads full accumulator — covers all variants created so far, not just current
+trap 'while IFS= read -r _wt; do git worktree remove --force "$_wt" 2>/dev/null; done < /tmp/fortify-worktree-paths-$$.txt 2>/dev/null; rm -f /tmp/fortify-worktree-paths-$$.txt' EXIT INT TERM
 ```
 
-Trap runs once; subsequent variants re-register their own `WORKTREE_PATH` before the trap fires. The explicit `git worktree remove` in 4f remains for happy-path cleanup; the trap is a safety net for interrupted loops only.
+The accumulator file is initialized before the variant loop begins (first write creates it). Each variant appends its path and re-registers the trap to cover all paths added so far. The explicit `git worktree remove` in 4f remains for happy-path cleanup; the trap is a safety net for interrupted loops only. Use `$$` (parent PID) as suffix to avoid collision across concurrent invocations.
 
 **4b. Navigate into worktree** (two separate Bash calls — cd first, then command):
 
@@ -218,8 +228,11 @@ For `no-<component>` variant: revert component's commits.
 **IMPORTANT — order matters**: revert in **reverse chronological order** (newest first) to avoid conflicts. If `revert_commits` from `variants.jsonl` is chronological (oldest first), reverse before reverting:
 
 ```bash
+# Extract revert_commits for current variant from variants.jsonl (VARIANT_NAME set in loop)
+REVERT_COMMITS_RAW=$(python -c "import sys,json; [print(*v['revert_commits']) for v in map(json.loads,open('$FORTIFY_DIR/variants.jsonl')) if v['variant_name']==sys.argv[1]]" "$VARIANT_NAME" 2>/dev/null)  # timeout: 5000
+[ -z "$REVERT_COMMITS_RAW" ] && { echo "⚠ No revert_commits for $VARIANT_NAME — skipping"; echo '{"variant":"'$VARIANT_NAME'","status":"revert-missing"}' >> "$FORTIFY_DIR/results.jsonl"; continue; }
 # Sort newest-first for conflict-free revert (portable awk reverse — avoids tac not available on macOS)
-REVERT_COMMITS_SORTED=$(echo "<commit1> <commit2> ..." | tr ' ' '\n' | awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}' | tr '\n' ' ')
+REVERT_COMMITS_SORTED=$(echo "$REVERT_COMMITS_RAW" | tr ' ' '\n' | awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}' | tr '\n' ' ')
 git revert $REVERT_COMMITS_SORTED --no-edit  # timeout: 15000
 ```
 

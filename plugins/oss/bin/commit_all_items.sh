@@ -38,6 +38,13 @@ done
 
 [ -z "$PR_NUMBER" ] && { echo "Usage: $0 PR_NUMBER N_AS N_SELF N_REJECTED [SUMMARIES_FILE] [--codex]" >&2; exit 1; }
 
+# Validate integer args (F-08 in security audit 2026-05-19).
+for arg_val in "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED"; do
+    if ! [[ "$arg_val" =~ ^[0-9]+$ ]]; then
+        echo "commit_all_items: expected integer, got: '$arg_val'" >&2; exit 2
+    fi
+done
+
 BULLET_LIST=""
 if [ -n "$SUMMARIES_FILE" ] && [ -f "$SUMMARIES_FILE" ]; then
     BULLET_LIST=$(<"$SUMMARIES_FILE")

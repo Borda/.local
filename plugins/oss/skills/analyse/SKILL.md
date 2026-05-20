@@ -5,11 +5,10 @@ description: |
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
   SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review).
 argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]"
-allowed-tools: Read, Bash, Write, Agent
+allowed-tools: Read, Bash, Write, Agent, AskUserQuestion
 context: fork
 model: sonnet
 effort: medium
-when_to_use: "Use when the user asks to analyze a GitHub issue, PR, or discussion thread, needs repo vitality stats, or wants to triage/summarize OSS contributor threads."
 ---
 
 <objective>
@@ -75,7 +74,13 @@ CLEAN_ARGS="${CLEAN_ARGS#\#}"
 
 ```bash
 DIRECT_PATH_MODE=false
-if [[ "$CLEAN_ARGS" == *.md ]]; then
+# Exclude vitality/ecosystem prefix (*.md check must not intercept them) and plan/todo files
+if [[ "$CLEAN_ARGS" == *.md ]] && [[ "$CLEAN_ARGS" != vitality* ]] && [[ "$CLEAN_ARGS" != ecosystem* ]]; then
+    if [[ "$CLEAN_ARGS" == .plans/* ]] || [[ "$CLEAN_ARGS" == *todo_*.md ]]; then
+        echo "! Invalid report path: '$CLEAN_ARGS' — plan/todo files are not valid report paths."
+        echo "Usage: /oss:analyse <path/to/report.md> --reply  (use a .reports/ path)"
+        exit 1
+    fi
     DIRECT_PATH_MODE=true
     REPORT_FILE="$CLEAN_ARGS"
 fi # timeout: 5000
@@ -134,12 +139,10 @@ if [[ "$CLEAN_ARGS" == vitality* ]]; then
 fi
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: print following as plain text (AskUserQuestion not available in forked context) and stop:
-```
-! Unknown flag(s): `--<token>`. Supported: `--reply`.
-Options: (a) re-invoke with correct flags  (b) continue ignoring unknown flags
-```
-Do not invoke `AskUserQuestion` — forked context; deferred tool schema not loaded.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: invoke `AskUserQuestion` with:
+- question: "Unknown flag(s): `--<token>`. Supported: `--reply`. How to proceed?"
+- (a) Abort — re-invoke with correct flags
+- (b) Continue ignoring unknown flags
 
 ## Step 2: Reply-mode fast-path (only when `REPLY_MODE=true`)
 
@@ -181,9 +184,21 @@ Check local cache before API calls — prevents redundant fetches, avoids GitHub
 ```bash
 CACHE_DIR=".cache/gh"
 # Include repo slug in cache key to prevent cross-repo cache poisoning (same issue# different repo)
-_CACHE_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-' || echo 'unknown-repo')
-CACHE_FILE="$CACHE_DIR/$_CACHE_REPO-$CLEAN_ARGS-$TODAY.json"
+_CACHE_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
+if [ -z "$_CACHE_REPO" ]; then
+    # No stable repo identifier — disable caching to prevent cross-repo collision on fallback key
+    CACHE_FILE=""
+else
+    CACHE_FILE="$CACHE_DIR/$_CACHE_REPO-$CLEAN_ARGS-$TODAY.json"
+fi
 mkdir -p "$CACHE_DIR" # timeout: 5000
+# Thread mode requires git+GitHub context for {owner}/{repo} substitution in API calls
+if [ -z "$_CACHE_REPO" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
+    echo "⚠ No GitHub repository context — cannot resolve repository for thread mode."
+    echo "Run from inside a git repository with a GitHub remote:"
+    echo "  cd /path/to/repo && /oss:analyse $CLEAN_ARGS"
+    exit 0
+fi
 ```
 
 **Cache hit** — if `$CACHE_FILE` exists:
@@ -217,7 +232,7 @@ UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M
 **Cache miss** — after fetching in `modes/thread.md`, write:
 
 ```bash
-[ -n "$ITEM" ] && jq -n \
+[ -n "$ITEM" ] && [ -n "$CACHE_FILE" ] && jq -n \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg type "$TYPE" \
     --argjson number "$CLEAN_ARGS" \
@@ -306,8 +321,7 @@ Read `$_OSS_MODE_DIR/<mode>.md` and execute all steps defined there.
 
 ### 6a — Follow-up gate
 
-<!-- AskUserQuestion NOT available in forked context — deferred tool schemas not loaded in fork; surface as plain text -->
-Print options as plain text. Options depend on mode:
+Invoke `AskUserQuestion`. Options depend on mode:
 
 **Thread mode** (`$CLEAN_ARGS` is a number):
 - question: "What next?"

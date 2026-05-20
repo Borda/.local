@@ -414,7 +414,7 @@ All ten agents are available by their full plugin-prefixed name. In spawn direct
 
 **Model**: `opus`
 
-**Not for**: docstrings (use `foundry:doc-scribe`), configuring ruff/mypy (use `foundry:linting-expert`), system design decisions (use `foundry:solution-architect`), test quality analysis (use `foundry:qa-specialist`), performance profiling (use `foundry:perf-optimizer`), ML paper implementations (use `research:scientist`), editing `.claude/` config files (use `foundry:curator`).
+**Not for**: docstrings (use `foundry:doc-scribe`), configuring ruff/mypy (use `foundry:linting-expert`), system design decisions (use `foundry:solution-architect`), test quality analysis (use `foundry:qa-specialist`), performance profiling (use `foundry:perf-optimizer`), ML paper implementations (use `research:scientist`), editing `.claude/` config files (use `foundry:curator`), CI/CD pipeline configuration — GitHub Actions, pre-commit hooks, CI YAML (use `oss:cicd-steward` — requires `oss` plugin).
 
 **Auto-invokes when:** user asks to implement, build, write, modify, or fix code across 3+ files; phrases: "implement", "build", "write the code for", "add feature", "fix this bug". Runs in isolated worktree.
 

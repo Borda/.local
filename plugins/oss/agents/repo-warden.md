@@ -1,6 +1,6 @@
 ---
 name: repo-warden
-description: "Scores an assigned group of vitality axes from a pre-fetched DATA_FILE using the vitality-scoring.md rubric; writes partial scores JSON for assembly by /oss:analyse (vitality mode). Spawned 3× in parallel by /oss:analyse (vitality mode). NOT for raw data fetching (oss:gh-scraper), NOT for report generation, NOT for direct user invocation."
+description: "Scores an assigned group of vitality axes from a pre-fetched DATA_FILE using the vitality-scoring.md rubric; writes partial scores JSON for assembly by /oss:analyse (vitality mode). TRIGGER when: spawned 3× in parallel by /oss:analyse (vitality mode) to score axis groups A, B, or C. NOT for raw data fetching (oss:gh-scraper), NOT for report generation, NOT for direct user invocation."
 tools: Read, Write, Bash
 model: sonnet
 effort: medium
@@ -47,6 +47,7 @@ Determine axes for group:
 - Group C: Axes 3, 9
 
 ```bash
+AXIS_GROUP="$(echo "$AXIS_GROUP" | tr -d '[:space:]')"  # trim whitespace from prompt parsing  # timeout: 5000
 case "$AXIS_GROUP" in
   A) AXES="1 2 5 6" ;;
   B) AXES="4 7 8" ;;
@@ -72,6 +73,10 @@ ANALYSIS_NOW=$(jq -r '.timestamp // empty' "$DATA_FILE" 2>/dev/null | head -1 ||
 
 ## Step 3 — Score Axes
 
+```bash
+[ -f "$_OSS_SHARED/vitality-scoring.md" ] || { echo "[repo-warden] ERROR: vitality-scoring.md not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
+```
+
 Read `$_OSS_SHARED/vitality-scoring.md` fully. Score each axis in assigned group per rubric. Use raw data from Step 2.
 
 **Group A** — any order (all independent; no cross-axis dependency; no internal parallelism needed):
@@ -86,9 +91,9 @@ Read `$_OSS_SHARED/vitality-scoring.md` fully. Score each axis in assigned group
 3. Axis 8 — Security Posture: use `dependabot_alerts` (403-tolerant), dep config signals, SECURITY.md depth; apply partial-scoring formula when Dependabot 403
 
 **Group C** — sequential (Axis 3 FIRST, mandatory):
-1. Axis 3 — Contributor Health: use `contributor_stats` (weeks[] data); filter bots; compute bus_factor, top_contributor_pct, retention_rate; apply 202-fallback from `commits_50` if stats unavailable; after scoring, write weeks[] array to `PARTIAL_FILE` as `axis3_weeks` field (bash variables don't persist across tool calls — always persist via file)
-2. Axis 9 — Trajectory: after Axis 3 complete, score all 4 sub-signals:
-   - 9A (reviewer pool drift): reads `axis3_weeks` from `PARTIAL_FILE` written by Axis 3 (not bash variable); compute shrinkage_ratio from pool_recent vs pool_prior; if Axis 3 used fallback (`axis3_weeks: null`), mark 9A ⚪
+1. Axis 3 — Contributor Health: use `contributor_stats` (weeks[] data); filter bots; compute bus_factor, top_contributor_pct, retention_rate; apply 202-fallback from `commits_50` if stats unavailable; after scoring, write an **intermediate** JSON to `PARTIAL_FILE` with only `{"axis3_weeks": [...]}` (or `{"axis3_weeks": null}` on fallback) — this is temporary passthrough for Axis 9A; Step 4 will overwrite PARTIAL_FILE with the complete final structure. Bash variables don't persist across tool calls — must persist via file.
+2. Axis 9 — Trajectory: after Axis 3 intermediate write complete, score all 4 sub-signals:
+   - 9A (reviewer pool drift): reads `axis3_weeks` from the **intermediate** `PARTIAL_FILE` written by Axis 3 above (not bash variable); compute shrinkage_ratio from pool_recent vs pool_prior; if Axis 3 used fallback (`axis3_weeks: null`), mark 9A ⚪
    - 9B (time-to-merge trend): uses `merged_prs_90d`; filter bots; compute median_30d vs median_90d; trend_ratio
    - 9C (queue staleness depth): uses `open_issues` (reused from JSONL); compute P90 age
    - 9D (commit substance ratio): uses `commits_50`; dep_ratio = dep-bump commits / total
@@ -198,11 +203,12 @@ Return ONLY this JSON as final output:
 
 <notes>
 
-- **⚪ coding**: unavailable axes use `score: null, conf: 0.0, label: "⚪"` in partial file; assembler renormalizes weights over available axes only
-- **Bot filtering**: applies in Axes 3, 4, 7 (checkpoint 7), 9A, 9B, 9D — exclude logins matching `*[bot]` or `*-bot` suffix; use bash pattern matching (`[[ "$login" == *"[bot]"* ]] || [[ "$login" == *"-bot" ]]`) — no jq or python required for filter itself
+- **⚪ coding**: unavailable axes use `score: null, conf: 0.0, label: "⚪"` in partial file; assembler renormalizes weights over available axes only; Group C with 1 of 2 axes ⚪ = 50% scored — treat as ≥ half (cap rule does NOT apply); Group C with both axes ⚪ = 0% scored — return `score: null` for whole group
+- **Bot filtering**: applies in Axes 3, 4, 7 (checkpoint 7), 9A, 9B, 9D — exclude logins matching `*[bot]` or `*-bot` suffix OR matching known-bot names (`pre-commit-ci`, `mergify`, `allcontributors`, `renovate`, `dependabot`); use bash: `[[ "$login" == *"[bot]"* ]] || [[ "$login" == *"-bot" ]] || [[ "$login" == "pre-commit-ci" ]] || [[ "$login" == "mergify" ]] || [[ "$login" == "allcontributors" ]] || [[ "$login" == "renovate" ]] || [[ "$login" == "dependabot" ]]`; note: authoritative bot signal is `user.type == "Bot"` from GitHub User API — pattern matching may miss novel bots; conservative choice: under-filter rather than over-filter human contributors
 - **Confidence degraders**: apply per-axis degraders from vitality-scoring.md § Per-Axis Confidence Thresholds; never inflate above 1.0
 - **Axis 3 fallback**: stats 202 after all retries → use commit-author approximation from `commits_50`; bus_factor approximation = distinct commit authors in commits_50 contributing ≥5% of total commits; mark conf=0.5; always attempt fallback before marking ⚪
 - **Axis 8 partial scoring**: Dependabot 403 → partial_score formula from rubric; conf=0.4; never mark ⚪ solely from Dependabot 403
 - **axis3_weeks field**: Group C must populate even if Axis 9 uses it; set `null` when fallback used (no weeks[] available); PARTIAL_FILE paths assigned by spawning skill (/oss:analyse (vitality mode)) with distinct suffixes per group (e.g., -group-A.json, -group-B.json, -group-C.json) — concurrent writes don't collide
+- **Null substitution**: when any metric used in a signal string is null or unavailable, substitute `"n/a"` — e.g., `"median_pr_response_days: n/a"`; never leave a bare `${null}` or empty substitution in a signal
 
 </notes>

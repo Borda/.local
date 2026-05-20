@@ -20,7 +20,7 @@ NOT for: methodology validation before run (use `/research:judge`); hypothesis g
 Campaign mode only:
 
 ```yaml
-MAX_ITERATIONS:             20 (hard cap for program.md config — values above 20 are silently clamped; ceiling: 50 — only reachable via explicit CLI override, not program.md config)
+MAX_ITERATIONS:             20 (hard cap — program.md values above 20 are silently clamped with a warning; 20 is the effective maximum)
 MAX_CODEX_RUNS:             10 (cost ceiling for --codex Phase 2c — disable Codex once exceeded)
 STUCK_THRESHOLD:            5 consecutive discards → escalation
 GUARD_REWORK_MAX:           2 attempts before revert
@@ -48,9 +48,10 @@ CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  
 
 **Auto-inference keyword heuristics** (when `agent_strategy: auto` or omitted; checked against `## Goal` text AND metric command):
 
-- contains `pytest`, `coverage`, `complexity` → `code` → `foundry:sw-engineer`
-- contains `time`, `latency`, `bench`, `throughput`, `memory` → `perf` → `foundry:perf-optimizer`
+**Precedence order** (first match wins; ML keywords take priority over test-framework keywords):
 - contains `accuracy`, `loss`, `f1`, `auc`, `train`, `val`, `eval` → `ml` → `research:scientist`
+- contains `time`, `latency`, `bench`, `throughput`, `memory` → `perf` → `foundry:perf-optimizer`
+- contains `pytest`, `coverage`, `complexity` → `code` → `foundry:sw-engineer`
 - no keyword match → `perf` (default fallback)
 
 **Stuck escalation sequence** (at STUCK_THRESHOLD consecutive discards):
@@ -101,6 +102,8 @@ Read `${CLAUDE_SKILL_DIR}/modes/hypothesis-pipeline.md`
 ### Step R1: Load / build config
 
 **`--resume` flag detection**: if `--resume` in args, extract optional program.md path. Jump to `## Resume Mode`. Rest of R1 and R2–R7 skipped.
+
+**`--hypothesis <path>` parsing**: if `--hypothesis` in args, extract path token following it. Verify file exists: `[ -f "$HYPOTHESIS_PATH" ]`. If not found: print `! --hypothesis <path>: file not found` and stop. If found: set `hypothesis_override = true`. In R5 Phase 2 (Propose change), replace the oracle-generated hypothesis with the loaded file content — prepend to the ideation agent prompt: "Use this pre-specified hypothesis as your starting hypothesis for iteration N: <contents of HYPOTHESIS_PATH>. Validate, refine, and implement it. Do not generate a new hypothesis from scratch."
 
 **Auto-detect**: first non-flag arg ends in `.md` → parse as program file. Otherwise → text goal.
 
@@ -196,8 +199,8 @@ Run all checks before touching code. Fail fast with clear message:
 **`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:init` (requires `foundry` plugin) from foundry plugin to `.claude/skills/_shared/`). If not found:
 
 ```bash
-# codex-delegation.md is deployed by /foundry:init to .claude/skills/_shared/
-[ -f ".claude/skills/_shared/codex-delegation.md" ] || echo "⚠ .claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:init to install it."
+# codex-delegation.md is deployed by /foundry:init to .claude/skills/_shared/ (requires foundry plugin — if absent, R7 Codex delegation is skipped automatically)
+[ -f ".claude/skills/_shared/codex-delegation.md" ] || echo "⚠ .claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:init (requires foundry plugin) to install it."
 ```
 
 Set `CODEX_DELEGATION_AVAILABLE=true` if found, `false` otherwise. Continue regardless.
@@ -278,7 +281,7 @@ For each iteration `i` from 1 to `max_iterations`:
 | 2 | Propose change | Always — spawn specialist agent to read code, research, investigate, and generate a hypothesis with optional sandbox scripts |
 | 2a | Sandbox validate | `compute: docker` only — run agent's exploratory scripts in Docker sandbox (read-only mount) |
 | 2b | Apply change | `compute: docker` only — agent applies the (validated) proposal to real codebase using Write/Edit tools only; no Bash on codebase |
-| 2c | Codex co-pilot | `--codex` only — **MANDATORY every iteration**; Codex second pass after Phase 2b; must not be skipped |
+| 2c | Codex co-pilot | `--codex` only — required each iteration up to `MAX_CODEX_RUNS`; after cap reached, continue without Codex |
 | 3 | Verify files | Always — check `git diff --stat`; skip to Phase 8 if no files changed (no-op) |
 | 4 | Commit change | Always — stage modified files and commit before verifying metric |
 | 5 | Verify metric | Always — run `metric_cmd` via `compute` mode (local/colab/docker); revert on timeout |
@@ -396,6 +399,15 @@ Read `${CLAUDE_SKILL_DIR}/modes/codex-copilot.md` — contains full Phase 2c log
 
 #### Phase 4 — Commit change
 
+Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentinel TTL set in R5 setup; recompute path because the R5 bash variable is lost between calls:
+
+```bash
+# Refresh commit sentinel — R5 loop can exceed 15-min TTL
+REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
+BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
+touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000
+```
+
 Stage only modified files (never `git add -A`):
 
 ```bash
@@ -406,7 +418,7 @@ git commit -m "experiment(optimize/i<N>): <description>"  # timeout: 90000
 If pre-commit hooks fail:
 
 - Delegate to `foundry:linting-expert`: provide failing hook output and modified files; ask to fix. Max 2 attempts.
-- If still failing after 2 attempts: `git restore --staged <files_modified>` + `git checkout -- <files_modified>` to clean up (`# <files_modified>` = list of files returned by the iteration agent; restricts discard to iteration scope only), append `status: hook-blocked`, continue loop.
+- If still failing after 2 attempts: `git restore --staged <files_modified>` + `git restore <files_modified>` to clean up (`# <files_modified>` = list of files returned by the iteration agent; restricts discard to iteration scope only), append `status: hook-blocked`, continue loop.
 
 #### Phase 5 — Verify metric
 
@@ -429,7 +441,7 @@ No resource limits. Use Bash tool `timeout` parameter (not shell `timeout`): `ti
 
 <!-- Colab assertion: MCP call, not Bash — exempt from the script-file rule; correct as an inline one-liner. -->
 
-If timeout expires: append `status: timeout`, revert via `git revert HEAD --no-edit`, continue loop.
+If timeout expires: refresh sentinel (`touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"`), append `status: timeout`, revert via `git revert HEAD --no-edit`, continue loop.
 
 #### Phase 6 — Run guard
 
@@ -445,8 +457,14 @@ Record pass (exit 0) or fail (non-zero).
 | --- | --- |
 | metric improved AND guard pass | Keep commit. Update `state.json`: `best_metric`, `best_commit`. |
 | metric improved AND guard fail | Rework: re-spawn agent with guard failure output. Max `GUARD_REWORK_MAX` (2) attempts. If still failing: revert. |
-| metric improved AND gain < 0.1% AND change > 50 lines | Discard (simplicity override): `git revert HEAD --no-edit`. |
-| no improvement | Revert: `git revert HEAD --no-edit`. |
+| metric improved AND gain < 0.1% AND change > 50 lines | Refresh sentinel; discard: `git revert HEAD --no-edit`. (Line count computed via `CHANGE_LINES` — see note below table.) |
+| no improvement | Refresh sentinel; revert: `git revert HEAD --no-edit`. |
+
+**Line count computation** (for "gain < 0.1% AND change > 50 lines" row): run before evaluating the condition:
+
+```bash
+CHANGE_LINES=$(git diff --stat HEAD~1..HEAD | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo 0)  # timeout: 3000
+```
 
 `git revert HEAD --no-edit` — never `git reset --hard` (preserves history, not in deny list).
 
@@ -535,7 +553,7 @@ Pre-compute branch before writing: `BRANCH=$(git branch --show-current 2>/dev/nu
 mkdir -p .reports/research  # timeout: 3000
 ```
 
-Write full report to `.reports/research/run-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Do not print to terminal. Anti-overwrite: if file exists, append counter suffix (e.g. `-2.md`): `OUT=".reports/research/run-$BRANCH-$(date +%Y-%m-%d).md"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done`
+Write full report to `.reports/research/run-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Do not print to terminal. Anti-overwrite: if file exists, append counter suffix (e.g. `-2.md`): `OUT=".reports/research/run-$BRANCH-$(date +%Y-%m-%d).md"; BASE="$OUT"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done`
 
 Read `${CLAUDE_SKILL_DIR}/modes/report.md`
 `state.json`: `status = completed`.
@@ -616,7 +634,7 @@ Then re-run with --colab.
 - **Guard/metric scripts protected** — ideation agent must not modify the files referenced in `guard_cmd` or `metric_cmd`; do not include them in `scope_files`. New test files may be created within `scope_files` for coverage improvement campaigns.
 - **JSONL over TSV** — richer structured fields, `jq`-parseable, no delimiter ambiguity; query with `jq -c 'select(.status == "kept")' experiments.jsonl`.
 - **State persistence enables resume** — if loop crashes/times out, `resume` picks up exactly where it stopped.
-- **Safety break**: max iterations = 20; skill never exceeds MAX_ITERATIONS without user override.
+- **Safety break**: max iterations = 20 (hard cap — values above 20 in program.md are silently clamped to 20 with a warning); skill never exceeds MAX_ITERATIONS.
 - **Explicit flags = hard requirements**: all flags (`--colab`, `--compute=docker`, `--codex`, `--researcher`, `--architect`) must be available at R2. If unavailable, stop — never silently degrade.
 - R7 Codex delegation requires `/foundry:init` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `.claude/skills/_shared/`; R7 is silently skipped if absent.
 

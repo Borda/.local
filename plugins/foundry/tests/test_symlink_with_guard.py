@@ -26,7 +26,7 @@ def env(tmp_path: Path) -> tuple[Path, Path]:
     Layout::
 
         tmp/plugin/{rules,skills/curator,TEAM_PROTOCOL.md}
-        tmp/home/.claude/{rules,skills}/
+        tmp/home/.claude/{rules,skills,agents}/
     """
     plugin = tmp_path / "plugin"
     (plugin / "rules").mkdir(parents=True)
@@ -39,6 +39,7 @@ def env(tmp_path: Path) -> tuple[Path, Path]:
     home = tmp_path / "home"
     (home / ".claude" / "rules").mkdir(parents=True)
     (home / ".claude" / "skills").mkdir(parents=True)
+    (home / ".claude" / "agents").mkdir(parents=True)
     return plugin, home
 
 
@@ -133,6 +134,53 @@ class TestCleanup:
         log = cleanup(plugin, home, _MARKER)
 
         assert log == []
+
+    def test_removes_stale_foundry_agent_symlink(self, env: tuple[Path, Path]) -> None:
+        """Foundry-managed agent symlink under a non-current root is removed unconditionally."""
+        plugin, home = env
+        link = home / ".claude" / "agents" / "sw-engineer.md"
+        _ln("/old/borda-ai-rig/foundry/0.10.0/agents/sw-engineer.md", link)
+
+        log = cleanup(plugin, home, _MARKER)
+
+        assert not link.is_symlink()
+        assert "removed obsolete agent: sw-engineer.md" in log
+
+    def test_keeps_non_foundry_agent_symlink(self, env: tuple[Path, Path]) -> None:
+        """Agent symlink pointing outside foundry is left alone (user owns it)."""
+        plugin, home = env
+        link = home / ".claude" / "agents" / "my-agent.md"
+        _ln("/home/user/.claude/agents/my-agent.md", link)
+
+        cleanup(plugin, home, _MARKER)
+
+        assert link.is_symlink()
+
+    def test_keeps_current_version_agent_symlink(self, env: tuple[Path, Path]) -> None:
+        """Agent symlink pointing into the current plugin root is left alone.
+
+        Init never re-creates these, so any link pointing at the current root
+        was placed by something external; leaving it intact gives the operator
+        a clear signal to investigate without silently destroying state.
+        """
+        plugin, home = env
+        link = home / ".claude" / "agents" / "sw-engineer.md"
+        _ln(str(plugin / "agents" / "sw-engineer.md"), link)
+
+        cleanup(plugin, home, _MARKER)
+
+        assert link.is_symlink()
+
+    def test_keeps_real_agent_file(self, env: tuple[Path, Path]) -> None:
+        """Real (non-symlink) files under ~/.claude/agents/ are never deleted."""
+        plugin, home = env
+        real = home / ".claude" / "agents" / "user.md"
+        real.write_text("user-authored\n")
+
+        cleanup(plugin, home, _MARKER)
+
+        assert real.is_file()
+        assert not real.is_symlink()
 
 
 class TestScan:

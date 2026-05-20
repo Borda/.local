@@ -3,6 +3,7 @@ name: sweep
 description: "Non-interactive end-to-end pipeline — auto-configure program.md (accept defaults), run judge+refine loop (up to 3 iterations), then run the campaign. Single command from goal to result."
 argument-hint: '"<goal>" [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--skip-validation] [--out <path>]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
+effort: high
 disable-model-invocation: true
 ---
 
@@ -59,6 +60,15 @@ Extract flags:
 - `--skip-validation` — passed to judge step (S3)
 - `--out <path>` — optional: write program.md here instead of project root
 
+**`--out` validation**: if `--out <path>` provided, validate path before proceeding:
+
+```bash
+if [ -n "$OUT" ] && [[ "$OUT" == *".."* ]]; then
+  echo "sweep: invalid --out path (path traversal not allowed): $OUT" >&2
+  exit 2
+fi
+```
+
 **Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--journal\`, \`--hypothesis\`, \`--skip-validation\`, \`--out\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 If `<goal>` missing or empty, stop:
@@ -68,13 +78,15 @@ If `<goal>` missing or empty, stop:
 Usage: /research:sweep "goal description" [--flags]
 ```
 
+If extracted `<goal>` starts with `--`, treat as flag misparse — stop with `! Misparse: goal starts with '--'. Did you forget to quote the goal or omit it? Usage: /research:sweep "goal description" [--flags]`
+
 ### Step S2: Non-interactive plan
 
 First, `Read $_RESEARCH_SKILLS/plan/SKILL.md` to load the plan mode step definitions, then execute steps P-P2 and P-P3 from `$_RESEARCH_SKILLS/plan/SKILL.md` (`$_RESEARCH_SKILLS` resolved above S1) (P-P0 skipped — `<goal>` always text string; P-P1 skipped — goal provided explicitly) with overrides:
 
 - **P-P2 (config presentation)**: Accept all auto-detected defaults without prompting. Print proposed config as informational block prefixed `sweep: auto-config →` — do NOT wait for confirmation.
 - If `--colab[=HW]` or `--compute=colab` passed, write `compute: colab` (and `colab_hw: <HW>` if provided) into Config block.
-- **scope_files**: derive from goal string — extract domain-relevant file patterns (e.g. goal mentioning "neural network" → `["*.py", "models/**", "train*.py"]`; goal mentioning "config" or "YAML" → `["*.yaml", "*.yml", "*.json"]`). Default `["**/*.py"]` only when goal provides no domain signals.
+- **scope_files**: derive from goal string — extract domain-relevant file patterns (e.g. goal mentioning "neural network" → `["*.py", "models/**", "train*.py"]`; goal mentioning "config" or "YAML" → `["*.yaml", "*.yml", "*.json"]`). Default `["**/*.py"]` only when goal provides no domain signals. **Multiple keyword matches**: merge (union) all matched patterns. Always include the derived `scope_files` in the `sweep: auto-config →` printout so users can verify before run — users cannot correct silently wrong scope without seeing it.
 - **agent_strategy**: set based on active flags — `--team` + `--architect` → `"dual-agent: researcher+architect"`; `--team` only → `"team"`; `--researcher` → `"researcher"`; none → `"default"`. Never leave `null` when flags are present.
 - **P-P3 (write program.md)**: Write to `<--out path>` if provided; else `program.md` at project root.
   - If output path exists: rename to `<path>.<UTC-ISO-safe (dashes)>.bak` (e.g., `program.md.2026-04-26T14-00-00Z.bak`), proceed — no confirmation in sweep mode. Timestamped suffix prevents overwrite on successive runs.
@@ -109,7 +121,7 @@ Repeat up to `MAX_REFINE` times:
    - If `REFINE_ITER < MAX_REFINE`:
      - Read `JUDGE_REPORT`. Extract `### Required Changes` section.
      - If `### Required Changes` section absent: print `sweep: judge report missing Required Changes section — re-judging without edits` and continue loop (re-judge with unchanged file).
-     - If present: apply each fix to program file via Edit tool. Count applied fixes as `N_FIXES`. Print: `sweep: applied N_FIXES fix(es) to <program path> — re-judging`
+     - If present: apply each fix to program file via Edit tool. Count applied fixes as `N_FIXES`; track failures as `N_FAILS`. If any Edit call fails (old_string not found or not unique): increment `N_FAILS`, continue remaining fixes. After all fixes attempted: if `N_FAILS > 0`, print `⚠ N_FAILS edit(s) failed — file may have changed since judge run; re-judging with partial fixes (N_FIXES applied)`. If `N_FIXES == 0` AND `N_FAILS > 0`: print `! All edits failed — re-judging without changes (edit conflict; check program file manually)`. Print: `sweep: applied N_FIXES fix(es) to <program path> — re-judging`
      - Continue next iteration (loop item #1 will re-judge).
    - If `REFINE_ITER == MAX_REFINE` — exit loop, outcome `unresolved`.
 
@@ -159,7 +171,7 @@ sweep: complete — plan → judge → run pipeline finished
 
 - **`.bak` backup behavior** (S2): when output path exists, sweep renames to `<path>.<UTC-ISO-safe (dashes)>.bak` before overwriting. Timestamped suffix prevents collision on successive runs. `.bak` = undo path for S3 edits.
 - **`--journal` and `--hypothesis` forwarded when present**: both flags pass through to S5 verbatim; sweep does not strip them. `--journal` requires `--researcher` or `--architect` (validated at run R2). `--hypothesis <path>` preloads the hypothesis queue.
-- **`--team` and interactivity**: sweep non-interactive except when `--team` active. Team mode Phase B presents user confirmation gate before Phase C — sweep pauses and waits. Expected; sweep cannot bypass Phase B gate.
+- **`--team` and interactivity**: sweep non-interactive except when `--team` active. Team mode Phase B presents user confirmation gate before Phase C — sweep pauses and waits. Expected; sweep cannot bypass Phase B gate. In automated/CI contexts where interaction is impossible, avoid `--team` flag or pre-confirm via the gate prompt manually; there is no `--auto` flag to suppress Phase B — this is by design (Phase B reviews potentially risky parallel agent decisions).
 - **`--skip-validation`**: passes through to judge step (S3). Useful for cross-machine workflows where metric/guard commands run only on target machine.
 - **Metric direction conventions** (S2 auto-config): minimize for loss/error/latency metrics (loss, error_rate, mse, mae, latency, time); maximize for quality metrics (accuracy, f1, precision, recall, auc, throughput). When goal string is ambiguous, default to `minimize` and note assumption in config comment.
 

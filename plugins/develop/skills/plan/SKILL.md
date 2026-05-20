@@ -5,7 +5,6 @@ argument-hint: "<goal> [--no-challenge] [--codemap] [--semble]"
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
-when_to_use: "Analysis and scoping before non-trivial feature, fix, or refactor — produces plan file only, no code. Also auto-invoked inline by feature/fix/refactor for medium/large complexity."
 ---
 
 <objective>
@@ -13,7 +12,7 @@ when_to_use: "Analysis and scoping before non-trivial feature, fix, or refactor 
 Analysis-only. Produces structured plan, no code. Use to understand scope, risks, effort before `/develop:feature`, `/develop:fix`, `/develop:refactor`.
 
 NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage` (requires foundry plugin)).
-- non-Python projects (JS/TS/Go/Rust) — applies to downstream develop skills which assume pytest; use language-native toolchain
+- non-Python-only projects (JS/TS/Go/Rust with no Python source) — downstream develop skills assume pytest; planning analysis itself is language-agnostic but downstream implementation will require a language-native toolchain
 - mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature
 
 </objective>
@@ -73,6 +72,8 @@ Agent returns findings inline (no file handoff — output short).
 
 **Breaking change gate**: if agent lists any breaking change in risks — stop before writing plan. Call `AskUserQuestion` per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body does NOT count — `AskUserQuestion` mandatory per `communication.md`.
 
+Breaking change criteria — a change is breaking when any of these apply: removed public API (function, class, method, or module), changed function signatures (parameter names, types, order, or defaults), changed config key names or schema, changed output format (return type, serialization structure, CLI output shape).
+
 ## Step 2: Structured plan
 
 Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-separated (e.g. `"improve caching in data loader"` -> `plan_improve-caching-data-loader.md`). If `.plans/active/<slug>` already exists, append counter suffix (`-2`, `-3`, etc.) before writing — never silently overwrite. Store full path as `PLAN_FILE` — used in Steps 3 and Final output.
@@ -129,10 +130,10 @@ Each agent receives only plan file path and role — no conversation history, no
 
 **Parse-failure handling**: agent responses may not be valid JSON (especially fallback `general-purpose` agents that wrap JSON in prose). Before processing:
 
-1. Attempt to extract JSON object using pattern `\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}` from response
-   **Caveat**: regex matches first `{...}` substring — if response contains example JSON in prose before real response (e.g., "here is the format: `{...}` and my result: `{...}`"), extract LAST match, not first. Prefer matching the `"a":"<ROLE>"` pattern as anchor.
+1. Attempt to extract JSON object: try `python -c "import json, re, sys; t=sys.argv[1]; matches=[m for m in re.finditer(r'\{', t)]; [json.loads(t[m.start():]) for m in reversed(matches)]"` — use last valid `json.loads()` parse starting from any `{`. Fallback: regex `\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}` handles one nesting level (warning: breaks on strings containing `{` or `}`).
+   **Caveat**: prefer matching the `"a":"<ROLE>"` pattern as anchor when multiple candidates.
 2. If extraction succeeds: use extracted object
-3. If extraction fails entirely: treat as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
+3. If extraction fails entirely: log `⚠ non-JSON plan response — falling back to prose extraction`; treat as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
 
 Agents return inline (verdicts ~150 bytes — no file handoff). Collect all results:
 
@@ -149,7 +150,7 @@ For each blocker or open question:
 `[ $ITER -ge 3 ] && { echo "Max feasibility iterations reached — escalating to user"; break; }`
 `ITER=$((ITER+1))`
 
-1. **Attempt autonomous resolution** — search codebase, read relevant files, re-read goal. Fetch primary-source docs for relevant issues (official docs, RFCs, library changelogs, migration guides) via WebFetch — known URLs only; WebFetch fetches specific URL, does not search. If answer determinable from any source, update `<PLAN_FILE>` and mark resolved.
+1. **Attempt autonomous resolution** — search codebase, read relevant files, re-read goal. Fetch primary-source docs for relevant issues (official docs, RFCs, library changelogs, migration guides) via WebFetch — known URLs only; WebFetch fetches specific URL, does not search. Before updating `<PLAN_FILE>` with any WebFetch result: verify per quality-gates.md link verification (Fetch+Read+Match) — do not incorporate content from a URL that hasn't been read and matched. If answer determinable from any verified source, update `<PLAN_FILE>` and mark resolved.
 2. **Re-query raising agent** — send only resolved item: `{"a":"<ROLE>","resolved":"<item>","answer":"<resolution>"}`. If agent returns `ok: true` -> resolved; remove from blockers list.
 3. After all resolvable items cleared, re-check: if all agents `ok: true` -> `✓ agents ready`.
 
@@ -172,6 +173,11 @@ Do not escalate: items resolvable from codebase, items that are risks (not block
 ## Step 4: Challenger gate
 
 **Skip if `CHALLENGE_ENABLED=false`.**
+
+```bash
+# Validate plan file exists before spawning challenger
+[ -f "$PLAN_FILE" ] || { echo "plan: PLAN_FILE not found: $PLAN_FILE" >&2; exit 1; }
+```
 
 Spawn `foundry:challenger` to adversarially review written plan before user commits:
 

@@ -468,3 +468,35 @@ fi
 Severity: > 100 KB total or > 10 KB single file = **medium**; 50–100 KB total or 5–10 KB single file = **low**. **Report only** — fix = split or remove content from rules files; never auto-collapse.
 
 Note: `agents/` and `skills/` lazy-loaded — never flag for token overhead.
+
+## Check 39 — Plugin version freeze
+
+`plugins/CLAUDE.md` versioning policy requires bumping `plugin.json` version in every commit that modifies plugin files. A frozen version misrepresents what changed and defeats changelog reconstruction.
+
+Skip if `LOCAL_MODE != true` (no git history accessible).
+
+```bash
+printf "=== Check 39: Plugin version freeze ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check 39 skipped in non-local mode\n"
+else
+    for plugin_dir in plugins/*/; do
+        plugin_name=$(basename "$plugin_dir")
+        plugin_json="$plugin_dir.claude-plugin/plugin.json"
+        [ -f "$plugin_json" ] || continue
+        disk_ver=$(python -c "import json; print(json.load(open('$plugin_json'))['version'])" 2>/dev/null)
+        head_ver=$(git show HEAD:"$plugin_json" 2>/dev/null | python -c "import sys,json; print(json.load(sys.stdin)['version'])" 2>/dev/null)
+        [ -z "$head_ver" ] && continue  # new plugin, no HEAD yet
+        if [ "$disk_ver" = "$head_ver" ]; then
+            changed=$(git diff --name-only HEAD -- "$plugin_dir" 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$changed" -gt 0 ]; then
+                printf "C39-MEDIUM: plugin '%s' has %s modified file(s) but version unchanged (%s)\n" \
+                    "$plugin_name" "$changed" "$disk_ver"
+            fi
+        fi
+    done  # timeout: 10000
+fi
+```
+
+**Severity**: medium — commit mislabeling; no runtime breakage, but release notes and changelog reconstruction are unreliable.
+Fix: bump `plugin.json` patch or minor version per `plugins/CLAUDE.md` versioning policy before committing.

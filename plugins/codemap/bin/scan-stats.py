@@ -4,14 +4,24 @@ import os
 import shlex
 import subprocess
 import sys
+from pathlib import Path
 
 
 def _resolve_root(scan_args: str, timeout: int = 15) -> str:
-    """Return project root: --root arg → git toplevel → cwd."""
+    """Return project root: --root arg → git toplevel → cwd.
+
+    --root is validated against CWD to block directory traversal via SCAN_ARGS.
+    """
     with contextlib.suppress(Exception):
         args = shlex.split(scan_args) if scan_args else []
         i = args.index("--root")
-        return os.path.abspath(args[i + 1])
+        root = args[i + 1]
+        abs_root = Path(root).resolve()
+        cwd = Path.cwd()
+        if not abs_root.is_relative_to(cwd):
+            print(f"scan-stats: --root path outside project root: {abs_root}", file=sys.stderr)
+            sys.exit(2)
+        return str(abs_root)
 
     try:
         return (

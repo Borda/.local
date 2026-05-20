@@ -49,7 +49,7 @@ class TestParseJqArgs:
     def test_non_arg_token_passthrough(self) -> None:
         """Unknown tokens (e.g. ``--argjson``) pass through unchanged."""
         extras = ["--argjson", "n", "42"]
-        # Non-``--arg`` token is treated as opaque single-token passthrough.
+        # --argjson is in _ALLOWED_FLAGS → passthrough without ValueError.
         assert jq_write._parse_jq_args(extras) == extras
 
 

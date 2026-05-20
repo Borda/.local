@@ -12,5 +12,11 @@ set -euo pipefail
 PYTEST_CMD="${1:-pytest}"
 TARGET="${2:-.}"
 
-# shellcheck disable=SC2086 -- $PYTEST_CMD intentionally word-split (may be "uv run pytest").
+# Validate PYTEST_CMD against allowlist before word-split exec.
+case "$PYTEST_CMD" in
+    pytest|"uv run pytest"|"python -m pytest") ;;
+    *) echo "pytest-gate: rejected unsafe PYTEST_CMD: $PYTEST_CMD" >&2; exit 2 ;;
+esac
+# SECURITY: PYTEST_CMD validated against allowlist above
+# shellcheck disable=SC2086 -- allowlisted PYTEST_CMD intentionally word-split.
 exec $PYTEST_CMD --tb=short "$TARGET" -v

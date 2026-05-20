@@ -34,6 +34,33 @@ _DEFAULT_WEIGHTS: dict[int, float] = {
     9: 0.08,
 }
 
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB — F-10 guard against runaway reads
+
+
+def _read_text_guarded(path: Path) -> str:
+    """Read text file after enforcing a 10 MB size cap.
+
+    Args:
+        path: Filesystem path to read.
+
+    Returns:
+        File contents as string.
+
+    Raises:
+        ValueError: when file exceeds ``_MAX_FILE_SIZE`` bytes.
+
+    Examples:
+        >>> import tempfile, pathlib
+        >>> tmp = pathlib.Path(tempfile.mktemp(suffix=".txt"))
+        >>> _ = tmp.write_text("hello")
+        >>> _read_text_guarded(tmp)
+        'hello'
+        >>> tmp.unlink()
+    """
+    if path.stat().st_size > _MAX_FILE_SIZE:
+        raise ValueError(f"File too large ({path.stat().st_size} bytes): {path}")
+    return path.read_text()
+
 
 def load_weights(scoring_file: Path) -> dict[int, float]:
     """Load per-axis weights from the vitality-scoring.md rubric table.
@@ -58,11 +85,11 @@ def load_weights(scoring_file: Path) -> dict[int, float]:
     """
     weights: dict[int, float] = {}
     try:
-        for line in scoring_file.read_text().splitlines():
+        for line in _read_text_guarded(scoring_file).splitlines():
             m = re.match(r"\|\s*(\d+)\s+[^|]+\|\s*(0\.\d+)\s*\|", line)
             if m:
                 weights[int(m.group(1))] = float(m.group(2))
-    except OSError:
+    except (OSError, ValueError):
         pass
     return weights if len(weights) == 9 else _DEFAULT_WEIGHTS.copy()
 
@@ -95,7 +122,7 @@ def assemble_scores(
 
     axes: dict[str, dict] = {}
     for path in (partial_a, partial_b, partial_c):
-        d = json.loads(path.read_text())
+        d = json.loads(_read_text_guarded(path))
         axes.update(d["axes"])
 
     available = {k: v for k, v in axes.items() if v.get("label") != "⚪" and v.get("score") is not None}
@@ -105,8 +132,8 @@ def assemble_scores(
     conf_vals = [v["conf"] for v in available.values() if v.get("conf", 0) > 0]
     overall_conf = sum(conf_vals) / len(conf_vals) if conf_vals else 0.0
 
-    partial_c_data = json.loads(partial_c.read_text())
-    partial_a_data = json.loads(partial_a.read_text())
+    partial_c_data = json.loads(_read_text_guarded(partial_c))
+    partial_a_data = json.loads(_read_text_guarded(partial_a))
 
     return {
         "analysis_now": partial_a_data["scored_at"],
@@ -149,7 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = assemble_scores(partial_a, partial_b, partial_c, scoring_file)
         scores_file.write_text(json.dumps(result, indent=2))
-    except (OSError, json.JSONDecodeError, KeyError) as e:
+    except (OSError, ValueError, json.JSONDecodeError, KeyError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 

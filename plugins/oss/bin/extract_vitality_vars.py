@@ -26,6 +26,33 @@ import shlex
 import sys
 from pathlib import Path
 
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB — F-10 guard against runaway reads
+
+
+def _read_text_guarded(path: Path) -> str:
+    """Read text file after enforcing a 10 MB size cap.
+
+    Args:
+        path: Filesystem path to read.
+
+    Returns:
+        File contents as string.
+
+    Raises:
+        ValueError: when file exceeds ``_MAX_FILE_SIZE`` bytes.
+
+    Examples:
+        >>> import tempfile, pathlib
+        >>> tmp = pathlib.Path(tempfile.mktemp(suffix=".txt"))
+        >>> _ = tmp.write_text("hello")
+        >>> _read_text_guarded(tmp)
+        'hello'
+        >>> tmp.unlink()
+    """
+    if path.stat().st_size > _MAX_FILE_SIZE:
+        raise ValueError(f"File too large ({path.stat().st_size} bytes): {path}")
+    return path.read_text()
+
 
 def extract_vars(scores: dict) -> dict[str, str]:
     """Extract shell variable values from an assembled vitality scores dict.
@@ -125,8 +152,8 @@ def main(argv: list[str] | None = None) -> int:
 
     scores_file = Path(args[0])
     try:
-        scores = json.loads(scores_file.read_text())
-    except (OSError, json.JSONDecodeError) as e:
+        scores = json.loads(_read_text_guarded(scores_file))
+    except (OSError, ValueError, json.JSONDecodeError) as e:
         print(f"Error reading {scores_file}: {e}", file=sys.stderr)
         return 1
 

@@ -33,9 +33,9 @@ For each skill in domain table (after exclusions), spawn one `general-purpose` p
 
 For skill targets (target name starts with `/`): spawn `general-purpose` subagent with skill's `SKILL.md` content prepended as context, running against synthetic input from problem. Pipeline template write-and-acknowledge pattern still applies.
 
-For mode-specific targets (`/research:plan`, `/research:judge`): prepend relevant mode file as context instead of full `SKILL.md`. Resolve skill file via installed path first, falling back to source-tree path:
-- `/research:plan`: `ls ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/plan/SKILL.md 2>/dev/null | sort -V | tail -1` — fallback: `plugins/research/skills/plan/SKILL.md`
-- `/research:judge`: `ls ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/judge/SKILL.md 2>/dev/null | sort -V | tail -1` — fallback: `plugins/research/skills/judge/SKILL.md`
+For mode-specific targets (`/research:plan`, `/research:judge`): prepend relevant mode file as context instead of full `SKILL.md`. Resolve skill file via registry first, falling back to source-tree path:
+- `/research:plan`: `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/get_plugin_install_path.py" borda-ai-rig research 2>/dev/null` → append `/skills/plan/SKILL.md`; fallback: `plugins/research/skills/plan/SKILL.md`
+- `/research:judge`: same helper → append `/skills/judge/SKILL.md`; fallback: `plugins/research/skills/judge/SKILL.md`
 
 Read resolved path (plan wizard steps P-P0–P-P3 for `/research:plan`; steps J1–J6 for `/research:judge`). `<TARGET>` substitution uses kebab form without leading slash (e.g. `research-plan`, `research-judge`).
 

@@ -190,3 +190,43 @@ class TestMainBadArgs:
         with pytest.raises(SystemExit) as exc:
             health_sentinel.main(["frobnicate"])
         assert exc.value.code == 2
+
+
+class TestMainSkillIdValidation:
+    """main('start', ...): skill_id allowlist — only [a-zA-Z0-9_-]+ accepted."""
+
+    @pytest.mark.parametrize(
+        "skill_id",
+        [
+            "a;b",
+            "../traverse",
+            "rm -rf /",
+            "$(cmd)",
+            "",
+            " spaces",
+        ],
+    )
+    def test_invalid_skill_id_returns_2(
+        self,
+        skill_id: str,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Disallowed chars in skill_id → exit 2, 'invalid skill_id' in stderr."""
+        rc = health_sentinel.main(["start", skill_id])
+        assert rc == 2
+        assert "invalid skill_id" in capsys.readouterr().err
+
+    def test_valid_skill_id_accepted(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Valid skill_id (alphanum + _ -) passes validation and creates sentinel."""
+        real_create = health_sentinel.create_sentinel
+
+        def fixed_create(sid: str) -> tuple[int, Path]:
+            return real_create(sid, tmp_dir=tmp_path, now=1700000000)
+
+        monkeypatch.setattr(health_sentinel, "create_sentinel", fixed_create)
+        rc = health_sentinel.main(["start", "valid-skill_1"])
+        assert rc == 0

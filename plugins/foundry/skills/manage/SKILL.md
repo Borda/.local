@@ -1,6 +1,6 @@
 ---
 name: manage
-description: "Create, update, or delete agents, skills, rules, and hooks with full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing code changes (use develop:feature or develop:fix — requires `develop` plugin)."
+description: "Create, update, or delete agents, skills, rules, and hooks with full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing application source code changes outside `.claude/` (use develop:feature or develop:fix — requires `develop` plugin)."
 argument-hint: 'create <agent|skill|rule> <name> "desc" | update <name> [new-name|"change"|spec.md] | delete <name> | add perm <rule> "desc" "use-case" | remove perm <rule>'
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
@@ -190,7 +190,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 
 1. Fetch latest Claude Code agent frontmatter schema:
 
-   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`" <!-- URL unverified — verify at: https://code.claude.com/docs/en/sub-agents -->
+   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
    **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
    ```bash
@@ -243,7 +243,7 @@ Every 5 min: `find .claude/agents -newer "$SENTINEL" -name "<name>.md" | wc -l` 
 
 1. Fetch latest Claude Code skill frontmatter schema:
 
-   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-skill-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-skill-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`" <!-- URL unverified — verify at: https://code.claude.com/docs/en/skills -->
+   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-skill-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-skill-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
    **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
    ```bash
@@ -482,7 +482,7 @@ jq --arg hook "$HOOK_NAME" '
     .hooks //= {}
     | .hooks |= with_entries(
         .value |= map(
-            .hooks |= map(select((.command // "") | test("/" + $hook + "\\.js"; "i") | not))
+            .hooks |= map(select((.command // "") | test("\\.claude/hooks/" + $hook + "\\.js"; "i") | not))
         )
         | .value |= map(select((.hooks // []) | length > 0))
     )
@@ -505,6 +505,9 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
 
    - `WebSearch` → `## Web`
    - `WebFetch(domain:...)` → `## WebFetch — allowed domains`
+   - `WebFetch` (bare, no domain) → `## WebFetch — allowed domains`
+   - `Agent(subagent_type:*)` → `## Shell utilities` (agent dispatch rules)
+   - `mcp__*` → `## Shell utilities` (MCP tool rules)
    - `Bash(gh ...)` → `## GitHub CLI — read-only`
    - `Bash(git log:*)`, `Bash(git show:*)`, `Bash(git diff:*)`, `Bash(git rev-*:*)`, `Bash(git ls-*:*)`, `Bash(git -C:*)`, `Bash(git branch:*)`, `Bash(git tag:*)`, `Bash(git status:*)`, `Bash(git describe:*)`, `Bash(git shortlog:*)` → `## Git — read-only`
    - `Bash(git add:*)`, `Bash(git checkout:*)`, `Bash(git stash:*)`, `Bash(git restore:*)`, `Bash(git clean:*)`, `Bash(git apply:*)` → `## Git — local write`

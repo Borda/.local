@@ -19,11 +19,13 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 HOOK_MARKER = "# codemap: incremental"
+_VALID_PLUGIN_ROOT_RE = re.compile(r"^[a-zA-Z0-9_./-]+$")
 
 
 def _make_hook_body(plugin_root: str | None) -> str:
@@ -37,6 +39,11 @@ def _make_hook_body(plugin_root: str | None) -> str:
     Returns:
         Multi-line shell fragment starting with a newline (suitable for appending).
 
+    Raises:
+        ValueError: if ``plugin_root`` contains characters outside ``[a-zA-Z0-9_./-]`` — only
+            this charset is safe inside double-quoted shell strings; anything else allows command
+            injection via the embedded hook body.
+
     Examples:
         >>> body = _make_hook_body(None)
         >>> "command -v scan-index" in body
@@ -47,6 +54,8 @@ def _make_hook_body(plugin_root: str | None) -> str:
         >>> "command -v scan-index" in body_abs  # fallback still present
         True
     """
+    if plugin_root and not _VALID_PLUGIN_ROOT_RE.match(str(plugin_root)):
+        raise ValueError(f"plugin_root contains disallowed characters (only a-zA-Z0-9_./- allowed): {plugin_root}")
     if plugin_root:
         scan = f"{plugin_root}/bin/scan-index"
         return (

@@ -1,7 +1,6 @@
 ---
 name: integration
 description: "Manage codemap integration — 'check' audits installation health (scan-query reachable, index fresh, injection present), 'init' onboards codemap by discovering skills/agents, recommending injection sites, and wiring them in."
-when_to_use: "Use when setting up or configuring codemap integration for a project repository. SKIP when codemap is already configured."
 argument-hint: "check | init [--approve]  # --approve: non-interactive, auto-applies all High+Medium injection recommendations and installs post-commit hook"
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
@@ -26,7 +25,7 @@ Arguments: `check` (no args) or `init [--approve]` — `--approve` auto-applies 
 - **$ARGUMENTS**: optional — one of:
   - Omitted or `check` — run diagnostic; print health status for all codemap integration points
   - `init` — interactive onboarding: build index if missing, discover skills/agents, recommend injection sites, wire in selected files
-  - `init --approve` — non-interactive; auto-applies all High+Medium injection recommendations and installs post-commit hook without prompting
+  - `init --approve` — non-interactive; auto-applies all High+Medium injection recommendations and installs post-commit hook without prompting. **⚠ Scope warning**: injects into ALL High+Medium-scored files across all installed plugins (cache files — see I2/I5 warning). Recommended: run `init` (interactive) first to review the candidate list before using `--approve` for subsequent runs.
 
 </inputs>
 
@@ -145,16 +144,18 @@ If **a** (or auto-approved): verify binary exists first, then run scanner:
 
 ```bash
 # timeout: 5000
-[ -x "${CLAUDE_PLUGIN_ROOT}/bin/scan-index" ] || { printf "✗ scan-index not found at ${CLAUDE_PLUGIN_ROOT}/bin/scan-index\nTry: /codemap:scan to install and rebuild.\n"; exit 1; }
+[ -x "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" ] || { printf "✗ scan-index not found at ${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index\nTry: /codemap:scan to install and rebuild.\n"; exit 1; }
 # timeout: 360000
-${CLAUDE_PLUGIN_ROOT}/bin/scan-index
+${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index
 ```
 
 Report result (module count, degraded count). If **b**: note "Proceeding without index — recommendations based on skill purpose only, not module count."
 
 ### I2 — Discover installed skills and agents
 
-Read `~/.claude/plugins/installed_plugins.json` (fallback: glob `~/.claude/plugins/cache/*/*/` if file absent). For each plugin's `installPath`, glob:
+Read `~/.claude/plugins/installed_plugins.json` (Claude Code internal plugin registry — format may change across versions; fallback: glob `~/.claude/plugins/cache/*/*/` if file absent or unreadable). For each plugin's `installPath`, glob:
+
+> **⚠ Cache-mutation warning**: files discovered via `installPath` are in the plugin cache (`~/.claude/plugins/cache/`). Edits made by I5 to these files are overwritten on the next `claude plugin install` or upgrade for that plugin. For durable injection that survives upgrades, create a project-local override in `.claude/agents/` or `.claude/skills/` first, then inject into the override copy.
 
 - `skills/*/SKILL.md` — skill files
 - `agents/*.md` — agent files
@@ -198,7 +199,7 @@ Codemap injection candidates for: $PROJ
   —       oss:release          SKIP    release artifact; no code traversal
 ```
 
-Use `AskUserQuestion`:
+Call `AskUserQuestion` tool with:
 
 ```text
 Which skills/agents should I add codemap injection to?
@@ -207,6 +208,8 @@ Reply with letters (e.g. "a b"), "all" (all High+Medium), or "none".
 ```
 
 ### I5 — Wire in the injection block
+
+**⚠ --approve scope guard**: when running in `--approve` mode, restrict auto-injection to files under `$CLAUDE_PLUGIN_ROOT` only — skip files from other plugins in `~/.claude/plugins/cache/` that appear in the candidate list. Files from other plugins require explicit interactive confirmation; `--approve` is scoped to the current project's plugin only. In interactive mode, present all candidates but highlight cache-path files with ⚠ to remind user they affect all projects.
 
 Per selected file, determine insertion point and content:
 
@@ -259,7 +262,9 @@ b) Skip — I'll run /codemap:scan or /codemap:scan --incremental manually
 
 ### I5b — Write hook file
 
-If **a** (or auto-approved): write `.git/hooks/post-commit`. Idempotent — check for `# codemap: incremental` marker before writing:
+If **a** (or auto-approved): write `.git/hooks/post-commit`. Idempotent — check for `# codemap: incremental` marker before writing.
+
+> **Path-baking note**: the hook bakes `CLAUDE_PLUGIN_ROOT` at install time. After a codemap version upgrade (`claude plugin install codemap@borda-ai-rig`), the baked path becomes stale — the hook falls back to `command -v scan-index` in that case. Re-run `/codemap:integration init` after upgrading codemap to refresh the hook path.
 
 ```bash
 # timeout: 5000

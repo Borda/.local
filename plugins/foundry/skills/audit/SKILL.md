@@ -235,7 +235,7 @@ Spawn **foundry:curator** agents in batches of up to `BATCH_SIZE` (grouping algo
 2. Include the disk inventory from Step 2 (agent/skill list for cross-reference validation)
 3. End with:
 
-> "Write your FULL findings (all severity levels) to `<RUN_DIR>/<file-slug>.md` using the Write tool — where `<file-slug>` is a unique identifier combining plugin prefix and filename (e.g. `foundry-shepherd.md`, `oss-analyse-SKILL.md`, `develop-fix-SKILL.md`) to avoid collisions between cross-plugin files sharing the same basename. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/<file-slug>.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<filename>: N critical, N high, N medium, N low\"}`"
+> "Write your FULL findings (all severity levels) to `<RUN_DIR>/<file-slug>.md` using the Write tool — where `<file-slug>` is a unique identifier combining plugin prefix and filename (e.g. `foundry-shepherd.md`, `oss-analyse-SKILL.md`, `develop-fix-SKILL.md`) to avoid collisions between cross-plugin files sharing the same basename. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/<file-slug>.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"<filename>: N critical, N high, N medium, N low\"}`"
 
 Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique slug (e.g. `foundry-shepherd`, `oss-analyse-SKILL`, `develop-fix-SKILL`). Slug chars: `[a-zA-Z0-9-]` only — no slashes, spaces, or dots.
 
@@ -256,21 +256,21 @@ Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$AUDIT_CHECKPOINT" -ty
 
 ## Step 4: System-wide checks
 
-> **Full implementation instructions** are split across 4 scope files in `$AUDIT_TPL/` (resolved in Pre-flight). Read only the file(s) for the active scope at the start of this step — do not read all 4 files unless running a full sweep.
+> **Full implementation instructions** are split across 5 scope files in `$AUDIT_TPL/` (resolved in Pre-flight). Read only the file(s) for the active scope at the start of this step — do not read all 5 files unless running a full sweep.
 >
 > | Scope | File(s) to read |
 > | --- | --- |
-> | `setup` | `checks-setup.md` + `checks-install.md` (Checks 1–11, I1–I3) |
+> | `setup` | `checks-setup.md` (Checks 1–11, 39) + `checks-install.md` (I1–I3) + `checks-security.md` (Check 37) |
 > | `plugin` | `checks-setup.md` (Checks 7, 8 only) |
-> | `plugins` | `checks-setup.md` (Checks 7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 29) + checks 32, 32d, 33 + `checks-install.md` (R1, R2, R3 — LOCAL_MODE only) |
+> | `plugins` | `checks-setup.md` (7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 29) + checks 32, 32d, 33, 38, 40 + `checks-install.md` (R1–R5 — LOCAL_MODE) + `checks-security.md` (35, 36, 37) |
 > | `plugins <name>` | same as `plugins` — scoped to one plugin directory |
-> | `agents` | `checks-agents.md` + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) + `checks-skills.md` (Check 22 only) |
-> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) |
+> | `agents` | `checks-agents.md` + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) + `checks-skills.md` (22, 40 only) + `checks-security.md` (35, 36) |
+> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33, 38, 40) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) + `checks-security.md` (35–37) |
 > | `rules` | `checks-shared.md` (run only: 18, 12, 13, 29) + `checks-skills.md` (32c only) |
 > | `communication` | `checks-shared.md` (run only: 15, 16, 12, 13, 29) |
-> | No scope (full) | all 4 files |
+> | No scope (full) | all 5 files |
 
-**Delegation for full-sweep runs**: for full-sweep (no scope), spawn dedicated `foundry:curator` per scope group, passing template file path and RUN_DIR: agents-checks (reads `checks-agents.md` + relevant `checks-shared.md`), skills-checks (reads `checks-skills.md` + relevant `checks-shared.md`), shared-checks (reads `checks-shared.md`), setup-checks (reads `checks-setup.md` + `checks-install.md`). Each writes findings to `<RUN_DIR>/system-checks-<scope>.md`, returns only JSON envelope. Orchestrator does NOT read template files — passes path to spawned agent only.
+**Delegation for full-sweep runs**: for full-sweep (no scope), spawn dedicated `foundry:curator` per scope group, passing template file path and RUN_DIR: agents-checks (reads `checks-agents.md` + relevant `checks-shared.md`), skills-checks (reads `checks-skills.md` + relevant `checks-shared.md`), shared-checks (reads `checks-shared.md`), setup-checks (reads `checks-setup.md` + `checks-install.md`), security-checks (reads `checks-security.md` — security findings land in separate Security Findings section of report). Each writes findings to `<RUN_DIR>/system-checks-<scope>.md`, returns only JSON envelope. Orchestrator does NOT read template files — passes path to spawned agent only.
 
 Run checks below. Native tools first (Glob, Grep, Read); Bash only for pipeline ops native tools can't do.
 
@@ -289,63 +289,24 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 
 **Scope filter**: when `$SCOPE` is set, run only checks listed for that scope; skip all others silently.
 
-- `agents` — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
-- `skills` — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
+- `agents` — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
+- `skills` — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 40 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
 - `rules` — Checks 18, 12, 13, 29, 32c (32d skipped — no plugin bin/ in rules scope)
 - `communication` — Checks 15, 16, 12, 13, 29
-- `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, I1, I2, I3 (Step 3: one foundry:curator spawn for `init` SKILL.md only; I1–I3 read `~/.claude/`)
+- `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, 37, 39, I1, I2, I3 (Step 3: one foundry:curator spawn for `init` SKILL.md only; I1–I3 read `~/.claude/`)
 - `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/init/SKILL.md` only)
-- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, R1, R2, R3 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md; 32d always LOCAL_MODE — skip in non-local; R1/R2/R3 always LOCAL_MODE — skip in non-local)
+- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
 - `plugins <name>` or `<plugin-name>` (tier 2) — same check list as `plugins`, scoped to `plugins/<name>/` only
-- `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29 (one file only; no cross-plugin Checks 7/8)
-- `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a (one file only)
+- `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36 (one file only; no cross-plugin Checks 7/8)
+- `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a, 35, 36, 37, 38, 40 (one file only)
 - Multiple scope tokens — union of check lists for all resolved scope types; de-duplicate; run each check once against union file set
 - No scope argument — run all checks
 
 ### Check summary
-<!-- Full check implementations in `audit/templates/checks-*.md` — this table is the quick-reference index only. -->
 
-| # | Name | Severity | Scope | Notes |
-| --- | --- | --- | --- | --- |
-| 1 | Inventory drift (MEMORY.md vs disk) | medium | setup | Agents + skills on disk vs MEMORY.md roster |
-| 2 | README vs disk | medium | setup | Agent/skill table rows in README vs disk |
-| 3 | settings.json permissions | medium | setup | Bash commands in skills vs allow list |
-| 4 | permissions-guide.md drift | medium | setup | Every allow entry must have a guide row, and vice versa |
-| 5 | Permission safety audit | critical/high | setup | Allow entries must be non-destructive, reversible, local-only |
-| 6 | Stale settings.json allow entries | low | setup | Allow entries with no usage in any .claude/ file |
-| 7 | codex plugin integration | medium | setup | Plugin installed and enabled; dispatches work |
-| 8 | foundry plugin correctness | critical/high/med | setup | 8a manifest, 8b symlinks, 8c hook scripts, 8d hooks.json, 8e dry-run validate, 8f perms drift, 8g init skill placement |
-| 9 | Agent color drift | medium | setup | statusline COLOR_MAP vs agent frontmatter color: |
-| 10 | RTK hook alignment | high/medium | setup | RTK_PREFIXES vs installed RTK subcommands - skip if rtk absent |
-| 11 | Memory health | low | setup | 11a duplicate rules, 11b stale version pins, 11c absorbed feedback files |
-| I1 | Plugin cache intact | high | setup | foundry in ~/.claude/plugins/installed_plugins.json; installPath exists |
-| I2 | Settings merge complete | medium | setup | statusLine, permissions.allow, enabledPlugins.codex in ~/.claude/settings.json |
-| I3 | Link health (conditional) | high | setup | Symlinks in ~/.claude/rules/ and ~/.claude/TEAM_PROTOCOL.md resolve; fix: /foundry:init |
-| 12 | File length | medium | all | Agents ≈300 lines, skills ≈600 lines, rules ≈200 lines; report only — fix = remove content, never collapse lines |
-| 13 | Heading hierarchy continuity | medium | all | Heading level jumps >1 (e.g. ## to ####) |
-| 14 | Orphaned follow-up references | medium | agents/skills | Skill-name refs in SKILL.md vs disk inventory |
-| 15 | Hardcoded user paths | high | agents/skills | /Users/ and /home/ in config files + settings.json |
-| 16 | Example value vs. token cost | low | agents/skills | Inline examples: high-value vs. low-value (prose restatement) |
-| 17 | Cross-file code block inventory | low | agents/skills | Block count table across all .md files (skills, modes, _shared, templates, agents, rules); flag files with ≥10 blocks for `--efficiency` run. NxN similarity analysis moved to `--efficiency` Phase B2 (expensive) |
-| 18 | Rules integrity | high/medium | rules | 18a inventory, 18b frontmatter, 18c redundancy, 18d cross-ref integrity |
-| 19 | Model tier appropriateness | medium/high | agents | Tier policy: opusplan/opus/sonnet/haiku - report only |
-| 20 | Agent description routing | medium/low | agents | 20a overlap pairs, 20b NOT-for coverage, 20c trigger specificity, 20d keep/sharpen/prune |
-| 21 | Skill frontmatter conflicts | critical | skills | context:fork + disable-model-invocation:true is broken |
-| 22 | Calibration coverage gap | medium/low | agents/skills | Unregistered calibratable skills/agents; stale domain table entries |
-| 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools; 23e python inline; 23f `# timeout: N` without `timeout S` shell prefix or Python `subprocess.*` without `timeout=` |
-| 24 | Skill sequence compatibility | high/medium | skills | 24a target skill not on disk; 24b argument absent from argument-hint; scans skills, agents, READMEs |
-| 25 | Implicit agent references | high | agents/skills | subagent_type without plugin prefix; exempt: built-in types |
-| 26 | Symbol and shortcut consistency | medium/low | agents/skills | 26a same-concept emoji conflict, 26b slash notation mixed, 26c body contradicts legend |
-| 27 | Cross-plugin shared-file ref integrity | critical/high/med | skills | 27a absent from foundry/\_shared/; 27b catch-22 (fallback needs foundry); 27c plugin-local \_shared/ unmounted |
-| 28 | Cross-plugin agent dispatch fallback | high/medium | skills | 28a no fallback for cross-plugin dispatch; 28b fallback present but incomplete |
-| 29 | LLM context minimality | medium/low | agents/skills/rules | Within-file repetition, prose inflation, obvious-consequence restatement — report only |
-| 30 | Config token overhead | medium/low | setup | 30a CLAUDE.md + global + rules/ > 100 KB; 30b single rules file > 10 KB |
-| 31 | Tool-body consistency | medium | skills | Skill `allowed-tools` must include every tool the workflow body invokes; see `checks-skills.md` for full spec |
-| 32 | Dead file detection | medium/low | skills/rules | 32a mode files in `*/modes/` not referenced from parent SKILL.md; 32b template files in `*/templates/` not referenced; 32c rule files whose `paths:` globs match no project files; 32d orphaned bin/ scripts not referenced by any plugin .md file (LOCAL_MODE only) |
-| 33 | Code block similarity + extraction feasibility | medium/low | skills | `--efficiency` only — Table 1: pairwise similarity per plugin; Table 2: rigidity + extraction feasibility + pos/neg impact. See `modes/efficiency.md` Phase B2 |
-| R1 | Computed path resolution (local + installed duality) | high/medium/info | plugins (LOCAL_MODE only) | R1-FAIL: file exists locally but absent from installed cache; R1-WARN: installed-only file; R1-INFO: plugin not installed. Root cause guard for silent-deletion class of bugs |
-| R2 | Grep-visible referencing (orphan-risk detection) | medium | plugins (LOCAL_MODE only) | Basename of indirect-load .md file (modes/, templates/, _shared/) not literal in any consumer .md — deletion-prone; fix: add `# loads: <basename>` comment |
-| R3 | bin/ script existence at local + installed | high | plugins (LOCAL_MODE only) | R3-FAIL: script referenced but missing locally; R3-WARN: script local but absent from installed cache |
+<!-- loads: checks-index.md -->
+<!-- loads: checks-security.md -->
+Read `$AUDIT_TPL/checks-index.md` for the full check index (Checks 1–40, I1–I3, R1–R5 with severity, scope, notes). Security checks (35–37) are implemented in `$AUDIT_TPL/checks-security.md`.
 
 ### Claude Code docs freshness (within Step 4)
 
@@ -363,7 +324,7 @@ After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/syst
 
 **Delegate aggregation** to consolidator agent to avoid flooding main context. Spawn **foundry:curator** consolidator:
 
-> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: C critical, H high, M medium, L low\"}`"
+> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
 
 Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate.md` in full — 200–600 lines, overflows context on large audits. Use `$RUN_DIR/summary.jsonl` for all dispatch decisions in Steps 7 and 8.
 
@@ -418,14 +379,14 @@ Before emitting, read current `$RUN_DIR/summary.jsonl` (may have been updated by
 ## Audit Report
 
 ### Findings by Severity
-#### Critical (N) | High (N) | Medium (N) | Low (N)
+#### Security (N) | Critical (N) | High (N) | Medium (N) | Low (N)
 | File | Line | Issue | Category |
 |---|---|---|---|
 | agents/foo.md | 42 | References `bar-agent` which does not exist on disk | broken cross-ref |
 
 ### Summary
-- Total: N (C critical, H high, M medium, L low)
-- Fix via follow-up gate: (a) critical+high · (b) all auto-fixable incl. low · (c) critical+high+medium
+- Total: N (S security, C critical, H high, M medium, L low)
+- Fix via follow-up gate: (a) Fix SECURITY + CRITICAL + HIGH · (b) fix auto-fixable · (c) fix ALL incl. systemic
 
 ### Upgrade Proposals (N — pick `/audit --upgrade` from gate to apply)
 | # | Feature | Type | Rationale |
@@ -447,6 +408,37 @@ After report → fire **Follow-up gate**. If user picks fix option (a–c), proc
 5. **Remove** — only if none above apply. Never remove solely because flagged as verbose.
 
 Apply hierarchy to every fix at all severity levels.
+
+**Dependency classification — before any dispatch**
+
+Classify each finding from `summary.jsonl` before spawning fix agents to avoid stale-read conflicts (agent reads file A → concurrent agent modifies file A → first agent's assumptions now wrong).
+
+**Parallel-safe** (ALL four must hold — apply after same-file coalescing in criterion 4):
+1. Fix writes only to the file that contains the finding
+2. Finding category is in `PARALLEL_SAFE_CATEGORIES`: `{hardcoded-path, missing-confidence-block, typo, heading-hierarchy, duplicate-lines, broken-bash-fence, stale-version-ref, missing-frontmatter-field}` — any category not in this list defaults to sequential
+3. No other finding in this batch writes to a file this fix reads from
+4. **Coalesce first**: group all same-file findings into a single agent prompt before applying criteria 1–3; the coalesced group is classified as one unit (prevents multiple agents racing on the same file)
+
+Parallel-safe examples: typos, hardcoded `/Users/` paths (replacement is `~/`), missing `## Confidence` block (template known), broken bash fence, heading hierarchy jump, duplicated lines within one file.
+
+**Sequential (cross-file dependent)**: any finding where the fix must read another file to determine correct replacement, OR where another concurrent fix writes to a file this fix reads from.
+
+Sequential examples: broken cross-reference (must verify target name on current disk), inventory drift (must read MEMORY.md), README sync (must read agent/skill source files).
+
+**Two-phase dispatch**:
+- **Phase 1 — Parallel basket**: issue ALL parallel-safe fix spawns in a single response. Each agent touches only its own file with self-contained changes.
+- **Phase 2 — Sequential basket**: after Phase 1 complete, spawn **foundry:curator** mini-agent to re-read files modified in Phase 1 that are dependency inputs for Phase 2 fixes — orchestrator must NOT inline-read modified files (orchestration contract: see `## Pre-flight checks` orchestration rule above). Mini-agent returns updated finding refs (refreshed line numbers, moot findings dropped). Then dispatch Phase 2 fixes using the category→dependency table:
+
+  | Category | Reads from | Serialization rule |
+  | --- | --- | --- |
+  | broken-cross-ref | target agent/skill file | serialize after any fix that renames/moves target |
+  | inventory-drift | MEMORY.md | serialize after any fix that adds/removes agents or skills |
+  | README-sync | agent/skill source files | serialize after any fix that modifies an agent/skill file |
+  | orphaned-ref | disk agent/skill inventory | serialize after any fix that adds/removes agents or skills |
+
+  Groups with no dependency on other groups' outputs run in parallel; groups depending on prior output serialize in order.
+
+Narrate phase boundaries: `"Phase 1: N parallel-safe fixes launched"` → `"Phase 1 complete — mini-agent re-reading modified files"` → `"Phase 2: N sequential fixes starting"`.
 
 **Adversarial pre-apply validation gate** — each proposed fix must clear two-agent gate before spawning fix agent:
 
@@ -471,43 +463,38 @@ Each subagent prompt: read from `$AUDIT_TPL/fix-prompt.md`, fill `<file path>` a
 
 **Preferred orchestration pattern — audit-fix sub-agent**
 
-<!-- Canonical multi-file orchestration template — intentionally inline; NOT derived from fix-prompt.md (per-file only). Keep both in sync when changing shared audit-fix behavior. -->
+<!-- loads: audit-fix-prompt.md -->
 
-After gate fires (Step 7): finding count > 10 or user picked "Fix all" → use audit-fix sub-agent pattern below (handles Steps 8–10 in isolation); otherwise use inline batched pattern at end of this step.
+After gate fires (Step 7): finding count > 10 or user picked option (b) "Fix auto-fixable" or (c) "Fix ALL" → use audit-fix sub-agent pattern below (handles Steps 8–10 in isolation); otherwise use inline batched pattern at end of this step.
 
 **Gate authority**: sub-agent path → orchestrator Step 7 gate **skipped** — sub-agent runs own gate internally, authoritative. Inline batched path (≤10 findings) → orchestrator Step 7 gate authoritative, no sub-agent gate. Never double-gate.
 
-Spawn a dedicated **audit-fix** sub-agent:
+**Gate failure fallback**: if sub-agent returns `blocked_findings: []` with `fixed > 0` and `failed == 0` but no `gate-<file>.md` files appear in `<RUN_DIR>`, surface: `⚠ GATE-SKIPPED — sub-agent did not perform adversarial gate; review fixes manually before merging.`
 
-```markdown
-Read `<RUN_DIR>/summary.jsonl` — this is the findings list (one JSON object per line).
-Read `$AUDIT_TPL/fix-prompt.md` for the per-file fix prompt template.
-**Adversarial pre-apply gate**: for each unique file in the findings list, spawn **foundry:challenger** AND **foundry:curator** in parallel — challenge/validate each finding batch: "Is each finding real? Is the fix appropriate? Does any fix risk removing load-bearing behavioral content?" Each writes verdict to `<RUN_DIR>/gate-<file-basename>.md`; return `{"verdict":"approved"|"blocked","reason":"<one-line>","file":"<path>"}`. If either returns `blocked`: mark findings for that file as blocked (add to `blocked_findings` list with reason); skip fix agent. Proceed to fix agent only if both return `approved`.
-Issue all gate spawns in a single response (parallel). After gate verdicts received, issue all fix spawns in a single response (approved files only, parallel).
-For each file that passed the gate, spawn one fix agent (foundry:curator for .md files, foundry:sw-engineer for .js/.py files) with all approved findings batched into a single prompt.
-After all fix agents complete, spawn foundry:curator re-audit agents (one per changed file) to confirm fixes held.
-Write a completion summary to `<RUN_DIR>/fix-summary.md`:
-  - findings_total: N
-  - fixed: N
-  - blocked: N (gate-rejected; listed in blocked_findings)
-  - failed: N
-  - re_audit_clean: true|false
-  - blocked_findings: [{id, file, reason}, ...]
-Return ONLY: {"status":"done","file":"<RUN_DIR>/fix-summary.md","fixed":N,"blocked":N,"failed":N,"re_audit_clean":true|false,"confidence":0.N}
-```
+Spawn a dedicated **audit-fix** sub-agent — read full prompt from `$AUDIT_TPL/audit-fix-prompt.md` and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into the prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false` or `failed > 0`.
 
-Orchestrator reads only compact JSON envelope. Does NOT read fix-summary.md unless `re_audit_clean: false` or `failed > 0`.
+Finding count ≤ 10 and user picked option (a) "Fix CRITICAL + HIGH" → inline batched pattern (one fix-agent per file, all parallel) acceptable; no dedicated sub-agent.
 
-Finding count ≤ 10 and user picked "Fix critical+high" or "Fix critical+high+medium" (not "Fix all") → inline batched pattern (one fix-agent per file, all parallel) acceptable; no dedicated sub-agent.
+**Findings that bypass fix-agent delegation:**
 
-**Findings that bypass fix-agent delegation (report-only):**
+**NON_AUTO_FIXABLE** (authoritative set — referenced by bypass list and option (d)): Check 3 (settings.json missing permission), Check 5 critical/high (permission safety), Check 19 (model tier mismatch), CLAUDE.md contradiction, dead loop in follow-up chains.
 
-No Edit or Write tool calls performed in these cases — findings surfaced to user only.
+Default (options a–b): report only — no Edit or Write tool calls for NON_AUTO_FIXABLE findings.
 
-- **settings.json permission missing**: report only — structural JSON edits risky to delegate
+- **settings.json permission missing** (Check 3, 5): report only — structural JSON edits risky to delegate
 - **CLAUDE.md contradiction**: raise to user — do not auto-fix (CLAUDE.md takes precedence)
 - **Dead loop**: flag for user review — human judgment needed on which link to break
-- **Model tier mismatch**: report only — assignments may be intentional for cost/latency trade-offs; user decides
+- **Model tier mismatch** (Check 19): report only — assignments may be intentional for cost/latency trade-offs; user decides
+
+**"Fix ALL" option (c)**:
+
+1. **Checkpoint**: after auto-fixable fix phases complete (including convergence loop), pause — call `AskUserQuestion`: "Auto-fix complete: N fixes applied across M files. N_systemic non-auto-fixable items remain. Continue to systemic review?" Options: (a) Continue · (b) Stop here · (c) Stop and emit partial report now. Do not proceed to step 2 unless user picks (a). This ensures user sees what changed before being asked about systemic items.
+
+2. **Re-validate**: spawn **foundry:curator** mini-pass to re-validate each deferred NON_AUTO_FIXABLE finding against current post-fix disk — line numbers may have shifted, some findings may have become moot. Update finding text/line refs; drop moot findings. Only surface validated findings.
+
+3. **Systemic questions**: group remaining NON_AUTO_FIXABLE findings by category (settings.json / model-tier / CLAUDE.md-conflict / dead-loop — max 4 categories). For each category call `AskUserQuestion` (one call per category, honoring `communication.md` 4-question-per-call cap): list up to 4 representative findings; if >4 in category, note "and N more follow same pattern". Options: (a) Apply same resolution to all in this category · (b) Review each individually · (c) Skip this category. Hard cap: max 4 `AskUserQuestion` calls total for systemic phase; overflow listed in final report. "Apply same resolution" valid for uniform findings; non-uniform findings force option (b).
+
+Apply only on explicit user selection; never auto-apply NON_AUTO_FIXABLE findings.
 
 After subagents complete, collect results and proceed to Step 10.
 
@@ -529,7 +516,7 @@ Treat findings as additional issues entering Step 10 re-audit scope. Skip if Ste
 
 ## Step 10: Re-audit modified files + confidence check
 
-For every file changed in Step 8, spawn **foundry:curator** to confirm fix resolved finding and no new issues introduced. Write full re-audit findings to `<RUN_DIR>/<file-basename>-reaudit.md`; end the full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements); return ONLY compact JSON envelope: `{"status":"done","file":"<RUN_DIR>/<file-basename>-reaudit.md","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N,"summary":"<filename>: fix confirmed, N residual findings"}`
+For every file changed in Step 8, spawn **foundry:curator** to confirm fix resolved finding and no new issues introduced. Write full re-audit findings to `<RUN_DIR>/<file-basename>-reaudit.md`; end the full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements); return ONLY compact JSON envelope: `{"status":"done","file":"<RUN_DIR>/<file-basename>-reaudit.md","findings":N,"severity":{"security":N,"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N,"summary":"<filename>: fix confirmed, N residual findings"}`
 
 ```bash
 # Spot-check: confirm the previously broken reference no longer appears
@@ -541,9 +528,9 @@ grep -n "<broken-name>" <fixed-file>
 **Convergence loop**: re-audit surfaces new fixable findings within gate-selected severity threshold → loop back to Step 8. Repeat until:
 
 - Zero fixable findings remain → mark fix pass complete, or
-- Hard limit: **5 total fix passes** (including initial Step 8) — still not converged → surface all remaining fixable findings with `⚠ CONVERGENCE LIMIT` warning explaining which issues resisted fixing.
+- Hard limit: **5 total fix passes** (including initial Step 8) — still not converged → surface all remaining fixable findings with `⚠ CONVERGENCE LIMIT` warning; **do not re-enter Step 8; omit fix options from follow-up gate when convergence limit reached**.
 
-Track pass count with counter initialized to 1 at first Step 8. Increment before each re-entry. Never suppress findings to clean counter.
+Track pass count via `$RUN_DIR/fix-passes.txt` (persist across bash calls — shell state does not persist). At each Step 10 entry: `PASS_COUNT=$(cat "$RUN_DIR/fix-passes.txt" 2>/dev/null || echo 0); PASS_COUNT=$((PASS_COUNT + 1)); echo "$PASS_COUNT" > "$RUN_DIR/fix-passes.txt"`. If `$PASS_COUNT >= 5`, stop loop immediately — do not re-enter Step 8 regardless of remaining findings. Never suppress findings to clean counter.
 
 Audit-fix sub-agent (when used) must apply this loop internally — instruct to keep spawning fix agents and re-audit agents until clean or 5-pass limit.
 
@@ -560,89 +547,8 @@ Write findings to `<RUN_DIR>/crossfile-revalidation-pass<N>.md` where N is curre
 
 ## Step 11: Final report
 
-Output complete audit summary. List each audited file by name in `### Files Audited` — from Step 2 inventory; counts alone insufficient.
-
-```markdown
----
-Audit — .claude/ config
-Date:     [YYYY-MM-DD]
-Scope:    [N agents, N skills, N rules, N hooks]
-Focus:    [config quality audit — agents / skills / routing / all]
-Agents:   foundry:curator, foundry:challenger (adversarial mode only)
-Outcome:  CLEAN | NEEDS_ATTENTION | BLOCKED
-Findings: [N] critical · [N] high · [N] medium · [N] low
-Confidence: [aggregate score from agent Confidence blocks]
-Next steps: /foundry:init (sync clean config) | fix findings → re-run /foundry:audit
-Path:       → .reports/audit/<timestamp>/report.md
----
-
-## Audit Complete — .claude/ config
-
-### Files Audited
-- **Agents** (N): name-1, name-2, ...
-- **Skills** (N): name-1, name-2, ...
-- **Rules** (N): name-1, name-2, ...
-- **Hooks** (N): file-1.js, file-2.js, ...
-- **Settings**: settings.json
-- **Communication** (if in scope): communication.md, quality-gates.md, TEAM_PROTOCOL.md, file-handoff-protocol.md
-
-### Findings
-| Severity | Found | Fixed | Remaining |
-|---|---|---|---|
-| critical | N | N | 0 |
-| high | N | N | 0 |
-| medium | N | N | 0 |
-| low | N | N ("Fix all" only) | N |
-
-**Fix convergence**: Converged in N pass(es) — 0 fixable findings remain.
-```
-
-Or if limit hit:
-
-```markdown
-**Fix convergence**: ⚠ CONVERGENCE LIMIT reached (5 passes) — N fixable findings remain (see Remaining section).
-```
-
-(Omit fix convergence line when user picked "skip" from gate — only shown when fix option chosen.)
-
-```markdown
-### Fixes Applied
-
-| File | Change |
-| --- | --- |
-| agents/foo.md | Replaced broken ref `old-agent` → `correct-agent` |
-
-### Remaining (low/nits — auto-fixed only with 'fix all'; otherwise manual review optional)
-
-- [low findings that were not auto-fixed]
-- [any infinite loops flagged for user decision]
-
-### Code Block Similarity
-
-Include when `$RUN_DIR/similarity-check33.md` exists (`--efficiency` mode only). Read the file and embed both tables verbatim — do NOT summarize. Label:
-
-```markdown
-#### Purpose-based similarity clusters — Check 33 / --efficiency only
-<Table 1 from similarity-check33.md verbatim>
-<Table 2 from similarity-check33.md verbatim>
-```
-
-Omit section entirely if `similarity-check33.md` absent (efficiency not active or no clusters found).
-
-### Agent Confidence
-
-| File | Score | Label | Gaps |
-| --- | --- | --- | --- |
-| agents/foo.md | 0.92 | high | — |
-| skills/bar/SKILL.md | 0.64 | ⚠ low | no runtime data for bash validation |
-
-Low-confidence files re-audited: N | Still uncertain after retry: N (see gaps above)
-
-### Next Step
-
-Run `/foundry:init` to propagate clean config to ~/.claude/
-
-```
+<!-- loads: report-template.md -->
+Read `$AUDIT_TPL/report-template.md` and emit the complete audit report following its template and instructions.
 
 ## Mode: upgrade
 
@@ -682,9 +588,9 @@ Read and execute `$EFFICIENCY_MD`.
 When user picks fix option (a–c): run Steps 8–10 inline (state on disk in `summary.jsonl`); no recursive `/audit` call.
 
 - question: "What next?" (include counts, e.g. "2 critical, 4 high, 3 medium, 1 low. What next?")
-- (a) label: `Fix critical + high` — auto-fix critical and high findings only
-- (b) label: `Fix all auto-fixable` — auto-fix critical, high, medium, and low findings (skip non-auto-fixable systemic issues); **recommended when low findings present**
-- (c) label: `Fix critical + high + medium` — auto-fix critical, high, medium only (skip low and systemic)
+- (a) label: `Fix SECURITY + CRITICAL + HIGH` — auto-fix all security findings plus critical and high
+- (b) label: `Fix auto-fixable` — auto-fix critical, high, medium, and low findings (skip NON_AUTO_FIXABLE systemic issues); **recommended**
+- (c) label: `Fix ALL` — fix all auto-fixable then prompt about each NON_AUTO_FIXABLE category via grouped `AskUserQuestion` (max 4 calls); most thorough option
 - (d) label: `Skip` — no fixes now; for other modes run `/audit --upgrade`, `/audit --adversarial`, `/audit --efficiency`, or `/foundry:init` manually
 
 After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate (omit the option(s) just run — no point repeating). When `--adversarial --efficiency` combined: fire gate once after both modes complete with merged finding counts; omit both options (d) and (e).

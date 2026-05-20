@@ -24,18 +24,30 @@ import sys
 from pathlib import Path
 
 
+_ALLOWED_FLAGS = {"--arg", "--argjson", "--indent"}
+
+
 def _parse_jq_args(extras: list[str]) -> list[str] | None:
-    """Validate and return passthrough ``--arg`` tokens.
+    """Validate and return passthrough jq flag tokens.
+
+    Only flags in :data:`_ALLOWED_FLAGS` are accepted; any other ``--`` token
+    is rejected (raises :class:`ValueError`). This blocks dangerous jq flags
+    such as ``--slurpfile`` / ``--rawfile`` that read arbitrary filesystem
+    paths.
 
     Args:
         extras: Tokens after ``<target> <filter>`` (e.g. ``["--arg", "k", "v"]``).
 
     Returns:
         The same list if every ``--arg`` is followed by two tokens, else None
-        to signal malformed args. Non-``--arg`` tokens are passed through
-        unchanged (jq accepts ``--argjson``, ``--slurpfile``, etc. — the bash
-        original was equally permissive).
+        to signal malformed args.
+
+    Raises:
+        ValueError: When a disallowed ``--`` flag is encountered.
     """
+    for token in extras:
+        if token.startswith("--") and token.split("=", 1)[0] not in _ALLOWED_FLAGS:
+            raise ValueError(f"jq_write: disallowed flag: {token!r}")
     i = 0
     while i < len(extras):
         token = extras[i]
@@ -105,7 +117,11 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
     target_str, jq_filter, *extras = args
-    parsed = _parse_jq_args(extras)
+    try:
+        parsed = _parse_jq_args(extras)
+    except ValueError as exc:
+        print(f"! {exc}", file=sys.stderr)
+        return 3
     if parsed is None:
         print("! malformed --arg: each --arg requires <name> <value>", file=sys.stderr)
         return 3
