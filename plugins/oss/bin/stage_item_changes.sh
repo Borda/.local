@@ -4,6 +4,8 @@
 # source-extension untracked files.  Extracted from oss:resolve
 # action-item-dispatch Phase 2 staging block (AI7).
 set -euo pipefail
+# timeout is GNU coreutils — not available on macOS by default.
+command -v timeout >/dev/null 2>&1 || { timeout() { shift; "$@"; }; }
 
 ITEM_ID="${1:?item_id required}"
 

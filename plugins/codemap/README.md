@@ -185,6 +185,7 @@ Most central (by rdep_count):
 ```
 
 <!-- mirrors integration/SKILL.md Step I5 -->
+
 This discovers all your installed `develop` and `oss` skills, shows a recommendation table, and injects the structural context block into each one you approve. It also offers to install a post-commit git hook so the index stays current automatically.
 
 That is it. Now run your normal skills — codemap works silently in the background:

@@ -1,0 +1,20 @@
+[tool.pytest.ini_options]
+testpaths = ["plugins"]
+addopts = [
+    "--import-mode=importlib",
+    "--color=yes",
+    "--doctest-modules",
+    "--cov=plugins/codemap/bin",
+    "--cov=plugins/develop/bin",
+    "--cov=plugins/foundry/bin",
+    "--cov=plugins/oss/bin",
+    "--cov=plugins/research/bin",
+    "--cov-report=term-missing",
+    "--cov-report=html:.reports/coverage",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+# inherits line-length from [tool.ruff]

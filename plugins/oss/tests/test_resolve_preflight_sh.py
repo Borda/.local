@@ -9,11 +9,43 @@ Unit test: gh-not-found triggers exit 1 with stderr message.
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 from pathlib import Path
 
-import pytest
+_SHADOW_TOOLS = [
+    "bash",
+    "sh",
+    "date",
+    "grep",
+    "head",
+    "xargs",
+    "wc",
+    "tr",
+    "mkdir",
+    "git",
+    "find",
+    "cat",
+    "sort",
+    "tail",
+]
+
+
+def _make_shadow_bin(tmp_path: Path, exclude: list[str] | None = None) -> Path:
+    """Create bin dir with symlinks to system tools, excluding named executables."""
+    shadow = tmp_path / "shadow_bin"
+    shadow.mkdir(exist_ok=True)
+    for tool in _SHADOW_TOOLS:
+        if exclude and tool in exclude:
+            continue
+        found = shutil.which(tool)
+        if found:
+            link = shadow / tool
+            if not link.exists():
+                link.symlink_to(found)
+    return shadow
+
 
 SCRIPT = Path(__file__).parent.parent / "bin" / "resolve_preflight.sh"
 
@@ -42,14 +74,12 @@ def _make_fake_bin(tmp_path: Path, name: str, script_content: str) -> Path:
 
 def test_gh_not_found(tmp_path: Path):
     """No gh on PATH → exit 1 with stderr "gh not found"."""
-    # Provide only basic shell utilities — no gh, no claude.
-    # Need at least bash, find, mkdir, date, cat, grep, head, xargs, git in PATH.
+    # Shadow bin has real tools but no gh — prevents pre-installed gh on CI from being found.
+    shadow = _make_shadow_bin(tmp_path, exclude=["gh"])
     env = {
         "HOME": str(tmp_path),
-        "PATH": "/usr/bin:/bin",  # standard tools but no gh
+        "PATH": str(shadow),
     }
-    # Run in tmp_path (not a git repo) — the script's git checks fail silently
-    # via `|| true`, so gh-not-found is the first hard failure.
     result = sh(env=env, cwd=str(tmp_path))
     assert result.returncode == 1
     assert "gh not found" in result.stderr
@@ -76,10 +106,23 @@ def test_gh_present_but_unauthenticated(tmp_path: Path):
     assert "gh found but not authenticated" in result.stderr
 
 
-@pytest.mark.skipif(not os.getenv("RUN_INTEGRATION"), reason="requires real gh auth")
-def test_integration_happy_path():
-    """End-to-end: real gh auth + real git repo → exit 0, GH_OK=true emitted."""
-    repo_root = Path(__file__).parents[3]
-    result = sh(cwd=str(repo_root))
+def test_happy_path_mocked(tmp_path: Path):
+    """Mocked happy path: authenticated gh → exit 0, GH_OK=true on stdout."""
+    _make_fake_bin(
+        tmp_path,
+        "gh",
+        "#!/bin/sh\n"
+        'if [ "$1" = "auth" ]; then\n'
+        '  echo "Logged in to github.com as testuser (oauth_token)" >&2\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 0\n",
+    )
+    _make_fake_bin(tmp_path, "claude", "#!/bin/sh\nexit 0\n")
+    env = {
+        "HOME": str(tmp_path),
+        "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
+    }
+    result = sh(env=env, cwd=str(tmp_path))
     assert result.returncode == 0
     assert "GH_OK=true" in result.stdout

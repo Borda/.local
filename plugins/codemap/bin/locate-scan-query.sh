@@ -17,7 +17,7 @@ if command -v scan-query >/dev/null 2>&1; then
 elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/bin/scan-query" ]; then
     SQ="${CLAUDE_PLUGIN_ROOT}/bin/scan-query"
 else
-    SQ=$(ls "$HOME/.claude/plugins/cache"/*/codemap/*/bin/scan-query 2>/dev/null | sort -V | tail -1)
+    SQ=$(ls "$HOME/.claude/plugins/cache"/*/codemap/*/bin/scan-query 2>/dev/null | sort -V | tail -1 || true)
 fi
 
 if [ -n "$SQ" ] && [ -x "$SQ" ]; then

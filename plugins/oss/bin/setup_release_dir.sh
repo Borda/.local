@@ -9,6 +9,8 @@
 # CHANGELOG.md is excluded from the backup loop — it is a symlink; re-linking
 # on re-run is safe and intentional.
 set -euo pipefail
+# timeout is GNU coreutils — not available on macOS by default.
+command -v timeout >/dev/null 2>&1 || { timeout() { shift; "$@"; }; }
 
 RELEASE_DIR="${1:?release_dir required}"
 CHANGELOG_FILE="${2:?changelog_file required}"

@@ -4,6 +4,8 @@
 # Extracted from oss:resolve lint-qa-gate Step 9 auto-fix commit block (LQ3).
 # No-ops cleanly when there are no changed files to stage.
 set -euo pipefail
+# timeout is GNU coreutils — not available on macOS by default.
+command -v timeout >/dev/null 2>&1 || { timeout() { shift; "$@"; }; }
 
 CHANGED=$(git diff HEAD --name-only 2>/dev/null) || true
 if [ -z "$CHANGED" ]; then

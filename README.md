@@ -477,6 +477,6 @@ ______________________________________________________________________
 
 **Questions?** Open an [issue](https://github.com/Borda/AI-Rig/issues) or start a [discussion](https://github.com/Borda/AI-Rig/discussions).
 
-Made with 💙 by the Borda et al.
+Made with 💚 by the Borda et al.
 
 </div>

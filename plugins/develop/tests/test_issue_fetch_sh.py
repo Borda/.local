@@ -11,7 +11,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
 
 SCRIPT = Path(__file__).parent.parent / "bin" / "issue-fetch.sh"
 
@@ -89,11 +88,10 @@ def test_non_numeric_arg_rejected(tmp_path: Path):
     assert not (tmp_path / "gh-args.txt").exists()
 
 
-@pytest.mark.skipif(not os.getenv("RUN_INTEGRATION"), reason="requires real gh auth")
-def test_integration_fetches_real_issue():
-    """End-to-end: fetch a known public issue through real gh CLI."""
-    # Use a low-numbered, stable issue on a well-known public repo.
-    # Caller must set RUN_INTEGRATION=1 and have gh authenticated.
-    result = sh("#1", cwd="/tmp")
-    # gh returns 0 on success; output should be non-empty.
-    assert result.returncode in (0, 1)
+def test_mocked_fetch_passes_through_output(tmp_path: Path):
+    """Mocked fetch: gh stdout is forwarded and exit 0 is preserved."""
+    _make_fake_gh(tmp_path, exit_code=0, stdout_text="Issue title: Fix the bug")
+    env = {"PATH": f"{tmp_path}/bin:/usr/bin:/bin"}
+    result = sh("#1", env=env)
+    assert result.returncode == 0
+    assert "Fix the bug" in result.stdout

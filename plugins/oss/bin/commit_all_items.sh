@@ -11,6 +11,8 @@
 #   $5  SUMMARIES_FILE    — optional path to file with bullet-list item summaries
 #   --codex               — include OpenAI Codex co-author trailer (pass anywhere)
 set -euo pipefail
+# timeout is GNU coreutils — not available on macOS by default.
+command -v timeout >/dev/null 2>&1 || { timeout() { shift; "$@"; }; }
 
 PR_NUMBER=""
 N_AS_SUGGESTED=0
