@@ -108,7 +108,7 @@ Never skip trailers because skill template omits them.
 
 ## Branch Safety
 
-Default branch is repo-specific — do NOT hardcode `main` or `master`. Hook detects dynamically via `git symbolic-ref refs/remotes/origin/HEAD`, `gh repo view`, or `git remote show origin`. Committing to default branch requires **second sentinel** (Gate 2 below).
+Default branch is repo-specific — do NOT hardcode `main` or `master`. Detect dynamically via `git symbolic-ref refs/remotes/origin/HEAD`, `gh repo view`, or `git remote show origin`.
 
 Before any `git commit`, check current branch:
 
@@ -116,41 +116,28 @@ Before any `git commit`, check current branch:
 CURRENT_BRANCH=$(git branch --show-current)
 ```
 
-On default branch: two sentinels required (Gate 1 + Gate 2). On feature branch: one sentinel required (Gate 1 only).
+Feature branch: `commit-guard.js` hook enforces authorization via sentinel files — never bypass it. Default branch: `AskUserQuestion` always required before commit.
 
-## Commit Gate (two gates)
+## Commit Authorization
 
-**Gate 1 — commit authorization** (all branches):
+Hook `commit-guard.js` is the runtime enforcement layer. Claude's role is to trigger the right flow; the hook blocks unauthorized `git commit` calls.
 
-Sentinel path: `/tmp/claude-commit-auth-<repo-slug>-<branch-slug>` · TTL: 15 min
+**Sentinel paths** (hook checks these):
 
-**Gate 2 — default-branch protection** (default branch only):
+- Gate 1: `/tmp/claude-commit-auth-<repo-slug>-<branch-slug>` · TTL 15 min
+- Gate 2 (default branch only): `/tmp/claude-commit-default-<repo-slug>-<branch-slug>` · TTL 5 min
 
-Sentinel path: `/tmp/claude-commit-default-<repo-slug>-<branch-slug>` · TTL: 5 min (must touch immediately before commit)
+**Feature branch — three authorization sources**:
 
-Slug algorithm: all non-alphanumeric → `-`, lowercased, consecutive dashes squeezed, trailing dashes stripped.
+| Source | Gate 1 created by | Claude action |
+| --- | --- | --- |
+| **In-message** — user said "commit [this/it]", "make a commit", etc. | Hook auto-creates at `UserPromptSubmit` | Run `git commit` directly — sentinel already present |
+| **In-workflow** — skill commits as documented step (e.g. `/oss:resolve`) | Skill: `touch $SENTINEL` before commit, `rm -f $SENTINEL` after | Run `git commit` inside skill workflow |
+| **In-confirmation** — no explicit instruction; user confirmed via `AskUserQuestion` | Claude: `touch $SENTINEL` → `git commit` → `rm -f $SENTINEL` | Show branch + diff size + draft subject in question |
 
-```bash
-# Compute both sentinel paths
-REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
-BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
-SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
-DEFAULT_SENTINEL="/tmp/claude-commit-default-${REPO_SLUG}-${BRANCH_SLUG}"
-```
+**Default branch — always AskUserQuestion**: invoke before any commit. On confirmation: `touch $SENTINEL && touch $DEFAULT_SENTINEL` → `git commit` → `rm -f $SENTINEL $DEFAULT_SENTINEL`. Gate 2 TTL is 5 min — touch immediately before commit.
 
-**Path A — skill pre-auth** (skills committing as part of workflow, e.g. `/oss:resolve`):
-- `touch $SENTINEL` at start of commit phase; `rm -f $SENTINEL` on finish or abort (use `trap` to guarantee cleanup)
-- If committing to default branch: also `touch $DEFAULT_SENTINEL`; `rm -f $DEFAULT_SENTINEL` in same `trap`
-- Gate 1 sentinel exists and <15 min old (Gate 2 valid if on default branch) → hook allows commit
-- Sentinel absent, expired, or branch mismatch → hook blocks → fall through to Path B
-
-**Path B — user ad-hoc request**:
-- No Gate 1 sentinel → invoke `AskUserQuestion` before `git commit`
-- Question must show: target branch, whether default branch, diff size (`N files, +A −B lines` from `git diff --stat HEAD`), draft commit message subject line
-- On user confirmation:
-  - Feature branch: `touch $SENTINEL` → `git commit` → `rm -f $SENTINEL`
-  - Default branch: `touch $SENTINEL && touch $DEFAULT_SENTINEL` → `git commit` → `rm -f $SENTINEL $DEFAULT_SENTINEL`
-- Never self-create sentinels without `AskUserQuestion` first — bypasses Gate 2 entirely
+**Never commit autonomously**: no commit without in-message signal, active skill workflow, or in-turn AskUserQuestion confirmation.
 
 ## Staging and Hooks
 
@@ -158,14 +145,27 @@ DEFAULT_SENTINEL="/tmp/claude-commit-default-${REPO_SLUG}-${BRANCH_SLUG}"
 - Never `--no-verify` — if pre-commit blocks, fix underlying issue
 - Never `--no-gpg-sign` unless user explicitly requests it
 
-## Push Safety
+## Push Authorization
 
-- **Never push without explicit user confirmation** — always invoke `AskUserQuestion` before any `git push`, including branch pushes, PR pushes, and release tags (prose question alone is not sufficient)
-- Authorization scoped: "commit this" does not authorize "push this"; ask separately for every push
-- Applies inside skill workflows — if skill (e.g. `/resolve`) includes push step, treat as "propose and confirm", not "auto-execute"; stop after committing, report what ready to push, wait for user to say push
-- Never push in autonomous bug fixing or as "final step" without being explicitly asked in that message
-- Never force-push (`--force`, `--force-with-lease`) to main/master — forbidden even with explicit user instruction
-- Never force-push to any other branch without explicit user instruction; prefer regular push with explicit confirmation
+Same signal model as §Commit Authorization — no AskUserQuestion when signal present. Note: `git push` is not pre-allowed in settings; harness will prompt once regardless (by design).
+
+**Feature branch — authorized when any signal present**:
+
+| Signal | What it looks like |
+| --- | --- |
+| **In-message** | Current user message contains unambiguous push instruction: "push", "push this", "push the branch" |
+| **In-workflow** | Running skill that names push as documented step AND user invoked that skill |
+| **In-confirmation** | User confirmed via `AskUserQuestion` in the current response turn |
+
+**When no signal present**: invoke `AskUserQuestion` before `git push`. Show: target branch, remote, whether default branch.
+
+**Authorization scoped**: "commit this" does not authorize "push this" — push requires its own signal in the current message or turn.
+
+**Default branch**: `AskUserQuestion` always required — no signal overrides this.
+
+**Force-push**:
+- Main/master: forbidden even with explicit user instruction
+- Other branches: only with explicit user instruction in current message; never as autonomous "final step"
 
 ## History Safety
 

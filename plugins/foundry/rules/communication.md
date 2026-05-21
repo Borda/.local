@@ -20,8 +20,9 @@ Rules:
 
 - Bold line: neutral factual gist of what user asked — not full restatement, no labels
 - Response body in blockquote (`>`) — visually distinct from tool/hook output in terminal
+- **Blockquote exceptions — render outside `>`**: tables (pipe-delimited rows break alignment inside `>`) and fenced code blocks (lose copy-paste fidelity inside `>`). Close the blockquote before the table/code block, then reopen `>` after if prose continues.
 - Never use table or pipe-delimited format for anchor line — pipe chars pollute copy-paste
-- No exceptions — apply to every response including short ones
+- No exceptions to the anchor rule — apply to every response including short ones
 
 ## Reply Visibility
 

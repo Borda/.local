@@ -31,8 +31,14 @@
 //      Sentinel valid → check default branch → exit 0 or exit 2.
 //   2. SessionStart: wipes all /tmp/claude-commit-auth-* and
 //      /tmp/claude-commit-default-* sentinels so prior-session auth never carries over.
-//   3. UserPromptSubmit: if the user submits `/clear`, wipes all sentinel files
-//      for the current repo so the authorisation is reset mid-session.
+//   3. UserPromptSubmit:
+//      a. /clear → wipes all sentinel files for the current repo.
+//      b. Explicit commit instruction detected ("commit", "commit this", "make a commit",
+//         etc.) → auto-creates Gate 1 sentinel for current repo+branch. This removes the
+//         touch/rm approval-click overhead: sentinel already exists when Claude calls
+//         `git commit`, so no intermediate Bash calls needed.
+//         Gate 2 (default-branch protection) is NOT auto-created — default branch commits
+//         still require AskUserQuestion confirmation from Claude.
 //
 // EXIT CODES
 //   0  Allow (sentinel present and fresh, default-branch gate passed).
@@ -160,13 +166,32 @@ process.stdin.on("end", () => {
     process.exit(0);
   }
 
-  // --- UserPromptSubmit: wipe sentinels when user runs /clear ---
+  // --- UserPromptSubmit: wipe on /clear; auto-sentinel on explicit commit request ---
   if (hook_event_name === "UserPromptSubmit") {
     const prompt = (data.prompt || data.user_message || "").trim();
+
     if (/^\/clear\b/.test(prompt)) {
       const repoSlug = getRepoSlug();
       if (repoSlug) wipeSentinels(repoSlug);
+      process.exit(0);
     }
+
+    // Auto-create Gate 1 sentinel when user explicitly requests a commit.
+    // Patterns: "commit [this/it/...]", "please commit", "make a commit", etc.
+    // Gate 2 (default-branch) is intentionally NOT auto-created — requires AskUserQuestion.
+    const COMMIT_RE = /^commit\b|\bplease\s+commit\b|\bmake\s+a\s+commit\b|\bgo\s+ahead\s+and\s+commit\b/i;
+    if (COMMIT_RE.test(prompt)) {
+      const repoSlug = getRepoSlug();
+      const branch = getCurrentBranch();
+      if (repoSlug && branch) {
+        const branchSlug = toSlug(branch);
+        const sentinel = getSentinelPath(repoSlug, branchSlug);
+        try {
+          fs.writeFileSync(sentinel, "");
+        } catch {}
+      }
+    }
+
     process.exit(0);
   }
 

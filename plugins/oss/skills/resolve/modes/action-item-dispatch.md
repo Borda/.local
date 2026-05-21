@@ -23,7 +23,18 @@ trap 'rm -f "$SENTINEL"; rm -rf "$IMPL_DIR"' EXIT INT TERM
 CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
 ```
 
-`CODEX_AVAILABLE=false`: apply degradation rules from Step 1 (simple items → foundry:sw-engineer; complex items → skip with notice). Never blanket-skip all items.
+`CODEX_AVAILABLE=false`: use `change` field to route to internal agent; never blanket-skip all items.
+
+| `change` value | `IMPL_AGENT` |
+| --- | --- |
+| `code` · `refactor` · `config` · `ci` | `foundry:sw-engineer` |
+| `test` | `foundry:qa-specialist` |
+| `docs` | `foundry:doc-scribe` |
+| `style` | `foundry:linting-expert` |
+
+Complex items (effort `xhigh`, multi-file) with `CODEX_AVAILABLE=false` → skip with `⚠ codex not found — skipping item #<id> (xhigh effort). Install: /plugin marketplace add openai/codex-plugin-cc`.
+
+`--agent <name>` overrides this routing table unconditionally.
 
 > **Conflict gate**: verify all Step 5a conflict tasks `completed` before any action item. Still `pending`/`in_progress` → stop, surface list, wait. Items on unresolved conflicts compound diff.
 

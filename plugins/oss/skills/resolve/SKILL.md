@@ -260,7 +260,10 @@ Read every comment, review, inline code comment. Per inline code comment: if its
 | `[info]` | Praise, acknowledgement, emoji-only — skip |
 | `[self-review]` | Finding from `/oss:review` report — not a GitHub commenter; author = agent name |
 
-Build `ACTION_ITEMS`: `[{id, type, author, summary, file, line, url, full_comment_text}]` — `url`: `html_url` from GitHub API response; blank for report items
+Build `ACTION_ITEMS`: `[{id, type, change, severity, author, summary, file, line, url, full_comment_text}]` — `url`: `html_url` from GitHub API response; blank for report items
+
+- **`change`** — type of change required: `code` · `test` · `docs` · `config` · `ci` · `style` · `refactor`; infer from finding text and affected file path; default `code` when ambiguous
+- **`severity`** — estimated impact severity 1–5 (5 = highest): 5 = blocks merge / data loss / security; 4 = user-visible regression; 3 = correctness/important quality gap; 2 = improvement, non-blocking; 1 = nit / style; map from comment urgency and `type` (`[req]` → floor 3)
 
 ### Sources confirmation
 
@@ -270,17 +273,19 @@ Print action item table — **MUST render as markdown table; never use key-value
 
 - **Summary**: ≤60 chars — truncate at word boundary, append `…`
 - **Notes**: ≤45 chars — truncate; full text preserved in `full_comment_text`; use `—` when empty
+- **Change**: one of `code` · `test` · `docs` · `config` · `ci` · `style` · `refactor`
+- **Severity**: integer 1–5; `[req]` floor = 3
 
 Status codes: `pending` · `✓ resolved` · `⊘ skipped` · `⊘ no action`. Verbose reason → Notes column:
 
 ```markdown
 ### Action Items — PR #<number>
 
-| # | Type | Author | Status | Summary | Notes |
-|---|------|--------|--------|---------|-------|
-| 1 | [gh][req] | @reviewer | pending | rename param `x` to `count` | — |
-| 2 | [gh][suggest] | @maintainer | pending | add docstring | — |
-| 3 | [gh][question] | @reviewer | pending | why not use X instead? | — |
+| # | Type | Change | Severity | Author | Status | Summary | Notes |
+|---|------|--------|----------|--------|--------|---------|-------|
+| 1 | [gh][req] | code | 4 | @reviewer | pending | rename param `x` to `count` | — |
+| 2 | [gh][suggest] | docs | 2 | @maintainer | pending | add docstring | — |
+| 3 | [gh][question] | code | 3 | @reviewer | pending | why not use X instead? | — |
 ```
 
 Long content never justifies switching to key-value or separator-delimited format — truncate, stay in table.
@@ -335,7 +340,7 @@ Options: (a) Apply all [req] (X items) · (b) Apply all (N items) · (c) Skip al
 If per-item control needed: advise re-run after reducing source (e.g. use `report` mode instead of `pr + report`, or `--no-challenge` to cut upstream findings).
 
 Resolve `SELECTED_ITEMS`:
-- "Skip all" or no selections → `[]` → skip Steps 4–8, jump to Step 9
+- "Skip all" or no selections → `[]` → skip Step 8, jump to Step 9 (checkout + conflict resolution still run)
 - "Apply all [req]" → all `[req]` IDs
 - "Apply all" → all pending IDs
 - "Apply selected" → checked IDs from item questions
@@ -369,7 +374,7 @@ Create tasks **only for `SELECTED_ITEMS`** — not all pending items; avoids con
 ```text
 TaskCreate(
   subject="<type> <summary> — PR #<number>",   # <type> = full string with brackets
-  description="Author: @<author> | File: <file:line or '—'> | <full_comment_text>",
+  description="Author: @<author> | Change: <change> | Severity: <severity> | File: <file:line or '—'> | <full_comment_text>",
   activeForm="Implementing: <summary>"          # <summary> truncated to 80 chars
 )
 ```
@@ -378,7 +383,7 @@ Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`.
 
 ## Step 4: Checkout PR branch
 
-*Runs only when `SELECTED_ITEMS` non-empty (set in Step 3e). Empty → skip to Step 9.*
+*Skip only when `MODE = report` with no PR# (`$PR_NUMBER` unset — no remote branch to check out). In pr mode, runs unconditionally regardless of `SELECTED_ITEMS` — conflict resolution must happen even when 0 action items selected.*
 
 **Branch-safety pre-check** — must run BEFORE `gh pr checkout` so a wrong-branch commit is impossible (per `git-commit.md` Gate 2). Verify the PR's `headRefName` is not the repo's default branch — `gh pr checkout` of a same-repo PR whose HEAD = default branch would land us on default and any later commit (Step 8) would violate Gate 2:
 
@@ -422,6 +427,8 @@ git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
 Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
 
 ## Step 8: Implement action items
+
+*Skip when `SELECTED_ITEMS` is empty — jump to Step 9.*
 
 **Soft cap: 8 Codex dispatches per session.** If `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] items only (if ≤8) · (c) Proceed anyway (sequential, may be slow).
 
