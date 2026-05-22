@@ -251,14 +251,44 @@ else
         elif [ ! -s "$test_file" ]; then
             printf "R4-FAIL (empty test file): %s\n" "$test_file"
             _FAIL=1
+        else
+            # R4-THIN: non-empty file with zero def test_ functions
+            test_fn_count=$(grep -c "^def test_" "$test_file" 2>/dev/null || echo 0)
+            if [ "$test_fn_count" -eq 0 ]; then
+                printf "R4-FAIL (no test functions): %s — has no def test_ functions\n" "$test_file"
+                _FAIL=1
+            else
+                # R4-STUB: every test function body is only pass or ...
+                non_stub=$(python -c "
+import ast, sys
+try:
+    tree = ast.parse(open('$test_file').read())
+except Exception:
+    sys.exit(0)
+for node in ast.walk(tree):
+    if isinstance(node, ast.FunctionDef) and node.name.startswith('test_'):
+        stmts = node.body
+        for s in stmts:
+            if isinstance(s, ast.Pass):
+                continue
+            if isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant) and s.value.value is ...:
+                continue
+            print('non-stub')
+            sys.exit(0)
+" 2>/dev/null)
+                if [ -z "$non_stub" ] && [ "$test_fn_count" -gt 0 ]; then
+                    printf "R4-FAIL (stub tests only): %s — all %s test function(s) are pass/... stubs\n" "$test_file" "$test_fn_count"
+                    _FAIL=1
+                fi
+            fi
         fi
     done < <(find plugins -path "*/bin/*.py" -not -name "_*.py" 2>/dev/null | sort)  # timeout: 5000
-    [ "$_FAIL" -eq 0 ] && printf "✓: all bin/ Python scripts have non-empty test files\n"
+    [ "$_FAIL" -eq 0 ] && printf "✓: all bin/ Python scripts have non-empty test files with real assertions\n"
 fi
 ```
 
 **Severity**:
-- `R4-FAIL` (no test file or empty test file) → **medium** — plugin policy violation; new bin/ scripts must ship with tests
+- `R4-FAIL` (any sub-check) → **medium** — plugin policy violation; new bin/ scripts must ship with tests containing real assertions
 
 Fix: create `tests/test_<basename>.py` with at minimum one test class covering the public API of the script.
 
@@ -266,6 +296,8 @@ Fix: create `tests/test_<basename>.py` with at minimum one test class covering t
 | --- | --- | --- | --- |
 | R4-FAIL — missing test file | `bin/*.py` with no matching `tests/test_*.py` | medium | no — write tests |
 | R4-FAIL — empty test file | `tests/test_*.py` exists but has zero size | medium | no — populate test file |
+| R4-FAIL — no test functions | test file non-empty but has zero `def test_` functions | medium | no — write tests |
+| R4-FAIL — stub tests only | all `def test_` functions body is only `pass` or `...` | medium | no — implement assertions |
 
 Note: the `_*.py` exclusion (e.g., `_schema.py`) is intentional only for files that are pure type-definition modules with no runnable logic. Files with `__name__ == "__main__"` guards must have tests regardless of leading underscore. Auditor should verify exclusion is appropriate per file when `_FAIL` reports are absent.
 

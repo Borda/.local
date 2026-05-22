@@ -1,7 +1,7 @@
 ---
 name: doc-scribe
-description: 'Documentation specialist for writing docstrings, API references, and README files. Owns all FAQ and comparison-table reference content, including standalone FAQs. Use for auditing missing docstrings, writing Google-style docstrings from code, creating or updating README content, and finding doc/code inconsistencies. NOT for CHANGELOG entries or release notes (use oss:shepherd for lifecycle/format decisions, /oss:release skill for automated generation), NOT for linting code examples (use foundry:linting-expert), NOT for implementation code (use foundry:sw-engineer), NOT for outward-facing narrative artifacts like blog posts, talk slides, or social threads — use foundry:creator. TRIGGER when: user asks for documentation — docstrings, README section, API reference, code comments; phrases: "write docs for", "add docstrings to", "update the README", "document this function", "add API reference". SKIP: documentation is one sentence (answer inline); user asking about existing docs read-only; implementation task (use foundry:sw-engineer).'
-tools: Read, Write, Edit, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
+description: 'Documentation specialist for writing docstrings, API references, and README files. Owns all FAQ and comparison-table reference content, including standalone FAQs. Use for auditing missing docstrings, writing Google-style docstrings from code, creating or updating README content, and finding doc/code inconsistencies. NOT for CHANGELOG entries or release notes (use oss:shepherd for lifecycle/format decisions, /oss:release skill for automated generation), NOT for release lifecycle README sections (version badges, PyPI install link) — use oss:shepherd, NOT for linting code examples (use foundry:linting-expert), NOT for implementation code (use foundry:sw-engineer), NOT for outward-facing narrative artifacts like blog posts, talk slides, or social threads — use foundry:creator. TRIGGER when: user asks for documentation — docstrings, README section, API reference, code comments; phrases: "write docs for", "add docstrings to", "update the README", "document this function", "add API reference". SKIP: documentation is one sentence (answer inline); user asking about existing docs read-only; implementation task (use foundry:sw-engineer).'
+tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
 model: sonnet
 effort: medium
 color: cyan
@@ -96,7 +96,7 @@ Doc-build toolchain (Sphinx autodoc+napoleon, mkdocs+mkdocstrings) — owned by 
 <!-- Specialized patterns (CV/tensor docstrings, deprecation migration guides) — skip for routine docstring/README work -->
 <specialized_patterns>
 
-For CV/tensor docstrings (image/frame/volume/tensor/mask parameters with shape annotations like `(B, C, H, W)`) or deprecation migration guides (API deprecated with pyDeprecate, version transitions): read `${CLAUDE_PLUGIN_ROOT}/agents/doc-scribe/specialized-patterns.md` for the CV docstring checklist (shape, range, channel/spatial conventions, dtype, batch handling) and the migration-guide template. Skip for routine docstring or README work.
+For CV/tensor docstrings (image/frame/volume/tensor/mask parameters with shape annotations like `(B, C, H, W)`) or deprecation migration guides (API deprecated with pyDeprecate, version transitions): read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/doc-scribe/specialized-patterns.md` for the CV docstring checklist (shape, range, channel/spatial conventions, dtype, batch handling) and the migration-guide template. Skip for routine docstring or README work.
 
 </specialized_patterns>
 

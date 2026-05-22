@@ -56,20 +56,23 @@ def _make_hook_body(plugin_root: str | None) -> str:
     """
     if plugin_root and not _VALID_PLUGIN_ROOT_RE.match(str(plugin_root)):
         raise ValueError(f"plugin_root contains disallowed characters (only a-zA-Z0-9_./- allowed): {plugin_root}")
+    # PID-qualified log path — avoids symlink attacks on the predictable shared /tmp/codemap-hook.log
+    # (CWE-377). ${TMPDIR:-/tmp} honours user-specific TMPDIR when set; $$ disambiguates per shell.
+    log_path = '"${TMPDIR:-/tmp}/codemap-hook-$$.log"'
     if plugin_root:
         scan = f"{plugin_root}/bin/scan-index"
         return (
             "\n# codemap: incremental index rebuild — do not remove this line\n"
             f'if [ -x "{scan}" ]; then\n'
-            f'    "{scan}" --incremental >> /tmp/codemap-hook.log 2>&1 &\n'
+            f'    "{scan}" --incremental >> {log_path} 2>&1 &\n'
             "elif command -v scan-index >/dev/null 2>&1; then\n"
-            "    scan-index --incremental >> /tmp/codemap-hook.log 2>&1 &\n"
+            f"    scan-index --incremental >> {log_path} 2>&1 &\n"
             "fi\n"
         )
     return (
         "\n# codemap: incremental index rebuild — do not remove this line\n"
         "if command -v scan-index >/dev/null 2>&1; then\n"
-        "    scan-index --incremental >> /tmp/codemap-hook.log 2>&1 &\n"
+        f"    scan-index --incremental >> {log_path} 2>&1 &\n"
         "fi\n"
     )
 
@@ -91,8 +94,39 @@ COMPATIBLE_SHEBANGS: frozenset[str] = frozenset(
 )
 
 
+def _repo_toplevel(cwd: Path | None = None, timeout: int = 5) -> Path | None:
+    """Return the repo top-level directory, or ``None`` when not inside a git repo.
+
+    Args:
+        cwd: working directory to query.
+        timeout: Subprocess timeout in seconds.
+
+    Returns:
+        Absolute repo top-level ``Path``, or ``None`` if git fails.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            cwd=str(cwd) if cwd is not None else None,
+            check=False,
+            timeout=timeout,
+        )
+        if completed.returncode == 0 and completed.stdout.strip():
+            return Path(completed.stdout.strip()).resolve()
+    except (OSError, FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def resolve_hooks_dir(cwd: Path | None = None, timeout: int = 5) -> Path:
     """Resolve the git hooks directory honouring ``core.hooksPath``.
+
+    The configured ``core.hooksPath`` is validated to ensure it stays within the
+    repository top-level (CWE-22+CWE-73): absolute paths outside the repo, ``..``
+    components, and values resolving outside the repo are rejected and the default
+    ``.git/hooks`` is used instead.
 
     Args:
         cwd: working directory to query (defaults to the current process cwd).
@@ -112,7 +146,23 @@ def resolve_hooks_dir(cwd: Path | None = None, timeout: int = 5) -> Path:
         )
         configured = completed.stdout.strip()
         if completed.returncode == 0 and configured:
-            return Path(configured)
+            # Reject non-string-empty values and ``..`` traversal outright.
+            if ".." in Path(configured).parts:
+                return Path(".git/hooks")
+            toplevel = _repo_toplevel(cwd=cwd, timeout=timeout)
+            candidate = Path(configured)
+            # Resolve relative paths against the repo top-level (git's own semantics) before validating.
+            resolved = (
+                (toplevel / candidate).resolve() if toplevel and not candidate.is_absolute() else candidate.resolve()
+            )
+            if toplevel is not None:
+                try:
+                    resolved.relative_to(toplevel)
+                except ValueError:
+                    # Configured path escapes the repo — reject; fall back to default hooks dir.
+                    return Path(".git/hooks")
+            # Return the resolved (absolute) path — CWD-independent, immune to caller cwd changes (SEC-H1/SEC-M11)
+            return resolved
     except (OSError, FileNotFoundError, subprocess.TimeoutExpired):
         pass
     return Path(".git/hooks")

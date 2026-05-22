@@ -879,3 +879,37 @@ done  # timeout: 5000
 
 **Severity**: high — background agents can silently time out with no user notification; lost work and false-progress indicators result.
 Fix: add CLAUDE.md §8 sentinel + poll protocol immediately after every `Agent(..., run_in_background=True)` spawn call.
+
+## Check 41 — Shell variable persistence across Bash calls
+
+Variables assigned in one `\`\`\`bash` block are NOT available in later bash blocks — each Bash tool call runs in a fresh shell. Referencing a variable from a prior block silently expands to empty string, corrupting commands, paths, and conditional guards without any error.
+
+```bash
+printf "=== Check 41: Shell variable persistence across Bash calls ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_bash_persistence.py" --scan-dir .  # timeout: 15000
+```
+
+**Severity**: critical — silent empty-string expansion; corrupts file paths, conditional branches, spawn prompts. No error surfaced at runtime.
+
+Fix: re-assign the variable at the top of every bash block that needs it, or combine dependent commands into a single bash block. Do NOT rely on variable state persisting between bash tool calls.
+
+| Sub-check | Pattern | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| 41 — cross-block ref | `$VAR` in block N where VAR assigned only in block M<N | critical | no — requires combining blocks or re-assigning |
+
+## Check 42 — Unexpanded variables in agent spawn prompts
+
+Variables written as `$VAR` or `${VAR}` inside ` ```markdown ` fenced blocks (spawn prompt templates) are passed literally to the spawned agent — the agent receives the dollar-sign string, not the resolved value. The agent cannot resolve orchestrator shell variables; `$_FOUNDRY_SHARED/foo.md` becomes the literal path string `$_FOUNDRY_SHARED/foo.md` and the Read tool fails silently.
+
+```bash
+printf "=== Check 42: Unexpanded variables in spawn prompt markdown blocks ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_spawn_prompt_vars.py" --scan-dir .  # timeout: 10000
+```
+
+**Severity**: critical — spawn prompt contains unresolved path or name; spawned agent reads wrong file or fails silently with no diagnostic.
+
+Fix: resolve the variable in a preceding bash block and substitute the resolved value inline into the spawn prompt string. For paths: use `$(cat /tmp/resolved-path)` or embed the bash-resolved value as a literal string in the prompt text. Do NOT pass `$VAR` directly inside a markdown spawn prompt unless the caller explicitly substitutes it before dispatch.
+
+| Sub-check | Pattern | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| 42 — unexpanded spawn var | `$VAR` inside ` ```markdown ` block | critical | no — requires resolving value before spawn |

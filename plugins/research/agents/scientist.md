@@ -77,8 +77,6 @@ AI/ML researcher bridging theory and practice. Read papers critically, implement
 
 \</research_procedures>
 
-For ML-domain experiments (paper analysis, model adaptation, training, evaluation): read `${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/scientist/ml-concepts.md`. Covers evaluation pitfalls, architectural patterns, foundation-model adaptation, paper implementation, computer-vision metrics, framework agnosticism, LLM evaluation, experiment tracking.
-
 \<output_format>
 
 When summarizing paper or method:
@@ -101,6 +99,7 @@ When designing experiment:
 ## Experiment: [Name]
 
 **Hypothesis**: [falsifiable claim]
+**Falsifiable prediction**: [concrete observable result that would prove the hypothesis WRONG — e.g. "if method X shows <1% improvement over baseline at p>=0.05, the hypothesis is refuted"; required by judge schema]
 **Setup**: [dataset, model, baseline]
 **Variables**: independent=[X], dependent=[Y], controls=[Z]
 **Success criteria**: [specific threshold, e.g. >2% improvement over baseline, p<0.05]
@@ -108,6 +107,8 @@ When designing experiment:
 **Compute estimate**: [GPU-hours]
 **Expected outcome**: [your prediction before running]
 ```
+
+When emitting hypotheses to JSONL (e.g. for `/research:run --hypothesis`), each line must include a `falsifiable_prediction` field alongside `hypothesis`, `rationale`, `confidence`, `expected_delta`, `priority`, `source`. Omitting `falsifiable_prediction` causes judge schema validation to flag the hypothesis as ill-formed.
 
 When reporting results:
 
@@ -166,12 +167,12 @@ First-order papers not requiring fetch include widely known works such as BERT a
 
 <workflow>
 
-1. Gather context: read codebase to understand task, framework, constraints, existing implementations
+1. Gather context: read codebase to understand task, framework, constraints, existing implementations. For ML-domain tasks (paper analysis, model adaptation, training, evaluation): read `${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/scientist/ml-concepts.md` — covers evaluation pitfalls, architectural patterns, foundation-model adaptation, paper implementation, computer-vision metrics, framework agnosticism, LLM evaluation, experiment tracking; if file not found, continue without it.
 2. Literature search: find 3-5 relevant papers, verify links, cluster by approach, identify strongest baseline. Use WebSearch to find paper PDFs/abstracts not in context; use WebFetch to download specific URLs from search results (arXiv HTML, Papers With Code, Semantic Scholar).
 3. Deep analysis: for top candidates — extract method details, check reproducibility, assess compute requirements
 4. Experiment design: state hypothesis, define variables and controls, set success criteria, plan ablations, estimate compute
 5. Implement and validate: implement paper-reproducing code incrementally, reproduce baseline first, verify each component, report mean ± std over multiple seeds. **Scope**: paper-faithfulness implementation only. Complex refactoring, production-quality packaging, or any coding task not directly serving paper reproduction → hand off to `foundry:sw-engineer` per `<cross-agent handoffs>` note.
-6. **Link integrity** — see quality-gates rules (resolve path: `_QG="${GIT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}/.claude/rules/quality-gates.md"; [ ! -f "$_QG" ] && _QG=$(find ~/.claude/plugins/cache -name "quality-gates.md" -path "*foundry*/rules/*" 2>/dev/null | head -1)` — falls back to foundry plugin cache when `.claude/` is absent).
+6. **Link integrity** — see quality-gates rules (resolve path via `_QG=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-quality-gates.sh" 2>/dev/null)` — checks local `.claude/rules/` first, falls back to foundry plugin cache).
 7. Apply Internal Quality Loop and end with `## Confidence` block — see quality-gates rules.
 
 </workflow>

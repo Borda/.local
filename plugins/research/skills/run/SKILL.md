@@ -29,7 +29,12 @@ COLAB_KNOWN_HW:             H100, L4, T4, A100
 SUMMARY_INTERVAL:           10 iterations
 DIMINISHING_RETURNS_WINDOW: 5 iterations < 0.5% each → warn user and suggest stopping
 STATE_DIR:                  .experiments/state/<run-id>/  (timestamped dir per run — see .claude/rules/artifact-lifecycle.md)
-CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  (resolved at Agent Resolution step)
+CLAUDE_SKILL_DIR:           <UNRESOLVED — set at Agent Resolution step via cache-path resolution; bare `plugins/research/skills/run` is final fallback only, never consume before resolution block>
+SENTINEL_SLUG_FORMULA: |
+  REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
+  BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
+  # Sentinel path: ${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}
+  # Bash state is lost between tool calls — re-derive at each use site; this formula is the only authorized form.
 ```
 
 <!-- Note: STATE_DIR (.experiments/state/) holds per-iteration artifacts (diary, experiments.jsonl).
@@ -48,16 +53,40 @@ CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  
 
 **Auto-inference keyword heuristics** (when `agent_strategy: auto` or omitted; checked against `## Goal` text AND metric command):
 
-**Precedence order** (first match wins; ML keywords take priority over test-framework keywords):
-- contains `accuracy`, `loss`, `f1`, `auc`, `train`, `val`, `eval` → `ml` → `research:scientist`
+**Precedence order** (first match wins; ML keywords take priority over test-framework keywords). ML-specific compound terms (not bare tokens) required to prevent over-triggering on `eval`/`train`/`val` as common words:
+- contains `accuracy`, `loss` (when paired with `train_loss`/`val_loss`/`eval_loss`), `f1_score`, `auc_roc`, `auroc`, `train_step`, `val_acc`, `eval_loss`, `epoch`, `gradient`, `tensor`, OR explicit `--scientist` flag → `ml` → `research:scientist`
 - contains `time`, `latency`, `bench`, `throughput`, `memory` → `perf` → `foundry:perf-optimizer`
 - contains `pytest`, `coverage`, `complexity` → `code` → `foundry:sw-engineer`
 - no keyword match → `perf` (default fallback)
 
+Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml` routing — too common in non-ML contexts (test eval scripts, training-environment configs, validator command names).
+
 **Stuck escalation sequence** (at STUCK_THRESHOLD consecutive discards):
 
-1. Switch to different agent type (rotate: `code` → `ml` → `perf` → `code`; if current `ml`, next `perf`; if current `perf`, next `code`)
-2. Spawn 2 agents parallel with competing strategies; each writes full analysis to `.experiments/state/<run-id>/stuck-escalation-<i>-<agent-type>.md`, returns ONLY compact JSON envelope. Consolidation: pick whichever returns delta ≥ 0.1% AND guard pass; if both qualify, pick higher delta.
+1. Switch to different agent type. Rotation by current strategy:
+
+   | Current strategy | Next strategy | Escalation agent |
+   | --- | --- | --- |
+   | `code` | `ml` | `research:scientist` |
+   | `ml` | `perf` | `foundry:perf-optimizer` |
+   | `perf` | `code` | `foundry:sw-engineer` |
+   | `arch` | `code` | `foundry:sw-engineer` (fallback `foundry:solution-architect` if sw-engineer unavailable) |
+   | `auto` | infer from resolved strategy | follow rotation row for whichever concrete strategy `auto` heuristics resolved to at Step R3 (e.g. `auto` → resolved `ml` → next `perf` → `foundry:perf-optimizer`) |
+2. Spawn 2 agents parallel with competing strategies; each writes full analysis to `.experiments/state/<run-id>/stuck-escalation-<i>-<agent-type>.md`, returns ONLY compact JSON envelope. Use this spawn prompt verbatim (substitute `<run-id>`, `<i>`, and strategy):
+
+   ```text
+   Stuck-escalation handoff — iteration <i> after STUCK_THRESHOLD consecutive discards.
+   Read `.experiments/state/<run-id>/state.json` for goal, best_metric, baseline, config.
+   Read `.experiments/state/<run-id>/experiments.jsonl` for full iteration history.
+   Read `.experiments/state/<run-id>/diary.md` for qualitative context (what was tried, why reverted).
+   Read `.experiments/state/<run-id>/context-<i>.md` for current iteration's context block.
+   Continue from the last completed iteration (do NOT restart from iteration 0).
+   Write your full analysis and proposed change to `.experiments/state/<run-id>/stuck-escalation-<i>-<your-strategy>.md`.
+   Write a resume point to `.experiments/state/<run-id>/resume.json`: {iteration: <i>, strategy: "<your-strategy>", proposed_change: "<one-line description>"}.
+   Return ONLY: {"strategy":"<your-strategy>","description":"...","files_modified":[...],"confidence":0.N,"file":".experiments/state/<run-id>/stuck-escalation-<i>-<your-strategy>.md"}
+   ```
+
+   Consolidation: pick whichever returns delta ≥ 0.1% AND guard pass; if both qualify, pick higher delta.
 3. Stop, report progress, surface to user — no blind looping
 
 </constants>
@@ -69,7 +98,7 @@ CLAUDE_SKILL_DIR:           "${CLAUDE_SKILL_DIR:-plugins/research/skills/run}"  
 ## Agent Resolution
 
 ```bash
-_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 ```
 
 **`CLAUDE_SKILL_DIR` resolution** — constants block provides default `plugins/research/skills/run` (source-tree path). Resolve to installed path before use:
@@ -147,7 +176,8 @@ Generate `run-id` = `$(date -u +%Y-%m-%dT%H-%M-%SZ)`. Assign immediately:
 ```bash
 RUN_ID=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".experiments/${RUN_ID}"  # hypothesis pipeline + journal outputs (per <constants> note)
-mkdir -p "$RUN_DIR"  # timeout: 5000
+STATE_DIR=".experiments/state/${RUN_ID}"  # per-iteration artifacts (state.json, experiments.jsonl, diary.md)
+mkdir -p "$RUN_DIR" "$STATE_DIR"  # timeout: 5000 — both dirs created before any Write to either
 ```
 
 Note: `STATE_DIR` (`.experiments/state/${RUN_ID}/`) is per-iteration artifact dir — distinct from `RUN_DIR`. Both coexist; see `<constants>` block.
@@ -174,13 +204,15 @@ Write initial `state.json` (`program_file` = absolute path to `.md` or `null` fo
   "iteration": 0,
   "best_metric": null,
   "best_commit": null,
-  "status": "running",
+  "status": "initializing",
   "started_at": "<ISO timestamp>",
   "clarification_prompt": null,
   "colab_hw": null,
   "sandbox_mode": "local"
 }
 ```
+
+Note: status is `"initializing"` until all R2 precondition checks pass — resume treats `"initializing"` as failed-init, not active run. Update to `"running"` at end of R2 (after all checks pass).
 
 ### Step R2: Precondition checks
 
@@ -205,16 +237,28 @@ Run all checks before touching code. Fail fast with clear message:
 
 Set `CODEX_DELEGATION_AVAILABLE=true` if found, `false` otherwise. Continue regardless.
 
-**Initialize sandbox variables** (after all checks pass):
+**Initialize sandbox + timeout variables** (after all checks pass — constants YAML block is not auto-exported to bash; assign explicitly with `${VAR:-default}` to honour environment overrides; ADV-L15 / ADV-M20):
 
 ```bash
 SANDBOX_NETWORK="${SANDBOX_NETWORK:-none}"  # override via program.md Config or environment variable
+# Verify timeout — 120s local, 300s Colab per <constants>; bash overrides via VERIFY_TIMEOUT_SEC env var
+if [ "${compute:-local}" = "colab" ]; then
+    VERIFY_TIMEOUT_SEC="${VERIFY_TIMEOUT_SEC:-300}"
+else
+    VERIFY_TIMEOUT_SEC="${VERIFY_TIMEOUT_SEC:-120}"
+fi
+VERIFY_TIMEOUT_MS=$((VERIFY_TIMEOUT_SEC * 1000))
+# Health-monitoring window per CLAUDE.md §8 — keep aligned with markdown constants in <constants>
+MONITOR_INTERVAL="${MONITOR_INTERVAL:-300}"   # 5 min poll cadence
+HARD_CUTOFF="${HARD_CUTOFF:-900}"             # 15 min hard cutoff
 ```
 
 **Initialize `sandbox_mode`**:
 
 - `compute: docker` (daemon check passed in #7) → `sandbox_mode = "docker"`. Print: `sandbox: Docker daemon reachable — sandbox mode active`
 - All other cases (`compute: local`, `compute: colab`) → `sandbox_mode = "local"`
+
+**Update state.json status to `"running"`** — write only after ALL checks above pass. Resume treats `"initializing"` as failed-init and skips such runs.
 
 ### Step R3: Select ideation agent
 
@@ -261,14 +305,19 @@ Then proceed to R5.
 ### Step R5: Iteration loop
 
 ```bash
+# REPO_SLUG / BRANCH_SLUG formulas: see canonical definition in <constants>
 REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
 BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
-COMMIT_SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
+COMMIT_SENTINEL="${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
 touch "$COMMIT_SENTINEL"  # timeout: 3000
-trap 'rm -f "$COMMIT_SENTINEL"' EXIT
+# Note: trap not effective across Bash calls — each Bash invocation is a fresh shell; commit protection handled by commit-guard.js hook instead.
 ```
 
+**Sentinel liveness**: touch `$COMMIT_SENTINEL` after each Phase 8 result write to extend monitoring window — do NOT rely solely on sentinel touched at loop start; slow iterations exceed 15-min TTL. Re-derive slug per SENTINEL_SLUG_FORMULA from `<constants>` (bash state lost between calls).
+
 **`--team` mode**: If `--team` active, Read `${CLAUDE_SKILL_DIR}/modes/team.md` and execute Phases A–D in place of standard iteration loop below.
+
+**`--team` + `--hypothesis` combination**: combinable. Team mode uses provided hypothesis path and skips oracle/hypothesis-generation phase — `hypothesis_override = true` applies inside team.md Phase A same as solo mode.
 
 For each iteration `i` from 1 to `max_iterations`:
 
@@ -319,7 +368,12 @@ Build context for ideation agent, write to file — do NOT accumulate inline in 
 # Collect signals
 git log --oneline -10 >.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 3000
 tail -10 .experiments/state/${RUN_ID}/experiments.jsonl >>.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 5000
-git diff --stat HEAD~5 HEAD >>.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 3000
+# Guard HEAD~5 — fresh repos have <5 commits; fall back to full HEAD diff when shallow
+if [ "$(git rev-list HEAD --count 2>/dev/null)" -gt 5 ]; then
+    git diff --stat HEAD~5 HEAD >>.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 3000
+else
+    git diff --stat HEAD >>.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 3000
+fi
 ```
 
 Prepend header block to `context-<i>.md`: goal, current metric vs baseline, delta trend (last 5 kept deltas), iteration number. Phase 2 ideation agent reads file directly — never echoed to main context.
@@ -350,7 +404,7 @@ Program constraints: read `<program_file>` — especially `## Notes`, `## Config
 `{"description":"...","files_modified":[],"scripts":["explore-<i>-<slug>.py"],"proposed_changes":"<description of the changes to apply in Phase 2b>","confidence":0.N}`
 ```
 
-For `--colab` runs: ideation agent (especially `research:scientist`) may call `mcp__colab-mcp__runtime_execute_code` to prototype GPU code before committing.
+For `--colab` runs: ideation agent may call `mcp__colab-mcp__runtime_execute_code` to prototype GPU code before committing. **Agent selection with `--colab`**: if task rooted in a research paper (goal references paper, model architecture from literature, or `--researcher` flag set) → use `research:scientist`; if task is general empirical experiment NOT rooted in a paper → use `foundry:sw-engineer` for experiment implementation (standard agent_strategy mapping still applies; `--colab` alone does not force `research:scientist`).
 
 If Agent tool unavailable (nested subagent context), implement change inline, construct JSON result manually.
 
@@ -358,18 +412,18 @@ If Agent tool unavailable (nested subagent context), implement change inline, co
 
 Skip entirely if `sandbox_mode = "local"`.
 
-If Phase 2 returned non-empty `"scripts"`: run each in Docker sandbox with read-only project mount. Per script:
+If Phase 2 returned non-empty `"scripts"`: run each in Docker sandbox with read-only project mount. Per script (use `${SANDBOX_NETWORK}` initialized at R2 — Phase 5 uses identical pattern):
 
 ```bash
-docker run --rm --network <sandbox_network> \
+docker run --rm --network "${SANDBOX_NETWORK}" \
     -v "$(pwd):/workspace:ro" \
     --tmpfs /tmp:rw,size=256m \
     -w /workspace \
     python:3.11-slim \
-    python /workspace/.experiments/state/<run-id>/scripts/<script>
+    python "/workspace/.experiments/state/${RUN_ID}/scripts/${script}"
 ```
 
-Use Bash tool `timeout`: `timeout: <VERIFY_TIMEOUT_SEC * 1000>`. Not shell `timeout` command.
+Use Bash tool `timeout`: `timeout: $VERIFY_TIMEOUT_MS` (computed in R2 from `$VERIFY_TIMEOUT_SEC`). Not shell `timeout` command.
 
 If any script exits non-zero: append `status: sandbox-failed` to `ideation-<i>.md`, skip to Phase 8 with `status: sandbox-failed`. Do not proceed to 2b.
 
@@ -405,7 +459,7 @@ Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentine
 # Refresh commit sentinel — bash state lost between calls; re-derive slug (same formula as R5 setup)
 REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
 BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
-touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # sentinel pattern: /tmp/claude-commit-auth-<repo>-<branch>; timeout: 3000
+touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # sentinel pattern: ${TMPDIR:-/tmp}/claude-commit-auth-<repo>-<branch>; timeout: 3000
 ```
 
 Stage only modified files (never `git add -A`):
@@ -433,15 +487,25 @@ docker run --rm --network "${SANDBOX_NETWORK}" \
     sh -c "$METRIC_CMD"
 ```
 
-No resource limits. Use Bash tool `timeout` parameter (not shell `timeout`): `timeout: <VERIFY_TIMEOUT_SEC * 1000>`.
+No resource limits. Use Bash tool `timeout` parameter (not shell `timeout`): `timeout: $VERIFY_TIMEOUT_MS`.
 
-**If `sandbox_mode = "local"`**: Run `metric_cmd` via Bash (`timeout: <VERIFY_TIMEOUT_SEC * 1000>` ms). Not shell `timeout`. Different CWD → separate `cd <path>` call first. Complex metric parsing → write parser to `.experiments/state/<run-id>/scripts/parse-metric-<i>.py`, run with `python <path>` — no inline one-liner.
+**If `sandbox_mode = "local"`**: Run `metric_cmd` via Bash (`timeout: $VERIFY_TIMEOUT_MS`). Not shell `timeout`. Different CWD → separate `cd <path>` call first. Complex metric parsing → write parser to `.experiments/state/<run-id>/scripts/parse-metric-<i>.py`, run with `python <path>` — no inline one-liner.
 
-**If `--colab` active**: routes through `mcp__colab-mcp__runtime_execute_code`; Docker not used. (`--colab` + `--compute=docker` conflict caught at R2.) If `colab_hw` non-null, prepend GPU identity check: `import torch; actual=torch.cuda.get_device_name(0); assert '<colab_hw>' in actual, f'Wrong GPU: expected <colab_hw>, got {actual}'` via `mcp__colab-mcp__runtime_execute_code`. If fails: print `"⚠ GPU mismatch: requested <colab_hw> but runtime has {actual}. Change the Colab runtime type and re-run."` Stop — do not proceed to Phase 6.
+**If `--colab` active**: routes through `mcp__colab-mcp__runtime_execute_code`; Docker not used. (`--colab` + `--compute=docker` conflict caught at R2.) If `colab_hw` non-null, prepend GPU identity check via `mcp__colab-mcp__runtime_execute_code` — substitute the configured hardware name (env var `COLAB_HW` overrides config) into the assertion string before sending:
+
+```python
+import os, torch
+expected_hw = os.environ.get("COLAB_HW", "")  # falls back to colab_hw from state.json injected at call site
+actual = torch.cuda.get_device_name(0)
+if expected_hw and expected_hw not in actual:
+    raise AssertionError(f"Wrong GPU: expected {expected_hw!r}, got {actual!r}")
+```
+
+If the assertion raises: print `"⚠ GPU mismatch: requested ${colab_hw} but runtime has {actual}. Change the Colab runtime type and re-run."` Stop — do not proceed to Phase 6. When `colab_hw` is null or `COLAB_HW` env var unset, the check is a no-op (environment-specific validation skipped).
 
 <!-- Colab assertion: MCP call, not Bash — exempt from the script-file rule; correct as an inline one-liner. -->
 
-If timeout expires: refresh sentinel (same slug formula as R5/Phase 4: `touch "/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"`), append `status: timeout`, revert via `git revert HEAD --no-edit`, continue loop.
+If timeout expires: refresh sentinel (use REPO_SLUG and BRANCH_SLUG from `<constants>` — re-derive per canonical formula, then `touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"`), append `status: timeout`, revert via `git revert HEAD --no-edit` **only if revert not already performed this iteration** (check: `git log --oneline -1` still shows the experiment commit — if HEAD already points past revert commit, skip revert), continue loop.
 
 #### Phase 6 — Run guard
 
@@ -463,10 +527,27 @@ Record pass (exit 0) or fail (non-zero).
 **Line count computation** (for "gain < 0.1% AND change > 50 lines" row): run before evaluating the condition:
 
 ```bash
-CHANGE_LINES=$(git diff --stat HEAD~1..HEAD | tail -1 | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo 0)  # timeout: 3000
+DIFF_SUMMARY=$(git diff --stat HEAD~1..HEAD | tail -1)  # timeout: 3000
+INSERTIONS=$(echo "$DIFF_SUMMARY" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo 0)
+DELETIONS=$(echo "$DIFF_SUMMARY" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo 0)
+CHANGE_LINES=$((INSERTIONS + DELETIONS))
 ```
 
 `git revert HEAD --no-edit` — never `git reset --hard` (preserves history, not in deny list).
+
+**Double-revert guard** (ADV-H19) — Phase 7 rework→revert can collide with a partial Phase 5 timeout revert or Phase 6 guard-fail revert performed in the same iteration. Always check before issuing the revert:
+
+```bash
+# Inspect last 5 commits for a prior revert in this iteration (no Bash state across calls — re-derive)
+ALREADY_REVERTED=$(git log --oneline -5 2>/dev/null | grep -c "^[0-9a-f]\+ Revert " || echo 0)
+if [ "$ALREADY_REVERTED" -gt 0 ]; then
+    echo "Phase 7: prior revert detected (Phase 5/6 already reverted this iteration) — skipping double-revert to prevent state corruption."
+else
+    git revert HEAD --no-edit  # timeout: 15000
+fi
+```
+
+The guard fires on `metric improved AND guard fail` (after `GUARD_REWORK_MAX` attempts exhausted), `no improvement`, and `gain < 0.1% AND change > 50 lines` paths — any path that issues a revert after Phase 5 or Phase 6 may have already reverted.
 
 #### Phase 7a — Write diary
 
@@ -542,6 +623,7 @@ TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 **After campaign loop completes** (outside per-iteration loop):
 
 ```bash
+# Sentinel cleanup is best-effort — process-local trap unreachable; commit-guard.js hook owns lifecycle.
 rm -f "$COMMIT_SENTINEL"  # timeout: 3000
 ```
 

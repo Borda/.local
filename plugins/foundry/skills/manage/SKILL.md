@@ -2,6 +2,7 @@
 name: manage
 description: "Create, update, or delete agents, skills, rules, and hooks with full cross-reference propagation. Trivial edits (typos, small fixes ≤10 words) applied inline without agent; `.md` content-edits delegated to foundry:curator; code file edits (`.js`, `.py`, `.ts`) delegated to foundry:sw-engineer; large cross-ref fan-outs (> 3 files) also delegate. The parent orchestrates MEMORY.md, README, audit, calibration, and the final report. Also manages settings.json permissions atomically with permissions-guide.md. NOT for: validation/quality audit of existing agents/skills (use /foundry:audit); implementing application source code changes outside `.claude/` (use develop:feature or develop:fix — requires `develop` plugin)."
 argument-hint: 'create <agent|skill|rule> <name> "desc" | update <name> [new-name|"change"|spec.md] | delete <name> | add perm <rule> "desc" "use-case" | remove perm <rule>'
+effort: medium
 disable-model-invocation: true
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, Skill
 ---
@@ -63,6 +64,19 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 - USED_COLORS: blue, cyan, green, orange, pink, purple, yellow
 - AVAILABLE_COLORS: indigo, lime, magenta, teal, violet
 
+<!-- Background agent health monitoring (CLAUDE.md §8) — used by every spawn in Step 4 -->
+- MONITOR_INTERVAL: 300   (5 minutes between polls)
+- HARD_CUTOFF:      900   (15 minutes of no file activity → declare timed out)
+- EXTENSION:        300   (one +5 min extension if output file tail explains delay)
+
+Bash equivalent (paste at the start of any health-monitoring block):
+
+```bash
+MONITOR_INTERVAL=300
+HARD_CUTOFF=900
+EXTENSION=300
+```
+
 Maintain colors manually — add new agent colors here when creating agents; static list advisory only — live Grep in Step 3 authoritative for colors in use.
 
 </constants>
@@ -103,7 +117,7 @@ ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/\(^\|[[:space:]]\)--skip-audit\([[:space:
 Results:
 
 - One non-empty result → resolved type; proceed
-- Multiple non-empty results → `AskUserQuestion`: "Multiple entities named `<name>` found. Which one? (a) agent (b) skill (c) rule (d) hook"
+- Multiple non-empty results → `AskUserQuestion`: "Multiple entities named `<name>` found. Which one? (a) agent (b) skill (c) rule (d) hook" — note: (d) hook valid for `update` and `delete` only; `create hook` not yet implemented (use Edit tool on `hooks/<name>.js` directly until create-hook mode added)
 - All empty → report "No agent, skill, rule, or hook named `<name>` found" and stop
 
 For `create`, check only relevant type's path.
@@ -189,15 +203,21 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 
 1. Fetch latest Claude Code agent frontmatter schema:
 
-   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
+   - Resolve schema output path before spawning:
+     ```bash
+     MANAGE_SCHEMA_FILE=$(mktemp -t manage-schema-XXXXXX).md
+     echo "Schema file: $MANAGE_SCHEMA_FILE"  # timeout: 3000
+     ```
+   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
    **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
    ```bash
+   MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer 2>/dev/null)"  # timeout: 5000
    [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
-   # Sets LAUNCH_AT + SENTINEL; use $SENTINEL in 5-min find -newer poll on /tmp for manage-schema-*.md files.
+   # Sets LAUNCH_AT + SENTINEL; use $SENTINEL in $MONITOR_INTERVAL-sec find -newer poll on ${TMPDIR:-/tmp} for manage-schema-*.md files.
    ```
-   Every 5 min: `find /tmp -newer "$SENTINEL" -name "manage-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+   Every `$MONITOR_INTERVAL` seconds: `find "${TMPDIR:-/tmp}" -newer "$SENTINEL" -name "manage-schema-*.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `effort`, `initialPrompt`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `isolation`, `color`), current model shorthands, new fields
    - Note new fields worth including. Adjust template to reflect current schema. If new field broadly useful for agent's role (e.g. `maxTurns` for long-running agents), include with sensible default and inline comment.
@@ -208,7 +228,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 
    - `opusplan` — plan-gated roles (solution-architect, oss:shepherd, foundry:curator)
    - `opus` — complex implementation roles (foundry:sw-engineer, foundry:qa-specialist, research:scientist, foundry:perf-optimizer)
-   - `sonnet` — focused execution roles (research:data-steward, foundry:web-explorer, foundry:doc-scribe, foundry:creator, oss:cicd-steward)
+   - `sonnet` — focused execution roles (research:data-steward (requires `research` plugin), foundry:web-explorer, foundry:doc-scribe, foundry:creator, oss:cicd-steward)
    - `haiku` — high-frequency diagnostics ONLY (e.g. linting-expert); NOT for analysis/auditing roles that require substantive reasoning
 
 4. Resolve template path (cascade primary → project-local → cache scan; only the cache scan runs if neither of the cheaper paths exists, since each candidate must satisfy `-d` before being assigned):
@@ -233,36 +253,51 @@ Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confi
 
 **Health monitoring** (CLAUDE.md §8): After spawning foundry:sw-engineer agent:
 ```bash
+MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-agent 2>/dev/null)"  # timeout: 5000
 [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
 ```
-Every 5 min: `find .claude/agents -newer "$SENTINEL" -name "<name>.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+Every `$MONITOR_INTERVAL` seconds: `find .claude/agents -newer "$SENTINEL" -name "<name>.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
 
 ### Mode: Create Skill
 
 1. Fetch latest Claude Code skill frontmatter schema:
 
-   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `/tmp/manage-skill-schema-$(date +%s).md` using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"/tmp/manage-skill-schema-<ts>.md\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
+   - Resolve skill schema output path before spawning:
+     ```bash
+     MANAGE_SKILL_SCHEMA_FILE=$(mktemp -t manage-skill-schema-XXXXXX).md
+     echo "Skill schema file: $MANAGE_SKILL_SCHEMA_FILE"  # timeout: 3000
+     ```
+   - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SKILL_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SKILL_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
    **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
    ```bash
+   MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer-skill 2>/dev/null)"  # timeout: 5000
    [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
    ```
-   Every 5 min: `find /tmp -newer "$SENTINEL" -name "manage-skill-schema-*.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+   Every `$MONITOR_INTERVAL` seconds: `find "${TMPDIR:-/tmp}" -newer "$SENTINEL" -name "manage-skill-schema-*.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
 
 2. **Re-resolve `MANAGE_TPL` at the start of each skill invocation**; do not assume it is set from a prior step. Most `/foundry:manage create skill ...` invocations enter Create Skill mode directly without going through Create Agent first, so the variable will be unset. Run the resolution block from Create Agent step 4 above (cascade primary → project-local → cache scan with the `-d` guards) before reading any template path.
 
-3. Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skill file (`foundry:curator` NOT-for excludes scaffolding new agents/skills — see Create Agent rationale above):
+3. Resolve `$_FOUNDRY_SHARED` before spawning — sub-agents do not inherit shell variables:
+
+```bash
+_FOUNDRY_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)"
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+echo "Shared dir: $_FOUNDRY_SHARED"  # timeout: 5000
+```
+
+Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skill file (`foundry:curator` NOT-for excludes scaffolding new agents/skills — see Create Agent rationale above):
 
 ```markdown
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
 Read the skill scaffold template at `$MANAGE_TPL/skill-scaffold.md`.
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
-Read `$_FOUNDRY_SHARED/bin-authoring-guide.md` — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH.
+Read `<_FOUNDRY_SHARED_RESOLVED>/bin-authoring-guide.md` (substitute resolved path from bash block above) — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH.
 Scaffold `.claude/skills/<name>/SKILL.md` with:
 - Frontmatter: name=<name>, description=<description>; add other fields per schema and scaffold guidance
 - Body: rich workflow scaffold derived from the description, following all content rules in the scaffold template
@@ -272,10 +307,11 @@ Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,
 
 **Health monitoring** (CLAUDE.md §8): After spawning foundry:sw-engineer agent:
 ```bash
+MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-skill 2>/dev/null)"  # timeout: 5000
 [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
 ```
-Every 5 min: `find .claude/skills -newer "$SENTINEL" -name "SKILL.md" | wc -l` — new files = alive; zero for 15 min = stalled. On timeout: read partial output; surface with ⏱.
+Every `$MONITOR_INTERVAL` seconds: `find .claude/skills -newer "$SENTINEL" -name "SKILL.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
 
 ### Mode: Update Agent (rename)
 
@@ -351,16 +387,24 @@ Before executing type-specific content-edit mode, determine approach:
 1. Determine change directive:
    - Quoted description → use as-is
    - Spec file path → Read spec file; use content as directive
-2. Spawn **foundry:curator** subagent:
+2. Resolve `_FS_VAL` (concrete path) before constructing spawn prompt — sub-agents do not inherit shell variables, so the prompt must contain a literal path, not a `$VAR` reference:
+
+```bash
+_FS_VAL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)"
+[ -z "$_FS_VAL" ] && _FS_VAL="plugins/foundry/skills/_shared"
+echo "Shared dir for curator prompt: $_FS_VAL"  # timeout: 5000
+```
+
+3. Spawn **foundry:curator** subagent — substitute `<_FS_VAL>` with the path from above when emitting the prompt:
 
 ```markdown
 Read `.claude/agents/<name>.md`.
 Apply this change: <directive>
 Rules:
 - Preserve frontmatter fields (name, description, tools, model, color) unless the change explicitly targets them
-- Preserve XML tags (<role>, <core_knowledge>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
+- Preserve XML tags (<role>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the agent's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
+- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
 - After editing: verify XML tag balance, step numbering, cross-ref validity
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -371,7 +415,15 @@ Use `description_changed` from returned JSON to decide whether Steps 5–7 need 
 ### Mode: Content-Edit Skill
 
 1. Determine change directive (same as Content-Edit Agent).
-2. Spawn **foundry:curator** subagent:
+2. Resolve `_FS_VAL` (concrete path) before constructing the spawn prompt:
+
+```bash
+_FS_VAL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)"
+[ -z "$_FS_VAL" ] && _FS_VAL="plugins/foundry/skills/_shared"
+echo "Shared dir for curator prompt: $_FS_VAL"  # timeout: 5000
+```
+
+3. Spawn **foundry:curator** subagent — substitute `<_FS_VAL>` with the path from above:
 
 ```markdown
 Read `.claude/skills/<name>/SKILL.md`.
@@ -380,7 +432,7 @@ Rules:
 - Preserve frontmatter fields (name, description, argument-hint, disable-model-invocation, allowed-tools)
 - Preserve XML tags (<objective>, <inputs>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the skill's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
+- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
 - After editing: verify XML tag balance, step numbering, workflow gate completeness
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -486,7 +538,7 @@ jq --arg hook "$HOOK_NAME" '
         | .value |= map(select((.hooks // []) | length > 0))
     )
     | .hooks |= with_entries(select((.value // []) | length > 0))
-' .claude/settings.json > /tmp/settings-tmp.json && mv /tmp/settings-tmp.json .claude/settings.json
+' .claude/settings.json > "${TMPDIR:-/tmp}/settings-tmp.json" && mv "${TMPDIR:-/tmp}/settings-tmp.json" .claude/settings.json
 ```
 
 Verify the entry is gone:
@@ -601,7 +653,13 @@ Return ONLY: {"status":"done","files_updated":N}
 
 ## Step 6: Update MEMORY.md roster (auto-memory)
 
-MEMORY.md is Claude Code's auto-memory file — **not** stored under `.claude/`. Injected into conversation context at session start. Absolute path appears near top of system prompt (e.g. `~/.claude/projects/.../memory/MEMORY.md`). Use that absolute path with Edit tool.
+MEMORY.md is Claude Code's auto-memory file — **not** stored under `.claude/`. Injected into conversation context at session start. Absolute path appears near top of system prompt (e.g. `~/.claude/projects/.../memory/MEMORY.md`). Use that absolute path with Edit tool. If system prompt parsing fails or path absent, fall back to:
+
+```bash
+# Slug both / and . to - (Claude Code's auto-memory dir uses dash for path separators AND dot replacements)
+MEMORY_FALLBACK=~/.claude/projects/$(pwd | sed 's|[/.]|-|g' | sed 's/^-//')/memory/MEMORY.md
+[ -f "$MEMORY_FALLBACK" ] && echo "Fallback MEMORY.md: $MEMORY_FALLBACK" || echo "MEMORY.md not found at fallback path — skip roster update"  # timeout: 5000
+```
 
 Regenerate inventory lines from disk:
 
@@ -695,6 +753,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 - **README.md tables**: agent/skill tables in project `README.md`; rules table in `.claude/README.md` — keep row format consistent with existing rows
 - **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note
+- **Cycle detection**: sub-tasks spawned by manage (foundry:sw-engineer, foundry:curator, foundry:doc-scribe) must not invoke manage again. Circular dispatch — manage→sw-engineer→curator→manage — causes infinite loops. If a sub-task needs manage capabilities, surface the need back to the orchestrator; never chain manage from inside a manage-spawned sub-agent.
 - Follow-up chains:
   - create or non-trivial update of agent/skill → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="<name>")` (mandatory) → `Skill(skill="foundry:calibrate", args="routing --fast")`
   - trivial update or rename or delete → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="routing --fast")` (if description changed)

@@ -1,7 +1,7 @@
 ---
 name: plan
 description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/."
-argument-hint: "<goal> [--no-challenge] [--codemap] [--semble]"
+argument-hint: "<goal> [--no-challenge] [--codemap] [--semble] [--max-depth <N>]"
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -24,7 +24,7 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 ## Agent Resolution
 
 ```bash
-_DEV_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" 2>/dev/null)  # timeout: 5000
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
@@ -43,11 +43,26 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 ## Flag parsing
 
-**Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
-**Set `CODEMAP_ENABLED=false`**. If `--codemap` in `$ARGUMENTS`, set `CODEMAP_ENABLED=true`.
-**Set `SEMBLE_ENABLED=false`**. If `--semble` in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
+Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+```bash
+# timeout: 5000
+CHALLENGE_ENABLED=true
+CODEMAP_ENABLED=false
+SEMBLE_ENABLED=false
+[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
+[[ " $ARGUMENTS " == *" --codemap "* ]] && CODEMAP_ENABLED=true
+[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
+MAX_DEPTH=$(echo "$ARGUMENTS" | grep -oP '(?<=--max-depth )\d+' || echo "3")
+echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
+echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
+echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
+echo "$MAX_DEPTH"         > ${TMPDIR:-/tmp}/dev-max-depth
+```
+
+Downstream blocks read back, e.g. `CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled 2>/dev/null || echo false)`.
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -63,6 +78,7 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
 
 - Classify task as `feature`, `fix`, `refactor`, or `debug`
   - `debug`: root cause unknown — symptoms present but cause unclear, investigation needed before a fix can be scoped; when classified `debug`, recommend running `/develop:debug` first, then re-run `/develop:plan` once root cause identified to produce a fix plan
+  - **WARNING**: debug classification triggers `/develop:debug` which can re-invoke `/develop:plan` — caller tracks dispatch depth to prevent infinite loop via `--max-depth` flag. Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). At limit (`--max-depth 0`): stop, report current plan state, invoke `AskUserQuestion` — (a) Accept plan as-is · (b) Re-scope with reduced depth requirement. Pass `--max-depth $((MAX_DEPTH - 1))` when invoking `/develop:debug` to decrement counter.
 - Identify affected files and modules (search codebase — no guessing)
 - Assess complexity: small (1-3 files, self-contained), medium (4-8 files or 1-2 modules), large (cross-module, API changes, or 3+ modules)
 - List risks: breaking changes, missing tests, unclear requirements, external dependencies
@@ -70,7 +86,7 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
 
 Agent returns findings inline (no file handoff — output short).
 
-**Breaking change gate**: if agent lists any breaking change in risks — stop before writing plan. Call `AskUserQuestion` per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body does NOT count — `AskUserQuestion` mandatory per `communication.md`.
+**Breaking change gate**: if agent lists any breaking change in risks — stop before writing plan. Call `AskUserQuestion` per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body does NOT count — `AskUserQuestion` mandatory per `communication.md`. If user selects No/Abort/Decline: stop immediately — do not proceed to Step 2 or subsequent steps.
 
 Breaking change criteria — a change is breaking when any of these apply: removed public API (function, class, method, or module), changed function signatures (parameter names, types, order, or defaults), changed config key names or schema, changed output format (return type, serialization structure, CLI output shape).
 
@@ -130,7 +146,7 @@ Each agent receives only plan file path and role — no conversation history, no
 
 **Parse-failure handling**: agent responses may not be valid JSON (especially fallback `general-purpose` agents that wrap JSON in prose). Before processing:
 
-1. Attempt to extract JSON object: try `python -c "import json, re, sys; t=sys.argv[1]; matches=[m for m in re.finditer(r'\{', t)]; [json.loads(t[m.start():]) for m in reversed(matches)]"` — use last valid `json.loads()` parse starting from any `{`. Fallback: regex `\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}` handles one nesting level (warning: breaks on strings containing `{` or `}`).
+1. Attempt to extract JSON object: prefer `echo "$RESPONSE" | jq -c '.' 2>/dev/null` for parseable input. For mixed prose+JSON: use `echo "$RESPONSE" | grep -oE '\{[^{}]*(\{[^{}]*\}[^{}]*)?\}' | tail -1 | jq -c '.' 2>/dev/null` — extracts last balanced JSON object (one nesting level; breaks on strings containing `{` or `}`). If `jq` not available or both jq attempts fail, fallback: `echo "$RESPONSE" | python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/extract_json_field.py" .` — recovers the outermost balanced JSON object from arbitrary prose+JSON text; pass a specific field name (e.g. `ok`, `a`) instead of `.` to extract just that field.
    **Caveat**: prefer matching the `"a":"<ROLE>"` pattern as anchor when multiple candidates.
 2. If extraction succeeds: use extracted object
 3. If extraction fails entirely: log `⚠ non-JSON plan response — falling back to prose extraction`; treat as `{"a":"<ROLE>","ok":false,"blockers":["agent returned non-JSON response"],"q":[],"concerns":[]}` and enter resolution loop with re-query
@@ -239,7 +255,7 @@ If unresolved items escalated, print each after brief:
   Recommendation: <option> — <reason>
 ```
 
-Wait for user input before printing `-> /develop ...`.
+Invoke `AskUserQuestion` tool before printing `-> /develop ...`. Options: (a) Proceed — print handoff line and continue · (b) Revise plan — return to Step 2 with user edits. Do not print handoff line until user selects option (a).
 
 **Handoff contract**: plan file at `<PLAN_FILE>` consumable by downstream skills. Pass via `--plan <PLAN_FILE>` when invoking `/develop:feature`, `/develop:fix`, or `/develop:refactor`. For `debug` classification: no downstream plan file — invoke `/develop:debug <goal>` directly; once root cause identified, re-run `/develop:plan` to produce a scoped fix plan. When skill receives `--plan <path>`, reads plan file at Step 1 and:
 - Extracts `Classification`, `Affected files`, `Risks`, `Suggested approach` — skips cold codebase exploration
@@ -252,7 +268,7 @@ End plan document with:
 
 ```markdown
 ## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
 **Gaps**:
 - [specific limitation or unverified assumption]
 

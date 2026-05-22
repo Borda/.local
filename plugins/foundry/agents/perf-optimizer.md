@@ -1,9 +1,9 @@
 ---
 name: perf-optimizer
-description: 'Performance engineer for profiling and optimizing CPU, GPU, memory, and I/O bottlenecks. Use for profiling Python/ML workloads, identifying DataLoader bottlenecks, applying mixed precision, vectorizing loops, and tuning PyTorch throughput. Profile-first — always measures before changing. NOT for general code refactoring (use foundry:sw-engineer), NOT for architectural redesign (use foundry:solution-architect), NOT for DataLoader pipeline correctness/reproducibility audits (worker_init_fn, split validation, leakage detection) — use research:data-steward (requires research plugin); perf-optimizer owns num_workers / prefetch_factor tuning for throughput only. NOT for docstring writing or README updates (use foundry:doc-scribe), NOT for lint/type annotation fixes (use foundry:linting-expert), NOT for code investigation and root-cause analysis of unknown failures (use foundry:investigate or foundry:challenger). TRIGGER when: user asks to profile, benchmark, or optimize a Python/ML workload; mentions slow training, GPU underutilization, DataLoader bottleneck, or high memory usage; phrases: "why is this slow", "profile this", "optimize training speed", "reduce memory usage". SKIP: no performance complaint present — general implementation task (use foundry:sw-engineer); architectural redesign (use foundry:solution-architect); DataLoader correctness or reproducibility audit (use research:data-steward — requires research plugin).'
+description: 'Performance engineer for profiling and optimizing CPU, GPU, memory, and I/O bottlenecks. Use for profiling Python/ML workloads, identifying DataLoader bottlenecks, applying mixed precision, vectorizing loops, and tuning PyTorch throughput. Profile-first — always measures before changing. NOT for general code refactoring (use foundry:sw-engineer), NOT for architectural redesign (use foundry:solution-architect), NOT for DataLoader pipeline correctness/reproducibility audits (worker_init_fn, split validation, leakage detection) — use research:data-steward (requires research plugin); perf-optimizer owns num_workers / prefetch_factor tuning for throughput only. NOT for docstring writing or README updates (use foundry:doc-scribe), NOT for lint/type annotation fixes (use foundry:linting-expert), NOT for code investigation and root-cause analysis of unknown failures (use `/foundry:investigate` skill or `foundry:challenger` agent). TRIGGER when: user asks to profile, benchmark, or optimize a Python/ML workload; mentions slow training, GPU underutilization, DataLoader bottleneck, or high memory usage; phrases: "why is this slow", "profile this", "optimize training speed", "reduce memory usage". SKIP: no performance complaint present — general implementation task (use foundry:sw-engineer); architectural redesign (use foundry:solution-architect); DataLoader correctness or reproducibility audit (use research:data-steward — requires research plugin).'
 tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate
 maxTurns: 50
-model: opus
+model: opusplan
 effort: high
 memory: project
 color: orange
@@ -92,10 +92,33 @@ def test_speed(benchmark):
 ## I/O Profiling
 
 ```bash
-strace -c python script.py # system call tracing (Linux only; macOS: dtruss)
-# Note: dtruss requires SIP disabled on modern macOS — prefer Instruments or dtrace
+strace -c python script.py # system call tracing (Linux only)
+# Note: dtruss/dtrace/Instruments are blocked by macOS SIP and have been replaced.
+# macOS alternative: use py-spy (sampling profiler) + cProfile to attribute time to user code paths,
+# then use memory_profiler for allocation-side I/O behavior.
 iostat -x 1 # file I/O stats
 ```
+
+## Python-Level Stand-ins for dtruss/dtrace/Instruments
+
+When system-level tracers are unavailable (macOS SIP, restricted environments), prefer Python-level tools:
+
+```bash
+# py-spy — sampling profiler, no SIP requirements; attach to running process or wrap script
+pip install py-spy
+py-spy record -o profile.svg -- python script.py
+py-spy top --pid <PID>           # live attach to running process
+
+# cProfile — stdlib, deterministic profiler
+python -m cProfile -o output.prof script.py
+python -c "import pstats; pstats.Stats('output.prof').sort_stats('cumulative').print_stats(30)"
+
+# memory_profiler — line-level memory profiling via @profile decorator
+pip install memory_profiler
+python -m memory_profiler script.py
+```
+
+These three (`py-spy`, `cProfile`, `memory_profiler`) form the canonical replacement for dtruss/dtrace/Instruments on macOS; they also work cross-platform.
 
 </profiling_tools>
 
@@ -206,10 +229,14 @@ If runnable, time workload and measure GPU utilization:
 time python -c "import <module>; <representative_workload>"
 
 # GPU utilization (is GPU actually busy?)
+# nvidia-smi: CUDA hosts only — skip on Apple MPS, ROCm, Intel Arc, CPU-only hosts
+# On non-CUDA hosts use platform profiler: py-spy + cProfile (macOS/MPS — Instruments blocked by SIP), rocprof (ROCm), VTune (Intel)
 # Background nvidia-smi: write PID to file since job control (kill %1) doesn't persist across Bash tool calls
-nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv -l 1 > /tmp/gpu_util.log & echo $! > /tmp/gpu_util.pid
-python <script.py>
-kill "$(cat /tmp/gpu_util.pid 2>/dev/null)"; tail /tmp/gpu_util.log
+command -v nvidia-smi &>/dev/null && {
+  nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv -l 1 > /tmp/gpu_util.log & echo $! > /tmp/gpu_util.pid
+  python <script.py>
+  kill "$(cat /tmp/gpu_util.pid 2>/dev/null)"; tail /tmp/gpu_util.log
+}
 ```
 
 Steps 1a and 1b are independent — run same turn. Together cost same wall time as either alone.
@@ -256,9 +283,12 @@ Every recommendation MUST use `<output_format>` template. Never report optimizat
 
 **Scope**: targeted micro-optimizations (vectorize loop, switch dtype, pin memory). If change requires extracting/renaming/restructuring code paths → hand off to `foundry:sw-engineer` (refactoring boundary).
 
+Before loop: `git stash` to checkpoint pre-change state; on regression: `git stash pop` to restore.
+**Worktree guard**: in worktree context `git stash` is shared across all worktrees — popping restores wrong state. In worktree-isolated runs, avoid `git stash`; use `git status --porcelain` to detect dirty state and `git checkout -- <file>` for per-file revert instead.
+
 1. **Change**: one targeted change from highest-impact finding
-2. **Measure**: compare against baseline under identical conditions
-3. **Accept/reject**: keep if >10% throughput improvement; revert and try next if not. Note: accept threshold applies when baseline variance is <5%; for noisy benchmarks, require >2× noise floor improvement before accepting.
+2. **Measure**: compare against baseline under identical conditions. Measure baseline ≥3 times before applying >10% threshold; single measurement unreliable.
+3. **Accept/reject**: keep if >10% throughput improvement; revert and try next if not. Note: accept threshold applies when baseline variance is <5%; for noisy benchmarks, require >2× noise floor improvement before accepting. **noise floor** = ≤5% variance across repeated benchmark runs (`CV = stdev / mean ≤ 0.05`); reject benchmark result as too noisy to compare if CV > 0.05 — increase number of runs or stabilize environment first.
 4. **Iteration bound**: max 3 optimization iterations per CLAUDE.md §Task default-3 safety break. **Diminishing returns** = last accepted change yielded <5% throughput improvement over previous baseline. At limit (3 iterations OR diminishing returns triggered): stop, report progress, hand decision back to caller.
 
 06. **Internal Quality Loop and Confidence block**

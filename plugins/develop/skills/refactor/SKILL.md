@@ -33,7 +33,7 @@ NOT for:
 ## Agent Resolution
 
 ```bash
-_PATHS=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" --foundry 2>/dev/null)  # timeout: 5000
+_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
@@ -60,19 +60,34 @@ Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: run `DEV_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-run-dir.sh" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
+**Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
 ## Flag parsing
 
-**Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
+Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
 ```bash
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-flags.sh" "$ARGUMENTS" 2>/dev/null)  # timeout: 5000
+# timeout: 5000
+CHALLENGE_ENABLED=true
+SEMBLE_ENABLED=false
+TEAM_MODE=false
+ACCEPT_NO_PLAN=false
+[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
+[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
+[[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
+[[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
+echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
+echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
+echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
+echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
 ```
 
-**Set `SEMBLE_ENABLED=false`**. If `--semble` in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
-**Set `TEAM_MODE=false`**. If `--team` in `$ARGUMENTS`, set `TEAM_MODE=true`.
-**Set `ACCEPT_NO_PLAN=false`**. If `--accept-no-plan` in `$ARGUMENTS`, set `ACCEPT_NO_PLAN=true`.
+Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
+
+```bash
+CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_flags.py" "$ARGUMENTS" 2>/dev/null)  # timeout: 5000
+echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
+```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -155,7 +170,7 @@ Use Glob tool (pattern `**/test_*.py` or `**/*_test.py`), then Grep tool (patter
 > (Use Glob tool — `pattern: **/test_*.py` — to discover test files; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` for configured paths)
 
 ```bash
-# Check pytest available
+# Check pytest available  # timeout: 600000
 $PYTEST_CMD --co -q 2>&1 | head -5
 
 # Check pytest-cov available
@@ -200,18 +215,31 @@ Compute run directory and create health sentinel:
 
 ```bash
 # timeout: 5000
-mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.sh" --sentinel refactor-team-check)
+mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py" --sentinel refactor-team-check)
 TS="${_run[0]}"
 RUN_DIR="${_run[1]}"
+RUN_DIR_LITERAL="$RUN_DIR"
+echo "$TS" > ${TMPDIR:-/tmp}/dev-refactor-team-ts
+echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir
 ```
 
-Spawn 2 teammates in parallel using Agent() tool:
+**IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with the actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
 
-**Teammate 1 — foundry:sw-engineer (model=opus)**: performs refactoring (Steps 4–5). Prompt: "You are a foundry:sw-engineer teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: apply the refactoring steps (Steps 4–5: change with safety net, review). Scope constraint: only edit source files (not under `tests/`). Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR/refactor-sw-engineer.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
+Serialize teammates — sw-engineer applies refactor first, then qa-specialist writes characterization tests against the refactored source. Running in parallel produces a race: qa-specialist may write tests against the pre-refactor implementation, which then fail spuriously once sw-engineer completes.
 
-**Teammate 2 — foundry:qa-specialist (model=opus)**: writes characterization tests (Step 3) in parallel. Prompt: "You are a foundry:qa-specialist teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: write characterization tests (Step 3) to build a safety net for the refactor. Scope constraint: only create/edit files under `tests/`. Do NOT edit source files. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR/refactor-qa-specialist.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
+**Step T1 — Spawn foundry:sw-engineer (model=opus) and wait for completion**. Prompt: "You are a foundry:sw-engineer teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: apply the refactoring steps (Steps 4–5: change with safety net, review). Scope constraint: only edit source files (not under `tests/`). Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-sw-engineer.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
 
-Health monitoring (CLAUDE.md §8): create sentinel `touch /tmp/refactor-team-check-$TS`; every 5 min: `find $RUN_DIR -newer /tmp/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
+**Step T2 — Only after T1 returns success, spawn foundry:qa-specialist (model=sonnet) against the refactored source**. Prompt: "You are a foundry:qa-specialist teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: write characterization tests (Step 3) to build a safety net for the refactor — test the CURRENT (post-refactor) source produced by Teammate 1. Scope constraint: only create/edit files under `tests/`. Do NOT edit source files. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>, refactor_output: $RUN_DIR_LITERAL/refactor-sw-engineer.md}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-qa-specialist.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
+
+Health monitoring (CLAUDE.md §8): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files the spawn block persisted):
+
+```bash
+# timeout: 5000
+TS=$(cat ${TMPDIR:-/tmp}/dev-refactor-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-refactor-run-dir 2>/dev/null || echo ".temp/develop/$TS")
+```
+
+Apply to each teammate independently — create sentinel `touch ${TMPDIR:-/tmp}/refactor-team-check-$TS` before each spawn; every 5 min: `find $RUN_DIR -newer ${TMPDIR:-/tmp}/refactor-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface partial results with ⏱; never omit.
 
 After both complete: read their output files from `$RUN_DIR/`, synthesize outputs, run quality stack, produce Final Report. Exit — do not continue to Steps 3–5.
 
@@ -234,17 +262,18 @@ Spawn with context:
 - Test naming: `test_<function>_characterization_<scenario>`
 
 ```bash
-# Run to confirm they pass against current code
-$PYTEST_CMD <test_file> -v
+# Run to confirm they pass against current code; capture exit in SAME block — $? resets across Bash() calls  # timeout: 600000
+$PYTEST_CMD <test_file> -v; GATE_EXIT=$?
+echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
 ```
 
-**Gate**: all characterization tests must pass before proceeding. Check exit code:
+**Gate**: all characterization tests must pass before proceeding. Check exit code (reads value persisted above — `$?` in a fresh shell is unrelated to the prior pytest run):
 
 ```bash
-GATE_EXIT=$?
-if [ "${GATE_EXIT:-0}" -eq 5 ]; then
+GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-gate-exit 2>/dev/null || echo 1)
+if [ "${GATE_EXIT}" -eq 5 ]; then
     echo "GATE WARN: no tests collected (exit 5) — characterization test file missing or not detected by pytest; fix collection, not the code"
-elif [ $GATE_EXIT -ne 0 ]; then
+elif [ "$GATE_EXIT" -ne 0 ]; then
     echo "GATE FAIL: characterization test(s) failed (exit $GATE_EXIT) — fix the test, not the code"
     # The test is wrong if it fails on unmodified code
 else
@@ -261,6 +290,7 @@ For each change:
 1. One focused change (single responsibility per edit)
 2. Run test suite:
    ```bash
+   # timeout: 600000
    $PYTEST_CMD --tb=short <test_files> -v
    ```
 3. Tests pass: proceed to next change
@@ -303,6 +333,7 @@ Full review of refactored code. **Loop** — review -> targeted refactoring (ret
 3. Re-run full test suite:
 
    ```bash
+   # timeout: 600000
    $PYTEST_CMD --tb=short <test_files> -v 2>&1 | tail -20
    GATE_EXIT=${PIPESTATUS[0]}
    ```
@@ -342,7 +373,7 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if not found → skip quality stack en
 - [any remaining items that need manual review]
 
 ## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
 **Gaps**:
 - [e.g., coverage tool unavailable, some tests skipped]
 

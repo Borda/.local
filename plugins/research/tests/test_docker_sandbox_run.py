@@ -107,12 +107,22 @@ def test_main_verify_mode_dispatches_correctly(captured_run: list[list[str]]) ->
     assert "/proj/.experiments:/workspace/.experiments:rw" in cmd
 
 
-def test_main_sandbox_network_env_override(captured_run: list[list[str]]) -> None:
+def test_main_sandbox_network_host_rejected(captured_run: list[list[str]], capsys: pytest.CaptureFixture[str]) -> None:
+    """SEC-R-2: ``SANDBOX_NETWORK=host`` removes network isolation and must be rejected."""
     rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_NETWORK": "host"}, cwd="/proj")
+    assert rc == 2
+    assert "SANDBOX_NETWORK" in capsys.readouterr().err
+    # ``host`` must never reach the docker argv.
+    assert captured_run == []
+
+
+def test_main_sandbox_network_bridge_accepted(captured_run: list[list[str]]) -> None:
+    """``bridge`` is in the allowlist alongside ``none`` and ``internal``."""
+    rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_NETWORK": "bridge"}, cwd="/proj")
     assert rc == 0
     cmd = captured_run[0]
     idx = cmd.index("--network")
-    assert cmd[idx + 1] == "host"
+    assert cmd[idx + 1] == "bridge"
 
 
 def test_main_sandbox_network_empty_falls_back_to_none(captured_run: list[list[str]]) -> None:

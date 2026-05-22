@@ -97,6 +97,10 @@ if $CLEAN; then
     done
 fi
 
+echo "Refreshing external plugin marketplaces..."
+claude plugin marketplace add openai/codex-plugin-cc 2>/dev/null && echo "  ✓ openai-codex refreshed" || echo "  ⚠ openai-codex refresh failed (offline?)"
+claude plugin marketplace add JuliusBrussee/caveman   2>/dev/null && echo "  ✓ caveman refreshed"      || echo "  ⚠ caveman refresh failed (offline?)"
+
 echo "Updating external plugins..."
 for p in "${EXTERNAL_PLUGINS[@]}"; do
     claude plugin uninstall "$p" 2>/dev/null && echo "  ✓ uninstalled $p" || echo "  – $p not installed, skipping"

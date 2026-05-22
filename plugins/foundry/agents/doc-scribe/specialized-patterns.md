@@ -5,8 +5,9 @@ Read this file only when documenting computer-vision / ML tensor functions or wr
 
 ## Computer Vision (CV) / Tensor Docstring Checklist
 
-**CV/ML projects only**: When documenting image/tensor functions — identified by params like `image`, `frame`, `volume`, `tensor`,
-`mask`, `feature_map`, or explicit shape annotations like `(B, C, H, W)` — always specify:
+**CV/ML projects only**: When documenting image/tensor functions — identified by **both** CNN/tensor param names (`kernel_size`, `stride`, `padding`, `image`, `frame`, `volume`, `tensor`, `mask`, `feature_map`) **and** at least one visual/image-domain signal (image dimensions, pixel values, bounding boxes, or explicit vision/image/detection/segmentation keyword or shape annotation like `(B, C, H, W)`) — always specify:
+
+> **Note**: CNN param names alone (`kernel_size`, `stride`, `padding`) also appear in NLP and audio models. Do not apply CV checklist unless a visual-domain signal is also present.
 
 - **Shape**: exact dims with named axes (B, C, D, H, W) — e.g., `Shape: (B, C, H, W)`
 - **Value range**: [0, 1], [0, 255], or [-1, 1]

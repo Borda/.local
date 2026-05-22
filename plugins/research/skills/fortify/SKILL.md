@@ -27,17 +27,22 @@ IMPORTANCE_CLASS_CRITICAL: 50.0 (% of full metric lost)
 IMPORTANCE_CLASS_SIGNIFICANT: 10.0
 FORTIFY_DIR_BASE:         .experiments
 STATE_DIR_BASE:           .experiments/state
+METRIC_CMD_DEFAULT:       "python -m pytest -x --tb=no -q"
+GUARD_CMD_DEFAULT:        "git diff --stat HEAD"
 ```
 
 </constants>
 
+**Environment overrides** — set these before invoking the skill to override per-variant defaults:
+
+- `METRIC_CMD` — command run inside each variant worktree to measure the ablation metric (default: `python -m pytest -x --tb=no -q`)
+- `GUARD_CMD` — command run inside each variant worktree to detect regressions (default: `git diff --stat HEAD`)
+- `STATE_DIR_BASE` — base directory for source-run state lookups (default: `.developments/fortify-state`)
+- `FORTIFY_DIR_BASE` — base directory for per-run fortify artifacts (default: `.developments/fortify`)
+
+The constants block defaults above are YAML-only — bash blocks read environment variables (with `${VAR:-default}` fallback) and never source values directly from YAML.
+
 <workflow>
-
-## Agent Resolution
-
-<!-- Foundry plugin check retained for resilience: run `Glob(pattern="foundry*", path="$HOME/.claude/plugins/cache/")` to confirm foundry installed before dispatching foundry:* agents (not used in fortify directly, but Glob kept for consistency with other research skills that do). If check fails, proceed — fortify only dispatches research:scientist (same plugin). -->
-
-`research:scientist` in same plugin as this skill — no fallback needed if research plugin installed.
 
 ## CRITICAL: Worktree-based isolation
 
@@ -65,6 +70,31 @@ Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
    fortify: No completed run found. Run /research:run first.
    ```
 
+**Initialize base directory bash variables** (constants YAML is not auto-exported; environment overrides honored):
+
+```bash
+STATE_DIR_BASE="${STATE_DIR_BASE:-.developments/fortify-state}"
+FORTIFY_DIR_BASE="${FORTIFY_DIR_BASE:-.developments/fortify}"
+METRIC_CMD="${METRIC_CMD:-python -m pytest -x --tb=no -q}"
+GUARD_CMD="${GUARD_CMD:-git diff --stat HEAD}"
+```
+
+**Assign `$RUN_ID`** from input resolution above (must be set before guard block uses it):
+
+```bash
+# Resolve RUN_ID from $ARGUMENTS (first non-flag token) or auto-detect latest completed run
+_ARG1=$(echo "$ARGUMENTS" | awk '{print $1}')
+if [ -n "$_ARG1" ] && [ "${_ARG1#-}" = "$_ARG1" ] && [ ! -f "$_ARG1" ] && [ -d "$STATE_DIR_BASE/$_ARG1" ]; then
+  RUN_ID="$_ARG1"
+elif [ -n "$_ARG1" ] && [ -f "$_ARG1" ]; then
+  # program.md path — find latest completed run matching program_file
+  RUN_ID=$(for d in $(ls -td "$STATE_DIR_BASE"/*/); do id=$(basename "$d"); pf=$(python -c "import json; print(json.load(open('$d/state.json')).get('program_file',''))" 2>/dev/null); st=$(python -c "import json; print(json.load(open('$d/state.json')).get('status',''))" 2>/dev/null); [ "$pf" = "$_ARG1" ] && ([ "$st" = "completed" ] || [ "$st" = "goal-achieved" ]) && echo "$id" && break; done)
+else
+  RUN_ID=$(for d in $(ls -td "$STATE_DIR_BASE"/*/); do id=$(basename "$d"); st=$(python -c "import json; print(json.load(open('$d/state.json')).get('status',''))" 2>/dev/null); ([ "$st" = "completed" ] || [ "$st" = "goal-achieved" ]) && echo "$id" && break; done)
+fi
+[ -z "$RUN_ID" ] && { echo "fortify: No completed run found. Run /research:run first."; exit 1; }
+```
+
 **Guard: judge approval required.** Judge skill writes verdict to `.reports/research/judge-<branch>-<date>.md` — scan for APPROVED verdict line:
 
 ```bash
@@ -79,7 +109,8 @@ JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 |
 
 # Program cross-match: confirm verdict was issued for the current experiment's program, not a different one
 PROGRAM_FILE=$(grep -iE '^[*]*(Program(_file)?|Program file)[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
-STATE_PROGRAM=$(python -c "import json; d=json.load(open('state.json')); print(d.get('program_file',''))" 2>/dev/null)
+# Use explicit run-specific state.json path (resolved during F1 input resolution) — never CWD-relative
+STATE_PROGRAM=$(jq -r '.program_file // ""' "$STATE_DIR_BASE/$RUN_ID/state.json" 2>/dev/null)
 if [ -n "$STATE_PROGRAM" ] && [ -n "$PROGRAM_FILE" ] && [ "$PROGRAM_FILE" != "$STATE_PROGRAM" ]; then
     printf "! BLOCKED — judge verdict references program '%s' but current experiment is for '%s'\n" "$PROGRAM_FILE" "$STATE_PROGRAM"
     printf "Run: /research:judge %s\n" "$STATE_PROGRAM"
@@ -92,11 +123,16 @@ if [ -n "$PROGRAM_FILE" ] && [ ! -f "$PROGRAM_FILE" ]; then
 fi
 ```
 
-Verify `JUDGE_VERDICT == "APPROVED"`. The program cross-match above guarantees the verdict was issued for the current experiment — fortify cannot ablate against a different program's verdict. If not APPROVED:
+Verify `JUDGE_VERDICT == "APPROVED"`. The program cross-match above guarantees the verdict was issued for the current experiment — fortify cannot ablate against a different program's verdict. Apply explicit bash gate — prose alone never halts execution:
 
-```text
-fortify: BLOCKED — no APPROVED judge verdict found for this program.
-Ablation studies require an approved baseline. Run: /research:judge <program.md>
+```bash
+JUDGE_VERDICT="${JUDGE_VERDICT:-REJECTED}"
+if [ "$JUDGE_VERDICT" != "APPROVED" ]; then
+    echo "fortify: BLOCKED — no APPROVED judge verdict found for this program."
+    echo "Judge verdict: $JUDGE_VERDICT — stopping before implementation (F1–F7)."
+    echo "Ablation studies require an approved baseline. Run: /research:judge <program.md>"
+    exit 1
+fi
 ```
 
 > Note: do NOT infer from `methodology.md` alone — `methodology_rating: sound` is one input to verdict, not verdict itself. Only `## Verdict` line in judge output file is authoritative.
@@ -111,8 +147,9 @@ Also read `baseline_commit` — iteration 0 commit from `experiments.jsonl` (fir
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)                                           # timeout: 3000
 FORTIFY_DIR="$FORTIFY_DIR_BASE/fortify-$TS"                                  # timeout: 5000
+STATE_DIR="$STATE_DIR_BASE/$TS"
 WORKTREE_BASE="$FORTIFY_DIR/worktrees"
-mkdir -p "$FORTIFY_DIR" "$WORKTREE_BASE"
+mkdir -p "$FORTIFY_DIR" "$STATE_DIR" "$WORKTREE_BASE"
 ```
 
 ## Step F2: Identify ablation candidates via scientist
@@ -122,40 +159,46 @@ Gather two inputs for scientist:
 1. **Git diff**: run `git diff <baseline_commit>...<best_commit> --stat` (summary) and full `git diff <baseline_commit>...<best_commit>`. If full diff exceeds ~200 lines, write to `$FORTIFY_DIR/diff.txt` via Write tool; otherwise inline in prompt.
 2. **Experiment history**: paths to `experiments.jsonl` and `diary.md` from source run directory.
 
-Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (15-min cutoff, one 5-min extension — same pattern as judge J3):
+Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (15-min cutoff, one 5-min extension — same pattern as judge J3).
 
-```markdown
-Act as an ML ablation study designer.
+Before building the prompt, substitute all bash variables into a single concrete string — never pass literal `<FORTIFY_DIR>` or `<path>` placeholders to the agent:
+
+```bash
+EXPERIMENTS_PATH="$STATE_DIR_BASE/$RUN_ID/experiments.jsonl"
+DIARY_PATH="$STATE_DIR_BASE/$RUN_ID/diary.md"
+F2_PROMPT="Act as an ML ablation study designer.
 
 Read:
-- git diff at <FORTIFY_DIR>/diff.txt (or inline if small)
-- experiments.jsonl at <path> (filter for entries with status: "kept")
-- diary.md at <path> (if exists)
+- git diff at ${FORTIFY_DIR}/diff.txt (or inline if small)
+- experiments.jsonl at ${EXPERIMENTS_PATH} (filter for entries with status: 'kept')
+- diary.md at ${DIARY_PATH} (if exists)
 
-Identify 3–8 distinct logical components that were changed during this run.
+Identify 3-8 distinct logical components that were changed during this run.
 A component = a logically independent change that can be removed independently.
 
-For each component produce one JSON line to <FORTIFY_DIR>/ablation-candidates.jsonl:
+For each component produce one JSON line to ${FORTIFY_DIR}/ablation-candidates.jsonl:
 {
-  "component_id": <int>,
-  "name": "<descriptive name, e.g. 'learning rate warmup'>",
-  "description": "<what it does and why it was introduced>",
-  "files": ["<file:line range>"],
-  "revert_commits": ["<commit SHA>"],
-  "expected_importance": "HIGH|MEDIUM|LOW"
+  \"component_id\": <int>,
+  \"name\": \"<descriptive name, e.g. 'learning rate warmup'>\",
+  \"description\": \"<what it does and why it was introduced>\",
+  \"files\": [\"<file:line range>\"],
+  \"revert_commits\": [\"<commit SHA>\"],
+  \"expected_importance\": \"HIGH|MEDIUM|LOW\"
 }
 
-Write your analysis to <FORTIFY_DIR>/candidates-analysis.md.
+Write your analysis to ${FORTIFY_DIR}/candidates-analysis.md.
 Include ## Confidence block.
-Return ONLY: {"status":"done","components":N,"file":"<FORTIFY_DIR>/ablation-candidates.jsonl","confidence":0.N}
+Return ONLY: {\"status\":\"done\",\"components\":N,\"file\":\"${FORTIFY_DIR}/ablation-candidates.jsonl\",\"confidence\":0.N}"
 ```
+
+Pass `$F2_PROMPT` (fully expanded) as the `prompt=` argument to `Agent(...)`.
 
 **Health monitoring** (CLAUDE.md §8):
 
 ```bash
 # audit-skip: resilience-replication
 # Per-phase checkpoint required — F2 + F6 dispatch independent scientist agents that may both be in scope; separate variables prevent cross-phase masking.
-_HM_F2=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "fortify-f2" 2>/dev/null)  # timeout: 5000
+_HM_F2=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "fortify-f2" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT_F2=$(echo "$_HM_F2" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_F2=$(echo "$_HM_F2" | grep '^SENTINEL=' | cut -d= -f2)
 ```
@@ -185,38 +228,49 @@ Write variant configs to `$FORTIFY_DIR/variants.jsonl` via Write tool — one JS
 
 Run each variant **sequentially** — parallel worktrees would conflict.
 
-**Before loop — store original working directory:**
+**Before loop — store original working directory and pre-create worktree-paths accumulator:**
 
 ```bash
 ORIG_DIR="$(pwd)"  # timeout: 3000
+WORKTREE_PATHS_FILE=$(mktemp -t fortify-XXXX)  # timeout: 3000
 ```
 
 **On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. The trap below makes interrupt cleanup automatic — never rely on prose-only cleanup discipline.
 
 For each variant in `variants.jsonl`:
 
+**4a-init. Derive `VARIANT_NAME` from the current iteration** (must be set before any 4a/4b/4c/4d/4e block uses it):
+
+```bash
+# variant_spec = the JSON line currently being processed from variants.jsonl
+# Slugify: lowercase, spaces to hyphens, strip leading "variant-" if already present
+VARIANT_NAME="variant-$(echo "$variant_spec" | jq -r '.variant_name' 2>/dev/null | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
+# Fallback when variant_spec is just the bare name (not full JSON object):
+[ -z "$VARIANT_NAME" ] || [ "$VARIANT_NAME" = "variant-null" ] && VARIANT_NAME="variant-$(echo "${variant_spec:-unnamed}" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
+```
+
 **4a. Create isolated worktree at best_commit:**
 
 ```bash
-git worktree add "$WORKTREE_BASE/<variant_name>" <best_commit>  # timeout: 15000
+git worktree add "$WORKTREE_BASE/$VARIANT_NAME" "$best_commit"  # timeout: 15000
 ```
 
 **4a-trap. Register cleanup trap immediately after worktree creation** (guarantees removal on EXIT / INT / TERM, even on uncaught error):
 
 ```bash
-WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/<variant_name>}"
+WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/$VARIANT_NAME}"
 # Append path to accumulator file — file persists across Bash calls; array variables do not
-echo "$WORKTREE_PATH" >> /tmp/fortify-worktree-paths-$$.txt
+echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"
 # Trap reads full accumulator — covers all variants created so far, not just current
-trap 'while IFS= read -r _wt; do git worktree remove --force "$_wt" 2>/dev/null; done < /tmp/fortify-worktree-paths-$$.txt 2>/dev/null; rm -f /tmp/fortify-worktree-paths-$$.txt' EXIT INT TERM
+trap 'while IFS= read -r _wt; do git worktree remove --force "$_wt" 2>/dev/null; done < "$WORKTREE_PATHS_FILE" 2>/dev/null; rm -f "$WORKTREE_PATHS_FILE"' EXIT INT TERM
 ```
 
-The accumulator file is initialized before the variant loop begins (first write creates it). Each variant appends its path and re-registers the trap to cover all paths added so far. The explicit `git worktree remove` in 4f remains for happy-path cleanup; the trap is a safety net for interrupted loops only. Use `$$` (parent PID) as suffix to avoid collision across concurrent invocations.
+The accumulator file (`$WORKTREE_PATHS_FILE`) is pre-created via `mktemp` before the variant loop begins. Each variant appends its path and re-registers the trap to cover all paths added so far. The explicit `git worktree remove` in 4f remains for happy-path cleanup; the trap is a safety net for interrupted loops only. `mktemp` ensures collision-free naming across concurrent invocations.
 
 **4b. Navigate into worktree** (two separate Bash calls — cd first, then command):
 
 ```bash
-cd "$WORKTREE_BASE/<variant_name>"  # timeout: 3000
+cd "$WORKTREE_BASE/$VARIANT_NAME"  # timeout: 3000
 ```
 
 **4c. Apply revert (skip for `full` variant):**
@@ -225,14 +279,21 @@ For `full` variant: no changes — proceed to 4d.
 
 For `no-<component>` variant: revert component's commits.
 
-**IMPORTANT — order matters**: revert in **reverse chronological order** (newest first) to avoid conflicts. If `revert_commits` from `variants.jsonl` is chronological (oldest first), reverse before reverting:
+**IMPORTANT — order matters**: revert in **reverse chronological order** (newest first) to avoid conflicts. If `revert_commits` from `variants.jsonl` is chronological (oldest first), reverse before reverting.
+
+**Bash call 1 — extract and sort revert_commits via jq + awk** (no python; jq-based JSONL filter avoids per-iteration approval prompt):
 
 ```bash
 # Extract revert_commits for current variant from variants.jsonl (VARIANT_NAME set in loop)
-REVERT_COMMITS_RAW=$(python -c "import sys,json; [print(*v['revert_commits']) for v in map(json.loads,open('$FORTIFY_DIR/variants.jsonl')) if v['variant_name']==sys.argv[1]]" "$VARIANT_NAME" 2>/dev/null)  # timeout: 5000
+REVERT_COMMITS_RAW=$(jq -r --arg vn "$VARIANT_NAME" 'select(.variant_name==$vn) | .revert_commits[]' "$FORTIFY_DIR/variants.jsonl" 2>/dev/null | tr '\n' ' ')  # timeout: 5000
 [ -z "$REVERT_COMMITS_RAW" ] && { echo "⚠ No revert_commits for $VARIANT_NAME — skipping"; echo '{"variant":"'$VARIANT_NAME'","status":"revert-missing"}' >> "$FORTIFY_DIR/results.jsonl"; continue; }
 # Sort newest-first for conflict-free revert (portable awk reverse — avoids tac not available on macOS)
 REVERT_COMMITS_SORTED=$(echo "$REVERT_COMMITS_RAW" | tr ' ' '\n' | awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}' | tr '\n' ' ')
+```
+
+**Bash call 2 — apply revert** (separated so first-token allow-list matches `git`):
+
+```bash
 git revert $REVERT_COMMITS_SORTED --no-edit  # timeout: 15000
 ```
 
@@ -241,7 +302,9 @@ If revert produces merge conflicts: append `{"variant":"<name>","status":"revert
 **4d. Run metric_cmd in worktree:**
 
 ```bash
-<metric_cmd>  # timeout: 360000
+# METRIC_CMD initialized in F1 from environment (METRIC_CMD env var) or default
+$METRIC_CMD  # timeout: 360000
+METRIC_EXIT=$?
 ```
 
 Parse stdout for numeric metric value. If command fails or no numeric output: record `status: "metric-failed"`, jump to 4f.
@@ -249,7 +312,9 @@ Parse stdout for numeric metric value. If command fails or no numeric output: re
 **4e. Run guard_cmd in worktree:**
 
 ```bash
-<guard_cmd>  # timeout: 360000
+# GUARD_CMD initialized in F1 from environment (GUARD_CMD env var) or default
+$GUARD_CMD  # timeout: 360000
+GUARD_EXIT=$?
 ```
 
 Record guard result: `"pass"` (exit 0) or `"fail"` (non-zero).
@@ -261,7 +326,7 @@ cd "$ORIG_DIR"  # timeout: 3000
 ```
 
 ```bash
-git worktree remove --force "$WORKTREE_BASE/<variant_name>"  # timeout: 15000
+git worktree remove --force "$WORKTREE_BASE/$VARIANT_NAME"  # timeout: 15000
 ```
 
 **4g. Record result** — append one JSON line to `$FORTIFY_DIR/results.jsonl`:
@@ -336,31 +401,37 @@ Skip entirely if no `--venue` flag. Supported venues: `CVPR`, `NeurIPS`, `ICML`,
 ```bash
 # audit-skip: resilience-replication
 # Per-phase checkpoint required — F6 reviewer Q&A is an independent scientist dispatch from F2; shared variables would mask phase-specific stalls.
-_HM_F6=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "fortify-f6" 2>/dev/null)  # timeout: 5000
+_HM_F6=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "fortify-f6" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT_F6=$(echo "$_HM_F6" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_F6=$(echo "$_HM_F6" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
-Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (same 15-min cutoff, one 5-min extension — poll `find <FORTIFY_DIR> -name "reviewer-qa.md" -newer "$CHECKPOINT_F6" | wc -l`):
+Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (same 15-min cutoff, one 5-min extension — poll `find "$FORTIFY_DIR" -name "reviewer-qa.md" -newer "$CHECKPOINT_F6" | wc -l`).
 
-```markdown
-Act as a peer reviewer for <venue>.
+Before building the prompt, substitute all bash variables into a single concrete string — never pass literal `<FORTIFY_DIR>`, `<path>`, or `<venue>` placeholders to the agent:
+
+```bash
+VENUE="${VENUE:-workshop}"  # parsed from --venue flag in F1
+PROGRAM_FILE="${PROGRAM_FILE:-$PROGRAM_FILE}"  # absolute path resolved in F1
+F6_PROMPT="Act as a peer reviewer for ${VENUE}.
 
 Read:
-- ablation results at <FORTIFY_DIR>/results.jsonl
-- importance ranking at <FORTIFY_DIR>/importance-ranking.json
-- original program.md at <path>
+- ablation results at ${FORTIFY_DIR}/results.jsonl
+- importance ranking at ${FORTIFY_DIR}/importance-ranking.json
+- original program.md at ${PROGRAM_FILE}
 
 Generate:
-1. 5–7 likely reviewer questions calibrated to <venue> standards
+1. 5-7 likely reviewer questions calibrated to ${VENUE} standards
    (CVPR/NeurIPS/ICML: expect thorough ablations, statistical significance, compute budget justification; workshop: lighter bar)
 2. For each question: a data-backed answer referencing specific ablation results
 3. A supplementary material draft section with the ablation table (LaTeX-ready)
 
-Write to <FORTIFY_DIR>/reviewer-qa.md.
+Write to ${FORTIFY_DIR}/reviewer-qa.md.
 Include ## Confidence block.
-Return ONLY: {"status":"done","questions":N,"file":"<FORTIFY_DIR>/reviewer-qa.md","confidence":0.N}
+Return ONLY: {\"status\":\"done\",\"questions\":N,\"file\":\"${FORTIFY_DIR}/reviewer-qa.md\",\"confidence\":0.N}"
 ```
+
+Pass `$F6_PROMPT` (fully expanded) as the `prompt=` argument to `Agent(...)`.
 
 **Health monitoring**: same as F2 (15-min cutoff, one extension). On timeout: note `"Reviewer Q&A: timed out"` in report, continue to F7.
 

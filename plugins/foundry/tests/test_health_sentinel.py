@@ -8,6 +8,7 @@ to assert the eval-able stdout contract for ``start``.
 from __future__ import annotations
 
 import os
+import shlex
 import time
 from pathlib import Path
 
@@ -111,7 +112,7 @@ class TestStartCommand:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Output is exactly two lines: ``LAUNCH_AT=<int>`` then ``SENTINEL=<path>``."""
+        """Output is exactly two lines: ``LAUNCH_AT=<int>`` (bare) then ``SENTINEL=<shlex-quoted-path>``."""
         # Capture real create_sentinel BEFORE patching so the closure does not recurse.
         real_create = health_sentinel.create_sentinel
 
@@ -126,9 +127,11 @@ class TestStartCommand:
         out = capsys.readouterr().out
         lines = out.splitlines()
         assert len(lines) == 2
+        # LAUNCH_AT is a bare integer — no quoting needed; shlex.quote handles SENTINEL path.
         assert lines[0] == "LAUNCH_AT=1700000000"
-        assert lines[1] == f"SENTINEL={tmp_path / 'foundry-audit-check-1700000000'}"
-        assert Path(lines[1].removeprefix("SENTINEL=")).exists()
+        expected_path = tmp_path / "foundry-audit-check-1700000000"
+        assert lines[1] == f"SENTINEL={shlex.quote(expected_path.as_posix())}"
+        assert expected_path.exists()
 
     def test_start_requires_skill_id(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Missing ``<skill-id>`` → argparse exits 2."""

@@ -32,7 +32,7 @@ Set up release directory, back up existing artifacts:
 
 ```bash
 RELEASE_DIR="releases/$VERSION"
-bash "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/setup_release_dir.sh" "$RELEASE_DIR" "$CHANGELOG_FILE"  # timeout: 5000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/setup_release_dir.py" "$RELEASE_DIR" "$CHANGELOG_FILE"  # timeout: 5000
 ```
 
 **a. Identify highlights** — apply **Identify highlights** logic using classified changes from `$GATHER_FILE`: rank top 3–5 most significant changes (breaking > new public API > major UX > notable fixes), pull one concrete code example per highlight from diff. Write to `releases/$VERSION/HIGHLIGHTS.md`. Source of truth for demo, executive summary, release draft spotlights.

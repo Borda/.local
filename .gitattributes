@@ -1,0 +1,20 @@
+# Enforce LF line endings for all text source files.
+# Prevents CRLF contamination on Windows checkouts — critical for bash shebangs
+# and Python/JS scripts that are also invoked on POSIX systems.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.js   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.toml text eol=lf
+
+# Binary assets — never diff or convert
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.whl  binary
+*.tar.gz binary

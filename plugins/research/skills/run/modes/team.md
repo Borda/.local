@@ -26,7 +26,7 @@
 3. Lead creates run output directory:
 
    ```bash
-   RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "run-team" ".experiments")  # timeout: 5000
+   RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "run-team" ".experiments")  # timeout: 5000
    ```
 
    Store `RUN_DIR` as run-level variable — do not re-evaluate at later phases. All `<RUN_DIR>` refs in Phases B, C, D use same value.
@@ -82,7 +82,7 @@
 **Health monitoring** (CLAUDE.md §8): after spawning all agents in step 4, create checkpoint via shared helper:
 
 ```bash
-_HM=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "optimize-team" 2>/dev/null)  # timeout: 5000
+_HM=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "optimize-team" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT=$(echo "$_HM" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT=$(echo "$_HM" | grep '^SENTINEL=' | cut -d= -f2)
 ```

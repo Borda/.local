@@ -42,6 +42,10 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 
+function getSentinelDir() {
+  return process.platform === "win32" ? os.tmpdir() : "/tmp";
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const BUILT_INS = new Set(["general-purpose", "claude-code-guide", "Explore", "Plan", "statusline-setup"]);
@@ -292,7 +296,7 @@ process.stdin.on("end", async () => {
     const event = data.hook_event_name;
     const sessionId = data.session_id || "unknown";
     if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) process.exit(0);
-    const stateDir = `/tmp/claude-state-${sessionId}`;
+    const stateDir = `${getSentinelDir()}/claude-state-${sessionId}`;
     const indexPath = path.join(stateDir, "agent-router-index.json");
     const cwd = process.cwd();
     const openaiKey = process.env.OPENAI_API_KEY || null;

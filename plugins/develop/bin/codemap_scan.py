@@ -197,6 +197,12 @@ def _find_py_files(target: str) -> list[str]:
     paths: list[str] = []
     for p in sorted(root.rglob("*.py")):
         if p.is_file():
+            # Symlink-escape guard: resolve each candidate and confirm it remains under cwd.
+            # Catches symlinks that physically reside inside the scan root but target paths outside.
+            try:
+                p.resolve(strict=True).relative_to(cwd)
+            except (ValueError, OSError):
+                continue
             # Match bash semantics: paths start with ./ when target starts with ./
             s = str(p)
             if target.startswith("./") and not s.startswith("./"):

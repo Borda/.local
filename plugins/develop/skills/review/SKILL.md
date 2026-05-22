@@ -25,16 +25,29 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
   - `--codemap`: enable structural context from codemap index (off by default)
   - `--semble`: enable semble semantic search companion (off by default)
 
-**Integer detection gate** (execute BEFORE Step 1): if `$ARGUMENTS` is positive integer or matches `#\d+`:
+**PR#/filename disambiguation gate** (execute BEFORE Step 1): tighten classification — valid PR# is positive integer with no extension and no existing file at that path. Filenames that look like numbers (e.g. `42.py`) must NOT trigger PR mode.
 
 ```bash
-if [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]] && [ ! -e "$ARGUMENTS" ]; then
-    echo "Integer argument detected — checking oss plugin availability"
+TOKEN="$ARGUMENTS"
+if [[ "$TOKEN" =~ ^[0-9]+$ ]] && [ ! -e "$TOKEN" ]; then
+    # Strict PR mode: bare positive integer, no extension, no existing path
+    echo "PR number detected — checking oss plugin availability"
     [ -f "$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review/SKILL.md 2>/dev/null | head -1)" ] && OSS_AVAILABLE=true || OSS_AVAILABLE=false  # timeout: 5000
+elif [ -f "$TOKEN" ]; then
+    # File mode: valid path, even if it looks numeric (e.g. `42.py`)
+    OSS_AVAILABLE=skip
+elif [[ "$TOKEN" =~ ^#[0-9]+$ ]] && [ ! -e "$TOKEN" ]; then
+    # `#NNN` form — also PR-like
+    echo "PR number detected — checking oss plugin availability"
+    [ -f "$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review/SKILL.md 2>/dev/null | head -1)" ] && OSS_AVAILABLE=true || OSS_AVAILABLE=false  # timeout: 5000
+else
+    OSS_AVAILABLE=skip
 fi
 ```
 
-If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → call `Skill(skill="oss:review", args="$ARGUMENTS")`; (b) "No — review local code at a path instead" → ask for path to review.
+If `$OSS_AVAILABLE` is `skip`: proceed to Step 1 normally (path / diff / dir mode).
+
+If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → strip develop-specific flags (`--team`, `--issue`, `--dry-run`, `--local`) from `$ARGUMENTS` before forwarding; call `Skill(skill="oss:review", args="<stripped-args>")`; (b) "No — review local code at a path instead" → ask for path to review.
 
 If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but the oss plugin is not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — provide a local file or directory path to review"; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
 
@@ -45,6 +58,7 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CODEMAP_ENABLED=false   # set to true via --codemap
 SEMBLE_ENABLED=false    # set to true via --semble
+CODEX_TIMEOUT=120000    # hard cap (ms) on Codex co-review spawn — prevent indefinite hang
 
 </constants>
 
@@ -57,7 +71,7 @@ SEMBLE_ENABLED=false    # set to true via --semble
 ## Agent Resolution
 
 ```bash
-_PATHS=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" --foundry 2>/dev/null)  # timeout: 5000
+_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
@@ -111,7 +125,22 @@ else
 fi
 ```
 
-Filter to Python files only. No Python files → report "no Python files to review" and stop.
+Filter to Python files only. No Python files → exit early (DMI skill — prose "stop" not executable; bash exit is the only enforceable mechanism):
+
+```bash
+# Check if diff contains any Python files — if not, exit early  # timeout: 5000
+if [ -n "$REVIEW_ARGS" ]; then
+    # Path mode: check target for .py files
+    PYTHON_FILES=$(find "$REVIEW_ARGS" -name '*.py' -type f 2>/dev/null | head -1)
+else
+    # Diff mode
+    PYTHON_FILES=$(git diff --name-only HEAD 2>/dev/null | grep '\.py$' | head -1)
+fi
+if [ -z "$PYTHON_FILES" ]; then
+    echo "! Diff contains non-Python files only. This skill is scoped to Python. For other languages, use a general-purpose code reviewer."
+    exit 0
+fi
+```
 
 **Non-Python impact check**: after filtering, scan diff for high-impact non-Python changes, warn in report header:
 - `pyproject.toml`, `setup.cfg`, `requirements*.txt` → "⚠ dependency changes detected — not reviewed; verify Python imports still resolve"
@@ -161,14 +190,14 @@ fi
 
 Codemap returns results → prepend `## Structural Context (codemap)` block to **Agent 1 (foundry:sw-engineer)** spawn prompt. Include:
 
-- Each changed module's `rdep_count` — label **high risk** (>20), **moderate** (5–20), **low** (\<5)
+- Each changed module's `imported_by` — label **high risk** (>20), **moderate** (5–20), **low** (\<5)
 - `central --top 5` for project-wide blast-radius reference
 
-Agent 1 uses this to prioritize: high `rdep_count` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
+Agent 1 uses this to prioritize: high `imported_by` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
 
 **Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt:
 
-> If `mcp__semble__search` is available in your tools and any changed module's codemap result was non-exhaustive (`"exhaustive": false`) or no codemap index found: call `mcp__semble__search` with varied queries and `repo=<git_root>`, `top_k=20`. Stop per module when two consecutive queries return no new importers. Merge with codemap results.
+> If `mcp__semble__search` is available in your tools and any changed module's codemap result was non-exhaustive (`"exhaustive": false`) or no codemap index found: call `mcp__semble__search` with varied queries and `repo=<git_root>`, `top_k=20`. Stop per module when two consecutive queries return no new importers. Merge with codemap results. If `mcp__semble__search` is NOT available (MCP not activated in this session): use Grep and Glob tools as fallback for code search — search for import references and usages of changed modules using `Grep(pattern="from <module>|import <module>", path=".")`.
 
 ## Step 2: Codex co-review
 
@@ -198,9 +227,9 @@ CODEX_OUT="$RUN_DIR/codex.md"
 
 If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
 
-Spawn `codex:codex-rescue` agent: "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
+Spawn `codex:codex-rescue` agent (apply `$CODEX_TIMEOUT` ms hard cap — Bash tool `timeout: $CODEX_TIMEOUT` on the wait/poll call; if Codex hangs beyond this cap, abort spawn, print `⚠ Codex co-review timed out after ${CODEX_TIMEOUT}ms — proceeding without Codex seed`, treat as "Codex skipped"): "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
 
-After Codex writes `$RUN_DIR/codex.md`, extract compact seed list (≤10 items, `[{"loc":"file:line","note":"..."}]`) to inject into agent prompts in Step 3 as pre-flagged issues to verify or dismiss. Codex skipped or found nothing → proceed with empty seed.
+After Codex writes `$RUN_DIR/codex.md` (or times out), extract compact seed list (≤10 items, `[{"loc":"file:line","note":"..."}]`) to inject into agent prompts in Step 3 as pre-flagged issues to verify or dismiss. Codex skipped, timed out, or found nothing → proceed with empty seed.
 
 **Cap-disclosure**: count total Codex findings before truncating. If ≥10, surface in consolidated report header:
 
@@ -319,7 +348,7 @@ Extract branch and date before constructing output path: `BRANCH=$(git branch --
 
 Spawn **foundry:sw-engineer** consolidator:
 
-> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert top-level note into consolidated report Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Check `$RUN_DIR_LITERAL/cross-validation.md` — if it contains "Cross-Validation: SKIPPED", prepend "⚠ Critical findings unverified — cross-validation protocol unavailable." to the YAML `---` header as `Cross-validation: skipped` field and to the report executive summary. Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `$REPORT_DIR_LITERAL/review-report.md` using Write tool. After the `## Confidence` block, append `## Source Files` section: use `Glob(pattern="*.md", path="$RUN_DIR")` to list every handover file present (paths relative to repo root, one per line). Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=$REPORT_DIR_LITERAL/review-report.md`"
+> "Read all finding files in `$RUN_DIR/` (agent files: `sw-engineer.md`, `qa-specialist.md`, `perf-optimizer.md`, `doc-scribe.md`, `linting-expert.md`, `solution-architect.md`, and `codex.md` if present — skip missing). Read `$REVIEW_CHECKLIST` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). **If `$REVIEW_CHECKLIST` is empty or unset:** insert top-level note into consolidated report Findings section: 'Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent.' Check `$RUN_DIR_LITERAL/cross-validation.md` — if it contains "Cross-Validation: SKIPPED", prepend "⚠ Critical findings unverified — cross-validation protocol unavailable." to the YAML `---` header as `Cross-validation: skipped` field and to the report executive summary. Apply precision gate: only include findings with concrete, actionable location (function, line range, or variable name). Apply finding density rule: modules under 100 lines → aim ≤10 total findings. Rank findings within each section by impact (blocking > critical > high > medium > low). For `codex.md`: include unique findings under `### Codex Co-Review` section; deduplicate against agent findings (same file:line raised by both → keep agent version, mark 'also flagged by Codex'). Parse each agent's `confidence` from its envelope; assign `codex` fixed confidence of 0.75. Write consolidated report to `$REPORT_DIR_LITERAL/review-report.md` using Write tool. After the `## Confidence` block, append `## Source Files` section: use `Glob(pattern="*.md", path="${RUN_DIR_LITERAL}")` (pre-expanded literal — bare `$RUN_DIR` does not survive into the spawned agent's context) to list every handover file present (paths relative to repo root, one per line). Return ONLY one-line summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=$REPORT_DIR_LITERAL/review-report.md`"
 
 Main context receives only one-liner verdict.
 
@@ -366,7 +395,7 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
 - (c) label: `walk through findings` — description: go through each finding interactively
 - (d) label: `skip` — description: no action
 
-**Confidence block (NEVER SKIP):** end response with `## Confidence` block per CLAUDE.md output standards.
+**Confidence block** — emitted by the consolidator agent in `$REPORT_DIR/review-report.md`, not at skill level (DMI skill: top-level model invocation is disabled, so any skill-level instruction would be unreachable).
 
 </workflow>
 

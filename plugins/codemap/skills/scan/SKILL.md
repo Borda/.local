@@ -2,8 +2,9 @@
 name: scan
 description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics)."
 argument-hint: "[--root <path>] [--incremental]"
-allowed-tools: Bash, AskUserQuestion
+allowed-tools: Bash, Write, AskUserQuestion
 disable-model-invocation: true
+effort: low
 ---
 
 <objective>
@@ -26,16 +27,30 @@ Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `
 
 ```bash
 # scan-index handles v2→v3 fallback internally
-# NOTE: if --incremental is passed but no existing index found, falls back to full scan silently — no user warning
 SCAN_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index"
-read -ra SCAN_ARGS <<< "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS")"  # timeout: 5000 — parse_scan_args.py validates $ARGUMENTS (allowlist: --root, --incremental); word-splitting safe because output is controlled flag tokens only
+SCAN_ARGS_RAW="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS")"  # timeout: 5000 — parse_scan_args.py validates $ARGUMENTS (allowlist: --root, --incremental); word-splitting safe because output is controlled flag tokens only
+# Persist for usage block — fresh shell per Bash() call loses bash variables
+echo "$SCAN_BIN" > "${TMPDIR:-/tmp}/codemap-scan-bin"
+echo "$SCAN_ARGS_RAW" > "${TMPDIR:-/tmp}/codemap-scan-args"
+
+# Pre-scan warning: if --incremental requested but no prior index, log fallback BEFORE starting scan
+if [[ " $ARGUMENTS " == *" --incremental "* ]]; then
+    PROJ_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")")
+    if [ ! -f ".cache/scan/${PROJ_NAME}.json" ]; then
+        echo "[codemap] No prior index: falling back to full scan"
+    fi
+fi
 ```
 
 **Unsupported flag check** — after supported flags extracted, scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # timeout: 360000
-timeout 360 "$SCAN_BIN" "${SCAN_ARGS[@]}"
+SCAN_BIN=$(cat "${TMPDIR:-/tmp}/codemap-scan-bin")
+SCAN_ARGS_RAW=$(cat "${TMPDIR:-/tmp}/codemap-scan-args")
+# Word-splitting safe: parse_scan_args.py output is controlled flag tokens only
+# Unquoted expansion intentional to preserve word boundaries between flags
+timeout 360 "$SCAN_BIN" $SCAN_ARGS_RAW
 ```
 
 Scanner writes to `<root>/.cache/scan/<project>.json` and prints summary line:

@@ -20,7 +20,7 @@ NOT for: running experiments (use `/research:run`); designing experiments (use `
 ## Agent Resolution
 
 ```bash
-_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
@@ -54,15 +54,30 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 
 If `--compare <run-id-2>` present: load second run identically from `.experiments/state/<run-id-2>/`. If not found, stop: `"Compare target not found: .experiments/state/<run-id-2>/. Check run ID and retry."`
 
-**Pre-compute run directory**:
+**Assign `RUN_ID_ARG`** from `$ARGUMENTS` — first positional non-flag token, empty if absent (ADV-H17):
 
 ```bash
+# Strip known flags before extracting positional; only positional is treated as run-id
+_REMAINDER=$(echo "$ARGUMENTS" | sed -E 's/--compare[= ]+[^ ]+//g; s/--threshold[= ]+[^ ]+//g; s/--alpha[= ]+[^ ]+//g')
+RUN_ID_ARG=$(echo "$_REMAINDER" | awk '{for (i=1; i<=NF; i++) if ($i !~ /^--/) { print $i; exit }}')
+RUN_ID_ARG="${RUN_ID_ARG:-}"
+# Persist for T3 (separate Bash shell — variables lost between calls)
+echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id"
+```
+
+**Pre-compute run directory** — also fix `$RUN_ID` (resolved from input resolution above) and persist `$RUN_DIR` for T3 (ADV-H18 + ADV-L16):
+
+```bash
+# RUN_ID = run-id argument if provided, else dir name of latest completed run
+RUN_ID="${RUN_ID_ARG:-$(ls -td .experiments/state/*/ 2>/dev/null | while read d; do python -c "import json,sys; s=json.load(open('${d}state.json')); sys.exit(0 if s.get('status') in ('completed','goal-achieved') else 1)" 2>/dev/null && basename "$d" && break; done)}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
+echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved"  # persist resolved id for T3 / fallback paths
 ```
 
 ```bash
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "retro" ".experiments" 2>/dev/null)  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "retro" ".experiments" 2>/dev/null)  # timeout: 5000
 mkdir -p "$RUN_DIR/scripts"  # timeout: 3000
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/retro-run-dir"  # T3 + fallback path reload from temp file
 ```
 
 ### Step T2: Statistical significance analysis
@@ -70,7 +85,9 @@ mkdir -p "$RUN_DIR/scripts"  # timeout: 3000
 Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python with scipy.stats:
 
 ```bash
-RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl ".experiments/state/<run-id>/experiments.jsonl" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
+ALPHA="${ALPHA:-0.05}"
+METRIC_DIRECTION=$(python -c "import json,sys; d=json.load(open('.experiments/state/$RUN_ID/state.json')); print(d.get('config',{}).get('metric',{}).get('direction','higher'))" 2>/dev/null || echo "higher")
+RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl ".experiments/state/$RUN_ID/experiments.jsonl" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
 ```
 
 **Contract** — script reads JSONL, extracts metric values for ALL iterations with `status == "kept"`, pairs each against the baseline record (`status == "baseline"`), runs a one-sided Wilcoxon signed-rank test, and prints a single line of JSON to stdout:
@@ -117,6 +134,16 @@ Scan `experiments.jsonl` sequentially, skipping iteration 0 (baseline). For each
 - Record: `start_iter`, `end_iter`, `count`
 - Classify type: `dead-plateau` if all iterations in window have `status: kept`; `dead-churn` if mixed `kept`/`reverted`/other
 - Compute `wasted_iters` = total iterations in all dead windows
+
+Re-hydrate cross-Bash state at the start of every separate Bash invocation in T3 (each Bash call is a fresh shell — `$RUN_DIR` / `$RUN_ID_ARG` lost across calls; ADV-H18 / ADV-L16):
+
+```bash
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/retro-run-dir" 2>/dev/null)
+RUN_ID_ARG=$(cat "${TMPDIR:-/tmp}/retro-run-id" 2>/dev/null)
+RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved" 2>/dev/null)
+# Guard: any of these empty means T1 didn't run — surface and exit rather than write to a bare /
+[ -z "$RUN_DIR" ] || [ -z "$RUN_ID" ] && { echo "retro T3: state files missing — T1 must run first" >&2; exit 1; }
+```
 
 Write summary to `$RUN_DIR/dead-iters.json` via Write tool. Format:
 
@@ -191,11 +218,13 @@ Parse returned JSON envelope. Record `hypotheses` count and `confidence` for T6.
 
 ### Step T6: Write retro report
 
-Pre-compute branch (already done in T1). ```bash
+Pre-compute branch (already done in T1).
+
+```bash
 mkdir -p .reports/research  # timeout: 3000
 ```
 
-Write full report to `.reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Anti-overwrite: `BASE=".reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md"; OUT="$BASE"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done`
+Write full report to `.reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Anti-overwrite: `BASE=".reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md"; OUT="$BASE"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done`
 
 ```markdown
 ---

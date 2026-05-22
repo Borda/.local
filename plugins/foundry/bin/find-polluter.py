@@ -32,9 +32,46 @@ import subprocess
 import sys
 import tempfile
 from collections.abc import Sequence
+from pathlib import Path
 
 ISOLATION_PASS_RE = re.compile(r"^(PASSED|1 passed)", re.MULTILINE)
 FAILURE_RE = re.compile(r"FAILED|ERROR")
+# Shell metacharacters that must not appear inside test node IDs.  Even though
+# every subprocess call uses argv-list form (no shell), pytest itself may forward
+# the value into shell-like contexts (e.g. ``--ignore=`` patterns, plugin hooks),
+# so we reject hostile collection-only output up-front (A03:2021).
+_UNSAFE_NODE_ID_CHARS = frozenset(";&|$`()\n\r\t<>\\\"' \x00")
+
+
+def _is_safe_node_id(node_id: str) -> bool:
+    """Return True when ``node_id`` contains no shell metacharacters.
+
+    pytest node IDs look like ``tests/test_foo.py::TestClass::test_method[param-id]``.
+    Anything containing ``;``, ``&``, ``|``, ``$``, backtick, ``(``, ``)``, newline,
+    carriage return, tab, redirection, quote, space, or NUL characters is rejected
+    as hostile pytest collection output.
+
+    Args:
+        node_id: candidate pytest node identifier.
+
+    Returns:
+        ``True`` if the node ID is safe to pass to subprocess.
+
+    Examples:
+        >>> _is_safe_node_id("tests/test_foo.py::test_bar")
+        True
+        >>> _is_safe_node_id("tests/test_foo.py::test_bar[a-b]")
+        True
+        >>> _is_safe_node_id("tests/test_foo.py::test_bar; rm -rf /")
+        False
+        >>> _is_safe_node_id("tests/$(whoami).py::test_bar")
+        False
+        >>> _is_safe_node_id("")
+        False
+    """
+    if not node_id:
+        return False
+    return not any(ch in _UNSAFE_NODE_ID_CHARS for ch in node_id)
 
 
 def round_estimate(total: int) -> int:
@@ -165,7 +202,9 @@ def collect_candidates(
         timeout=300,
     )
     # Mirror bash: `grep "::" | grep -v failing | grep -v ^$`. pytest writes
-    # its collection lines to stdout; ignore stderr noise.
+    # its collection lines to stdout; ignore stderr noise.  Any node ID
+    # containing shell metacharacters is dropped to prevent injection through
+    # hostile pytest collection output (A03:2021).
     candidates: list[str] = []
     for line in result.stdout.splitlines():
         stripped = line.strip()
@@ -174,6 +213,12 @@ def collect_candidates(
         if "::" not in stripped:
             continue
         if stripped == failing_test:
+            continue
+        if not _is_safe_node_id(stripped):
+            print(
+                f"⚠ skipping candidate with unsafe characters: {stripped!r}",
+                file=sys.stderr,
+            )
             continue
         candidates.append(stripped)
     return candidates
@@ -258,6 +303,27 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     failing_test = args[0]
     test_dir = args[1] if len(args) > 1 else "tests"
+
+    if not _is_safe_node_id(failing_test):
+        print(
+            f"✗ failing test node ID rejected (shell metacharacters): {failing_test!r}",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Reject test_dir values that escape the project root (path traversal).
+    # pytest loads conftest.py from any directory it collects, so a traversal
+    # path (e.g. ``../../etc``) would cause arbitrary Python execution.
+    test_dir_path = Path(test_dir).resolve()
+    project_root = Path.cwd().resolve()
+    try:
+        test_dir_path.relative_to(project_root)
+    except ValueError:
+        print(
+            f"! SECURITY: test_dir must be within project root: {test_dir}",
+            file=sys.stderr,
+        )
+        return 1
 
     pytest_cmd = _resolve_pytest_cmd()
     if pytest_cmd is None:

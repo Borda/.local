@@ -5,7 +5,7 @@ description: |
   TRIGGER when: user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of".
   SKIP: codemap index not built (skill self-checks and no-ops gracefully); simple grep would suffice; non-Python repo.
 argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]>"
-allowed-tools: Bash, AskUserQuestion
+allowed-tools: Bash, Write, AskUserQuestion
 model: haiku
 effort: low
 ---
@@ -34,7 +34,7 @@ Query codemap structural index for import-graph analysis, symbol-level source ex
 
 Use `module::function` format for qname, e.g. `mypackage.auth::validate_token`. Requires v3 index — v2 returns clear upgrade prompt.
 
-NOT for: building or rebuilding index (use `/codemap:scan`). All query subcommands are **read-only** — any request that modifies the index or project files belongs to `/codemap:scan` (index writes) or `/codemap:integration` (file injection). Ambiguous prompts like "show me the call graph" that imply read → query is correct; "update the call graph" → scan. If subcommand roster expands significantly, run `/foundry:calibrate routing` to verify no routing collisions.
+NOT for: building or rebuilding index (use `/codemap:scan`). All query subcommands are **read-only** — any request that modifies the index or project files belongs to `/codemap:scan` (index writes) or `/codemap:integration` (file injection). Ambiguous prompts like "show me the call graph" that imply read → query is correct; "update the call graph" → scan. If subcommand roster expands significantly, run `/foundry:calibrate routing` (requires `foundry` plugin) to verify no routing collisions.
 
 </objective>
 
@@ -89,6 +89,8 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 ## Budget and stop rules
 
 **Query budget**: max 3 calls per task. Stop after 3 even if not exhaustive — report what found. Exception: explicit exhaustive multi-target analysis requests — state exhaustive intent before first call, budget extends to 6. Declaring exhaustive intent after the first call has already been made is invalid — treat that run as non-exhaustive (budget=3).
+
+**Exhaustive path/fn-blast traversal** — `path` and `fn-blast` queries traverse the graph internally and may require deeper exploration than 3 surface calls allow. For these subcommands, increase guidance to **10 calls** when caller declares exhaustive intent OR set `budget_override=unlimited` before first call. Without override, path/fn-blast still capped at 6 (exhaustive-mode default) — caller must opt in explicitly for unbounded traversal.
 
 **exhaustive: true — STOP ALL TOOL CALLS:** When `rdeps` or `deps` result contains `"exhaustive": true`, list complete and authoritative for **unfiltered** index. Note: if `--exclude-tests` used, exhaustive reflects unfiltered coverage — filtered results may omit callers; state caveat if relevant. Write answer immediately. Do NOT call codemap again. Do NOT run grep, bash, or Glob passes to verify or extend. No exceptions.
 

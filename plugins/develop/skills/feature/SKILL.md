@@ -2,7 +2,8 @@
 name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop."
 argument-hint: "<goal> [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
+effort: high
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
 
@@ -25,12 +26,14 @@ NOT for:
 ## Agent Resolution
 
 ```bash
-_PATHS=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" --foundry 2>/dev/null)  # timeout: 5000
+_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
+
+<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
 
 ## Anti-Rationalizations
 
@@ -63,17 +66,46 @@ If `NON_PY` is non-empty: invoke `AskUserQuestion` — "Non-Python project detec
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: run `DEV_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-run-dir.sh" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
+**Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
 
 ## Flag parsing
 
-**Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` present in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
-**Set `CODEMAP_ENABLED=auto`** (use when available, skip silently when absent). If `--no-codemap` present in `$ARGUMENTS`, set `CODEMAP_ENABLED=off`. If `--codemap` present in `$ARGUMENTS`, set `CODEMAP_ENABLED=strict`.
-**Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
-**Set `TEAM_MODE=false`**. If `--team` present in `$ARGUMENTS`, set `TEAM_MODE=true`.
-**Set `ACCEPT_NO_PLAN=false`**. If `--accept-no-plan` present in `$ARGUMENTS`, set `ACCEPT_NO_PLAN=true` (skips inline plan generation for medium/large complexity — trust user override).
+Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--no-codemap\`, \`--codemap\`, \`--semble\`, \`--accept-no-plan\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+```bash
+# timeout: 5000
+CHALLENGE_ENABLED=true
+CODEMAP_ENABLED=auto
+SEMBLE_ENABLED=false
+TEAM_MODE=false
+ACCEPT_NO_PLAN=false
+[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_ENABLED=off
+[[ " $ARGUMENTS " == *" --codemap "* ]] && CODEMAP_ENABLED=strict
+[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
+[[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
+[[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
+echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
+echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
+echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
+echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
+echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
+```
+
+Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
+
+```bash
+# Parse --issue flag for issue-linked feature scaffolding  # timeout: 6000
+ISSUE_REF=$(echo "$ARGUMENTS" | grep -oP '(?<=--issue )[^ ]+' || echo "")
+echo "$ISSUE_REF" > ${TMPDIR:-/tmp}/dev-issue-ref
+if [ -n "$ISSUE_REF" ]; then
+    gh issue view "$ISSUE_REF" 2>/dev/null || echo "⚠ Could not fetch issue $ISSUE_REF — proceeding without issue context"
+fi
+```
+
+If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, and labels in Step 1 scope analysis as pre-populated requirements context.
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--no-codemap\`, \`--codemap\`, \`--semble\`, \`--accept-no-plan\`, \`--issue\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — run after flag parsing:
 
@@ -102,24 +134,50 @@ Compute run directory:
 
 ```bash
 # timeout: 5000
-mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.sh")
+mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py")
 TS="${_run[0]}"
 TEAM_DIR="${_run[1]}"
+echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts
 ```
 
 **IMPORTANT**: in spawn prompts below, replace `$TS` and `$TEAM_DIR` with the actual computed values from the bash block above — literal resolved strings, not shell variable references.
+
+```bash
+# Resolve variables to literals for spawn prompt embedding (matches fix/refactor pattern)  # timeout: 5000
+_SPAWN_TS="$TS"
+_SPAWN_TEAM_DIR="$TEAM_DIR"
+```
+
+Use `$_SPAWN_TS` (or the literal resolved value) inside spawn prompt strings, not bare `$TS`.
 
 Spawn 3 teammates in parallel using Agent() tool:
 
 **Teammate 1 — foundry:sw-engineer (model=opus)**: implements the feature (Steps 2-3: demo test, TDD loop). Prompt: "You are a foundry:sw-engineer teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: implement the feature (Steps 2-3: demo test, TDD loop). Scope constraint: only edit files in `src/`, the target module directory, and non-test Python files. Do NOT edit files under `tests/`. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-sw-engineer-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
 
-**Teammate 2 — foundry:qa-specialist (model=opus)**: audits test coverage, adds edge-case and regression tests in parallel + security checks for auth/payment/data scope (TDD demo/red-green tests stay with sw-engineer per qa-specialist NOT-for). Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: audit test coverage and add edge-case, boundary, and regression tests around the SW implementation; include security checks for any auth/payment/data-handling code. Do NOT write the primary TDD demo/red-green tests — those stay with sw-engineer (Teammate 1) as part of the TDD loop. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-qa-specialist-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+**Teammate 2 — foundry:qa-specialist (model=sonnet)**: audits test coverage, adds edge-case and regression tests in parallel + security checks for auth/payment/data scope (TDD demo/red-green tests stay with sw-engineer per qa-specialist NOT-for). Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: audit test coverage and add edge-case, boundary, and regression tests around the SW implementation; include security checks for any auth/payment/data-handling code. Do NOT write the primary TDD demo/red-green tests — those stay with sw-engineer (Teammate 1) as part of the TDD loop. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-qa-specialist-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
 
-**Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepares documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README). Prompt: "You are a foundry:doc-scribe teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: prepare documentation structure in parallel (Step 5 prep — docstrings, CHANGELOG, README). Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-doc-scribe-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+**Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepares documentation structure in parallel (Step 5 prep — docstrings and README only; CHANGELOG handled by lead via foundry:sw-engineer after synthesis). Prompt: "You are a foundry:doc-scribe teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: prepare documentation structure in parallel (Step 5 prep — docstrings and README only; do NOT write to CHANGELOG.md — that is handled separately). Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-doc-scribe-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+
+**Path verification**: after team spawns, verify agents received correct paths — check expected output files exist:
+
+```bash
+# timeout: 5000
+for agent in sw-engineer qa-specialist doc-scribe; do
+    expected=".temp/develop/$TS/feature-${agent}-$TS.md"
+    [ -f "$expected" ] && echo "✓ $agent wrote $expected" || echo "⚠ $agent missing expected output $expected"
+done
+```
 
 **Coordination order**: QA challenges SW API design — lead routes challenge back to SW before implementation starts. SW shares implementation details with QA so tests stay accurate. Lead synthesizes outputs in Step 5 onward as normal.
 
-Health monitoring (CLAUDE.md §8): create sentinel `touch /tmp/feature-team-check-$TS`; every 5 min: `find .temp/develop/$TS -newer /tmp/feature-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface with ⏱; never omit timed-out teammates.
+Health monitoring (CLAUDE.md §8): re-derive `$TS` at block start (bash state lost between Bash() calls — read back from temp file the spawn block persisted):
+
+```bash
+# timeout: 5000
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+```
+
+Create sentinel `touch ${TMPDIR:-/tmp}/feature-team-check-$TS`; every 5 min: `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/feature-team-check-$TS -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file; surface with ⏱; never omit timed-out teammates.
 
 After all teammates complete: read their output files from `.temp/develop/$TS/`, synthesize, run quality stack, produce Final Report. Exit — do not continue to solo Steps 1-5.
 
@@ -135,7 +193,7 @@ Gather full context before writing any code:
 # Strip leading '#' so both '123' and '#123' work; only fetch if numeric
 ISSUE_NUM="${ARGUMENTS#\#}"
 if [[ "$ISSUE_NUM" =~ ^[0-9]+$ ]]; then
-  "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue-fetch.sh" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+  python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
 fi
 ```
 
@@ -263,31 +321,34 @@ Both forms must:
 **Gate**: demo must fail or error.
 
 ```bash
-# Run demo and capture exit code in same Bash call — PIPESTATUS lost across separate calls
-# Doctest form:
-$PYTEST_CMD --doctest-modules <module>.py -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
-
-# Script form (use instead of doctest when applicable):
-# python examples/demo_<feature>.py 2>&1 | tail -5; GATE_EXIT=$?
-
-# Pre-check: verify ≥1 doctest collected before treating exit 0 as "feature exists"
-$PYTEST_CMD --collect-only --doctest-modules <module>.py -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}  # timeout: 30000
+# Step 1: collect-only — verify ≥1 doctest exists before running full gate  # timeout: 30000
+$PYTEST_CMD --collect-only --doctest-modules <module>.py -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}
 if [ "$COLLECT_EXIT" -eq 5 ]; then
     echo "⚠ GATE FAIL: no demo tests collected — demo file missing or doctest malformed"
+    GATE_EXIT=1  # collection failed — skip full run, treat as gate failure
 elif [ "$COLLECT_EXIT" -ne 0 ]; then
     echo "⚠ Cannot collect doctests — check module for import errors (collect exit $COLLECT_EXIT)"
+    GATE_EXIT=1  # collection failed — skip full run, treat as gate failure
 fi
-# Only run full gate if doctests were found
-if [ "${COLLECT_EXIT:-0}" -eq 0 ]; then
+```
+
+```bash
+# Step 2: run full gate only when collection succeeded (COLLECT_EXIT=0)  # timeout: 600000
+# Doctest form:
+if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
+    $PYTEST_CMD --doctest-modules <module>.py -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
     if [ "${GATE_EXIT:-0}" -eq 0 ]; then
         echo "⚠ GATE FAIL: demo passed (exit 0) — feature may already exist; revisit Step 1"
     else
         echo "✓ GATE OK: demo failed as expected (exit $GATE_EXIT)"
     fi
 fi
+
+# Script form (use instead of doctest when applicable):
+# python examples/demo_<feature>.py 2>&1 | tail -5; GATE_EXIT=$?
 ```
 
-If `GATE_EXIT -eq 0` or `GATE_EXIT -eq 5`: stop. Don't proceed. Revisit Step 2 — demo is missing or feature already implemented.
+If `COLLECT_EXIT -ne 0`: stop — collection failed, gate skipped (GATE_EXIT=1). If `GATE_EXIT -eq 0`: invoke `AskUserQuestion` — do not silently proceed past a gate failure with prose alone: "Demo passed against current code — feature may already exist. How to proceed?" · (a) **Stop** — revisit Step 1 scope (recommended; feature likely already implemented) · (b) **Continue anyway** — proceed with TDD loop (gate explicitly overridden). On Stop: exit; do not advance to Step 3.
 
 ### Review: Validate the demo
 
@@ -308,7 +369,7 @@ Drive implementation by making tests pass, one cycle at a time:
 
 ```bash
 # Baseline: confirm existing suite is green before adding any new code
-"${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/run-pytest-short.sh" "$PYTEST_CMD" <target_test_dir>  # timeout: 600000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/run_pytest_short.py" "$PYTEST_CMD" <target_test_dir>  # timeout: 600000
 GATE_EXIT=$?
 ```
 
@@ -323,11 +384,13 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
 1. **Target demo or write next focused test** — first iteration uses Step 2 demo directly; subsequent iterations add one new test per piece of new behaviour
 2. **Run existing suite — confirm all pass**:
    ```bash
+   # timeout: 600000
    $PYTEST_CMD --tb=short <target_test_dir> -v 2>&1 | tail -20
    GATE_EXIT=${PIPESTATUS[0]}
    ```
 3. **Run new demo/test — confirm it fails**:
    ```bash
+   # timeout: 600000
    # doctest form
    $PYTEST_CMD --doctest-modules <module>.py -v --tb=short 2>&1 | tail -10
    GATE_EXIT=${PIPESTATUS[0]}
@@ -342,6 +405,7 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
 5. **Run demo/test — confirm it passes**
 6. **Run full suite** to catch regressions:
    ```bash
+   # timeout: 600000
    $PYTEST_CMD --tb=short <target_test_dir> -v
    ```
 7. If regressions appear: fix before moving on — never carry forward broken suite
@@ -379,6 +443,7 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 3. Re-run full suite to confirm nothing regressed:
 
    ```bash
+   # timeout: 600000
    $PYTEST_CMD --tb=short <target_test_dir> -v 2>&1 | tail -20
    GATE_EXIT=${PIPESTATUS[0]}
    ```
@@ -412,24 +477,24 @@ Implementation incomplete — stopped after 3 review cycles.
 
 ## Step 5: Documentation
 
-Spawn **foundry:doc-scribe** agent to update all affected docs:
+Spawn **foundry:doc-scribe** agent to update docstrings and README only (doc-scribe NOT-for: CHANGELOG — route separately):
 
 - Add or update **docstrings** on new/modified functions and classes (Google style — Napoleon)
 - Update module-level docstring if feature adds significant capability
 - Add demo from Step 2 as doctest if not already embedded
-- Update `CHANGELOG.md` with one-line entry under `Unreleased`
 - If feature changes public API: update `README.md` usage examples
 
-Spawn with context:
+Spawn doc-scribe with context:
 - Affected files: [list from Step 1 scope analysis]
 - New/modified public API: [function names, signatures from Step 3]
 - Demo location: [Step 2 demo file path and function name]
-- CHANGELOG entry: [one-line description of feature]
 
 Agent must Read each affected source file before writing docstrings — do not write placeholder content.
 
+**CHANGELOG update** (separate from doc-scribe): after doc-scribe completes, spawn **foundry:sw-engineer** to append one-line entry to `CHANGELOG.md` under `Unreleased` section. Context: feature name and one-line description of new capability.
+
 ```bash
-# Verify doctests pass after doc updates
+# Verify doctests pass after doc updates  # timeout: 600000
 $PYTEST_CMD --doctest-modules <target_module> -v 2>&1 | tail -20
 GATE_EXIT=${PIPESTATUS[0]}
 ```
@@ -470,7 +535,7 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 - [any deferred items, known limitations, or suggested next steps]
 
 ## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
 **Gaps**:
 - [e.g., review cycle incomplete, edge cases not fully explored]
 

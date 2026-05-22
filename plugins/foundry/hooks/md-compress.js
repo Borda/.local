@@ -46,8 +46,13 @@
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
+
+function getSentinelDir() {
+  return process.platform === "win32" ? os.tmpdir() : "/tmp";
+}
 
 /**
  * Compress markdown content:
@@ -208,7 +213,7 @@ process.stdin.on("end", () => {
     // session_id follows same sanitization as lint-on-save.js.
     const sessionId = data.session_id || "default";
     const sid = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const tmpDir = `/tmp/claude-state-${sid}/md-compress`;
+    const tmpDir = `${getSentinelDir()}/claude-state-${sid}/md-compress`;
 
     // Ensure temp dir exists (mkdirSync with recursive is safe if already present).
     try {

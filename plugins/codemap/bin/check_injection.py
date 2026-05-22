@@ -42,6 +42,7 @@ CANONICAL_INJECTION_SITES: tuple[str, ...] = (
 SKILL_INJECTION_MARKER = "command -v scan-query"
 AGENT_INJECTION_MARKER = "Structural context (codemap"
 DEFAULT_CACHE_GLOB = "borda-ai-rig/codemap/*"
+MAX_AUDIT_FILE_SIZE = 1_000_000  # 1 MB — skip oversized files in marker scan (SEC-M8: DoS guard)
 
 
 @dataclass(frozen=True)
@@ -57,11 +58,39 @@ class AuditResult:
     lines: tuple[str, ...]
 
 
+def _is_plausible_plugin_dir(path: Path) -> bool:
+    """Return True when ``path`` looks like a real plugin directory.
+
+    A safe plugin directory must (a) exist as a directory, (b) not be ``/`` or
+    ``$HOME``, (c) contain at least one plugin marker (``plugin.json``,
+    ``.claude-plugin/plugin.json``, ``agents/``, or ``skills/``). This guards
+    against unbounded ``rglob`` traversal across the home or root filesystem.
+    """
+    if not path.is_dir():
+        return False
+    resolved = path.resolve()
+    home = Path(os.path.expanduser("~")).resolve()
+    if resolved == Path("/") or resolved == home:
+        return False
+    markers = (
+        resolved / "plugin.json",
+        resolved / ".claude-plugin" / "plugin.json",
+        resolved / "agents",
+        resolved / "skills",
+    )
+    return any(m.exists() for m in markers)
+
+
 def resolve_plugin_root(explicit: str | None) -> Path | None:
     """Resolve the codemap plugin install root.
 
     Falls back to the most recently modified entry under
     ``~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/integration``.
+
+    The caller-supplied value is canonicalised with :meth:`Path.resolve` and must
+    pass :func:`_is_plausible_plugin_dir` — paths resolving outside expected
+    plugin directories (e.g. ``/``, ``$HOME``, arbitrary system dirs) are
+    rejected and the auto-discovery fallback is used instead (CWE-22).
 
     Args:
         explicit: caller-supplied path (may be empty/``None``).
@@ -70,7 +99,10 @@ def resolve_plugin_root(explicit: str | None) -> Path | None:
         Resolved ``Path`` or ``None`` if neither argument nor fallback succeeded.
     """
     if explicit:
-        return Path(explicit)
+        candidate = Path(explicit).expanduser().resolve()
+        if _is_plausible_plugin_dir(candidate):
+            return candidate
+        # Reject silently → fall through to auto-discovery (preserves prior UX for missing paths).
     home = Path(os.path.expanduser("~"))
     candidates = sorted(
         home.joinpath(".claude/plugins/cache").glob(DEFAULT_CACHE_GLOB),
@@ -118,6 +150,12 @@ def find_files_with_marker(
         if not candidate.is_file():
             continue
         if path_substr is not None and path_substr not in candidate.as_posix():
+            continue
+        # DoS guard (SEC-M8): skip oversized files; markdown SKILL.md / agent .md files are well under 1 MB.
+        try:
+            if candidate.stat().st_size > MAX_AUDIT_FILE_SIZE:
+                continue
+        except OSError:
             continue
         try:
             content = candidate.read_text(encoding="utf-8", errors="replace")

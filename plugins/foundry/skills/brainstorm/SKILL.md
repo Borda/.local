@@ -38,7 +38,7 @@ NOT for implementation or code-gen — see `develop` plugin (requires `develop` 
 **Task hygiene**:
 ```bash
 # audit-skip: resilience-replication
-_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
@@ -105,12 +105,12 @@ On write failure: log `> Viewer write failed: <reason>` inline and continue.
 
 Print launch note:
 
-> **Live tree viewer**: resolve scripts dir:
+> **Live tree viewer**: resolve scripts dir (works both pre- and post-install — `$CLAUDE_PLUGIN_ROOT` points at the installed cache when the plugin is installed; the fallback supports development against the source tree):
 > ```bash
-> _BRAINSTORM_SCRIPTS=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 5 -type d -name "scripts" -path "*/brainstorm/*" 2>/dev/null | sort -Vr | head -1)
-> [ -z "$_BRAINSTORM_SCRIPTS" ] && _BRAINSTORM_SCRIPTS="plugins/foundry/skills/brainstorm/scripts"
+> _BRAINSTORM_SCRIPTS="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/brainstorm/scripts"
+> echo "Viewer HTML: $_BRAINSTORM_SCRIPTS/tree-viewer.html"
 > ```
-> Serve from project root with a static-file server (e.g. `npx serve .`, `npx http-server .`). If `npx` unavailable, serve via `python -m http.server 8080` from the output directory. Then open `http://localhost:<PORT>/<path-to-tree-viewer.html>?state=<sidecar-path>`.
+> Because the viewer lives under the plugin cache (read-only) while `$SIDECAR` lives under the project's `.plans/blueprint/`, the static server's document root must cover both paths. Easiest reliable option: serve from `$HOME` with `python -m http.server 8080 --directory "$HOME"` (or `npx serve "$HOME"`), then open `http://localhost:8080/<relative-path-from-HOME-to-tree-viewer.html>?state=<absolute-or-HOME-relative-sidecar-path>`. If you prefer serving from the project root, copy or symlink the viewer HTML into a project-local directory first so the URL path resolves under the same document root as `$SIDECAR`.
 
 ## Step 2: Clarifying questions
 
@@ -461,6 +461,8 @@ For each blocking question: call `AskUserQuestion` — one at a time, in order. 
 
 #### Step B2: Generate the action plan
 
+**Idempotency pre-check**: before generating plan, call `TaskList` and scan for active `/develop:feature` tasks naming this spec's slug. If found, surface existing task to user and ask whether to re-generate plan (which will not re-dispatch — see Step B3) or skip; do not silently double-dispatch.
+
 1. Parse spec into discrete action items from "Proposed design" and "Success criteria"
 2. For each item, write ready-to-run invocation:
    - `.claude/` config change → `/foundry:manage create <type> <name> "description"` or `/foundry:manage update <name> <spec-file>`
@@ -493,7 +495,7 @@ Call `AskUserQuestion` tool — do NOT write options as plain text first. Map op
 - (b) label: `Copy plan` — description: output plan table as clean markdown block, then stop
 - (c) label: `Revise spec first` — description: stop; revise spec and re-run `/brainstorm breakdown <spec>`
 
-On **(a)**: proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
+On **(a)**: before dispatching, verify no active `/develop:feature` task for this spec already exists in TaskList — call `TaskList` and scan for tasks naming the spec slug or referencing `/develop:feature` against same spec file; if found, surface existing task to user and skip dispatch (prevents double-dispatch on re-entry). Otherwise proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
 
 End with `## Confidence` block per CLAUDE.md output standards.
 
@@ -508,7 +510,7 @@ End with `## Confidence` block per CLAUDE.md output standards.
 - **Status field**: tree documents use `Status: tree`; spec documents use `Status: draft`; breakdown auto-detects which path to take
 - **Breakdown heading convention**: distillation mode uses D-prefix steps (D1–D4); action plan mode uses B-prefix steps (B1–B3)
 - **Exploration notes in spec**: Section 6 derived from tree's Pruning log — intentional context for future readers; do not remove in foundry:curator review
-- **Interaction budget**: idea mode — worst case: 13 (`--tight`) / 23 (default) / 33 (`--deep`) questions + operations + 3 approval cycles; breakdown distillation — max 5 questions + 6 section drafts ≈ 11; typical sessions use ~8–15 total AskUserQuestion calls across both
+- **Interaction budget**: idea mode — worst case: 13 (`--tight`) / 23 (default) / 33 (`--deep`) questions + operations + 3 approval cycles; breakdown distillation — max 5 questions + 6 section drafts ≈ 11; typical sessions use ~8–15 total AskUserQuestion calls across both. <!-- Branch-path audit: confirm no single branch through the workflow asks more than 4 AskUserQuestion calls in one response — communication.md 4-question-per-call cap is per invocation, not per branch; multiple sequential AskUserQuestion calls in one branch path are permitted but should be reviewed for batching opportunities. -->
 - **Flag modes**: `--tight` / `--deep` scale question and operation caps (5/15 vs default 10); `--type` enables type-aware scan and question framing in Steps 1–2; flags apply to idea mode only, ignored in breakdown
 - **Follow-up**: after spec approval in distillation mode → if targeting `.claude/` config: `/foundry:manage update <name> <spec-file>`; for application or mixed changes: `/brainstorm breakdown .plans/blueprint/<spec-file>` for action plan
 - **Rejected vs resolved distinction**: ⛔ marks branches dismissed as wrong direction; ✅ marks branch explicitly chosen as direction. Resolved branches do not count toward minimum-rejected-branches gate — they are the goal. Pruning log captures rejected only; resolved branches go in separate "Resolved branches" section.

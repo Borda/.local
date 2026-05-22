@@ -22,7 +22,7 @@ NOT for: running experiments (use `/research:run`); designing hypotheses (use `r
 ## Agent Resolution
 
 ```bash
-_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
@@ -36,7 +36,7 @@ Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback 
 
 Triggered by `judge` or `judge <file.md>`.
 
-**Task tracking**: create tasks for J1, J2, J3, J4, J5, J6 at start — before any tool calls.
+**Task tracking**: create tasks for J1, J2, J3, J4, J5 (includes J5a + J5b sub-steps), J6 at start — before any tool calls.
 
 ## Step J1: Locate and parse program.md
 
@@ -111,29 +111,43 @@ Goodhart findings are `critical` (not just methodology notes) because a broken m
 Pre-compute run dir before spawning:
 
 ```bash
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "judge" ".experiments" 2>/dev/null)  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "judge" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
 **Health monitoring** (CLAUDE.md §8) — create both checkpoints BEFORE dispatching any agents:
 
 ```bash
-_HM_ARCH=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "judge-architect" 2>/dev/null)  # timeout: 5000
+_HM_ARCH=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "judge-architect" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT=$(echo "$_HM_ARCH" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT=$(echo "$_HM_ARCH" | grep '^SENTINEL=' | cut -d= -f2)
-_HM_SCI=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "judge-scientist" 2>/dev/null)  # timeout: 5000
+_HM_SCI=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "judge-scientist" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT_SCI=$(echo "$_HM_SCI" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_SCI=$(echo "$_HM_SCI" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
 Then dispatch both agents (architect + scientist) in a single response.
 
-Spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt="...")` (uses `opusplan`) with this prompt:
+Before constructing the J3 prompts, expand all bash variables into concrete paths — never pass literal `<path_to_program.md>` or `<RUN_DIR>` placeholders to agents:
+
+```bash
+PROGRAM_PATH=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
+# RUN_DIR was assigned earlier in J3 via make_run_dir.py
+J3_ARCH_PROMPT="Act as a research supervisor reviewing a PhD student's experimental protocol.
+Your job is NOT to predict whether the experiment will succeed — it is to judge whether the experimental design is methodologically sound and whether the student should be allowed to proceed.
+
+Read the campaign program file at ${PROGRAM_PATH}.
+Also read the codebase (Glob **/*.py, **/*.ts, **/*.js at project root, limit 50 files) for structural context.
+
+(Remainder of architect prompt follows verbatim — see prompt template below for the full text; substitute ${RUN_DIR} for each <RUN_DIR> token in the template.)"
+```
+
+Spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opusplan`). The full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
 
 ```markdown
 Act as a research supervisor reviewing a PhD student's experimental protocol.
 Your job is NOT to predict whether the experiment will succeed — it is to judge whether the experimental design is methodologically sound and whether the student should be allowed to proceed.
 
-Read the campaign program file at <path_to_program.md>.
+Read the campaign program file at ${PROGRAM_PATH}.
 Also read the codebase (Glob **/*.py, **/*.ts, **/*.js at project root, limit 50 files) for structural context.
 
 Review the experimental protocol across seven dimensions:
@@ -250,7 +264,22 @@ Incorporate Codex findings into overall findings list with `source: "codex"`.
 note: codex plugin not installed — skipping adversarial review (Claude-only judge)
 ```
 
+## Step J5b: Resolve rating source
+
+Apply rating source precedence before J6 verdict computation — fixes ambiguity when envelope and file-parsed ratings disagree.
+
+For each rating (`methodology_rating`, `scientific_rating`):
+
+1. If `<RUN_DIR>/methodology.md` (or `scientific-review.md`) is present AND parsable, use file-parsed value — authoritative.
+2. Else use envelope value from the agent's returned JSON — fallback.
+3. Log source used: print `→ methodology_rating source: file | envelope` and `→ scientific_rating source: file | envelope` before entering J6.
+
+Resolved rating values feed directly into J6 verdict table — no further source disambiguation in J6.
+
 ## Step J6: Verdict and report
+
+<!-- Confidence threshold: 0.85 per quality-gates.md — update here if quality-gates.md changes -->
+<!-- Scoring weight constants (any/critical/high/methodology_rating) are duplicated inline below; if quality-gates.md thresholds change, sync this section too. -->
 
 **Verdict computation** (deterministic — design soundness, not outcome prediction):
 
@@ -259,8 +288,8 @@ Top-to-bottom; **first match wins**. BLOCKED takes precedence — stop at first 
 | Condition | Verdict |
 | --- | --- |
 | any critical (J2) — exact `critical` severity match | BLOCKED |
-| `methodology_rating == "fundamentally-flawed"` (exact string match, J4) | BLOCKED |
-| `scientific_rating == "fundamentally-flawed"` (exact string match, J4) | BLOCKED |
+| `methodology_rating == "fundamentally-flawed"` (exact string match, J3) | BLOCKED |
+| `scientific_rating == "fundamentally-flawed"` (exact string match, J3) | BLOCKED |
 | J3 agent timed out (`methodology_rating == "timed_out"` — exact match — or null; note: `timed_out` does **not** trigger BLOCKED — it falls to NEEDS-REVISION) | NEEDS-REVISION |
 | 0 critical AND (high > 0 OR `methodology_rating == "needs-refinement"`) | NEEDS-REVISION |
 | 0 critical AND 0 high AND `methodology_rating == "sound"` | APPROVED |

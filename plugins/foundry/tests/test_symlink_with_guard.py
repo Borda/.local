@@ -14,7 +14,7 @@ import pytest
 
 
 import symlink_with_guard  # noqa: E402
-from symlink_with_guard import cleanup, main, scan  # noqa: E402
+from symlink_with_guard import cleanup, create_link, main, scan  # noqa: E402
 
 _MARKER = "borda-ai-rig/foundry/"
 
@@ -327,8 +327,156 @@ class TestMain:
         assert "  removed obsolete: another.md" in out
 
 
+class TestCreateLink:
+    """create_link: 3-tier cascade (symlink → junction → copy + sidecar)."""
+
+    def test_create_link_makes_symlink(self, tmp_path: Path) -> None:
+        """Directory src + non-existent dest on POSIX → real symlink created."""
+        home = tmp_path / "home"
+        home.mkdir()
+        src = tmp_path / "src_dir"
+        src.mkdir()
+        (src / "file.txt").write_text("hello\n")
+        dest = tmp_path / "dest_link"
+
+        tier = create_link(src, dest, home)
+
+        assert tier == "symlink"
+        assert dest.is_symlink()
+        assert (dest / "file.txt").read_text() == "hello\n"
+
+    def test_create_link_file_makes_symlink(self, tmp_path: Path) -> None:
+        """File src + non-existent dest on POSIX → real symlink created."""
+        home = tmp_path / "home"
+        home.mkdir()
+        src = tmp_path / "src_file.md"
+        src.write_text("body\n")
+        dest = tmp_path / "dest_file.md"
+
+        tier = create_link(src, dest, home)
+
+        assert tier == "symlink"
+        assert dest.is_symlink()
+        assert dest.read_text() == "body\n"
+
+    def test_create_link_falls_to_copy_when_symlink_fails(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tier 1 raises OSError, Tier 2 skipped (non-Windows) → Tier 3 copy + sidecar."""
+        home = tmp_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        src = tmp_path / "src_dir"
+        src.mkdir()
+        (src / "inner.txt").write_text("payload\n")
+        dest = tmp_path / "out" / "dest_dir"
+
+        # Force Tier 1 to fail and pin platform to non-Windows so Tier 2 is skipped.
+        monkeypatch.setattr(
+            symlink_with_guard.Path,
+            "symlink_to",
+            lambda self, target: (_ for _ in ()).throw(OSError("simulated symlink failure")),
+        )
+        monkeypatch.setattr(symlink_with_guard.sys, "platform", "linux")
+
+        tier = create_link(src, dest, home)
+
+        assert tier == "copy"
+        assert dest.is_dir()
+        assert not dest.is_symlink()
+        assert (dest / "inner.txt").read_text() == "payload\n"
+        sidecar = dest.parent / f".{dest.name}.sourced_from"
+        assert sidecar.is_file()
+        assert sidecar.read_text()  # non-empty
+
+    def test_create_link_sidecar_uses_relative_path(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Src under ``home/.claude`` → sidecar holds relative posix path (no leading /)."""
+        home = tmp_path / "home"
+        claude_dir = home / ".claude"
+        claude_dir.mkdir(parents=True)
+        src = claude_dir / "plugins" / "foundry" / "rules" / "x.md"
+        src.parent.mkdir(parents=True)
+        src.write_text("rule body\n")
+        dest = tmp_path / "out" / "x.md"
+
+        monkeypatch.setattr(
+            symlink_with_guard.Path,
+            "symlink_to",
+            lambda self, target: (_ for _ in ()).throw(OSError("forced copy path")),
+        )
+        monkeypatch.setattr(symlink_with_guard.sys, "platform", "linux")
+
+        tier = create_link(src, dest, home)
+
+        assert tier == "copy"
+        sidecar = dest.parent / f".{dest.name}.sourced_from"
+        content = sidecar.read_text()
+        # Relative path: does NOT start with '/' and matches expected posix-relative form.
+        assert not content.startswith("/")
+        assert content == "plugins/foundry/rules/x.md\n"
+
+    def test_create_link_sidecar_falls_back_to_absolute(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Src outside ``home/.claude`` → ValueError on relative_to → sidecar stores absolute posix path."""
+        home = tmp_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        # src lives outside home/.claude entirely
+        src = tmp_path / "elsewhere" / "external.md"
+        src.parent.mkdir(parents=True)
+        src.write_text("external content\n")
+        dest = tmp_path / "out" / "external.md"
+
+        monkeypatch.setattr(
+            symlink_with_guard.Path,
+            "symlink_to",
+            lambda self, target: (_ for _ in ()).throw(OSError("forced copy path")),
+        )
+        monkeypatch.setattr(symlink_with_guard.sys, "platform", "linux")
+
+        tier = create_link(src, dest, home)
+
+        assert tier == "copy"
+        sidecar = dest.parent / f".{dest.name}.sourced_from"
+        content = sidecar.read_text()
+        assert content == src.as_posix() + "\n"
+        assert content.startswith("/")  # absolute fallback
+
+    def test_main_create_mode_missing_src(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`create` without --src → returns 2 with explanatory stderr."""
+        home = tmp_path / "home"
+        home.mkdir()
+        rc = main(["create", "--dest", str(tmp_path / "x"), "--home", str(home)])
+        assert rc == 2
+        assert "--src" in capsys.readouterr().err
+
+    def test_main_create_mode_missing_dest(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """`create` without --dest → returns 2 with explanatory stderr."""
+        home = tmp_path / "home"
+        home.mkdir()
+        rc = main(["create", "--src", str(tmp_path / "x"), "--home", str(home)])
+        assert rc == 2
+        assert "--dest" in capsys.readouterr().err
+
+
 def test_module_exposes_expected_helpers() -> None:
     """Smoke check: module surface includes the documented entry points."""
     assert callable(symlink_with_guard.cleanup)
     assert callable(symlink_with_guard.scan)
+    assert callable(symlink_with_guard.create_link)
     assert callable(symlink_with_guard.main)

@@ -1,7 +1,7 @@
 ---
 name: gh-scraper
 description: "Fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL data file for consumption by oss:repo-warden axis scorers. TRIGGER when: spawned by /oss:analyse (vitality mode) to fetch raw GitHub data. NOT for axis scoring or report generation. NOT for direct user invocation."
-tools: Write, Bash
+tools: Write, Bash, WebFetch
 model: sonnet
 effort: medium
 color: cyan
@@ -59,21 +59,25 @@ if [ "$RATE_REMAINING" != "unknown" ] && [ "$RATE_REMAINING" -lt 80 ]; then
     echo "[gh-scraper] WARN: only $RATE_REMAINING core API calls remaining — results may be incomplete; reset at $(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null | xargs -I{} date -r {} 2>/dev/null || echo 'unknown time')"  # timeout: 6000
 fi
 
+# DATA_FILE path is set by the caller (oss:analyse vitality mode) inside its
+# per-run REPORT_DIR — keep it as-is so vitality.md reads the same file gh-scraper
+# wrote. Do NOT inject a PID suffix here — that breaks the handoff (vitality.md
+# would read the original non-PID path while we wrote to a PID-suffixed one).
 echo "[gh-scraper] analysing $GH_OWNER/$GH_REPO"  # timeout: 5000
 mkdir -p "$(dirname "$DATA_FILE")"  # timeout: 5000
 # loads: oss-shared-resolver.md
 # shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in repo-warden.md, shepherd.md)
-_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
 
 ## Step 2 — Data Fetch Group 1 (all parallel)
 
-Run all calls simultaneously — independent. Extracted to `bin/fetch_gh_data_group1.sh` (parallel `gh api` + `gh issue list` + `gh pr list` calls; one JSON file per dataset under `$GROUP1_DIR`). Pre-compute output dir tied to `$DATA_FILE` so Step 4 can read each file back:
+Run all calls simultaneously — independent. Extracted to `bin/fetch_gh_data_group1.py` (parallel `gh api` + `gh issue list` + `gh pr list` calls; one JSON file per dataset under `$GROUP1_DIR`). Pre-compute output dir tied to `$DATA_FILE` so Step 4 can read each file back:
 
 ```bash
 GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000
-"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/fetch_gh_data_group1.sh" \
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/fetch_gh_data_group1.py" \
     --repo "$GH_OWNER/$GH_REPO" \
     --output-dir "$GROUP1_DIR" \
     --cutoff-3y "$CUTOFF_3Y" \
@@ -90,74 +94,96 @@ After Group 1 complete — root file list and default_branch now known. Run all 
 Read Group 1 outputs before the bash block:
 
 ```bash
-# ROOT_FILES: JSON array of filenames in repo root, written by fetch_gh_data_group1.sh to $GROUP1_DIR/root_contents.json
+GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000  # redeclare: separate bash block, prior block's vars not in scope
+# ROOT_FILES: JSON array of filenames in repo root, written by fetch_gh_data_group1.py to $GROUP1_DIR/root_contents.json
 ROOT_FILES=$(cat "${GROUP1_DIR}/root_contents.json" 2>/dev/null || echo "[]")  # timeout: 5000
 DEFAULT_BRANCH=$(jq -r '.[]|select(.name=="default_branch")|.data' "${GROUP1_DIR}/repo_meta.json" 2>/dev/null || echo "main")  # timeout: 5000
 ```
 
 ```bash
 # Axis 5: README content (decode base64; --ignore-garbage tolerates padded/partial base64 from API)
+# base64 fallback with explicit error check: empty decode output from non-empty raw = decode failure (rate limit or malformed); log + skip axis rather than score 'missing'
 _README_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/readme" --jq '.content' 2>/dev/null)  # timeout: 10000
 _README_DECODED=$(echo "$_README_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_README_RAW" | base64 -D 2>/dev/null)
+if [ -n "$_README_RAW" ] && [ -z "$_README_DECODED" ]; then
+    echo "[gh-scraper] WARN: base64 decode failed for README (possible rate limit) — skipping Axis 5 README content"  # timeout: 5000
+    _README_DECODED=""
+fi
 
 # Axis 5 checkpoints 8–10: CONTRIBUTING.md content (only if checkpoint 5 ✓ — CONTRIBUTING.md in root file list)
 if echo "$ROOT_FILES" | grep -q '"CONTRIBUTING.md"'; then  # M29: only fetch if present in root file list from Group 1
     _CONTRIB_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/CONTRIBUTING.md" --jq '.content' 2>/dev/null)  # timeout: 10000
     _CONTRIB_DECODED=$(echo "$_CONTRIB_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CONTRIB_RAW" | base64 -D 2>/dev/null)
+    if [ -n "$_CONTRIB_RAW" ] && [ -z "$_CONTRIB_DECODED" ]; then
+        echo "[gh-scraper] WARN: base64 decode failed for CONTRIBUTING.md (possible rate limit) — skipping Axis 5 CONTRIBUTING content"  # timeout: 5000
+        _CONTRIB_DECODED=""
+    fi
 fi
 
 # Axis 6: .github/ directory contents
-gh api "repos/$GH_OWNER/$GH_REPO/contents/.github" --jq '[.[] | .name]' 2>/dev/null  # timeout: 10000
+_GITHUB_DIR=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github" --jq '[.[] | .name]' 2>/dev/null)  # timeout: 10000
 
 # Axis 6 checkpoint 5+7: CODEOWNERS content (check .github/CODEOWNERS first, then root)
 _CO_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/CODEOWNERS" --jq '.content' 2>/dev/null)  # timeout: 10000
 if [ -n "$_CO_RAW" ]; then
-    echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null
+    _CO_DECODED=$(echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null)
+    if [ -z "$_CO_DECODED" ]; then
+        echo "[gh-scraper] WARN: base64 decode failed for .github/CODEOWNERS (possible rate limit) — skipping Axis 6 CODEOWNERS content"  # timeout: 5000
+    else
+        echo "$_CO_DECODED"
+    fi
 else
     _CO_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/CODEOWNERS" --jq '.content' 2>/dev/null)
-    echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null
+    if [ -n "$_CO_RAW" ]; then
+        _CO_DECODED=$(echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null)
+        if [ -z "$_CO_DECODED" ]; then
+            echo "[gh-scraper] WARN: base64 decode failed for CODEOWNERS (possible rate limit) — skipping Axis 6 CODEOWNERS content"  # timeout: 5000
+        else
+            echo "$_CO_DECODED"
+        fi
+    fi
 fi
 
-# Axis 6: branch protection on default branch
-gh api "repos/$GH_OWNER/$GH_REPO/branches/{default_branch}/protection" 2>/dev/null  # timeout: 10000
+# Axis 6: branch protection on default branch — substitute $DEFAULT_BRANCH (resolved from repo_meta.json above); literal {default_branch} never substituted by gh, returns 404 silently
+_BRANCH_PROTECTION=$(gh api "repos/$GH_OWNER/$GH_REPO/branches/$DEFAULT_BRANCH/protection" 2>/dev/null)  # timeout: 10000
+
+# Axis 8B: star velocity — NOT IMPLEMENTED: gh api stargazers endpoint does not expose per-star timestamps
+# without Accept: application/vnd.github.star+json; that header is unofficial and unreliable. Axis 8B
+# star_dates are unavailable — repo-warden Group C scores Axis 8B as N/A when star_dates absent.
 
 # Axis 8C: package registry — detect package from root contents, then WebFetch
-# If pyproject.toml found in root:
-#   PYPROJECT=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/pyproject.toml" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null)
-#   Extract [project].name or [tool.poetry].name; WebFetch https://pypistats.org/api/packages/<name>/recent
-# If package.json found in root:
-#   PKG_JSON=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/package.json" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null)
-#   Extract .name; WebFetch https://api.npmjs.org/downloads/range/last-month/<name>
-# 404 from registry: skip sub-signal C silently
-
-# Axis 8B: star velocity — page-by-page loop; stop when starred_at < 180d ago
-# gh --paginate fetches ALL pages unconditionally; use explicit loop with date check instead:
-#   STAR_TMP="/tmp/star-dates-$GH_OWNER-$GH_REPO-$ANALYSIS_NOW.txt"
-#   PAGE=1
-#   while true; do
-#     BATCH=$(gh api "repos/$GH_OWNER/$GH_REPO/stargazers?per_page=100&page=$PAGE" \
-#       -H "Accept: application/vnd.github.star+json" --jq '.[].starred_at')  # timeout: 15000
-#     [ -z "$BATCH" ] && break  # no more pages
-#     echo "$BATCH" >> "$STAR_TMP"
-#     OLDEST=$(echo "$BATCH" | tail -1)
-#     [[ "$OLDEST" < "$CUTOFF_180D" ]] && break  # crossed 180d boundary
-#     PAGE=$((PAGE+1))
-#   done
-# Derive: stars gained last 30d, 90d, 180d; trend = 30d rate vs 90d rate
-# If fewer than 2 pages collected before timeout: mark 8B ⚪ unavailable
+# NOT IMPLEMENTED: registry download stats require WebFetch to PyPI/npm APIs and package name
+# extraction from pyproject.toml/package.json — deferred; scorer marks sub-signal C as N/A if absent.
 
 # Axis 5: Workflow content analysis — detect test/lint/SAST signals
 # List .github/workflows/ directory (parallel with other Group 2 calls)
-gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/workflows" --jq '[.[] | .name]' 2>/dev/null  # timeout: 10000
-# Fetch content of first 2 workflow files (up to 2 calls); grep for signals:
-# has_tests: grep -qi 'pytest\|jest\|cargo test\|go test\|npm test\|mvn test\|rspec\|phpunit'
-# has_lint: grep -qi 'ruff\|flake8\|eslint\|prettier\|rubocop\|golangci\|black\|mypy'
-# has_sast: grep -qi 'codeql\|semgrep\|sonar\|snyk\|trivy\|bandit'
+_WORKFLOW_LIST=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/workflows" --jq '[.[] | .name]' 2>/dev/null)  # timeout: 10000
+# Fetch content of first 2 workflow files so Step 4 can grep for CI signals.
+# Concatenate decoded YAML into _WORKFLOW_CONTENT — scorer greps it for:
+#   has_tests: pytest|jest|cargo test|go test|npm test|mvn test|rspec|phpunit
+#   has_lint:  ruff|flake8|eslint|prettier|rubocop|golangci|black|mypy
+#   has_sast:  codeql|semgrep|sonar|snyk|trivy|bandit
+_WORKFLOW_CONTENT=""
+if [ -n "$_WORKFLOW_LIST" ] && [ "$_WORKFLOW_LIST" != "null" ]; then
+    _WORKFLOW_NAMES=$(echo "$_WORKFLOW_LIST" | jq -r '.[]' 2>/dev/null | head -2)
+    while IFS= read -r _wf_name; do
+        [ -z "$_wf_name" ] && continue
+        _WF_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/workflows/$_wf_name" --jq '.content' 2>/dev/null)  # timeout: 10000
+        _WF_DECODED=$(echo "$_WF_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_WF_RAW" | base64 -D 2>/dev/null)
+        if [ -n "$_WF_RAW" ] && [ -z "$_WF_DECODED" ]; then
+            echo "[gh-scraper] WARN: base64 decode failed for workflow $_wf_name (possible rate limit) — skipping"  # timeout: 5000
+            continue
+        fi
+        _WORKFLOW_CONTENT="${_WORKFLOW_CONTENT}
+--- workflow: $_wf_name ---
+$_WF_DECODED"
+    done <<<"$_WORKFLOW_NAMES"
+fi
 
 # Axis 8: Dependabot/Renovate config check
 # renovate.json and .renovaterc are in root-contents (already fetched in Group 1) — check from list
 # .github/dependabot.yml requires this separate call:
-gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/dependabot.yml" 2>/dev/null  # timeout: 10000
+_DEPENDABOT_CONFIG=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/dependabot.yml" 2>/dev/null)  # timeout: 10000
 ```
 
 ## Step 4 — Raw Data Dump (JSONL)
@@ -173,7 +199,11 @@ Rules:
 - Set `"partial": true` when truncation detected
 - Set `"records"` to item count in `data`
 - After writing: `echo "[gh-scraper] raw data: N datasets → $DATA_FILE"`
-- Include text-content records for README and CONTRIBUTING using captured `_README_DECODED` / `_CONTRIB_DECODED` variables — set `"type":"readme_text"` / `"type":"contributing_text"` with `"data"` as plain string; skip if variable empty
+- Include text-content records using captured variables — set `"data"` as plain string; skip if variable empty:
+  - `_README_DECODED` → `"type":"readme_text"`
+  - `_CONTRIB_DECODED` → `"type":"contributing_text"`
+  - `_CO_DECODED` → `"type":"codeowners_text"` (Axis 7 scorer reads this; absent record = no CODEOWNERS file)
+  - `_WORKFLOW_CONTENT` → `"type":"workflow_content"` (Axis 5 scorer greps it for test/lint/SAST signals)
 
 ## Step 5 — Return Envelope
 

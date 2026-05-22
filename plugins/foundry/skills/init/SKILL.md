@@ -13,6 +13,7 @@ Set up foundry on new machine:
 
 | Action | What happens |
 | --- | --- |
+| Detect Python 3.10+ (`python` / `py -3` / `python3`); install `~/bin/python` shim if needed | ✓ |
 | Merge `statusLine`, `permissions.allow`, `enabledPlugins` → `~/.claude/settings.json` | ✓ |
 | `rules/*.md` → `~/.claude/rules/` | symlink |
 | `TEAM_PROTOCOL.md` → `~/.claude/` | symlink |
@@ -45,11 +46,11 @@ NOT for: editing project `.claude/settings.json`.
 
 Parse `$ARGUMENTS` for `--approve` (case-insensitive). If found, set `APPROVE_ALL=true`; else `APPROVE_ALL=false`.
 
-**Early git repository check** — Step 6 requires a git repository. In `--approve` mode there is no interactive fallback, so check immediately before Step 1:
+**Early git repository check** — Step 6 requires a git repository. Check unconditionally before any settings.json modification — `--approve` stops automatically; interactive mode also stops to prevent non-reversible writes on non-git dirs:
 
 ```bash
-if [ "$APPROVE_ALL" = "true" ] && [ ! -e ".git" ]; then
-    printf "! --approve requires git repository — run from project root\n"
+if [ ! -e ".git" ]; then
+    printf "! /foundry:init must run from project root (git repository root)\n"
     exit 1
 fi
 ```
@@ -57,6 +58,41 @@ fi
 When `APPROVE_ALL=true`, every `AskUserQuestion` below **skipped** — ★ recommended option applied automatically. Print `[--approve] auto-accepting recommended option` in place of question.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+## Python detection
+
+Probe Python 3.10+ — required before any `bin/*.py` calls. Windows Store stub returns exit 9009 when given args; caught by `2>/dev/null`:
+
+```bash
+PYTHON_CMD=""
+SHIM_DIR="$HOME/.local/bin"
+if command -v python >/dev/null 2>&1 && python --version 2>/dev/null | grep -qE "Python 3\.(1[0-9]|[2-9][0-9])"; then
+    PYTHON_CMD="python"
+elif command -v py >/dev/null 2>&1 && py -3 --version 2>/dev/null | grep -qE "Python 3\.(1[0-9]|[2-9][0-9])"; then
+    PYTHON_CMD="py -3"
+    mkdir -p "$SHIM_DIR"
+    printf '#!/usr/bin/env bash\npy -3 "$@"\n' > "$SHIM_DIR/python"
+    chmod +x "$SHIM_DIR/python"
+    printf "  Python shim installed: %s/python → py -3\n" "$SHIM_DIR"
+elif command -v python3 >/dev/null 2>&1 && python3 --version 2>/dev/null | grep -qE "Python 3\.(1[0-9]|[2-9][0-9])"; then
+    PYTHON_CMD="python3"
+    mkdir -p "$SHIM_DIR"
+    printf '#!/usr/bin/env bash\npython3 "$@"\n' > "$SHIM_DIR/python"
+    chmod +x "$SHIM_DIR/python"
+    printf "  Python shim installed: %s/python → python3\n" "$SHIM_DIR"
+else
+    printf "! Python 3.10+ not found — install Python 3.10+ and re-run /foundry:init\n"
+    exit 1
+fi
+printf "  Python: %s\n" "$PYTHON_CMD"
+
+# PATH guidance — ~/.local/bin standard on modern macOS/Linux (XDG Base Directory spec) but not always on PATH by default
+if [ -f "$SHIM_DIR/python" ] && ! echo ":$PATH:" | grep -q ":$SHIM_DIR:"; then
+    printf "  ⚠ %s not on PATH — add to shell rc:\n      export PATH=\"\$HOME/.local/bin:\$PATH\"\n" "$SHIM_DIR"
+fi
+```
+
+`~/.local/bin` is the XDG-standard user-bin directory on modern macOS/Linux. Shim created only when `python` absent or resolves to Store stub. Idempotent — re-running init overwrites shim with same content. If `~/.local/bin` is not yet on `$PATH`, init prints the `export PATH="$HOME/.local/bin:$PATH"` line for the user's shell rc.
 
 ## Step 1: Locate the installed plugin
 
@@ -100,6 +136,8 @@ If `~/.claude/settings.json` does not exist, create it using the Write tool with
 ```bash
 INIT_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
 cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${INIT_BAK_TS}"  # timeout: 5000
+# Persist timestamp — Step 8 restore-on-error path needs it in a fresh shell
+echo "$INIT_BAK_TS" > "${TMPDIR:-/tmp}/foundry-init-bak-ts"
 ```
 
 Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
@@ -137,9 +175,10 @@ If already set to the current `$PLUGIN_ROOT`: report "statusLine already set to 
 Writes `statusLine` key to `~/.claude/settings.json`:
 
 ```bash
-jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
+_jq_result=$(jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
     '.statusLine = {"async":true,"command":$cmd,"type":"command"}' \
-    ~/.claude/settings.json > /tmp/foundry_init_tmp.json  # timeout: 5000
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
 ```
 
 Write `/tmp/foundry_init_tmp.json` back to `~/.claude/settings.json` using Write tool.
@@ -151,34 +190,39 @@ Read `$PLUGIN_ROOT/.claude-plugin/permissions-allow.json` using Read tool. Merge
 Writes merged `permissions.allow` array:
 
 ```bash
-jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
+_jq_result=$(jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
     '.permissions.allow = ((.permissions.allow // []) + $perms[0] | unique)' \
-    ~/.claude/settings.json > /tmp/foundry_init_tmp.json  # timeout: 5000
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
 ```
 
-Write back with Write tool. Report: "Added N new permissions.allow entries (M already present)."
+(then: write-back via Write tool as above) Report: "Added N new permissions.allow entries (M already present)."
 
 Check whether `$PLUGIN_ROOT/.claude-plugin/permissions-deny.json` exists. If so, read with Read tool and merge — add only entries not already present:
 
 Writes merged `permissions.deny` array:
 
 ```bash
-jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
+_jq_result=$(jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
     '.permissions.deny = ((.permissions.deny // []) + $deny[0] | unique)' \
-    ~/.claude/settings.json > /tmp/foundry_init_tmp.json  # timeout: 5000
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
 ```
 
-Write back with Write tool. Report: "Added N new permissions.deny entries (M already present)."
+(then: write-back via Write tool as above) Report: "Added N new permissions.deny entries (M already present)."
 
 ## Step 6: Copy permissions-guide.md
 
 Note: this step writes to `.claude/permissions-guide.md` relative to the current working directory — init must be run from project root (a git repository root). Guard:
 
 ```bash
-[ -e ".git" ] || printf "! BLOCKED — /foundry:init must run from project root (git repository root)\n"
+if [ ! -e ".git" ]; then
+    printf "! BLOCKED — /foundry:init must run from project root (git repository root)\n"
+    exit 1
+fi
 ```
 
-If `! BLOCKED` printed above: stop — do not proceed with Step 6 or subsequent steps.
+If `! BLOCKED` printed above: execution stops — Step 6 and subsequent steps will not run.
 
 Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — only if destination absent (preserves project-local edits via `/manage`):
 
@@ -202,21 +246,23 @@ If already `true`: report "enabledPlugins already set — skipping." Otherwise:
 Writes `enabledPlugins["codex@openai-codex"]` key:
 
 ```bash
-jq '.enabledPlugins["codex@openai-codex"] = true' \
-    ~/.claude/settings.json > /tmp/foundry_init_tmp.json  # timeout: 5000
+_jq_result=$(jq '.enabledPlugins["codex@openai-codex"] = true' \
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
 ```
 
-Write back with Write tool.
+(then: write-back via Write tool as above)
 
 ## Step 8: Validate
 
 After all writes, confirm file parses as valid JSON:
 
 ```bash
+INIT_BAK_TS=$(cat "${TMPDIR:-/tmp}/foundry-init-bak-ts" 2>/dev/null || echo "")
 jq empty ~/.claude/settings.json  # timeout: 5000
 ```
 
-If `jq` exits non-zero: restore from backup (`cp "$HOME/.claude/settings.json.bak-${INIT_BAK_TS}" ~/.claude/settings.json`), report error, stop. If valid: continue.
+If `jq` exits non-zero: restore from backup (`[ -n "$INIT_BAK_TS" ] && cp "$HOME/.claude/settings.json.bak-${INIT_BAK_TS}" ~/.claude/settings.json`), report error, stop. If `$INIT_BAK_TS` empty (state file lost), find newest backup: `ls -t ~/.claude/settings.json.bak-* 2>/dev/null | head -1 | xargs -I{} cp {} ~/.claude/settings.json`. If valid: continue.
 
 ## Step 9: Symlink rules and TEAM_PROTOCOL.md
 
@@ -240,9 +286,10 @@ The same cleanup also scans `~/.claude/agents/` for any foundry-managed symlinks
 
 ```bash
 mkdir -p "$HOME/.claude/skills"  # timeout: 5000
-mapfile -t LINK_CONFLICTS < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
+LINK_CONFLICTS=()
+while IFS= read -r line; do LINK_CONFLICTS+=("$line"); done < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
 # Persist for Phase 4 — Bash tool calls don't share shell state
-printf '%s\n' "${LINK_CONFLICTS[@]}" > /tmp/foundry-init-conflicts.txt  # timeout: 3000
+printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-init-conflicts.txt"  # timeout: 3000
 ```
 
 The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
@@ -267,8 +314,29 @@ Options:
 - b) Skip all conflicts — keep existing files unchanged
 - c) Review one by one
 
-On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > /tmp/foundry-init-approved.txt`. Items not in `LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
+On **(b)**: set `SKIP_CONFLICTS_MODE=true` and persist for Phase 4 (fresh-shell state loss):
+
+```bash
+echo "true"  > "${TMPDIR:-/tmp}/foundry-init-skip-conflicts"
+echo "false" > "${TMPDIR:-/tmp}/foundry-init-per-item-review"
+```
+
+On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist:
+
+```bash
+printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > "${TMPDIR:-/tmp}/foundry-init-approved.txt"
+echo "false" > "${TMPDIR:-/tmp}/foundry-init-skip-conflicts"
+echo "true"  > "${TMPDIR:-/tmp}/foundry-init-per-item-review"
+```
+
+On **(a)** or no conflicts: persist both flags as false so Phase 4 takes the unconditional-replace branch:
+
+```bash
+echo "false" > "${TMPDIR:-/tmp}/foundry-init-skip-conflicts"
+echo "false" > "${TMPDIR:-/tmp}/foundry-init-per-item-review"
+```
+
+Items not in `LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
 **Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
 
@@ -277,9 +345,13 @@ On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=
 - Neither flag (option a or no conflicts): replace unconditionally.
 
 ```bash
-# Restore arrays from Phase 2/3 — Bash tool calls don't share shell state
-mapfile -t LINK_CONFLICTS < /tmp/foundry-init-conflicts.txt 2>/dev/null || LINK_CONFLICTS=()
-mapfile -t APPROVED_CONFLICT_ENTRIES < /tmp/foundry-init-approved.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
+# Restore arrays and flags from Phase 2/3 — Bash tool calls don't share shell state
+LINK_CONFLICTS=()
+while IFS= read -r line; do LINK_CONFLICTS+=("$line"); done < "${TMPDIR:-/tmp}/foundry-init-conflicts.txt" 2>/dev/null || true
+APPROVED_CONFLICT_ENTRIES=()
+while IFS= read -r line; do APPROVED_CONFLICT_ENTRIES+=("$line"); done < "${TMPDIR:-/tmp}/foundry-init-approved.txt" 2>/dev/null || true
+SKIP_CONFLICTS_MODE=$(cat "${TMPDIR:-/tmp}/foundry-init-skip-conflicts" 2>/dev/null || echo "false")
+PER_ITEM_REVIEW_MODE=$(cat "${TMPDIR:-/tmp}/foundry-init-per-item-review" 2>/dev/null || echo "false")
 
 # Helper: is identifier in APPROVED_CONFLICT_ENTRIES?
 _approved() {
@@ -308,7 +380,12 @@ for src in "$PLUGIN_ROOT/rules/"*.md; do
     if [ "${PER_ITEM_REVIEW_MODE:-false}" = "true" ] && _in_conflicts "rules/$base" && ! _approved "rules/$base"; then
         echo "  skipped (user choice c — not approved): $base"; continue
     fi
-    unlink "$dest" 2>/dev/null || true; ln -sf "$src" "$dest"  # timeout: 5000
+    if [ -L "$dest" ]; then
+        unlink "$dest"
+    elif [ -e "$dest" ]; then
+        printf "  ⚠ %s exists but is not a symlink — remove manually before re-running\n" "$dest"; continue
+    fi
+    ln -sf "$src" "$dest"  # timeout: 5000
     echo "  linked: $base"
 done  # timeout: 10000
 dest="$HOME/.claude/TEAM_PROTOCOL.md"
@@ -316,8 +393,11 @@ if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$de
     echo "  skipped (user choice b): TEAM_PROTOCOL.md"
 elif [ "${PER_ITEM_REVIEW_MODE:-false}" = "true" ] && _in_conflicts "TEAM_PROTOCOL.md" && ! _approved "TEAM_PROTOCOL.md"; then
     echo "  skipped (user choice c — not approved): TEAM_PROTOCOL.md"
+elif [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    printf "  ⚠ %s exists but is not a symlink — remove manually before re-running\n" "$dest"
 else
-    unlink "$dest" 2>/dev/null || true; ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" "$dest"  # timeout: 5000
+    [ -L "$dest" ] && unlink "$dest"
+    ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" "$dest"  # timeout: 5000
     echo "  linked: TEAM_PROTOCOL.md"
 fi
 # Skills — ln -sf each skills/ subdir; handles stale foundry and absent entries
@@ -330,7 +410,12 @@ for src_dir in "$PLUGIN_ROOT/skills/"*/; do
     if [ "${PER_ITEM_REVIEW_MODE:-false}" = "true" ] && _in_conflicts "skills/$skill" && ! _approved "skill:$skill"; then
         echo "  skipped (user choice c — not approved): skill:$skill"; continue
     fi
-    unlink "$dest" 2>/dev/null || true; ln -sf "${src_dir%/}" "$dest"  # timeout: 5000
+    if [ -L "$dest" ]; then
+        unlink "$dest"
+    elif [ -e "$dest" ]; then
+        printf "  ⚠ %s exists but is not a symlink — remove manually before re-running\n" "$dest"; continue
+    fi
+    ln -sf "${src_dir%/}" "$dest"  # timeout: 5000
     echo "  linked skill: $skill"
 done  # timeout: 10000
 ```
@@ -339,6 +424,7 @@ done  # timeout: 10000
 
 Print summary:
 
+- Python: `<PYTHON_CMD>` (shim installed at ~/.local/bin/python / already on PATH / n/a)
 - statusLine: set / skipped
 - permissions.allow: N entries added
 - enabledPlugins: set / skipped

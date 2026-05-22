@@ -28,9 +28,35 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _is_within(candidate: Path, root: Path) -> bool:
+    """Return True when ``candidate`` resolves inside ``root`` (inclusive).
+
+    Args:
+        candidate: Already-resolved path to test.
+        root: Already-resolved directory boundary.
+
+    Returns:
+        True iff ``candidate`` is ``root`` or a descendant of ``root``.
+
+    Examples:
+        >>> _is_within(Path('/a/b/c'), Path('/a'))
+        True
+        >>> _is_within(Path('/x/y'), Path('/a'))
+        False
+        >>> _is_within(Path('/a'), Path('/a'))
+        True
+    """
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _validate_token(value: str, label: str) -> None:
@@ -157,7 +183,25 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.registry:
-        registry_path = Path(args.registry)
+        # Canonicalise --registry: must resolve under the user's ``.claude``
+        # tree, the project working directory, or the OS temp dir.  The temp-dir
+        # exception covers pytest's ``tmp_path`` fixture and tooling that
+        # vendors a throw-away registry copy.  Anything else is rejected (CWE-22).
+        registry_path = Path(args.registry).expanduser().resolve()
+        allowed_roots = [
+            (Path(os.path.expanduser("~")) / ".claude").resolve(),
+            Path.cwd().resolve(),
+            Path(tempfile.gettempdir()).resolve(),
+        ]
+        if not any(_is_within(registry_path, root) for root in allowed_roots):
+            print(
+                f"error: --registry resolves outside ~/.claude, project root, and temp dir: {registry_path}",
+                file=sys.stderr,
+            )
+            return 2
+        # File existence is checked downstream by ``resolve_install_path`` which
+        # gracefully returns ``None`` (→ exit 1) for missing/malformed files —
+        # preserves the historical exit-code contract for those cases.
     else:
         registry_path = Path(os.path.expanduser("~")) / ".claude" / "plugins" / "installed_plugins.json"
 

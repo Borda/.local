@@ -57,6 +57,10 @@ from pathlib import Path
 
 _DEFAULT_INSTALLED_PLUGINS_JSON = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
 
+# Guard against pathological inputs that would exhaust heap memory when read
+# in one shot. 10 MB is well above any realistic Markdown / agent file.
+_MAX_FILE_SIZE = 10 * 1024 * 1024
+
 
 def get_active_install_paths(installed_plugins_json: Path) -> dict[str, Path]:
     """Return active installPath per borda-ai-rig plugin from installed_plugins.json.
@@ -293,6 +297,8 @@ def extract_path_refs(md_file: Path, plugin: str, plugins_dir: Path) -> list[Pat
         List of PathRef objects for each unique path reference found.
     """
     try:
+        if md_file.stat().st_size > _MAX_FILE_SIZE:
+            return []
         text = md_file.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
@@ -377,6 +383,8 @@ def extract_bin_refs(md_file: Path, plugin: str) -> list[tuple[str, str, str, bo
         ('foundry', 'health_sentinel.py', False)
     """
     try:
+        if md_file.stat().st_size > _MAX_FILE_SIZE:
+            return []
         text = md_file.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
@@ -662,6 +670,8 @@ def is_basename_grep_visible(basename: str, plugin_dir: Path) -> bool:
         if depth > 10:
             continue
         try:
+            if md_file.stat().st_size > _MAX_FILE_SIZE:
+                continue
             text = md_file.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
@@ -942,8 +952,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    plugins_dir = Path(args.plugins_dir)
-    cache_dir = Path(args.cache_dir)
+    # Normalise argv-supplied paths so ``..`` components cannot escape the
+    # project tree. ``--plugins-dir`` must stay inside the project root.
+    # ``--cache-dir`` is allowed to point anywhere under ``~/.claude``
+    # (the default lives there) — it just must not contain unresolved traversal.
+    plugins_dir = Path(args.plugins_dir).resolve()
+    cache_dir = Path(args.cache_dir).resolve()
+    project_root = Path.cwd().resolve()
+    try:
+        plugins_dir.relative_to(project_root)
+    except ValueError:
+        print(
+            f"! SECURITY: --plugins-dir must be within project root: {args.plugins_dir}",
+            file=sys.stderr,
+        )
+        return 2
     active_checks = {c.strip().upper() for c in args.check.split(",")}
 
     if not plugins_dir.is_dir():

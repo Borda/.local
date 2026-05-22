@@ -39,7 +39,7 @@ NOT for: implementation, code gen, README writing (use `foundry:doc-scribe`), st
 > What content format?
 > a: blog post
 > b: conference / meetup talk with Marp slide deck ★
-> c: social thread (Twitter/LinkedIn)
+> c: social thread (X/LinkedIn)
 > d: talk abstract (CFP submission)
 > e: lightning talk (5–10 min)
 
@@ -98,7 +98,7 @@ created: YYYY-MM-DD
 [who they are, experience level, what they've likely seen, what they need]
 
 ## Format
-[blog post | conference talk (N min) | social thread (twitter|linkedin) | talk abstract | lightning talk (N min)]
+[blog post | conference talk (N min) | social thread (x|linkedin) | talk abstract | lightning talk (N min)]
 
 ## Voice
 [tone brief: e.g., "direct and opinionated, first-person, no hedging"]
@@ -128,7 +128,7 @@ created: YYYY-MM-DD
   | --- | --- |
   | a) blog post | `md` |
   | b) conference / meetup talk with Marp slide deck | `md` (Marp markdown) |
-  | c) social thread (Twitter/LinkedIn) | `md` |
+  | c) social thread (X/LinkedIn) | `md` |
   | d) talk abstract (CFP submission) | `md` |
   | e) lightning talk | `md` |
 
@@ -144,6 +144,8 @@ created: YYYY-MM-DD
 </workflow>
 
 <notes>
+
+- **Execution model**: `disable-model-invocation: true` — Claude itself follows this SKILL.md as workflow template directly in the main context (no autonomous sub-agent dispatch during the outline phase). When the Step 5 gate selects (a), exactly one sub-agent is spawned: `foundry:creator` (executes the outline and writes the full artifact). No other sub-agent invocations are made by this skill.
 
 - 5 questions in baseline flow; up to 7 with arc-conflict resolution (steps 2–4 use exactly 4; step 1 adds one only when $ARGUMENTS absent; arc conflicts in step 3 may add 1–2 more).
 - Each AskUserQuestion uses lettered options with one ★ recommended default.

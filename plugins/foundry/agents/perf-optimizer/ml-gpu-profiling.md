@@ -39,6 +39,11 @@ pip install nvitop
 nvitop
 ```
 
+> **Platform notes** — nvidia-smi and CUDA-specific calls above apply to NVIDIA GPUs only:
+> - **Apple MPS**: use `torch.profiler` with `torch.device("mps")`; no nvidia-smi; monitor via Activity Monitor (GPU History) or Instruments (Metal System Trace)
+> - **AMD ROCm**: replace `nvidia-smi` with `rocm-smi`; `torch.profiler` with `ProfilerActivity.CPU` works; omit `ProfilerActivity.CUDA`
+> - **Intel Arc**: use Intel VTune Profiler or `torch.profiler` with XPU backend; no nvidia-smi
+
 ## DataLoader Bottleneck Detection
 
 `data_fraction = data_time / step_time > 0.3` → pipeline CPU-bound.
@@ -46,8 +51,7 @@ Fix: increase `num_workers` or switch to faster augmentations (e.g. albumentatio
 
 ## DataLoader Optimization
 
-Throughput checklist: `num_workers > 0`, `pin_memory=True`, `persistent_workers=True`, `prefetch_factor=2`.
-(Boundary with `research:data-steward` (requires `research` plugin) stated in frontmatter NOT-for clause.)
+DataLoader pipeline config (`num_workers`, `persistent_workers`, `pin_memory`, `prefetch_factor`): see `research:data-steward` (requires `research` plugin).
 
 ## Mixed Precision (torch.amp — PyTorch 2.0+)
 
@@ -89,6 +93,8 @@ See `research:data-steward` (requires `research` plugin) — contains mmap (`np.
 model = torch.compile(model)  # default (inductor backend)
 model = torch.compile(model, mode="reduce-overhead")  # for small batches
 model = torch.compile(model, mode="max-autotune")  # max speed, slower compile
+
+# Variable batch sizes: torch.compile(model, dynamic=True) prevents per-shape recompilation.
 
 # When it helps: repeated forward passes, simple/regular ops, training loops
 # When it hurts: very dynamic shapes, lots of Python control flow, first inference

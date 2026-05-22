@@ -25,6 +25,34 @@ from pathlib import Path
 
 
 _ALLOWED_FLAGS = {"--arg", "--argjson", "--indent"}
+# Hostile jq filters can exhaust CPU/memory (CWE-400); cap wall-clock at 30s.
+_JQ_TIMEOUT_SECONDS = 30
+# Hard virtual-memory ceiling for the jq subprocess (bytes). 256 MB is far
+# beyond any realistic foundry config file (typical settings.json is < 64 KB)
+# while still stopping a runaway filter that builds large in-memory data.
+_JQ_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024
+
+
+def _jq_preexec() -> None:  # pragma: no cover — runs in subprocess fork
+    """``preexec_fn`` that caps the jq child's address space.
+
+    Unix-only (``resource`` module unavailable on Windows); on platforms where
+    ``RLIMIT_AS`` is unsupported, the import is wrapped so the failure mode is
+    "no limit applied" rather than "no jq spawned at all".
+    """
+    try:
+        import resource  # imported here so non-POSIX platforms aren't penalised at module load
+    except ImportError:
+        return
+    try:
+        _, hard = resource.getrlimit(resource.RLIMIT_AS)
+        # Respect any tighter hard limit already in place.
+        cap = _JQ_MEMORY_LIMIT_BYTES if hard == resource.RLIM_INFINITY else min(_JQ_MEMORY_LIMIT_BYTES, hard)
+        resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
+    except (ValueError, OSError):
+        # Setting the limit may fail on macOS for some inherited limits — fall
+        # back to no cap rather than crashing the spawn.
+        return
 
 
 def _parse_jq_args(extras: list[str]) -> list[str] | None:
@@ -77,6 +105,11 @@ def run_jq_write(target: Path, jq_filter: str, extras: list[str]) -> int:
         return 1
 
     tmp = target.with_suffix(target.suffix + ".tmp")
+    # `preexec_fn` is POSIX-only and a no-op on Windows; pass it conditionally
+    # so we don't crash the spawn on platforms that don't support it.
+    spawn_kwargs: dict[str, object] = {}
+    if sys.platform != "win32":
+        spawn_kwargs["preexec_fn"] = _jq_preexec
     try:
         with tmp.open("w", encoding="utf-8") as fh:
             completed = subprocess.run(
@@ -85,7 +118,16 @@ def run_jq_write(target: Path, jq_filter: str, extras: list[str]) -> int:
                 stderr=subprocess.PIPE,
                 check=False,
                 text=True,
+                timeout=_JQ_TIMEOUT_SECONDS,
+                **spawn_kwargs,
             )
+    except subprocess.TimeoutExpired:
+        tmp.unlink(missing_ok=True)
+        print(
+            f"! jq filter exceeded {_JQ_TIMEOUT_SECONDS}s timeout for {target}",
+            file=sys.stderr,
+        )
+        return 2
     except (FileNotFoundError, OSError) as exc:
         tmp.unlink(missing_ok=True)
         print(f"! jq invocation failed for {target}: {exc}", file=sys.stderr)

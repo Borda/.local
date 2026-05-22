@@ -48,7 +48,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 # loads: oss-shared-resolver.md
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
-_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 # $_OSS_SHARED is required by --reply mode (Step 8 reads shepherd-reply-protocol.md). For non-reply
 # flows the helpers are nice-to-have but not load-bearing — degrade gracefully instead of exiting.
@@ -106,14 +106,28 @@ if [[ "$CLEAN_ARGS" == *.md ]]; then
         echo "Error: plan files cannot be used as review report input. Pass a review report from .reports/review/<timestamp>/review-report.md or a PR number."
         exit 1
     fi
-    DIRECT_PATH_MODE=true
-    REVIEW_FILE="$CLEAN_ARGS"
+    # Validate file looks like a review report — guards against vitality reports, research reports,
+    # arbitrary markdown. Required markers: at least one of `## Summary`, `verdict:`, or a
+    # `APPROVED|NEEDS_WORK|REQUEST_CHANGES` token in the header region. If validation fails, warn
+    # and fall back to normal review path (treat $CLEAN_ARGS as PR number — will fail the numeric
+    # check below with a clear error if it isn't one).
+    if [ -f "$CLEAN_ARGS" ] && grep -qE '(^## Summary|^verdict:|APPROVED|NEEDS_WORK|REQUEST_CHANGES)' "$CLEAN_ARGS" 2>/dev/null; then  # timeout: 5000
+        DIRECT_PATH_MODE=true
+        REVIEW_FILE="$CLEAN_ARGS"
+    else
+        echo "⚠ $CLEAN_ARGS is a .md file but lacks review-report markers (## Summary | verdict: | APPROVED|NEEDS_WORK|REQUEST_CHANGES) — refusing direct-path fast-path; continuing with normal review path which expects a PR number."
+    fi
 fi
 ```
 
 ```bash
-FOUNDRY_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve-shared-path.sh" foundry skills/_shared 2>/dev/null)  # timeout: 5000
-[ -z "$FOUNDRY_SHARED" ] && echo "⚠ Could not resolve FOUNDRY_SHARED — Steps 5/7/consolidator will fail; verify foundry plugin installed" || true
+FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000
+if [ -z "$FOUNDRY_SHARED" ]; then
+    # Fallback to bare path so downstream Steps 5/7/consolidator don't fail on un-expanded variable;
+    # they degrade gracefully when the file actually missing on disk via per-read guards.
+    FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+    echo "⚠ Could not resolve FOUNDRY_SHARED via cache lookup — using bare fallback path '$FOUNDRY_SHARED'; foundry plugin may be absent — Steps 5/7/consolidator will degrade (per-file guards still fire)"
+fi
 ```
 
 ```bash
@@ -153,6 +167,14 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
     else
         DOCS_CICD_MODE=false
     fi
+    # Persist mode flags to temp file — bash state lost between SKILL.md code blocks;
+    # Step 2 EXPECTED_FILE construction (different bash block) reads these back.
+    _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-$$"
+    {
+        echo "CICD_ONLY_MODE=$CICD_ONLY_MODE"
+        echo "DOCS_ONLY_MODE=$DOCS_ONLY_MODE"
+        echo "DOCS_CICD_MODE=$DOCS_CICD_MODE"
+    } > "$_REVIEW_MODE_FILE"
 fi
 ```
 
@@ -160,7 +182,7 @@ fi
 
 **CI/CD-only mode** (`CICD_ONLY_MODE=true`): PR changes only CI/CD config files (`.github/workflows/`, `.github/actions/`, `azure-pipelines.yml`, `.circleci/config.yml`, `Jenkinsfile`, etc.), no `.py` or `.md`/`.rst`. Spawn `oss:cicd-steward` + Agent 1 (sw-engineer) + Agent 7 (challenger, if `CHALLENGE_ENABLED=true`) + Codex (if available); skip Agents 2, 3, 4, 5, 6. Skip scope classification below — proceed directly to agent launch.
 
-**Docs-only mode** (`DOCS_ONLY_MODE=true`): PR changes only `.md`/`.rst` files, no `.py`. Spawn Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 7 (challenger, if `CHALLENGE_ENABLED=true`), and Codex (if available); skip Agents 2 (qa-specialist), 3 (perf-optimizer), 5 (linting-expert), 6 (solution-architect). Skip scope classification below — proceed directly to agent launch.
+**Docs-only mode** (`DOCS_ONLY_MODE=true`): PR changes only `.md`/`.rst` files, no `.py`. Spawn Agent 4 (foundry:doc-scribe), Agent 7 (challenger, if `CHALLENGE_ENABLED=true`), and Codex (if available); skip Agents 1 (sw-engineer — NOT for docs per agent NOT-for clause), 2, 3, 5, 6. Skip scope classification below — proceed directly to agent launch.
 
 **Docs + CI/CD mode** (`DOCS_CICD_MODE=true`): PR changes only `.md`/`.rst` and CI/CD config — no Python source. Spawn `oss:cicd-steward` (Agent 8) + `foundry:doc-scribe` (Agent 4) only; optionally `foundry:challenger` (Agent 7) when `CHALLENGE_ENABLED=true`. Skip Agents 1, 2, 3, 5, 6 — there is no Python source to analyse. Skip scope classification below — proceed directly to agent launch. The 7-agent Python fan-out is incorrect for CI+docs PRs and would produce mostly empty findings.
 
@@ -195,6 +217,16 @@ else
     SCOPE=MIXED
 fi
 echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$NEW_API_LINES)"
+
+# Persist SCOPE and CHORE_DEPS flags alongside mode flags — Step 2 EXPECTED_FILE
+# construction is in a separate bash block; without persistence these expand empty.
+# CHORE_DEPS detection mirrors the conditional below (CHORE + dependency files exception).
+echo "$CHANGED_FILES" | grep -qE '(^|/)(requirements.*\.txt|pyproject\.toml|package.*\.json|Pipfile|poetry\.lock|setup\.cfg|.*\.lock)$' && CHORE_DEPS=true || CHORE_DEPS=false
+_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-$$"
+{
+    echo "SCOPE=$SCOPE"
+    echo "CHORE_DEPS=$CHORE_DEPS"
+} > "$_REVIEW_SCOPE_FILE"
 ```
 
 Skip optional agents by classification:
@@ -203,6 +235,7 @@ Skip optional agents by classification:
 - REFACTOR scope → keep all agents; perf-optimizer runs to verify new structure isn't slower
 - FEATURE/MIXED → spawn all agents
 - CHORE scope → spawn Agents 1 (sw-engineer), 4 (doc-scribe), 5 (linting-expert), 7 (challenger, if `CHALLENGE_ENABLED=true`), Codex (if available); skip Agents 2, 3, 6
+  - **CHORE + dependency files exception**: diff includes any of `requirements*.txt`, `pyproject.toml`, `package*.json`, `Pipfile`, `poetry.lock`, `setup.cfg`, `*.lock` → keep Agent 2 (qa-specialist) — its OWASP Top 10 check is calibrated for dependency CVE risk that sw-engineer is not. Detect via: `echo "$CHANGED_FILES" | grep -qE '(^|/)(requirements.*\.txt|pyproject\.toml|package.*\.json|Pipfile|poetry\.lock|setup\.cfg|.*\.lock)$' && CHORE_DEPS=true || CHORE_DEPS=false`. CHORE + non-deps (pure tooling/config) → skip qa-specialist per default CHORE behavior.
 
 ### Structural context (codemap — only if `CODEMAP_ENABLED=true`)
 
@@ -220,10 +253,10 @@ fi
 
 Codemap returns results: prepend `## Structural Context (codemap)` block to **Agent 1 (foundry:sw-engineer)** spawn prompt. Include:
 
-- Each changed module's `rdep_count` — label **high risk** (>20), **moderate** (5–20), or **low** (\<5)
+- Each changed module's `imported_by` count — label **high risk** (>20), **moderate** (5–20), or **low** (\<5)
 - `central --top 5` for project-wide blast-radius reference
 
-Agent 1 uses this to prioritize: high `rdep_count` modules warrant deeper scrutiny on API compat, error handling, correctness — downstream callers outside diff not otherwise visible.
+Agent 1 uses this to prioritize: high `imported_by` modules warrant deeper scrutiny on API compat, error handling, correctness — downstream callers outside diff not otherwise visible.
 
 **Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt:
 
@@ -233,7 +266,7 @@ Agent 1 uses this to prioritize: high `rdep_count` modules warrant deeper scruti
 
 Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`, `Resolves #N`, `refs #N` — case-insensitive). Extract to `ISSUE_NUMS`. Cap 3.
 
-`ISSUE_NUMS` non-empty: spawn one **foundry:sw-engineer** per issue in Step 2 alongside Codex — all launch simultaneously in one message batch; no sequential hold between Codex and issue agents. Step 2's unified wait covers all outputs before Step 3. Each issue agent:
+`ISSUE_NUMS` non-empty AND `DOCS_CICD_MODE != true`: spawn one **foundry:sw-engineer** per issue in Step 2 alongside Codex — all launch simultaneously in one message batch; no sequential hold between Codex and issue agents. Step 2's unified wait covers all outputs before Step 3. **Skip linked-issue sw-engineer spawn when `DOCS_CICD_MODE=true`** — DOCS_CICD_MODE has no Python source for an sw-engineer to analyse, and the mode's contract is to skip Agent 1. Each issue agent:
 
 - Fetch issue: `gh issue view <N> --json title,body,comments,state,labels`
 - Fetch comments: `gh issue view <N> --comments`
@@ -326,13 +359,17 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 7 — foundry:challenger (skip only if `CHALLENGE_ENABLED=false` — pass `--no-challenge` to opt out)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
 
-**Agent 8 — oss:cicd-steward (CI/CD-only mode only)**: Review CI/CD config changes. Check: correctness (valid YAML/syntax, correct job ordering, trigger expressions), security (pinned SHA for third-party actions, no secret exposure in logs, `permissions:` scopes minimal), best practices (cache keys, matrix strategy, workflow topology), and breaking changes to existing CI behavior (removed jobs, changed required checks). Write findings to `$RUN_DIR/oss--cicd-steward.md`.
+**Agent 8 — oss:cicd-steward (CI/CD-only mode and docs+CI/CD mode)**: Review CI/CD config changes. Check: correctness (valid YAML/syntax, correct job ordering, trigger expressions), security (pinned SHA for third-party actions, no secret exposure in logs, `permissions:` scopes minimal), best practices (cache keys, matrix strategy, workflow topology), and breaking changes to existing CI behavior (removed jobs, changed required checks). Write findings to `$RUN_DIR/oss--cicd-steward.md`.
 
 **Health monitoring** (CLAUDE.md §8): Create checkpoint BEFORE spawning agents — timing starts from first spawn:
 
 ```bash
-REVIEW_CHECKPOINT="/tmp/review-check-$(date +%s)"
+REVIEW_CHECKPOINT="${TMPDIR:-/tmp}/review-check-$(date +%s)"
 touch "$REVIEW_CHECKPOINT"
+# Persist checkpoint path — the poll block (separate bash invocation) reads it back.
+# Without this persistence the poll block expands $REVIEW_CHECKPOINT empty and
+# `find -newer ""` errors out, masking stalled agents.
+echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint-$$"
 ```
 
 Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents:
@@ -341,7 +378,8 @@ Launch Codex, issue agents, and all review agents in one message batch — zero 
 CODEX_OUT="$RUN_DIR/foundry--codex.md"
 # All Agent() calls below go in a SINGLE response turn — Codex + all review agents start simultaneously:
 # [if CODEX_AVAILABLE=1] Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/foundry--codex.md.")
-# [for each N in ISSUE_NUMS] Agent(subagent_type="foundry:sw-engineer", prompt="<issue N prompt — see Step 1 issue agent spec>. Write to $RUN_DIR/issue-N.md")
+# [skip entire issue-agent block if DOCS_CICD_MODE=true] [for each N in ISSUE_NUMS] — for each issue number N, substitute $RUN_DIR (literal computed path) and N (literal number) into prompt BEFORE Agent() call; agents receive text, not shell context:
+# Agent(subagent_type="foundry:sw-engineer", prompt="<issue N prompt — see Step 1 issue agent spec>. Write to <expanded-RUN_DIR>/issue-<N>.md")
 # Agent(subagent_type="foundry:sw-engineer", ...) ← Agent 1
 # Agent(subagent_type="foundry:qa-specialist", ...) ← Agent 2
 # Agent(subagent_type="foundry:perf-optimizer", ...) ← Agent 3
@@ -349,32 +387,44 @@ CODEX_OUT="$RUN_DIR/foundry--codex.md"
 # Agent(subagent_type="foundry:linting-expert", ...) ← Agent 5
 # [optional] Agent(subagent_type="foundry:solution-architect", ...) ← Agent 6
 # [skip if CHALLENGE_ENABLED=false] Agent(subagent_type="foundry:challenger", ...) ← Agent 7
-# [CI/CD-only] Agent(subagent_type="oss:cicd-steward", ...) ← Agent 8
+# [if CICD_ONLY_MODE=true OR DOCS_CICD_MODE=true] Agent(subagent_type="oss:cicd-steward", ...) ← Agent 8
 ```
 
-Unified wait — poll until all expected outputs present or each hits hard cutoff:
+Unified wait — poll until all expected outputs present or each hits hard cutoff.
+
+Write expected paths to file (Bash arrays don't persist across tool invocations — file-based handoff lets later poll blocks read the same list):
 
 ```bash
-POLL_START=$(date +%s)
-EXPECTED=()
-[ "$CODEX_AVAILABLE" = "1" ] && EXPECTED+=("$RUN_DIR/foundry--codex.md")
-for N in $ISSUE_NUMS; do EXPECTED+=("$RUN_DIR/issue-$N.md"); done
-# cicd-steward runs in CI/CD-only mode AND in docs+CI/CD mode
-{ [ "$CICD_ONLY_MODE" = "true" ] || [ "$DOCS_CICD_MODE" = "true" ]; } && EXPECTED+=("$RUN_DIR/oss--cicd-steward.md")
-# sw-engineer (Agent 1) runs in Python modes and docs-only (light reviewer); skipped for docs+CI/CD (no Python source)
-[ "$DOCS_CICD_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--sw-engineer.md")
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && EXPECTED+=("$RUN_DIR/foundry--qa-specialist.md")
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && EXPECTED+=("$RUN_DIR/foundry--perf-optimizer.md")
-# doc-scribe runs whenever docs exist (DOCS_ONLY, DOCS_CICD, Python with docs) — only skipped in pure CI/CD-only mode
-[ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--doc-scribe.md")
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && EXPECTED+=("$RUN_DIR/foundry--linting-expert.md")
-[ "$CHALLENGE_ENABLED" = "true" ] && EXPECTED+=("$RUN_DIR/foundry--challenger.md")
-# solution-architect spawned for FEATURE/MIXED/REFACTOR Python-mode PRs (not FIX, CHORE, or single-domain modes)
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "FIX" ] && [ "$SCOPE" != "CHORE" ] && EXPECTED+=("$RUN_DIR/foundry--solution-architect.md")
+# Restore mode flags + SCOPE persisted in Step 1 (each SKILL.md bash block runs in a
+# fresh shell — without this rehydration, CICD_ONLY_MODE/DOCS_ONLY_MODE/DOCS_CICD_MODE/SCOPE
+# expand empty here and EXPECTED_FILE branches on wrong values).
+_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-$$"
+_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-$$"
+[ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
+[ -f "$_REVIEW_SCOPE_FILE" ] && . "$_REVIEW_SCOPE_FILE"
 
+POLL_START=$(date +%s)
+EXPECTED_FILE="$RUN_DIR/.expected-files"
+: >"$EXPECTED_FILE"  # truncate / create empty
+[ "$CODEX_AVAILABLE" = "1" ] && echo "$RUN_DIR/foundry--codex.md" >>"$EXPECTED_FILE"
+[ "$DOCS_CICD_MODE" != "true" ] && for N in $ISSUE_NUMS; do echo "$RUN_DIR/issue-$N.md" >>"$EXPECTED_FILE"; done
+# cicd-steward runs in CI/CD-only mode AND in docs+CI/CD mode
+{ [ "$CICD_ONLY_MODE" = "true" ] || [ "$DOCS_CICD_MODE" = "true" ]; } && echo "$RUN_DIR/oss--cicd-steward.md" >>"$EXPECTED_FILE"
+# sw-engineer (Agent 1) runs in Python modes only; skipped for docs-only (foundry:doc-scribe handles docs) and docs+CI/CD (no Python source)
+[ "$DOCS_CICD_MODE" != "true" ] && [ "$DOCS_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--sw-engineer.md" >>"$EXPECTED_FILE"
+{ [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && { [ "$SCOPE" != "CHORE" ] || [ "$CHORE_DEPS" = "true" ]; }; } && echo "$RUN_DIR/foundry--qa-specialist.md" >>"$EXPECTED_FILE"
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && echo "$RUN_DIR/foundry--perf-optimizer.md" >>"$EXPECTED_FILE"
+# doc-scribe runs whenever docs exist (DOCS_ONLY, DOCS_CICD, Python with docs) — only skipped in pure CI/CD-only mode
+[ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--doc-scribe.md" >>"$EXPECTED_FILE"
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
+[ "$CHALLENGE_ENABLED" = "true" ] && echo "$RUN_DIR/foundry--challenger.md" >>"$EXPECTED_FILE"
+# solution-architect spawned for FEATURE/MIXED/REFACTOR Python-mode PRs (not FIX, CHORE, or single-domain modes)
+[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "FIX" ] && [ "$SCOPE" != "CHORE" ] && echo "$RUN_DIR/foundry--solution-architect.md" >>"$EXPECTED_FILE"
 ```
 
-Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
+Later poll blocks read paths back via `while read -r path; do [ -f "$path" ] || PENDING=1; done <"$EXPECTED_FILE"` — no in-memory array required.
+
+Every `$MONITOR_INTERVAL` seconds, in the poll bash block, rehydrate the checkpoint path first (separate bash invocations don't share variables): `REVIEW_CHECKPOINT=$(cat "${TMPDIR:-/tmp}/oss-review-checkpoint-$$" 2>/dev/null)` then `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
 
 After all outputs collected (or timed out), proceed to post-agent checks.
 
@@ -382,9 +432,9 @@ After all outputs collected (or timed out), proceed to post-agent checks.
 ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_DIR — check that $RUN_DIR was expanded correctly in spawn prompts"
 ```
 
-## Step 3: Post-agent checks (run concurrently with Step 2)
+## Step 3: Post-agent checks (concurrent with Step 2 — after PR_BASE available)
 
-Run these two checks concurrently with Step 2 agent execution:
+`PR_BASE` is computed in this step from `git merge-base`, but Step 3a/3b reference it for diff scopes against the PR base. Order: compute `TRUNK` + `PR_BASE` first (Bash block below), then Step 3a (ecosystem) and Step 3b (OSS) `Agent()` / bash `grep` / git-diff calls may run concurrently with the still-executing Step 2 agent spawns — issue them in the same response turn as any remaining Step 2 operations that do not depend on `PR_BASE` (the long-running Agent() polls and `find $RUN_DIR -newer` checks). Do NOT issue Step 3a/3b calls before `PR_BASE` is bound — they would diff against the wrong base.
 
 ```bash
 TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}') # timeout: 6000  # shared by 3a and 3b
@@ -407,7 +457,7 @@ PR_BASE=$(git merge-base HEAD "origin/${TRUNK:-main}" 2>/dev/null || echo "origi
 # Check if changed APIs are used by downstream projects
 # Rate-limit guard: if gh api returns HTTP 429, wait 10 seconds and retry once.
 # If still rate-limited, log "rate-limited — downstream search may be incomplete" and continue.
-CHANGED_EXPORTS=$(git diff $PR_BASE HEAD -- ':(glob)src/**/__init__.py' | grep "^[-+]" | grep -v "^[-+][-+]" | grep -oP '\w+' | sort -u) # timeout: 3000
+CHANGED_EXPORTS=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep "^[-+]" | grep -v "^[-+][-+]" | grep -oP '\w+' | sort -u) # timeout: 6000
 for export in $CHANGED_EXPORTS; do
     echo "=== $export ==="
     gh api "search/code" --field "q=$export language:python" --jq '.items[:5] | .[].repository.full_name' 2>/dev/null # timeout: 30000
@@ -415,23 +465,23 @@ for export in $CHANGED_EXPORTS; do
 done
 
 # Check if deprecated APIs have migration guides
-git diff $PR_BASE HEAD | grep -A2 "deprecated" # timeout: 3000
+gh pr diff $CLEAN_ARGS 2>/dev/null | grep -A2 "deprecated" # timeout: 6000
 ```
 
 ### 3b: OSS checks
 
 ```bash
 # Check for new dependencies — license compatibility
-git diff $PR_BASE HEAD -- pyproject.toml requirements*.txt # timeout: 3000
+gh pr diff $CLEAN_ARGS -- pyproject.toml 'requirements*.txt' 2>/dev/null # timeout: 6000
 
 # Check for secrets accidentally committed — scoped to .py files only (oss:review is Python-only)
-git diff $PR_BASE HEAD -- '*.py' | grep -iE "(password|secret|api_key|token|private_key|auth_token)\s*[=:]\s*['\"]?[A-Za-z0-9+/._-]{8,}['\"]?" # timeout: 3000
+gh pr diff $CLEAN_ARGS -- '*.py' 2>/dev/null | grep -iE "(password|secret|api_key|token|private_key|auth_token)\s*[=:]\s*['\"]?[A-Za-z0-9+/._-]{8,}['\"]?" # timeout: 6000
 
 # Check for API stability: are public APIs being removed without deprecation?
-git diff $PR_BASE HEAD -- ':(glob)src/**/__init__.py' # timeout: 3000
+gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null # timeout: 6000
 
 # Check CHANGELOG was updated
-git diff $PR_BASE HEAD -- CHANGELOG.md CHANGES.md # timeout: 3000
+gh pr diff $CLEAN_ARGS -- CHANGELOG.md CHANGES.md 2>/dev/null # timeout: 6000
 ```
 
 ## Step 4: Cross-validate critical/blocking findings
@@ -452,7 +502,7 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 ```
 
-**IMPORTANT**: expand `$RUN_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt — same rule as Step 2. Un-expanded variables create wrong paths.
+**IMPORTANT**: expand `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt — same rule as Step 2. Un-expanded variables create wrong paths. **Special attention**: the `## Source Files` footnote below contains a `Glob(... path="<EXPANDED_RUN_DIR>")` invocation — its path must also be expanded to the literal `$RUN_DIR` value, otherwise the consolidator's Glob silently matches nothing.
 
 Spawn **foundry:sw-engineer** consolidator agent with prompt:
 
@@ -472,7 +522,7 @@ Spawn **foundry:sw-engineer** consolidator agent with prompt:
 >
 > **Write to:** `$REPORT_DIR/review-report.md` using Write tool.
 >
-> **Source Files footnote**: after the `## Confidence` block, append `## Source Files` section. Use `Glob(pattern="*.md", path="$RUN_DIR")` to list every handover file present (paths relative to repo root, one per line) — lets reviewers locate raw subagent outputs without knowing the run timestamp.
+> **Source Files footnote**: after the `## Confidence` block, append `## Source Files` section. Use `Glob(pattern="*.md", path="<EXPANDED_RUN_DIR>")` to list every handover file present (paths relative to repo root, one per line) — lets reviewers locate raw subagent outputs without knowing the run timestamp. Orchestrator MUST substitute `<EXPANDED_RUN_DIR>` with the literal `$RUN_DIR` value (e.g. `.temp/review/2026-05-24T21-16-33Z`) before sending this prompt to the consolidator — spawned agent receives text, not shell context, so an un-expanded `$RUN_DIR` makes the Glob call silently match nothing.
 >
 > **Return ONLY** one-liner summary: `verdict=<APPROVE|REQUEST_CHANGES|NEEDS_WORK> | findings=N | critical=N | high=N | file=$REPORT_DIR/review-report.md`
 
@@ -520,11 +570,29 @@ Print `### Codex Delegation` only when tasks delegated — omit if nothing deleg
 
 ### 7a — Follow-up gate
 
-! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text before or instead of tool call. Map options directly into tool call arguments:
+Check `oss:resolve` availability first — match shepherd availability pattern (Step 8 line ~556). `oss:resolve` is a skill not an agent, so check the installed skill path directly rather than via `check_agent.py`:
+
+```bash
+# Cannot use _OSS_SHARED as signal: its bare-path fallback is always non-empty even when oss plugin absent
+if ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve/SKILL.md >/dev/null 2>&1; then  # timeout: 5000
+    RESOLVE_AVAILABLE=true
+else
+    RESOLVE_AVAILABLE=false
+fi
+```
+
+! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text before or instead of tool call. Map options directly into tool call arguments. Option set depends on `$RESOLVE_AVAILABLE`:
+
+**When `$RESOLVE_AVAILABLE = true`** (full option list):
 - question: "What next?"
 - (a) label: `/oss:resolve $CLEAN_ARGS` — description: fix this PR
 - (b) label: `/oss:resolve report` — description: resolve from full report
 - (c) label: `/oss:resolve $CLEAN_ARGS report` — description: fix PR + resolve from report
+- (d) label: `walk through findings` — description: go through each finding interactively
+- (e) label: `skip` — description: no action
+
+**When `$RESOLVE_AVAILABLE = false`** (oss plugin missing or resolve skill absent): omit options (a)/(b)/(c) entirely (offering an unavailable command misleads the user):
+- question: "What next?"
 - (d) label: `walk through findings` — description: go through each finding interactively
 - (e) label: `skip` — description: no action
 
@@ -543,7 +611,7 @@ End with `## Confidence` block per CLAUDE.md output standards.
 ```bash
 # Check oss:shepherd availability — verify installed cache path specifically
 # Cannot use _OSS_SHARED as signal: its bare-path fallback is always non-empty even when oss plugin absent
-SHEPHERD_AVAILABLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check-agent.sh" oss shepherd 2>/dev/null)  # timeout: 5000
+SHEPHERD_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss shepherd 2>/dev/null)  # timeout: 5000
 ```
 
 `$SHEPHERD_AVAILABLE` equals `false`: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip shepherd spawn.
@@ -570,6 +638,7 @@ Scenarios:
 
 <notes>
 
+- **PR review acceptance criteria — canonical here**: oss:shepherd cross-references these criteria; do not duplicate them in shepherd. Shepherd defers to this file for acceptance thresholds and severity definitions.
 - Critical issues always surfaced regardless of scope
 - Skip sections with no issues — no padding. Isolated code without git context → skip OSS Checks and Performance Concerns unless evidence of perf issues (nested loops, I/O in tight loops) or OSS concerns (hardcoded secrets, new deps).
 - **Signal-to-noise gate**: Function/class ≤50 lines with 1–2 critical/high issues → max 2 additional medium/low findings. Rest as `[nit]` in "Minor Observations". First 3 findings reader sees = most impactful.

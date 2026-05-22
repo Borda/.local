@@ -26,13 +26,51 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 DEFAULT_MAX_AGE_HOURS = 24
+MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M9: DoS guard)
+
+
+def _validate_index_path(raw: str) -> Path | None:
+    """Resolve and validate that ``raw`` stays within a safe base directory.
+
+    Permitted base directories (any one is sufficient):
+      * The current working directory (treated as the repository root)
+      * ``~/.claude`` (where codemap indices typically live)
+      * The OS temporary directory (``tempfile.gettempdir()``) — needed for
+        pytest's ``tmp_path`` fixture and other sandboxed test runs.
+
+    Args:
+        raw: User-supplied path from argv.
+
+    Returns:
+        Resolved ``Path`` if validation succeeds; ``None`` if the path is empty,
+        does not point at a file, or resolves outside every allowed base.
+    """
+    if not raw:
+        return None
+    candidate = Path(raw).expanduser().resolve()
+    if not candidate.is_file():
+        return None
+    allowed_roots = [
+        Path.cwd().resolve(),
+        (Path(os.path.expanduser("~")) / ".claude").resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    for root in allowed_roots:
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        return candidate
+    return None
 
 
 @dataclass(frozen=True)
@@ -121,6 +159,19 @@ def smoke_test_index(index_path: Path, max_age_hours: int, now: float | None = N
     if not index_path.exists() or not index_path.is_file():
         return SmokeResult(ok=False, stale=False, age_hours=None, path=abs_path, error="index file not found")
 
+    # DoS guard (SEC-M9): refuse oversized index files before json.load to avoid memory exhaustion.
+    try:
+        if index_path.stat().st_size > MAX_INDEX_SIZE:
+            return SmokeResult(
+                ok=False,
+                stale=False,
+                age_hours=None,
+                path=abs_path,
+                error=f"index too large ({index_path.stat().st_size} bytes; max {MAX_INDEX_SIZE})",
+            )
+    except OSError as exc:
+        return SmokeResult(ok=False, stale=False, age_hours=None, path=abs_path, error=f"stat failed: {exc}")
+
     try:
         with index_path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -159,7 +210,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    result = smoke_test_index(Path(args.index_path), max_age_hours=args.max_age_hours)
+    validated = _validate_index_path(args.index_path)
+    if validated is None:
+        abs_path = str(Path(args.index_path).expanduser().resolve()) if args.index_path else args.index_path
+        result = SmokeResult(
+            ok=False,
+            stale=False,
+            age_hours=None,
+            path=abs_path,
+            error="index file not found or outside allowed roots (cwd, ~/.claude, tempdir)",
+        )
+        print(result.to_json())
+        return 1
+
+    result = smoke_test_index(validated, max_age_hours=args.max_age_hours)
     print(result.to_json())
     return 0 if (result.ok and not result.stale) else 1
 

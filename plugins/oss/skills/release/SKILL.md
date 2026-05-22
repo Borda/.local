@@ -80,14 +80,24 @@ Gather + explore + validate produce large git/PR output bloating main context. I
    Write full findings — commit list, classified change table, diff excerpts — to <GATHER_FILE> using the Write tool.
    Return ONLY: {\"status\":\"done\",\"file\":\"<GATHER_FILE>\",\"changes\":N,\"breaking\":N,\"confidence\":0.N}")
    ```
-3. Validate envelope and pass file path downstream:
-   - Parse `file` field using: `GATHER_FILE=$(echo "$ENVELOPE" | jq -r '.file' 2>/dev/null)`
-   - Assert `status == "done"`; else abort with error
-   - If `breaking` field absent, default to `0` — do not skip migration guide on missing field
-   - Verify `[ -f "$GATHER_FILE" ]` before passing to artifact phase; abort if missing
-   - Pass `file` path to artifact phase — do NOT read gather file into main context; artifact agent reads it directly
+3. Validate envelope and pass file path downstream — every "abort" below is a hard `exit 1`, not a prose continuation:
+   ```bash
+   STATUS=$(echo "$ENVELOPE" | jq -r '.status' 2>/dev/null)
+   GATHER_FILE=$(echo "$ENVELOPE" | jq -r '.file' 2>/dev/null)
+   BREAKING=$(echo "$ENVELOPE" | jq -r '.breaking // 0' 2>/dev/null)  # default 0 — never skip migration guide on missing field
+   if [ "$STATUS" != "done" ] || [ -z "$GATHER_FILE" ] || [ "$GATHER_FILE" = "null" ] || [ ! -f "$GATHER_FILE" ]; then
+       echo "Error: delegation validation failed — status=$STATUS, file=$GATHER_FILE" >&2
+       exit 1
+   fi
+   ```
+   Pass `$GATHER_FILE` path to artifact phase — do NOT read gather file into main context; artifact agent reads it directly.
 
-`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null || echo "HEAD~20")..HEAD} 2>/dev/null`. If count exceeds 50, delegate gather to `general-purpose` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood.
+`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-${LAST_TAG:-HEAD~20}..HEAD} 2>/dev/null` (reuses `LAST_TAG` derived in Shared setup when available; falls back to `HEAD~20` only when `LAST_TAG` unset). If count exceeds 50, delegate gather to `general-purpose` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood. Define `GATHER_FILE` before spawning (mirrors prepare-mode step 1) so the envelope-validation block above can resolve the path:
+
+```bash
+GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
+mkdir -p .temp  # timeout: 5000
+```
 
 ## Mode Detection
 
@@ -111,9 +121,9 @@ fi
 
 | First token | Mode | Routing |
 | --- | --- | --- |
-| `prepare` | prepare | Skip to **Mode: prepare** |
-| `audit` | audit | Skip to **Mode: audit** |
-| `demo` | demo | Skip to **Mode: demo** |
+| `prepare` | prepare | Run **Shared setup** block first, then skip to **Mode: prepare** (skip other mode sections only — Shared setup is mandatory prerequisite) |
+| `audit` | audit | Run **Shared setup** block first, then skip to **Mode: audit** (skip other mode sections only — Shared setup is mandatory prerequisite) |
+| `demo` | demo | Run **Shared setup** block first, then skip to **Mode: demo** (skip other mode sections only — Shared setup is mandatory prerequisite) |
 | `notes` | notes | Parse flags and range from `$REST`; run all phases |
 | *(bare range — handled above by range-first detection)* | notes | Falls through to `notes` route after `FIRST` is rewritten |
 | *(none)* | notes | `RANGE=""`, no flags; run all phases |
@@ -141,18 +151,18 @@ RANGE="${RANGE/->/../}"
 Run this first — cold-start fallback (sets `$_OSS_SHARED`):
 
 ```bash
-_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 ```
 
-Extracted to `bin/release_setup.sh` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, and the branch-aware `LAST_TAG` / `CHERRY_PICK_SUBJECTS` / `SOURCE_TAG_REF`. Emits `KEY=value` lines for `eval`; stable-branch banner and "no stable tag" warnings go to stderr.
+Extracted to `bin/release_setup.py` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, and the branch-aware `LAST_TAG` / `CHERRY_PICK_SUBJECTS` / `SOURCE_TAG_REF`. Emits `KEY=value` lines for `eval`; stable-branch banner and "no stable tag" warnings go to stderr.
 
 ```bash
-eval "$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/release_setup.sh")"  # timeout: 10000
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/release_setup.py")"  # timeout: 10000
 ```
 
-When no stable tags exist, `LAST_TAG` resolves to the initial commit — surface this to the user via `AskUserQuestion` ("No stable tags found. Range base is initial commit — proceed?") before any phase that consumes the range.
+When no stable tags exist, `LAST_TAG` resolves to the initial commit — surface this to the user via `AskUserQuestion` ("No stable tags found. Range base is initial commit — proceed?") before any phase that consumes the range. Options: (a) Proceed with initial commit as base · (b) Abort — stop release process. If user selects (b): stop immediately, print "Release aborted — no stable tags found; create a tag first with `git tag v0.1.0`" and exit.
 
 ## Gather changes
 
@@ -245,7 +255,7 @@ Gate — runs after Classify, before Audit changelog. Verifies each classified c
 # For additions — confirm symbol present in implementation files at HEAD
 # Restrict to src/ directories; docs/, tests/, CHANGELOG exclude (they document, not implement)
 git grep -l "<symbol_name>" HEAD -- 'src/**' '*.py' '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null || \
-  git grep -l "<symbol_name>" HEAD -- . --exclude-dir=docs --exclude-dir=tests --exclude-dir=.github  # timeout: 3000
+  git grep -l "<symbol_name>" HEAD -- . ':!docs' ':!tests' ':!.github'  # timeout: 3000
 # For removals / breaking changes — confirm symbol absent from implementation at HEAD
 git grep -l "<symbol_name>" HEAD -- 'src/**' '*.py' '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null && echo "PRESENT (unexpected)" || echo "ABSENT (confirmed)"  # timeout: 3000
 # For behavior changes — read the relevant file at HEAD and confirm the changed code path
@@ -316,7 +326,7 @@ Before running, invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OU
 
 On (a) or user confirmation after (b): run:
 ```bash
-# Note: python invocation triggers approval prompt by design (allow-list policy — python excluded from auto-allow)
+# Note: python invocation allowed by Bash(python:*) allow-list entry — runs without approval prompt
 python "$DEMO_OUT"  # timeout: 600000
 ```
 If fails: fix and re-run. Don't proceed until exits 0 with expected output. Self-contained: package installed in current env; no live API calls or network deps; deterministic synthetic data; `# !pip install` lines are Python comments — interpreter skips.
@@ -401,7 +411,7 @@ After polishing, dispatch shepherd for public-facing voice/tone review before wr
 
 ```bash
 # Check oss:shepherd availability (may not be installed in partial setups)
-SHEPHERD_AVAILABLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check-agent.sh" oss shepherd 2>/dev/null)  # timeout: 5000
+SHEPHERD_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss shepherd 2>/dev/null)  # timeout: 5000
 # Pre-compute shepherd run dir (file-handoff protocol)
 SHEPHERD_DIR=".temp/release-shepherd-$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')-$(date +%Y-%m-%d)"
 mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
@@ -422,13 +432,13 @@ Agent(subagent_type="oss:shepherd", prompt="Review the full release draft at <$S
 
 If `oss:shepherd` not available, use draft content directly — skip shepherd review.
 
-Read `$SHEPHERD_DIR/shepherd-revised.md` → validate before use: `[ -s "$SHEPHERD_DIR/shepherd-revised.md" ] || { echo "⚠ shepherd output empty or missing — using original draft"; SHEPHERD_REVISED_PATH="$SHEPHERD_DIR/draft.md"; }`. Shepherd runs once per invocation — full release draft (Write release draft output) is shepherd input.
+Read `$SHEPHERD_DIR/shepherd-revised.md` → validate before use: `if [ -s "$SHEPHERD_DIR/shepherd-revised.md" ]; then SHEPHERD_REVISED_PATH="$SHEPHERD_DIR/shepherd-revised.md"; else echo "⚠ shepherd output empty or missing — using original draft"; SHEPHERD_REVISED_PATH="$SHEPHERD_DIR/draft.md"; fi`. Shepherd runs once per invocation — full release draft (Write release draft output) is shepherd input.
 
 Write to disk: (`BRANCH` and `DATE` from Shared setup block.)
 
 Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == true`):
 - **notes** (always): shepherd review → write to `DRAFT.md` at repo root. Notify: `→ written to DRAFT.md`
-- **`--changelog`** (if set): no shepherd (structured, internal) → invoke `AskUserQuestion`: "Ready to prepend to `$CHANGELOG_FILE`?" Options: (a) Proceed · (b) Preview only. On (a): prepend to `CHANGELOG.md` after `# Changelog` heading (create if missing). Notify: `→ prepended to CHANGELOG.md`
+- **`--changelog`** (if set): no shepherd (structured, internal) → invoke `AskUserQuestion`: "Ready to prepend to `$CHANGELOG_FILE`?" Options: (a) Proceed · (b) Preview only. On (b): display changelog entry content in terminal and stop — do not write to file. On (a): derive `VERSION` for idempotency check — `VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")` — then **idempotency check first** — if `$CHANGELOG_FILE` already contains the version header for this release (`grep -qF "## [$VERSION]" "$CHANGELOG_FILE"` or matching `## v$VERSION`), skip prepend to avoid duplicate entry and notify `→ CHANGELOG.md already contains version header — prepend skipped`; otherwise prepend after `# Changelog` heading (create if missing). Notify: `→ prepended to CHANGELOG.md`
 - **`--summary`** (if set): no shepherd (internal) → Draft executive summary saved to `.temp/output-release-summary-$BRANCH-$DATE.md` — confirm written. Notify: `→ saved to .temp/output-release-summary-<branch>-<date>.md`
 - **`--migration`** (if set): shepherd review (public-facing) → save to `.temp/output-release-migration-$BRANCH-$DATE.md`. Notify: `→ saved to .temp/output-release-migration-<branch>-<date>.md`
 

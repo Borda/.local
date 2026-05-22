@@ -1,0 +1,118 @@
+"""Tests for ``bin/issue_fetch.py``.
+
+The script strips a leading ``#`` from the issue number, validates digits-only, then
+delegates to ``gh issue view <num> --comments``. ``subprocess.run`` is monkeypatched
+throughout — no actual ``gh`` invocation. ``shutil.which`` is patched to return a
+fake path so ``_resolve`` succeeds even when ``gh`` is not installed.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+import pytest
+
+import issue_fetch  # type: ignore[import-not-found]  # noqa: E402
+
+
+class _FakeCompleted:
+    """Minimal stand-in for ``subprocess.CompletedProcess``."""
+
+    def __init__(self, returncode: int = 0) -> None:
+        self.returncode = returncode
+
+
+@pytest.fixture
+def captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """Patch ``subprocess.run`` and ``shutil.which`` inside the script; record argv lists."""
+    recorded: list[list[str]] = []
+
+    def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        recorded.append(list(cmd))
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(issue_fetch.subprocess, "run", _fake_run)
+    monkeypatch.setattr(issue_fetch, "which", lambda _name: "/fake/path/to/gh")
+    return recorded
+
+
+def test_strips_hash_prefix(captured_argv: list[list[str]]) -> None:
+    """``#42`` → ``42`` passed to gh; leading ``#`` not forwarded."""
+    rc = issue_fetch.main(["#42"])
+    assert rc == 0
+    assert len(captured_argv) == 1
+    assert captured_argv[0] == ["/fake/path/to/gh", "issue", "view", "42", "--comments"]
+
+
+def test_rejects_non_numeric(
+    captured_argv: list[list[str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Non-numeric input → exit 1; gh never invoked; stderr contains diagnostic."""
+    rc = issue_fetch.main(["abc"])
+    assert rc == 1
+    assert captured_argv == []  # gh never called
+    err = capsys.readouterr().err
+    assert "invalid issue number" in err
+    assert "abc" in err
+
+
+def test_rejects_empty_input(
+    captured_argv: list[list[str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """No argument → empty string → invalid; gh not invoked."""
+    rc = issue_fetch.main([])
+    assert rc == 1
+    assert captured_argv == []
+    assert "invalid issue number" in capsys.readouterr().err
+
+
+def test_passes_through_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``gh`` exits 3 → ``main`` returns 3 unchanged."""
+
+    def _fake_run(_cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        return _FakeCompleted(returncode=3)
+
+    monkeypatch.setattr(issue_fetch.subprocess, "run", _fake_run)
+    monkeypatch.setattr(issue_fetch, "which", lambda _name: "/fake/gh")
+    assert issue_fetch.main(["99"]) == 3
+
+
+def test_bare_number_forwarded_unchanged(captured_argv: list[list[str]]) -> None:
+    """Numeric arg without ``#`` prefix forwarded as-is."""
+    issue_fetch.main(["123"])
+    assert captured_argv[0] == ["/fake/path/to/gh", "issue", "view", "123", "--comments"]
+
+
+def test_resolve_raises_when_gh_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``_resolve`` propagates ``FileNotFoundError`` when ``gh`` not on PATH."""
+
+    def _no_run(*_args: Any, **_kwargs: Any) -> _FakeCompleted:  # pragma: no cover
+        raise AssertionError("subprocess.run should not be called when gh is missing")
+
+    monkeypatch.setattr(issue_fetch.subprocess, "run", _no_run)
+    monkeypatch.setattr(issue_fetch, "which", lambda _name: None)
+    with pytest.raises(FileNotFoundError, match="gh"):
+        issue_fetch.main(["1"])
+
+
+def test_passthrough_no_capture(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sanity: ``subprocess.run`` is called WITHOUT ``capture_output=True``.
+
+    Both stdout and stderr must remain inherited from the caller so the user sees
+    ``gh``'s output directly (mirrors bash ``2>&1``).
+    """
+    recorded_kwargs: dict[str, Any] = {}
+
+    def _fake_run(_cmd: list[str], **kwargs: Any) -> _FakeCompleted:
+        recorded_kwargs.update(kwargs)
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(issue_fetch.subprocess, "run", _fake_run)
+    monkeypatch.setattr(issue_fetch, "which", lambda _name: "/fake/gh")
+    issue_fetch.main(["7"])
+    # No capture flags — stdout/stderr inherit by default.
+    assert recorded_kwargs.get("capture_output") in (None, False)
+    assert "stdout" not in recorded_kwargs or recorded_kwargs["stdout"] is None
+    assert "stderr" not in recorded_kwargs or recorded_kwargs["stderr"] is None

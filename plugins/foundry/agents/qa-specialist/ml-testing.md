@@ -3,6 +3,8 @@
 
 Read this file only when task scope includes ML model testing (PyTorch, TensorFlow, JAX, model inference, training-loop verification, tensor-shape checks). Skip for non-ML Python tasks.
 
+> **Framework scope**: all patterns below are PyTorch-based. TF/JAX users: adapt to `tf.debugging`/`jax.test_util` equivalents — seeding, assertion APIs, and DataLoader patterns differ.
+
 ## Tensor Assertions (PyTorch)
 
 ```python
@@ -36,7 +38,7 @@ def test_transform_preserves_range():
 
 ## GPU / CUDA Tests
 
-Note: global `reset_random_seeds` fixture (defined in `<pytest_config>`) handles seeding autouse for all tests.
+Define in conftest.py: `@pytest.fixture(autouse=True) def reset_random_seeds(): random.seed(42); np.random.seed(42); torch.manual_seed(42)` — `autouse=True` makes the fixture apply to every test without explicit request.
 
 Mark GPU tests with `@pytest.mark.gpu` and `@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")` so they skip on CPU-only runners without breaking suite.
 
@@ -44,6 +46,7 @@ Mark GPU tests with `@pytest.mark.gpu` and `@pytest.mark.skipif(not torch.cuda.i
 
 > **Determinism with `num_workers > 0`**: when the DataLoader uses worker processes, **each worker has its own RNG state**. Reproducibility tests are non-deterministic unless every worker is seeded via `worker_init_fn`. The `reset_random_seeds` autouse fixture seeds the main process only — it does NOT propagate into worker processes. Pass a `worker_init_fn` and a `torch.Generator` to `DataLoader`, or restrict tests to `num_workers=0`.
 
+<!-- extraction-candidate: high — DataLoader pattern; candidate for bin/ extraction per bin-authoring-guide.md -->
 ```python
 import random
 import numpy as np
@@ -57,12 +60,12 @@ def seed_worker(worker_id: int) -> None:
     random.seed(worker_seed)
 
 
-def make_dataloader(seed: int, num_workers: int = 0):
+def make_dataloader(dataset: torch.utils.data.Dataset, seed: int, num_workers: int = 0):
     g = torch.Generator()
     g.manual_seed(seed)
     return torch.utils.data.DataLoader(
         dataset,
-        batch_size=...,
+        batch_size=4,
         num_workers=num_workers,
         worker_init_fn=seed_worker if num_workers > 0 else None,
         generator=g,
@@ -70,17 +73,19 @@ def make_dataloader(seed: int, num_workers: int = 0):
 
 
 def test_dataloader_reproducibility():
-    loader1 = make_dataloader(seed=42)
-    loader2 = make_dataloader(seed=42)
-    for batch1, batch2 in zip(loader1, loader2):
-        torch.testing.assert_close(batch1["image"], batch2["image"])
+    ds = torch.utils.data.TensorDataset(torch.randn(16, 3, 224, 224))
+    loader1 = make_dataloader(ds, seed=42)
+    loader2 = make_dataloader(ds, seed=42)
+    for (batch1,), (batch2,) in zip(loader1, loader2):
+        torch.testing.assert_close(batch1, batch2)
 
 
 def test_dataloader_no_nan():
-    loader = make_dataloader(seed=42)
-    for batch in loader:
-        assert not torch.any(torch.isnan(batch["image"])), "NaN in batch"
-        assert not torch.any(torch.isinf(batch["image"])), "Inf in batch"
+    ds = torch.utils.data.TensorDataset(torch.randn(16, 3, 224, 224))
+    loader = make_dataloader(ds, seed=42)
+    for (batch,) in loader:
+        assert not torch.any(torch.isnan(batch)), "NaN in batch"
+        assert not torch.any(torch.isinf(batch)), "Inf in batch"
 ```
 
 ## Model Mode Assertions

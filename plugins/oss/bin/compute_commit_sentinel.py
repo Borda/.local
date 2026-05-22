@@ -26,9 +26,11 @@ Exit codes:
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
+import tempfile
 
 
 def to_slug(value: str) -> str:
@@ -86,7 +88,12 @@ def get_sentinel_path() -> str:
 
     branch = subprocess.check_output(["git", "branch", "--show-current"], text=True).strip()
 
-    return f"/tmp/claude-commit-auth-{to_slug(repo_name)}-{to_slug(branch)}"
+    # Prefer per-user temp dirs over `/tmp`. macOS's `/tmp` is world-readable
+    # (mode 1777) — the sentinel name leaks branch/repo metadata to other
+    # users on shared hosts. Order: TMPDIR (per-user on macOS) →
+    # XDG_RUNTIME_DIR (per-user on Linux) → tempfile.gettempdir() fallback.
+    base = os.environ.get("TMPDIR") or os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+    return f"{base.rstrip('/')}/claude-commit-auth-{to_slug(repo_name)}-{to_slug(branch)}"
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -11,11 +11,49 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 STALE_THRESHOLD_DAYS = 7
+MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M9: DoS guard)
+
+
+def _validate_index_path(raw: str) -> Path | None:
+    """Resolve and validate that ``raw`` stays within a safe base directory.
+
+    Permitted base directories (any one is sufficient):
+      * The current working directory (treated as the repository root)
+      * ``~/.claude`` (where codemap indices typically live)
+      * The OS temporary directory (``tempfile.gettempdir()``) — needed for
+        pytest's ``tmp_path`` fixture and other sandboxed test runs.
+
+    Args:
+        raw: User-supplied path from argv.
+
+    Returns:
+        Resolved ``Path`` if validation succeeds; ``None`` if the path is empty,
+        does not point at a file, or resolves outside every allowed base.
+    """
+    if not raw:
+        return None
+    candidate = Path(raw).expanduser().resolve()
+    if not candidate.is_file():
+        return None
+    allowed_roots = [
+        Path.cwd().resolve(),
+        (Path(os.path.expanduser("~")) / ".claude").resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    for root in allowed_roots:
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        return candidate
+    return None
 
 
 def parse_scanned_at(scanned_at: str) -> datetime | None:
@@ -113,6 +151,12 @@ def read_scanned_at(index_path: Path) -> str | None:
     Returns:
         The ``scanned_at`` value if present, otherwise ``None``.
     """
+    # DoS guard (SEC-M9): refuse oversized index files before json.load to avoid memory exhaustion.
+    try:
+        if index_path.stat().st_size > MAX_INDEX_SIZE:
+            return None
+    except OSError:
+        return None
     try:
         with index_path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -133,11 +177,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     index_arg = args.index_path
+    # Preserve the legacy "index not provided or not found" wording for the
+    # absent / missing-file paths so existing CLI consumers still match.
     if not index_arg or not Path(index_arg).is_file():
         sys.stdout.write("⚠ freshness: index not provided or not found\n  → Pass a valid index path\n")
         return 0
+    validated = _validate_index_path(index_arg)
+    if validated is None:
+        sys.stdout.write(
+            "⚠ freshness: index path outside allowed roots — pass a path within the project or ~/.claude\n"
+        )
+        return 0
 
-    scanned_at = read_scanned_at(Path(index_arg))
+    scanned_at = read_scanned_at(validated)
     scan_time = parse_scanned_at(scanned_at or "")
     sys.stdout.write(format_status(scanned_at, scan_time, datetime.now(timezone.utc)))
     return 0

@@ -25,7 +25,7 @@ Agent(subagent_type="foundry:qa-specialist", maxTurns=15, prompt="Review all fil
 - `foundry:linting-expert` made file changes → commit:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_lint_fixes.sh"  # timeout: 3000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_lint_fixes.py"  # timeout: 3000
 ```
 
 - Blocking issues from `foundry:qa-specialist` → fix (Codex or inline), re-run qa-specialist once to confirm; issues remain after one fix pass → **stop workflow — do not proceed to Step 10 (push)**; surface all remaining blocking issues in report; print: `⛔ QA gate blocked push — review findings above, fix errors, then re-run /resolve or push manually after fixing.`

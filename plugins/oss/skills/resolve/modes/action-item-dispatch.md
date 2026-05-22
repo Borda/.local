@@ -14,7 +14,7 @@ IMPL_AGENT="codex:codex-rescue"
 }
 
 # File-handoff dir — subagents write full output here; orchestrator reads only compact JSON envelopes
-IMPL_DIR="/tmp/resolve-impl-$$"
+IMPL_DIR="${TMPDIR:-/tmp}/resolve-impl-$$"
 mkdir -p "$IMPL_DIR"  # timeout: 5000
 
 SENTINEL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/compute_commit_sentinel.py")  # timeout: 5000
@@ -49,6 +49,8 @@ Process items in `SELECTED_ITEMS` (from Step 3e) in priority order (`[req]` firs
   - ANY item classified `xhigh` → `CHANGE_SCOPE=full`
   - otherwise → `CHANGE_SCOPE=targeted` (default)
 - Compute `CHANGE_SCOPE` once before the loop; pass to Step 9 via shell variable
+
+**Hard cap: max 20 items per dispatch** — each item spawns up to 3 agents (1a challenge, 1b challenge, impl); 20 items = 60 agent spawns, already at context budget boundary. When `SELECTED_ITEMS` contains >20 items (`$(echo "$SELECTED_ITEMS" | wc -w)` > 20): invoke `AskUserQuestion` — (a) Apply first 20 now, re-run for remainder · (b) Apply all `[req]` only · (c) Proceed with all (slow, may hit context limits). Never silently start loop with >20 items.
 
 **≥10 selected items — batched dispatch**: group items by file affinity (items touching the same file → one batch; max 3 per batch; unrelated items → solo batch). Challenge each batch item individually (phases 1a/1b) before batching — items that pass both phases → batch together. Print compact progress `[N/total] batch #<ids> — <files>`. Skip per-item stash/unstash — one clean-state check per batch instead.
 
@@ -146,10 +148,10 @@ if [ "$STASHED" = "true" ]; then
     STASHED=false
 fi
 
-"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/stage_item_changes.sh" "<id>"  # timeout: 5000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/stage_item_changes.py" "<id>"  # timeout: 5000
 ```
 
-**`COMMIT_MODE=each`** (commit-each, default) — commit immediately after each item. Write the per-item commit message to a temp file, then dispatch to `bin/commit_action_item.sh` (handles sentinel touch + `git add` + `git commit` and cleans the sentinel on every exit path). Omit the Codex co-author line when `IMPL_AGENT ≠ codex:codex-rescue`:
+**`COMMIT_MODE=each`** (commit-each, default) — commit immediately after each item. Write the per-item commit message to a temp file, then dispatch to `bin/commit_action_item.py` (handles sentinel touch + `git add` + `git commit` and cleans the sentinel on every exit path). Omit the Codex co-author line when `IMPL_AGENT ≠ codex:codex-rescue`:
 
 ```bash
 COMMIT_MSG=$(mktemp)  # timeout: 3000
@@ -166,7 +168,7 @@ Co-authored-by: Claude Code <noreply@anthropic.com>
 Co-authored-by: OpenAI Codex <codex@openai.com>
 EOF
 
-"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.sh" \
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" \
     --message-file "$COMMIT_MSG" \
     --files <files-changed-by-this-item>  # timeout: 10000
 ```
@@ -194,5 +196,5 @@ for _entry in "${CHALLENGE_LOG[@]}"; do
         *evidence=REJECT*) N_REJECTED=$(( N_REJECTED + 1 )) ;;
     esac
 done
-"${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_all_items.sh" "$PR_NUMBER" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_all_items.py" "$PR_NUMBER" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
 ```

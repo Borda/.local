@@ -185,6 +185,10 @@ _CODE_SIGNAL = re.compile(
 _PROSE_END = re.compile(r"[.,?!]\s*$")
 _FENCE_OPEN = re.compile(r"^(`{3,}|~{3,})([\w.+\-]*)")
 
+# Guard against pathological inputs that would exhaust heap memory when read
+# in one shot. 10 MB is well above any realistic Markdown / agent file.
+_MAX_FILE_SIZE = 10 * 1024 * 1024
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -453,6 +457,12 @@ def main(argv: list[str] | None = None) -> int:
 
     for filepath in iter_md_files(args.dir, args.include):
         try:
+            if Path(filepath).stat().st_size > _MAX_FILE_SIZE:
+                print(
+                    f"warning: skipping oversized file (> {_MAX_FILE_SIZE} bytes): {filepath}",
+                    file=sys.stderr,
+                )
+                continue
             text = Path(filepath).read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
             print(f"warning: could not read {filepath}: {exc}", file=sys.stderr)

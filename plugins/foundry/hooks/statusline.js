@@ -69,6 +69,10 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
+function getSentinelDir() {
+  return process.platform === "win32" ? os.tmpdir() : "/tmp";
+}
+
 let raw = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (d) => (raw += d));
@@ -79,7 +83,7 @@ process.stdin.on("end", () => {
     // Session-scoped temp dir — mirrors the layout written by task-log.js.
     // Falls back to 'default' for older Claude Code versions without session_id.
     const sid = (session_id || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const tmpDir = path.join("/tmp", `claude-state-${sid}`);
+    const tmpDir = path.join(getSentinelDir(), `claude-state-${sid}`);
 
     const modelName = model?.display_name || model?.id || "";
     const dir = path.basename(workspace?.current_dir || process.cwd());

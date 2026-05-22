@@ -1,0 +1,162 @@
+"""Tests for ``bin/extract_json_field.py``.
+
+Verifies JSON object recovery from mixed-prose text and field extraction
+(happy path, whole-object aliases, absent field, no JSON, stdin, usage error).
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+
+import pytest
+
+import extract_json_field  # type: ignore[import-not-found]
+from extract_json_field import format_field, recover_json_object
+
+
+# ---------------------------------------------------------------------------
+# recover_json_object
+# ---------------------------------------------------------------------------
+
+
+class TestRecoverJsonObject:
+    """Unit tests for :func:`recover_json_object`."""
+
+    def test_plain_json(self) -> None:
+        """Extracts a plain JSON object with no surrounding prose."""
+        result = recover_json_object('{"status":"done","files_changed":1}')
+        assert result == {"status": "done", "files_changed": 1}
+
+    def test_prose_preamble(self) -> None:
+        """Extracts JSON object preceded by prose."""
+        result = recover_json_object('thinking... here it is: {"verdict":"PASS"}')
+        assert result == {"verdict": "PASS"}
+
+    def test_stray_brace_before_json(self) -> None:
+        """Prefers rightmost / outermost valid JSON when stray braces precede it."""
+        result = recover_json_object('prose with { stray brace and {"ok":false}')
+        assert result == {"ok": False}
+
+    def test_trailing_prose(self) -> None:
+        """Extracts JSON object followed by trailing prose."""
+        result = recover_json_object('  {"ok": true}\n\nthen extra prose')
+        assert result == {"ok": True}
+
+    def test_nested_object(self) -> None:
+        """Returns outermost object when nested objects are present."""
+        result = recover_json_object('{"nested":{"k":1}} trailing')
+        assert result == {"nested": {"k": 1}}
+
+    def test_no_json_returns_none(self) -> None:
+        """Returns None when no JSON object is present."""
+        assert recover_json_object("no json here at all") is None
+
+    def test_empty_string_returns_none(self) -> None:
+        """Returns None for empty input."""
+        assert recover_json_object("") is None
+
+    @pytest.mark.parametrize(
+        "alias",
+        [".", "_object", ""],
+    )
+    def test_whole_object_aliases_recognized(self, alias: str) -> None:
+        """Whole-object aliases (., _object, '') are in the frozenset."""
+        assert alias in extract_json_field._WHOLE_OBJECT_ALIASES
+
+
+# ---------------------------------------------------------------------------
+# format_field
+# ---------------------------------------------------------------------------
+
+
+class TestFormatField:
+    """Unit tests for :func:`format_field`."""
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("PASS", "PASS"),
+            (True, "true"),
+            (False, "false"),
+            (42, "42"),
+            ([1, 2, 3], "[1, 2, 3]"),
+            ({"k": "v"}, '{"k": "v"}'),
+            (None, "null"),
+        ],
+    )
+    def test_format(self, value: object, expected: str) -> None:
+        """Formats each JSON type correctly for stdout."""
+        assert format_field(value) == expected  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# main() — CLI behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestMain:
+    """Integration tests for :func:`main` (CLI entry point)."""
+
+    def test_extract_string_field(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Extracts a string field and prints it raw (no quotes)."""
+        rc = extract_json_field.main(["status", '{"status":"done","n":3}'])
+        out, _ = capsys.readouterr()
+        assert rc == 0
+        assert out.strip() == "done"
+
+    def test_extract_int_field(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Extracts an integer field and prints it as JSON."""
+        rc = extract_json_field.main(["files_changed", '{"status":"ok","files_changed":2}'])
+        out, _ = capsys.readouterr()
+        assert rc == 0
+        assert out.strip() == "2"
+
+    def test_extract_bool_field(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Extracts a boolean field as lowercase JSON."""
+        rc = extract_json_field.main(["re_audit_clean", '{"re_audit_clean":true}'])
+        out, _ = capsys.readouterr()
+        assert rc == 0
+        assert out.strip() == "true"
+
+    @pytest.mark.parametrize("alias", [".", "_object"])
+    def test_whole_object_alias(self, alias: str, capsys: pytest.CaptureFixture[str]) -> None:
+        """Whole-object aliases print compact JSON of the full recovered object."""
+        rc = extract_json_field.main([alias, '{"a":1,"b":2}'])
+        out, _ = capsys.readouterr()
+        assert rc == 0
+        parsed = json.loads(out.strip())
+        assert parsed == {"a": 1, "b": 2}
+
+    def test_field_absent_returns_exit_2(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Returns exit code 2 when the requested field is not in the object."""
+        rc = extract_json_field.main(["missing", '{"other":"val"}'])
+        assert rc == 2
+
+    def test_no_json_returns_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Returns exit code 1 when no JSON object is recoverable."""
+        rc = extract_json_field.main(["field", "just plain text"])
+        assert rc == 1
+
+    def test_no_args_returns_exit_3(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Returns exit code 3 (usage error) when no arguments provided."""
+        rc = extract_json_field.main([])
+        assert rc == 3
+
+    def test_stdin_input(self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+        """Reads JSON from stdin when second arg is '-' or omitted."""
+        import io
+
+        monkeypatch.setattr(sys, "stdin", io.StringIO('{"verdict":"approved"}'))
+        rc = extract_json_field.main(["verdict", "-"])
+        out, _ = capsys.readouterr()
+        assert rc == 0
+        assert out.strip() == "approved"
+
+    def test_prose_wrapped_json(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Recovers JSON embedded in reasoning/prose output from agents."""
+        prose = 'I reviewed the findings. Here is my response: {"status":"done","fixed":5} Thank you.'
+        rc = extract_json_field.main(["fixed", prose])
+        out, _ = capsys.readouterr()
+        assert rc == 0
+        assert out.strip() == "5"

@@ -29,6 +29,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# Guard against pathological inputs that would exhaust heap memory when read
+# in one shot. 10 MB is well above any realistic Markdown / agent file.
+_MAX_FILE_SIZE = 10 * 1024 * 1024
+
 
 @dataclass
 class OrphanFinding:
@@ -117,8 +121,11 @@ def is_referenced(script_name: str, search_dir: Path) -> bool:
         for fn in filenames:
             if not fn.endswith(".md"):
                 continue
+            md_path = Path(dirpath) / fn
             try:
-                text = (Path(dirpath) / fn).read_text(encoding="utf-8", errors="replace")
+                if md_path.stat().st_size > _MAX_FILE_SIZE:
+                    continue
+                text = md_path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
             if script_name in text:
@@ -159,7 +166,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    plugins_dir = Path(args.plugins_dir)
+    # Normalise argv path so ``..`` components cannot escape the project tree.
+    plugins_dir = Path(args.plugins_dir).resolve()
+    project_root = Path.cwd().resolve()
+    try:
+        plugins_dir.relative_to(project_root)
+    except ValueError:
+        print(
+            f"! SECURITY: --plugins-dir must be within project root: {args.plugins_dir}",
+            file=sys.stderr,
+        )
+        return 2
     if not plugins_dir.is_dir():
         print(f"error: {args.plugins_dir!r} is not a directory", file=sys.stderr)
         return 2

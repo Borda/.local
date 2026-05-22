@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M10: DoS guard)
+
 
 def _resolve_root(scan_args: str, timeout: int = 15) -> str:
     """Return project root: --root arg → git toplevel → cwd.
@@ -17,7 +19,7 @@ def _resolve_root(scan_args: str, timeout: int = 15) -> str:
         i = args.index("--root")
         root = args[i + 1]
         abs_root = Path(root).resolve()
-        cwd = Path.cwd()
+        cwd = Path.cwd().resolve()
         if not abs_root.is_relative_to(cwd):
             print(f"scan-stats: --root path outside project root: {abs_root}", file=sys.stderr)
             sys.exit(2)
@@ -41,6 +43,15 @@ def _load_index(root: str) -> dict:
     """Load .cache/scan/<project>.json; exit 1 if missing."""
     proj = os.path.basename(root)
     index_path = os.path.join(root, ".cache", "scan", f"{proj}.json")
+    # DoS guard (SEC-M10): refuse oversized index files before json.load to avoid memory exhaustion.
+    try:
+        size = os.path.getsize(index_path)
+    except FileNotFoundError:
+        print(f"Index not found: {index_path} — run /codemap:scan first")
+        sys.exit(1)
+    if size > MAX_INDEX_SIZE:
+        print(f"Index too large ({size} bytes; max {MAX_INDEX_SIZE}): {index_path}")
+        sys.exit(1)
     try:
         with open(index_path) as f:
             return json.load(f)

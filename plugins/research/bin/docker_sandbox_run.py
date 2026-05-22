@@ -27,6 +27,14 @@ IMAGE = "python:3.11-slim"
 TMPFS_SIZE = "256m"
 TMPFS_MOUNT = f"/tmp:rw,size={TMPFS_SIZE}"
 DEFAULT_NETWORK = "none"
+# Docker network modes that preserve sandbox isolation.  ``host`` is excluded by
+# policy: it removes network namespace isolation and would allow exfiltration
+# from inside the verify-mode container (SEC-R-2).
+_ALLOWED_NETWORK_MODES: frozenset[str] = frozenset({"none", "bridge", "internal"})
+# Shell metacharacters forbidden in verify-mode command strings.  These reach
+# ``sh -c`` inside the container; ``SANDBOX_NETWORK=host`` would otherwise allow
+# network exfiltration via embedded ``$(...)``, backticks, redirection, etc.
+_VERIFY_FORBIDDEN_CHARS = frozenset(";&|$`<>\n\r\\")
 
 
 def build_explore_command(arg: str, network: str, workdir: str) -> list[str]:
@@ -43,6 +51,10 @@ def build_explore_command(arg: str, network: str, workdir: str) -> list[str]:
     Returns:
         Argument list ready for ``subprocess.run`` (no shell).
 
+    Raises:
+        ValueError: if the script path contains ``..`` components (path traversal)
+            or resolves to an absolute path (SEC-M14).
+
     Examples:
         >>> build_explore_command("scripts/explore.py", "none", "/proj")[:3]
         ['docker', 'run', '--rm']
@@ -50,8 +62,26 @@ def build_explore_command(arg: str, network: str, workdir: str) -> list[str]:
         '/workspace/scripts/x.py'
         >>> "--network" in build_explore_command("a.py", "none", "/proj")
         True
+        >>> build_explore_command("../etc/passwd", "none", "/proj")
+        Traceback (most recent call last):
+            ...
+        ValueError: Path traversal not allowed in script path: '../etc/passwd'
+        >>> build_explore_command("./scripts/../../etc/passwd", "none", "/proj")
+        Traceback (most recent call last):
+            ...
+        ValueError: Path traversal not allowed in script path: './scripts/../../etc/passwd'
+        >>> build_explore_command("/etc/passwd", "none", "/proj")
+        Traceback (most recent call last):
+            ...
+        ValueError: Absolute script path not allowed: '/etc/passwd'
     """
-    script = arg[2:] if arg.startswith("./") else arg
+    script_raw = arg[2:] if arg.startswith("./") else arg
+    script_path = Path(script_raw)
+    if script_path.is_absolute():
+        raise ValueError(f"Absolute script path not allowed: {arg!r}")
+    if any(part == ".." for part in script_path.parts):
+        raise ValueError(f"Path traversal not allowed in script path: {arg!r}")
+    script = script_raw
     return [
         "docker",
         "run",
@@ -176,10 +206,33 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
         return 2
 
     network = env.get("SANDBOX_NETWORK") or DEFAULT_NETWORK
+    if network not in _ALLOWED_NETWORK_MODES:
+        # ``host`` is explicitly rejected — it removes network-namespace isolation.
+        print(
+            f"docker_sandbox_run.py: Disallowed SANDBOX_NETWORK: {network!r} "
+            f"(allowed: {sorted(_ALLOWED_NETWORK_MODES)})",
+            file=sys.stderr,
+        )
+        return 2
 
     if mode == "explore":
-        cmd = build_explore_command(arg, network, workdir)
+        try:
+            cmd = build_explore_command(arg, network, workdir)
+        except ValueError as exc:
+            print(f"docker_sandbox_run.py: {exc}", file=sys.stderr)
+            return 2
     elif mode == "verify":
+        # Verify mode forwards ``arg`` to ``sh -c`` inside the container.  Even
+        # with non-host networks, embedded shell metacharacters can chain
+        # arbitrary commands; reject upfront (SEC-R-1).
+        unsafe = sorted({ch for ch in arg if ch in _VERIFY_FORBIDDEN_CHARS})
+        if unsafe:
+            print(
+                f"docker_sandbox_run.py: verify-mode command contains shell metacharacters {unsafe!r}; "
+                "use a script entry point instead of inline shell composition",
+                file=sys.stderr,
+            )
+            return 2
         cmd = build_verify_command(arg, network, workdir)
     else:
         # argparse choices should have rejected, but guard anyway.

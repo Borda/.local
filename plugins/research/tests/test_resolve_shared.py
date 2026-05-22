@@ -1,0 +1,91 @@
+"""Tests for ``research/bin/resolve_shared.py``.
+
+Output contract:
+
+* Cache hit → newest non-orphaned ``research/<version>/skills/_shared``.
+* No cache → source-tree fallback ``plugins/research/skills/_shared``
+  with stderr warning. Always exits 0.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+import resolve_shared
+
+SCRIPT = Path(resolve_shared.__file__)
+
+
+def test_no_tmp_literal_in_source() -> None:
+    """Windows-portability: no hardcoded ``/tmp``."""
+    assert "/tmp" not in SCRIPT.read_text(encoding="utf-8")
+
+
+def test_stdout_reconfigure_present() -> None:
+    """Windows-portability: ``sys.stdout.reconfigure(...)`` required."""
+    assert "sys.stdout.reconfigure" in SCRIPT.read_text(encoding="utf-8")
+
+
+def test_shebang_uses_env_python() -> None:
+    """Shebang must read ``#!/usr/bin/env python``."""
+    first_line = SCRIPT.read_text(encoding="utf-8").splitlines()[0]
+    assert first_line == "#!/usr/bin/env python"
+
+
+def test_cache_hit_returns_newest_version(tmp_path: Path) -> None:
+    """Newest cached research version's ``_shared`` is returned."""
+    base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research"
+    (base / "0.1.0" / "skills" / "_shared").mkdir(parents=True)
+    newer = base / "0.5.2" / "skills" / "_shared"
+    newer.mkdir(parents=True)
+    path, from_cache = resolve_shared.resolve(home=tmp_path)
+    assert from_cache is True
+    assert Path(path) == newer
+
+
+def test_orphaned_version_skipped(tmp_path: Path) -> None:
+    """``.orphaned_at`` marker on newest version → next-best wins."""
+    base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research"
+    orphaned = base / "0.20.0"
+    (orphaned / "skills" / "_shared").mkdir(parents=True)
+    (orphaned / ".orphaned_at").write_text("2026-01-01T00:00:00Z\n", encoding="utf-8")
+    older = base / "0.5.2" / "skills" / "_shared"
+    older.mkdir(parents=True)
+    path, from_cache = resolve_shared.resolve(home=tmp_path)
+    assert from_cache is True
+    assert Path(path) == older
+
+
+def test_source_tree_fallback(tmp_path: Path) -> None:
+    """Empty cache → source-tree fallback string, ``from_cache=False``."""
+    path, from_cache = resolve_shared.resolve(home=tmp_path)
+    assert from_cache is False
+    assert path == "plugins/research/skills/_shared"
+
+
+def test_main_cache_hit_no_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``main()`` cache hit: stdout has path, stderr empty."""
+    cache = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research" / "0.5.2" / "skills" / "_shared"
+    cache.mkdir(parents=True)
+    monkeypatch.setattr(resolve_shared.Path, "home", classmethod(lambda _cls: tmp_path))
+    rc = resolve_shared.main([])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.strip() == str(cache)
+    assert captured.err == ""
+
+
+def test_main_fallback_warns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``main()`` no cache: stdout has fallback, stderr has warning, exit 0."""
+    monkeypatch.setattr(resolve_shared.Path, "home", classmethod(lambda _cls: tmp_path))
+    rc = resolve_shared.main([])
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.out.strip() == "plugins/research/skills/_shared"
+    assert "source-tree fallback" in captured.err

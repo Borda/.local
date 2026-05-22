@@ -4,6 +4,7 @@ description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (
 argument-hint: "<PR number or URL> [report] | report | <review comment text>"
 disable-model-invocation: true
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+effort: high
 ---
 
 <objective>
@@ -31,7 +32,7 @@ Bare comment text → skip to Codex dispatch (Step 12).
   - `42 report` or `<URL> report` → **pr + report mode**: aggregate live GitHub comments + review report, deduplicated in one pass
   - Bare review comment text → **comment dispatch mode** (jumps to Step 12)
 - **`--no-challenge`**: optional — skip challenge gate per item; all selected items treated as `VALID`
-- **`--agent <name>`**: optional — use `<name>` agent for implementation instead of Codex (e.g. `--agent curator` → `foundry:curator` for targeted edits; `--agent sw-engineer` → `foundry:sw-engineer` for code-heavy fixes)
+- **`--agent <name>`**: optional — use `<name>` agent for implementation instead of Codex; must be an implementation agent; bare name auto-prefixed with `foundry:` if no plugin prefix detected (e.g. `--agent sw-engineer` → `foundry:sw-engineer`; `--agent linting-expert` → `foundry:linting-expert`; `--agent doc-scribe` → `foundry:doc-scribe`); explicit prefix also accepted (`--agent foundry:sw-engineer`); see routing table in `action-item-dispatch.md`
 
 </inputs>
 
@@ -50,7 +51,7 @@ CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §8 default 300s
 
 ```bash
 # loads: oss-shared-resolver.md
-_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 _OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 2>/dev/null | head -1)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
 ```
@@ -68,10 +69,10 @@ Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 
 ## Step 1: Pre-flight
 
-Extracted to `bin/resolve_preflight.sh` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Emits `CODEX_AVAILABLE=<bool>` and `GH_OK=true` on stdout for `eval`; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
+Extracted to `bin/resolve_preflight.py` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Emits `CODEX_AVAILABLE=<bool>` and `GH_OK=true` on stdout for `eval`; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
 
 ```bash
-eval "$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_preflight.sh")"  # timeout: 30000
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_preflight.py")"  # timeout: 30000
 ```
 
 gh missing or not authenticated → script exits 1 (error printed above).
@@ -128,9 +129,9 @@ fi
 **Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode
-- `MODE="report"` → find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .reports/review/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present; no PR# in header → add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
+- `MODE="report"` → find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .reports/review/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present; no PR# in header → add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
 - `MODE="pr"` → continue Step 2
-- `MODE="comment-dispatch"` → branch safety check before Step 12: `CURRENT=$(git branch --show-current); DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }` → jump to Step 12
+- `MODE="comment-dispatch"` → branch safety check before Step 12: `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }` → jump to Step 12
 
 ## Step 2: Create initial task
 
@@ -185,9 +186,24 @@ Map each finding to action item schema:
 - `full_comment_text`: full finding bullet
 - All items get `[report]` prefix on `type` (e.g., `[report][req]`, `[report][suggest]`)
 
-PR# found in report header → set `$ARGUMENTS = <N>`, go to Step 4; skip Step 3b entirely. After checkout, skip to Step 8 with report-derived action items.
+PR# found in report header → set `$ARGUMENTS = <N>`, go to Step 4; skip Step 3b entirely. After checkout, set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs (report mode executes all findings; no user selection step); skip to Step 8.
 
-No PR# in header → skip Steps 3b and 4; work on current branch as-is. Skip to Step 8 with report-derived action items.
+No PR# in header → skip Steps 3b and 4; work on current branch as-is. Set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs; skip to Step 8.
+
+**Report mode — Step 8 behavior**: `SELECTED_ITEMS` initialized above; Step 3d (user selection) is skipped; Step 8 proceeds with all report-derived items. If report produces zero action items: `SELECTED_ITEMS=[]` → Step 8 skipped, jump to Step 9.
+
+**`BASE_REF` derivation (no-PR path)** — when Step 3b is skipped (report mode without PR#, or comment-dispatch mode), Step 9's lint-qa gate still needs `BASE_REF` for `git merge-base HEAD "origin/$BASE_REF"`. Without this, `BASE_REF` expands empty → `origin/` is an invalid ref → linting sees no changes → workflow pushes silently with vacuous QA gate. Set it from the local default-branch symbolic-ref before Step 8, and guard the downstream `git merge-base` against shallow-clone empty output (CI checkouts frequently use `--depth=1` and `merge-base` returns nothing — linting again sees no changes):
+
+```bash
+BASE_REF=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")  # timeout: 3000
+# Pre-compute MERGE_BASE for Step 9 with shallow-clone fallback to the repo's root commit;
+# without this, `git merge-base HEAD origin/$BASE_REF` returns empty in shallow clones and
+# `git diff <empty>..HEAD` shows the entire branch history (or nothing at all).
+MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null)  # timeout: 3000
+if [ -z "$MERGE_BASE" ]; then
+    MERGE_BASE=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1)  # timeout: 3000 — root commit fallback
+fi
+```
 
 ## Step 3b: PR intelligence
 
@@ -230,6 +246,8 @@ RESOLVED_THREAD_IDS=$(gh api graphql \
   2>/dev/null || echo "[]")  # timeout: 15000
 [ "$RESOLVED_THREAD_IDS" = "[]" ] && echo "⚠ Could not fetch resolved thread status — some action items may already be resolved on GitHub; review the table carefully before implementing"
 ```
+
+> **Pagination note (PRs with >100 review threads)** — `reviewThreads(first:100)` returns at most 100 threads with no pagination; large PRs silently truncate. Extend the query to include `pageInfo{hasNextPage,endCursor}`; check `reviewThreads.pageInfo.hasNextPage` after each page; if `true`, re-issue the query with `after:"$endCursor"` and accumulate `databaseId` values across pages until `hasNextPage` is `false` before marking threads resolved. Truncation produces false `pending` classification → already-resolved items get reimplemented.
 
 Non-empty `CLOSING_ISSUES` → fetch each linked issue:
 
@@ -296,6 +314,8 @@ Answer `[question]` items resolvable from code — clear answer → present answ
 
 *Skip when in pr mode.*
 
+! NO user input in this step — deterministic merge only; Step 3d handles all user selection.
+
 When mode == **pr + report**:
 
 Find + read latest review report (`ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`). Parse findings same as Step 3a.
@@ -324,11 +344,13 @@ Report merged: <N> findings from /review · <M> deduplicated against GitHub comm
 
 Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero pending → set `SELECTED_ITEMS` = all pending IDs, skip to Step 3e.
 
-Sort: `[req]` first, then `[suggest]`. Constraint: max 4 options/question, max 4 questions/call (3 item-group + 1 bulk-action).
+Sort: `[req]` first, then `[suggest]`. Constraint: max 3 items/question, max 4 questions/call (3 item-group + 1 bulk-action). Note: `AskUserQuestion` always appends "Type something" outside the option list — 3 items + Type something = 4 visible per page; 4 items + Type something = 5 visible (cluttered); keep ≤3.
 
-**≤12 pending items**: split into groups of ≤4, one `multiSelect: true` question per group. Labels: `<type> #<id>: <summary>` (≤55 chars); description: `<file:line> · @<author>`. Last question (single-select): "Or choose a bulk action:" — "Apply selected" / "Apply all [req]" / "Apply all" / "Skip all".
+**Q4 = bulk action only — hard rule**: Q4 is always reserved for "Or choose a bulk action:" (single-select: "Apply selected" / "Apply all [req]" / "Apply all" / "Skip all"). Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
 
-**13–19 pending items**: two calls — call 1: `[req]` groups + bulk-action; call 2: `[suggest]` groups + bulk-action; merge selections.
+**≤9 pending items**: group by proximity not by type — fill Q1→Q3 in order (≤3 items each). If items span 4+ type categories, distribute so all groups stay ≤3; don't reserve a whole group for a single type. Each group: one `multiSelect: true` question, header "Selecting items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>`. After item groups, always invoke Q4: single-select "Or choose a bulk action:" — "Apply selected" / "Apply all [req] (only)" / "Apply ALL (req + suggest)" / "Skip all".
+
+**10–19 pending items**: two calls — print `→ N pending items — selecting in 2 calls ([req] first, then [suggest])` before call 1. Call 1: `[req]` groups + Q4 bulk-action ("Apply selected" / "Apply all [req] (only)" / "Apply ALL (req + suggest)" / "Skip all [req]"). "Apply ALL (req + suggest)" in Call 1 → `SELECTED_ITEMS` = all pending IDs, skip Call 2. Otherwise: Call 2: `[suggest]` groups + Q4 bulk-action ("Apply selected" / "Apply all [suggest]" / "Skip all [suggest]"); merge selections from both calls.
 
 **≥20 pending items — context-budget mode**: skip per-item multiSelect; print compressed table (type · id · summary ≤40 chars · file) then single bulk-action call only:
 
@@ -340,10 +362,10 @@ Options: (a) Apply all [req] (X items) · (b) Apply all (N items) · (c) Skip al
 If per-item control needed: advise re-run after reducing source (e.g. use `report` mode instead of `pr + report`, or `--no-challenge` to cut upstream findings).
 
 Resolve `SELECTED_ITEMS`:
-- "Skip all" or no selections → `[]` → skip Step 8, jump to Step 9 (checkout + conflict resolution still run)
-- "Apply all [req]" → all `[req]` IDs
-- "Apply all" → all pending IDs
-- "Apply selected" → checked IDs from item questions
+- "Skip all" or "Skip all [req]" / "Skip all [suggest]" or no selections → `[]` → skip Step 8, jump to Step 9 (checkout + conflict resolution still run)
+- "Apply all [req] (only)" → all `[req]` IDs
+- "Apply ALL (req + suggest)" → all pending IDs (if from Call 1 of 10–19 path, skip Call 2 entirely)
+- "Apply selected" → checked IDs from item questions; for two-call flow, merge checked IDs from both calls
 
 **Commit mode** — after resolving `SELECTED_ITEMS` (non-empty), invoke `AskUserQuestion` as a separate call:
 
@@ -388,9 +410,12 @@ Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`.
 **Branch-safety pre-check** — must run BEFORE `gh pr checkout` so a wrong-branch commit is impossible (per `git-commit.md` Gate 2). Verify the PR's `headRefName` is not the repo's default branch — `gh pr checkout` of a same-repo PR whose HEAD = default branch would land us on default and any later commit (Step 8) would violate Gate 2:
 
 ```bash
-DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')  # timeout: 6000
+# Local-first detection (no network); fall back to network query; hard-fail when neither resolves
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')  # timeout: 3000
+[ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')  # timeout: 6000
+[ -z "$DEFAULT_BRANCH" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }
 PR_HEAD_REF=$(gh pr view "<PR#>" --json headRefName --jq .headRefName 2>/dev/null)  # timeout: 6000
-if [ -n "$DEFAULT_BRANCH" ] && [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
+if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     echo "⛔ PR HEAD ref ($PR_HEAD_REF) equals default branch — refusing to check out and commit on default branch"
     exit 1
 fi
@@ -430,7 +455,19 @@ Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
 
 *Skip when `SELECTED_ITEMS` is empty — jump to Step 9.*
 
-**Soft cap: 8 Codex dispatches per session.** If `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] items only (if ≤8) · (c) Proceed anyway (sequential, may be slow).
+**Soft cap: 8 Codex dispatches per session** — Codex-specific. Skip this cap entirely when `--agent <name>` is set and the resolved agent is not `codex:codex-rescue` (other implementation agents have no per-session dispatch ceiling here):
+
+```bash
+# IMPL_AGENT resolved in action-item-dispatch.md (Step 8); compute here too for cap branching
+_RESOLVE_IMPL_AGENT="codex:codex-rescue"
+[[ "$ARGUMENTS" == *"--agent "* ]] && _RESOLVE_IMPL_AGENT=$(echo "$ARGUMENTS" | grep -oP '(?<=--agent )\S+')
+if [ "$_RESOLVE_IMPL_AGENT" = "codex:codex-rescue" ] && [ "$(echo "$SELECTED_ITEMS" | wc -w)" -gt 8 ]; then
+    # invoke AskUserQuestion as described below
+    :
+fi
+```
+
+If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] items only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
 
 <!-- Step 8 defined in action-item-dispatch.md — see that file for phase/sub-step detail -->
 
@@ -502,9 +539,9 @@ Include `### Challenge Log` section in report — one row per item: id · eviden
 ```bash
 # Branch restore — skip when COMMIT_MODE=stage (staged changes would be lost)
 if [ "$COMMIT_MODE" = "stage" ]; then
-    echo "⚠ COMMIT_MODE=stage: changes are staged on $(git branch --show-current) — restore to $SAVED_BRANCH skipped to preserve staged work. Run: git stash && git checkout $SAVED_BRANCH && git stash pop (on PR branch) when ready."
+    echo "⚠ COMMIT_MODE=stage: changes are staged on $(git branch --show-current) — restore to $SAVED_BRANCH skipped to preserve staged work. Run: git stash && git switch $SAVED_BRANCH && git stash pop (on PR branch) when ready."
 elif [ -n "$SAVED_BRANCH" ]; then
-    git checkout "$SAVED_BRANCH" 2>/dev/null && echo "→ Restored to $SAVED_BRANCH"  # timeout: 5000
+    git switch "$SAVED_BRANCH" 2>/dev/null && echo "→ Restored to $SAVED_BRANCH"  # timeout: 5000
 fi
 ```
 
@@ -534,11 +571,11 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **Merge-push sequencing** — `git merge` and `git push` not atomic; concurrent push to same branch between these steps causes non-fast-forward rejection. Fetch + pull and retry push step only — do not re-run full merge.
 - **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses (loses action-item commits); never `--rebase` (rewrites SHAs); default `--merge`.
 - **Escape hatch**: `git merge --abort` = undo all conflict state; `git push --force-with-lease` (never plain `--force`) only when user explicitly requests — if push rejected after local amend.
-- **Impl agent health**: IMPL_AGENT defaults to `codex:codex-rescue`; subject to CLAUDE.md §8 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file. `--agent curator` or other agents: foreground only, no health monitoring needed.
+- **Impl agent health**: IMPL_AGENT defaults to `codex:codex-rescue`; subject to CLAUDE.md §8 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file. `--agent foundry:sw-engineer` or other implementation agents: foreground only, no health monitoring needed.
 - **Effort calibration**: effort set per item — never `low`; minimum `medium`; typo/doc/formatting/rename-simple → `medium`; multi-file/architecture/new-feature → `xhigh`; default → `high`; effort prefix in agent prompt; `CHANGE_SCOPE` aggregated for Step 9 test targeting
 - **Two-phase challenge**: evidence phase checks code reality (problem exists?); suggestion phase checks fix quality (right approach?); evidence reject → item skipped; suggestion reject → self-resolved fix using challenger's `alternative` field; all outcomes recorded to `CHALLENGE_LOG` and surfaced in Step 11 report
 - **COMMIT_MODE**: set in Step 3d; `each` = commit after each item (default); `all` = single commit after loop; `stage` = no commits (⚠ branch restore in Step 11 leaves staged changes — warn user before attempting restore)
-- **`--agent <name>`**: agent name must match an installed agent (plugin-prefixed, e.g. `foundry:curator`); skip availability check — failure at dispatch time surfaces error naturally; omit Codex co-author trailer when IMPL_AGENT ≠ `codex:codex-rescue`
+- **`--agent <name>`**: agent name accepted with or without plugin prefix; bare name auto-prefixed with `foundry:` (e.g. `sw-engineer` → `foundry:sw-engineer`); must resolve to an installed implementation agent (NOT config-review agents such as `foundry:curator`); skip availability check — failure at dispatch time surfaces error naturally; omit Codex co-author trailer when IMPL_AGENT ≠ `codex:codex-rescue`
 - **Thread resolution via GraphQL** — `isResolved` lives on `PullRequestReviewThread` (GraphQL only); REST `/pulls/{PR}/comments` does not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId` values; GraphQL failure → `[]` fallback.
 - **Commit attribution** — `[gh]` items: `[resolve #<id>] @<reviewer> (gh):`; `[report]` items: `[resolve #<id>] /review finding by <agent-name> (report: <report-path>):` — distinguishes automated findings in git history.
 - **Sources block**: print after all sources read, before action item table.

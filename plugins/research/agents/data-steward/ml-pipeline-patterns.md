@@ -34,16 +34,11 @@ Checklist for medical imaging datasets:
 [ ] Annotation consistency: inter-reader variability measured (Fleiss' kappa)
 ```
 
-Verify zero patient overlap between splits:
+Verify zero patient overlap between splits (uses `verify_patient_split.py` from `bin/`):
 
 ```bash
-python -c "
-import pandas as pd
-train = pd.read_csv('splits/train.csv')
-test = pd.read_csv('splits/test.csv')
-overlap = set(train['patient_id']) & set(test['patient_id'])
-print(f'Overlap: {len(overlap)} patients' if overlap else 'No patient overlap')
-"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/verify_patient_split.py" \
+    --train splits/train.csv --test splits/test.csv
 ```
 
 ## Temporal Split (time-series or streaming data)

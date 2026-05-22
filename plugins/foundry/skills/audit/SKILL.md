@@ -3,7 +3,7 @@ name: audit
 description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, boilerplate duplication, and bin/ extraction candidates (extraction performed separately via /distill executables). Fix level chosen via always-fire follow-up gate after report."
 argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
 ---
 
@@ -54,6 +54,7 @@ MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
 BATCH_SIZE=5           # max files per foundry:curator spawn in Step 3; keep small to avoid context compaction
+ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention; override with --batch-size N
 
 </constants>
 
@@ -61,7 +62,7 @@ BATCH_SIZE=5           # max files per foundry:curator spawn in Step 3; keep sma
 
 **Task hygiene**:
 ```bash
-_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 Read `$_FS/preflight-helpers.md` — defines `preflight_ok()` and `preflight_pass()` used in Pre-flight checks below.
@@ -102,7 +103,11 @@ if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFF
     exit 1
 fi
 
-# canonical: _shared/preflight-helpers.md — loaded by audit/SKILL.md at session start
+# Inline preflight helpers — canonical defs in _shared/preflight-helpers.md
+# Inlined here because Claude Code spawns fresh shell per Bash() call;
+# functions sourced in one block are unavailable in subsequent blocks.
+preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
+preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
 
 # .claude/ directory must exist (not cached — filesystem state)
 if [ ! -d ".claude" ]; then
@@ -140,15 +145,34 @@ else
 fi
 
 AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local}) || { printf "! BREAKING: audit/templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
+
+# Persist LOCAL_MODE and AUDIT_TPL for subsequent Bash blocks (fresh-shell state loss).
+# Re-derive at start of each Step that uses them — see ADV-M1 protocol below.
+mkdir -p "${TMPDIR:-/tmp}/audit-state"
+echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/audit-state/local-mode"
+echo "$AUDIT_TPL"  > "${TMPDIR:-/tmp}/audit-state/audit-tpl"
 ```
 
 If `.claude/` missing, abort immediately. Missing `jq` is warning — audit continues with Check 4 skipped.
+
+**State re-derivation across Bash blocks** — Claude Code spawns a fresh shell per Bash() call; variables set in pre-flight are LOST in Steps 2–11. Every Bash block in subsequent steps that uses `LOCAL_MODE` or `AUDIT_TPL` must re-read them from the persisted state files:
+
+```bash
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local})
+```
+
+Place these two lines at the top of every Bash block in Steps 2–11 that references either variable.
 
 **Unsupported flag check** — after extracting supported flags (`--local`, `--upgrade`, `--adversarial`, `--efficiency`, `--skip-gate`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--local\`, \`--upgrade\`, \`--adversarial\`, \`--efficiency\`, \`--skip-gate\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 1: Run pre-commit (if configured)
 
 ```bash
+# Inline preflight helpers — fresh shell loses prior defs
+preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
+preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
+
 # Check whether pre-commit is installed and a config exists
 if (preflight_ok pre-commit || { command -v pre-commit &>/dev/null && preflight_pass pre-commit; }) &&
 [ -f .pre-commit-config.yaml ]; then
@@ -215,8 +239,12 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 Set up the run directory once before spawning any agents:
 
 ```bash
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make-run-dir.sh" .reports/audit)  # timeout: 5000
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local})
+
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make_run_dir.py" .reports/audit)  # timeout: 5000
 echo "Run dir: $RUN_DIR"
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/audit-state/run-dir"
 ```
 
 Spawn **foundry:curator** agents in batches of up to `BATCH_SIZE` (grouping algorithm above) — or one batch if scope ≤ `BATCH_SIZE`. Each spawn prompt must:
@@ -238,7 +266,7 @@ After spawns complete: short summaries in context; use to identify files with fi
 **Health monitoring** (CLAUDE.md §8): after spawning all batches, create a checkpoint:
 
 ```bash
-AUDIT_CHECKPOINT="/tmp/audit-check-$(date +%s)" # timeout: 5000
+AUDIT_CHECKPOINT="${TMPDIR:-/tmp}/audit-check-$(date +%s)" # timeout: 5000
 touch "$AUDIT_CHECKPOINT"                       # timeout: 5000
 ```
 
@@ -252,10 +280,10 @@ Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$AUDIT_CHECKPOINT" -ty
 > | --- | --- |
 > | `setup` | `checks-setup.md` (Checks 1–11, 39) + `checks-install.md` (I1–I3) + `checks-security.md` (Check 37) |
 > | `plugin` | `checks-setup.md` (Checks 7, 8 only) |
-> | `plugins` | `checks-setup.md` (7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 29) + checks 32, 32d, 33, 38, 40 + `checks-install.md` (R1–R5 — LOCAL_MODE) + `checks-security.md` (35, 36, 37) |
+> | `plugins` | `checks-setup.md` (7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 26, 29) + checks 32, 32d, 33, 38, 40 + `checks-install.md` (R1–R5 — LOCAL_MODE) + `checks-security.md` (35, 36, 37) |
 > | `plugins <name>` | same as `plugins` — scoped to one plugin directory |
-> | `agents` | `checks-agents.md` + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) + `checks-skills.md` (22, 40 only) + `checks-security.md` (35, 36) |
-> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33, 38, 40) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 29) + `checks-security.md` (35–37) |
+> | `agents` | `checks-agents.md` (19, 20) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 26, 29) + `checks-skills.md` (22, 40 only) + `checks-security.md` (35, 36) |
+> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33, 38, 40) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 26, 29) + `checks-security.md` (35–37) |
 > | `rules` | `checks-shared.md` (run only: 18, 12, 13, 29) + `checks-skills.md` (32c only) |
 > | `communication` | `checks-shared.md` (run only: 15, 16, 12, 13, 29) |
 > | No scope (full) | all 5 files |
@@ -287,7 +315,7 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 - `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/init/SKILL.md` only)
 - `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
 - `plugins <name>` or `<plugin-name>` (tier 2) — same check list as `plugins`, scoped to `plugins/<name>/` only
-- `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36 (one file only; no cross-plugin Checks 7/8)
+- `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40 (one file only; no cross-plugin Checks 7/8)
 - `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a, 35, 36, 37, 38, 40 (one file only)
 - Multiple scope tokens — union of check lists for all resolved scope types; de-duplicate; run each check once against union file set
 - No scope argument — run all checks
@@ -314,13 +342,24 @@ After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/syst
 
 **Delegate aggregation** to consolidator agent to avoid flooding main context. Spawn **foundry:curator** consolidator:
 
-> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
+> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"critical|high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
 
 Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate.md` in full — 200–600 lines, overflows context on large audits. Use `$RUN_DIR/summary.jsonl` for all dispatch decisions in Steps 7 and 8.
 
 ## Step 5b: Low-confidence remediation
 
 Parse confidence scores from each file's `## Confidence` block in `<RUN_DIR>/<slug>.md` output files (use Glob + Read — batch envelopes carry aggregate confidence, not per-file scores; individual file reports are the authoritative source). For each slug where `Score` < **0.80**, run three parallel passes:
+
+**Health monitoring** (CLAUDE.md §8): before spawning passes A–C, create a checkpoint:
+
+```bash
+STEP5B_CHECKPOINT="${TMPDIR:-/tmp}/audit-5b-check-$(date +%s)"  # timeout: 5000
+touch "$STEP5B_CHECKPOINT"                                        # timeout: 5000
+```
+
+Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$STEP5B_CHECKPOINT" \( -name "*-rerun.md" -o -name "docs-recheck-*.md" -o -name "codex-recheck-*.md" \) | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` extension if output file tail explains delay. On timeout: read partial output from stalled agent's file; surface with ⏱ in final report.
+
+> **Find precedence note**: parens around `-name` alternatives are mandatory — without them, `-newer` binds only to the first `-name`, and the others match every file regardless of mtime.
 
 **A — Double-reasoning pass** (curator re-run with gaps called out):
 
@@ -353,7 +392,7 @@ If `CODEX_AVAILABLE=false`: log `[Step 5b] Codex unavailable — adversarial pas
 ## Step 6: Cross-validate critical findings
 
 ```bash
-_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/cross-validation-protocol.md" ] || { printf "⚠ WARNING: cross-validation-protocol.md not found at $_SHARED — skipping cross-validation\n"; }
 ```
 
@@ -461,7 +500,7 @@ After gate fires (Step 7): finding count > 10 or user picked option (b) "Fix aut
 
 **Gate failure fallback**: if sub-agent returns `blocked_findings: []` with `fixed > 0` and `failed == 0` but no `gate-<file>.md` files appear in `<RUN_DIR>`, surface: `⚠ GATE-SKIPPED — sub-agent did not perform adversarial gate; review fixes manually before merging.`
 
-Spawn a dedicated **audit-fix** sub-agent — read full prompt from `$AUDIT_TPL/audit-fix-prompt.md` and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into the prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false` or `failed > 0`.
+Spawn a dedicated **audit-fix** sub-agent — read full prompt from `$AUDIT_TPL/audit-fix-prompt.md` and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into the prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false`, `failed > 0`, or `residual_criticals > 0`.
 
 Finding count ≤ 10 and user picked option (a) "Fix CRITICAL + HIGH" → inline batched pattern (one fix-agent per file, all parallel) acceptable; no dedicated sub-agent.
 
@@ -496,7 +535,7 @@ After Step 8 fix agents complete, before foundry:curator re-audit:
 
 ```bash
 CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
-_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 ```
 
@@ -540,6 +579,8 @@ Write findings to `<RUN_DIR>/crossfile-revalidation-pass<N>.md` where N is curre
 <!-- loads: report-template.md -->
 Read `$AUDIT_TPL/report-template.md` and emit the complete audit report following its template and instructions.
 
+**Completion marker** — on successful completion, write `$RUN_DIR/result.jsonl` with one JSONL line summarising the run (severity totals, scope, pass count). On any abort/error path before completion, leave `result.jsonl` absent — the TTL cleanup hook (artifact-lifecycle.md) intentionally skips run directories without `result.jsonl`, preserving incomplete runs for post-mortem debugging. To force cleanup of a known-bad incomplete run, write `{"status":"incomplete","reason":"<one-line>"}` to `result.jsonl` so TTL can age it out.
+
 ## Mode: upgrade
 
 **Trigger**: `/audit --upgrade`
@@ -569,7 +610,6 @@ EFFICIENCY_MD="$AUDIT_TPL/../modes/efficiency.md"
 ```
 
 Read and execute `$EFFICIENCY_MD`.
----
 
 ## Follow-up gate
 

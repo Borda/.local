@@ -1,16 +1,6 @@
 {
   "description": "foundry plugin hooks: task/agent tracking, teammate quality gates, and tool preprocessing",
   "hooks": {
-    "PostCompact": [
-      {
-        "hooks": [
-          {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/task-log.js\"",
-            "type": "command"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "hooks": [

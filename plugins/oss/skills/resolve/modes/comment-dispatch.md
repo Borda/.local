@@ -18,15 +18,21 @@ TaskCreate(
 )
 ```
 
-If `CODEX_AVAILABLE=false`: stop with `⚠ codex plugin not found — install: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`, mark task completed:
+If `CODEX_AVAILABLE=false`: degrade gracefully — match `action-item-dispatch.md` routing. Classify the comment by intended `change` type (infer from comment text: mentions of tests → `test`; mentions of docs/README → `docs`; mentions of style/lint → `style`; configuration/CI → `config`/`ci`; default → `code`). Route to internal agent:
 
-```text
-TaskUpdate(task_id=<task_id_from_above>, status="completed")
-```
+| Inferred `change` value | Fallback agent |
+| --- | --- |
+| `code` · `refactor` · `config` · `ci` | `foundry:sw-engineer` |
+| `test` | `foundry:qa-specialist` |
+| `docs` | `foundry:doc-scribe` |
+| `style` | `foundry:linting-expert` |
+| ambiguous / config-only changes | `foundry:curator` |
 
-and stop.
+Print `⚠ codex plugin not found — falling back to <agent> for this comment. For broader Codex support: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`. Set `IMPL_AGENT=<fallback agent>`; proceed to Step 12a with fallback agent in place of `codex:codex-rescue`. Skip the Codex review loop (Step 12b) when no Codex available — single dispatch only.
 
 ### 12a: Dispatch
+
+**BATCH_SIZE=5** — dispatch at most 5 `Agent()` calls per response turn; wait for all to return before next batch. If $ARGUMENTS expands to more than 5 comment items (multi-comment dispatch), process first 5, wait for results, then continue with next 5. Prevents rate-limit hits and unbounded parallel spawn.
 
 Compute the scoped sentinel path (matches `git-commit.md` Path A pattern — `/tmp/claude-commit-auth-<repo-slug>-<branch-slug>`), touch it, and register a cleanup trap so the authorization is revoked on completion or abort:
 
@@ -39,12 +45,15 @@ trap 'rm -f "$SENTINEL"' EXIT INT TERM
 ```
 
 ```bash
-Agent(subagent_type="codex:codex-rescue", prompt="Apply this review comment to the codebase. If the change is already present, or the comment has no actionable code change, make no changes and briefly explain why. Comment: $ARGUMENTS")
+# IMPL_AGENT defaults to codex:codex-rescue; falls back per table above when CODEX_AVAILABLE=false
+Agent(subagent_type="${IMPL_AGENT:-codex:codex-rescue}", prompt="Apply this review comment to the codebase. If the change is already present, or the comment has no actionable code change, make no changes and briefly explain why. Comment: $ARGUMENTS")
 ```
 
 Record initial dispatch outcome (code changed or no change + reason).
 
 ### 12b: Codex review loop (max 5 passes)
+
+**Skip entirely when `CODEX_AVAILABLE=false`** — review loop is Codex-specific. Set `CODEX_REVIEW_FINDINGS=""` and continue to Step 12c.
 
 ```bash
 git diff HEAD --stat # timeout: 3000 — confirm there are changes to review

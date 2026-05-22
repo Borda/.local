@@ -40,7 +40,7 @@ HARD_CUTOFF: 900   # 15 min — if researcher does not return, surface partial r
 ## Agent Resolution
 
 ```bash
-_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`.
@@ -61,9 +61,26 @@ Read current project before searching, extract constraints:
 - Task (classification, detection, generation, regression)?
 - Constraints (latency, memory, dataset size, compute budget)?
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. are accepted:
+
+```bash
+ARGUMENTS_LOWER=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]')
+```
+
+Use `$ARGUMENTS_LOWER` for all flag/mode dispatch checks (`--team`, `--plan`, leading `plan` token); preserve original `$ARGUMENTS` only where literal substitution into prompts is required (e.g. topic string).
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS_LOWER` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3 to avoid wasted SOTA search compute:
+
+- If `$ARGUMENTS_LOWER` starts with `plan` token (first word is exactly `plan`) → skip Steps 2-3; jump directly to **Plan Mode** section below.
+- If `$ARGUMENTS_LOWER` contains `--team` flag → skip Steps 2-3; jump directly to **Team Mode** section below.
+
+Steps 2-3 execute only when neither `--team` nor `plan` mode is detected.
 
 ## Step 2: Research & codebase check (run in parallel)
+
+> **Parallelism scope**: 2a (Agent spawn) and 2b (Grep) issue in one response. Any WebSearch/WebFetch calls inside the researcher agent are issued sequentially — invoke all searches before synthesizing results. No mechanism exists to parallelize prose-driven searches across calls.
 
 ### 2a: Spawn researcher agent (issue with 2b simultaneously in one response)
 
@@ -102,7 +119,7 @@ Then return ONLY a compact JSON envelope on your final line — nothing else aft
 
 Use Grep tool to search codebase for existing related code:
 
-- Pattern: `$ARGUMENTS` (literal)
+- Pattern: `$ARGUMENTS` (treat as literal string — if `$ARGUMENTS` contains regex metacharacters like `.`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `\\`, escape them via `grep -F` semantics, OR escape each metachar with `\\` before passing to Grep tool)
 - Glob: `**/*.py`
 - Output mode: `files_with_matches`
 - Limit to 1000 results (per external-data.md — never cap at default 10)
@@ -169,9 +186,12 @@ Path:        → .reports/research/topic-<branch>-<date>.md
 
 ```bash
 mkdir -p .reports/research  # timeout: 3000
+# Anti-overwrite counter-suffix loop (per quality-gates.md output routing rule)
+BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; COUNT=2
+while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
 ```
 
-Write full report to `.reports/research/topic-$BRANCH-$DATE.md` using Write tool — **do not print full report to terminal**.
+Write full report to `$REPORT_OUT` using Write tool (resolved by counter-suffix loop above) — **do not print full report to terminal**.
 
 Print compact terminal summary:
 
@@ -194,10 +214,14 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 # loads: modes/team.md
 Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"` and execute its workflow.
 
+**Mandatory termination gate**: after `modes/team.md` returns (consolidation complete, report written), continue to the `## Follow-up gate` section below — do NOT exit early. The `AskUserQuestion` call in `## Follow-up gate` is the only authorized terminal action for team mode; reaching the end of the team workflow without invoking it is a protocol violation.
+
 ## Plan Mode — only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode)
 
 # loads: modes/plan.md
 Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"` and execute its workflow.
+
+**Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written), continue to the `## Follow-up gate` section below — do NOT exit early. The `AskUserQuestion` call in `## Follow-up gate` is the only authorized terminal action for plan mode; reaching the end of the plan workflow without invoking it is a protocol violation.
 
 ## Follow-up gate
 

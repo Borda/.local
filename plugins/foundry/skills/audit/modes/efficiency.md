@@ -13,7 +13,7 @@ Sweeps agents and skills for cost inefficiency signals. Does NOT run standard pe
 **Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Fragment files (`*/modes/*`, `*/templates/*`, `*/_shared/*`): skip checks 1–4 and 6 (no model frontmatter); run checks 5 (token bloat) and 7 (bin/ extraction) only.
 
 ```bash
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make-run-dir.sh" .reports/audit)  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make_run_dir.py" .reports/audit)  # timeout: 5000
 ```
 
 This RUN_DIR replaces Step 3 setup (skipped in efficiency mode).

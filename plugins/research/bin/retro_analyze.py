@@ -36,11 +36,51 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Final
 
 MIN_SAMPLES_FOR_TEST: Final[int] = 6
+
+
+def _validate_jsonl_path(raw: str) -> Path | None:
+    """Resolve and validate that ``raw`` stays within a safe base directory.
+
+    Permitted base directories (any one is sufficient):
+      * The current working directory (treated as the project root)
+      * The project's ``.experiments`` subdirectory
+      * ``~/.claude/projects`` (per-project session data; narrower than the
+        full ``~/.claude`` tree — SEC-L8)
+      * The OS temporary directory — needed for pytest ``tmp_path`` runs.
+
+    Args:
+        raw: Raw value from ``--jsonl``.
+
+    Returns:
+        Resolved ``Path`` when the file exists and is within an allowed root;
+        ``None`` when the file is missing or outside every allowed root.
+    """
+    if not raw:
+        return None
+    candidate = Path(raw).expanduser().resolve()
+    if not candidate.is_file():
+        return None
+    project_root = Path.cwd().resolve()
+    allowed_roots = [
+        project_root,
+        (project_root / ".experiments").resolve(),
+        (Path(os.path.expanduser("~")) / ".claude" / "projects").resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    ]
+    for root in allowed_roots:
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        return candidate
+    return None
 
 
 def run_wilcoxon(
@@ -214,9 +254,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    path = Path(args.jsonl)
-    if not path.is_file():
-        print(json.dumps({"error": f"jsonl not found: {args.jsonl}"}))
+    path = _validate_jsonl_path(args.jsonl)
+    if path is None:
+        print(
+            json.dumps(
+                {
+                    "error": (
+                        f"jsonl not found or outside allowed roots (project root, "
+                        f".experiments/, ~/.claude/projects, tempdir): {args.jsonl}"
+                    )
+                }
+            )
+        )
         return 2
 
     try:

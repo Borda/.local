@@ -2,7 +2,7 @@
 name: session
 description: 'Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks "what was I working on", "any pending items", "what''s in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only).'
 argument-hint: "resume | archive <text> | summary"
-allowed-tools: Read, Write, Glob, Grep, Bash, TaskList, AskUserQuestion
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 effort: low
 model: sonnet
 context: fork
@@ -27,12 +27,12 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 <constants>
 
-- Memory dir: `$HOME/.claude/projects/$(git rev-parse --show-toplevel | sed 's|[/.]|-|g')/memory/`
+- Memory dir: `$HOME/.claude/projects/$(git rev-parse --show-toplevel | sed 's|[/.]|-|g')/memory`
 - Canonical MEMORY_DIR snippet (use in every bash block that needs the path):
   ```bash
   PROJECT="$(git rev-parse --show-toplevel)"
   SLUG="$(echo "$PROJECT" | sed 's|[/.]|-|g')"
-  MEMORY_DIR="$HOME/.claude/projects/$SLUG/memory/"
+  MEMORY_DIR="$HOME/.claude/projects/$SLUG/memory"
   ```
 - File pattern: `session-open-*.md`
 - Resolution log: `.claude/logs/session-archive.jsonl`
@@ -47,7 +47,7 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 **Task hygiene**:
 ```bash
 # audit-skip: resilience-replication
-_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
@@ -89,7 +89,11 @@ echo "cleanup done"
 
 **Primary source (current)**: Read `.claude/state/session-context.md` if it exists. Extract all bullets under `## Parked items` section — each is a current parked item. Use item's `Raised:` date for age computation.
 
-**Legacy source (backwards-compat)**: Use Glob with pattern `session-open-*.md` in memory directory. For each file, read with Read tool to extract `name` and `description` frontmatter fields and item body. Show legacy items alongside current items in output.
+**Legacy source (backwards-compat)**: List `session-open-*.md` files via Bash (Glob with absolute paths outside project root may return empty on restricted installs — Bash `ls` is the reliable fallback):
+```bash
+ls "$MEMORY_DIR"/session-open-*.md 2>/dev/null  # timeout: 5000
+```
+For each file path returned, read with Read tool to extract `name` and `description` frontmatter fields and item body. Show legacy items alongside current items in output. If `ls` returns no files, skip — no legacy items.
 
 Compute age in days per file using `session_age_files.py` (cross-platform; output is `<age>\t<path>` per line): <!-- file: session_age_files.py — consumers: foundry:session Substep 1c -->
 
@@ -123,6 +127,8 @@ Print in this format:
 ```
 
 If no files exist, print: `No pending session items.`
+
+End resume mode output with a `## Confidence` block per quality-gates.md — score based on: memory sources resolved without error, age computation succeeded, legacy file enumeration returned a result (even empty).
 
 ## Step 2 / Mode: archive (close a parked item)
 
@@ -189,7 +195,12 @@ Call TaskList (or use TaskCreate/TaskUpdate context) to get tasks with status `c
 
 ### Substep 3b: Collect parked items
 
-Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with pattern `session-open-*.md` in MEMORY_DIR to list candidates. Read each matched file with Read tool for `name` and `description`.
+Read from two sources and merge:
+
+1. **Current** (primary) — Read `.claude/state/session-context.md` if present (written by the `PreCompact` hook). Extract all bullets under the `## Parked items` heading; each bullet's slug and one-line description become a parked-item entry. If the file does not exist, skip silently.
+2. **Legacy** (backwards-compat) — Derive MEMORY_DIR using canonical snippet from `<constants>`. Use Glob tool with pattern `session-open-*.md` in MEMORY_DIR to list candidates. Read each matched file with Read tool for `name` and `description`.
+
+Combine both sources into a single parked-items list. De-duplicate by slug — when an item appears in both, prefer the `session-context.md` entry (newer, hook-maintained). Carry both into Substep 3e composition under the same `### Parked / Pending` section.
 
 ### Substep 3c: Collect recent git commits
 

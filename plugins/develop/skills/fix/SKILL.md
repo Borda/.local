@@ -3,7 +3,7 @@ name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop."
 argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
 
@@ -16,6 +16,7 @@ NOT for:
 - production incidents without any CI run or traceback (use `/foundry:investigate` (requires foundry plugin))
 - `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
+- CSS/JS-only frontend changes (no Python source touched) — use `/develop:feature` for new frontend work or direct editing for surgical CSS/JS fixes; this skill's regression-test gate assumes pytest
 
 </objective>
 
@@ -26,7 +27,7 @@ NOT for:
 ## Agent Resolution
 
 ```bash
-_PATHS=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-shared-resolve.sh" --foundry 2>/dev/null)  # timeout: 5000
+_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
@@ -53,33 +54,48 @@ Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
-**Checkpoint init**: run `DEV_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev-run-dir.sh" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
+**Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
 ## Fix Mode
 
 **Optional `--diagnosis <path>`**: if provided (from preceding `/develop:debug` session), read diagnosis file first. Skip Step 1 codebase analysis — root cause, suspect files, and evidence pre-populated from diagnosis file. The Challenger gate still applies: proceed from pre-populated root cause through challenger gate, then to Step 2. Do NOT skip the challenger gate — it reviews the fix approach, not just root cause discovery.
 
 ```bash
-DIAG_FILE=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/diagnosis-parse.sh" "$ARGUMENTS" 2>&1) || { echo "$DIAG_FILE"; exit 1; }  # timeout: 5000
+DIAG_FILE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/diagnosis_parse.py" "$ARGUMENTS" 2>&1) || { echo "$DIAG_FILE"; exit 1; }  # timeout: 5000
 ```
 
 Diagnosis file format: see `/develop:debug` Final Report section for canonical field definitions (Root Cause, Suspect Files, Evidence).
 
 ## Flag parsing
 
-**Set `CHALLENGE_ENABLED=true`**. If `--no-challenge` present in `$ARGUMENTS`, set `CHALLENGE_ENABLED=false`.
-**Set `ACCEPT_NO_PLAN=false`**. If `--accept-no-plan` present in `$ARGUMENTS`, set `ACCEPT_NO_PLAN=true` (skips inline plan generation for medium/large complexity — trust user override).
+Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
 ```bash
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-flags.sh" "$ARGUMENTS" 2>/dev/null)  # timeout: 5000
+# timeout: 5000
+CHALLENGE_ENABLED=true
+ACCEPT_NO_PLAN=false
+SEMBLE_ENABLED=false
+TEAM_MODE=false
+[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
+[[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
+[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
+[[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
+echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
+echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
+echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
+echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
+```
+
+Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
+
+```bash
+CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_flags.py" "$ARGUMENTS" 2>/dev/null)  # timeout: 5000
 ```
 
 ```bash
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1  # timeout: 5000
+echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
-
-**Set `SEMBLE_ENABLED=false`**. If `--semble` present in `$ARGUMENTS`, set `SEMBLE_ENABLED=true`.
-**Set `TEAM_MODE=false`**. If `--team` present in `$ARGUMENTS`, set `TEAM_MODE=true`.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -106,19 +122,36 @@ Compute run directory and create health sentinel:
 
 ```bash
 # timeout: 5000
-mapfile -t _run < <("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup-worktree.sh" --sentinel fix-team-check)
+mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py" --sentinel fix-team-check)
 TS="${_run[0]}"
 FIX_TEAM_DIR="${_run[1]}"
-trap 'rm -f /tmp/fix-team-check-$TS' EXIT
+echo "$TS" > ${TMPDIR:-/tmp}/dev-fix-team-ts
+trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT
 ```
 
 Spawn 2 teammates in parallel using Agent() tool:
 
-**Teammate 1 — foundry:sw-engineer (model=opus) — hypothesis A**: "You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template. Bug: ${ARGUMENTS}. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to .temp/develop/$TS/fix-hypothesis-A-$TS.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
+**IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in the prompt strings:
 
-**Teammate 2 — foundry:sw-engineer (model=opus) — hypothesis B**: "You are a foundry:sw-engineer teammate investigating a bug fix. Read $_DEV_SHARED/preflight-helpers.md §Team Spawn Template. Bug: ${ARGUMENTS}. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to .temp/develop/$TS/fix-hypothesis-B-$TS.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
+```bash
+# Resolve variables to literals for spawn prompt embedding  # timeout: 5000
+_SPAWN_DEV_SHARED="$_DEV_SHARED"
+_SPAWN_TS="$TS"
+_SPAWN_ARGS="$ARGUMENTS"
+```
 
-Health monitoring (CLAUDE.md §8): every 5 min: `find .temp/develop/$TS -newer /tmp/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `.temp/develop/$TS/fix-hypothesis-*.md`; surface with ⏱; never omit.
+**Teammate 1 — foundry:sw-engineer (model=opus) — hypothesis A**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, and `$_SPAWN_ARGS` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read <_DEV_SHARED_LITERAL>/preflight-helpers.md §Team Spawn Template. Bug: <ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis A — claim one distinct root-cause hypothesis, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to .temp/develop/<TS_LITERAL>/fix-hypothesis-A-<TS_LITERAL>.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
+
+**Teammate 2 — foundry:sw-engineer (model=opus) — hypothesis B**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, and `$_SPAWN_ARGS` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read <_DEV_SHARED_LITERAL>/preflight-helpers.md §Team Spawn Template. Bug: <ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to .temp/develop/<TS_LITERAL>/fix-hypothesis-B-<TS_LITERAL>.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
+
+Health monitoring (CLAUDE.md §8): re-derive `$TS` at block start (bash state lost between Bash() calls — read back from temp file the spawn block persisted):
+
+```bash
+# timeout: 5000
+TS=$(cat ${TMPDIR:-/tmp}/dev-fix-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+```
+
+Every 5 min: `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/fix-team-check-$TS -name "fix-hypothesis-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min no file activity → timed out. One extension (+5 min) if `tail -20` of output file explains delay; second unexplained stall = hard cutoff. On timeout: read `tail -100` of each `.temp/develop/$TS/fix-hypothesis-*.md`; surface with ⏱; never omit.
 
 After both teammates complete: read their output files from `.temp/develop/$TS/`, synthesize consensus root cause, facilitate cross-challenge between competing analyses. Lead then proceeds alone with Steps 2-4 (regression test, fix, review loop).
 
@@ -130,13 +163,13 @@ Gather all available context about bug:
 
 ```bash
 # If issue number: fetch the full issue with comments
-"${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue-fetch.sh" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
 ```
 
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
 
 ```bash
-# If failing test: run it to capture the exact failure
+# If failing test: run it to capture the exact failure  # timeout: 600000
 $PYTEST_CMD --tb=long <test_path> -v 2>&1 >/tmp/pytest-out.txt; PYTEST_EXIT=$?; tail -40 /tmp/pytest-out.txt; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 
@@ -200,7 +233,7 @@ Parse result:
    Run any candidate tests found to see if they currently pass or fail:
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/pytest-gate.sh" "$PYTEST_CMD" <candidate_test_file>::<candidate_test_name>  # timeout: 120000
+   python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/pytest_gate.py" "$PYTEST_CMD" <candidate_test_file>::<candidate_test_name>  # timeout: 120000
    ```
 
 2. For each candidate test found — critically assess coverage quality:
@@ -248,6 +281,7 @@ Spawn with context:
 Both tests must **fail** against current code before proceeding. Check exit codes for each independently:
 
 ```bash
+# timeout: 600000
 # Path 1 gate
 $PYTEST_CMD --tb=short tests/integration/<test_file>::test_<bug>_user_flow -v
 GATE_P1=$?
@@ -300,10 +334,12 @@ Make minimal change to fix root cause:
 1. Edit only code necessary to resolve bug
 2. Run regression test to confirm now passes:
    ```bash
+   # timeout: 600000
    $PYTEST_CMD --tb=short <test_file>::<test_name> -v
    ```
 3. Run full test suite for affected module:
    ```bash
+   # timeout: 600000
    $PYTEST_CMD --tb=short <test_dir> -v
    ```
    **If `<test_dir>` does not exist or has no tests beyond regression test**: run only regression test (already verified in Step 2). Note in Final Report: "No pre-existing test suite found — regression test is sole verification."
@@ -338,7 +374,7 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 3. Re-run test suite:
 
    ```bash
-   "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/run-pytest-short.sh" "$PYTEST_CMD" <test_dir>; PYTEST_EXIT=$?; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"  # timeout: 600000
+   python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/run_pytest_short.py" "$PYTEST_CMD" <test_dir>; PYTEST_EXIT=$?; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"  # timeout: 600000
    ```
 
 4. **Adjacent bugs** (observation only): scan for similar patterns; document in Follow-up — do not fix here, avoids scope creep.
@@ -382,7 +418,7 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 - [if no test runner: `rm <test_file>` — no test suite will re-execute it; it served the gate, now expendable. **Exception**: if test was introduced in this session and is definitively wrong, delete it. Never delete pre-existing regression tests — they represent captured behavior that predates this session.]
 
 ## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
 **Gaps**:
 - [e.g., could not reproduce locally, partial traceback only, fix not runtime-tested]
 

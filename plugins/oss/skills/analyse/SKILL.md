@@ -5,7 +5,7 @@ description: |
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
   SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review).
 argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]"
-allowed-tools: Read, Bash, Write, Agent, AskUserQuestion
+allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
 model: sonnet
 effort: medium
@@ -47,8 +47,8 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ```bash
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
-_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
-FOUNDRY_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/)
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
+FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/)
 ```
 # loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
@@ -291,7 +291,11 @@ else
         TYPE="unknown"
     fi
 fi
-# unknown → print: "Item #$CLEAN_ARGS not found on GitHub. Re-run with a different number, or use `/analyse vitality` for repo overview." and stop
+# TYPE=unknown: stop immediately — do not fall through to Step 5 dispatch
+if [ "$TYPE" = "unknown" ]; then
+    echo "Item #$CLEAN_ARGS not found on GitHub. Re-run with a different number, or use \`/oss:analyse vitality\` for repo overview."
+    exit 1
+fi
 
 # FAST_PATH=true (set above): jump to Step 7. FAST_PATH=false: continue to Step 5.
 ```
@@ -345,7 +349,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 ```bash
 # Shepherd availability guard — oss plugin may not be installed
 # Check installed cache path specifically (bare _OSS_SHARED fallback is always non-empty — cannot use it as availability signal)
-SHEPHERD_AVAILABLE=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check-agent.sh" oss shepherd 2>/dev/null)  # timeout: 5000
+SHEPHERD_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss shepherd 2>/dev/null)  # timeout: 5000
 if [ "$SHEPHERD_AVAILABLE" = "false" ]; then
     echo "⚠ oss:shepherd not available — --reply requires the oss plugin. Install: claude plugin install oss@borda-ai-rig"
     exit 1
@@ -396,14 +400,14 @@ Scenarios:
 - **Thread analysis output schema** (canonical section order): `## Item Type`, `## Summary`, `## Related Items`, `## Reproduction Steps` (issues only), `## Risks / Blockers`, `## Next Steps`. Use these exact headings — consistent section names enable downstream parsing and diff-based change detection across runs.
 - **Precision guidance**: flag issues, do not solve them; flag blockers, do not design solutions. Reference `/develop:fix` and `/develop:feature` (requires `develop` plugin) for implementation work. Verbose implementation sketches in triage output dilute signal-to-noise ratio.
 - **Vitality mode repo resolution**: `GH_OWNER` and `GH_REPO` set in Step 1 from: (1) explicit URL/owner-repo arg, (2) `gh repo view`, (3) `git remote origin`. vitality.md uses `-R "$GH_OWNER/$GH_REPO"` on all gh commands and literal `$GH_OWNER/$GH_REPO` in all `gh api` paths — never `{owner}/{repo}` template substitution in vitality mode.
-- Mode files live in `plugins/oss/skills/analyse/modes/` — one file per mode, fully self-contained
+- Mode files live in `$_OSS_MODE_DIR/` (resolved in Step 5; falls back to bare `plugins/oss/skills/analyse/modes/` only when cache path missing) — one file per mode, fully self-contained
 - `modes/thread.md` handles all three thread types (issue, PR, discussion) via internal branching
 - Always use `gh` CLI — never hardcode repo URLs
 - Run `gh auth status` first if commands fail; user may need to authenticate
 - For closed items, note resolution so history useful
 - Don't post responses without explicit user instruction — draft only
 - **Out-of-scope early-exit**: when input is clearly outside this skill's domain (e.g. CI pipeline diagnosis, code review), print scope note + redirect (e.g. "use oss:cicd-steward (requires `oss` plugin)") and stop — do not provide full analysis of out-of-scope content. Flag then stop; flag then analyze = precision cost with no recall benefit.
-- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `AskUserQuestion` NOT available (deferred tool schema not loaded in fork) — interactive gates surface as plain text instead. `Agent` IS available in forked context (non-deferred, declared in `allowed-tools`) — do NOT skip Steps 5–6 adversarial review assuming Agent unavailable; it is available and those steps are mandatory.
+- **Forked context**: skill runs with `context: fork` — no access to current conversation history. All required context must be in skill argument or prompt. `Agent` IS available in forked context (non-deferred, declared in `allowed-tools`) — do NOT skip Steps 5–6 adversarial review assuming Agent unavailable; it is available and those steps are mandatory.
 - **`--reply` drafts only** — shepherd produces draft file; does NOT auto-post to GitHub. User posts manually. Write access to repo not required to use `--reply`; required only if user subsequently posts draft via `gh issue comment` or `gh pr comment`.
 - **Follow-up context gap**: skill runs with `context: fork` — follow-up chains (`/develop:fix` (requires `develop` plugin), `/oss:review`) receive no analysis context from this run. Pass report path explicitly or re-summarize key findings in follow-up invocation.
 - Follow-up chains:

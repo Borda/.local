@@ -22,7 +22,7 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 ## Agent Resolution
 
 ```bash
-_RESEARCH_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-shared.sh" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`.
@@ -43,15 +43,23 @@ Parse `<input>` from arguments. Determine: **file path** or **goal string**:
 
 First, extract first positional token (strip all `--<flag>` tokens from `$ARGUMENTS`, take first remaining token as `FILE_ARG`). Then:
 
-1. `test -f "$FILE_ARG"` succeeds → **file path**. `FILE_ARG` is the script to profile. Enter profiling flow.
-2. Otherwise → **goal string**. Skip to Step P-P1.
+**Disambiguation guard** — only treat `FILE_ARG` as a file path if it actually exists on disk. Multi-token strings ($ARGUMENTS containing spaces beyond `FILE_ARG`) are always goal text — never run `test -f` on the first token of a multi-token goal:
+
+```bash
+# Count tokens in $ARGUMENTS (excluding flags). If >1, FILE_ARG is part of a goal string.
+NONFLAG_TOKEN_COUNT=$(echo "$ARGUMENTS" | tr ' ' '\n' | grep -v '^--' | grep -v '^$' | wc -l | tr -d ' ')  # timeout: 5000
+```
+
+1. `NONFLAG_TOKEN_COUNT == 1` AND `test -f "$FILE_ARG"` succeeds → **file path**. `FILE_ARG` is the script to profile. Enter profiling flow.
+2. Otherwise (multi-token, or single token not on disk) → **goal string**. Use full `$ARGUMENTS` (minus flags) as `<goal>`. Skip to Step P-P1.
 
 **Profiling flow** (file path detected):
 
 Run baseline profiling using `FILE_ARG` only — never use raw `$ARGUMENTS` in cProfile command:
 
 ```bash
-python -m cProfile -s cumtime "$FILE_ARG" > /tmp/cprofile-out.txt 2>&1  # timeout: 600000
+CPROFILE_OUT=$(mktemp -t research-plan-XXXX)  # timeout: 3000
+python -m cProfile -s cumtime "$FILE_ARG" > "$CPROFILE_OUT" 2>&1  # timeout: 600000
 PROFILE_EXIT=$?
 if [ $PROFILE_EXIT -ne 0 ]; then
     echo "⚠ cProfile failed (exit $PROFILE_EXIT) — continuing without profile data."
@@ -59,7 +67,7 @@ if [ $PROFILE_EXIT -ne 0 ]; then
     PROFILE_AVAILABLE=false
 else
     PROFILE_AVAILABLE=true
-    head -40 /tmp/cprofile-out.txt  # timeout: 5000
+    head -40 "$CPROFILE_OUT"  # timeout: 5000
     time python "$FILE_ARG"  # timeout: 600000
 fi
 ```
@@ -124,21 +132,47 @@ Dry-run both commands before presenting (add `# timeout: 60000` to timed bash ca
 
 After user confirms, run expert agent review before writing `program.md`. Dispatch conditional on goal type — run whichever apply in parallel.
 
+**Foundry availability check** — before dispatching any `foundry:*` agent:
+
+```bash
+_FOUNDRY_AVAILABLE=$(find ~/.claude/plugins/cache -path "*/foundry*" -name "solution-architect.md" 2>/dev/null | head -1)  # timeout: 5000
+```
+
+If `_FOUNDRY_AVAILABLE` empty: skip architecture and perf reviews entirely; print `⚠ foundry plugin not installed — skipping foundry:solution-architect and foundry:perf-optimizer reviews. Continuing without architecture/perf advisory.`; record gap in advisory block as `architect: skipped (foundry absent)`. Proceed to P-P3 with available advisor output (scientist only if ML keywords matched).
+
 **Pre-spawn — create plan run dir** (review files share single timestamped dir):
 
 ```bash
-PLAN_RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "plan" ".experiments" 2>/dev/null)  # timeout: 5000
+PLAN_RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "plan" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
-**Health monitoring** (CLAUDE.md §8) — create checkpoint before spawning agents:
+**Health monitoring** (CLAUDE.md §8) — create one checkpoint per parallel agent so individual stalls are detectable (ADV-H16). Without per-agent checkpoints a single live agent masks two stalled ones:
 
 ```bash
-_HM=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health-monitor-start.sh" "plan" 2>/dev/null)  # timeout: 5000
+# Plan-mode health constants — ADV-L19 (constants YAML not auto-exported to bash)
+PLAN_TIMEOUT_SEC="${PLAN_TIMEOUT_SEC:-600}"
+PLAN_MONITOR_INTERVAL="${PLAN_MONITOR_INTERVAL:-300}"
+PLAN_HARD_CUTOFF="${PLAN_HARD_CUTOFF:-900}"
+
+# Per-agent checkpoints — TMPDIR-relative, timestamp-suffixed to avoid collisions
+_TS=$(date +%s)
+ARCH_CHECK="${TMPDIR:-/tmp}/research-plan-arch-${_TS}"
+SCI_CHECK="${TMPDIR:-/tmp}/research-plan-sci-${_TS}"
+PERF_CHECK="${TMPDIR:-/tmp}/research-plan-perf-${_TS}"
+touch "$ARCH_CHECK" "$SCI_CHECK" "$PERF_CHECK"  # timeout: 3000
+
+# Helper checkpoints from health_monitor_start.py — retained for LAUNCH_AT bookkeeping
+_HM=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "plan" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT=$(echo "$_HM" | grep '^LAUNCH_AT=' | cut -d= -f2)
-CHECKPOINT=$(echo "$_HM" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
-Poll every 5 min: `find $PLAN_RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min. One extension (+5 min) if partial output visible. On timeout: surface partial results with ⏱, continue to P-P3 with available advisor output.
+Poll each checkpoint independently every `$PLAN_MONITOR_INTERVAL` seconds:
+
+- Architect: `find "$PLAN_RUN_DIR" -name "plan-review-architect.md" -newer "$ARCH_CHECK" | wc -l`
+- Scientist: `find "$PLAN_RUN_DIR" -name "plan-review-scientist.md" -newer "$SCI_CHECK" | wc -l`
+- Perf: `find "$PLAN_RUN_DIR" -name "plan-review-perf.md" -newer "$PERF_CHECK" | wc -l`
+
+Zero hits for any agent = that agent stalled (independent of others). Hard cutoff: `$PLAN_HARD_CUTOFF` (15 min). One extension (+5 min) per agent if partial output visible in its own review file. On per-agent timeout: surface partial results with ⏱, continue to P-P3 with the remaining advisor output.
 
 **Always** — spawn architect to validate scope coverage. Before constructing the Agent() call, substitute the actual computed value of `$PLAN_RUN_DIR` into the prompt string (e.g. `.experiments/plan-2026-05-13T10-00-00Z`):
 

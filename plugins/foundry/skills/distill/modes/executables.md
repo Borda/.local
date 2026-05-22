@@ -7,8 +7,8 @@ Triggered when `$ARGUMENTS == "executables"`. Reads latest `/audit --efficiency`
 ## Step E1: Locate or run scan
 
 ```bash
-_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make-run-dir.sh" .reports/distill 2>/dev/null || echo ".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)")  # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make_run_dir.py" .reports/distill 2>/dev/null || echo ".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)")  # timeout: 5000
 mkdir -p "$RUN_DIR"  # timeout: 5000
 
 # Optional path override: /distill executables <run-dir-or-report-path>
@@ -92,7 +92,7 @@ For each selected cluster, resolve `$_FS` path and spawn **foundry:sw-engineer**
 
 ```text
 Agent(subagent_type="foundry:sw-engineer", prompt="
-_FS=$(\"\${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh\" 2>/dev/null || echo \"plugins/foundry/skills/_shared\")
+_FS=$(python \"\${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py\" foundry skills/_shared 2>/dev/null || echo \"plugins/foundry/skills/_shared\")
 Read $_FS/bin-authoring-guide.md for bin/ script conventions.
 Task: extract cluster <cluster-id> to bin/.
 Cluster: purpose=<purpose>, language=<lang>, param slots=<differs-by values>.

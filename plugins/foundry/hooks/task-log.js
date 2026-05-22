@@ -123,6 +123,10 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 
+function getSentinelDir() {
+  return process.platform === "win32" ? os.tmpdir() : "/tmp";
+}
+
 let raw = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (d) => (raw += d));
@@ -146,7 +150,7 @@ process.stdin.on("end", () => {
     // concurrently — each session owns its own subtree and cannot see another session's state.
     // Fallback to 'default' if session_id is missing (older Claude Code versions).
     const sid = (session_id || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const tmpDir = path.join("/tmp", `claude-state-${sid}`);
+    const tmpDir = path.join(getSentinelDir(), `claude-state-${sid}`);
     const agentsDir = path.join(tmpDir, "agents");
     const toolsDir = path.join(tmpDir, "tools");
     const codexDir = path.join(tmpDir, "codex");
@@ -459,9 +463,9 @@ process.stdin.on("end", () => {
       const ownDirName = path.basename(tmpDir); // "claude-state-<sid>"
       try {
         const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-        for (const entry of fs.readdirSync("/tmp")) {
+        for (const entry of fs.readdirSync(getSentinelDir())) {
           if (!entry.startsWith("claude-state-") || entry === ownDirName) continue;
-          const p = path.join("/tmp", entry);
+          const p = path.join(getSentinelDir(), entry);
           try {
             const stat = fs.statSync(p);
             if (!stat.isDirectory()) continue;

@@ -59,8 +59,13 @@
 //
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawn } = require("child_process");
+
+function getSentinelDir() {
+  return process.platform === "win32" ? os.tmpdir() : "/tmp";
+}
 
 function runPrecommit(configPath, filePath, root, timeoutMs) {
   return new Promise((resolve) => {
@@ -128,7 +133,7 @@ process.stdin.on("end", async () => {
     // Lock lives in the session-scoped tmpDir so it is cleaned up on SessionEnd
     // and cannot collide with other concurrent Claude sessions.
     const sid = (session_id || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const tmpDir = path.join("/tmp", `claude-state-${sid}`);
+    const tmpDir = path.join(getSentinelDir(), `claude-state-${sid}`);
     const sanitized = filePath.replace(/[^a-zA-Z0-9_-]/g, "_");
     const lockFile = path.join(tmpDir, `lock-lint-on-save-${sanitized}.lock`);
     try {
@@ -143,7 +148,7 @@ process.stdin.on("end", async () => {
     // Cross-session lock: one pre-commit run per project at a time.
     // Key by project root to avoid blocking unrelated projects.
     const projectHash = root.replace(/[^a-zA-Z0-9]/g, "_").slice(-40);
-    crossLock = path.join("/tmp", `claude-precommit-${projectHash}.lock`);
+    crossLock = path.join(getSentinelDir(), `claude-precommit-${projectHash}.lock`);
     const CROSS_LOCK_TTL = 20_000; // 20s — covers 15s timeout + startup overhead
 
     try {

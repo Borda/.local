@@ -37,7 +37,7 @@ Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE`, `PARTIAL_FILE`, `AXIS_GROUP` from prom
 ```bash
 # loads: oss-shared-resolver.md
 # shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in gh-scraper.md, shepherd.md)
-_OSS_SHARED=$("${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve-shared-path.sh" oss skills/_shared 2>/dev/null)  # timeout: 5000
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 ```
 
@@ -97,6 +97,7 @@ Read `$_OSS_SHARED/vitality-scoring.md` fully. Score each axis in assigned group
    - 9B (time-to-merge trend): uses `merged_prs_90d`; filter bots; compute median_30d vs median_90d; trend_ratio
    - 9C (queue staleness depth): uses `open_issues` (reused from JSONL); compute P90 age
    - 9D (commit substance ratio): uses `commits_50`; dep_ratio = dep-bump commits / total
+   - **star velocity (Axis 8B sub-signal)**: if `star_dates` absent from DATA_FILE (gh-scraper does not collect per-star timestamps), skip star velocity scoring entirely — mark as N/A with note "star data unavailable"; do not infer or estimate star velocity from total star count alone
    - Axis 9 overall = mean of available sub-signals (0–10 float)
 
 Per axis, produce result object:
@@ -138,7 +139,7 @@ Signal string formats (must match scorecard Key Signal column):
 
 ## Step 4 — Write Partial Scores
 
-Write `$PARTIAL_FILE` via Write tool. Format:
+Write `$PARTIAL_FILE` via Write tool — do not use Bash with `echo`/`cat` redirection. Use the Write tool to create this file. Format:
 
 **Group A:**
 ```json
@@ -156,7 +157,7 @@ Write `$PARTIAL_FILE` via Write tool. Format:
 }
 ```
 
-**Group B:**
+**Group B** (`axis3_weeks` is always `null` for Groups A and B — only Group C emits the array):
 ```json
 {
   "group": "B",
@@ -167,7 +168,7 @@ Write `$PARTIAL_FILE` via Write tool. Format:
     "7": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
     "8": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." }
   },
-  "axis3_weeks": null  // null for Groups A and B; only Group C emits the array — see notes:204
+  "axis3_weeks": null
 }
 ```
 
@@ -193,7 +194,9 @@ echo "[repo-warden] group=$AXIS_GROUP complete → $PARTIAL_FILE"  # timeout: 50
 
 ## Step 5 — Return Envelope
 
-Compute group confidence as mean of per-axis confidence values (exclude ⚪ axes with conf=0.0; if all ⚪ return 0.0). Cap: fewer than half assigned axes scored (e.g. 1 of 4 in Group A) → cap group confidence at 0.7 to reflect incomplete coverage.
+Compute group confidence as mean of per-axis confidence values (exclude ⚪ axes with conf=0.0; if all ⚪ return 0.0). Cap: strictly less than half assigned axes scored (e.g. 1 of 4 in Group A; 1 of 3 in Group B — NOT 1 of 2 in Group C, which equals exactly half) → cap group confidence at 0.7 to reflect incomplete coverage.
+
+**Group C multi-axis cap**: when processing more than 3 axes, cap Confidence Score at 0.85 regardless of how thorough the analysis — multi-axis coverage in one pass has inherent gaps. (Group C currently scores 2 axes — Axis 3 and Axis 9 with 4 sub-signals; if expanded to >3 distinct axes in future, this cap applies.)
 
 Return ONLY this JSON as final output:
 

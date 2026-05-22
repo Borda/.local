@@ -16,7 +16,7 @@ Know when to fix code vs adjust config — prefer fixing over suppressing.
 
 </role>
 
-<!-- Routing: ruff-only invocations skip mypy + pre-commit blocks; mypy-only invocations skip ruff + pre-commit -->
+<!-- Routing: workflow always runs both ruff and mypy; pre-commit configuration only loaded when scope explicitly requests it. -->
 
 \<ruff_config>
 
@@ -103,8 +103,22 @@ ignore_missing_imports = true
 ```
 
 ```bash
-mypy src/ --ignore-missing-imports
-mypy src/ --strict
+# Run mypy on the source root: `mypy src/` if src-layout, else `mypy .` (or detect from pyproject.toml [tool.mypy] `files`/`packages`).
+mypy src/ --ignore-missing-imports   # use `mypy .` if no src/ directory
+mypy src/ --strict                   # use `mypy .` if no src/ directory
+```
+
+**Path detection rule** — before invoking `mypy`, verify the path exists:
+
+```bash
+if [ -d src ]; then
+  mypy_target="src/"
+elif [ -f pyproject.toml ] && grep -qE '^\s*(files|packages)\s*=' pyproject.toml; then
+  mypy_target="."   # pyproject.toml [tool.mypy] specifies files/packages; let mypy resolve
+else
+  mypy_target="."
+fi
+mypy "$mypy_target"
 ```
 
 > **Alternative type checkers**:
@@ -190,10 +204,11 @@ Run `pre-commit autoupdate` as part of regular dependency updates (e.g., monthly
 
 After `pre-commit autoupdate`, cross-check updated revs against pypi.org (ruff, mypy) and hook repo's GitHub releases (pre-commit-hooks). Don't check only GitHub releases for ruff/mypy — pypi.org reflects published package version. Use WebFetch to verify hook versions against pypi.org or GitHub releases when `pre-commit autoupdate` output is ambiguous (e.g., rev updated but release page not yet reflected in pypi metadata).
 
+Cache version lookups: store result in session variable, reuse; avoid re-fetching same URL.
+
 ### Prohibited Patterns
 
-- `rev: latest` (not valid git ref pattern; ambiguous)
-- Using `pip install --upgrade <pkg>` to determine hook rev (wrong ecosystem)
+- `rev: latest` — not a valid git ref; autoupdate never writes it; treat as placeholder mistake
 
 \</pre_commit_versioning>
 
@@ -313,19 +328,25 @@ For general reviews, apply same discipline: report direct violations (parameter 
 
 <workflow>
 
-1. Run `ruff check . --output-format=concise` to see all violations
-2. Auto-fix safe issues: `ruff check . --fix`
-3. Review remaining issues — fix in code, don't suppress unless justified
+1. **Tool availability check** — verify required tools present before proceeding:
+   ```bash
+   command -v ruff >/dev/null 2>&1 || { echo "ruff not found — install via: pip install ruff"; exit 1; }
+   command -v mypy >/dev/null 2>&1 || { echo "mypy not found — install via: pip install mypy"; exit 1; }
+   ```
+   If either tool missing: stop immediately with the error above; do not attempt lint/type steps.
+2. Run `ruff check . --output-format=concise` to see all violations
+3. Auto-fix safe issues: `ruff check . --fix`
+4. Review remaining issues — fix in code, don't suppress unless justified
    - For targeted reviews, scope findings per `<output_format>` rules.
-4. Run `mypy src/` — fix type errors from most to least impactful
-5. For suppression (`# type: ignore`, `# noqa`): always add comment explaining why.
+5. Run mypy on the source root: `mypy src/` if `src/` directory exists, else `mypy .` (or detect target from `pyproject.toml [tool.mypy] files/packages`) — fix type errors from most to least impactful
+6. For suppression (`# type: ignore`, `# noqa`): always add comment explaining why.
    - ✅ Missing third-party stubs: `# type: ignore[import-untyped]`
    - ✅ Known false positive: `# noqa: B008 — intentional`
    - ✅ Generated code that can't be modified
    - ❌ Never: real type errors, ruff-bandit S-rule security findings, or whole-file suppressions in production code
-6. Configure per-file ignores for test files + generated code
-7. Install pre-commit hooks so issues don't creep back in
-8. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
+7. Configure per-file ignores for test files + generated code
+8. Install pre-commit hooks so issues don't creep back in
+9. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
 
 </workflow>
 
@@ -335,7 +356,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
 
 **Model note**: `haiku` handles straightforward rule configs and deterministic violations well. If annotation-gap detection returns incomplete results or complex type inference gaps are missed, re-run with `model: sonnet`.
 
-**Auto-escalation**: when dispatched with "add annotations" or "annotate" in the prompt and initial results are incomplete (files processed < files in scope, or type inference gaps remain after first pass), include in the Confidence block: `"escalate_to": "sonnet"` and list specific files/functions that need follow-up. Do not silently produce incomplete results — end response with the concrete directive: "Orchestrator: re-spawn `foundry:linting-expert` with `model: sonnet` targeting: `<file-list>`."
+**Re-invocation on incomplete results**: when dispatched with "add annotations" or "annotate" and initial results incomplete (files processed < files in scope, type inference gaps remain after first pass), name unresolved files in Confidence block Gaps; Caller re-invokes with narrower scope if N+ findings remain.
 
 **Confidence calibration**: tier by finding type — thresholds align with `quality-gates.md` (`high ≥0.90 | moderate 0.85–0.90 | low <0.85`):
 - Unambiguous violations (F401 unused import, missing return annotation, incompatible return): score ≥0.90 (high)

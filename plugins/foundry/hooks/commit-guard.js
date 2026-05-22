@@ -47,8 +47,13 @@
 "use strict";
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { execSync } = require("child_process");
+
+function getSentinelDir() {
+  return process.platform === "win32" ? os.tmpdir() : "/tmp";
+}
 
 const TTL_MS = 15 * 60 * 1000; // 15 min — regular sentinel
 const DEFAULT_BRANCH_TTL_MS = 5 * 60 * 1000; // 5 min — default-branch sentinel
@@ -106,11 +111,11 @@ function getDefaultBranch() {
 }
 
 function getSentinelPath(repoSlug, branchSlug) {
-  return `/tmp/claude-commit-auth-${repoSlug}-${branchSlug}`;
+  return `${getSentinelDir()}/claude-commit-auth-${repoSlug}-${branchSlug}`;
 }
 
 function getDefaultBranchSentinelPath(repoSlug, branchSlug) {
-  return `/tmp/claude-commit-default-${repoSlug}-${branchSlug}`;
+  return `${getSentinelDir()}/claude-commit-default-${repoSlug}-${branchSlug}`;
 }
 
 function checkSentinel(sentinelPath, ttlMs) {
@@ -132,7 +137,7 @@ function checkSentinel(sentinelPath, ttlMs) {
 // Wipe all sentinel files for a given prefix pattern.
 function wipeSentinels(prefix) {
   try {
-    const files = fs.readdirSync("/tmp");
+    const files = fs.readdirSync(getSentinelDir());
     for (const f of files) {
       const isAuth = prefix ? f.startsWith(`claude-commit-auth-${prefix}-`) : f.startsWith("claude-commit-auth-");
       const isDefault = prefix
@@ -140,7 +145,7 @@ function wipeSentinels(prefix) {
         : f.startsWith("claude-commit-default-");
       if (isAuth || isDefault) {
         try {
-          fs.unlinkSync(path.join("/tmp", f));
+          fs.unlinkSync(path.join(getSentinelDir(), f));
         } catch {}
       }
     }

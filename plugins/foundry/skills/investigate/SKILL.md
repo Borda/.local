@@ -35,7 +35,7 @@ If $ARGUMENTS empty or too vague, use AskUserQuestion: "What exactly is failing 
 **Task hygiene**:
 ```bash
 # audit-skip: resilience-replication
-_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
@@ -61,7 +61,7 @@ Collect evidence in parallel — do NOT form hypotheses yet.
 which python && python --version                                                                   # timeout: 5000
 which uv 2>/dev/null && uv --version 2>/dev/null || echo "uv: not found"                             # timeout: 5000
 node --version 2>/dev/null || echo "node: not found"                                                 # timeout: 5000
-jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . || echo "codex (openai-codex): not found"  # timeout: 5000
+jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && { jq -e '.enabledPlugins["codex@openai-codex"] == false' ~/.claude/settings.json >/dev/null 2>&1 && echo "codex (openai-codex): installed but disabled in settings.json" || echo "codex (openai-codex): enabled"; } || echo "codex (openai-codex): not found"  # timeout: 5000
 ```
 
 ```bash
@@ -127,26 +127,40 @@ Otherwise, set up adversarial review:
 INVESTIGATE_RUN=".temp/investigate/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$INVESTIGATE_RUN"  # timeout: 5000
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
+# Resolve literal paths for spawn prompts — bash variables don't expand inside Agent() text blocks
+INVESTIGATE_RUN_RESOLVED="$INVESTIGATE_RUN"
+CODEX_OUT_RESOLVED="$CODEX_OUT"
+echo "Run dir: $INVESTIGATE_RUN_RESOLVED"  # timeout: 3000
 ```
 
 Re-check Codex availability at point of use (bash variables don't persist across tool calls):
 
 ```bash
 CODEX_AVAILABLE=false
+# (1) plugin installed
 jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && CODEX_AVAILABLE=true  # timeout: 5000
+# (2) honor user opt-out — explicit `false` in enabledPlugins disables codex even when installed
+if [ "$CODEX_AVAILABLE" = "true" ] && jq -e '.enabledPlugins["codex@openai-codex"] == false' ~/.claude/settings.json >/dev/null 2>&1; then
+    CODEX_AVAILABLE=false
+    printf "  codex plugin installed but disabled in ~/.claude/settings.json — skipping codex review\n"
+fi
 ```
 
-If `[ "$CODEX_AVAILABLE" = "true" ]`:
+If `[ "$CODEX_AVAILABLE" = "true" ]`: substitute `$CODEX_OUT_RESOLVED` (resolved above) for the literal output path in the spawn prompt — do not use `$CODEX_OUT` variable reference inside Agent() text:
 
 ```text
-Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality — symptom: ${SYMPTOM_DESCRIPTION}, signals: ${KEY_SIGNALS}, hypothesis table: ${HYPOTHESIS_TABLE}. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to $CODEX_OUT using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
+Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality — symptom: ${SYMPTOM_DESCRIPTION}, signals: ${KEY_SIGNALS}, hypothesis table: ${HYPOTHESIS_TABLE}. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to <CODEX_OUT_RESOLVED> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
 ```
 
-Else (Codex unavailable): spawn `foundry:challenger`:
+Replace `<CODEX_OUT_RESOLVED>` with the value of `$CODEX_OUT_RESOLVED` printed in the bash block above before constructing the prompt.
+
+Else (Codex unavailable): spawn `foundry:challenger` — substitute `$INVESTIGATE_RUN_RESOLVED` (resolved above) for the literal output path:
 
 ```text
-Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality for this investigation — symptom: ${SYMPTOM_DESCRIPTION}, signals: ${KEY_SIGNALS}, hypothesis table: ${HYPOTHESIS_TABLE}. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to $INVESTIGATE_RUN/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality for this investigation — symptom: ${SYMPTOM_DESCRIPTION}, signals: ${KEY_SIGNALS}, hypothesis table: ${HYPOTHESIS_TABLE}. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to <INVESTIGATE_RUN_RESOLVED>/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
 ```
+
+Replace `<INVESTIGATE_RUN_RESOLVED>` with the value of `$INVESTIGATE_RUN_RESOLVED` printed in the bash block above before constructing the prompt.
 
 - Add challenger alternative hypotheses as new rows in Step 3 table
 - Re-rank if challenger gives stronger evidence for lower-ranked candidate
@@ -193,7 +207,7 @@ If `$INVESTIGATE_RUN/codex-review.md` or `$INVESTIGATE_RUN/challenger-review.md`
 
 **Recommended next action**: <one of:>
   - `/develop:fix` — code regression confirmed (application code only — NOT for `.claude/` changes) (requires `develop` plugin — check plugin availability before following this recommendation)
-  - `/manage update <name> "<change directive>"` — `.claude/` agent/skill content needs adding or updating (NOT for structural/quality sweeps — use `/foundry:audit` for that)
+  - `/foundry:manage update <name> "<change directive>"` — `.claude/` agent/skill content needs adding or updating (NOT for structural/quality sweeps — use `/foundry:audit` for that)
   - `/foundry:audit` — structural/quality issue in `.claude/` config confirmed (e.g. broken cross-refs, missing blocks, tag imbalance); NOT for content additions — use `/manage update` for those
   - `/foundry:init` — propagate project `.claude/` to `~/.claude/` (foundry plugin is the distribution path)
   - Manual step: <exact command to run>

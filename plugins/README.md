@@ -63,11 +63,11 @@ The fallback exists so skills work from both installed cache and local dev tree 
 
 ### Two call patterns
 
-**Pattern A — shell scripts (`.sh`) via subshell variable assignment:**
+**Pattern A — Python scripts (`.py`) via subshell variable assignment:**
 
 ```bash
-_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "fallback")  # timeout: 5000
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "skill" ".reports" 2>/dev/null)    # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "skill" ".reports" 2>/dev/null)         # timeout: 5000
 ```
 
 The `VAR=$(...)` form is a shell variable assignment — Claude Code's permission matcher treats it as a shell builtin construct. The inner script is not separately matched against the allow list. **Note**: this is observed behavior, not a documented guarantee; a Claude Code update could change it. ~48 call sites across all plugin SKILL.md files depend on this behavior (see Known Limitations).
@@ -91,7 +91,7 @@ MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_d
 python3 "${CLAUDE_PLUGIN_ROOT}/bin/script.py" ...
 
 # ✗ timeout S wrapper — redundant with # timeout: N annotation, adds subprocess fork
-_FS=$(timeout 5 "${CLAUDE_PLUGIN_ROOT}/bin/find-foundry-shared.sh" ...)  # timeout: 5000
+_FS=$(timeout 5 python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_shared_path.py" foundry skills/_shared ...)  # timeout: 5000
 
 # ✗ inline python — Check 23e HIGH violation, triggers prompt
 RESULT=$(python -c "import json; ...")

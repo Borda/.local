@@ -1,3 +1,6 @@
+<!-- file: lessons.md — consumers: foundry:distill (inline lessons mode in SKILL.md duplicates this content; kept as canonical extraction reference for executables-mode fallback and future re-modularization) -->
+<!-- SYNC: keep in lock-step with the inline "Mode: Lessons Distillation" section in ../SKILL.md — any edit here must be mirrored there, and vice versa -->
+
 # Mode: Lessons Distillation
 
 Triggered when `$ARGUMENTS == "lessons"`. Read accumulated lessons and feedback, identify patterns to promote into durable governance — rule files, agent instruction updates, or skill workflow changes.
@@ -107,7 +110,7 @@ Produce structured proposal table. Do not apply anything yet — report first.
 Set up run directory before conflict checks:
 
 ```bash
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make-run-dir.sh" .reports/distill 2>/dev/null)  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make_run_dir.py" .reports/distill 2>/dev/null)  # timeout: 5000
 ```
 
 **Conflict pre-check** — before presenting question, run in parallel for every `→ rule` and `→ agent/skill update` proposal:

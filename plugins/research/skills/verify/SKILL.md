@@ -3,6 +3,7 @@ name: verify
 description: "Paper-vs-code consistency audit. After research:scientist implements a method from a paper, verify the implementation matches paper claims across five dimensions — formula matching [F], hyperparameter parity [H], eval protocol [E], notation consistency [N], and citation chain [C]. Reads paper (PDF path / arXiv URL / pasted text), maps claims to codebase, emits verification table with match status and severity."
 argument-hint: "<paper> [--scope <glob>] [--program <program.md>] [--strict] [--dim <F,H,E,N,C>]"
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
+effort: medium
 disable-model-invocation: true
 ---
 
@@ -16,10 +17,11 @@ NOT for: running experiments (use `/research:run`); judging experimental methodo
 
 <constants>
 
-HARD_CUTOFF: 900   # 15 min — if scientist does not return, surface partial results from RUN_DIR
-# Deviation from CLAUDE.md §8: V3 Agent call is synchronous — no Bash file-activity poll available.
-# HARD_CUTOFF is the only liveness mechanism; manual poll unreachable during synchronous Agent call.
-# Same pattern as research:topic — synchronous Agent(...) exempt from §8 file-activity polling.
+HARD_CUTOFF: 900   # 15 min — ADVISORY ONLY, not enforced.
+# Synchronous Agent() has no escape — the parent cannot interrupt mid-flight call.
+# If the agent exceeds the expected ~15 min budget, the parent must handle the timeout in the NEXT turn
+# (e.g., user re-invokes, or orchestrator surfaces partial results from $RUN_DIR/audit-raw.md after Agent returns).
+# Same limitation as research:topic — documented, not bypassable from within the skill.
 
 </constants>
 
@@ -40,7 +42,7 @@ Triggered by `verify <paper>` where `<paper>` is PDF path, arXiv URL, or multi-l
 **Input resolution** (priority order):
 
 1. Path ending `.pdf` — read via Read tool (use `pages: "1-20"` for large PDFs; iterate with subsequent page ranges if needed — max 20 pages per Read call)
-2. URL matching `arxiv.org` — convert `abs/<id>` to `https://arxiv.org/html/<id>` for structured content; also fetch abstract page for metadata. Use WebFetch (`timeout: 30000`).
+2. URL matching `arxiv.org` — convert `abs/<id>` to `https://arxiv.org/pdf/<id>` for actual content fetching (e.g., `ARXIV_URL="${ARXIV_URL//arxiv.org\/abs\//arxiv.org\/pdf\/}"`); also fetch abstract page for metadata. Use WebFetch (`timeout: 30000`).
 3. URL matching `*.pdf` or `doi.org` — WebFetch (`timeout: 30000`)
 4. Multi-line quoted text block — treat as literal paper content
 5. No paper argument — stop: `"No paper provided. Usage: /research:verify <paper.pdf|arxiv-url|'pasted text'> [--scope <glob>]"`
@@ -53,12 +55,25 @@ From paper content, extract:
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--scope\`, \`--program\`, \`--strict\`, \`--dim\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
-**Pre-compute run directory**:
+**Pre-compute run directory** — persist `RUN_DIR` and `OUT` to temp files so V3/V4/V5 (separate Bash shells) can reload them (ADV-H20):
 
 ```bash
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date -u +%Y-%m-%d)  # timeout: 3000
-RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
+RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
+mkdir -p .reports/research
+BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done
+# Persist for V3/V4/V5 — each Bash call is a fresh shell, variables do not survive
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-run-dir"
+echo "$OUT" > "${TMPDIR:-/tmp}/verify-out"
+```
+
+**State-rehydration block** (paste at the top of every separate Bash invocation in V3, V4, V5):
+
+```bash
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/verify-run-dir" 2>/dev/null)
+OUT=$(cat "${TMPDIR:-/tmp}/verify-out" 2>/dev/null)
+[ -z "$RUN_DIR" ] || [ -z "$OUT" ] && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
 ```
 
 ### Step V2: Resolve codebase scope
@@ -71,15 +86,32 @@ RUN_DIR=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make-run-dir.sh" "verify"
 
 Apply `--dim` filter: if `--dim F,H` specified, only audit those dimensions. Default: all five (`F,H,E,N,C`).
 
-**`--dim` validation**: validate each specified dimension token against the known set before proceeding:
+**`--dim` validation**: derive `$DIM` from the `--dim` flag (default `F,H,E,N,C` when flag absent), then validate each specified dimension token against the known set before proceeding. **Persist status to temp file** so V3 (separate Bash shell) can short-circuit when V2 failed (ADV-M25 — bash `exit 2` only terminates V2's shell, not the V3 invocation):
 
 ```bash
+DIM="${DIM:-F,H,E,N,C}"  # default when --dim flag not supplied
+V2_STATUS="ok"
 for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
   case "$_DIM_VAL" in
     F|H|E|N|C) ;;
-    *) echo "verify: unknown dimension: '$_DIM_VAL' — valid: F,H,E,N,C" >&2; exit 2 ;;
+    *)
+      echo "verify: unknown dimension: '$_DIM_VAL' — valid: F,H,E,N,C" >&2
+      V2_STATUS="failed"
+      ;;
   esac
 done
+echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-v2-status"
+[ "$V2_STATUS" = "failed" ] && exit 2
+```
+
+**V3 entry guard** (run before any V3 work — paste immediately after the state-rehydration block):
+
+```bash
+V2_STATUS=$(cat "${TMPDIR:-/tmp}/verify-v2-status" 2>/dev/null || echo "ok")
+if [ "$V2_STATUS" = "failed" ]; then
+    echo "verify V3: dimension validation failed in V2 — skipping V3."
+    exit 1
+fi
 ```
 
 ### Step V3: Five-dimension audit via scientist
@@ -130,14 +162,14 @@ For each finding, produce:
 
 Also compute fidelity score: (MATCH + 0.5*PARTIAL) / total_verified_claims.
 
-Write full audit to <RUN_DIR>/audit-raw.md using Write tool.
+Write full audit to $RUN_DIR/audit-raw.md using Write tool.
 Include ## Confidence block.
-Return ONLY: {"status":"done","claims_verified":N,"mismatches":N,"high":N,"medium":N,"low":N,"fidelity":0.N,"file":"<RUN_DIR>/audit-raw.md","confidence":0.N}
+Return ONLY: {"status":"done","claims_verified":N,"mismatches":N,"high":N,"medium":N,"low":N,"fidelity":0.N,"file":"$RUN_DIR/audit-raw.md","confidence":0.N}
 ```
 
-`timeout` is not a valid parameter on `Agent()` — do NOT pass it. Liveness enforced via the `HARD_CUTOFF: 900` constant (15-min budget) declared in the `<constants>` block; if a real Bash-polled cutoff is required, follow the health-monitoring sentinel + 15-min cutoff pattern from CLAUDE.md §8 (synchronous `Agent()` calls cannot be polled mid-flight — same exemption documented in `<constants>`).
+`timeout` is not a valid parameter on `Agent()` — do NOT pass it. The `HARD_CUTOFF: 900` constant is advisory only (see `<constants>`); synchronous `Agent()` calls cannot be polled or interrupted mid-flight. Parent handles timeout in the NEXT turn.
 
-On timeout: read `tail -100 $RUN_DIR/audit-raw.md`; if empty set `fidelity = null`, continue to V4 with `timed_out` status.
+On timeout: use whatever partial results Agent returned before context compaction (read `$RUN_DIR/audit-raw.md` if file exists post-return). If empty or unparsable: set `fidelity = null`, continue to V4 with `timed_out` status.
 
 ### Step V4: Severity assessment and fidelity rating
 
@@ -156,16 +188,19 @@ Post-process envelope from scientist:
 ! BREAKING — HIGH severity mismatch in critical dimension (F or E). Fix before running experiments.
 ```
 
-Stop — do not proceed to V5/V6. Report specific mismatches to terminal and exit.
+Before stopping, write a **partial report** to `$OUT` (compute `$OUT` per V5 path scheme) containing the verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top; full audit remains at `$RUN_DIR/audit-raw.md`.
+
+Then invoke `AskUserQuestion` — do NOT write options as plain text:
+- question: "Strict mode hit HIGH severity mismatch — how to proceed?"
+- (a) label: `Stop here` — description: keep partial report (passing claims only); fix mismatches and re-run `/research:verify`
+- (b) label: `Continue to full report` — description: proceed to V5/V6 and include failed claims in the full verification report
+
+On (a): stop — do not proceed to V5/V6. Report specific mismatches to terminal and exit.
+On (b): proceed to V5/V6 normally (failed claims included).
 
 ### Step V5: Write verification report
 
-```bash
-mkdir -p .reports/research  # timeout: 3000
-BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000
-```
-
-Write to `$OUT` via Write tool (`BRANCH` and `DATE` computed in V1):
+`$OUT` pre-computed in V1 — available here. Write to `$OUT` via Write tool (`BRANCH` and `DATE` computed in V1):
 
 ```markdown
 ---
@@ -221,7 +256,12 @@ Path:        → .reports/research/verify-<branch>-<date>.md
 
 Full audit: <RUN_DIR>/audit-raw.md
 
-<!-- Add ## Confidence block here per quality-gates.md -->
+## Confidence
+**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
+**Gaps**:
+- [e.g., implementation details not directly verifiable from paper alone]
+
+**Refinements**: N passes.
 ```
 
 ### Step V6: Terminal summary

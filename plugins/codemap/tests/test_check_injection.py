@@ -51,9 +51,14 @@ def _make_plugin_root(cache_root: Path) -> Path:
 
     Mirrors ``${CLAUDE_PLUGIN_ROOT}`` semantics — two levels deeper than the marketplace cache root,
     so ``derive_cache_root(plugin_root)`` walks back to ``cache_root``.
+
+    Drops a ``skills/`` marker so SEC-CD-3's plugin-directory plausibility check
+    accepts the path; without a marker, ``resolve_plugin_root`` rejects an
+    arbitrary explicit argument as untrusted.
     """
     plugin_root = cache_root / "codemap" / "0.1.0"
     plugin_root.mkdir(parents=True, exist_ok=True)
+    (plugin_root / "skills").mkdir(exist_ok=True)
     return plugin_root
 
 
@@ -66,8 +71,14 @@ class TestResolvePluginRoot:
     """Cover explicit-arg and HOME-fallback resolution paths."""
 
     def test_returns_explicit_path_when_given(self, tmp_path: Path):
-        """Explicit non-empty argument bypasses HOME discovery."""
-        assert ci.resolve_plugin_root(str(tmp_path)) == tmp_path
+        """Explicit non-empty argument bypasses HOME discovery.
+
+        SEC-CD-3 requires the directory to look like a real plugin (plugin.json,
+        ``.claude-plugin/plugin.json``, ``agents/``, or ``skills/``); create the
+        cheapest marker (``skills/``) so the validator accepts the path.
+        """
+        (tmp_path / "skills").mkdir()
+        assert ci.resolve_plugin_root(str(tmp_path)) == tmp_path.resolve()
 
     def test_falls_back_to_home_glob(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Empty arg triggers ``~/.claude/plugins/cache`` glob and picks the result."""

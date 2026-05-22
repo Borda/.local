@@ -47,20 +47,36 @@ class TestGetSentinelPath:
 
         return patch("compute_commit_sentinel.subprocess.check_output", side_effect=fake_check_output)
 
-    def test_basic_path(self) -> None:
+    def test_basic_path(self, monkeypatch) -> None:
+        # Force a deterministic base dir — get_sentinel_path prefers TMPDIR
+        # over /tmp (SEC-M7: macOS /tmp is world-readable).
+        monkeypatch.setenv("TMPDIR", "/tmp")
+        monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
         with self._mock_git("/home/user/MyRepo", "main"):
             path = get_sentinel_path()
         assert path == "/tmp/claude-commit-auth-myrepo-main"
 
-    def test_dotted_repo_name(self) -> None:
+    def test_dotted_repo_name(self, monkeypatch) -> None:
+        monkeypatch.setenv("TMPDIR", "/tmp")
+        monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
         with self._mock_git("/projects/borda.local", "feature/add-tests"):
             path = get_sentinel_path()
         assert path == "/tmp/claude-commit-auth-borda-local-feature-add-tests"
 
-    def test_uppercase_branch(self) -> None:
+    def test_uppercase_branch(self, monkeypatch) -> None:
+        monkeypatch.setenv("TMPDIR", "/tmp")
+        monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
         with self._mock_git("/repo/proj", "HOTFIX/MY-FIX"):
             path = get_sentinel_path()
         assert path == "/tmp/claude-commit-auth-proj-hotfix-my-fix"
+
+    def test_tmpdir_preferred_over_default(self, monkeypatch, tmp_path) -> None:
+        """SEC-M7 regression: per-user TMPDIR must take precedence over /tmp."""
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+        with self._mock_git("/home/user/Project", "main"):
+            path = get_sentinel_path()
+        assert path == f"{tmp_path}/claude-commit-auth-project-main"
 
     def test_git_failure_raises(self) -> None:
         with patch(

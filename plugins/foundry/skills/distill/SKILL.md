@@ -24,7 +24,7 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
   - `prune` — evaluate project memory file for stale, redundant, or verbose entries and apply trimmed version.
   - `lessons` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes.
   - `external <source>` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory.
-  - `executables [<run-dir-or-report-path>]` — perform bin/ extraction from `/audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Gates on verdict (HIGH/MEDIUM), spawns `foundry:sw-engineer` per cluster to create bin/ scripts and replace inline blocks. Skip to **Mode: Executables Extraction** below.
+  - `executables [<run-dir-or-report-path>]` — perform bin/ extraction from `/foundry:audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Gates on verdict (HIGH/MEDIUM), spawns `foundry:sw-engineer` per cluster to create bin/ scripts and replace inline blocks. Skip to **Mode: Executables Extraction** below.
   - Description of recurring task — use description as context when generating suggestions (e.g. "I keep doing X manually").
 
 </inputs>
@@ -34,7 +34,7 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
 **Task hygiene**:
 ```bash
 # audit-skip: resilience-replication
-_FS=$("${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/find-foundry-shared.sh" 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+_FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
@@ -44,19 +44,19 @@ Use Glob tool to enumerate agents and skills across all sources — project-loca
 
 - **Project-local**: pattern `agents/*.md`, path `.claude/`; pattern `skills/*/SKILL.md`, path `.claude/`
 - **Plugin source** (workspace): pattern `*/agents/*.md`, path `plugins/`; pattern `*/skills/*/SKILL.md`, path `plugins/`
-- **Installed plugin cache** (if accessible): resolve cache root — `PLUGIN_CACHE=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)` — then use Glob tool on `$PLUGIN_CACHE` for pattern `*/agents/*.md` and `*/skills/*/SKILL.md`
+- **Installed plugin cache** (if accessible): resolve cache root — `PLUGIN_CACHE="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}"` — then use Glob tool on `$PLUGIN_CACHE` for pattern `*/agents/*.md` and `*/skills/*/SKILL.md`
 
 For each agent/skill found, extract: name, description, tools, purpose. Tag each entry with plugin namespace (e.g. `foundry:sw-engineer`, `oss:resolve`) — used in Step 3 gap analysis to prevent recommending duplicates of plugin-namespaced agents/skills.
 
 ## Step 2: Analyze work patterns
 
-**If `$ARGUMENTS` begins with `executables`**: skip Steps 2–5 entirely and go to "Mode: Executables Extraction" below.
+**If `$ARGUMENTS` first whitespace-delimited token equals `executables`** (i.e. `executables` alone or `executables <path>`, NOT a path or word that merely starts with the string `executables`): skip Steps 2–5 entirely and go to "Mode: Executables Extraction" below.
 
 **If `$ARGUMENTS` is `prune`**: skip Steps 2–5 entirely and go to "Mode: Memory Pruning" below.
 
 **If `$ARGUMENTS` is `lessons`**: skip Steps 2–5 entirely and go to "Mode: Lessons Distillation" below.
 
-**If `$ARGUMENTS` begins with `external`**: skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
+**If `$ARGUMENTS` first whitespace-delimited token equals `external`** (i.e. `external <source>`, NOT a word that merely starts with the string `external`): skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
 
 **If `$ARGUMENTS` is `review`**: skip git analysis below and go directly to Step 3 (Gap analysis). Use agent/skill descriptions from Step 1 as sole input — goal is to assess quality and coverage of existing roster, not look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries.
 
@@ -164,19 +164,22 @@ Locate, evaluate, and trim project memory file.
 **Find memory file:**
 
 <!-- Note: if the auto-memory path convention changes, update this slug derivation. -->
+<!-- Slug-divergence guard: `resolve_memory_dir.py` is the single source of truth for the memory directory and `MEMORY.md` filename. Any consumer that reads or writes session/project memory (e.g. `foundry:session`, lessons mode below) MUST resolve the same path via this script — do NOT hardcode an alternate slug or filename here or elsewhere; divergence causes silent split-brain between writer and reader. -->
 
 ```bash
-# timeout: 3000
-PROJECT="$(git rev-parse --show-toplevel)"
-MEMORY_FILE="$HOME/.claude/projects/$(echo "$PROJECT" | sed 's|[/.]|-|g')/memory/MEMORY.md"
-if [ -f "$MEMORY_FILE" ]; then
-    echo "PRUNE_FOUND: $MEMORY_FILE"
+# timeout: 5000 — uses canonical resolve_memory_dir.py (aligned with modes/lessons.md)
+MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
+MEMORY_FILE="$MEMORY_DIR/MEMORY.md"
+if [ -n "$MEMORY_DIR" ] && [ -f "$MEMORY_FILE" ]; then
+    echo "PRUNE_FOUND"
+    echo "PRUNE_FOUND_PATH: $MEMORY_FILE"
 else
-    echo "PRUNE_ABORT: no memory file at $MEMORY_FILE — skipping prune mode"
+    echo "PRUNE_ABORT"
+    echo "PRUNE_ABORT_REASON: no memory file at $MEMORY_FILE — skipping prune mode"
 fi
 ```
 
-> **Short-circuit**: `exit 0` inside this bash block would terminate only the bash subprocess, **not** the surrounding skill — so without the explicit gate below the skill would continue into the prune-evaluation steps with no memory file to operate on. After the block above runs, **stop the prune mode entirely if the bash output contains `PRUNE_ABORT`**: skip every remaining prune step (read, evaluate, P1–P3, summary) and end the response with the Confidence block. Extract the memory file path from the `PRUNE_FOUND: <path>` output line for use in subsequent Read calls. The remaining prune-mode prose below assumes `PRUNE_FOUND` was in output.
+ **Short-circuit**: `exit 0` inside this bash block would terminate only the bash subprocess, **not** the surrounding skill — so without the explicit gate below the skill would continue into the prune-evaluation steps with no memory file to operate on. After the block above runs, **scan bash output for a line where the entire line content is exactly `PRUNE_ABORT`** (use exact-line match: `[[ "$line" == "PRUNE_ABORT" ]]`, not substring match). If present, **stop the prune mode entirely**: skip every remaining prune step (read, evaluate, P1–P3, summary) and end the response with the Confidence block. Otherwise, extract the memory file path from the `PRUNE_FOUND_PATH: <path>` output line for use in subsequent Read calls. The remaining prune-mode prose below assumes `PRUNE_FOUND` was in output.
 
 Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md need not live in memory.
 
@@ -221,16 +224,17 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Mode: Lessons Distillation — only when `$ARGUMENTS == "lessons"`
 
+<!-- lessons mode logic is duplicated in modes/lessons.md — keep both copies in sync when editing -->
+
 Read accumulated lessons and feedback, identify patterns to promote into durable governance — rule files, agent instruction updates, or skill workflow changes.
 
 **Step L1: Collect raw material**
 
 Find and read all source material in parallel:
 
-Use Read tool on `.notes/lessons.md` (skip if file not found). Derive MEMORY_DIR via canonical snippet:
+Use Read tool on `.notes/lessons.md` (skip if file not found). Derive MEMORY_DIR via canonical script (aligned with modes/lessons.md):
 ```bash
-PROJECT="$(git rev-parse --show-toplevel)"  # timeout: 3000
-MEMORY_DIR="$HOME/.claude/projects/$(echo "$PROJECT" | sed 's|[/.]|-|g')/memory"
+MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # timeout: 5000
 ```
 Then use Glob tool with pattern `feedback_*.md` in `$MEMORY_DIR` to list feedback files; read each with Read tool. Also read `.claude/rules/` (Glob `rules/*.md`, path `.claude/`) to understand what's already captured as rule.
 
@@ -331,7 +335,11 @@ Set up run directory before conflict checks:
 ```bash
 RUN_DIR=".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$RUN_DIR"  # timeout: 5000
+# Persist for L5 curator spawn — Bash tool calls don't share shell state
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/foundry-distill-run-dir"
 ```
+
+> Any subsequent Bash block that needs `$RUN_DIR` must re-read it: `RUN_DIR=$(cat "${TMPDIR:-/tmp}/foundry-distill-run-dir" 2>/dev/null)`. The L5 spawn prompt substitutes the resolved path inline before issuing the Agent call.
 
 **Conflict pre-check** — before presenting question, run in parallel for every `→ rule` and `→ agent/skill update` proposal:
 
@@ -374,10 +382,16 @@ Applied N changes — <date>
 
 3. Remind user: "Run `/foundry:init` to propagate rule changes to `~/.claude/`"
 
-4. **Git diff gate** — run after all writes complete:
+4. **Git diff gate** — run after all writes complete. Derive the file list dynamically from the working tree so the diff command is executable rather than a literal placeholder:
 
 ```bash
-git diff HEAD -- <space-separated list of changed files>  # timeout: 5000
+# timeout: 5000 — diff every tracked file modified in this session that lives under .claude/rules/, .claude/agents/, or .claude/skills/
+CHANGED=$(git diff HEAD --name-only -- '.claude/rules/*.md' '.claude/agents/*.md' '.claude/skills/*/SKILL.md' 2>/dev/null)
+if [ -n "$CHANGED" ]; then
+    printf '%s\n' "$CHANGED" | tr '\n' '\0' | xargs -0 git diff HEAD --
+else
+    echo "No tracked .claude/ changes to diff."
+fi
 ```
 
 Print diff. If anything unexpected appears, revert individual files before proceeding: `git checkout HEAD -- <file>`. Final safety net — changes recoverable until committed.
@@ -386,10 +400,18 @@ Print diff. If anything unexpected appears, revert individual files before proce
 
 **Step L5: curator review** — **conditional on the L4 gate choice**. Run L5 only when the user's choice in the L4 `AskUserQuestion` was (a) `Apply non-conflicting` or (b) `Review first` followed by an approval that resulted in at least one write. If the user picked (c) `Skip` (no files were modified), **skip L5 entirely** and proceed straight to the Confidence block — there is nothing to review.
 
-After applying changes, dispatch curator to audit created and modified config files. Substitute `$RUN_DIR` with its actual computed path from the `RUN_DIR=` block above:
+After applying changes, dispatch curator to audit created and modified config files. Re-read `$RUN_DIR` from persisted state (fresh-shell state loss) before substituting it into the spawn prompt:
+
+```bash
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/foundry-distill-run-dir" 2>/dev/null)
+[ -z "$RUN_DIR" ] && { RUN_DIR=".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"; mkdir -p "$RUN_DIR"; }
+echo "Using RUN_DIR=$RUN_DIR"  # timeout: 5000
+```
+
+Substitute the resolved `$RUN_DIR` value inline before issuing the Agent call:
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to ${RUN_DIR}/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"${RUN_DIR}/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to <RUN_DIR>/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"<RUN_DIR>/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
 
 Surface curator findings as advisory block in terminal output. Do not block on curator findings — quality recommendations, not release gates.
@@ -404,7 +426,7 @@ EXT_MD="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/external.md"
 
 Read and execute `$EXT_MD`.
 
-## Mode: Executables Extraction — only when `$ARGUMENTS == "executables"`
+## Mode: Executables Extraction — only when `$ARGUMENTS` begins with `executables`
 
 ```bash
 EXEC_MD="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/executables.md"
@@ -429,10 +451,10 @@ Read and execute `$EXEC_MD`.
 - **Agent Teams signal tracking**: when reviewing patterns, also look for:
 
   - Skills using `--team` or team-mode heuristics more/less than expected → flag over/under-use relative to decision matrix in `CLAUDE.md § Agent Teams`
-  - Security findings appearing in reviews for non-auth code → suggests qa-specialist teammate scope too broad; narrow it
+  - Security findings appearing in reviews for non-auth code → suggests foundry:qa-specialist teammate scope too broad; narrow it
   - Model tier mismatches (e.g., heavy analysis assigned to `sonnet` teammates) → flag for tier adjustment
 
-- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${HOME}/.claude/plugins/cache/borda-ai-rig/foundry/"* -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | sort -Vr | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
+- **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}" -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:
   - **caveman plugin** — narrow, self-contained communication mode, no local structural overlap → GT: install-as-is recommended, Group A empty or thin
   - **Karpathy autoresearch** — research automation tool, strong overlap with `research:` plugin structure → GT: Group A candidates map to research plugin, digest recommended, install-as-is not triggered
   - Ground truth = static snapshot of each tool's agent/skill/rule files (no live fetch needed); score adoption-table lane assignments against GT outcomes
@@ -441,7 +463,7 @@ Read and execute `$EXEC_MD`.
 
   - Suggestion accepted for new agent/skill → `/foundry:manage create` to scaffold and register it
   - Suggestion to enhance existing → edit agent/skill directly, then `/foundry:init`
-  - `lessons` proposals applied → `/foundry:init` to propagate; `/audit rules` to verify new rule files structurally sound
-  - `executables` extraction complete → `/foundry:init` to propagate bin/ scripts; run `/audit --efficiency` to confirm `clusters == 0`
+  - `lessons` proposals applied → `/foundry:init` to propagate; `/foundry:audit rules` to verify new rule files structurally sound
+  - `executables` extraction complete → `/foundry:init` to propagate bin/ scripts; run `/foundry:audit --efficiency` to confirm `clusters == 0`
 
 </notes>
