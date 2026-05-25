@@ -3,11 +3,11 @@
 # Run from the project root: bash sync.sh [claude] [codex] [--no-clean]
 #
 # Arguments (order-independent):
-#   claude   — sync Claude plugins + foundry:init (default: both)
+#   claude   — sync Claude plugins + foundry:setup (default: both)
 #   codex    — sync .codex/ configs to ~/.codex/   (default: both)
 #   --no-clean — skip uninstall before reinstalling (default: uninstall first)
 #
-# foundry:init runs headlessly at end of script — no manual step needed.
+# foundry:setup runs headlessly at end of script — no manual step needed.
 
 set -e
 
@@ -116,7 +116,7 @@ for p in "${PLUGINS[@]}"; do
 done
 
 echo "Initializing Foundry (sync settings + symlinks)..."
-claude --print "/foundry:init"
+claude --print "/foundry:setup"
 
 fi  # SYNC_CLAUDE
 

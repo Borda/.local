@@ -155,6 +155,9 @@ def load_index(path: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_GIT_TIMEOUT_S = 10  # max seconds for any git subprocess (H78: hung process guard)
+
+
 def _get_current_file_shas() -> dict[str, str]:
     """Return {relative_path: blob_sha} for all tracked .py files, or {} if unavailable."""
     try:
@@ -162,6 +165,7 @@ def _get_current_file_shas() -> dict[str, str]:
             ["git", "ls-files", "-s", "--", "*.py"],
             text=True,
             stderr=subprocess.DEVNULL,
+            timeout=_GIT_TIMEOUT_S,
         )
         shas: dict[str, str] = {}
         for line in output.strip().splitlines():
@@ -182,6 +186,13 @@ def check_staleness(scanned_at: str) -> bool:
     Args:
         scanned_at: ISO timestamp string from the index's ``scanned_at`` field.
     """
+    # Validate scanned_at to only allow ISO 8601 timestamp chars (H79: defense-in-depth
+    # against index-controlled value; subprocess list-form already prevents shell injection,
+    # but reject obviously malformed values before passing to git)
+    import re as _re
+
+    if not _re.match(r"^[0-9T:+\-Z.]+$", scanned_at):
+        return False
     try:
         result = subprocess.run(
             [

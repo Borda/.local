@@ -162,9 +162,35 @@ def _cmd_start(skill_id: str) -> int:
     return 0
 
 
+def _validate_sentinel(sentinel: Path) -> Path:
+    """Resolve sentinel path and assert it lives under an allowed root (tmpdir or cwd).
+
+    Args:
+        sentinel: User-supplied sentinel file path.
+
+    Returns:
+        The resolved path.
+
+    Raises:
+        ValueError: If the resolved path is outside allowed roots.
+    """
+    resolved = sentinel.resolve()
+    roots = _allowed_roots()
+    if not any(resolved == r or r in resolved.parents for r in roots):
+        raise ValueError(
+            f"sentinel path outside allowed roots (cwd, tmpdir): {resolved}",
+        )
+    return resolved
+
+
 def _cmd_check(sentinel: str, run_dir: str) -> int:
     """Handle ``check`` subcommand. Returns exit code (0 alive, 1 stalled)."""
-    return 0 if has_new_files(Path(sentinel), Path(run_dir)) else 1
+    try:
+        safe_sentinel = _validate_sentinel(Path(sentinel))
+    except ValueError as exc:
+        print(f"health_sentinel: {exc}", file=sys.stderr)
+        return 1
+    return 0 if has_new_files(safe_sentinel, Path(run_dir)) else 1
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -119,7 +119,7 @@ claude plugin install codemap@borda-ai-rig
 One-time setup — run inside Claude Code after installing:
 
 ```text
-/foundry:init
+/foundry:setup
 ```
 
 This merges settings, symlinks rule files, and confirms everything is wired correctly. It is idempotent — safe to re-run after any upgrade.

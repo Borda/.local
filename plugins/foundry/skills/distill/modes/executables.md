@@ -143,6 +143,6 @@ Extraction complete — <date>
   Re-audit: clean / N issues (see $RUN_DIR/)
 ```
 
-Remind: run `/foundry:init` to propagate bin/ scripts to `~/.claude/` plugin cache. Then run `/audit --efficiency` to confirm `clusters == 0`.
+Remind: run `/foundry:setup` to propagate bin/ scripts to `~/.claude/` plugin cache. Then run `/audit --efficiency` to confirm `clusters == 0`.
 
 End response with `## Confidence` block per CLAUDE.md output standards.

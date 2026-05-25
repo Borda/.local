@@ -15,7 +15,7 @@ ______________________________________________________________________
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Skills reference](#skills-reference)
-  - [`/foundry:init`](#foundryinit)
+  - [`/foundry:setup`](#foundrysetup)
   - [`/foundry:audit`](#foundryaudit)
   - [`/foundry:calibrate`](#foundrycalibrate)
   - [`/foundry:manage`](#foundrymanage)
@@ -94,12 +94,12 @@ claude plugin install research@borda-ai-rig
 **One-time setup** — run inside Claude Code after installing:
 
 ```text
-/foundry:init
+/foundry:setup
 ```
 
 This merges `statusLine`, `permissions.allow`, and `enabledPlugins` into `~/.claude/settings.json`, and symlinks all rule files and `TEAM_PROTOCOL.md` into `~/.claude/`. It is idempotent — safe to re-run.
 
-**After any plugin upgrade**, re-run `/foundry:init` — it auto-replaces stale foundry symlinks and removes rules that no longer exist in the new version. No prompt needed for old-version symlinks.
+**After any plugin upgrade**, re-run `/foundry:setup` — it auto-replaces stale foundry symlinks and removes rules that no longer exist in the new version. No prompt needed for old-version symlinks.
 
 ______________________________________________________________________
 
@@ -125,13 +125,13 @@ ______________________________________________________________________
 
 ## 🔧 Skills reference
 
-### `/foundry:init`
+### `/foundry:setup`
 
 Post-install setup. Merges settings and creates symlinks. Run once after install, and again after any upgrade.
 
 ```text
-/foundry:init
-/foundry:init --approve      # non-interactive; auto-accepts all recommended choices
+/foundry:setup
+/foundry:setup --approve      # non-interactive; auto-accepts all recommended choices
 ```
 
 What it does:
@@ -142,7 +142,7 @@ What it does:
 - Symlinks all `plugins/foundry/rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks and removes rules no longer in current version\`
 - Removes stale `hooks` block from settings if present (hooks now register via plugin manifest)
 
-Hooks (`hooks.json`) register automatically when the plugin is enabled — `/foundry:init` does not touch them directly.
+Hooks (`hooks.json`) register automatically when the plugin is enabled — `/foundry:setup` does not touch them directly.
 
 ______________________________________________________________________
 
@@ -352,7 +352,7 @@ Extracts patterns from work history and corrections, then distills them into dur
 
 **`external` mode** does a fast + slow read of the source (URL, file, or directory), extracts the mental model and standout implementation details, compares against the live local setup, then splits candidates into two groups: *Align + improve* (maps cleanly onto existing agents/skills/rules) and *Differentiated highlights* (novel, structurally different — interesting but larger work). Each candidate is scored and assigned to an adoption lane: adopt-as-is / tweak / discuss / skip. When Group A is thin or cumulative edit effort is large, it recommends installing the source as a standalone plugin with justification, rather than cherry-picking. Nothing is written until you confirm.
 
-After applying: run `/foundry:init` to propagate new rule files to `~/.claude/`.
+After applying: run `/foundry:setup` to propagate new rule files to `~/.claude/`.
 
 Run monthly or after any burst of corrections.
 
@@ -586,7 +586,7 @@ ______________________________________________________________________
 
 ## 📋 Rules installed
 
-`/foundry:init` symlinks all rule files from `plugins/foundry/rules/` into `~/.claude/rules/`. These govern Claude's behavior globally across all sessions after install.
+`/foundry:setup` symlinks all rule files from `plugins/foundry/rules/` into `~/.claude/rules/`. These govern Claude's behavior globally across all sessions after install.
 
 | Rule file               | Applies to                      | What it governs                                                                                         |
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -605,7 +605,7 @@ ______________________________________________________________________
 
 ## ⚙️ Configuration
 
-### settings.json keys merged by `/foundry:init`
+### settings.json keys merged by `/foundry:setup`
 
 | Key                                    | What it does                                                                             |
 | -------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -616,7 +616,7 @@ ______________________________________________________________________
 
 ### Optional flags and knobs
 
-**`--approve`** on `/foundry:init`: skips all interactive prompts and auto-accepts recommended choices. Use for scripted or CI setups.
+**`--approve`** on `/foundry:setup`: skips all interactive prompts and auto-accepts recommended choices. Use for scripted or CI setups.
 
 **`--skip-audit`** on `/foundry:manage`: skips the trailing `/foundry:audit` validation step. Use inside audit-initiated fix sessions to avoid recursion.
 
@@ -626,7 +626,7 @@ ______________________________________________________________________
 
 ### Environment
 
-No environment variables required. foundry reads from `~/.claude/settings.json` and the plugin's installed cache path, both resolved automatically by `/foundry:init`.
+No environment variables required. foundry reads from `~/.claude/settings.json` and the plugin's installed cache path, both resolved automatically by `/foundry:setup`.
 
 ______________________________________________________________________
 
@@ -642,11 +642,11 @@ ______________________________________________________________________
 
 **`/foundry:audit` reports broken symlinks (Check I3)**
 
-Symlinks in `~/.claude/rules/` point to the previous plugin cache path after an upgrade. Re-run `/foundry:init` — Step 9 detects stale symlinks as conflicts and offers to replace them.
+Symlinks in `~/.claude/rules/` point to the previous plugin cache path after an upgrade. Re-run `/foundry:setup` — Step 9 detects stale symlinks as conflicts and offers to replace them.
 
 **Hooks not firing**
 
-Run `/foundry:investigate "hooks not firing on Save"`. Most common cause: a `hooks` block is still present in `~/.claude/settings.json` from a pre-plugin-migration install (hooks now register via plugin manifest, not the `hooks` key). `/foundry:init` Step 3 detects and removes the stale block.
+Run `/foundry:investigate "hooks not firing on Save"`. Most common cause: a `hooks` block is still present in `~/.claude/settings.json` from a pre-plugin-migration install (hooks now register via plugin manifest, not the `hooks` key). `/foundry:setup` Step 3 detects and removes the stale block.
 
 **`/foundry:calibrate` times out**
 
@@ -682,13 +682,13 @@ ______________________________________________________________________
 plugins/foundry/
 ├── .claude-plugin/
 │   ├── plugin.json              version + metadata
-│   ├── permissions-allow.json   allow-list merged by /foundry:init
-│   └── permissions-deny.json    deny-list merged by /foundry:init
+│   ├── permissions-allow.json   allow-list merged by /foundry:setup
+│   └── permissions-deny.json    deny-list merged by /foundry:setup
 ├── agents/                      10 specialist agent files
 ├── skills/                      9 skill directories (audit, brainstorm, calibrate, create, distill,
 │                                    init, investigate, manage, session)
-├── rules/                       10 rule files symlinked to ~/.claude/rules/ by /foundry:init
-├── CLAUDE.md                    workflow rules distributed via /foundry:init
+├── rules/                       10 rule files symlinked to ~/.claude/rules/ by /foundry:setup
+├── CLAUDE.md                    workflow rules distributed via /foundry:setup
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol
 ├── permissions-guide.md         annotated allow/deny reference (copied to .claude/ by init)
 └── hooks/
@@ -722,10 +722,10 @@ claude plugin install foundry@borda-ai-rig
 Then, inside Claude Code:
 
 ```text
-/foundry:init
+/foundry:setup
 ```
 
-Re-running `/foundry:init` after an upgrade is required — symlinks point to the versioned cache path and go stale after reinstall.
+Re-running `/foundry:setup` after an upgrade is required — symlinks point to the versioned cache path and go stale after reinstall.
 
 </details>
 
@@ -741,7 +741,7 @@ ______________________________________________________________________
 claude plugin uninstall foundry
 ```
 
-Settings keys merged by `/foundry:init` (`statusLine`, `permissions.allow` entries) remain in `~/.claude/settings.json` after uninstall — remove them manually if desired. Symlinks created by `/foundry:init` in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist.
+Settings keys merged by `/foundry:setup` (`statusLine`, `permissions.allow` entries) remain in `~/.claude/settings.json` after uninstall — remove them manually if desired. Symlinks created by `/foundry:setup` in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist.
 
 ______________________________________________________________________
 
@@ -751,6 +751,6 @@ foundry is part of the Borda-AI-Rig repository. To suggest an improvement or rep
 
 1. Run `/foundry:brainstorm "your idea"` to develop the idea before filing anything
 2. File an issue on the repository — include the output of `/foundry:audit setup` and your Claude Code version
-3. Plugin updates propagate to users via `git pull` + `claude plugin install foundry@borda-ai-rig` + `/foundry:init`
+3. Plugin updates propagate to users via `git pull` + `claude plugin install foundry@borda-ai-rig` + `/foundry:setup`
 
 To add a new agent or skill, use `/foundry:manage create` — it handles scaffolding, README sync, and MEMORY.md updates automatically.

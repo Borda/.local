@@ -87,10 +87,10 @@ _ARG1=$(echo "$ARGUMENTS" | awk '{print $1}')
 if [ -n "$_ARG1" ] && [ "${_ARG1#-}" = "$_ARG1" ] && [ ! -f "$_ARG1" ] && [ -d "$STATE_DIR_BASE/$_ARG1" ]; then
   RUN_ID="$_ARG1"
 elif [ -n "$_ARG1" ] && [ -f "$_ARG1" ]; then
-  # program.md path — find latest completed run matching program_file
-  RUN_ID=$(for d in $(ls -td "$STATE_DIR_BASE"/*/); do id=$(basename "$d"); pf=$(python -c "import json; print(json.load(open('$d/state.json')).get('program_file',''))" 2>/dev/null); st=$(python -c "import json; print(json.load(open('$d/state.json')).get('status',''))" 2>/dev/null); [ "$pf" = "$_ARG1" ] && ([ "$st" = "completed" ] || [ "$st" = "goal-achieved" ]) && echo "$id" && break; done)
+  # program.md path — find latest completed run matching program_file  <!-- loads: find_run_id.py -->
+  RUN_ID=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" "$STATE_DIR_BASE" --match-program "$_ARG1" 2>/dev/null)
 else
-  RUN_ID=$(for d in $(ls -td "$STATE_DIR_BASE"/*/); do id=$(basename "$d"); st=$(python -c "import json; print(json.load(open('$d/state.json')).get('status',''))" 2>/dev/null); ([ "$st" = "completed" ] || [ "$st" = "goal-achieved" ]) && echo "$id" && break; done)
+  RUN_ID=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" "$STATE_DIR_BASE" 2>/dev/null)
 fi
 [ -z "$RUN_ID" ] && { echo "fortify: No completed run found. Run /research:run first."; exit 1; }
 ```

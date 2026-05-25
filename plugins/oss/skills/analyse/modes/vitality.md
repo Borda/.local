@@ -79,17 +79,9 @@ REPORT_TIMESTAMP=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
 REPORT_FILE=".reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-${REPORT_TIMESTAMP}.md"
 
 # Provenance metadata — embedded in report header for self-complete, deterministic output
-SKILL_VERSION=$(python -c "
-import json, os, glob
-# Try installed cache first, then workspace source
-paths = sorted(glob.glob(os.path.expanduser('~/.claude/plugins/cache/borda-ai-rig/oss/*/.claude-plugin/plugin.json')))
-if not paths:
-    paths = glob.glob('plugins/oss/.claude-plugin/plugin.json')
-if paths:
-    print(json.load(open(paths[-1])).get('version','unknown'))
-else:
-    print('unknown')
-" 2>/dev/null || echo "unknown")  # timeout: 5000
+_VER_FILE=$(ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/.claude-plugin/plugin.json 2>/dev/null | sort | tail -1)  # timeout: 5000
+[ -z "$_VER_FILE" ] && _VER_FILE="plugins/oss/.claude-plugin/plugin.json"
+SKILL_VERSION=$(jq -r '.version // "unknown"' "$_VER_FILE" 2>/dev/null || echo "unknown")  # timeout: 5000
 
 REPORT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")  # timeout: 5000
 
@@ -246,7 +238,7 @@ Parse REWORK_JSON from challenger output:
 
 ```bash
 REWORK_JSON=$(grep "^REWORK_JSON:" "$REVIEW_DIR/challenger-iter${REWORK_ITER}.md" 2>/dev/null | sed 's/^REWORK_JSON: //')
-REWORK_VERDICT=$(echo "$REWORK_JSON" | python -c "import json,sys; print(json.load(sys.stdin)['verdict'])" 2>/dev/null || echo "pass")  # timeout: 5000
+REWORK_VERDICT=$(echo "$REWORK_JSON" | jq -r '.verdict // "pass"' 2>/dev/null || echo "pass")  # timeout: 5000
 ```
 
 ### 6b — Rework (only when REWORK_VERDICT=needs_rework)
@@ -314,7 +306,7 @@ After loop exits (pass or max iterations): update `$REPORT_FILE` — replace pla
 
 ## Step 7 — Terminal Summary Output
 
-Read `$FOUNDRY_SHARED/terminal-summaries.md` for compact block format. File absent → warn "foundry:init required — printing plain terminal output instead."
+Read `$FOUNDRY_SHARED/terminal-summaries.md` for compact block format. File absent → warn "foundry:setup required — printing plain terminal output instead."
 
 Print compact block to terminal. Three sections: header, exec summary, simplified scorecard. Axis rows must appear in numeric order 1–9; never reorder by score, weight, or status:
 

@@ -64,7 +64,37 @@ Before writing commit, run three in parallel:
 - `git diff HEAD` — **not** bare `git diff`; bare `git diff` shows only unstaged changes, misses staged new files; `git diff HEAD` captures staged and unstaged vs HEAD
 - `git log --oneline -5` — reference repo's existing commit style
 
-**Truncated diff — mandatory follow-up**: when `git diff HEAD` output large and Bash tool saves to file (showing only 2 KB preview), **read saved file completely before writing commit**. Don't write from preview alone — most significant changes often past truncation point. Also run `git diff --stat HEAD` (always fits in context) for complete file-by-file change map; use stat output to identify which files changed most and whether any missed in preview.
+**Truncated diff — mandatory follow-up**: when `git diff HEAD` output large and Bash tool saves to file (showing only 2 KB preview), read saved file completely before writing commit. Don't write from preview alone — most significant changes often past truncation point. Also run `git diff --stat HEAD` (always fits in context) for complete file-by-file change map; use stat output to identify which files changed most and whether any missed in preview. If saved diff file exceeds ~2000 lines, escalate to subagent summarization — see Large diff rule below.
+
+**Large diff — subagent summarization**: when diff file exceeds ~2000 lines OR `git diff --stat HEAD` shows >10 files spanning >2 plugins/concerns, spawn one Agent task per logical file group — one agent per top-level directory in stat output (e.g. one per `plugins/<name>/`, one collective for everything outside `plugins/`); max 5 agents, group smallest partitions until ≤5. Each task runs inline (not background); receives `git diff HEAD -- <file> [<file> ...]` and returns compact bullet summary: what changed and highest tier classification. Orchestrator aggregates summaries, writes commit from aggregated evidence only — never from session memory. After aggregation, cross-check every file in `git diff --stat HEAD` appears in at least one summary; missing file → spawn one additional Agent task for that file before drafting. On agent failure or timeout: fall back to direct `git diff HEAD -- <files>` read for that group; surface unread group as a gap in commit message.
+
+**Large diff — agent handover format**: before spawning, create run dir: `RUN_TS=".temp/commit-diff/$(date -u +%Y-%m-%dT%H-%M-%SZ)"; mkdir -p "$RUN_TS"`. Each agent task writes to `$RUN_TS/group-<dir-slug>.md` using this fixed structure:
+
+```markdown
+## Group: <top-level-dir>
+Files in scope: <comma-separated list>
+
+| File | Change | Tier | Type |
+|------|--------|------|------|
+| `path/to/file` | one-line what changed | 1 | feat |
+
+Highest tier: <N>
+Tier-1 items: <file — specific new capability>
+Tier-2 items: <file — specific behaviour change>
+Recurring theme: <pattern visible across ≥2 files in this group, e.g. "python→python3 migration" or "none">
+```
+
+Agent returns ONLY this JSON envelope (no prose after it):
+
+```json
+{"status":"done","group":"<dir>","files_covered":["a","b"],"highest_tier":1,"theme":"<cross-file pattern or null>","file":"<path>","summary":"<file>: <change> T<N>; <file>: <change> T<N>"}
+```
+
+`theme` — one-phrase pattern visible across ≥2 files in this group (e.g. `"python→python3 migration"`, `"TRIGGER/SKIP added to all agents"`); `null` when no pattern.
+
+Orchestrator: collect envelopes, verify coverage (every file in `git diff --stat HEAD` in at least one `files_covered`), then read `.md` files directly — ≤5 small files is within direct-read threshold (file-handoff-protocol.md). Draft commit from `.md` file content only — never from envelope `summary` strings (too lossy). `status: "done_with_concerns"` → flag that group as uncertain in commit message.
+
+**Compound synthesis step** (mandatory before drafting): after reading all group `.md` files, scan across all groups for repeated themes — same concept changed in N **codebase** files across different groups each classified T3–T4 individually. If ≥3 codebase files share a theme (same pattern replaced, same flag added everywhere, same agent property updated system-wide), elevate the aggregate to T2 minimum and name the cross-cutting change in the commit subject. Per-group tiers are local signal only — aggregate tier governs the subject line. Exclude docs/supplementary files (README, CHANGELOG, comments, docstrings) from the ≥3 threshold count — they do not compound.
 
 **High-churn files — mandatory diff read**: any file with >50 lines changed in `git diff --stat` NOT already in planned bullets — read actual diff before writing message. Don't assume from session memory or prior context; post-compaction sessions have no reliable recall. User/developer-facing changes (command syntax, CLI argument names, invocation patterns, API surface, usage examples) must be identified and prioritised regardless of earlier discussion — outrank internal restructuring of equal line count.
 
@@ -73,11 +103,16 @@ Before writing commit, run three in parallel:
 - Title must reflect highest-tier change in diff, not most recent one
 
 **New files — classify by content, not by `A` marker**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list. But tier depends on content origin:
-- Content is genuinely new → tier 1 (new capability)
+- Content is genuinely new capability/behaviour → tier 1
 - Content extracted/refactored from existing file → tier 4 (maintenance); mention as "extracted from X", not "added"
-- New file + new content = tier 1. New file + moved content = tier 3.
+- Test-only new file (adds tests, no source change) → tier 4; `test` type; not tier 1 even though content is new
+- New file + new content = tier 1. New file + moved content = tier 3. New file + tests only = tier 4.
 
 **Semantic novelty beats diff verbosity**: new capability/interface/script outranks verbose-but-routine config edit even if config diff has more lines. Ask "what would reviewer need to know first?" — that most significant change.
+
+**Compound change detection**: when ≥3 **codebase** files share a common theme in their changes (same concept replaced, same flag added, same pattern adopted everywhere), treat the aggregate as potentially higher tier than any individual file suggests. Signals: same function/string replaced across N files → migration pattern; same trigger/description updated in N agents → routing change (T2 minimum); same convention adopted across all plugins → new standard. Rule: after reading all per-file diffs (or all subagent `.md` summaries), ask "do these individually small changes form a coordinated pattern?" — if yes, classify the whole at the aggregate tier, not the per-file tier. Name the pattern in the commit subject, not the individual files. **Docs/supplementary exempt**: README, CHANGELOG, inline comments, docstrings, and other documentation-only files are standalone entities — repeated small doc tweaks do not compound into a higher tier regardless of count.
+
+**Reverted-change leak guard**: conversation context may contain changes introduced then rolled back before commit — visible in chat history but absent from `git diff HEAD` (no `+` or `-` line). Never mention such rolled-back content. Distinct from content removed BY this commit, which appears as `-` lines in `git diff HEAD` and IS valid to mention. Hard rule: if a change cannot be found in `git diff HEAD` output as a `+` or `-` line, omit it regardless of what was discussed. When uncertain whether a discussed change landed: save `git diff HEAD` to file and `grep -F <distinctive-token>` (function/class name, error string, config key); no hit = change did not land. If subagent summarization was used instead of full inline read, re-run `git diff HEAD -- <file>` for the specific file before including the change in any bullet.
 
 ## Co-authors
 

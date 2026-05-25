@@ -212,7 +212,7 @@ Low confidence (<0.8): orchestrator re-runs curator with targeted prompt. Recurr
 
 - Missing capability → add tool to `tools` in agent frontmatter
 - Missed pattern → add to `\<antipatterns_to_flag>`
-- Project-specific context → update `.claude/agent-memory/foundry-curator/MEMORY.md`
+- Project-specific context → add pattern to `\<antipatterns_to_flag>` section in this agent file (project CLAUDE.md prohibits MEMORY.md writes — learnings go into plugin files)
 
 Loop: low score → targeted re-run → pattern identified → instruction updated → `/calibrate <agent>`.
 
@@ -222,7 +222,7 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
 
 Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
 
-1. Glob all agent files: `.claude/agents/*.md` and skill files: `.claude/skills/**/*.md` — **post-install only**: these paths only exist after `/foundry:init`; in plugin-dev context (working directly in `plugins/*/`) derive plugin name from argument or task context. Detect plugin scope: check prompt for `plugins/<name>` pattern or bare `<name>` token matching dir under plugins/. If a specific plugin is named, glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; if no specific plugin is named, glob all plugins: `plugins/*/agents/*.md` and `plugins/*/skills/**/*.md`
+1. Glob all agent files: `.claude/agents/*.md` and skill files: `.claude/skills/**/*.md` — **post-install only**: these paths only exist after `/foundry:setup`; in plugin-dev context (working directly in `plugins/*/`) derive plugin name from argument or task context. Detect plugin scope: check prompt for `plugins/<name>` pattern or bare `<name>` token matching dir under plugins/. If a specific plugin is named, glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; if no specific plugin is named, glob all plugins: `plugins/*/agents/*.md` and `plugins/*/skills/**/*.md`
 2. Read each file and evaluate: structure, cross-refs, line count, duplication — when evaluating handoff envelope compliance specifically, read `.claude/skills/_shared/file-handoff-protocol.md` first to verify required fields from live source rather than memory
 3. For cross-refs: `Grep("See .* agent", <agents-dir>)` — scope `<agents-dir>` to the same path resolved in Step 1 (`.claude/agents/` post-install, or `plugins/<name>/agents/` in plugin-dev context); validate each target exists on disk
 4. For URLs: `WebFetch` each URL found in agent/skill files — confirm resolves and content matches description; flag any 404 or mismatch as P4 (outdated content). **In-session URL cache (Fetch step only)**: maintain an in-memory set of URLs already fetched in this invocation — avoid re-fetching the same URL twice in one session. Cache covers the Fetch step only; Read (inspect cached content) and Match (verify content matches description) are still required per occurrence per quality-gates.md link verification. **Persistent disk cache** in `.cache/gh/curator-url-<slug>.md` (TTL 24h) — reuse cached file for Fetch step if < 24h old, but still Read cached content and Match against current context description before accepting URL as valid. Pre-fetch setup: `mkdir -p .cache/gh # timeout: 5000`. Per-URL cache pattern:

@@ -97,9 +97,9 @@ Mark "A/B test capability proposals" completed.
 | 2 | ... | agents/sw-engineer.md | −0.02 | +0.01 | ✗ reverted |
 
 ### Next Steps
-- `/foundry:init` — propagate accepted changes to ~/.claude/
+- `/foundry:setup` — propagate accepted changes to ~/.claude/
 - `/audit` — confirm clean baseline after upgrades
 - Reverted items: run `/calibrate <agent> full` for deeper A/B signal (N=10 vs N=3 used here)
 ```
 
-Propose `/foundry:init` after upgrade completes — no auto-execute. Print: `→ Run \`/foundry:init\` to propagate accepted changes to ~/.claude/\`
+Propose `/foundry:setup` after upgrade completes — no auto-execute. Print: `→ Run \`/foundry:setup\` to propagate accepted changes to ~/.claude/\`

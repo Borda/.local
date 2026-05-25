@@ -10,7 +10,7 @@ Agents:   foundry:curator, foundry:challenger (adversarial mode only)
 Outcome:  CLEAN | NEEDS_ATTENTION | BLOCKED
 Findings: [N] security · [N] critical · [N] high · [N] medium · [N] low
 Confidence: [aggregate score from agent Confidence blocks]
-Next steps: /foundry:init (sync clean config) | fix findings → re-run /foundry:audit
+Next steps: /foundry:setup (sync clean config) | fix findings → re-run /foundry:audit
 Path:       → .reports/audit/<timestamp>/report.md
 ---
 
@@ -33,7 +33,7 @@ Path:       → .reports/audit/<timestamp>/report.md
 | `security/critical` | C37-1 | `hooks/foo.js` | Hardcoded API key on line 12 | Remove; use env var `$MY_KEY` |
 | `security/high` | C35-1 | `skills/bar/SKILL.md` | Unquoted `$ARGUMENTS` in bash block | Route via parse_scan_args.py |
 
-**Required action before any `/foundry:init` or merge**: resolve all security findings — they are not deferred to "fix all" queue.
+**Required action before any `/foundry:setup` or merge**: resolve all security findings — they are not deferred to "fix all" queue.
 
 ### Findings
 | Severity | Found | Fixed | Remaining |
@@ -90,6 +90,6 @@ Low-confidence files re-audited: N | Still uncertain after retry: N (see gaps ab
 
 ### Next Step
 
-Run `/foundry:init` to propagate clean config to ~/.claude/
+Run `/foundry:setup` to propagate clean config to ~/.claude/
 
 ```

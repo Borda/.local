@@ -152,7 +152,7 @@ Applied N changes — <date>
   Skipped:        N (already covered or too narrow)
 ```
 
-3. Remind user: "Run `/foundry:init` to propagate rule changes to `~/.claude/`"
+3. Remind user: "Run `/foundry:setup` to propagate rule changes to `~/.claude/`"
 
 4. **Git diff gate** — run after all writes complete:
 

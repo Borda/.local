@@ -19,12 +19,12 @@ Installing a plugin = consenting to trust its bin/ scripts. Claude Code's allow 
 Additional trust boundaries to be aware of:
 
 - **Integrity at install time only**: `claude plugin install` fetches code from the marketplace. Nothing verifies marketplace authenticity or pins a hash. If the marketplace is compromised at install time, the installed bin/ scripts run without prompts. For a personal dev tool this is the accepted threat model; it is not appropriate for multi-tenant environments.
-- **Updates inherit prior consent**: if a plugin update ships new bin/\*.py code, it runs without re-consent. `/foundry:init` is re-run to sync settings, not to re-authorize.
-- **No auto-revocation on uninstall**: `/foundry:init` merge is additive — it adds entries to `~/.claude/settings.json` but never removes them. Uninstalling a plugin does not remove its allow entries. Manual cleanup required.
+- **Updates inherit prior consent**: if a plugin update ships new bin/\*.py code, it runs without re-consent. `/foundry:setup` is re-run to sync settings, not to re-authorize.
+- **No auto-revocation on uninstall**: `/foundry:setup` merge is additive — it adds entries to `~/.claude/settings.json` but never removes them. Uninstalling a plugin does not remove its allow entries. Manual cleanup required.
 
 ### What is pre-approved (in `~/.claude/settings.json`)
 
-All entries are merged from `plugins/foundry/.claude-plugin/permissions-allow.json` by `/foundry:init`. Key entries relevant to plugin execution:
+All entries are merged from `plugins/foundry/.claude-plugin/permissions-allow.json` by `/foundry:setup`. Key entries relevant to plugin execution:
 
 | Entry                     | What it covers                                                   | Why                                                                                     |
 | ------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -140,10 +140,10 @@ ______________________________________________________________________
 
 ## Settings Sync
 
-`plugins/foundry/.claude-plugin/permissions-allow.json` is the canonical allow list for all entries that foundry needs. `/foundry:init` merges this into `~/.claude/settings.json` on install. The merge is **additive** — entries are never removed automatically. If you remove an entry from `permissions-allow.json`, manually remove it from `~/.claude/settings.json` as well.
+`plugins/foundry/.claude-plugin/permissions-allow.json` is the canonical allow list for all entries that foundry needs. `/foundry:setup` merges this into `~/.claude/settings.json` on install. The merge is **additive** — entries are never removed automatically. If you remove an entry from `permissions-allow.json`, manually remove it from `~/.claude/settings.json` as well.
 
 If you add a new allow entry:
 
 1. Edit `plugins/foundry/.claude-plugin/permissions-allow.json`
 2. Run `/foundry:manage add perm "Bash(X:*)" "description" "use case"` OR manually update `~/.claude/settings.json` + `~/.claude/permissions-guide.md`
-3. Re-run `/foundry:init` to sync symlinks and verify
+3. Re-run `/foundry:setup` to sync symlinks and verify

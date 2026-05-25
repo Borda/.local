@@ -158,7 +158,10 @@ echo "$TIMESTAMP" > "${TMPDIR:-/tmp}/calibrate-state/timestamp"
 Every subsequent Bash block in Steps 2–6 that uses `$TIMESTAMP` must re-read it at the top of the block:
 
 ```bash
-TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
+TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
+[ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
+# NOTE: never fall back to $(date ...) here — that generates a NEW timestamp resolving to a different
+# (non-existent) run directory. State loss must be surfaced explicitly, not silently worked around.
 ```
 
 All run dirs use this timestamp.
@@ -172,7 +175,7 @@ Create tasks before proceeding:
 ## Step 2: Spawn pipeline subagents
 
 > **Pre-flight**: mode files at `<plugin-cache>/foundry/<v>/skills/calibrate/modes/` — resolve via plugin cache scan below.
-> `/foundry:init` does NOT symlink these (only `rules/*.md` and `TEAM_PROTOCOL.md`); if not found, re-install foundry plugin.
+> `/foundry:setup` does NOT symlink these (only `rules/*.md` and `TEAM_PROTOCOL.md`); if not found, re-install foundry plugin.
 > ```bash
 > CALIB_MODES_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local))  # timeout: 5000
 > ```

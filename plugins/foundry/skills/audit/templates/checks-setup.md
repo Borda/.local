@@ -271,20 +271,20 @@ else
     fi
 
     # 8g — init skill: exists in plugin only (not in .claude/skills/), declares required behaviors
-    SF_SKILL="$PLUGIN_DIR/skills/init/SKILL.md"
+    SF_SKILL="$PLUGIN_DIR/skills/setup/SKILL.md"
     if [ ! -f "$SF_SKILL" ]; then
-        printf "! HIGH: Check 8g — init SKILL.md not found at %s\n" "$SF_SKILL"
+        printf "! HIGH: Check 8g — setup SKILL.md not found at %s\n" "$SF_SKILL"
         FAIL=$((FAIL + 1))
     else
-        # Must NOT exist as standalone .claude/skills/init/ (plugin-only skill)
-        if [ -e ".claude/skills/init" ]; then
-            printf "⚠ MEDIUM: Check 8g — .claude/skills/init/ exists; init skill should live only in the plugin\n"
+        # Must NOT exist as standalone .claude/skills/setup/ (plugin-only skill)
+        if [ -e ".claude/skills/setup" ]; then
+            printf "⚠ MEDIUM: Check 8g — .claude/skills/setup/ exists; setup skill should live only in the plugin\n"
         fi
         # Must declare all settings it merges and the link subcommand
         MISSING_COVERAGE=0
         for KEYWORD in "statusLine" "permissions.allow" "codex@openai-codex" "link"; do
             if ! grep -qF "$KEYWORD" "$SF_SKILL"; then # timeout: 5000
-                printf "⚠ MEDIUM: Check 8g — init SKILL.md does not mention '%s'\n" "$KEYWORD"
+                printf "⚠ MEDIUM: Check 8g — setup SKILL.md does not mention '%s'\n" "$KEYWORD"
                 MISSING_COVERAGE=$((MISSING_COVERAGE + 1))
             fi
         done

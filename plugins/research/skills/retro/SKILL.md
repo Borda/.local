@@ -68,8 +68,8 @@ echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id"
 **Pre-compute run directory** — also fix `$RUN_ID` (resolved from input resolution above) and persist `$RUN_DIR` for T3 (ADV-H18 + ADV-L16):
 
 ```bash
-# RUN_ID = run-id argument if provided, else dir name of latest completed run
-RUN_ID="${RUN_ID_ARG:-$(ls -td .experiments/state/*/ 2>/dev/null | while read d; do python -c "import json,sys; s=json.load(open('${d}state.json')); sys.exit(0 if s.get('status') in ('completed','goal-achieved') else 1)" 2>/dev/null && basename "$d" && break; done)}"
+# RUN_ID = run-id argument if provided, else dir name of latest completed run  <!-- loads: find_run_id.py -->
+RUN_ID="${RUN_ID_ARG:-$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" .experiments/state 2>/dev/null)}"
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved"  # persist resolved id for T3 / fallback paths
 ```
@@ -86,7 +86,7 @@ Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python wi
 
 ```bash
 ALPHA="${ALPHA:-0.05}"
-METRIC_DIRECTION=$(python -c "import json,sys; d=json.load(open('.experiments/state/$RUN_ID/state.json')); print(d.get('config',{}).get('metric',{}).get('direction','higher'))" 2>/dev/null || echo "higher")
+METRIC_DIRECTION=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/read_state_field.py" ".experiments/state/$RUN_ID/state.json" "config.metric.direction" --default "higher" 2>/dev/null || echo "higher")  # loads: read_state_field.py
 RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl ".experiments/state/$RUN_ID/experiments.jsonl" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
 ```
 

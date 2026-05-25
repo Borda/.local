@@ -223,6 +223,7 @@ If Codex available:
 
 ```bash
 CODEX_OUT="$RUN_DIR/codex.md"
+echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # persist: Bash() state lost between calls; Step 6 reads this back
 ```
 
 If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
@@ -326,7 +327,7 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Challenger severity propagation**: when consolidator (Step 5) reads `challenger.md`, map challenger severity labels to review severity labels before merging — CRITICAL → `critical`, HIGH → `high`, MEDIUM → `medium`, LOW → `low`. Do not drop severity; if challenger uses non-standard labels (e.g. "blocker", "concern"), apply the mapping: blockers → `high`, concerns → `medium`.
 
-**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. If an agent returns partial results or errors, use Read tool on `$RUN_DIR/<agent-name>.md` for details. Mark agents that returned empty or error with ⏱ in final report. Never silently omit agents that failed.
+**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. If an agent returns partial results or errors, use Read tool on `$RUN_DIR/<agent-name>.md` for details. Mark agents that returned empty or error with ⏱ in final report. Never silently omit agents that **failed** (returned error/partial) — they must appear with ⏱ marker. Agents that are **not spawned** (skipped due to mode flags, docs-only, CHORE mode) may be absent from RUN_DIR; consolidator "skip missing" applies only to legitimately-not-spawned agents.
 
 ## Step 4: Cross-validate critical/blocking findings
 
@@ -369,7 +370,7 @@ Print terminal block: read `---` header from top of `$REPORT_DIR/review-report.m
 
 ## Step 6: Delegate implementation follow-up (optional)
 
-Skip if `$CODEX_OUT` is empty (set in Step 2 when Codex available and wrote output); proceed only when `CODEX_OUT` has a file path.
+Re-hydrate `CODEX_OUT` from persisted temp file (Bash() state does not survive between calls): `CODEX_OUT=$(cat ${TMPDIR:-/tmp}/dev-review-codex-out 2>/dev/null || echo "")`. Skip Step 6 if `$CODEX_OUT` is empty or the file at that path does not exist.
 
 After consolidating, identify tasks Codex can implement directly — not style violations (pre-commit handles those), but work requiring meaningful code or documentation grounded in actual implementation.
 

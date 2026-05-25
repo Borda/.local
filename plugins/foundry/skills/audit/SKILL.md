@@ -32,8 +32,8 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
   - `skills` — restrict sweep to skill files only
   - `rules` — restrict sweep to rule files only
   - `communication` — restrict sweep to communication governance files: `rules/communication.md`, `rules/quality-gates.md`, `TEAM_PROTOCOL.md`, `skills/_shared/file-handoff-protocol.md`
-  - `setup` — restrict to system-config files: `settings.json`, `permissions-guide.md`, hooks, `MEMORY.md`, `README.md`, plugin integration, post-install user state (Checks 1–11, 30, I1, I2, I3); Step 3: `init` SKILL.md only (one foundry:curator spawn); Checks I1–I3 read `~/.claude/` not `.claude/`
-  - `plugin` — plugin integration only: codex plugin (Check 7), foundry plugin + init validation (Check 8, including 8g); Step 3: `init` SKILL.md only (one foundry:curator spawn)
+  - `setup` — restrict to system-config files: `settings.json`, `permissions-guide.md`, hooks, `MEMORY.md`, `README.md`, plugin integration, post-install user state (Checks 1–11, 30, I1, I2, I3); Step 3: `setup` SKILL.md only (one foundry:curator spawn); Checks I1–I3 read `~/.claude/` not `.claude/`
+  - `plugin` — plugin integration only: codex plugin (Check 7), foundry plugin + init validation (Check 8, including 8g); Step 3: `setup` SKILL.md only (one foundry:curator spawn)
   - `plugins` — full audit of all plugins: per-file audit of every `plugins/*/agents/*.md` and `plugins/*/skills/*/SKILL.md` + integration checks (7, 8) per plugin
   - `plugins <name>` — same as `plugins` scoped to one plugin: `plugins/<name>/agents/*.md` + `plugins/<name>/skills/*/SKILL.md` + integration checks; `<name>` must match dir under `plugins/` (e.g. `plugins foundry`, `plugins oss`, `plugins research`)
   - `<plugin-name>` — **tier 2 shorthand**: bare plugin dir name (e.g. `oss`, `foundry`, `research`, `develop`, `codemap`) auto-resolved when token matches dir under `plugins/`; equivalent to `plugins <name>`; no `plugins` prefix needed
@@ -144,7 +144,7 @@ else
     NODE_AVAILABLE=false
 fi
 
-AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local}) || { printf "! BREAKING: audit/templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
+AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local}) || { printf "! BREAKING: audit/templates not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
 
 # Persist LOCAL_MODE and AUDIT_TPL for subsequent Bash blocks (fresh-shell state loss).
 # Re-derive at start of each Step that uses them — see ADV-M1 protocol below.
@@ -220,9 +220,9 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 - `setup`/`plugin` (bare) scope — no agent/skill collection from plugins; see setup/plugin notes below
 - Full sweep (no scope) — collect per `LOCAL_MODE` source selection above
 
-**Setup scope**: when `$SCOPE` is `setup`, also collect `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/init/SKILL.md` for Step 3 foundry:curator spawn — only per-file spawn in setup scope. Checks I1–I3 (from `checks-install.md`) run in Step 4 against `~/.claude/` to validate post-install user state.
+**Setup scope**: when `$SCOPE` is `setup`, also collect `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/setup/SKILL.md` for Step 3 foundry:curator spawn — only per-file spawn in setup scope. Checks I1–I3 (from `checks-install.md`) run in Step 4 against `~/.claude/` to validate post-install user state.
 
-**`plugins <name>` scope**: verify `plugins/<name>/` exists — abort `! BREAKING: plugins/<name>/ not found` if absent. Collect `plugins/<name>/skills/init/SKILL.md` for Step 3 plus all agents/skills in that plugin. **`plugins` (no name)**: iterate all subdirs under `plugins/` with `agents/` or `skills/` dir.
+**`plugins <name>` scope**: verify `plugins/<name>/` exists — abort `! BREAKING: plugins/<name>/ not found` if absent. Collect `plugins/<name>/skills/setup/SKILL.md` for Step 3 plus all agents/skills in that plugin. **`plugins` (no name)**: iterate all subdirs under `plugins/` with `agents/` or `skills/` dir.
 
 ## Step 3: Per-file audit via foundry:curator
 
@@ -311,9 +311,9 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 - `skills` — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 40 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
 - `rules` — Checks 18, 12, 13, 29, 32c (32d skipped — no plugin bin/ in rules scope)
 - `communication` — Checks 15, 16, 12, 13, 29
-- `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, 37, 39, I1, I2, I3 (Step 3: one foundry:curator spawn for `init` SKILL.md only; I1–I3 read `~/.claude/`)
-- `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/init/SKILL.md` only)
-- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's init SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
+- `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, 37, 39, I1, I2, I3 (Step 3: one foundry:curator spawn for `setup` SKILL.md only; I1–I3 read `~/.claude/`)
+- `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/setup/SKILL.md` only)
+- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's setup SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
 - `plugins <name>` or `<plugin-name>` (tier 2) — same check list as `plugins`, scoped to `plugins/<name>/` only
 - `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40 (one file only; no cross-plugin Checks 7/8)
 - `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a, 35, 36, 37, 38, 40 (one file only)
@@ -517,13 +517,11 @@ Default (options a–b): report only — no Edit or Write tool calls for NON_AUT
 
 **"Fix ALL" option (c)**:
 
-1. **Checkpoint**: after auto-fixable fix phases complete (including convergence loop), pause — call `AskUserQuestion`: "Auto-fix complete: N fixes applied across M files. N_systemic non-auto-fixable items remain. Continue to systemic review?" Options: (a) Continue · (b) Stop here · (c) Stop and emit partial report now. Do not proceed to step 2 unless user picks (a). This ensures user sees what changed before being asked about systemic items.
+1. **Upfront decision collection** — before any fixes run: group all NON_AUTO_FIXABLE findings by category (settings.json / model-tier / CLAUDE.md-conflict / dead-loop — max 4 categories). For each category call `AskUserQuestion` (one call per category, honoring `communication.md` 4-question-per-call cap): list up to 4 representative findings; if >4 in category, note "and N more follow same pattern". Options: (a) Apply same resolution to all in this category · (b) Review each individually · (c) Skip this category. Hard cap: max 4 `AskUserQuestion` calls total; overflow findings listed in final report. "Apply same resolution" valid for uniform findings; non-uniform findings force option (b).
 
-2. **Re-validate**: spawn **foundry:curator** mini-pass to re-validate each deferred NON_AUTO_FIXABLE finding against current post-fix disk — line numbers may have shifted, some findings may have become moot. Update finding text/line refs; drop moot findings. Only surface validated findings.
+2. **Single integrated fix pass** — after all decisions collected, run auto-fixable + user-resolved NON_AUTO_FIXABLE in one combined loop using same Phase 1 parallel / Phase 2 sequential dispatch. Low findings included. No mid-run checkpoint — all decisions already made upfront.
 
-3. **Systemic questions**: group remaining NON_AUTO_FIXABLE findings by category (settings.json / model-tier / CLAUDE.md-conflict / dead-loop — max 4 categories). For each category call `AskUserQuestion` (one call per category, honoring `communication.md` 4-question-per-call cap): list up to 4 representative findings; if >4 in category, note "and N more follow same pattern". Options: (a) Apply same resolution to all in this category · (b) Review each individually · (c) Skip this category. Hard cap: max 4 `AskUserQuestion` calls total for systemic phase; overflow listed in final report. "Apply same resolution" valid for uniform findings; non-uniform findings force option (b).
-
-Apply only on explicit user selection; never auto-apply NON_AUTO_FIXABLE findings.
+Apply NON_AUTO_FIXABLE fixes only on explicit user selection per category; never auto-apply.
 
 After subagents complete, collect results and proceed to Step 10.
 
@@ -549,7 +547,8 @@ For every file changed in Step 8, spawn **foundry:curator** to confirm fix resol
 
 ```bash
 # Spot-check: confirm the previously broken reference no longer appears
-grep -n "<broken-name>" <fixed-file>
+# Replace BROKEN_NAME and FIXED_FILE with the actual values from the finding
+grep -n "BROKEN_NAME" FIXED_FILE
 ```
 
 **Confidence re-run**: parse confidence scores from Step 3 and Step 10 summaries. **Score < 0.80**: Step 5b already ran a three-pass remediation (double-reasoning, docs consultation, Codex adversarial) — if Step 10 re-audit still scores < 0.80 after Step 5b, flag with ⚠, include gap in final report. Recurring low-confidence gaps (same gap, same file, multiple runs) → candidate for foundry:curator `\<antipatterns_to_flag>` or agent instructions.
@@ -620,8 +619,8 @@ When user picks fix option (a–c): run Steps 8–10 inline (state on disk in `s
 - question: "What next?" (include counts, e.g. "2 critical, 4 high, 3 medium, 1 low. What next?")
 - (a) label: `Fix SECURITY + CRITICAL + HIGH` — auto-fix all security findings plus critical and high
 - (b) label: `Fix auto-fixable` — auto-fix critical, high, medium, and low findings (skip NON_AUTO_FIXABLE systemic issues); **recommended**
-- (c) label: `Fix ALL` — fix all auto-fixable then prompt about each NON_AUTO_FIXABLE category via grouped `AskUserQuestion` (max 4 calls); most thorough option
-- (d) label: `Skip` — no fixes now; for other modes run `/audit --upgrade`, `/audit --adversarial`, `/audit --efficiency`, or `/foundry:init` manually
+- (c) label: `Fix ALL` — collect all NON_AUTO_FIXABLE decisions upfront (max 4 `AskUserQuestion` calls), then run one integrated fix pass covering auto-fixable + resolved systemic items + lows; most thorough option
+- (d) label: `Skip` — no fixes now; for other modes run `/audit --upgrade`, `/audit --adversarial`, `/audit --efficiency`, or `/foundry:setup` manually
 
 After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate. Fix options (a)–(c) always present — never omit. For (d) Skip hint: remove the mode just run from the "for other modes" list. When `--adversarial --efficiency` combined: fire gate once after both modes complete with merged finding counts; remove both from (d) hint.
 
@@ -642,7 +641,7 @@ After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this
 - **Token cost**: Step 3 (foundry:curator spawns) most expensive. For quick structural scan needing only cross-reference + inventory validation, Step 4 system-wide checks often sufficient. Run `/audit agents` or `/audit skills` to scope, or skip Step 3 for fast pass when per-file quality already trusted.
 - **Routing calibration complement**: for testing whether skill trigger descriptions fire correctly (trigger accuracy, A/B testing), use `/foundry:calibrate routing`. `/audit` checks structural quality; `/foundry:calibrate routing` validates right skill selected by Claude Code dispatcher.
 - Follow-up chains:
-  - Audit clean → pick `/foundry:init` from gate to propagate verified config to `~/.claude/`
+  - Audit clean → pick `/foundry:setup` from gate to propagate verified config to `~/.claude/`
   - Audit found structural issues → review flagged files manually before syncing; pick fix level from gate
   - Audit found many low items → pick "Fix all" from gate, or run `/develop:refactor` (requires `develop` plugin) for targeted cleanup
   - After fixing agent instructions (from audit gate) → `/foundry:calibrate <agent>` to verify fix improved recall and confidence calibration

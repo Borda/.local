@@ -13,5 +13,6 @@ Foundry **not** installed: substitute `foundry:X` with `general-purpose`, prepen
 | `foundry:linting-expert` | `general-purpose` | `haiku` | `You are a static analysis specialist. Fix ruff/mypy violations, add missing type annotations, configure pre-commit hooks.` |
 | `foundry:solution-architect` | `general-purpose` | `opus` | `You are a system design specialist. Produce ADRs, interface specs, and API contracts — read code, produce specs only.` |
 | `foundry:challenger` | `general-purpose` | `opus` | `You are an adversarial reviewer. Challenge the proposed plan or design across 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply a refutation step — try to disprove each challenge before keeping it. Report only challenges that survive refutation.` |
+| `foundry:curator` | `general-purpose` | `sonnet` | `You are a Claude Code configuration quality reviewer. Audit agent and skill .md files for verbosity, duplication, cross-reference integrity, and structural consistency. Return findings as a prioritized improvement report.` |
 
 Skills with `--team` mode: fallback agents work, lower quality. Apply fallback only for agents skill actually dispatches.

@@ -89,6 +89,37 @@ def _parse_jq_args(extras: list[str]) -> list[str] | None:
     return extras
 
 
+_ALLOWED_WRITE_ROOTS_ENV_VARS = ("CLAUDE_PLUGIN_ROOT", "TMPDIR")
+
+
+def _validate_target(target: Path) -> Path:
+    """Resolve target and assert it lives under an allowed write root.
+
+    Allowed roots: cwd, TMPDIR, and common config paths (.claude/, .temp/, .reports/).
+
+    Args:
+        target: User-supplied target file path.
+
+    Returns:
+        The resolved path.
+
+    Raises:
+        ValueError: If the resolved path is outside allowed roots.
+    """
+    import os
+    import tempfile
+
+    resolved = target.resolve()
+    cwd = Path.cwd().resolve()
+    tmpdir = Path(os.environ.get("TMPDIR", tempfile.gettempdir())).resolve()
+    allowed = [cwd, tmpdir]
+    if not any(resolved == r or r in resolved.parents for r in allowed):
+        raise ValueError(
+            f"jq_write: target outside allowed roots (cwd, tmpdir): {resolved}",
+        )
+    return resolved
+
+
 def run_jq_write(target: Path, jq_filter: str, extras: list[str]) -> int:
     """Apply ``jq_filter`` to ``target`` atomically.
 
@@ -100,6 +131,11 @@ def run_jq_write(target: Path, jq_filter: str, extras: list[str]) -> int:
     Returns:
         0 on success, 1 if target missing, 2 on jq subprocess error.
     """
+    try:
+        target = _validate_target(target)
+    except ValueError as exc:
+        print(f"! {exc}", file=sys.stderr)
+        return 1
     if not target.is_file():
         print(f"! target not found: {target}", file=sys.stderr)
         return 1

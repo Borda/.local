@@ -211,7 +211,7 @@ Build directed graph from (source-file, skill-reference) pairs collected in Step
 
 ## Check 27 — Cross-plugin shared-file reference integrity
 
-Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inline references to `.claude/skills/_shared/<file>` unless that exact file ships inside `plugins/foundry/skills/_shared/`. Path only available at runtime via `foundry:init` symlink — any file absent from foundry's `_shared/` = broken reference when foundry installed, entirely unreachable when not installed.
+Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inline references to `.claude/skills/_shared/<file>` unless that exact file ships inside `plugins/foundry/skills/_shared/`. Path only available at runtime via `foundry:setup` symlink — any file absent from foundry's `_shared/` = broken reference when foundry installed, entirely unreachable when not installed.
 
 **Special antipattern — foundry-dependency catch-22**: when referenced file's purpose is to describe fallback behaviour for users without foundry (e.g. `agent-resolution.md` listing `general-purpose` substitutes), reference is **critical** — file explaining how to work without foundry is only accessible via foundry.
 

@@ -233,9 +233,9 @@ time python -c "import <module>; <representative_workload>"
 # On non-CUDA hosts use platform profiler: py-spy + cProfile (macOS/MPS — Instruments blocked by SIP), rocprof (ROCm), VTune (Intel)
 # Background nvidia-smi: write PID to file since job control (kill %1) doesn't persist across Bash tool calls
 command -v nvidia-smi &>/dev/null && {
-  nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv -l 1 > /tmp/gpu_util.log & echo $! > /tmp/gpu_util.pid
+  nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv -l 1 > ${TMPDIR:-/tmp}/gpu_util.log & echo $! > ${TMPDIR:-/tmp}/gpu_util.pid
   python <script.py>
-  kill "$(cat /tmp/gpu_util.pid 2>/dev/null)"; tail /tmp/gpu_util.log
+  kill "$(cat ${TMPDIR:-/tmp}/gpu_util.pid 2>/dev/null)"; tail ${TMPDIR:-/tmp}/gpu_util.log
 }
 ```
 

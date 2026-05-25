@@ -66,9 +66,10 @@ Confidence < 0.9 → push back on the analysis before handing over: ask for proo
 - **Short inline status** (single result, pass/fail, one-sentence finding) → terminal only; do **not** create file
 - Prose paragraphs: no hard line breaks at column width
 - **Follow-up gate options**: skill-defined; minimum: (a) primary action · (b) skip. Canonical examples by skill:
-  - `foundry:audit` → (a) `/foundry:init` (sync clean config) · (b) fix all findings · (c) skip
+  - `foundry:audit` → (a) `/foundry:setup` (sync clean config) · (b) fix all findings · (c) skip
   - `foundry:distill` → (a) `/foundry:manage create` (scaffold suggestion) · (b) edit existing · (c) skip
 - **Follow-up gate follow-through**: when `AskUserQuestion` returns with skill-invocation option selected — call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
+- **Don't ask what you can't honor**: if selected option cannot trigger automatic action (e.g. skill has `disable-model-invocation: true`, or output is intermediate with a downstream AskUserQuestion coming anyway) — do NOT use AskUserQuestion for that option; print the suggestion as plain text instead so user can copy-paste it. Hollow question = worse UX than no question.
 
 ## Report File Format
 

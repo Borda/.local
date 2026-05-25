@@ -98,4 +98,4 @@ Modes evaluated for calibration but deferred — significant barriers. `/audit` 
 - `/research:sweep` — same barriers as `/research:run` — sustained iteration loop requiring live metrics and git state; not calibratable synthetically
 - `/research:fortify` — requires completed `/research:run` ablation output; ground truth not constructable synthetically
 - `/research:retro` — requires live `experiments.jsonl`; same barrier as `/research:run`
-- `/foundry:init` — system-state-dependent — installs symlinks and merges settings; ground truth not constructable
+- `/foundry:setup` — system-state-dependent — installs symlinks and merges settings; ground truth not constructable

@@ -1,6 +1,6 @@
 # Permissions Reference
 
-Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and `.claude-plugin/permissions-deny.json` (deny list) — canonical sources merged into `~/.claude/settings.json` by `/foundry:init`. Working copy lives at `.claude/permissions-guide.md`, kept in sync by `/audit` (Check 4 drift check) and `/manage add perm` / `/manage remove perm`.
+Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and `.claude-plugin/permissions-deny.json` (deny list) — canonical sources merged into `~/.claude/settings.json` by `/foundry:setup`. Working copy lives at `.claude/permissions-guide.md`, kept in sync by `/audit` (Check 4 drift check) and `/manage add perm` / `/manage remove perm`.
 
 **Destructive git commands explicitly denied** — see Deny List below. Deny rules evaluated before allow rules; matching deny always blocks regardless of any allow entry. Remote-mutating ops (`git push`, `git remote`) not denied — prompt user for approval.
 
@@ -36,8 +36,8 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Write(.notes/**)` | Write notes and lessons to `.notes/` | Skills write lessons, diary entries, guides to `.notes/` |
 | `Write(.reports/**)` | Write files into `.reports/` skill run dirs | Skills and Codex write timestamped run artifacts (result.jsonl, analysis files) to `.reports/<skill>/` |
 | `Write(.temp/**)` | Write prose output files to `.temp/` | Quality-gates long output; research, review, resolve, session, other skills write findings to `.temp/output-<slug>-<date>.md` |
-| `Glob(~/.claude/**)` | Glob-match files in home `.claude/` directory | `/foundry:init link` checks for existing symlinks/files before linking; `/investigate` probes verify agent/skill/config files exist in `~/.claude/`; scoped to `.claude/` only to avoid broad home-dir timeout |
-| `Read(~/.claude/**)` | Read files in home `.claude/` directory | `/foundry:init` reads `~/.claude/settings.json` for merging; `/investigate` probes read `~/.claude/settings.json` during environment checks |
+| `Glob(~/.claude/**)` | Glob-match files in home `.claude/` directory | `/foundry:setup link` checks for existing symlinks/files before linking; `/investigate` probes verify agent/skill/config files exist in `~/.claude/`; scoped to `.claude/` only to avoid broad home-dir timeout |
+| `Read(~/.claude/**)` | Read files in home `.claude/` directory | `/foundry:setup` reads `~/.claude/settings.json` for merging; `/investigate` probes read `~/.claude/settings.json` during environment checks |
 
 ## Web
 
@@ -65,8 +65,8 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Bash(ls:*)` | List directory contents | Check file existence, inspect directory structure |
 | `Bash(wc:*)` | Count lines, words, or bytes | Measure file count, line budget checks |
 | `Bash(diff:*)` | Compare two files line-by-line | Confirm patch outcome, spot drift between config files |
-| `Bash(cp:*)` | Copy files | `/foundry:init` uses this to copy rules and settings to `~/.claude/` |
-| `Bash(ln:*)` | Create symlinks | `/foundry:init link` symlinks agents, skills, rules into `~/.claude/` |
+| `Bash(cp:*)` | Copy files | `/foundry:setup` uses this to copy rules and settings to `~/.claude/` |
+| `Bash(ln:*)` | Create symlinks | `/foundry:setup link` symlinks agents, skills, rules into `~/.claude/` |
 | `Bash(mkdir:*)` | Create directories | Ensure target paths exist before writing |
 | `Bash(mkdir -p .cache/*)` | Create subdirs inside `.cache/` | `/analyse` creates `.cache/gh/` for GitHub API response caching |
 | `Bash(mkdir -p .notes/)` | Create `.notes/` directory | Skills write lessons, diary entries, guides to `.notes/` |

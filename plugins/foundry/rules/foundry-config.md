@@ -38,9 +38,9 @@ paths:
 
 - Source of truth: `plugins/foundry/` for foundry-owned files (rules, agents, skills, hooks, CLAUDE.md, TEAM_PROTOCOL.md, permissions-guide.md); other plugins (`plugins/oss/`, `plugins/research/`, etc.) own their own agents/skills — edit in their respective `plugins/<name>/` source dirs
 - `.claude/` entries = symlinks into plugin — edit plugin files, not symlinks
-- Rules distribute to `~/.claude/rules/` via `/foundry:init`
+- Rules distribute to `~/.claude/rules/` via `/foundry:setup`
 - `permissions-guide.md` = project-only reference — symlinked from `.claude/`, not copied to `~/.claude/`
-- `settings.local.json` never distributed; `CLAUDE.md` NOT distributed (reserved — user owns `~/.claude/CLAUDE.md`); `TEAM_PROTOCOL.md` IS distributed via `/foundry:init`
+- `settings.local.json` never distributed; `CLAUDE.md` NOT distributed (reserved — user owns `~/.claude/CLAUDE.md`); `TEAM_PROTOCOL.md` IS distributed via `/foundry:setup`
 
 ## Log File TTL
 

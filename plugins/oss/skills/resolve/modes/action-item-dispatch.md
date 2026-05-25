@@ -67,10 +67,12 @@ Route by domain to foreground challenge agent:
 | Test coverage, assertions, regressions | `foundry:qa-specialist` |
 | Default / unclassified | `foundry:challenger` |
 
+Set `DOMAIN_CHALLENGER` from routing table: architecture/API/coupling/default → `foundry:challenger`; code logic/correctness/edge-cases → `foundry:sw-engineer`; test coverage/assertions/regressions → `foundry:qa-specialist`. Use agent-resolution.md fallback if foundry absent.
+
 **1a — challenge evidence** (does the stated problem actually exist in the code?):
 
 ```text
-Agent(subagent_type="<domain-challenger>", prompt="Challenge evidence only — does this issue actually exist in the code as described?
+Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Challenge evidence only — does this issue actually exist in the code as described?
 Read the referenced file at <file:line>. Max 2 tool calls.
 Write full analysis to $IMPL_DIR/challenge-<id>-1a.md using the Write tool.
 Return ONLY compact JSON as your FINAL message (nothing after it):
@@ -84,7 +86,7 @@ Parse compact JSON from agent final message:
 **1b — challenge suggestion** (is the suggested fix the right approach?):
 
 ```text
-Agent(subagent_type="<domain-challenger>", prompt="Evidence confirmed. Challenge the suggested fix only — is it the right approach?
+Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Evidence confirmed. Challenge the suggested fix only — is it the right approach?
 Write full analysis to $IMPL_DIR/challenge-<id>-1b.md using the Write tool.
 Return ONLY compact JSON as your FINAL message (nothing after it):
 {\"verdict\":\"VALID\"|\"REJECT\",\"rationale\":\"<one sentence>\",\"alternative\":\"<brief alternative or null>\"}")

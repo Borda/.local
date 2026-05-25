@@ -12,9 +12,10 @@ fi
 
 ### Data gathering (Checks 1, 2, 3, 4, 5, 6 + gh-auth preflight)
 
-Extracted to `bin/run_audit_checks.py` — emits sectioned output (`--- check: <name> ---` banners) covering: repository state (`git status`, unreleased commits), CI health (`gh run list`), open issues + PRs, files changed in range, version-declaration grep, release-blocking TODO/FIXME/HACK grep, pip-audit CVE scan. Caller captures into one buffer for parsing:
+Extracted to `bin/run_audit_checks.py` — emits sectioned output (`--- check: <name> ---` banners) covering: repository state (`git status`, unreleased commits), CI health (`gh run list`), open issues + PRs, files changed in range, version-declaration grep, release-blocking TODO/FIXME/HACK grep, pip-audit CVE scan. Internally invokes `bin/parse_audit_json.py` to summarise pip-audit JSON output. Caller captures into one buffer for parsing:
 
 ```bash
+# loads: run_audit_checks.py, parse_audit_json.py
 AUDIT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/run_audit_checks.py" \
     --repo "$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)" \
     ${TARGET:+--tag "$TARGET"} \

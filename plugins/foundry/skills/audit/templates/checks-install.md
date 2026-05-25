@@ -1,6 +1,6 @@
 # Install Checks — I1, I2, I3
 
-Checks validate post-install state in `~/.claude/`. Operate on home dir, not project `.claude/`. Run via `/foundry:audit setup` (or `/audit setup` after `foundry:init link`).
+Checks validate post-install state in `~/.claude/`. Operate on home dir, not project `.claude/`. Run via `/foundry:audit setup` (or `/audit setup` after `foundry:setup link`).
 
 ## Check I1 — Plugin cache intact
 
@@ -34,7 +34,7 @@ fi
 
 ## Check I2 — Settings merge complete
 
-Verify `foundry:init` ran: `~/.claude/settings.json` has required entries, no stale hooks block.
+Verify `foundry:setup` ran: `~/.claude/settings.json` has required entries, no stale hooks block.
 
 ```bash
 printf "=== Check I2: ~/.claude/settings.json merge ===\n"
@@ -49,7 +49,7 @@ else
     # I2a — statusLine: must reference statusline.js (any path)
     if ! jq -e '(.statusLine.command // "") | contains("statusline.js")' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
         printf "⚠ MEDIUM: Check I2a — statusLine not set to statusline.js\n"
-        printf "  Fix: run /foundry:init\n"
+        printf "  Fix: run /foundry:setup\n"
         FAIL=$((FAIL + 1))
     else
         printf "✓: Check I2a — statusLine set\n"
@@ -58,7 +58,7 @@ else
     # I2b — permissions.allow: spot-check that foundry entries were merged (>10 entries expected)
     if ! jq -e '(.permissions.allow // []) | length > 10' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
         printf "⚠ MEDIUM: Check I2b — permissions.allow appears empty or very short; foundry entries may not have been merged\n"
-        printf "  Fix: run /foundry:init\n"
+        printf "  Fix: run /foundry:setup\n"
         FAIL=$((FAIL + 1))
     else
         printf "✓: Check I2b — permissions.allow populated\n"
@@ -67,7 +67,7 @@ else
     # I2c — enabledPlugins: codex@openai-codex must be true
     if ! jq -e '.enabledPlugins["codex@openai-codex"] == true' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
         printf "⚠ MEDIUM: Check I2c — enabledPlugins.codex@openai-codex not set to true\n"
-        printf "  Fix: run /foundry:init\n"
+        printf "  Fix: run /foundry:setup\n"
         FAIL=$((FAIL + 1))
     else
         printf "✓: Check I2c — enabledPlugins.codex@openai-codex enabled\n"
@@ -76,7 +76,7 @@ else
     # I2d — stale hooks block: must be absent (double-fires with plugin hooks.json)
     if jq -e 'has("hooks")' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
         printf "⚠ MEDIUM: Check I2d — 'hooks' key present in ~/.claude/settings.json; stale block from before plugin migration will cause double-firing\n"
-        printf "  Fix: run /foundry:init — it will offer to remove the stale hooks block\n"
+        printf "  Fix: run /foundry:setup — it will offer to remove the stale hooks block\n"
         FAIL=$((FAIL + 1))
     else
         printf "✓: Check I2d — no stale hooks block\n"
@@ -86,7 +86,7 @@ else
 fi
 ```
 
-**Severity**: missing entry or stale hooks block → **medium** per sub-check (non-blocking, degrades functionality). Fix: re-run `/foundry:init` — idempotent.
+**Severity**: missing entry or stale hooks block → **medium** per sub-check (non-blocking, degrades functionality). Fix: re-run `/foundry:setup` — idempotent.
 
 ## Check I3 — Link health (conditional)
 
@@ -121,16 +121,16 @@ for d in "$HOME/.claude/skills/"/*/; do
 done
 
 if [ "$LINKED" -eq 0 ]; then
-    printf "✓: Check I3 — no foundry symlinks in ~/.claude/ (foundry:init link not run; skipping)\n"
+    printf "✓: Check I3 — no foundry symlinks in ~/.claude/ (foundry:setup link not run; skipping)\n"
 elif [ "$STALE" -eq 0 ]; then
     printf "✓: Check I3 — %d symlink(s) all resolve correctly\n" "$LINKED"
 else
     printf "! HIGH: Check I3 — %d of %d symlink(s) broken (likely stale after plugin version upgrade)\n" "$STALE" "$LINKED"
-    printf "  Fix: re-run /foundry:init link — it will replace stale symlinks with the current cache path\n"
+    printf "  Fix: re-run /foundry:setup link — it will replace stale symlinks with the current cache path\n"
 fi
 ```
 
-**Severity**: broken symlinks → **high** (agents/skills silently unavailable at root namespace). Fix: re-run `/foundry:init link` — detects and replaces stale symlinks.
+**Severity**: broken symlinks → **high** (agents/skills silently unavailable at root namespace). Fix: re-run `/foundry:setup link` — detects and replaces stale symlinks.
 
 ## Check R1 — Computed path resolution (local + installed duality)
 

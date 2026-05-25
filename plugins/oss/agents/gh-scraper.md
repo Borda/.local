@@ -198,7 +198,7 @@ Rules:
 - Skip datasets returning 403, persistent 202, or empty
 - Set `"partial": true` when truncation detected
 - Set `"records"` to item count in `data`
-- After writing: `echo "[gh-scraper] raw data: N datasets → $DATA_FILE"`
+- After writing: `echo "[gh-scraper] raw data: N datasets → $DATA_FILE" >&2`
 - Include text-content records using captured variables — set `"data"` as plain string; skip if variable empty:
   - `_README_DECODED` → `"type":"readme_text"`
   - `_CONTRIB_DECODED` → `"type":"contributing_text"`
@@ -213,7 +213,7 @@ PARTIAL_COUNT=$(jq -c 'select(.partial == true)' "$DATA_FILE" 2>/dev/null | wc -
 if [ "$PARTIAL_COUNT" -eq 0 ]; then CONFIDENCE=0.95
 elif [ "$PARTIAL_COUNT" -le 2 ]; then CONFIDENCE=0.88
 else CONFIDENCE=0.78; fi
-echo "[gh-scraper] fetch complete: $DATASET_COUNT datasets ($PARTIAL_COUNT partial) → $DATA_FILE"  # timeout: 5000
+echo "[gh-scraper] fetch complete: $DATASET_COUNT datasets ($PARTIAL_COUNT partial) → $DATA_FILE" >&2  # timeout: 5000
 ```
 
 Return ONLY this JSON as final output line:
