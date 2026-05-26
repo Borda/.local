@@ -8,6 +8,7 @@
 //
 //     agents/   — which subagents are currently running
 //     codex/    — which codex plugin sessions are active
+//     skills/   — which Skill() calls are currently in flight
 //     tools/    — which tool types fired in the current turn (for the 🔧 line)
 //     timings/  — in-flight start markers for per-tool wall-clock timing
 //
@@ -78,6 +79,10 @@
 //       while Claude is processing the current turn. (UserPromptSubmit fires when Claude
 //       begins handling the message — not when the user presses Enter — so the marker
 //       represents "currently processing", not a queued-but-unstarted message.)
+//     • Detects user-invoked slash commands (data.prompt starting with /) and writes a
+//       skills/<id>.json entry so statusline.js shows ⚡ while the skill executes.
+//       User slash commands are system-injected (not Skill() tool calls), so
+//       PreToolUse(Skill) never fires for them — this is the only tracking path.
 //
 //   Stop  (end of Claude's turn)
 //     • Clears state/tools/ so the 🔧 line resets between turns.
@@ -88,6 +93,8 @@
 //       calls that never received a PostToolUse/PostToolUseFailure event).
 //     • Deletes lock-Pre-*.lock dedup files from tmpDir root (accumulate across turns;
 //       functionally inert after 500ms TTL but never otherwise cleaned).
+//     • Deletes remaining state/skills/ entries written by UserPromptSubmit (slash cmds).
+//       PostToolUse already deleted Skill() tool call entries; Stop cleans up the rest.
 //
 //   SessionEnd  (full session teardown)
 //     • Clears state/agents/, state/tools/, state/codex/, and state/queue/ completely.
@@ -102,6 +109,7 @@
 //   ~/.claude/logs/timings.jsonl        — append-only per-tool timing log {ts, project, tool, args, tool_use_id, session_id, duration_ms, status, model}
 //   /tmp/claude-state-<session_id>/agents/<id>.json     — one file per active subagent
 //   /tmp/claude-state-<session_id>/codex/<id>.json      — one file per active codex plugin session
+//   /tmp/claude-state-<session_id>/skills/<id>.json     — one file per in-flight Skill() call
 //   /tmp/claude-state-<session_id>/tools/<tool>.json    — one file per tool type, current turn only
 //   /tmp/claude-state-<session_id>/queue/<ts>.json      — one file per pending user input (cleared on Stop)
 //   /tmp/claude-state-<session_id>/pending/<id>.json    — one file per in-flight Agent() call (consumed by SubagentStart; cleaned at SessionEnd)
@@ -157,6 +165,7 @@ process.stdin.on("end", () => {
     const queueDir = path.join(tmpDir, "queue");
     const pendingDir = path.join(tmpDir, "pending");
     const timingsDir = path.join(tmpDir, "timings");
+    const skillsDir = path.join(tmpDir, "skills");
 
     const ts = new Date().toISOString();
 
@@ -215,6 +224,16 @@ process.stdin.on("end", () => {
             );
           } catch (_) {}
         }
+        // Track active skills for statusline display (keyed by tool_use_id)
+        if (data.tool_use_id) {
+          try {
+            fs.mkdirSync(skillsDir, { recursive: true });
+            fs.writeFileSync(
+              path.join(skillsDir, `${data.tool_use_id}.json`),
+              JSON.stringify({ id: data.tool_use_id, skill, since: ts }),
+            );
+          } catch (_) {}
+        }
       }
       // Track all tool calls for statusline tool-activity line (count per type within window)
       // Exclude Agent/Task — those are tracked separately via PreToolUse/PostToolUse → state/agents/
@@ -262,6 +281,12 @@ process.stdin.on("end", () => {
             fs.unlinkSync(path.join(agentsDir, `${data.tool_use_id}.json`));
           } catch (_) {}
         }
+        // Remove skill tracking entry when Skill() call completes
+        if (tool_name === "Skill") {
+          try {
+            fs.unlinkSync(path.join(skillsDir, `${data.tool_use_id}.json`));
+          } catch (_) {}
+        }
         // Complete timing: read start marker, compute duration, append to timings.jsonl, delete marker.
         // Natural dedup: first fire reads+deletes the marker; second fire finds it gone and exits silently.
         recordTiming(data.tool_use_id, tool_name, session_id, "ok", timingsDir, timingsFile, globalLogsDir, data.model);
@@ -269,6 +294,12 @@ process.stdin.on("end", () => {
     } else if (hook_event_name === "PostToolUseFailure") {
       // Same as PostToolUse timing but marks status "error".
       if (data.tool_use_id) {
+        // Remove skill tracking entry on failure too
+        if (tool_name === "Skill") {
+          try {
+            fs.unlinkSync(path.join(skillsDir, `${data.tool_use_id}.json`));
+          } catch (_) {}
+        }
         recordTiming(
           data.tool_use_id,
           tool_name,
@@ -396,6 +427,56 @@ process.stdin.on("end", () => {
         const id = ts.replace(/[:.]/g, "-");
         fs.writeFileSync(path.join(queueDir, `${id}.json`), JSON.stringify({ since: ts }));
       } catch (_) {}
+      // Detect user-invoked slash command — write current-skill.json for statusline ⚡ display.
+      // User slash commands are system injections; PreToolUse(Skill) fires too but skills/*.json
+      // is wiped by Stop at every turn end. current-skill.json persists across turns so ⚡
+      // stays visible during multi-turn skill execution (e.g. /oss:resolve, /develop:feature).
+      // Cleared by the next UserPromptSubmit (new command) or SessionEnd (full teardown).
+      // Claude Code wraps slash commands in XML: <command-name>/foo</command-name>.
+      const BUILTIN_CMDS = new Set([
+        "clear",
+        "exit",
+        "help",
+        "fast",
+        "slow",
+        "compact",
+        "memory",
+        "config",
+        "mcp",
+        "status",
+        "permissions",
+        "cost",
+        "init",
+        "login",
+        "logout",
+        "resume",
+        "reset",
+        "load",
+        "doctor",
+        "update",
+        "vim",
+        "pr_comments",
+        "approve",
+        "bug",
+      ]);
+      const rawPrompt = (data.prompt || data.user_message || "").trim();
+      // Match XML-wrapped form (newer CC injects <command-name>/foo</command-name> into hook payload)
+      // or raw /foo form (current CC sends raw user text in data.prompt at UserPromptSubmit time).
+      const slashMatch = rawPrompt.match(/<command-name>\s*\/([^\s<]+)/) || rawPrompt.match(/^\/([^\s]+)/);
+      if (slashMatch && !BUILTIN_CMDS.has(slashMatch[1])) {
+        try {
+          fs.mkdirSync(tmpDir, { recursive: true });
+          fs.writeFileSync(
+            path.join(tmpDir, "current-skill.json"),
+            JSON.stringify({ skill: slashMatch[1], since: ts }),
+          );
+        } catch (_) {}
+      } else {
+        // Non-skill message — clear current-skill so ⚡ resets to "none" for regular prompts
+        try {
+          fs.unlinkSync(path.join(tmpDir, "current-skill.json"));
+        } catch (_) {}
+      }
     } else if (hook_event_name === "Stop") {
       // Deduplication lock — project and home settings.json both register this hook.
       // Guard: if a lock for Stop exists and is < 500ms old, skip (duplicate fire).
@@ -442,6 +523,17 @@ process.stdin.on("end", () => {
               fs.unlinkSync(path.join(tmpDir, f));
             } catch (_) {}
           }
+        }
+      } catch (_) {}
+      // Clean orphaned skill entries — PostToolUse handles normal Skill() completions;
+      // Stop catches any left over from interrupted/crashed turns (tool_use_id entries only).
+      // current-skill.json is intentionally NOT cleared here — it persists across turns.
+      try {
+        const sFiles = fs.readdirSync(skillsDir);
+        for (const f of sFiles) {
+          try {
+            fs.unlinkSync(path.join(skillsDir, f));
+          } catch (_) {}
         }
       } catch (_) {}
     } else if (hook_event_name === "TaskCreated") {

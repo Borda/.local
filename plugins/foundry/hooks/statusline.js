@@ -7,16 +7,19 @@
 //   active subagents (incl. codex:* subagents) and current tool activity.
 //
 // HOW IT WORKS
-//   1. Parse stdin JSON for model, workspace, context_window, cost, and session_id
+//   1. Parse stdin JSON for model, workspace, context_window, cost, session_id, and effort
+//      (top-level field with `.level` sub-property — e.g. {level: "high"})
 //   2. Resolve the per-session temp dir at /tmp/claude-state-<session_id>/ (written by task-log.js)
 //   3. Build Line 1: model name, project dir, billing (API key = yellow; OAuth = cyan plan name),
 //      context bar (10-char block bar; green <50% · yellow <75% · red ≥75% used), and 💬 [N]
 //      badge while Claude is processing the current turn; N shown only when >1 messages queued
 //   3a. /clear detection: remaining_percentage === 0 → wipe state/agents/ before rendering
 //       so agent badges reset immediately after /clear
-//   4. Build Line 2 agent segment (🤖): read state/agents/*.json; skip entries older than 10 min
+//   4. Build Line 2 skills segment (⚡): read state/skills/*.json; render each active skill in
+//      bright yellow; shows "none" when idle (consistent with agents/tools segments)
+//   5. Build Line 2 agent segment (🤖): read state/agents/*.json; skip entries older than 10 min
 //      (safety net); group by type; color from agent frontmatter COLOR_MAP; codex:* shown here
-//   5. Build Line 2 tool segment (🛠️): read state/tools/*.json; skip entries older than 30 s;
+//   6. Build Line 2 tool segment (🛠️): read state/tools/*.json; skip entries older than 30 s;
 //      render per-type call counts with fixed TOOL_COLORS palette
 //   7. Write both lines to stdout with \x1b[K (clear-to-end-of-line) on each line
 //
@@ -24,13 +27,15 @@
 //   Line 1 — session metadata:
 //     <model>  <project-dir>  <billing>  <context-bar pct%>  [💬 while processing]
 //
-//   Line 2 — runtime activity (always shown, "none" when idle):
-//     🤖 N <type> [×N], …  │  🛠️ <tools>
+//   Line 2 — runtime activity (skills shown only when active; agents/tools always shown):
+//     [⚡ <skill> │] 🤖 N <type> [×N], …  │  🛠️ <tools>
 //     codex:* subagents shown in 🤖 alongside other agents
 //
 // LINE 1 DETAILS
-//   model       display_name or id from session JSON, with " (effort)" suffix when
-//               thinking effort is present (e.g. "claude-sonnet-4-6 (high)")
+//   model       display_name or id from session JSON, with " (effort.level)" suffix when
+//               thinking effort is present (e.g. "claude-sonnet-4-6 (high)"). The hook
+//               payload exposes effort as a top-level field with a `.level` sub-property,
+//               not nested under model.
 //   project-dir basename of workspace.current_dir
 //   billing     API key mode  → yellow  "API $X.XX"  (real spend, every token costs)
 //               OAuth/sub mode → cyan   "<Plan> ~$X.XX"  (theoretical API-rate cost,
@@ -40,6 +45,12 @@
 //   context bar 10-char block bar; color: green <50% · yellow <75% · red ≥75% used
 //
 // LINE 2 DETAILS
+//   ⚡ skills   reads /tmp/claude-state-<session_id>/skills/*.json written by task-log.js
+//               PreToolUse(Skill); deleted by PostToolUse(Skill). Shows active Skill()
+//               invocation in bright yellow with plugin: prefix stripped (e.g. "audit" not
+//               "foundry:audit"). Shows "none" when idle (consistent with agents/tools).
+//               No count shown — only one skill active per session at a time.
+//               No age gate — relies on PostToolUse cleanup; SessionEnd wipes any crash remnants.
 //   🤖 agents   reads /tmp/claude-state-<session_id>/agents/*.json written by task-log.js
 //               SubagentStart/Stop. Groups by type; all agents (incl. codex:*) shown in their
 //               declared color (from agent frontmatter color: field); general-purpose gray.
@@ -74,7 +85,7 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (d) => (raw += d));
 process.stdin.on("end", () => {
   try {
-    const { model, workspace, context_window, cost, session_id, thinking } = JSON.parse(raw);
+    const { model, workspace, context_window, cost, session_id, effort } = JSON.parse(raw);
 
     // Session-scoped temp dir — mirrors the layout written by task-log.js.
     // Falls back to 'default' for older Claude Code versions without session_id.
@@ -82,10 +93,9 @@ process.stdin.on("end", () => {
     const tmpDir = path.join(getSentinelDir(), `claude-state-${sid}`);
 
     const modelName = model?.display_name || model?.id || "";
-    // Thinking effort: try several plausible paths. Claude Code may expose it on
-    // the model object, or on a top-level `thinking` object alongside model.
-    const effort = model?.effort || thinking?.effort || model?.thinking?.effort || null;
-    const modelDisplay = effort ? `${modelName} (${effort})` : modelName;
+    // Thinking effort: hook payload has `effort` as a top-level field with a `.level` sub-property.
+    const effortLevel = effort?.level || null;
+    const modelDisplay = effortLevel ? `${modelName} (${effortLevel})` : modelName;
     const dir = path.basename(workspace?.current_dir || process.cwd());
     const remainingRaw = context_window?.remaining_percentage;
     const remaining = Number.isFinite(Number(remainingRaw)) ? Number(remainingRaw) : null;
@@ -243,13 +253,15 @@ process.stdin.on("end", () => {
           if (!groups.has(key)) groups.set(key, { label, isGray, ansiColor, count: 0 });
           groups.get(key).count++;
         }
+        const isSingleGroup = groups.size === 1;
         const items = [...groups.values()]
           .sort((a, b) => b.count - a.count)
           .map(({ label, isGray, ansiColor, count }) => {
-            const colored = isGray ? `\x1b[2m${label}\x1b[0m` : `${ansiColor}${label}\x1b[0m`;
-            return count > 1 ? `${colored} ×${count}` : colored;
+            const displayLabel = count > 1 ? `${label}(${count})` : label;
+            return isGray ? `\x1b[2m${displayLabel}\x1b[0m` : `${ansiColor}${displayLabel}\x1b[0m`;
           });
-        agentsPart = `\x1b[35m🤖 ${agents.length}\x1b[0m ${items.join(", ")}`;
+        const robotPrefix = isSingleGroup ? `\x1b[35m🤖\x1b[0m` : `\x1b[35m🤖 ${agents.length}\x1b[0m \x1b[2m·\x1b[0m`;
+        agentsPart = `${robotPrefix} ${items.join(", ")}`;
       } else {
         agentsPart = `\x1b[35m🤖\x1b[0m \x1b[2mnone\x1b[0m`;
       }
@@ -289,8 +301,50 @@ process.stdin.on("end", () => {
       toolLine = `\x1b[2m🛠️ none\x1b[0m`;
     }
 
+    // Line 2 — skills (always shown; "none" when idle — mirrors agents/tools)
+    // Two data sources:
+    //   skills/*.json      — tool-call scoped; written by PreToolUse(Skill), deleted by PostToolUse
+    //   current-skill.json — turn-persistent; written by UserPromptSubmit for slash commands,
+    //                        cleared by next UserPromptSubmit or SessionEnd; survives Stop so
+    //                        multi-turn skills (e.g. /oss:resolve) stay visible between turns
+    let skillsPart = "";
+    try {
+      const sDir = path.join(tmpDir, "skills");
+      const sFiles = fs.readdirSync(sDir).filter((f) => f.endsWith(".json"));
+      const activeSkills = sFiles.flatMap((f) => {
+        try {
+          return [JSON.parse(fs.readFileSync(path.join(sDir, f), "utf8"))];
+        } catch (_) {
+          return [];
+        }
+      });
+      if (activeSkills.length > 0) {
+        const names = activeSkills.map((s) => {
+          // Strip plugin: prefix for brevity (e.g. "foundry:audit" → "audit")
+          const name = (s.skill || "?").replace(/^[^:]+:/, "");
+          return `\x1b[93m${name}\x1b[0m`; // bright yellow
+        });
+        skillsPart = `\x1b[93m⚡\x1b[0m ${names.join(", ")}`;
+      }
+    } catch (_) {}
+    // Fallback to current-skill.json when no in-flight Skill() tool call (between turns)
+    if (!skillsPart) {
+      try {
+        const cs = JSON.parse(fs.readFileSync(path.join(tmpDir, "current-skill.json"), "utf8"));
+        if (cs.skill) {
+          const name = cs.skill.replace(/^[^:]+:/, "");
+          skillsPart = `\x1b[93m⚡\x1b[0m \x1b[93m${name}\x1b[0m`;
+        }
+      } catch (_) {}
+    }
+    if (!skillsPart) skillsPart = `\x1b[93m⚡\x1b[0m \x1b[2mnone\x1b[0m`;
+
     const line1 = parts.join(" \x1b[2m│\x1b[0m ");
-    const line2 = `${agentsPart} \x1b[2m│\x1b[0m ${toolLine}`;
+    const line2Parts = [];
+    line2Parts.push(skillsPart);
+    line2Parts.push(agentsPart);
+    line2Parts.push(toolLine);
+    const line2 = line2Parts.join(` \x1b[2m│\x1b[0m `);
     const lines = [line1, line2];
     // \x1b[K clears to end of line — erases stale chars from longer previous renders.
     process.stdout.write(lines.map((l) => l + "\x1b[K").join("\n") + "\x1b[K");

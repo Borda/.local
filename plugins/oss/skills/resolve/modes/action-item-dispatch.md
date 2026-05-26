@@ -4,6 +4,8 @@
 
 ## Step 8: Implement action items
 
+**Commit authorization — entire Step 8**: `COMMIT_MODE` from Step 3d governs all commits; never re-ask regardless of mode, item count, or sentinel state. Multiple resolve flows per session each honor their own Step 3d choice.
+
 Determine implementation agent, set up file-handoff dir, and authorize commits before the loop:
 
 ```bash
@@ -16,10 +18,6 @@ IMPL_AGENT="codex:codex-rescue"
 # File-handoff dir — subagents write full output here; orchestrator reads only compact JSON envelopes
 IMPL_DIR="${TMPDIR:-/tmp}/resolve-impl-$$"
 mkdir -p "$IMPL_DIR"  # timeout: 5000
-
-SENTINEL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/compute_commit_sentinel.py")  # timeout: 5000
-touch "$SENTINEL"  # timeout: 3000
-trap 'rm -f "$SENTINEL"; rm -rf "$IMPL_DIR"' EXIT INT TERM
 CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
 ```
 
@@ -109,11 +107,6 @@ if [ -n "$(git status --porcelain)" ]; then
     echo "⚠ dirty tree before item #<id> — stashing"
     git stash push -m "resolve-pre-item-<id>" && STASHED=true  # timeout: 3000
 fi
-# Pop on any exit path; STASHED=false after a successful pop makes the
-# trap body a no-op. This appends to the EXIT/INT/TERM traps already set
-# in the loop header (sentinel + IMPL_DIR cleanup) — fold the stash-pop
-# into the existing single trap line rather than overwriting it.
-trap '[ "$STASHED" = "true" ] && git stash pop >/dev/null 2>&1; rm -f "$SENTINEL"; rm -rf "$IMPL_DIR"' EXIT INT TERM
 git diff HEAD --stat  # timeout: 3000
 ```
 
@@ -153,7 +146,7 @@ fi
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/stage_item_changes.py" "<id>"  # timeout: 5000
 ```
 
-**`COMMIT_MODE=each`** (commit-each, default) — commit immediately after each item. Write the per-item commit message to a temp file, then dispatch to `bin/commit_action_item.py` (handles sentinel touch + `git add` + `git commit` and cleans the sentinel on every exit path). Omit the Codex co-author line when `IMPL_AGENT ≠ codex:codex-rescue`:
+**`COMMIT_MODE=each`** — commit immediately after each item. Write commit message to temp file, dispatch to `bin/commit_action_item.py`. Omit Codex co-author line when `IMPL_AGENT ≠ codex:codex-rescue`:
 
 ```bash
 COMMIT_MSG=$(mktemp)  # timeout: 3000
@@ -187,7 +180,7 @@ Mark item's task completed:
 TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
 
-**After loop — `COMMIT_MODE=all` only**: derive counters from `CHALLENGE_LOG`, then create single commit:
+**After loop — `COMMIT_MODE=all` only**: derive counters from `CHALLENGE_LOG`, create single commit:
 
 ```bash
 N_AS_SUGGESTED=0; N_SELF_RESOLVED=0; N_REJECTED=0; SUMMARIES_FILE=""

@@ -10,13 +10,62 @@ Usage:
 
 from __future__ import annotations
 
+import atexit
+import os
+import re
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 from shutil import which
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
 
 _COMMIT_MESSAGE = (
     "lint: auto-fix violations after resolve cycle\n\n---\nCo-authored-by: Claude Code <noreply@anthropic.com>"
 )
+
+
+def _slug(text: str) -> str:
+    """Slugify text to ``[a-z0-9-]`` with no trailing hyphen.
+
+    Args:
+        text: Input string.
+
+    Returns:
+        Slugified string.
+
+    Examples:
+        >>> _slug("My/Repo Name")
+        'my-repo-name'
+        >>> _slug("main")
+        'main'
+    """
+    return _SLUG_RE.sub("-", text.lower()).rstrip("-")
+
+
+def _sentinel_path(git: str) -> Path:
+    """Return the commit-auth sentinel path for the current repo+branch.
+
+    Mirrors the logic in ``commit_action_item.py``.
+
+    Args:
+        git: Absolute path to the ``git`` executable.
+
+    Returns:
+        Path to sentinel file (may not yet exist).
+
+    Examples:
+        No doctest — requires live git; covered by pytest with monkeypatch.
+    """
+    root = subprocess.run(
+        [git, "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    branch = subprocess.run(
+        [git, "branch", "--show-current"], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    base = os.environ.get("TMPDIR") or os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()
+    return Path(base.rstrip("/")) / f"claude-commit-auth-{_slug(Path(root).name)}-{_slug(branch)}"
 
 
 def _resolve(cmd: str) -> str:
@@ -68,6 +117,9 @@ def main(argv: list[str] | None = None) -> int:
         print("[lint] no changed files to commit")
         return 0
     subprocess.run([git, "add", "--"] + changed, check=True, timeout=3)  # noqa: S603
+    sentinel = _sentinel_path(git)
+    sentinel.touch()
+    atexit.register(lambda: sentinel.unlink(missing_ok=True))
     result = subprocess.run(  # noqa: S603
         [git, "commit", "-m", _COMMIT_MESSAGE],
         check=False,

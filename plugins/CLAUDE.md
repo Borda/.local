@@ -106,11 +106,12 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 **Pre-bump checklist** — run before writing any version change to disk:
 
 1. Read HEAD baseline: `git show HEAD:<plugin-path>/.claude-plugin/plugin.json | grep version`
-2. Classify highest-magnitude change in session (`X` or `Y`) — do NOT read on-disk version; disk may already differ from HEAD
-3. Calculate new version from HEAD baseline: `X` → bump minor, reset patch to `0`; `Y` → bump patch only
-4. Write calculated version to `<plugin-path>/.claude-plugin/plugin.json` — **if on-disk version already equals or exceeds calculated, skip write entirely; do not bump again**
+2. **Read on-disk version: `grep version <plugin-path>/.claude-plugin/plugin.json`** — if on-disk ≠ HEAD → session bump already applied → **STOP; do not proceed**
+3. Classify highest-magnitude change in session (`X` or `Y`)
+4. Calculate new version from HEAD baseline: `X` → bump minor, reset patch to `0`; `Y` → bump patch only; max +1 on the bumped component
+5. Write calculated version — must be exactly HEAD + the single bump; anything higher = double-bump violation
 
-**One bump per commit session** — after writing once, all further edits to that plugin in same uncommitted session must NOT bump again. On-disk version will already exceed HEAD baseline, triggering step 4 skip. Never treat on-disk bumped value as new baseline to increment from.
+**One bump per commit session** — after writing once, all further edits to that plugin in same uncommitted session must NOT bump again. Step 2 catches this: on-disk will already differ from HEAD. Never treat on-disk bumped value as new baseline to increment from.
 
 ## Edit Quality Gate
 

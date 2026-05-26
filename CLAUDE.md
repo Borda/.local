@@ -1,9 +1,16 @@
-## Local Config
+## Edit Scope — Hard Constraint
 
-`.claude/` edits stay local — no auto-propagation to `~/.claude/`.
+**ALL edits must stay within this project directory.** Never directly edit `~/.claude/` (cache, settings, hooks, or any file under the user home).
 
-- Edit `.claude/agents/`, `.claude/skills/`, `.claude/rules/`, `settings.json` freely
-- Upstream only via `/sync apply` — never suggest or initiate mid-workflow
+**Permitted edit roots** (project-local):
+
+- `.claude/agents/`, `.claude/skills/`, `.claude/rules/`, `settings.json` — project config
+- `plugins/*/hooks/`, `plugins/*/agents/`, `plugins/*/skills/` — plugin source
+
+**Propagation to live cache** at `~/.claude/plugins/cache/`:
+
+- Use `bash sync.sh claude` only — cache is managed by plugin install, never hand-edited
+- Never suggest or initiate propagation mid-workflow
 - Applies to all skills — no skill auto-syncs
 
 ## Memory Policy
