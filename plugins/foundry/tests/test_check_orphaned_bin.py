@@ -169,8 +169,9 @@ class TestFindOrphans:
 
 
 class TestMain:
-    def test_exit_0_all_referenced(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_exit_0_all_referenced(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
         with tempfile.TemporaryDirectory() as d:
+            monkeypatch.chdir(d)
             p = Path(d)
             _make_plugin(p, "myplugin", ["foo.py"])
             (p / "myplugin" / "skills").mkdir()
@@ -180,8 +181,9 @@ class TestMain:
             out = capsys.readouterr().out
             assert "✓" in out
 
-    def test_exit_1_orphans_found(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_exit_1_orphans_found(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
         with tempfile.TemporaryDirectory() as d:
+            monkeypatch.chdir(d)
             p = Path(d)
             _make_plugin(p, "myplugin", ["orphan.py"])
             rc = main(["--plugins-dir", str(p)])
@@ -190,8 +192,11 @@ class TestMain:
             assert "⚠ 32d" in out
             assert "orphan.py" in out
 
-    def test_exit_1_output_includes_hint(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_exit_1_output_includes_hint(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         with tempfile.TemporaryDirectory() as d:
+            monkeypatch.chdir(d)
             p = Path(d)
             _make_plugin(p, "myplugin", ["orphan.py"])
             main(["--plugins-dir", str(p)])

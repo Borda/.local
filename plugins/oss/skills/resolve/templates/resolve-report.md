@@ -23,6 +23,7 @@
 - `gh pr merge <PR#> --merge` to merge now (preserves all commits)
 
 ## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.8–0.9 | low <0.8 ⚠]
-**Gaps**: [e.g. conflict strategy ambiguity, action items skipped at guard, Codex partial completion]
-**Refinements**: N passes. — omit if 0 passes
+
+<!-- format per quality-gates.md: Score 0.N, Gaps bullets, Refinements N passes (omit if 0) -->
+
+**Score**: 0.N — **Gaps**: — **Refinements**: N passes.

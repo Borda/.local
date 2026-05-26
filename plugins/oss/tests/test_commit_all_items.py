@@ -19,8 +19,9 @@ import commit_all_items as cai
 class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 
-    def __init__(self, returncode: int = 0) -> None:
+    def __init__(self, returncode: int = 0, stdout: str = "") -> None:
         self.returncode = returncode
+        self.stdout = stdout
 
 
 @pytest.fixture
@@ -30,11 +31,23 @@ def fake_git(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
 
     def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
         recorded.append(list(cmd))
+        subcmd = cmd[1] if len(cmd) > 1 else ""
+        if subcmd == "rev-parse":
+            return _FakeCompleted(returncode=0, stdout="/repo/my-project\n")
+        if subcmd == "branch":
+            return _FakeCompleted(returncode=0, stdout="main\n")
+        if subcmd == "diff":
+            return _FakeCompleted(returncode=1)
         return _FakeCompleted(returncode=0)
 
     monkeypatch.setattr(cai.subprocess, "run", _fake_run)
     monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
     return recorded
+
+
+def _commit_calls(recorded: list[list[str]]) -> list[list[str]]:
+    """Return recorded ``git commit`` calls."""
+    return [cmd for cmd in recorded if len(cmd) > 1 and cmd[1] == "commit"]
 
 
 def test_missing_pr_number_exits_1(fake_git: list[list[str]], capsys: pytest.CaptureFixture[str]) -> None:
@@ -75,14 +88,15 @@ def test_successful_commit_exits_0(fake_git: list[list[str]]) -> None:
     """Valid args → git commit invoked once, exit 0."""
     rc = cai.main(["42", "3", "1", "0"])
     assert rc == 0
-    assert len(fake_git) == 1
-    assert fake_git[0][1:3] == ["commit", "-m"]
+    commit_calls = _commit_calls(fake_git)
+    assert len(commit_calls) == 1
+    assert commit_calls[0][1:3] == ["commit", "-m"]
 
 
 def test_commit_message_contains_pr_and_counts(fake_git: list[list[str]]) -> None:
     """Commit message includes PR number and all three challenge-log counts."""
     cai.main(["99", "2", "1", "0"])
-    msg = fake_git[0][3]
+    msg = _commit_calls(fake_git)[0][3]
     assert "PR #99" in msg
     assert "2 as-suggested" in msg
     assert "1 self-resolved" in msg
@@ -92,14 +106,14 @@ def test_commit_message_contains_pr_and_counts(fake_git: list[list[str]]) -> Non
 def test_codex_flag_adds_trailer(fake_git: list[list[str]]) -> None:
     """``--codex`` flag → OpenAI Codex co-author trailer present in message."""
     cai.main(["42", "3", "1", "0", "--codex"])
-    msg = fake_git[0][3]
+    msg = _commit_calls(fake_git)[0][3]
     assert "Co-authored-by: OpenAI Codex" in msg
 
 
 def test_no_codex_flag_omits_trailer(fake_git: list[list[str]]) -> None:
     """Without ``--codex``, OpenAI Codex trailer absent from message."""
     cai.main(["42", "3", "1", "0"])
-    msg = fake_git[0][3]
+    msg = _commit_calls(fake_git)[0][3]
     assert "OpenAI Codex" not in msg
 
 
@@ -108,7 +122,7 @@ def test_summaries_file_content_in_message(fake_git: list[list[str]], tmp_path: 
     sfile = tmp_path / "summaries.txt"
     sfile.write_text("- fixed foo\n- refactored bar\n")
     cai.main(["42", "3", "1", "0", str(sfile)])
-    msg = fake_git[0][3]
+    msg = _commit_calls(fake_git)[0][3]
     assert "- fixed foo" in msg
     assert "- refactored bar" in msg
 
@@ -117,7 +131,7 @@ def test_missing_summaries_file_ignored(fake_git: list[list[str]], tmp_path: Pat
     """Non-existent summaries file path → no error, commit proceeds normally."""
     rc = cai.main(["42", "3", "1", "0", str(tmp_path / "nosuchfile.txt")])
     assert rc == 0
-    assert len(fake_git) == 1
+    assert len(_commit_calls(fake_git)) == 1
 
 
 def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:

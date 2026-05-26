@@ -26,7 +26,7 @@ If `CODEX_AVAILABLE=false`: degrade gracefully — match `action-item-dispatch.m
 | `test` | `foundry:qa-specialist` |
 | `docs` | `foundry:doc-scribe` |
 | `style` | `foundry:linting-expert` |
-| ambiguous / config-only changes | `foundry:curator` |
+| ambiguous / config-only changes | `foundry:sw-engineer` |
 
 Print `⚠ codex plugin not found — falling back to <agent> for this comment. For broader Codex support: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`. Set `IMPL_AGENT=<fallback agent>`; proceed to Step 12a with fallback agent in place of `codex:codex-rescue`. Skip the Codex review loop (Step 12b) when no Codex available — single dispatch only.
 
@@ -34,12 +34,10 @@ Print `⚠ codex plugin not found — falling back to <agent> for this comment. 
 
 **BATCH_SIZE=5** — dispatch at most 5 `Agent()` calls per response turn; wait for all to return before next batch. If $ARGUMENTS expands to more than 5 comment items (multi-comment dispatch), process first 5, wait for results, then continue with next 5. Prevents rate-limit hits and unbounded parallel spawn.
 
-Compute the scoped sentinel path (matches `git-commit.md` Path A pattern — `/tmp/claude-commit-auth-<repo-slug>-<branch-slug>`), touch it, and register a cleanup trap so the authorization is revoked on completion or abort:
+Compute the scoped sentinel path via `compute_commit_sentinel.py`, touch it, and register a cleanup trap:
 
 ```bash
-REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
-BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
-SENTINEL="/tmp/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
+SENTINEL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/compute_commit_sentinel.py")  # timeout: 5000
 touch "$SENTINEL"  # timeout: 3000
 trap 'rm -f "$SENTINEL"' EXIT INT TERM
 ```
@@ -85,14 +83,11 @@ if REVIEW_PASS == 5 and ISSUES_FOUND > 0:
 
 ### 12c: Lint and QA gate
 
-If code changed:
+If code changed, ensure `$CHANGE_SCOPE` set (default `targeted` if unset), then delegate to gate:
 
-```bash
-RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # timeout: 5000
-mkdir -p "$RUN_DIR"                                          # timeout: 5000
+```text
+Read and execute $_OSS_RESOLVE/modes/lint-qa-gate.md
 ```
-
-Apply **Step 9 lint and QA gate pattern** from main resolve workflow — same parallel spawn of `foundry:linting-expert` + `foundry:qa-specialist`, commit lint fixes, surface blocking QA issues. Use `$RUN_DIR/linting-expert-step12c.md` and `$RUN_DIR/qa-specialist-step12c.md` as output paths.
 
 Commit authorization is revoked automatically by the `trap 'rm -f "$SENTINEL"' EXIT INT TERM` registered in Step 12a — `$SENTINEL` stays in scope for the entire dispatch + review + gate sequence. Do **not** issue a separate `rm -f /tmp/claude-commit-authorized` here; that path is no longer used (sentinel is now scoped per repo + branch per `git-commit.md`).
 
@@ -120,7 +115,7 @@ Then print:
 ## Confidence
 **Score**: [0.N]
 **Gaps**: [e.g. Codex partial completion, ambiguous comment intent]
-**Refinements**: N passes. — omit if 0 passes
+**Refinements**: N passes.
 ```
 
 </workflow>

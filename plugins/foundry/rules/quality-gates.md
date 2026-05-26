@@ -105,3 +105,4 @@ Fix: <concrete action to resolve>
 ```
 
 - Severity markers: `!` = critical · `⚠` = warnings · `✓` = pass · hint = fix hint
+- **Block merge integrity**: after merging two blocks (combining e.g. `<antipatterns>` + `<quality_checks>` into one), diff combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops

@@ -39,6 +39,10 @@ Bare comment text → skip to Codex dispatch (Step 12).
 <constants>
 CHALLENGE_TIMEOUT_S=300  # tightened from CLAUDE.md §8 default 900s
 CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §8 default 300s
+# Bash timeout convention — `# timeout: N` annotations in bash blocks are honored by the Claude Code
+# Bash tool (sets tool-level timeout). Shell enforcement (`timeout S cmd` prefix) is NOT required for
+# skills executed exclusively via Claude Code. Shell prefix added only for commands that could hang
+# in direct-shell execution (git push, gh pr checkout).
 </constants>
 
 <workflow>
@@ -57,7 +61,7 @@ _OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 
 ```
 Read `$_OSS_SHARED/oss-shared-resolver.md` and execute its contents.
 
-Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
+Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, `foundry:challenger`.
 
 <!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:linting-expert → general-purpose, foundry:challenger → general-purpose. -->
 
@@ -223,90 +227,129 @@ Extract and record:
 - `BASE_REPO_OWNER` — owner of base repo; from `.url` via `split("/")[3]` or `gh repo view --json owner -q .owner.login`
 - `IS_FORK` — `.isCrossRepository` (`true` = fork PR, `false` = same-repo branch)
 - `CLOSING_ISSUES` — linked issue numbers (`.closingIssuesReferences[].number`)
+- `PR_TITLE` — `.title`
+- `PR_BODY` — `.body` (short; kept in-context as motivation prompt seed)
+- `PR_LABELS` — `.labels[].name | join(",")` (comma-separated label names; empty string if none)
 
-Fetch full discussion:
-
-```bash
-gh pr view <PR_NUMBER> --comments                        # PR-level comments + timeline
-gh api repos/{owner}/{repo}/pulls/<PR_NUMBER>/reviews  # formal reviews (Approve / Request Changes)
-gh api repos/{owner}/{repo}/pulls/<PR_NUMBER>/comments # inline code comments with file + line
-```
-
-Fetch resolved thread status via GraphQL (`isResolved` not in REST `/pulls/{PR}/comments`):
+Set up implementation work directory and fetch repo name (used throughout the workflow):
 
 ```bash
-REPO_OWNER=$(gh repo view --json owner --jq .owner.login 2>/dev/null || echo "$BASE_REPO_OWNER")  # timeout: 6000
+[ -z "$IMPL_DIR" ] && IMPL_DIR=$(mktemp -d)  # timeout: 3000
+mkdir -p "$IMPL_DIR"  # timeout: 3000
 REPO_NAME=$(gh repo view --json name --jq .name 2>/dev/null)  # timeout: 6000
-RESOLVED_THREAD_IDS=$(gh api graphql \
-  -f query='query($owner:String!,$repo:String!,$pr:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$pr){reviewThreads(first:100){nodes{isResolved,comments(first:1){nodes{databaseId}}}}}}}' \
-  -f owner="$REPO_OWNER" \
-  -f repo="$REPO_NAME" \
-  -F pr="$PR_NUMBER" \
-  --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved) | .comments.nodes[0].databaseId]' \
-  2>/dev/null || echo "[]")  # timeout: 15000
-[ "$RESOLVED_THREAD_IDS" = "[]" ] && echo "⚠ Could not fetch resolved thread status — some action items may already be resolved on GitHub; review the table carefully before implementing"
 ```
 
-> **Pagination note (PRs with >100 review threads)** — `reviewThreads(first:100)` returns at most 100 threads with no pagination; large PRs silently truncate. Extend the query to include `pageInfo{hasNextPage,endCursor}`; check `reviewThreads.pageInfo.hasNextPage` after each page; if `true`, re-issue the query with `after:"$endCursor"` and accumulate `databaseId` values across pages until `hasNextPage` is `false` before marking threads resolved. Truncation produces false `pending` classification → already-resolved items get reimplemented.
+### Thread intelligence (subagent)
 
-Non-empty `CLOSING_ISSUES` → fetch each linked issue:
+Infer `INTEL_AGENT` from `PR_LABELS` + `PR_TITLE` (lowercase, first match wins) using the same routing table as `action-item-dispatch.md`:
+
+| Signal keywords in labels/title | `INTEL_AGENT` |
+| --- | --- |
+| `test`, `spec`, `pytest`, `coverage` | `foundry:qa-specialist` |
+| `doc`, `readme`, `changelog`, `sphinx` | `foundry:doc-scribe` |
+| `lint`, `style`, `format`, `ruff`, `mypy` | `foundry:linting-expert` |
+| (no match / mixed) | `foundry:sw-engineer` |
+
+Apply `agent-resolution.md` fallback to `INTEL_AGENT` (foundry absent → substitute with `general-purpose` + role prefix).
+
+Raw PR discussion — all `--comments`, formal reviews, and inline code comments — can be thousands of tokens on an active PR. Offload fetching + classification to a subagent; orchestrator context stays small. Subagent writes structured output to `$IMPL_DIR/`; orchestrator reads only the compact envelope and loads the classified table from file.
+
+```text
+Agent(subagent_type="${INTEL_AGENT}", prompt="
+Fetch and classify PR #<PR_NUMBER> review feedback for the /oss:resolve workflow.
+
+Inputs (substitute literal values — agent does not inherit shell variables):
+- PR: #<PR_NUMBER>  (repo: <BASE_REPO_OWNER>/<REPO_NAME>)
+- PR title: <PR_TITLE>
+- PR body: <PR_BODY>
+- Linked issues: <CLOSING_ISSUES>  # comma-separated issue numbers; may be empty
+- Contributor: @<PR_AUTHOR>
+- Output dir: <IMPL_DIR>           # expand to absolute path before spawning
+
+Fetch (each gh call timeout 15000 ms; run as Bash):
+1. gh pr view <PR_NUMBER> --comments
+2. gh api repos/<BASE_REPO_OWNER>/<REPO_NAME>/pulls/<PR_NUMBER>/reviews
+3. gh api repos/<BASE_REPO_OWNER>/<REPO_NAME>/pulls/<PR_NUMBER>/comments
+4. Resolved-thread databaseId list via GraphQL with full pagination:
+   Use query with pageInfo{hasNextPage,endCursor} on reviewThreads(first:100,after:\$after).
+   Loop until hasNextPage=false; accumulate databaseId values for isResolved=true threads.
+   On GraphQL failure → treat as empty list.
+5. For each issue number in CLOSING_ISSUES: gh issue view <N> --json title,body
+
+Synthesize contribution motivation (2–3 sentences using PR body + linked issues):
+what problem contributor solving, why this approach, expected user-visible outcome.
+This becomes the priority lens for conflict resolution.
+
+Classify EVERY comment using these codes:
+  [gh][req]      change required before merge (reviewer with write access / maintainer)
+  [gh][suggest]  improvement, non-blocking
+  [gh][question] open question — needs answer before deciding what code to write
+  [done]         thread isResolved=true OR subsequent commit/reply addressed it
+  [info]         praise / acknowledgement / emoji-only — skip
+  [self-review]  /oss:review finding — not a GitHub commenter
+
+Per inline comment: if its REST 'id' (= GraphQL databaseId) appears in resolved-thread
+list → mark [done] without reading content. All others: apply codes above.
+
+ACTION_ITEM fields: id (sequential int starting at 1), type, change, severity, author,
+summary (≤60 chars, truncated at word boundary with …), file, line, url (html_url from
+API, blank for report items), full_comment_text.
+  - change ∈ {code,test,docs,config,ci,style,refactor}; default=code when ambiguous
+  - severity ∈ 1..5 (5=highest); [req] floor=3
+
+Write THREE files using the Write tool (expand <IMPL_DIR> to the literal path above):
+
+1. <IMPL_DIR>/pr-intelligence.md
+   Sources block: Mode=pr · PR=#<PR_NUMBER> · GitHub=Read — PR body · <N> comments ·
+   <N> reviews · <N> inline code comments · Report=not used
+   Motivation paragraph (2–3 sentences).
+   Table header: ### Action Items — PR #<PR_NUMBER>
+   Columns: # | Type | Change | Severity | Author | Status | Summary | Notes
+   Truncation: Summary ≤60 chars, Notes ≤45 chars (use — when empty). All Status=pending.
+   MUST render as markdown table. Example row:
+   | 1 | [gh][req] | code | 4 | @reviewer | pending | rename param x to count | — |
+
+2. <IMPL_DIR>/action-items.jsonl
+   One compact JSON object per line, one ACTION_ITEM each.
+   Fields: id, type, change, severity, author, summary, file, line, url, full_comment_text.
+
+3. <IMPL_DIR>/pr-vars.sh
+   ONLY these assignments, one per line, each value single-quoted, no shell metacharacters:
+     RESOLVED_THREAD_IDS_COUNT='<int>'
+     ACTION_ITEMS_TOTAL='<int>'
+     ACTION_ITEMS_REQ='<int>'
+     ACTION_ITEMS_SUGGEST='<int>'
+     ACTION_ITEMS_DONE='<int>'
+     PR_MOTIVATION='<motivation text; replace any literal single-quotes in text with spaces>'
+
+DO NOT print table, motivation, or raw comment data in final message — write to files only.
+Return ONLY this compact JSON as your FINAL message (nothing after it):
+{\"status\":\"done\",\"items\":N,\"req\":N,\"suggest\":N,\"done\":N,\"files\":[\"<IMPL_DIR>/pr-intelligence.md\",\"<IMPL_DIR>/action-items.jsonl\",\"<IMPL_DIR>/pr-vars.sh\"]}
+")
+```
+
+> **Health monitoring** — CLAUDE.md §8: checkpoint before spawn; poll every 5 min; hard cutoff 15 min (tighten: use `CHALLENGE_TIMEOUT_S=300` from `<constants>` as the polling interval). On timeout ⏱: fall back to inline execution (fetch GitHub data directly in orchestrator context, classify inline) with explicit warning — never silently produce empty ACTION_ITEMS.
+
+Validate and source vars after agent returns:
 
 ```bash
-gh issue view <ISSUE_NUMBER> --json title,body
+# Validate: only VAR='value' lines — mirrors parse-resolve-args.py defence-in-depth
+if grep -qvE "^[A-Z_][A-Z0-9_]*='[^']*'$" "$IMPL_DIR/pr-vars.sh"; then
+    echo "! BLOCKED — pr-vars.sh has unexpected output; refusing to source"
+    cat "$IMPL_DIR/pr-vars.sh"
+    exit 1
+fi
+. "$IMPL_DIR/pr-vars.sh"
+[ "${RESOLVED_THREAD_IDS_COUNT:-0}" = "0" ] && echo "⚠ Could not fetch resolved thread status — some items may already be resolved; review table carefully"  # timeout: 3000
 ```
 
-### Synthesize contribution motivation
+Read `$IMPL_DIR/pr-intelligence.md` and print its contents (Sources block + motivation + action item table). Orchestrator context now holds the *classified* table (~500–1000 tokens) rather than raw PR thread (often 5000–20000+ tokens on active PRs). All later steps read per-item details from `$IMPL_DIR/action-items.jsonl` when `full_comment_text` or other fields are needed:
 
-Read PR title, body, linked issues, commits. Produce 2–3 sentence paragraph:
-
-- What problem/gap contributor solving (linked issues or PR description)
-- Why they chose this approach (PR body, design notes in commits)
-- Expected user-visible outcome
-
-Motivation = **priority lens for conflict resolution** in Step 7 — whose logic wins when both sides touched same area.
-
-### Classify action items
-
-Read every comment, review, inline code comment. Per inline code comment: if its `id` (REST response field `id`, same value as `databaseId` in GraphQL) appears in `RESOLVED_THREAD_IDS` → classify as `[done]` immediately without reading thread content. All others, apply table below:
-
-| Code | Meaning |
-| --- | --- |
-| `[gh][req]` | Change **required** before merge — requested by reviewer with write access or maintainer |
-| `[gh][suggest]` | Improvement suggested — nice-to-have, non-blocking |
-| `[gh][question]` | Open question needing answer before deciding what code to write |
-| `[done]` | Review thread marked resolved on GitHub (`isResolved=true`) OR subsequent commit/reply already addressed — skip |
-| `[info]` | Praise, acknowledgement, emoji-only — skip |
-| `[self-review]` | Finding from `/oss:review` report — not a GitHub commenter; author = agent name |
-
-Build `ACTION_ITEMS`: `[{id, type, change, severity, author, summary, file, line, url, full_comment_text}]` — `url`: `html_url` from GitHub API response; blank for report items
-
-- **`change`** — type of change required: `code` · `test` · `docs` · `config` · `ci` · `style` · `refactor`; infer from finding text and affected file path; default `code` when ambiguous
-- **`severity`** — estimated impact severity 1–5 (5 = highest): 5 = blocks merge / data loss / security; 4 = user-visible regression; 3 = correctness/important quality gap; 2 = improvement, non-blocking; 1 = nit / style; map from comment urgency and `type` (`[req]` → floor 3)
-
-### Sources confirmation
-
-Print Sources block (same format as Step 3a template; Mode=pr · PR=#<N> · GitHub=Read — PR body · <N> comments · <N> reviews · <N> inline code comments · Report=not used) right before action item table.
-
-Print action item table — **MUST render as markdown table; never use key-value list, prose, or separator-delimited format regardless of cell length**. Mandatory per-cell truncation (truncate with `…`, never wrap or split):
-
-- **Summary**: ≤60 chars — truncate at word boundary, append `…`
-- **Notes**: ≤45 chars — truncate; full text preserved in `full_comment_text`; use `—` when empty
-- **Change**: one of `code` · `test` · `docs` · `config` · `ci` · `style` · `refactor`
-- **Severity**: integer 1–5; `[req]` floor = 3
-
-Status codes: `pending` · `✓ resolved` · `⊘ skipped` · `⊘ no action`. Verbose reason → Notes column:
-
-```markdown
-### Action Items — PR #<number>
-
-| # | Type | Change | Severity | Author | Status | Summary | Notes |
-|---|------|--------|----------|--------|--------|---------|-------|
-| 1 | [gh][req] | code | 4 | @reviewer | pending | rename param `x` to `count` | — |
-| 2 | [gh][suggest] | docs | 2 | @maintainer | pending | add docstring | — |
-| 3 | [gh][question] | code | 3 | @reviewer | pending | why not use X instead? | — |
+```bash
+jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl"  # timeout: 5000
 ```
 
-Long content never justifies switching to key-value or separator-delimited format — truncate, stay in table.
+### `[question]` item handling
 
 Answer `[question]` items resolvable from code — clear answer → present answer and proposed reclassification via `AskUserQuestion` before implementing: "[question] #N: '<summary>' — answer: '<answer>'. Reclassify as [req]?" Options: (a) Yes, implement · (b) Keep as question for maintainer. Never self-promote `[question]` to `[req]` without user confirmation. Maintainer judgement needed → surface and pause. Contributor answer ≠ auto-close — answer revealing known limitation/deferred work → keep `[question]`, surface for maintainer to accept/reject.
 

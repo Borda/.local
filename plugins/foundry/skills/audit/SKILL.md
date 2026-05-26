@@ -37,8 +37,8 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
   - `plugins` — full audit of all plugins: per-file audit of every `plugins/*/agents/*.md` and `plugins/*/skills/*/SKILL.md` + integration checks (7, 8) per plugin
   - `plugins <name>` — same as `plugins` scoped to one plugin: `plugins/<name>/agents/*.md` + `plugins/<name>/skills/*/SKILL.md` + integration checks; `<name>` must match dir under `plugins/` (e.g. `plugins foundry`, `plugins oss`, `plugins research`)
   - `<plugin-name>` — **tier 2 shorthand**: bare plugin dir name (e.g. `oss`, `foundry`, `research`, `develop`, `codemap`) auto-resolved when token matches dir under `plugins/`; equivalent to `plugins <name>`; no `plugins` prefix needed
-  - `<agent-name>` — **tier 3**: name matches `plugins/*/agents/<name>.md` or `.claude/agents/<name>.md`; runs agent checks only (Checks 14, 15, 19, 20, 17, 12, 13, 25, 22, 26, 29); one file in Step 3
-  - `<skill-name>` — **tier 3**: name matches `plugins/*/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`; runs skill checks only (Checks 14, 15, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29); one file in Step 3
+  - `<agent-name>` — **tier 3**: name matches `plugins/*/agents/<name>.md` or `.claude/agents/<name>.md`; runs agent checks only (Checks 14a, 14b, 15, 19, 20, 17, 12, 13, 25, 22, 26, 29); one file in Step 3
+  - `<skill-name>` — **tier 3**: name matches `plugins/*/skills/<name>/SKILL.md` or `.claude/skills/<name>/SKILL.md`; runs skill checks only (Checks 14a, 14b, 15, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29); one file in Step 3
   - Multiple scope tokens — space-separated, any combo; scope = union of resolved file sets: `agents skills`, `oss research`, `shepherd curator`, `review resolve`; check list = union (de-duplicated)
 
   **Scope token resolution** (each remaining token after flag-strip, resolved before Step 2): (1) reserved keywords (`agents`, `skills`, `rules`, `communication`, `setup`, `plugin`, `plugins`) → use as-is; (2) matches dir under `plugins/<token>/` → tier 2; (3) matches agent file in `plugins/*/agents/<token>.md` or `.claude/agents/<token>.md` → tier 3 agent; (4) matches skill dir `plugins/*/skills/<token>/` or `.claude/skills/<token>/` → tier 3 skill; (5) no match → error and stop
@@ -280,10 +280,10 @@ Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$AUDIT_CHECKPOINT" -ty
 > | --- | --- |
 > | `setup` | `checks-setup.md` (Checks 1–11, 39) + `checks-install.md` (I1–I3) + `checks-security.md` (Check 37) |
 > | `plugin` | `checks-setup.md` (Checks 7, 8 only) |
-> | `plugins` | `checks-setup.md` (7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14, 15, 17, 12, 13, 25, 26, 29) + checks 32, 32d, 33, 38, 40 + `checks-install.md` (R1–R5 — LOCAL_MODE) + `checks-security.md` (35, 36, 37) |
+> | `plugins` | `checks-setup.md` (7, 8) + `checks-agents.md` + `checks-skills.md` + `checks-shared.md` (14a, 14b, 15, 17, 12, 13, 25, 26, 29) + checks 32, 32d, 33, 38, 40 + `checks-install.md` (R1–R5 — LOCAL_MODE) + `checks-security.md` (35, 36, 37) |
 > | `plugins <name>` | same as `plugins` — scoped to one plugin directory |
-> | `agents` | `checks-agents.md` (19, 20) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 26, 29) + `checks-skills.md` (22, 40 only) + `checks-security.md` (35, 36) |
-> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33, 38, 40) + `checks-shared.md` (run only: 14, 15, 17, 12, 13, 25, 26, 29) + `checks-security.md` (35–37) |
+> | `agents` | `checks-agents.md` (19, 20) + `checks-shared.md` (run only: 14a, 14b, 15, 17, 12, 13, 25, 26, 29) + `checks-skills.md` (22, 40 only) + `checks-security.md` (35, 36) |
+> | `skills` | `checks-skills.md` (21–24, 27, 28, 30, 31, 32, 33, 38, 40) + `checks-shared.md` (run only: 14a, 14b, 15, 17, 12, 13, 25, 26, 29) + `checks-security.md` (35–37) |
 > | `rules` | `checks-shared.md` (run only: 18, 12, 13, 29) + `checks-skills.md` (32c only) |
 > | `communication` | `checks-shared.md` (run only: 15, 16, 12, 13, 29) |
 > | No scope (full) | all 5 files |
@@ -307,16 +307,16 @@ Don't leave overlap findings as vague "potential duplication." Audit must say wh
 
 **Scope filter**: when `$SCOPE` is set, run only checks listed for that scope; skip all others silently.
 
-- `agents` — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
-- `skills` — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 40 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
+- `agents` — Checks 14a, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40 (files: `.claude/agents/*.md` + `plugins/*/agents/*.md`)
+- `skills` — Checks 14a, 14b, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 35, 36, 37, 38, 40 (files: `.claude/skills/*/SKILL.md` + `plugins/*/skills/*/SKILL.md`)
 - `rules` — Checks 18, 12, 13, 29, 32c (32d skipped — no plugin bin/ in rules scope)
 - `communication` — Checks 15, 16, 12, 13, 29
 - `setup` — Checks 1, 2, 3, 4, 5, 9, 10, 11, 7, 6, 8, 30, 37, 39, I1, I2, I3 (Step 3: one foundry:curator spawn for `setup` SKILL.md only; I1–I3 read `~/.claude/`)
 - `plugin` — Checks 7, 8 (Step 3: one foundry:curator spawn for `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/setup/SKILL.md` only)
-- `plugins` — Checks 7, 8, 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's setup SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
+- `plugins` — Checks 7, 8, 14, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 21, 23, 24, 27, 28, 29, 30, 31, 32, 32d, 33, 35, 36, 37, 38, 39, 40, R1, R2, R3, R4, R5 (files: all `plugins/*/agents/*.md` + `plugins/*/skills/*/SKILL.md`; Step 3: foundry:curator batches for all plugin agents + skills + each plugin's setup SKILL.md; 32d, R1–R5 always LOCAL_MODE — skip in non-local)
 - `plugins <name>` or `<plugin-name>` (tier 2) — same check list as `plugins`, scoped to `plugins/<name>/` only
-- `<agent-name>` (tier 3) — Checks 14, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40 (one file only; no cross-plugin Checks 7/8)
-- `<skill-name>` (tier 3) — Checks 14, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a, 35, 36, 37, 38, 40 (one file only)
+- `<agent-name>` (tier 3) — Checks 14, 14b, 15, 16, 19, 20, 17, 12, 13, 25, 22, 26, 29, 35, 36, 40 (one file only; no cross-plugin Checks 7/8)
+- `<skill-name>` (tier 3) — Checks 14, 14b, 15, 16, 21, 17, 12, 23, 22, 13, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33a, 35, 36, 37, 38, 40 (one file only)
 - Multiple scope tokens — union of check lists for all resolved scope types; de-duplicate; run each check once against union file set
 - No scope argument — run all checks
 
@@ -566,7 +566,8 @@ Audit-fix sub-agent (when used) must apply this loop internally — instruct to 
 
 - Check 1 (inventory drift) — if any agent or skill file modified
 - Check 2 (README vs disk) — if any agent or skill added, renamed, or deleted
-- Check 14 (orphaned follow-up references) — if any skill file modified
+- Check 14a (structural tag symmetry) — if any agent or skill file modified
+- Check 14b (code fence symmetry) — if any agent or skill file modified
 - Check 17 (cross-file content duplication) — if 2+ files modified
 - Check 25 (implicit agent references) — if any agent or skill file modified
 - Check 27 (cross-plugin shared-file ref integrity) — if any skill file modified
@@ -616,15 +617,24 @@ Read and execute `$EFFICIENCY_MD`.
 
 When user picks fix option (a–c): run Steps 8–10 inline (state on disk in `summary.jsonl`); no recursive `/audit` call.
 
-- question: "What next?" (include counts, e.g. "2 critical, 4 high, 3 medium, 1 low. What next?")
-- (a) label: `Fix SECURITY + CRITICAL + HIGH` — auto-fix all security findings plus critical and high
+**HARD RULE — Fixed option labels**: Use exactly the labels below verbatim. Do NOT rewrite, paraphrase, or substitute finding-specific alternatives. Finding context must NOT influence option labels. This rule has been violated repeatedly in past runs; enforce strictly.
+
+**Mandatory options (always present, never omit)**:
 - (b) label: `Fix auto-fixable` — auto-fix critical, high, medium, and low findings (skip NON_AUTO_FIXABLE systemic issues); **recommended**
 - (c) label: `Fix ALL` — collect all NON_AUTO_FIXABLE decisions upfront (max 4 `AskUserQuestion` calls), then run one integrated fix pass covering auto-fixable + resolved systemic items + lows; most thorough option
-- (d) label: `Skip` — no fixes now; for other modes run `/audit --upgrade`, `/audit --adversarial`, `/audit --efficiency`, or `/foundry:setup` manually
 
-After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate. Fix options (a)–(c) always present — never omit. For (d) Skip hint: remove the mode just run from the "for other modes" list. When `--adversarial --efficiency` combined: fire gate once after both modes complete with merged finding counts; remove both from (d) hint.
+**Conditional options (include when condition met)**:
+- (a) label: `Fix SECURITY + CRITICAL + HIGH` — include only when security, critical, or high findings present; omit otherwise to stay within 4-option cap
+- (d) label: `Skip` — always include; when `--efficiency` ran and `extract_count > 0` (HIGH or MEDIUM), replace with `` `Run /distill executables (N HIGH, M MEDIUM candidates)` `` instead
 
-**Efficiency mode — extraction override**: when `--efficiency` ran AND Phase C envelope `extract_count > 0` (HIGH or MEDIUM verdict clusters exist): replace option (d) label with `` `Run /distill executables (N HIGH, M MEDIUM candidates)` `` where N and M come from Phase C envelope; selecting this option invokes `/distill executables` → `foundry:sw-engineer` extraction then `/audit --efficiency` re-run to confirm savings. User may type "skip" via Other to defer.
+**Option slot budget** (`AskUserQuestion` hard cap = 4 options; "Other" always auto-appended as 5th free-text slot):
+- Typical: (a) + (b) + (c) + (d) = 4 ✓
+- No sec/crit/high findings: (b) + (c) + (d) = 3 ✓ — slot freed; do NOT fill with custom finding-specific option
+- Efficiency override active: (a) + (b) + (c) + distill = 4 ✓ — (d) Skip replaced by distill label
+
+- question: "What next?" (include counts, e.g. "2 critical, 4 high, 3 medium, 1 low. What next?")
+
+After completing `--upgrade`, `--adversarial`, or `--efficiency`: also fire this gate. For (d) Skip: remove the mode just run from the "for other modes" list. When `--adversarial --efficiency` combined: fire gate once after both complete with merged finding counts; remove both from (d) hint. Efficiency distill override: selecting distill option invokes `/distill executables` → `foundry:sw-engineer` extraction then `/audit --efficiency` re-run to confirm savings.
 
 </workflow>
 

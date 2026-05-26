@@ -327,6 +327,27 @@ process.stdin.on("end", () => {
             fs.unlinkSync(pendingFile); // consume — PreToolUse already wrote to agents/
             preToolUseTracked = true;
           } catch (_) {}
+        } else if (agent_type) {
+          // SubagentStart payload omits tool_use_id — scan pending/ for most-recent entry
+          // matching this agent_type, consume it. PreToolUse already wrote agents/<tool_use_id>.json,
+          // so skipping the second write below avoids double-counting in statusline.
+          try {
+            const files = fs
+              .readdirSync(pendingDir)
+              .map((f) => {
+                try {
+                  return { f, p: JSON.parse(fs.readFileSync(path.join(pendingDir, f), "utf8")) };
+                } catch (_) {
+                  return null;
+                }
+              })
+              .filter((x) => x && x.p && x.p.type === agent_type)
+              .sort((a, b) => (b.p.ts > a.p.ts ? 1 : -1));
+            if (files.length > 0) {
+              fs.unlinkSync(path.join(pendingDir, files[0].f)); // consume most-recent match
+              preToolUseTracked = true;
+            }
+          } catch (_) {}
         }
         if (!preToolUseTracked) {
           // No PreToolUse entry — write agents/ entry for this agent (e.g. team-mode agent)

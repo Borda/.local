@@ -109,10 +109,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if all_violations:
         for v in all_violations:
-            print(f"! C14: {v}")
+            print(f"! C14a: {v}")
         return 1
 
-    print(f"✓: Check 14 — no tag symmetry violations ({checked} files checked)")
+    print(f"✓: Check 14a — no tag symmetry violations ({checked} files checked)")
     return 0
 
 

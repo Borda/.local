@@ -304,9 +304,9 @@ Apply review findings to the codebase. Reads from live PR comments, a saved revi
 
 Resolve runs in three phases:
 
-1. **Intelligence gathering** — fetch and parse all sources; classify each finding as a requirement, suggestion, or conflict; deduplicate across sources
+1. **Intelligence gathering** — a dedicated subagent fetches the full PR thread (comments, reviews, inline code comments) so the orchestrator context stays small; subagent classifies each finding and writes structured output to files; orchestrator reads the compact classified table
 2. **Conflict resolution** — for merge conflicts, read intent from both sides; apply the semantically correct resolution (never mechanical "take ours" or "take theirs")
-3. **Action item implementation** — apply fixes in batches of 10; each fix tagged `[resolve #N]` in the commit for traceability
+3. **Action item implementation** — each item dispatched to Codex (or appropriate foundry agent per change type and complexity); soft codemap blast-radius check runs after the loop to flag callers of changed modules
 
 **Guard rails:**
 

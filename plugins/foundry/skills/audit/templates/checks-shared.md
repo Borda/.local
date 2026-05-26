@@ -70,14 +70,14 @@ fi
 
 **Severity**: **medium** — heading jumps impair navigation. Fix: insert missing intermediate heading level, or demote/promote offending heading. **Report only** — never auto-fix.
 
-## Check 14 — Structural tag symmetry
+## Check 14a — Structural tag symmetry
 
 Checks two failure modes: (1) empty blocks — `<tag></tag>` with only whitespace between open and close; (2) unbalanced tags — open count differs from close count. Both leave files structurally broken.
 
 Scan all agent and skill files via deterministic bin/ script:
 
 ```bash
-printf "=== Check 14: Structural tag symmetry ===\n"
+printf "=== Check 14a: Structural tag symmetry ===\n"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_tag_symmetry.py" \
     .claude/agents/*.md .claude/skills/*/SKILL.md  # timeout: 10000
 ```
@@ -87,6 +87,25 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_tag_symmetry.py" \
 - **Unbalanced tag**: **Auto-fix: NO** — missing open or close tag requires manual inspection to determine intended structure.
 
 > Root cause: prior fix moved or removed block content but left container tags (empty block); or copy-paste error dropped closing tag (unbalanced). Empty `<constants>` most common empty-block case.
+
+## Check 14b — Code fence symmetry
+
+Detects two failure modes: (1) unclosed fence — opening ` ``` ` or ` ```lang ` with no matching closing ` ``` `; (2) bad nesting — inner fence uses same or more backticks as outer (outer must use ```` ```` or more to contain inner ` ``` `).
+
+Scan all agent and skill files via deterministic bin/ script:
+
+```bash
+printf "=== Check 14b: Code fence symmetry ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_fence_symmetry.py" \
+    .claude/agents/*.md .claude/skills/*/SKILL.md  # timeout: 10000
+```
+
+**Severity**: **high** — unclosed fence corrupts all subsequent code blocks in the file; Claude misparses the rest of the file.
+- **Unclosed fence**: **Auto-fix: YES** — add missing closing ` ``` ` at end of block; confirm content boundary by reading surrounding context.
+- **Bad nesting**: **Auto-fix: YES** — promote outer fence to ```` ```` ```` ````; or demote inner if outer is intentionally 3-backtick.
+- **Timeout comment on closing fence** (```` ``` # timeout: N ````): **Auto-fix: YES** — move comment to last command inside block; change closing line to plain ` ``` `.
+
+> Root cause: timeout annotation placed on closing fence delimiter instead of inside block (most common); or copy-paste lost a closing ` ``` `.
 
 ## Check 15 — Hardcoded user paths
 

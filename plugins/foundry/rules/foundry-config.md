@@ -9,6 +9,12 @@ paths:
 - **STOP — do not open, read, or edit any file.** Enter plan mode first (`opusplan`). **No exceptions**: typo fixes, single-step edits, "quick" changes all require plan mode before any action. Global "3+ steps" threshold does NOT apply — any `.claude/` edit = non-trivial.
 - **Never edit `.claude/` paths directly.** Run `ls -la .claude/` first to identify the symlink target; all `.claude/` entries are symlinks into `plugins/foundry/`; edit only the source file under `plugins/foundry/`, never the `.claude/` symlink destination.
 
+## Agent Dispatch for .claude/ Config Edits
+
+Use `foundry:curator`, not `foundry:sw-engineer`, for `.claude/` edits (agents, skills, rules, CLAUDE.md). Exception: hook files (`*.js`) → `foundry:sw-engineer`.
+
+`sw-engineer` = application code. `curator` = Claude Code config files.
+
 ## After Any Change
 
 1. **Cross-references** — name or capability changes → update every file mentioning it

@@ -114,13 +114,13 @@ class TestMain:
         assert "✓" in out
 
     def test_violation_exits_one(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """File with empty block exits 1 with violation prefixed ! C14:."""
+        """File with empty block exits 1 with violation prefixed ! C14a:."""
         f = tmp_path / "bad.md"
         f.write_text("<constants></constants>\n", encoding="utf-8")
         rc = cts.main([str(f)])
         out = capsys.readouterr().out
         assert rc == 1
-        assert "! C14:" in out
+        assert "! C14a:" in out
 
     def test_nonexistent_file_skipped_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
         """Non-existent file path is silently skipped; exits 0."""

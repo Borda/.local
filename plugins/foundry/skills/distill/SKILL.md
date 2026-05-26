@@ -1,7 +1,7 @@
 ---
 name: distill
 description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates."
-argument-hint: '[review | prune | lessons | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"]'
+argument-hint: '[review | prune | lessons | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--eager]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: low
@@ -21,11 +21,12 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
 - **$ARGUMENTS**: optional. Four modes:
   - Omitted — analyze existing patterns and agents; generate suggestions proactively.
   - `review` — review existing agent/skill roster for quality and gaps without suggesting new additions.
-  - `prune` — evaluate project memory file for stale, redundant, or verbose entries and apply trimmed version.
-  - `lessons` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes.
-  - `external <source>` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory.
-  - `executables [<run-dir-or-report-path>]` — perform bin/ extraction from `/foundry:audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Gates on verdict (HIGH/MEDIUM), spawns `foundry:sw-engineer` per cluster to create bin/ scripts and replace inline blocks. Skip to **Mode: Executables Extraction** below.
-  - Description of recurring task — use description as context when generating suggestions (e.g. "I keep doing X manually").
+  - `prune [--eager]` — evaluate project memory file for stale, redundant, or verbose entries. Default: advisory diff + apply prompt. `--eager`: score every entry (Usage likelihood × Impact → Tier P0/P1/P2), print full scored table with `#` column, let user select by tier or item numbers, delegate edits to `foundry:curator`.
+  - `lessons [--eager]` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes. `--eager`: include Pattern count, Strength, and Tier columns in proposal table; let user select clusters to promote by tier or item numbers; delegate writes to `foundry:curator`.
+  - `review [--eager]` — review existing agent/skill roster for quality and gaps without suggesting new additions. `--eager`: lower overlap flag threshold from >50% to >30% scope coverage; surface any shared single capability between agents as boundary issue; add "Sharpen Boundary" section to output.
+  - `external <source> [--eager]` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory. `--eager`: lower adoption bar — recommend partial adoption even for single useful components.
+  - `executables [--eager] [<run-dir-or-report-path>]` — perform bin/ extraction from `/foundry:audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Default gates on HIGH/MEDIUM verdict. `--eager`: also surface LOW verdict clusters as extraction candidates. Spawns `foundry:sw-engineer` per cluster. Skip to **Mode: Executables Extraction** below.
+  - `[--eager] <recurring task description>` — use description as context when generating suggestions. `--eager`: lower frequency threshold from 3+ to 2+ occurrences; single high-effort occurrence also qualifies.
 
 </inputs>
 
@@ -37,6 +38,13 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
+
+```bash
+# Parse --eager flag; strip from ARGUMENTS before mode dispatch
+EAGER=false
+[[ "$ARGUMENTS" == *"--eager"* ]] && EAGER=true
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--eager//g' | xargs)  # timeout: 3000
+```
 
 ## Step 1: Inventory existing agents and skills
 
@@ -58,7 +66,7 @@ For each agent/skill found, extract: name, description, tools, purpose. Tag each
 
 **If `$ARGUMENTS` first whitespace-delimited token equals `external`** (i.e. `external <source>`, NOT a word that merely starts with the string `external`): skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
 
-**If `$ARGUMENTS` is `review`**: skip git analysis below and go directly to Step 3 (Gap analysis). Use agent/skill descriptions from Step 1 as sole input — goal is to assess quality and coverage of existing roster, not look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries.
+**If `$ARGUMENTS` is `review`**: skip git analysis below and go directly to Step 3 (Gap analysis). Use agent/skill descriptions from Step 1 as sole input — goal is to assess quality and coverage of existing roster, not look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries. With `--eager`: apply stricter overlap detection in Step 4 (threshold drops to >30%; any shared single named capability flags as boundary issue); add "Recommend: Sharpen Boundary" section to Step 5 output listing all partial-overlap pairs with specific capability to split.
 
 Otherwise, look for signals of repetitive or specialist work. First three git commands are independent — run in parallel:
 
@@ -87,6 +95,11 @@ If `$ARGUMENTS` provided, use as additional context for pattern analysis.
 - **significant manual effort** per occurrence (subjective — use git history context) → high-value automation target
 - **Domain-specific knowledge** required → candidate for specialist agent (not just skill)
 
+With `--eager` (lower thresholds):
+- **2+ occurrences** → candidate for automation
+- **1 occurrence** with significant manual effort → qualifies as high-value candidate
+- Domain-specific threshold unchanged
+
 ## Step 3: Gap analysis
 
 > **`review` mode**: focus on agent/skill quality and coverage gaps — skip "Recommend: New Agent/Skill" analysis and focus on "Existing Coverage" and "Recommend: Enhance Existing".
@@ -113,6 +126,7 @@ Before recommending anything, run overlap check and anti-pattern checklist:
 ```markdown
 For each candidate agent/skill:
 - Does any existing agent cover >50% of its scope? → enhance existing instead
+  (with --eager: lower to >30%; any shared single named capability → flag as boundary issue)
 - Is the name/description confusingly similar to an existing one? → rename existing
 ```
 
@@ -182,6 +196,73 @@ fi
  **Short-circuit**: `exit 0` inside this bash block would terminate only the bash subprocess, **not** the surrounding skill — so without the explicit gate below the skill would continue into the prune-evaluation steps with no memory file to operate on. After the block above runs, **scan bash output for a line where the entire line content is exactly `PRUNE_ABORT`** (use exact-line match: `[[ "$line" == "PRUNE_ABORT" ]]`, not substring match). If present, **stop the prune mode entirely**: skip every remaining prune step (read, evaluate, P1–P3, summary) and end the response with the Confidence block. Otherwise, extract the memory file path from the `PRUNE_FOUND_PATH: <path>` output line for use in subsequent Read calls. The remaining prune-mode prose below assumes `PRUNE_FOUND` was in output.
 
 Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md need not live in memory.
+
+**If `$EAGER == true`** — skip P1–P3 below; execute P-eager steps:
+
+**P-eager-1**: Score every MEMORY.md section against two dimensions:
+
+- **Usage likelihood**: High = needed every session · Moderate = occasional · Low = rare/one-off
+- **Impact if missing**: High = wrong behavior without it · Moderate = degraded output · Low = no effect
+- **Tier** (derived): P0 = keep · P1 = trim candidate · P2 = drop/convert candidate
+  - P0: High×High or High×Moderate
+  - P1: any Moderate×Moderate or mixed High/Low signal
+  - P2: Low usage OR Low impact (especially both)
+- **Action**: entries whose content could live in `rules/*.md` or an agent file → mark `→ rule` in Action column
+
+Print scored table:
+
+```text
+| #  | Section | Usage likelihood | Impact if missing | Tier | Action      |
+|----|---------|-----------------|-------------------|------|-------------|
+| 1  | ...     | High            | High              | P0   | Keep        |
+| 2  | ...     | Low             | Low               | P2   | Drop        |
+| 3  | ...     | Moderate        | High              | P1   | Trim        |
+| 4  | ...     | Low             | High              | P2   | → rule      |
+
+Legend:
+  Usage likelihood — High: every session · Moderate: occasional · Low: rare/one-off
+  Impact if missing — High: wrong behavior · Moderate: degraded · Low: no effect
+  Tier — P0: keep · P1: trim candidate · P2: drop/convert candidate
+  Action — "→ rule" entries can be promoted to rules/*.md then dropped from memory
+```
+
+**P-eager-2**: Call `AskUserQuestion` tool — do NOT write question as plain text:
+- question: "Which entries to prune? Select tier or type item numbers (e.g. 2, 4, 7)."
+- (a) label: `All P2` — description: drop all tier-P2 entries; apply `→ rule` conversions as proposals
+- (b) label: `All P1 + P2` — description: trim P1 entries and drop P2 entries
+- (c) label: `Specific items` — description: enter item numbers in next message; applies only those
+- (d) label: `Skip` — description: leave MEMORY.md untouched; user edits manually
+
+If user picks (c): print "Enter item numbers (e.g. 2, 4, 7):" and wait for next message; resolve item numbers against # column before proceeding.
+
+**P-eager-3**: Spawn **foundry:curator** to apply selected edits. Substitute absolute memory file path (resolved from `PRUNE_FOUND_PATH`) inline before issuing the Agent call:
+
+```text
+Read MEMORY.md at <absolute-path>.
+Apply these prune actions (sections identified by # from scored table):
+  <list: # — section name — action (Drop | Trim | Convert to rule)>
+Rules:
+- Drop: remove entire section including heading
+- Trim: keep operational directive only (1 line max per entry); remove rationale/backstory
+- Convert to rule: remove section from MEMORY.md; print proposed rule file content inline in response for user review before writing — do NOT write the rule file
+Write MEMORY.md changes using the Edit tool.
+Return ONLY: {"status":"done","sections_dropped":N,"sections_trimmed":N,"rule_conversions":N,"confidence":0.N}
+```
+
+Print compact summary after curator completes:
+
+```text
+Pruned MEMORY.md — <date>
+  Dropped: N sections — [names]
+  Trimmed: N sections — [names]
+  Rule conversions proposed: N — [names] (review and write manually or via /manage)
+  Kept:    N sections unchanged
+  Saved:   ~N lines
+```
+
+End response with `## Confidence` block per CLAUDE.md output standards.
+
+**Otherwise** (`$EAGER == false`) — standard read-only advisory flow:
 
 **Evaluate each section against these criteria:**
 
@@ -284,11 +365,14 @@ Produce structured proposal table. Do not apply anything yet — report first.
 
 ### Proposals
 
-| # | Cluster | Lesson (condensed) | Disposition | Target |
-|---|---------|-------------------|-------------|--------|
-| 1 | Git | Never use git add -A; stage specific files | → already covered | rules/git-commit.md |
-| 2 | Agent config | Agent description must include NOT-for clause | → rule | add to existing rule: rules/foundry-config.md |
-| 3 | Communication | Flag blockers before starting, not mid-task | → already covered | rules/communication.md |
+| # | Cluster | Lesson (condensed) | Pattern count | Strength | Tier | Disposition | Target |
+|---|---------|-------------------|---------------|----------|------|-------------|--------|
+| 1 | Git | Never use git add -A; stage specific files | 2 | Probable | P1 | → already covered | rules/git-commit.md |
+| 2 | Agent config | Agent description must include NOT-for clause | 1 | Must | P0 | → rule | rules/foundry-config.md |
+| 3 | Communication | Flag blockers before starting, not mid-task | 1 | Weak | P2 | → already covered | rules/communication.md |
+
+> *Strength — Must: `always`/`never` language or applies across ≥3 agents/skills · Probable: 2+ lessons on same topic · Weak: single, contextual, or low-generalizability*
+> *Tier — P0: promote now · P1: consider promoting · P2: drop or keep in memory only*
 
 ### New Rule Files Proposed (N)
 
@@ -355,13 +439,24 @@ Annotate each conflicting proposal row with ⚠. If conflicts found, print above
 Review conflicts manually or select (b) to inspect each change before writing.
 ```
 
-Print (annotated) proposal table. Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+Print (annotated) proposal table. Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments.
+
+**If `$EAGER == true`** — tier-based and item-based selection:
+- question: "Which clusters to promote? Select tier or type item numbers (e.g. 1, 3)."
+- (a) label: `All P0` — description: promote all Must-strength clusters (Tier P0) only
+- (b) label: `All P0 + P1` — description: promote P0 and P1 clusters; skip P2
+- (c) label: `Specific items` — description: enter item numbers in next message; applies only those rows
+- (d) label: `Skip` — description: discard proposals and exit without changes
+
+If user picks (c): print "Enter item numbers (e.g. 1, 3):" and wait for next message; resolve numbers against # column; apply only matching rows. Delegate all writes to **foundry:curator** — spawn with explicit list of target files and changes per selected row.
+
+**If `$EAGER == false`** — standard flow:
 - question: "Apply proposals?"
 - (a) label: `Apply non-conflicting` — description: write all `→ rule` and `→ agent/skill update` changes except ⚠ flagged proposals
 - (b) label: `Review first` — description: show diff of each proposed change before writing
 - (c) label: `Skip` — description: discard proposals and exit without changes
 
-If user selects (a), apply changes:
+If user selects (a) or (c) from eager flow, or (a) from standard flow, apply changes:
 
 - **New rule files**: Write tool to create `.claude/rules/<name>.md` with drafted content
 - **Agent updates**: Edit tool to insert new instruction into appropriate section of agent file

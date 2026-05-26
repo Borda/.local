@@ -1,4 +1,5 @@
 <!-- oss:resolve Step 8 — executed via: Read $_OSS_RESOLVE/modes/action-item-dispatch.md; execute -->
+<!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
 <!-- Input: SELECTED_ITEMS (from Step 3e), COMMIT_MODE (from Step 3d), CODEX_AVAILABLE (from Step 1), $_OSS_RESOLVE, ARGUMENTS -->
 <!-- Output: items implemented/staged/committed; CHALLENGE_LOG populated; CHANGE_SCOPE set for Step 9 -->
 
@@ -15,9 +16,9 @@ IMPL_AGENT="codex:codex-rescue"
     echo "→ Using --agent: $IMPL_AGENT"
 }
 
-# File-handoff dir — subagents write full output here; orchestrator reads only compact JSON envelopes
-IMPL_DIR="${TMPDIR:-/tmp}/resolve-impl-$$"
-mkdir -p "$IMPL_DIR"  # timeout: 5000
+# File-handoff dir — set in Step 3b (pr-intelligence subagent writes here); idempotent if already set
+[ -z "$IMPL_DIR" ] && IMPL_DIR=$(mktemp -d)  # timeout: 3000
+mkdir -p "$IMPL_DIR"  # timeout: 3000
 CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
 ```
 
@@ -52,7 +53,43 @@ Process items in `SELECTED_ITEMS` (from Step 3e) in priority order (`[req]` firs
 
 **≥10 selected items — batched dispatch**: group items by file affinity (items touching the same file → one batch; max 3 per batch; unrelated items → solo batch). Challenge each batch item individually (phases 1a/1b) before batching — items that pass both phases → batch together. Print compact progress `[N/total] batch #<ids> — <files>`. Skip per-item stash/unstash — one clean-state check per batch instead.
 
-**Per action item** — loop over `SELECTED_ITEMS` in priority order:
+**Per action item** — loop over `SELECTED_ITEMS` in priority order. Per item, read full details from `$IMPL_DIR/action-items.jsonl` (written by Step 3b pr-intelligence subagent) — this is the authoritative source for `full_comment_text`, `file`, `line`, `change`, `severity`, `author`:
+
+```bash
+ITEM_DATA=$(jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl")  # timeout: 5000
+```
+
+Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for stash label and commit scope, `.change`/`.severity` for effort classification and agent routing.
+
+**Pre-loop blast-radius scan** — run once in the main orchestrator before the loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `scan-query` is a no-op.
+
+```bash
+# Pre-loop; never blocks; BLAST_RADIUS_CONTEXT shared with impl agents below
+BLAST_RADIUS_CONTEXT=""
+if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
+    echo "→ Codemap pre-scan — caller context for selected action items:"
+    for _id in $SELECTED_ITEMS; do
+        _f=$(jq -r "select(.id == $_id) | .file // empty" "$IMPL_DIR/action-items.jsonl")  # timeout: 5000
+        [[ "$_f" == *.py ]] || continue
+        _m=$(echo "$_f" | sed -E 's|^src/||; s|/|.|g; s|\.py$||')
+        _c=$(scan-query rdeps "$_m" 2>/dev/null | head -20)  # timeout: 10000
+        if [ -n "$_c" ]; then
+            printf "  #%s %s ← callers: %s\n" "$_id" "$_m" "$(echo "$_c" | tr '\n' ' ')"
+            BLAST_RADIUS_CONTEXT+="item #${_id} (${_m}) callers:"$'\n'"${_c}"$'\n\n'
+        fi
+    done
+    [ -z "$BLAST_RADIUS_CONTEXT" ] && echo "  (no Python callers found for selected items)"
+fi
+```
+
+Per item before impl dispatch, extract this item's caller section:
+
+```bash
+item_id=$_id  # align with blast-radius scan loop variable
+ITEM_CALLERS=$(awk "/^item #${item_id} /,/^[[:space:]]*$/" <<< "$BLAST_RADIUS_CONTEXT" | tail -n +2)
+```
+
+Include non-empty `$ITEM_CALLERS` in impl agent prompt — see Phase 2.
 
 ### Phase 1: Two-phase challenge (skip when `--no-challenge`)
 
@@ -127,6 +164,7 @@ fi
 
 # File-handoff: agent writes full context to file; orchestrator reads only compact JSON envelope
 Agent(subagent_type="$IMPL_AGENT", prompt="Effort level: $ITEM_EFFORT. $IMPL_PROMPT
+$([ -n "$ITEM_CALLERS" ] && printf "Blast-radius context — modules that call into the code you are changing; preserve their public contracts:\n%s" "$ITEM_CALLERS")
 Write your findings (approach taken, files changed) to $IMPL_DIR/impl-<id>.md using the Write tool.
 Return ONLY compact JSON as your FINAL message (nothing after it):
 {\"status\":\"done\"|\"skipped\",\"reason\":\"<if skipped, else null>\",\"files_changed\":N}")
@@ -192,4 +230,3 @@ for _entry in "${CHALLENGE_LOG[@]}"; do
     esac
 done
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_all_items.py" "$PR_NUMBER" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
-```

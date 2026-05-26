@@ -528,13 +528,19 @@ class TestFormatResults:
 
 
 class TestMain:
-    def test_invalid_plugins_dir(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    def test_invalid_plugins_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
         exit_code = main(["--plugins-dir", str(tmp_path / "nonexistent")])
         assert exit_code == 2
         captured = capsys.readouterr()
         assert "not a directory" in captured.err
 
-    def test_invalid_check_name(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    def test_invalid_check_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
         exit_code = main(["--plugins-dir", str(plugins_dir), "--check", "R4"])
@@ -542,7 +548,10 @@ class TestMain:
         captured = capsys.readouterr()
         assert "unknown check" in captured.err
 
-    def test_empty_plugins_dir_passes(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    def test_empty_plugins_dir_passes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
         plugins_dir = tmp_path / "plugins"
         plugins_dir.mkdir()
         cache_dir = tmp_path / "cache"

@@ -102,6 +102,8 @@ Orchestrator: collect envelopes, verify coverage (every file in `git diff --stat
 - Conversational recency bias must not dominate — last task in session ≠ most significant
 - Title must reflect highest-tier change in diff, not most recent one
 
+**Same-tier tie-breaking — session work over bundled pre-existing**: when multiple T1 items exist in the diff, the item explicitly produced in the current session takes subject priority. If one T1 item was the explicit focus of conversation, design, and iteration in this session, it leads — even if a different T1 item appears first in subagent output or has more lines. This does NOT override the "never draft from session memory" rule — still classify from diff; use session context only to rank among same-tier items, not to skip diff analysis. Ask: "which T1 item did this session set out to produce?" — that one leads.
+
 **New files — classify by content, not by `A` marker**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list. But tier depends on content origin:
 - Content is genuinely new capability/behaviour → tier 1
 - Content extracted/refactored from existing file → tier 4 (maintenance); mention as "extracted from X", not "added"

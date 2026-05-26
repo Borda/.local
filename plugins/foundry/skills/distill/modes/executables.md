@@ -64,9 +64,9 @@ Every 5 min: `find "$RUN_DIR" -newer "$SCAN_CHECKPOINT" -type f | wc -l` — new
 
 ## Step E2: Parse candidates
 
-For each file in `CHECK33_FILES`, read and extract clusters where `Verdict = HIGH` or `Verdict = MEDIUM`. Build candidate list: cluster ID, files affected, language, block purpose, occurrence count, verdict, recommended extraction target, differs-by param slots.
+For each file in `CHECK33_FILES`, read and extract clusters. Default: `Verdict = HIGH` or `Verdict = MEDIUM` only. With `--eager`: also include `Verdict = LOW` clusters. Build candidate list: cluster ID, files affected, language, block purpose, occurrence count, verdict, recommended extraction target, differs-by param slots.
 
-If no HIGH or MEDIUM clusters found: print `✓ No extraction candidates — all clusters HOLD or LOW verdict.` End with `## Confidence` block and stop.
+If no qualifying clusters found: print `✓ No extraction candidates at current threshold.` End with `## Confidence` block and stop.
 
 ## Step E3: Present candidates and gate
 
@@ -84,7 +84,10 @@ Then call `AskUserQuestion` — do NOT write options as plain text first. Map op
 - question: "Extract candidates to bin/ scripts?"
 - (a) label: `HIGH only` — description: extract only HIGH-verdict clusters
 - (b) label: `HIGH + MEDIUM` — description: extract all HIGH and MEDIUM clusters
-- (c) label: `Skip` — description: no extraction; review candidates manually
+- (c) label: `HIGH + MEDIUM + LOW` — description: extract all clusters including LOW verdict; only shown when `--eager` active
+- (d) label: `Skip` — description: no extraction; review candidates manually
+
+**If `$EAGER == false`**: omit option (c) — present only (a), (b), (d).
 
 ## Step E4: Extract
 

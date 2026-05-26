@@ -1,12 +1,13 @@
 <!-- oss:resolve Step 9 — executed via: Read $_OSS_RESOLVE/modes/lint-qa-gate.md; execute -->
-<!-- Input: $RUN_DIR, $BASE_REF_MERGE, current working tree after Step 8 -->
+<!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
+<!-- Input: $BASE_REF_MERGE, current working tree after Step 8; $RUN_DIR optional (created here if unset) -->
 <!-- $CHANGE_SCOPE: lint-only | targeted | full (default=targeted; set in SKILL.md Step 8 effort classification) -->
 <!-- Output: lint fixes committed (if any), or BLOCKING_ISSUES found -->
 
 ## Step 9: Lint and QA gate
 
 ```bash
-RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # IMPORTANT: expand $RUN_DIR to its literal value in each prompt string below — agents receive text, not shell context; un-expanded $RUN_DIR means literal string in instructions
+[ -z "$RUN_DIR" ] && RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # IMPORTANT: expand $RUN_DIR to its literal value in each prompt string below — agents receive text, not shell context; un-expanded $RUN_DIR means literal string in instructions
 mkdir -p "$RUN_DIR" # timeout: 5000
 # Compute BASE_REF merge base for accurate diff range in agent prompts
 BASE_REF_MERGE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || echo "origin/$BASE_REF")
@@ -31,8 +32,9 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_lint_fixes.py"  # timeout:
 - Blocking issues from `foundry:qa-specialist` → fix (Codex or inline), re-run qa-specialist once to confirm; issues remain after one fix pass → **stop workflow — do not proceed to Step 10 (push)**; surface all remaining blocking issues in report; print: `⛔ QA gate blocked push — review findings above, fix errors, then re-run /resolve or push manually after fixing.`
 - Warnings (non-blocking) → record in report; don't block push
 
-Revoke commit authorization:
+Revoke commit authorization (recompute sentinel path — main PR flow does not set `$SENTINEL`):
 
 ```bash
+SENTINEL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/compute_commit_sentinel.py" 2>/dev/null || echo "")
 rm -f "$SENTINEL"  # timeout: 3000
 ```

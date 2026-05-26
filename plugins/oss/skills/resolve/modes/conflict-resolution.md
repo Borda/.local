@@ -1,5 +1,6 @@
 <!-- oss:resolve Steps 5-7 — executed via: Read $_OSS_RESOLVE/modes/conflict-resolution.md; execute -->
-<!-- Input: PR branch checked out (Step 4 complete), $MERGE_BASE, $HEAD_REF, $BASE_REF, $BASE_REPO_OWNER, $RUN_DIR -->
+<!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
+<!-- Input: PR branch checked out (Step 4 complete), $MERGE_BASE, $HEAD_REF, $BASE_REF, $BASE_REPO_OWNER -->
 <!-- Output: conflicts resolved or NO_CONFLICTS_FOUND=true set -->
 
 ## Step 5: Conflict detection
