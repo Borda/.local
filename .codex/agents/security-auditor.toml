@@ -2,7 +2,7 @@
 
 name                    = "security-auditor"
 description             = "Security audit: OWASP Python, ML supply chain (pickle, model weights), secrets, CI/CD hygiene. Read-only."
-model                   = "gpt-5.4-mini"
+model                   = "gpt-5.3-codex"
 model_reasoning_effort  = "xhigh"
 model_reasoning_summary = "detailed"
 sandbox_mode            = "read-only"

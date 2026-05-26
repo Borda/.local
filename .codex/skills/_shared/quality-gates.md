@@ -1,6 +1,6 @@
 # Codex Quality Gates
 
-All codex-native skills (`review`, `develop`, `resolve`, `audit`) must emit the same gate fields.
+All codex-native skills must emit the same gate fields.
 
 ## Required checks
 
@@ -43,3 +43,7 @@ Optional but recommended:
 - Use `.codex/skills/_shared/run-gates.sh` to execute the five checks consistently.
 - Use `.codex/skills/_shared/write-result.sh` to write canonical JSON result payloads.
 - Use `.codex/skills/_shared/severity-map.md` to map findings to severity levels.
+
+## Behavior-Change Guardrails
+
+When a change modifies Codex behavior, it must also update registrations, docs, and calibration coverage in the same patch. Prefer enhancing an existing agent or skill over adding a new one unless the new role or workflow has distinct triggers, acceptance criteria, and measurable gates.

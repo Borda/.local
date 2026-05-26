@@ -156,6 +156,8 @@ Parent agent responsibilities:
 - `solution-architect`: architecture planning, API contracts, migration design
 - `web-explorer`: authoritative external docs/changelogs/API delta research
 - `curator`: configuration drift, instruction overlap, calibration/gate hygiene
+- `challenger`: adversarial stress-testing of significant plans, architecture, and non-trivial diffs
+- `scientist`: paper analysis, ML hypotheses, ablations, and experiment-method verification
 
 ### Collaboration team patterns
 
@@ -165,6 +167,8 @@ Parent agent responsibilities:
 - Toolchain/CI quality changes: `cicd-steward` + `linting-expert` + `curator`
 - External migration/release-note driven changes: `web-explorer` + `solution-architect` + `sw-engineer`
 - Release readiness: `oss-shepherd` + `cicd-steward` + `doc-scribe` + `qa-specialist`
+- Research-paper implementation: `scientist` + `solution-architect` + `sw-engineer` + `qa-specialist`
+- High-risk plan validation: `challenger` + the relevant domain specialist before implementation
 
 ### Spawn `sw-engineer` when:
 
@@ -261,6 +265,20 @@ Parent agent responsibilities:
 - Routing quality, calibration leakage, or weak gate coverage is reported
 - New skills/agents are added and consistency checks are needed
 - Prompt/instruction hygiene needs a focused quality pass
+
+### Spawn `challenger` when:
+
+- The user asks to challenge, stress-test, poke holes in, or get a devil's-advocate review
+- A plan affects public APIs, architecture, migrations, release safety, or multiple subsystems
+- A review needs independence from the implementation context to reduce confirmation bias
+- Claims or assumptions are plausible but not yet backed by code, tests, logs, or docs
+
+### Spawn `scientist` when:
+
+- The task depends on a research paper, formula, benchmark, or ML method claim
+- An experiment needs a falsifiable hypothesis, metric, guard, seed policy, or ablation matrix
+- Results look unstable or too good and need leakage, overfitting, or metric-gaming analysis
+- A paper implementation must be checked against equations, hyperparameters, and evaluation protocol
 
 ______________________________________________________________________
 

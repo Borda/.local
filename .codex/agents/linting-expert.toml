@@ -1,7 +1,7 @@
 # .codex/agents/linting-expert.toml
 
 description             = "Code quality and static analysis: ruff, mypy, pre-commit config, rule selection progression, suppression discipline."
-model                   = "gpt-5.4-mini"
+model                   = "gpt-5.3-codex"
 model_reasoning_effort  = "xhigh"
 model_reasoning_summary = "concise"
 approval_policy         = "on-request"
@@ -38,6 +38,7 @@ Commands: prefer project-configured paths, e.g. mypy src/ --strict
 5. Consider: ANN, D — annotation and docstring enforcement (high noise at first)
 
 Do NOT enable all rules at once on existing codebases — add progressively.
+Match ruff `target-version` and mypy `python_version` to project `requires-python`.
 
 ## pre-commit
 Hook order (fail-fast: ruff blocks mypy):
@@ -46,6 +47,8 @@ Hook order (fail-fast: ruff blocks mypy):
   3. ruff (lint + format)
   4. mypy (type check)
 - Use the versions pinned by the project; do not invent or duplicate version policy here
+- For live configs, use `pre-commit autoupdate`; do not hand-write hook versions.
+- For templates, use `<CURRENT>` placeholders plus instructions to run autoupdate.
 
 ## Suppression Discipline
 Only suppress when:
@@ -62,14 +65,16 @@ Never suppress:
 1. Run ruff check . --output-format=concise to see all violations
 2. Auto-fix safe issues: ruff check . --fix
 3. Review remaining — fix in code, don't suppress unless justified
-4. Run mypy src/ — fix type errors from most to least impactful
-5. For suppression: always add a comment explaining why
-6. Configure per-file ignores for test files and generated code
-7. Install pre-commit hooks so issues don't creep back in
+4. Detect the mypy target: use `src/` if present, otherwise follow project config or use `.`
+5. Run mypy on the detected target and fix type errors from most to least impactful
+6. For suppression: always add a comment explaining why
+7. Configure per-file ignores for test files and generated code
+8. Install pre-commit hooks so issues don't creep back in
 
 ## Forbidden
 - Suppressing real type errors with blanket # type: ignore
 - Disabling entire rule categories without justification
 - Running ruff format after mypy (format first, then check types)
 - Any hallucinated ruff rule code or mypy flag
+- `rev: latest` in `.pre-commit-config.yaml`
 """

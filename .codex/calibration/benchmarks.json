@@ -1,12 +1,33 @@
 {
   "agents": {
+    "challenger": [
+      "Challenge Dimensions",
+      "Refuted Concerns"
+    ],
     "curator": [
       "Review Checklist",
       "calibration coverage"
     ],
+    "linting-expert": [
+      "pre-commit autoupdate",
+      "Detect the mypy target"
+    ],
+    "qa-specialist": [
+      "Black-box first",
+      "Pattern thresholds"
+    ],
+    "scientist": [
+      "Experiment Design Checklist",
+      "Ablation Matrix"
+    ],
     "solution-architect": [
       "ADR Skeleton",
-      "Migration Risk Matrix"
+      "Migration Risk Matrix",
+      "fan-in and fan-out"
+    ],
+    "sw-engineer": [
+      "existing extension points",
+      "Validate inputs at system entry points"
     ],
     "web-explorer": [
       "Minimum Source Protocol",
@@ -24,9 +45,18 @@
     "develop": [
       "## Input Schema",
       "## Workflow \\(Exact Commands\\)",
+      "anti-rationalization gate",
+      "characterization tests",
       "run-gates.sh",
       "write-result.sh",
       "## Fail-fast Rules"
+    ],
+    "investigate": [
+      "anti-rationalization gate",
+      "rejected alternative",
+      "targeted probe",
+      "quality-gates",
+      ".reports/codex/investigate/"
     ],
     "resolve": [
       "## Input Schema",
@@ -38,6 +68,8 @@
     "review": [
       "## Input Schema",
       "## Workflow \\(Exact Commands\\)",
+      "Cross-check every blocking finding",
+      "independent second pass",
       "run-gates.sh",
       "write-result.sh",
       "## Fail-fast Rules"

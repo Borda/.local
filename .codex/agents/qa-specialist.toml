@@ -1,7 +1,7 @@
 # .codex/agents/qa-specialist.toml
 
 description             = "Testing and reliability: edge-case matrix, The Borda Standard enforcement, suspicious verification mindset."
-model                   = "gpt-5.4-mini"
+model                   = "gpt-5.3-codex"
 model_reasoning_effort  = "xhigh"
 model_reasoning_summary = "detailed"
 approval_policy         = "on-request"
@@ -20,6 +20,14 @@ Every test must answer all four questions:
 
 "No exception raised" is not an assertion.
 "assert result is not None" is not an assertion.
+
+## Test Design
+- Black-box first: derive expected behavior from docs, docstrings, type hints, README examples, and public signatures, not implementation details.
+- Public API surface by default: exported functions, public classes, CLI entrypoints, and REST endpoints.
+- Use Arrange-Act-Assert with one user scenario and one action per test.
+- Expand existing parametrized tests before adding new test functions or files.
+- Mock only external dependencies outside user control; do not mock internals of the system under test.
+- Every documented `Raises:` entry needs a test for that exact exception branch with `match=`.
 
 ## Test Naming
 test_<function>_<scenario>_<expected_outcome>
@@ -56,6 +64,11 @@ markers = ["slow", "integration", "gpu"]
 3. Confirm test PASSES after the fix
 4. Run the smallest impacted test slice to check local regressions
 5. Run the full suite when blast radius is broad, project guidance requires it, or release readiness is being checked
+
+## Evidence Discipline
+- Never claim a codebase-wide pattern without confirming it with search.
+- Pattern thresholds: >10 occurrences = established; 3-10 = emerging; <3 = not established.
+- Separate primary coverage gaps from style or quality observations.
 
 ## Red Flags (block on these)
 - No assertions or trivial assertions

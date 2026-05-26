@@ -65,22 +65,24 @@ cp -r .codex/ ~/.codex/      # activate globally
 
 ### Reference table
 
-All agents are standardized on `gpt-5.4-mini` with `xhigh` reasoning effort. Differentiation is via role instructions.
+Agents are tiered by task profile. Coding-heavy agents use `gpt-5.3-codex`, complex reasoning agents use `gpt-5.5`, and lighter non-coding agents use `gpt-5.4-mini`.
 
-| Agent                  | Effort | Purpose                                                                 |
-| ---------------------- | ------ | ----------------------------------------------------------------------- |
-| **sw-engineer**        | xhigh  | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
-| **qa-specialist**      | xhigh  | Edge-case matrix, The Borda Standard, adversarial test review           |
-| **squeezer**           | xhigh  | Profile-first optimization, GPU throughput, memory efficiency           |
-| **doc-scribe**         | xhigh  | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
-| **security-auditor**   | xhigh  | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
-| **data-steward**       | xhigh  | Split leakage, DataLoader reproducibility, augmentation correctness     |
-| **cicd-steward**       | xhigh  | GitHub Actions, trusted PyPI publishing, pre-commit, flaky tests        |
-| **linting-expert**     | xhigh  | ruff, mypy, pre-commit config, rule progression, suppression discipline |
-| **oss-shepherd**       | xhigh  | Issue triage, PR review, SemVer, pyDeprecate, release checklist         |
-| **solution-architect** | xhigh  | System design, ADRs, API compatibility, migration planning              |
-| **web-explorer**       | xhigh  | External docs/release-note extraction and evidence gathering            |
-| **curator**            | xhigh  | Config quality checks, drift/leak detection, workflow hygiene           |
+| Agent                  | Model         | Effort | Purpose                                                                 |
+| ---------------------- | ------------- | ------ | ----------------------------------------------------------------------- |
+| **sw-engineer**        | gpt-5.3-codex | xhigh  | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
+| **qa-specialist**      | gpt-5.3-codex | xhigh  | Edge-case matrix, The Borda Standard, adversarial test review           |
+| **squeezer**           | gpt-5.3-codex | xhigh  | Profile-first optimization, GPU throughput, memory efficiency           |
+| **doc-scribe**         | gpt-5.4-mini  | xhigh  | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
+| **security-auditor**   | gpt-5.3-codex | xhigh  | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
+| **data-steward**       | gpt-5.3-codex | xhigh  | Split leakage, DataLoader reproducibility, augmentation correctness     |
+| **cicd-steward**       | gpt-5.3-codex | xhigh  | GitHub Actions, trusted PyPI publishing, pre-commit, flaky tests        |
+| **linting-expert**     | gpt-5.3-codex | xhigh  | ruff, mypy, pre-commit config, rule progression, suppression discipline |
+| **oss-shepherd**       | gpt-5.4-mini  | xhigh  | Issue triage, PR review, SemVer, pyDeprecate, release checklist         |
+| **solution-architect** | gpt-5.5       | xhigh  | System design, ADRs, API compatibility, migration planning              |
+| **web-explorer**       | gpt-5.4-mini  | xhigh  | External docs/release-note extraction and evidence gathering            |
+| **curator**            | gpt-5.4-mini  | xhigh  | Config quality checks, drift/leak detection, workflow hygiene           |
+| **challenger**         | gpt-5.5       | xhigh  | Adversarial plan, architecture, migration, and diff stress-testing      |
+| **scientist**          | gpt-5.5       | xhigh  | Paper analysis, ML hypothesis design, ablations, experiment validation  |
 
 ### Spawn rules
 
@@ -93,6 +95,8 @@ Automatic spawn patterns (from `AGENTS.md`):
 - `data-steward` is used when tasks touch data pipelines, splits, augmentation, or DataLoaders
 - `squeezer` is used for profiling, throughput, and memory optimization tasks
 - `cicd-steward` is used for CI workflow and publishing tasks
+- `challenger` is used for high-risk plans, architecture, and independent stress tests
+- `scientist` is used for paper-driven ML work, experiment design, and ablation planning
 
 When to address by name vs letting Codex decide:
 
@@ -110,9 +114,11 @@ Session defaults:
 - `approval_policy = "on-request"`
 - `sandbox_mode = "workspace-write"`
 
-Reasoning allocation:
+Agent model allocation:
 
-All configured `gpt-5.4-mini` agents currently use `xhigh`, so there is no active effort tiering to summarize here.
+- `gpt-5.3-codex`: code, tests, static analysis, CI/tooling, performance, data pipeline integrity, security code audit.
+- `gpt-5.5`: architecture, adversarial challenge, and research-to-experiment reasoning.
+- `gpt-5.4-mini`: documentation, web evidence gathering, OSS lifecycle, and config curation.
 
 ### Profiles
 
@@ -123,12 +129,12 @@ codex --profile deep-review "full security audit of src/api/"
 codex --profile fast-edit "fix the typo in the docstring"
 ```
 
-| Profile       | What changes                                                         | When to use                                                  |
-| ------------- | -------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `cautious`    | `approval_policy = "untrusted"`                                      | Unfamiliar codebases, production systems, destructive ops    |
-| `fast-edit`   | `model = "gpt-5.4-mini"`, medium reasoning, low verbosity, 2 threads | Narrow mechanical edits where speed > depth                  |
-| `fresh-docs`  | `web_search = "live"`, concise summaries                             | Questions about volatile docs, library versions, API changes |
-| `deep-review` | `model = "gpt-5.4-mini"`, `xhigh` reasoning, live web search         | Broad/high-risk changes needing maximum review depth         |
+| Profile       | What changes                                                          | When to use                                                  |
+| ------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `cautious`    | `approval_policy = "untrusted"`                                       | Unfamiliar codebases, production systems, destructive ops    |
+| `fast-edit`   | `model = "gpt-5.3-codex"`, medium reasoning, low verbosity, 2 threads | Narrow mechanical code edits where speed > depth             |
+| `fresh-docs`  | `web_search = "live"`, concise summaries                              | Questions about volatile docs, library versions, API changes |
+| `deep-review` | `model = "gpt-5.5"`, `xhigh` reasoning, live web search               | Broad/high-risk changes needing maximum review depth         |
 
 ## 🧭 Skills In Codex
 

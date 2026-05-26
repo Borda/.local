@@ -36,7 +36,9 @@ Run a linear review loop with strict output gates.
 
 3. Read the changed files end-to-end and identify findings before considering any fix or gate outcome.
 
-4. Run shared quality gates.
+4. Cross-check every blocking finding against surrounding context and existing project patterns before reporting it. Critical/blocking findings require an independent second pass when feasible; if unconfirmed, downgrade or mark the evidence gap explicitly.
+
+5. Run shared quality gates.
 
    ```bash
    .codex/skills/_shared/run-gates.sh \
@@ -48,11 +50,11 @@ Run a linear review loop with strict output gates.
        --review "${REVIEW_CMD:-git diff --check}"
    ```
 
-5. Classify findings using `../_shared/severity-map.md`.
+6. Classify findings using `../_shared/severity-map.md`.
 
-6. If no findings are present, state that explicitly and note any residual risks.
+7. If no findings are present, state that explicitly and note any residual risks.
 
-7. Write mandatory result artifact.
+8. Write mandatory result artifact.
 
    ```bash
    .codex/skills/_shared/write-result.sh \
@@ -74,6 +76,7 @@ Run a linear review loop with strict output gates.
 2. Shared gate script missing => fail.
 3. Result artifact missing => fail.
 4. Review that skips changed-file inspection => fail.
+5. Blocking finding without local evidence or pattern check => fail.
 
 ## Output Contract
 

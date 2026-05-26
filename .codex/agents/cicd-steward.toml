@@ -2,7 +2,7 @@
 
 name                    = "cicd-steward"
 description             = "CI/CD reliability: GitHub Actions, trusted PyPI publishing, pre-commit hooks, flaky test detection."
-model                   = "gpt-5.4-mini"
+model                   = "gpt-5.3-codex"
 model_reasoning_effort  = "xhigh"
 model_reasoning_summary = "concise"
 approval_policy         = "on-request"

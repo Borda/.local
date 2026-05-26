@@ -38,9 +38,16 @@ Run a linear implementation loop with strict gates.
 
 3. Define the narrowest reversible change, ownership, and acceptance criteria. If the task is 3+ steps or has design tradeoffs, update the plan before editing.
 
-4. Implement minimal change.
+4. Run the anti-rationalization gate before editing.
 
-5. Run shared quality gates.
+   - Existing code and tests for the target surface have been read.
+   - Failure mode or new behavior is captured by a failing doctest, pytest, or explicit acceptance check.
+   - Behavior-preserving refactors have characterization tests or an equivalent current-behavior safety net.
+   - The next edit is the smallest reversible step, not a speculative refactor.
+
+5. Implement minimal change.
+
+6. Run shared quality gates.
 
    ```bash
    .codex/skills/_shared/run-gates.sh \
@@ -52,11 +59,11 @@ Run a linear implementation loop with strict gates.
        --review "${REVIEW_CMD:-git diff --check}"
    ```
 
-6. Review the changed files and the gate output before deciding pass/fail.
+7. Review the changed files and the gate output before deciding pass/fail.
 
-7. Classify findings using `../_shared/severity-map.md`.
+8. Classify findings using `../_shared/severity-map.md`.
 
-8. Write mandatory result artifact.
+9. Write mandatory result artifact.
 
    ```bash
    .codex/skills/_shared/write-result.sh \
@@ -78,7 +85,8 @@ Run a linear implementation loop with strict gates.
 2. Shared gate script missing => fail.
 3. Any critical finding => fail.
 4. Ambiguous scope or missing ownership => fail.
-5. Result artifact missing => fail.
+5. Missing failing doctest, pytest, or explicit acceptance check for changed behavior => fail.
+6. Result artifact missing => fail.
 
 ## Output Contract
 
