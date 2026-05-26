@@ -4,7 +4,7 @@
 // PURPOSE
 //   Renders a two-line live status display in the Claude Code terminal, refreshed
 //   on every hook event.  Gives an at-a-glance view of model, cost, context usage,
-//   active subagents, running codex plugin sessions, and current tool activity.
+//   active subagents (incl. codex:* subagents) and current tool activity.
 //
 // HOW IT WORKS
 //   1. Parse stdin JSON for model, workspace, context_window, cost, and session_id
@@ -12,13 +12,11 @@
 //   3. Build Line 1: model name, project dir, billing (API key = yellow; OAuth = cyan plan name),
 //      context bar (10-char block bar; green <50% · yellow <75% · red ≥75% used), and 💬 [N]
 //      badge while Claude is processing the current turn; N shown only when >1 messages queued
-//   3a. /clear detection: remaining_percentage === 0 → wipe state/agents/ and state/codex/ before
-//       rendering so agent/codex badges reset immediately after /clear
-//   4. Build Line 2 agent segment (🕵): read state/agents/*.json; skip codex:* agents and entries
-//      older than 10 min (safety net); group by type; color from agent frontmatter COLOR_MAP
-//   5. Build Line 2 codex segment (🤖): read state/codex/*.json; skip entries older than 30 min;
-//      group by short type name
-//   6. Build Line 2 tool segment (🔧): read state/tools/*.json; skip entries older than 30 s;
+//   3a. /clear detection: remaining_percentage === 0 → wipe state/agents/ before rendering
+//       so agent badges reset immediately after /clear
+//   4. Build Line 2 agent segment (🤖): read state/agents/*.json; skip entries older than 10 min
+//      (safety net); group by type; color from agent frontmatter COLOR_MAP; codex:* shown here
+//   5. Build Line 2 tool segment (🛠️): read state/tools/*.json; skip entries older than 30 s;
 //      render per-type call counts with fixed TOOL_COLORS palette
 //   7. Write both lines to stdout with \x1b[K (clear-to-end-of-line) on each line
 //
@@ -27,11 +25,12 @@
 //     <model>  <project-dir>  <billing>  <context-bar pct%>  [💬 while processing]
 //
 //   Line 2 — runtime activity (always shown, "none" when idle):
-//     🕵 N <type> [×N], …  │  🤖 <codex-type> [×N]  │  🔧 <tools>
-//     codex:* subagents are excluded from 🕵 and shown in 🤖 by short name
+//     🤖 N <type> [×N], …  │  🛠️ <tools>
+//     codex:* subagents shown in 🤖 alongside other agents
 //
 // LINE 1 DETAILS
-//   model       display_name or id from session JSON
+//   model       display_name or id from session JSON, with " (effort)" suffix when
+//               thinking effort is present (e.g. "claude-sonnet-4-6 (high)")
 //   project-dir basename of workspace.current_dir
 //   billing     API key mode  → yellow  "API $X.XX"  (real spend, every token costs)
 //               OAuth/sub mode → cyan   "<Plan> ~$X.XX"  (theoretical API-rate cost,
@@ -41,17 +40,14 @@
 //   context bar 10-char block bar; color: green <50% · yellow <75% · red ≥75% used
 //
 // LINE 2 DETAILS
-//   🕵 agents   reads /tmp/claude-state-<session_id>/agents/*.json written by task-log.js
-//               SubagentStart/Stop. Groups by type; specialized agents shown in their
+//   🤖 agents   reads /tmp/claude-state-<session_id>/agents/*.json written by task-log.js
+//               SubagentStart/Stop. Groups by type; all agents (incl. codex:*) shown in their
 //               declared color (from agent frontmatter color: field); general-purpose gray.
 //               Safety-net: ignores entries older than 10 min (SubagentStop crash/hang).
-//   🤖 codex    reads /tmp/claude-state-<session_id>/codex/*.json written by task-log.js
-//               PreToolUse/PostToolUse and SubagentStart/Stop. Shows short name of each
-//               active codex session. Safety-net: ignores entries older than 30 min.
-//   🔧 tools    reads /tmp/claude-state-<session_id>/tools/*.json written by task-log.js
+//   🛠️ tools    reads /tmp/claude-state-<session_id>/tools/*.json written by task-log.js
 //               PreToolUse. Shows tool types active within the last 30 s with per-type
 //               call counts. Each tool type has a fixed ANSI color for visual stability.
-//               Agent and Task tool calls are excluded (tracked under 🕵 instead).
+//               Agent and Task tool calls are excluded (tracked under 🤖 instead).
 //
 // SESSION ISOLATION
 //   All state dirs are scoped to /tmp/claude-state-<session_id>/ using the session_id from
@@ -78,7 +74,7 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (d) => (raw += d));
 process.stdin.on("end", () => {
   try {
-    const { model, workspace, context_window, cost, session_id } = JSON.parse(raw);
+    const { model, workspace, context_window, cost, session_id, thinking } = JSON.parse(raw);
 
     // Session-scoped temp dir — mirrors the layout written by task-log.js.
     // Falls back to 'default' for older Claude Code versions without session_id.
@@ -86,6 +82,10 @@ process.stdin.on("end", () => {
     const tmpDir = path.join(getSentinelDir(), `claude-state-${sid}`);
 
     const modelName = model?.display_name || model?.id || "";
+    // Thinking effort: try several plausible paths. Claude Code may expose it on
+    // the model object, or on a top-level `thinking` object alongside model.
+    const effort = model?.effort || thinking?.effort || model?.thinking?.effort || null;
+    const modelDisplay = effort ? `${modelName} (${effort})` : modelName;
     const dir = path.basename(workspace?.current_dir || process.cwd());
     const remainingRaw = context_window?.remaining_percentage;
     const remaining = Number.isFinite(Number(remainingRaw)) ? Number(remainingRaw) : null;
@@ -141,9 +141,8 @@ process.stdin.on("end", () => {
 
     const parts = [];
     let agentsPart = "";
-    let codexPart = "";
 
-    if (modelName) parts.push(`\x1b[2m${modelName}\x1b[0m`);
+    if (modelName) parts.push(`\x1b[2m${modelDisplay}\x1b[0m`);
     if (dir) parts.push(`\x1b[2m${dir}\x1b[0m`);
 
     if (isApiKey) {
@@ -170,16 +169,14 @@ process.stdin.on("end", () => {
     // remaining===0 at session start (before first turn) has no agents yet; after /clear
     // remaining becomes nonzero after the first response. Narrow window, no data loss.
     if (remaining === 0) {
-      for (const sub of ["agents", "codex"]) {
-        try {
-          const d = path.join(tmpDir, sub);
-          for (const f of fs.readdirSync(d)) {
-            try {
-              fs.unlinkSync(path.join(d, f));
-            } catch (_) {}
-          }
-        } catch (_) {}
-      }
+      try {
+        const d = path.join(tmpDir, "agents");
+        for (const f of fs.readdirSync(d)) {
+          try {
+            fs.unlinkSync(path.join(d, f));
+          } catch (_) {}
+        }
+      } catch (_) {}
     }
 
     const now = Date.now(); // shared by agents, tools, and queue sections
@@ -218,10 +215,7 @@ process.stdin.on("end", () => {
           return [];
         }
       });
-      // Exclude codex:* agents — they are shown in the 🤖 section instead
-      const agents = allAgents.filter(
-        (a) => (!a.since || now - new Date(a.since).getTime() < MAX_AGE_MS) && !(a.type && a.type.startsWith("codex:")),
-      );
+      const agents = allAgents.filter((a) => !a.since || now - new Date(a.since).getTime() < MAX_AGE_MS);
       if (agents.length > 0) {
         // Specialized + pinned model → type name, normal color
         // Specialized + inherit model → type name, gray (no special model assigned)
@@ -255,39 +249,12 @@ process.stdin.on("end", () => {
             const colored = isGray ? `\x1b[2m${label}\x1b[0m` : `${ansiColor}${label}\x1b[0m`;
             return count > 1 ? `${colored} ×${count}` : colored;
           });
-        agentsPart = `\x1b[35m🕵 ${agents.length}\x1b[0m ${items.join(", ")}`;
+        agentsPart = `\x1b[35m🤖 ${agents.length}\x1b[0m ${items.join(", ")}`;
       } else {
-        agentsPart = `\x1b[35m🕵\x1b[0m \x1b[2mnone\x1b[0m`;
+        agentsPart = `\x1b[35m🤖\x1b[0m \x1b[2mnone\x1b[0m`;
       }
     } catch (_) {
-      agentsPart = `\x1b[35m🕵\x1b[0m \x1b[2mnone\x1b[0m`;
-    }
-
-    // Line 2 — codex sessions (always shown, even when 0)
-    try {
-      const codexDir = path.join(tmpDir, "codex");
-      const codexFiles = fs.readdirSync(codexDir).filter((f) => f.endsWith(".json"));
-      const MAX_CODEX_AGE_MS = 30 * 60 * 1000; // 30-min safety net
-      // Collect active entries with their short type names (e.g. "codex-rescue", "review")
-      const activeCodexTypes = codexFiles.flatMap((f) => {
-        try {
-          const c = JSON.parse(fs.readFileSync(path.join(codexDir, f), "utf8"));
-          if (c.since && now - new Date(c.since).getTime() >= MAX_CODEX_AGE_MS) return [];
-          return [c.type || "codex"];
-        } catch (_) {
-          return [];
-        }
-      });
-      if (activeCodexTypes.length > 0) {
-        const groups = new Map();
-        for (const n of activeCodexTypes) groups.set(n, (groups.get(n) || 0) + 1);
-        const items = [...groups.entries()].map(([n, cnt]) => (cnt > 1 ? `${n} ×${cnt}` : n));
-        codexPart = `\x1b[33m🤖 ${items.join(", ")}\x1b[0m`;
-      } else {
-        codexPart = `\x1b[33m🤖\x1b[0m \x1b[2mnone\x1b[0m`;
-      }
-    } catch (_) {
-      codexPart = `\x1b[33m🤖\x1b[0m \x1b[2mnone\x1b[0m`;
+      agentsPart = `\x1b[35m🤖\x1b[0m \x1b[2mnone\x1b[0m`;
     }
 
     // Line 2 — tool activity segment (always shown, even when idle)
@@ -311,19 +278,19 @@ process.stdin.on("end", () => {
         .sort((a, b) => a.tool.localeCompare(b.tool));
       if (activeTools.length > 0) {
         const colored = activeTools.map(({ tool: t, count: n }) => {
-          const label = `${t} x${n}`;
+          const label = `${t}:${n}x`;
           return `${TOOL_COLORS[t] || TOOL_DEFAULT_COLOR}${label}\x1b[0m`;
         });
-        toolLine = `\x1b[2m🔧\x1b[0m ${colored.join(" \x1b[2m·\x1b[0m ")}`;
+        toolLine = `\x1b[2m🛠️\x1b[0m ${colored.join(" \x1b[2m·\x1b[0m ")}`;
       } else {
-        toolLine = `\x1b[2m🔧 none\x1b[0m`;
+        toolLine = `\x1b[2m🛠️ none\x1b[0m`;
       }
     } catch (_) {
-      toolLine = `\x1b[2m🔧 none\x1b[0m`;
+      toolLine = `\x1b[2m🛠️ none\x1b[0m`;
     }
 
     const line1 = parts.join(" \x1b[2m│\x1b[0m ");
-    const line2 = `${agentsPart} \x1b[2m│\x1b[0m ${codexPart} \x1b[2m│\x1b[0m ${toolLine}`;
+    const line2 = `${agentsPart} \x1b[2m│\x1b[0m ${toolLine}`;
     const lines = [line1, line2];
     // \x1b[K clears to end of line — erases stale chars from longer previous renders.
     process.stdout.write(lines.map((l) => l + "\x1b[K").join("\n") + "\x1b[K");
