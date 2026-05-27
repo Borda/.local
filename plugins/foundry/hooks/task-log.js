@@ -42,8 +42,8 @@
 //     • Opens a codex session file when Skill(codex:*) or Agent(codex:*) starts
 //       (keyed by tool_use_id so concurrent sessions don't collide).
 //     • Writes/increments a per-tool-type file in state/tools/ for the 🔧 display.
-//       Agent and Task tool calls are excluded here — they are tracked via the
-//       dedicated SubagentStart/Stop events to avoid double-counting.
+//       Uses a fixed 30s window (since = window start, not last call) so count resets
+//       after a >30s gap. Agent and Task calls excluded — tracked via SubagentStart/Stop.
 //     • For Agent() calls: writes state/pending/<tool_use_id>.json with subagent_type so
 //       SubagentStart can resolve agent_type when its payload omits it (Agent() vs Task()).
 //
@@ -75,6 +75,9 @@
 //       breadcrumb that survives context compaction and is re-read at session resume.
 //
 //   UserPromptSubmit
+//     • Clears state/tools/ so the 🔧 line resets immediately at new-prompt start —
+//       display resets without waiting for the first PostToolUse of the new turn.
+//       (Stop also clears; this is a backup and ensures visible reset at prompt time.)
 //     • Writes a marker file to state/queue/ so statusline.js shows 💬 on Line 1
 //       while Claude is processing the current turn. (UserPromptSubmit fires when Claude
 //       begins handling the message — not when the user presses Enter — so the marker
@@ -235,19 +238,25 @@ process.stdin.on("end", () => {
           } catch (_) {}
         }
       }
-      // Track all tool calls for statusline tool-activity line (count per type within window)
+      // Track all tool calls for statusline tool-activity line (count per type within 30s fixed window).
+      // Fixed window: since = start of window (not last call) → count resets after 30s gap.
       // Exclude Agent/Task — those are tracked separately via PreToolUse/PostToolUse → state/agents/
       if (tool_name && tool_name !== "Agent" && tool_name !== "Task") {
         try {
           fs.mkdirSync(toolsDir, { recursive: true });
           const toolFile = path.join(toolsDir, `${tool_name}.json`);
           let count = 1;
+          let windowStart = ts; // fixed window: since = start of current 30s window, not last call
           try {
             const existing = JSON.parse(fs.readFileSync(toolFile, "utf8"));
-            const prevAge = Date.now() - new Date(existing.since || 0).getTime();
-            count = prevAge <= 30000 ? (existing.count || 0) + 1 : 1;
+            const windowAge = Date.now() - new Date(existing.since || 0).getTime();
+            if (windowAge <= 30000) {
+              count = (existing.count || 0) + 1;
+              windowStart = existing.since; // preserve original window start so window is fixed, not sliding
+            }
+            // windowAge > 30s: reset — count stays 1, windowStart = now (new window)
           } catch (_) {}
-          fs.writeFileSync(toolFile, JSON.stringify({ tool: tool_name, since: ts, count }));
+          fs.writeFileSync(toolFile, JSON.stringify({ tool: tool_name, since: windowStart, count }));
         } catch (_) {}
       }
       // Write timing start marker. PostToolUse reads it to compute wall-clock duration.
@@ -276,9 +285,15 @@ process.stdin.on("end", () => {
           } catch (_) {}
         }
         // Remove agent tracking entry written by PreToolUse when Agent() call completes.
+        // For run_in_background=true agents, PostToolUse fires immediately (before SubagentStart).
+        // Clearing pending/ here signals SubagentStart to re-write agents/<agent_id>.json instead
+        // of assuming the PreToolUse entry still exists (which it no longer does).
         if (tool_name === "Agent") {
           try {
             fs.unlinkSync(path.join(agentsDir, `${data.tool_use_id}.json`));
+          } catch (_) {}
+          try {
+            fs.unlinkSync(path.join(pendingDir, `${data.tool_use_id}.json`));
           } catch (_) {}
         }
         // Remove skill tracking entry when Skill() call completes
@@ -441,6 +456,16 @@ process.stdin.on("end", () => {
       // Deduplication lock — project and home settings.json both register this hook.
       // Guard: if a lock for UserPromptSubmit exists and is < 500ms old, skip (duplicate fire).
       if (isDuplicateEvent("UserPromptSubmit", tmpDir)) process.exit(0);
+      // Clear tool activity from previous turn — resets display immediately at new prompt
+      // without waiting for the first PostToolUse of the new turn. Stop also clears; this is backup.
+      try {
+        const tFiles = fs.readdirSync(toolsDir);
+        for (const f of tFiles) {
+          try {
+            fs.unlinkSync(path.join(toolsDir, f));
+          } catch (_) {}
+        }
+      } catch (_) {}
       // Write a processing marker so statusline shows 💬 while Claude handles this turn.
       // Cleared on Stop (turn complete). SessionEnd removes any crash remnants via tmpDir wipe.
       try {

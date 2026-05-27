@@ -42,6 +42,7 @@ ______________________________________________________________________
 - [Plugin structure](#plugin-structure)
 - [Upgrade](#upgrade)
 - [Uninstall](#uninstall)
+- [Development / testing](#development--testing)
 - [Contributing / feedback](#contributing--feedback)
 
 </details>
@@ -742,6 +743,67 @@ claude plugin uninstall foundry
 ```
 
 Settings keys merged by `/foundry:setup` (`statusLine`, `permissions.allow` entries) remain in `~/.claude/settings.json` after uninstall — remove them manually if desired. Symlinks created by `/foundry:setup` in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist.
+
+______________________________________________________________________
+
+## 🧪 Development / testing
+
+485 tests across 24 files; one runner (pytest) covers both Python `bin/` scripts and JS hooks.
+
+**Run locally** (requires Python ≥ 3.10 and Node ≥ 18 — run from repo root):
+
+```bash
+pip install pytest pytest-cov
+pytest plugins/foundry/tests/ -v
+```
+
+Run only JS hook tests:
+
+```bash
+pytest plugins/foundry/tests/ -v -k "js"
+```
+
+### JS hook tests (subprocess, black-box)
+
+Each test spawns `node <hook>.js` with a JSON payload on stdin and asserts filesystem side-effects under `/tmp/claude-state-<session_id>/` and exit codes.
+
+| File                      | Hook              | Tests | What's covered                                                                                                                                |
+| ------------------------- | ----------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_task_log_js.py`     | `task-log.js`     | 10    | Agent lifecycle (Pre/PostToolUse, SubagentStart/Stop), pending/ race condition for background agents, codex skill tracking, per-tool counters |
+| `test_statusline_js.py`   | `statusline.js`   | 5     | `🤖` segment: empty/active/stale agents, codex agent type label                                                                               |
+| `test_commit_guard_js.py` | `commit-guard.js` | 6     | Missing/fresh/expired sentinel gates, SessionStart wipe, UserPromptSubmit auto-arm, non-commit Bash passthrough                               |
+| `test_agent_router_js.py` | `agent-router.js` | 4     | Builtin/plugin-agent passthrough (tier 1), unknown-agent reroute to `general-purpose` (tier 3), SessionStart index build                      |
+
+`run_hook` and `state_dir` are pytest fixtures in `conftest.py`; test methods receive them as parameters — no `from conftest import` needed.
+
+**Why Python tests for JS hooks?** These are black-box contract tests: each test spawns the real `node` process, sends a JSON payload on stdin, and asserts filesystem side-effects and exit codes. Python is just the orchestrator — the JS runs for real. One runner (pytest) covers all plugin tests (Python `bin/` scripts and JS hooks) with no `package.json` or `node_modules` required. Tradeoff: covers the hook *interface* contract but not individual JS function internals. Jest would be the right addition if internal logic ever warrants unit testing.
+
+### Python `bin/` script tests
+
+| File                              | Script                       | Tests | What's covered                                                                                    |
+| --------------------------------- | ---------------------------- | ----- | ------------------------------------------------------------------------------------------------- |
+| `test_check_routing_links.py`     | `check_routing_links.py`     | 42    | Computed path resolution, orphan-risk detection (R2), bin-ref integrity (R3), security path guard |
+| `test_symlink_with_guard.py`      | `symlink_with_guard.py`      | 31    | Create/update/remove symlinks, guard against stale links, cleanup of obsolete rule links          |
+| `test_extract_code_blocks.py`     | `extract_code_blocks.py`     | 30    | Fence parsing, lang normalisation, heuristic code/prose classification, token filtering           |
+| `test_check_bash_persistence.py`  | `check_bash_persistence.py`  | 28    | Cross-block variable reference detection, env-var filtering, multi-block files                    |
+| `test_find_polluter.py`           | `find_polluter.py`           | 24    | Safe/unsafe node-id validation, isolation test runner, bisect loop                                |
+| `test_verify_perm.py`             | `verify_perm.py`             | 21    | Settings allow-entry detection, missing/malformed JSON, CLI exit codes                            |
+| `test_check_orphaned_bin.py`      | `check_orphaned_bin.py`      | 21    | Orphaned bin/ script detection, consumer-reference parsing, multi-plugin scan                     |
+| `test_jq_write.py`                | `jq_write.py`                | 18    | Arg parsing, JSON path writes, merge semantics                                                    |
+| `test_resolve_shared_path.py`     | `resolve_shared_path.py`     | 18    | Plugin/subdir validation, path traversal rejection, tier-1/2/3 resolution cascade                 |
+| `test_health_sentinel.py`         | `health_sentinel.py`         | 18    | Sentinel creation, age computation, stale detection, new-file polling                             |
+| `test_check_fence_symmetry.py`    | `check_fence_symmetry.py`    | 17    | Unclosed fences, nested/interleaved fences, multi-file scan                                       |
+| `test_check_codex.py`             | `check_codex.py`             | 17    | `installed_plugins.json` manifest parsing, codex key presence, malformed JSON                     |
+| `test_make_run_dir.py`            | `make_run_dir.py`            | 16    | Portability invariants (no `/tmp` literals, `stdout.reconfigure`, shebang), timestamp format      |
+| `test_check_spawn_prompt_vars.py` | `check_spawn_prompt_vars.py` | 16    | `$VAR` in markdown code blocks, caller-substituted-var whitelist, multi-file scan                 |
+| `test_check_tag_symmetry.py`      | `check_tag_symmetry.py`      | 14    | Empty/whitespace XML blocks, unbalanced open/close tags, multi-file scan                          |
+| `test_resolve_skill_subdir.py`    | `resolve_skill_subdir.py`    | 11    | Tier-1/2/3 subdir resolution cascade, local-override flag, fallback ordering                      |
+| `test_resolve_memory_dir.py`      | `resolve_memory_dir.py`      | 10    | Path slugification, `PROJECT_ROOT` override, git fallback, missing-git fallback                   |
+| `test_session_age_files.py`       | `session_age_files.py`       | 8     | File listing, age computation, glob filtering, missing-dir handling                               |
+| `test_get_plugin_install_path.py` | `get_plugin_install_path.py` | 7     | Registry lookup, multiple-entry tie-breaking, missing plugin exit code                            |
+| `test_c33_dir_resolution.py`      | _(C33 dir-resolution logic)_ | 4     | Latest-version selection, older-version exclusion, no-cache fallback                              |
+
+CI runs all 485 tests on every push to `main` and on PRs touching `plugins/` (see `.github/workflows/ci-tests.yml`).
 
 ______________________________________________________________________
 

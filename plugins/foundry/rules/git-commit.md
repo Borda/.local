@@ -55,6 +55,8 @@ Rules:
   ```
 
 - **No line wrapping** — bullets and prose single continuous lines; never hard-break at any column width
+- **No GitHub auto-links** — never use `#N`, `@name`, or `@org` in commit messages; GitHub renders these as issue/PR links and user/org mentions, creating unintended cross-references in any repo that picks up the commit
+- **No non-VCS paths** — never reference files or paths not tracked in the repo (e.g. `/tmp/`, `~/.claude/`, local cache dirs, machine-specific paths); commit message must be meaningful on any machine that clones the repo
 
 ## Gathering Diff Context
 
@@ -66,7 +68,7 @@ Before writing commit, run three in parallel:
 
 **Truncated diff — mandatory follow-up**: when `git diff HEAD` output large and Bash tool saves to file (showing only 2 KB preview), read saved file completely before writing commit. Don't write from preview alone — most significant changes often past truncation point. Also run `git diff --stat HEAD` (always fits in context) for complete file-by-file change map; use stat output to identify which files changed most and whether any missed in preview. If saved diff file exceeds ~2000 lines, escalate to subagent summarization — see Large diff rule below.
 
-**Large diff — subagent summarization**: when diff file exceeds ~2000 lines OR `git diff --stat HEAD` shows >10 files spanning >2 plugins/concerns, spawn one Agent task per logical file group — one agent per top-level directory in stat output (e.g. one per `plugins/<name>/`, one collective for everything outside `plugins/`); max 5 agents, group smallest partitions until ≤5. Each task runs inline (not background); receives `git diff HEAD -- <file> [<file> ...]` and returns compact bullet summary: what changed and highest tier classification. Orchestrator aggregates summaries, writes commit from aggregated evidence only — never from session memory. After aggregation, cross-check every file in `git diff --stat HEAD` appears in at least one summary; missing file → spawn one additional Agent task for that file before drafting. On agent failure or timeout: fall back to direct `git diff HEAD -- <files>` read for that group; surface unread group as a gap in commit message.
+**Large diff — subagent summarization**: when diff file exceeds ~2000 lines OR `git diff --stat HEAD` shows >10 files spanning >2 plugins/concerns, spawn one Agent task per logical file group — one agent per top-level directory in stat output (e.g. one per `plugins/<name>/`, one collective for everything outside `plugins/`); max 5 agents, group smallest partitions until ≤5. Each task runs inline (not background); **use `model: haiku`** — diff summarisation is bounded, low-complexity output; receives `git diff HEAD -- <file> [<file> ...]` and returns compact bullet summary: what changed and highest tier classification. Orchestrator aggregates summaries, writes commit from aggregated evidence only — never from session memory. After aggregation, cross-check every file in `git diff --stat HEAD` appears in at least one summary; missing file → spawn one additional Agent task for that file before drafting. On agent failure or timeout: fall back to direct `git diff HEAD -- <files>` read for that group; surface unread group as a gap in commit message.
 
 **Large diff — agent handover format**: before spawning, create run dir: `RUN_TS=".temp/commit-diff/$(date -u +%Y-%m-%dT%H-%M-%SZ)"; mkdir -p "$RUN_TS"`. Each agent task writes to `$RUN_TS/group-<dir-slug>.md` using this fixed structure:
 

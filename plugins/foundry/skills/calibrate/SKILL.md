@@ -1,7 +1,7 @@
 ---
 name: calibrate
 description: "Calibration testing for agents and skills. Generates synthetic problems with known outcomes (quasi-ground-truth), runs targets against them, measures recall, precision, confidence calibration — reveals whether self-reported confidence scores track actual quality."
-argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate]"
+argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate] [--local]"
 effort: high
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Agent, Glob, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
@@ -231,11 +231,11 @@ Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instru
 
 Per-target checkpoint init — **create checkpoint BEFORE spawning each pipeline** (sequential execution: only one runs at a time, do NOT pre-initialize checkpoints for unstarted targets). In Step 2, immediately before issuing each `Agent(...)` spawn call, run:
 ```bash
-touch /tmp/calibrate-check-$batch_target; LAUNCH_AT=$(date +%s)
+touch ${TMPDIR:-/tmp}/calibrate-check-$batch_target; LAUNCH_AT=$(date +%s)
 ```
 Then spawn the pipeline. This ordering prevents false-alive readings on fast-exit agents (a checkpoint created after spawn may never see any writes if the agent exits before the first poll).
 
-Poll every `$HEALTH_CHECK_INTERVAL_MIN` minutes: `find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer /tmp/calibrate-check-$batch_target -type f | wc -l` — new files = alive; use Read tool (limit=20) on `pipeline.jsonl` to check for PROGRESS:/HEARTBEAT: if stalled; apply `$PIPELINE_TIMEOUT_MIN_DUAL` instead of `$PIPELINE_TIMEOUT_MIN` for dual-source (Codex-active) targets.
+Poll every `$HEALTH_CHECK_INTERVAL_MIN` minutes: `find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer ${TMPDIR:-/tmp}/calibrate-check-$batch_target -type f | wc -l` — new files = alive; use Read tool (limit=20) on `pipeline.jsonl` to check for PROGRESS:/HEARTBEAT: if stalled; apply `$PIPELINE_TIMEOUT_MIN_DUAL` instead of `$PIPELINE_TIMEOUT_MIN` for dual-source (Codex-active) targets.
 
 **On timeout**: read `tail -100 <output_file>` for partial JSON; if none use: `{"target":"<TARGET>","verdict":"timed_out","mean_recall":null,"gaps":["pipeline timed out — re-run individually with /calibrate <target> fast"]}`. Timed-out targets appear in report with ⏱ prefix and null metrics.
 

@@ -753,6 +753,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 - **README.md tables**: agent/skill tables in project `README.md`; rules table in `.claude/README.md` — keep row format consistent with existing rows
 - **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note
+- **Inline bash / extraction gate**: before writing any fenced bash block directly into a `.md` file (agent, skill, rule) via Edit/Write, apply the extraction gate from `bin-authoring-guide.md` — verdict MEDIUM or HIGH → write a `bin/` script instead; verdict LOW → inline is acceptable. The same rule is enforced in spawn prompts to foundry:curator and foundry:sw-engineer (see Content-Edit Agent/Skill modes). This note applies to orchestrator-level inline edits.
 - **Cycle detection**: sub-tasks spawned by manage (foundry:sw-engineer, foundry:curator, foundry:doc-scribe) must not invoke manage again. Circular dispatch — manage→sw-engineer→curator→manage — causes infinite loops. If a sub-task needs manage capabilities, surface the need back to the orchestrator; never chain manage from inside a manage-spawned sub-agent.
 - Follow-up chains:
   - create or non-trivial update of agent/skill → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="<name>")` (mandatory) → `Skill(skill="foundry:calibrate", args="routing --fast")`

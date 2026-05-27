@@ -263,10 +263,10 @@ Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
 
  | Category | Model | Agents |
  | --- | --- | --- |
- | Plan-gated — high-stakes design/config decisions | `opusplan` | foundry:solution-architect, foundry:curator |
+ | Plan-gated — high-stakes design/config decisions | `opusplan` | foundry:solution-architect, foundry:curator, oss:shepherd |
  | Implementation | `opus` | foundry:sw-engineer, research:scientist, foundry:perf-optimizer |
  | Adversarial reasoning | `opus` | foundry:challenger |
- | Diagnostics / writing | `sonnet` | foundry:web-explorer, foundry:doc-scribe, research:data-steward, oss:cicd-steward, oss:shepherd, foundry:creator, foundry:qa-specialist |
+ | Diagnostics / writing | `sonnet` | foundry:web-explorer, foundry:doc-scribe, research:data-steward, oss:cicd-steward, foundry:creator, foundry:qa-specialist |
  | High-freq diagnostics | `haiku` | foundry:linting-expert — cost optimization |
 
 Never use `sonnet` for agents making complex multi-file design decisions; `foundry:creator` and `foundry:qa-specialist` are execution/pattern-matching roles — `sonnet` is correct.

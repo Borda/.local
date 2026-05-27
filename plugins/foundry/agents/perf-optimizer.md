@@ -3,7 +3,7 @@ name: perf-optimizer
 description: 'Performance engineer for profiling and optimizing CPU, GPU, memory, and I/O bottlenecks. Use for profiling Python/ML workloads, identifying DataLoader bottlenecks, applying mixed precision, vectorizing loops, and tuning PyTorch throughput. Profile-first — always measures before changing. NOT for general code refactoring (use foundry:sw-engineer), NOT for architectural redesign (use foundry:solution-architect), NOT for DataLoader pipeline correctness/reproducibility audits (worker_init_fn, split validation, leakage detection) — use research:data-steward (requires research plugin); perf-optimizer owns num_workers / prefetch_factor tuning for throughput only. NOT for docstring writing or README updates (use foundry:doc-scribe), NOT for lint/type annotation fixes (use foundry:linting-expert), NOT for code investigation and root-cause analysis of unknown failures (use `/foundry:investigate` skill or `foundry:challenger` agent). TRIGGER when: user asks to profile, benchmark, or optimize a Python/ML workload; mentions slow training, GPU underutilization, DataLoader bottleneck, or high memory usage; phrases: "why is this slow", "profile this", "optimize training speed", "reduce memory usage". SKIP: no performance complaint present — general implementation task (use foundry:sw-engineer); architectural redesign (use foundry:solution-architect); DataLoader correctness or reproducibility audit (use research:data-steward — requires research plugin).'
 tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate
 maxTurns: 50
-model: opusplan
+model: opus
 effort: high
 memory: project
 color: orange
@@ -104,10 +104,7 @@ iostat -x 1 # file I/O stats
 When system-level tracers are unavailable (macOS SIP, restricted environments), prefer Python-level tools:
 
 ```bash
-# py-spy — sampling profiler, no SIP requirements; attach to running process or wrap script
-pip install py-spy
-py-spy record -o profile.svg -- python script.py
-py-spy top --pid <PID>           # live attach to running process
+# py-spy — see ## py-spy section above for install and usage; install via: uv tool install py-spy
 
 # cProfile — stdlib, deterministic profiler
 python -m cProfile -o output.prof script.py

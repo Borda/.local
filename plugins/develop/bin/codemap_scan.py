@@ -6,8 +6,8 @@ Usage:
     codemap_scan.py --source=diff [--limit N]
 
 Sources:
-    find — enumerate ``.py`` files under ``<path>``, derive module names via codemap's
-        ``resolve_target_module`` rules.
+    find — enumerate ``.py`` files under ``<path>``, derive module names (strip ``./``,
+        ``src/``, ``.py``; replace ``/`` → ``.``).
     diff — derive modules from ``git diff HEAD --name-only``; flat-layout fallback when
         ``src/`` strip yields nothing.
 

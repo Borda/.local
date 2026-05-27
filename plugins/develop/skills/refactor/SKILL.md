@@ -84,17 +84,15 @@ echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
-```bash
-CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_flags.py" "$ARGUMENTS" 2>/dev/null)  # timeout: 5000
-echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
-```
+`CODEMAP_ENABLED` raw flag — scan `$ARGUMENTS`: `--no-codemap` → `off`; `--codemap` (without preceding `--no-`) → `strict`; else → `auto`. Substitute value below.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
-**Codemap auto-detection** — run after flag parsing:
+**Codemap auto-detection** — run after flag parsing, substituting raw flag (`off`/`strict`/`auto`) from rule above:
 
 ```bash
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "<off|strict|auto>") || exit 1  # timeout: 5000
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
 
 **Preflight** — if `CODEMAP_ENABLED=true`:

@@ -88,12 +88,10 @@ echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
-```bash
-CODEMAP_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_flags.py" "$ARGUMENTS" 2>/dev/null)  # timeout: 5000
-```
+`CODEMAP_ENABLED` raw flag — scan `$ARGUMENTS`: `--no-codemap` → `off`; `--codemap` (without preceding `--no-`) → `strict`; else → `auto`. Substitute value below.
 
 ```bash
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1  # timeout: 5000
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "<off|strict|auto>") || exit 1  # timeout: 5000; substitute raw flag from rule above
 echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
 
@@ -170,7 +168,7 @@ If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, 
 
 ```bash
 # If failing test: run it to capture the exact failure  # timeout: 600000
-$PYTEST_CMD --tb=long <test_path> -v 2>&1 >/tmp/pytest-out.txt; PYTEST_EXIT=$?; tail -40 /tmp/pytest-out.txt; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
+$PYTEST_CMD --tb=long <test_path> -v 2>&1 >"${TMPDIR:-/tmp}/pytest-out.txt"; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 
 **If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.

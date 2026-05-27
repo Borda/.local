@@ -24,10 +24,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install pytest
         run: pip install -q pytest pytest-cov scipy
 
-      - name: Run plugin's bin tests
+      - name: Run plugin tests (Python bin/ + JS hooks)
         env:
           RUN_INTEGRATION: "1"
         run: pytest -W error::DeprecationWarning

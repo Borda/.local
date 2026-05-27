@@ -284,33 +284,9 @@ Crystallise intended API contract before any implementation. Choose form based o
 
 > **Choosing demo form**: use inline doctest for simple functions/methods with minimal setup; use example script for features requiring external state, multiple steps, or side effects.
 
-**Unit function / simple API** -> inline doctest:
+**Unit function / simple API** -> inline doctest (doctest in method docstring; must fail against current code).
 
-```python
-def predict(self, x: Tensor) -> Tensor:
-    """
-    >>> model = Classifier()
-    >>> model.predict(torch.zeros(1, 3))
-    tensor([0])
-    """
-```
-
-**Complex feature** (setup required, side effects, multi-step flow) -> minimal example script:
-
-```bash
-mkdir -p examples/
-```
-
-```python
-# examples/demo_<feature>.py  — throwaway script, run manually
-from mypackage import Classifier
-
-model = Classifier.from_pretrained("tiny")
-result = model.predict_batch(["hello", "world"])
-print(result)  # expected: [label, label]
-```
-
-Example script captures what feature should feel like to use. Becomes formal pytest test once implementation complete and API stable (end of Step 3).
+**Complex feature** (setup required, side effects, multi-step flow) -> minimal example script `examples/demo_<feature>.py`; shows intended API end-to-end; becomes formal pytest test once implementation complete and API stable (end of Step 3).
 
 Both forms must:
 

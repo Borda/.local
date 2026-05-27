@@ -958,7 +958,18 @@ def main(argv: list[str] | None = None) -> int:
     # (the default lives there) — it just must not contain unresolved traversal.
     plugins_dir = Path(args.plugins_dir).resolve()
     cache_dir = Path(args.cache_dir).resolve()
-    project_root = Path.cwd().resolve()
+    try:
+        import subprocess as _sp
+
+        _r = _sp.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            cwd=str(plugins_dir),
+        )
+        project_root = Path(_r.stdout.strip()).resolve() if _r.returncode == 0 else Path.cwd().resolve()
+    except Exception:
+        project_root = Path.cwd().resolve()
     try:
         plugins_dir.relative_to(project_root)
     except ValueError:

@@ -159,6 +159,16 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
         if remote_proc.stdout:
             print(remote_proc.stdout, file=sys.stderr, end="")
 
+        # Always fetch all remotes so origin/$BASE_REF is current before Step 5 merges it.
+        # Conditional fetch (gated on current branch having @{u}) left origin/$BASE_REF stale
+        # when invoked from a branch with no upstream tracking ref.
+        subprocess.run(  # noqa: S603
+            [git, "fetch", "origin"],
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+
         upstream_proc = subprocess.run(  # noqa: S603
             [git, "rev-parse", "--abbrev-ref", "@{u}"],
             capture_output=True,
@@ -167,12 +177,6 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
             timeout=3,
         )
         if upstream_proc.returncode == 0 and upstream_proc.stdout.strip():
-            subprocess.run(  # noqa: S603
-                [git, "fetch", "origin"],
-                capture_output=True,
-                check=False,
-                timeout=30,
-            )
             log_proc = subprocess.run(  # noqa: S603
                 [git, "log", "HEAD..@{u}", "--oneline"],
                 capture_output=True,
@@ -198,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
                     return 1
             else:
                 print("✓ git: up to date", file=sys.stderr)
+        else:
+            print("✓ git: fetched origin (no upstream tracking on current branch — pull skipped)", file=sys.stderr)
 
     # --- emit KEY=value to stdout for caller eval -------------------------------
     print(f"CODEX_AVAILABLE={shlex.quote(str(codex_available).lower())}")

@@ -280,15 +280,13 @@ fi
 
 For skills where target module derives from `$ARGUMENTS` (refactor, fix with module path, review), also add after `central` — **derive `TARGET_MODULE` first**; without it calls run as `scan-query rdeps ""` and return nothing:
 
+Derive `TARGET_MODULE` from `$ARGUMENTS`: strip leading `./`; strip leading `src/`; strip trailing `.py`; replace `/` → `.`. If result empty, use `Path($ARGUMENTS).stem`. Example: `src/foo/bar.py` → `foo.bar`.
+
+If `TARGET_MODULE` non-empty, substitute derived value and run:
+
 ```bash
-# Derive TARGET_MODULE from the file/path argument (e.g. src/foo/bar.py → foo.bar)
-TARGET_MODULE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_target_module.py" "$ARGUMENTS")  # timeout: 5000
-if [ -z "$TARGET_MODULE" ]; then
-    echo "⚠ TARGET_MODULE empty — skipping rdeps/deps soft-check"
-else
-    scan-query rdeps "$TARGET_MODULE" 2>/dev/null  # timeout: 5000
-    scan-query deps  "$TARGET_MODULE" 2>/dev/null  # timeout: 5000
-fi
+scan-query rdeps "<TARGET_MODULE>" 2>/dev/null  # timeout: 5000
+scan-query deps  "<TARGET_MODULE>" 2>/dev/null  # timeout: 5000
 ```
 
 **For agent `.md` files** — append to last workflow instruction paragraph, before closing section or final notes. Agents have no `$ARGUMENTS` — derive `TARGET_MODULE` from user's input prompt:

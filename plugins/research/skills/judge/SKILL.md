@@ -187,12 +187,12 @@ Use `methodology_rating` from returned envelope for verdict computation in J6:
 - `needs-refinement` → supports NEEDS-REVISION
 - `fundamentally-flawed` → supports BLOCKED
 
-Also spawn `research:scientist` in parallel (dispatch both at start of J3) to review scientific rigor:
+Also spawn `research:scientist` in parallel (dispatch both at start of J3) to review scientific rigor. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing — construct `$J3_SCI_PROMPT` analogously to `$J3_ARCH_PROMPT` above (same variable substitution pattern). Spawn: `Agent(subagent_type="research:scientist", prompt=$J3_SCI_PROMPT)`.
 
 ```markdown
 Act as an ML research peer reviewer assessing experimental protocol rigor.
 
-Read the campaign program file at <path_to_program.md>.
+Read the campaign program file at ${PROGRAM_PATH}.
 
 Review across four dimensions:
 1. **Hypothesis falsifiability**: Is the goal precisely stated — can you tell unambiguously when the experiment has succeeded or failed?
@@ -200,8 +200,8 @@ Review across four dimensions:
 3. **Missing baselines**: What standard controls, ablations, or baselines would a peer reviewer expect that are absent?
 4. **Reproducibility risks**: List concrete factors that could produce non-reproducible results (randomness seeds, dataset splits, flaky tests, environment dependencies).
 
-Write findings to `<RUN_DIR>/scientific-review.md`.
-Return ONLY: {"status":"done","scientific_rating":"sound|needs-refinement|fundamentally-flawed","issues":N,"file":"<RUN_DIR>/scientific-review.md","confidence":0.N,"summary":"<one-line>"}
+Write findings to `${RUN_DIR}/scientific-review.md`.
+Return ONLY: {"status":"done","scientific_rating":"sound|needs-refinement|fundamentally-flawed","issues":N,"file":"${RUN_DIR}/scientific-review.md","confidence":0.N,"summary":"<one-line>"}
 ```
 
 Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** — informs but does not override verdict. Exception: `scientific_rating == "fundamentally-flawed"` (exact match) elevates verdict to BLOCKED.

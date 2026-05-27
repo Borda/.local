@@ -178,10 +178,10 @@ Writes `statusLine` key to `~/.claude/settings.json`:
 _jq_result=$(jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
     '.statusLine = {"async":true,"command":$cmd,"type":"command"}' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_init_tmp.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
 ```
 
-Write `/tmp/foundry_init_tmp.json` back to `~/.claude/settings.json` using Write tool.
+Write `${TMPDIR:-/tmp}/foundry_init_tmp.json` back to `~/.claude/settings.json` using Write tool.
 
 ## Step 5: Merge permissions.allow and permissions.deny
 
@@ -193,7 +193,7 @@ Writes merged `permissions.allow` array:
 _jq_result=$(jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
     '.permissions.allow = ((.permissions.allow // []) + $perms[0] | unique)' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_init_tmp.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
 ```
 
 (then: write-back via Write tool as above) Report: "Added N new permissions.allow entries (M already present)."
@@ -206,7 +206,7 @@ Writes merged `permissions.deny` array:
 _jq_result=$(jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
     '.permissions.deny = ((.permissions.deny // []) + $deny[0] | unique)' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_init_tmp.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
 ```
 
 (then: write-back via Write tool as above) Report: "Added N new permissions.deny entries (M already present)."
@@ -248,7 +248,7 @@ Writes `enabledPlugins["codex@openai-codex"]` key:
 ```bash
 _jq_result=$(jq '.enabledPlugins["codex@openai-codex"] = true' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > /tmp/foundry_init_tmp.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_init_tmp.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
 ```
 
 (then: write-back via Write tool as above)

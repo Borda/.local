@@ -139,10 +139,10 @@ Writes `statusLine` key to `~/.claude/settings.json`:
 ```bash
 jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
     '.statusLine = {"async":true,"command":$cmd,"type":"command"}' \
-    ~/.claude/settings.json > /tmp/foundry_setup_tmp.json  # timeout: 5000
+    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
 ```
 
-Write `/tmp/foundry_setup_tmp.json` back to `~/.claude/settings.json` using Write tool.
+Write `${TMPDIR:-/tmp}/foundry_setup_tmp.json` back to `~/.claude/settings.json` using Write tool.
 
 ## Step 5: Merge permissions.allow and permissions.deny
 
@@ -153,7 +153,7 @@ Writes merged `permissions.allow` array:
 ```bash
 jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
     '.permissions.allow = ((.permissions.allow // []) + $perms[0] | unique)' \
-    ~/.claude/settings.json > /tmp/foundry_setup_tmp.json  # timeout: 5000
+    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
 ```
 
 Write back with Write tool. Report: "Added N new permissions.allow entries (M already present)."
@@ -165,7 +165,7 @@ Writes merged `permissions.deny` array:
 ```bash
 jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
     '.permissions.deny = ((.permissions.deny // []) + $deny[0] | unique)' \
-    ~/.claude/settings.json > /tmp/foundry_setup_tmp.json  # timeout: 5000
+    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
 ```
 
 Write back with Write tool. Report: "Added N new permissions.deny entries (M already present)."
@@ -203,7 +203,7 @@ Writes `enabledPlugins["codex@openai-codex"]` key:
 
 ```bash
 jq '.enabledPlugins["codex@openai-codex"] = true' \
-    ~/.claude/settings.json > /tmp/foundry_setup_tmp.json  # timeout: 5000
+    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
 ```
 
 Write back with Write tool.
@@ -262,7 +262,7 @@ The same cleanup also scans `~/.claude/agents/` for any foundry-managed symlinks
 mkdir -p "$HOME/.claude/skills"  # timeout: 5000
 mapfile -t LINK_CONFLICTS < <(python "$PLUGIN_ROOT/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
 # Persist for Phase 4 — Bash tool calls don't share shell state
-printf '%s\n' "${LINK_CONFLICTS[@]}" > /tmp/foundry-setup-conflicts.txt  # timeout: 3000
+printf '%s\n' "${LINK_CONFLICTS[@]}" > ${TMPDIR:-/tmp}/foundry-setup-conflicts.txt  # timeout: 3000
 ```
 
 The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
@@ -288,7 +288,7 @@ Options:
 - c) Review one by one
 
 On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > /tmp/foundry-setup-approved.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
+On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
 **Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
 
@@ -298,8 +298,8 @@ On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=
 
 ```bash
 # Restore arrays from Phase 2/3 — Bash tool calls don't share shell state
-mapfile -t LINK_CONFLICTS < /tmp/foundry-setup-conflicts.txt 2>/dev/null || LINK_CONFLICTS=()
-mapfile -t APPROVED_CONFLICT_ENTRIES < /tmp/foundry-setup-approved.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
+mapfile -t LINK_CONFLICTS < ${TMPDIR:-/tmp}/foundry-setup-conflicts.txt 2>/dev/null || LINK_CONFLICTS=()
+mapfile -t APPROVED_CONFLICT_ENTRIES < ${TMPDIR:-/tmp}/foundry-setup-approved.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
 
 # Helper: is identifier in APPROVED_CONFLICT_ENTRIES?
 _approved() {

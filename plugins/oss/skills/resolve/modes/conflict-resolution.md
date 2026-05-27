@@ -18,7 +18,7 @@ test -f "$MERGE_HEAD_FILE" && echo "MERGING" || echo "clean"
 Merge `BASE_REF` into PR branch (BASE → HEAD_REF, not reverse):
 
 ```bash
-git fetch origin "$BASE_REF"                     # ensure origin/$BASE_REF is current  # timeout: 6000
+git fetch origin "$BASE_REF" || { echo "⛔ fetch origin/$BASE_REF failed — cannot guarantee base is current; check network/auth and retry"; exit 1; }  # timeout: 6000
 git merge "origin/$BASE_REF" --no-commit --no-ff # timeout: 6000
 ```
 
