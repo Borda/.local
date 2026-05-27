@@ -21,7 +21,7 @@ if command -v scan-query >/dev/null 2>&1; then
   if [ -f "$INDEX" ]; then
     echo "true"
   elif [ "$MODE" = "strict" ]; then
-    echo "! BREAKING — --codemap strict: index $INDEX not found. Run /codemap:scan first." >&2
+    echo "! BREAKING — --codemap strict: index $INDEX not found. Run /codemap:scan-codebase first." >&2
     exit 1
   else
     echo "false"

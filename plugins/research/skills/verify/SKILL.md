@@ -261,7 +261,7 @@ Full audit: <RUN_DIR>/audit-raw.md
 **Gaps**:
 - [e.g., implementation details not directly verifiable from paper alone]
 
-**Refinements**: N passes.
+**Refinements**: [N] passes — omit line if 0 passes
 ```
 
 ### Step V6: Terminal summary

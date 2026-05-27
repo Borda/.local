@@ -85,7 +85,7 @@ esac
 # Verify resolved path stays within project root (defense in depth; macOS-compatible)
 if [ -n "$OUT" ]; then
     _PROJ_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-    if ! python -c "import os,sys; p=os.path.realpath(sys.argv[1]); b=os.path.realpath(sys.argv[2]); sys.exit(0 if p == b or p.startswith(b + os.sep) else 1)" "$OUT" "$_PROJ_ROOT" 2>/dev/null; then
+    if ! python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/check_output_within_root.py" "$OUT" "$_PROJ_ROOT" 2>/dev/null; then  # timeout: 5000
         echo "sweep: --out path escapes project root: $OUT" >&2
         exit 2
     fi

@@ -145,7 +145,7 @@ def load_index(path: Path) -> dict:
         path: filesystem path to the index JSON file.
     """
     if not path.exists():
-        _exit_error(f"Index not found at {path}. Run /codemap:scan first.")
+        _exit_error(f"Index not found at {path}. Run /codemap:scan-codebase first.")
     with path.open() as f:
         return json.load(f)
 
@@ -239,7 +239,7 @@ def warn_if_stale(index: dict) -> None:
                 n = len(stale_files)
                 print(
                     f"⚠ codemap index stale — {n} file(s) changed since last scan."
-                    " Run /codemap:scan --incremental to update.",
+                    " Run /codemap:scan-codebase --incremental to update.",
                     file=sys.stderr,
                 )
             return
@@ -247,7 +247,7 @@ def warn_if_stale(index: dict) -> None:
     scanned_at = index.get("scanned_at", "")
     if scanned_at and check_staleness(scanned_at):
         print(
-            "⚠ codemap index may be stale — Python files changed since last scan. Re-run /codemap:scan.",
+            "⚠ codemap index may be stale — Python files changed since last scan. Re-run /codemap:scan-codebase.",
             file=sys.stderr,
         )
 
@@ -351,7 +351,7 @@ def _require_call_graph(index: dict) -> None:
         index: parsed codemap index dict to check for v3 call graph support.
     """
     if not _has_call_graph(index):
-        _exit_error("Index is v2 — call graph not available. Re-run /codemap:scan to upgrade.")
+        _exit_error("Index is v2 — call graph not available. Re-run /codemap:scan-codebase to upgrade.")
 
 
 def _current_git_sha() -> str | None:
@@ -406,7 +406,7 @@ def _coverage(index: dict) -> dict:
         note = (
             f"All {total} indexed modules were searched. "
             "⚠ Index may be stale — source files changed since last scan. "
-            "Re-run /codemap:scan to update before relying on this result."
+            "Re-run /codemap:scan-codebase to update before relying on this result."
         )
         exhaustive = False
     else:
@@ -613,7 +613,7 @@ def cmd_symbol(index: dict, name: str, limit: int = 20, exclude_tests: bool = Fa
                     matches.append((m, sym))
 
     if not matches:
-        _exit_error(f"Symbol '{name}' not found. Try /codemap:query find-symbol <pattern> to search.")
+        _exit_error(f"Symbol '{name}' not found. Try /codemap:query-code find-symbol <pattern> to search.")
 
     if limit > 0:
         matches = matches[:limit]

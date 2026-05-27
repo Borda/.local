@@ -586,7 +586,7 @@ In `/develop:refactor` Step 3, characterization tests must pass before refactori
 
 ### scan-query warnings appearing in output
 
-`codemap` is optional. If `scan-query` is not on your PATH or the index file is missing, all codemap steps are silently skipped — no blast-radius check, no structural context for analysis agents. The skill works fully without it. To enable codemap context, install the `codemap` plugin and run `/codemap:scan`.
+`codemap` is optional. If `scan-query` is not on your PATH or the index file is missing, all codemap steps are silently skipped — no blast-radius check, no structural context for analysis agents. The skill works fully without it. To enable codemap context, install the `codemap` plugin and run `/codemap:scan-codebase`.
 
 ______________________________________________________________________
 

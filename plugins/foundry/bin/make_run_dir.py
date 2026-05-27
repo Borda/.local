@@ -46,7 +46,9 @@ def _validate_base_dir(base_dir: str) -> None:
     if ".." in Path(base_dir).parts:
         raise ValueError(f"base_dir must not contain '..': {base_dir!r}")
     candidate = Path(base_dir)
-    if not candidate.is_absolute():
+    # On Windows /etc/evil is not `is_absolute()` (no drive letter) but is still
+    # a Unix-style absolute path — check the posix form too.
+    if not candidate.is_absolute() and not candidate.as_posix().startswith("/"):
         return
     resolved = candidate.expanduser().resolve()
     # Compare against BOTH the raw input and the resolved form: on macOS the

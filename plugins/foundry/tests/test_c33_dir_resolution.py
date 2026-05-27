@@ -7,7 +7,12 @@ Fixed code: ls -d .../foundry/*/ | sort -V | tail -1 resolves to latest version 
 """
 
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="requires bash")
 
 
 def _bash(script: str) -> subprocess.CompletedProcess:

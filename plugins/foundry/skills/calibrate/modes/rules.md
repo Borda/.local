@@ -1,4 +1,5 @@
 <!-- Step 1 in SKILL.md dispatches to this mode file. Steps here continue from Step 2. -->
+<!-- loads: rules-pipeline-prompt.md -->
 
 ## Mode: rules
 

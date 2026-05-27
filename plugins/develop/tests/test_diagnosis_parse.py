@@ -24,10 +24,10 @@ def test_equals_form(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: py
     monkeypatch.chdir(tmp_path)
     diag = tmp_path / "diag.md"
     diag.write_text("# diagnosis\n")
-    rc = diagnosis_parse.main([f"--diagnosis={diag}"])
+    rc = diagnosis_parse.main([f"--diagnosis={diag.as_posix()}"])
     assert rc == 0
     out = capsys.readouterr().out.strip()
-    assert out == str(diag)
+    assert Path(out) == diag
 
 
 def test_space_form(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -35,9 +35,9 @@ def test_space_form(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pyt
     monkeypatch.chdir(tmp_path)
     diag = tmp_path / "diag.md"
     diag.write_text("# diagnosis\n")
-    rc = diagnosis_parse.main([f"--diagnosis {diag}"])
+    rc = diagnosis_parse.main([f"--diagnosis {diag.as_posix()}"])
     assert rc == 0
-    assert capsys.readouterr().out.strip() == str(diag)
+    assert Path(capsys.readouterr().out.strip()) == diag
 
 
 def test_no_diagnosis(capsys: pytest.CaptureFixture[str]) -> None:
@@ -86,9 +86,9 @@ def test_combined_with_other_flags(
     monkeypatch.chdir(tmp_path)
     diag = tmp_path / "d.md"
     diag.write_text("x")
-    rc = diagnosis_parse.main([f"--mode fix --diagnosis={diag} --team"])
+    rc = diagnosis_parse.main([f"--mode fix --diagnosis={diag.as_posix()} --team"])
     assert rc == 0
-    assert capsys.readouterr().out.strip() == str(diag)
+    assert Path(capsys.readouterr().out.strip()) == diag
 
 
 def test_rejects_path_outside_cwd(
@@ -108,7 +108,7 @@ def test_rejects_path_outside_cwd(
     outside.mkdir()
     diag = outside / "leak.md"
     diag.write_text("# outside\n")
-    rc = diagnosis_parse.main([f"--diagnosis={diag}"])
+    rc = diagnosis_parse.main([f"--diagnosis={diag.as_posix()}"])
     assert rc == 1
     err = capsys.readouterr().err
     assert "outside project root" in err

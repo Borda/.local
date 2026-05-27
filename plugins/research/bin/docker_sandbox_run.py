@@ -77,7 +77,8 @@ def build_explore_command(arg: str, network: str, workdir: str) -> list[str]:
     """
     script_raw = arg[2:] if arg.startswith("./") else arg
     script_path = Path(script_raw)
-    if script_path.is_absolute():
+    # On Windows Path("/etc/passwd").is_absolute() is False (no drive); check posix form too.
+    if script_path.is_absolute() or script_path.as_posix().startswith("/"):
         raise ValueError(f"Absolute script path not allowed: {arg!r}")
     if any(part == ".." for part in script_path.parts):
         raise ValueError(f"Path traversal not allowed in script path: {arg!r}")
@@ -194,7 +195,7 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
     """
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     env = os.environ if env is None else env
-    workdir = str(Path(cwd).resolve()) if cwd else os.getcwd()
+    workdir = Path(cwd).as_posix() if cwd else Path(os.getcwd()).as_posix()
 
     mode, arg = _parse_args(raw_argv)
 

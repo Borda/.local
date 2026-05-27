@@ -102,7 +102,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
     fi
     _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename)  # timeout: 3000
     if [ ! -f ".cache/scan/${_PROJ}.json" ]; then
-        printf "! --codemap requested but no index found for project '%s'.\n  Build index: /codemap:scan\n" "$_PROJ"; exit 1
+        printf "! --codemap requested but no index found for project '%s'.\n  Build index: /codemap:scan-codebase\n" "$_PROJ"; exit 1
     fi
 fi
 ```

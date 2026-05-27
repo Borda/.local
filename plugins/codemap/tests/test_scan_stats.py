@@ -44,7 +44,7 @@ class TestResolveRoot:
         subdir = tmp_path / "proj"
         subdir.mkdir()
         monkeypatch.chdir(tmp_path)
-        result = _resolve_root(f"--root {subdir}", timeout=5)
+        result = _resolve_root(f"--root {subdir.as_posix()}", timeout=5)
         assert result == str(subdir)
 
     def test_traversal_blocked_exits_2(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -52,7 +52,7 @@ class TestResolveRoot:
         monkeypatch.chdir(tmp_path)
         outside = tmp_path.parent / "escaped"
         with pytest.raises(SystemExit) as exc_info:
-            _resolve_root(f"--root {outside}", timeout=5)
+            _resolve_root(f"--root {outside.as_posix()}", timeout=5)
         assert exc_info.value.code == 2
 
     def test_falls_back_to_git_toplevel(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -96,7 +96,7 @@ class TestLoadIndex:
         assert _load_index(str(tmp_path)) == payload
 
     def test_exits_1_when_file_missing(self, tmp_path: Path) -> None:
-        """Absent index file causes sys.exit(1) (user hint: run /codemap:scan)."""
+        """Absent index file causes sys.exit(1) (user hint: run /codemap:scan-codebase)."""
         with pytest.raises(SystemExit) as exc_info:
             _load_index(str(tmp_path))
         assert exc_info.value.code == 1

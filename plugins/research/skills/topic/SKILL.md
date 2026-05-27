@@ -40,6 +40,7 @@ HARD_CUTOFF: 900   # 15 min — if researcher does not return, surface partial r
 ## Agent Resolution
 
 ```bash
+# CLAUDE_PLUGIN_ROOT set by Claude Code to installed cache path; plugins/ fallback = source-tree only
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 ```
 

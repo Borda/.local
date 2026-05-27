@@ -91,7 +91,7 @@ def resolve_memory_dir(project: str | None, timeout: int = 5) -> str | None:
     if not project:
         return None
     slug = slugify(project)
-    home = Path(os.path.expanduser("~"))
+    home = Path(os.environ.get("HOME") or os.path.expanduser("~"))
     return str(home / ".claude" / "projects" / slug / "memory")
 
 

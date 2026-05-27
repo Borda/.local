@@ -103,7 +103,7 @@ def resolve_plugin_root(explicit: str | None) -> Path | None:
         if _is_plausible_plugin_dir(candidate):
             return candidate
         # Reject silently → fall through to auto-discovery (preserves prior UX for missing paths).
-    home = Path(os.path.expanduser("~"))
+    home = Path(os.environ.get("HOME") or os.path.expanduser("~"))
     candidates = sorted(
         home.joinpath(".claude/plugins/cache").glob(DEFAULT_CACHE_GLOB),
         key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
@@ -231,7 +231,7 @@ def build_audit_lines(cache: Path) -> list[str]:
             "",
             "--- check complete ---",
             "If any check failed:",
-            "  • /codemap:scan    — build or refresh the index",
+            "  • /codemap:scan-codebase    — build or refresh the index",
             "  • /codemap:integration init — add injection to more skills/agents",
             "  • /codemap:integration check — re-run after fixes",
         ]

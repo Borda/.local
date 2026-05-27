@@ -112,7 +112,7 @@ Common categories:
 - **Config / permission error** — settings.json allow entry missing; hook path wrong; settings.local.json override
 - **State pollution** — stale lock file, leftover tmp artifact, or cached state conflicts with current run
 - **Recent change regression** — git commit or config edit introduced issue (check `git log`)
-- **Sync drift** — project `.claude/` and `~/.claude/` diverged; compare manually or run `/foundry:audit setup`
+- **Sync drift** — project `.claude/` and `~/.claude/` diverged; compare manually or `/foundry:audit setup`
 - **External service** — network unavailable, API rate-limited, or remote tool unreachable
 
 ## Step 4: Auxiliary review (optional)

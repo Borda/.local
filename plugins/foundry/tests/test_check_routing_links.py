@@ -62,7 +62,7 @@ class TestResolveComputedRel:
     def test_audit_tpl_modes(self, tmp_path: Path) -> None:
         plugins_dir = tmp_path / "plugins"
         result = _resolve_computed_rel("AUDIT_TPL", "modes/upgrade.md", plugins_dir)
-        assert result == str(plugins_dir / "foundry" / "skills" / "audit" / "modes" / "upgrade.md")
+        assert result == (plugins_dir / "foundry" / "skills" / "audit" / "modes" / "upgrade.md").as_posix()
 
     def test_unknown_var_returns_none(self, tmp_path: Path) -> None:
         result = _resolve_computed_rel("MYSTERY_VAR", "foo.md", tmp_path)
@@ -85,7 +85,7 @@ class TestResolveComputedAbs:
     def test_fs_task_hygiene(self, tmp_path: Path) -> None:
         plugins_dir = tmp_path / "plugins"
         result = _resolve_computed_abs("_FS", "task-hygiene.md", plugins_dir)
-        assert result == str(plugins_dir / "foundry" / "skills" / "_shared" / "task-hygiene.md")
+        assert result == (plugins_dir / "foundry" / "skills" / "_shared" / "task-hygiene.md").as_posix()
 
     def test_unknown_var_returns_none(self, tmp_path: Path) -> None:
         result = _resolve_computed_abs("NO_SUCH_VAR", "foo.md", tmp_path)

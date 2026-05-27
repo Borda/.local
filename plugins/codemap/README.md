@@ -20,8 +20,8 @@ ______________________________________________________________________
 - [Quick start](#quick-start)
 - [Skills reference](#skills-reference)
   - [integration](#integration)
-  - [scan](#scan)
-  - [query](#query)
+  - [scan-codebase](#scan-codebase)
+  - [query-code](#query-code)
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -87,7 +87,7 @@ Zero codemap timeouts. Plain-arm agents hit the 300-second hard timeout on sever
 >
 > codemap injects a rich dependency graph into every agent prompt. On weaker models or tasks with large blast-radius graphs, this extra context can overwhelm the model and cause it to fall back to grep-heavy loops — performing *worse* than plain arm. The benchmark labels this failure mode `degenerate_grep_loop`.
 >
-> Good integration requires three things: (1) **skill-first protocol** — the agent calls `/codemap:query` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap queries per task; (3) **hard stop on `exhaustive: true`** — when the index says the list is complete, write the answer immediately, no more tool calls. Skipping any of these — especially ignoring the exhaustive flag — is the primary cause of regressions that flip the codemap benefit into a liability. Use `/codemap:integration init` to wire integration correctly rather than injecting context manually.
+> Good integration requires three things: (1) **skill-first protocol** — the agent calls `/codemap:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap queries per task; (3) **hard stop on `exhaustive: true`** — when the index says the list is complete, write the answer immediately, no more tool calls. Skipping any of these — especially ignoring the exhaustive flag — is the primary cause of regressions that flip the codemap benefit into a liability. Use `/codemap:integration init` to wire integration correctly rather than injecting context manually.
 
 ______________________________________________________________________
 
@@ -157,7 +157,7 @@ Two commands — then forget about codemap and just use your normal skills.
 **Step 1 — build the index:**
 
 ```text
-/codemap:scan
+/codemap:scan-codebase
 ```
 
 Output:
@@ -196,7 +196,7 @@ That is it. Now run your normal skills — codemap works silently in the backgro
 /oss:review                  # reviewer gets structural context on changed modules
 ```
 
-If you ever want to explore structure manually, `/codemap:query` is there for you — but most users rarely need it.
+If you ever want to explore structure manually, `/codemap:query-code` is there for you — but most users rarely need it.
 
 ______________________________________________________________________
 
@@ -230,7 +230,7 @@ Each check prints `✓`, `✗`, or `⚠` with a one-line remediation hint if nee
 
 Interactive onboarding for the current project:
 
-1. Builds the index if it is missing (offers to run `/codemap:scan`)
+1. Builds the index if it is missing (offers to run `/codemap:scan-codebase`)
 2. Discovers all installed skills and agents across all plugins
 3. Scores candidates by value tier (High / Medium / Low / Skip) based on whether structural context would help them
 4. Presents a recommendation table and asks which to wire in
@@ -275,9 +275,9 @@ run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a 
 **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
 ```
 
-### scan
+### scan-codebase
 
-**Trigger**: `/codemap:scan`
+**Trigger**: `/codemap:scan-codebase`
 
 Builds the structural index by running `ast.parse` across every `.py` file in the project. Writes the index to `.cache/scan/<project>.json`. Reports how many modules were indexed, how many were degraded (parse errors), and which five modules have the highest blast radius.
 
@@ -303,28 +303,28 @@ Run a full scan once when you first set up the project. After that, `--increment
 #### Example
 
 ```text
-/codemap:scan
+/codemap:scan-codebase
 ```
 
 ```text
-/codemap:scan --incremental
+/codemap:scan-codebase --incremental
 ```
 
 ______________________________________________________________________
 
-<a id="query"></a>
+<a id="query-code"></a>
 
 <details>
 
 <summary>
 
-### query — full subcommand reference
+### query-code — full subcommand reference
 
 </summary>
 
-### query
+### query-code
 
-**Trigger**: `/codemap:query <subcommand> [args]`
+**Trigger**: `/codemap:query-code <subcommand> [args]`
 
 **Auto-invokes when:** user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "blast radius of". Requires codemap index to exist (skill self-checks and no-ops gracefully if absent).
 
@@ -357,7 +357,7 @@ Retrieve function or class source by name instead of reading the full file — d
 
 #### Function-level call graph queries (v3 index)
 
-These require a v3 index built by `/codemap:scan`. If your index is older (v2), the commands return a clear upgrade message.
+These require a v3 index built by `/codemap:scan-codebase`. If your index is older (v2), the commands return a clear upgrade message.
 
 | Subcommand             | What it answers                                        |
 | ---------------------- | ------------------------------------------------------ |
@@ -382,28 +382,28 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 
 ```text
 # Before refactoring auth.py — understand full blast radius
-/codemap:query rdeps myproject.auth
+/codemap:query-code rdeps myproject.auth
 
 # Before adding a dependency to models.py — see what already imports it
-/codemap:query central --top 5
+/codemap:query-code central --top 5
 
 # Check if api and db are already coupled before adding a direct import
-/codemap:query path myproject.api myproject.db
+/codemap:query-code path myproject.api myproject.db
 
 # Read just the validate_token function without loading the whole file
-/codemap:query symbol validate_token
+/codemap:query-code symbol validate_token
 
 # Find all functions whose name starts with "validate" (unlimited results)
-/codemap:query find-symbol "^validate" --limit 0
+/codemap:query-code find-symbol "^validate" --limit 0
 
 # Check transitive impact of changing fetch_user at the function level
-/codemap:query fn-blast myproject.db::fetch_user
+/codemap:query-code fn-blast myproject.db::fetch_user
 
 # Exclude test modules from blast-radius analysis
-/codemap:query central --exclude-tests --top 10
+/codemap:query-code central --exclude-tests --top 10
 
 # Query a specific index file (monorepo with multiple projects)
-/codemap:query central --index /path/to/.cache/scan/subproject.json
+/codemap:query-code central --index /path/to/.cache/scan/subproject.json
 ```
 
 </details>
@@ -473,7 +473,7 @@ The index is always written to `.cache/scan/<project>.json` at the project root.
 If your Python source is not at the git root, pass `--root`:
 
 ```text
-/codemap:scan --root src/mypackage
+/codemap:scan-codebase --root src/mypackage
 ```
 
 Or from the terminal:
@@ -505,7 +505,7 @@ ______________________________________________________________________
 The index has not been built for this project yet. Run:
 
 ```text
-/codemap:scan
+/codemap:scan-codebase
 ```
 
 ### Stale index warning
@@ -513,13 +513,13 @@ The index has not been built for this project yet. Run:
 `scan-query` detected that Python files were committed after the index was built. Run an incremental rebuild:
 
 ```text
-/codemap:scan --incremental
+/codemap:scan-codebase --incremental
 ```
 
 Or a full rebuild if you have made large structural changes:
 
 ```text
-/codemap:scan
+/codemap:scan-codebase
 ```
 
 ### scan-query not found in the terminal
@@ -562,7 +562,7 @@ Generated files (e.g. protobuf output) are expected to degrade. They are not par
 The function-level call graph queries (`fn-deps`, `fn-rdeps`, `fn-central`, `fn-blast`) require a v3 index. Your current index is older. Rebuild:
 
 ```text
-/codemap:scan
+/codemap:scan-codebase
 ```
 
 ### The develop plugin does not seem to use codemap

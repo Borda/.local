@@ -1,3 +1,5 @@
+<!-- loads: vitality-report.md -->
+
 <workflow>
 
 **Task hygiene**: call TaskList first; close orphaned tasks from prior runs. **Task tracking**: TaskCreate tasks for each major phase before starting: "Step 1 Data Fetch", "Step 2 Axis Scoring (3 parallel)", "Step 3 Assemble Scores", "Step 4 Report", "Step 5 Codex Review", "Step 6 Adversarial Rework Loop", "Step 7 Terminal Output"; mark each in_progress/completed as you go.

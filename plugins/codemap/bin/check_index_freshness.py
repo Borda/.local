@@ -132,13 +132,13 @@ def format_status(scanned_at: str | None, scan_time: datetime | None, now: datet
     """
     if scan_time is None:
         if not scanned_at:
-            return "⚠ freshness: scanned_at missing — index may be corrupted\n  → Re-run /codemap:scan\n"
-        return f"⚠ freshness: could not parse scanned_at timestamp ({scanned_at}) — run /codemap:scan\n"
+            return "⚠ freshness: scanned_at missing — index may be corrupted\n  → Re-run /codemap:scan-codebase\n"
+        return f"⚠ freshness: could not parse scanned_at timestamp ({scanned_at}) — run /codemap:scan-codebase\n"
 
     days = age_days(scan_time, now)
     scan_date = (scanned_at or "")[:10]
     if days > STALE_THRESHOLD_DAYS:
-        return f"⚠ freshness: {days} day(s) ago ({scan_date})\n  → Run /codemap:scan to refresh\n"
+        return f"⚠ freshness: {days} day(s) ago ({scan_date})\n  → Run /codemap:scan-codebase to refresh\n"
     return f"✓ freshness: {days} day(s) ago ({scan_date})\n"
 
 

@@ -319,13 +319,6 @@ Evidence: <key signals>
 | "I'll apply fix here instead of handing off to `/develop:fix`" | Debug = investigation only. Mixing investigation + implementation conflates history, skips regression test gate. |
 | "Low confidence fine — I'll try fix and see" | Fix without confirmed hypothesis = guess. Guesses produce fixes that pass tests but don't resolve underlying problem. |
 
-## Team Assignments
-
-<!-- Executed inline in Flag parsing block above when --team flag is set. -->
-<!-- This section is reference documentation only — do not execute here. -->
-
-**When to use team mode**: pass `--team` flag. Team logic runs immediately after flag parsing and exits — Steps 1-4 below are skipped.
-
-**Spawn prompt template:** read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[symptom]`, `[FILE_SLUG]` with `debug-hypothesis`. Output written to `.temp/develop/$TS/debug-hypothesis-N.md`.
+<!-- Team spawn logic: see Flag parsing block above for team mode branch -->
 
 </notes>

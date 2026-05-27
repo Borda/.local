@@ -18,9 +18,8 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
 
 <inputs>
 
-- **$ARGUMENTS**: optional. Four modes:
+- **$ARGUMENTS**: optional. Modes:
   - Omitted — analyze existing patterns and agents; generate suggestions proactively.
-  - `review` — review existing agent/skill roster for quality and gaps without suggesting new additions.
   - `prune [--eager]` — evaluate project memory file for stale, redundant, or verbose entries. Default: advisory diff + apply prompt. `--eager`: score every entry (Usage likelihood × Impact → Tier P0/P1/P2), print full scored table with `#` column, let user select by tier or item numbers, delegate edits to `foundry:curator`.
   - `lessons [--eager]` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes. `--eager`: include Pattern count, Strength, and Tier columns in proposal table; let user select clusters to promote by tier or item numbers; delegate writes to `foundry:curator`.
   - `review [--eager]` — review existing agent/skill roster for quality and gaps without suggesting new additions. `--eager`: lower overlap flag threshold from >50% to >30% scope coverage; surface any shared single capability between agents as boundary issue; add "Sharpen Boundary" section to output.

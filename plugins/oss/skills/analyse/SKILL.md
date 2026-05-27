@@ -303,8 +303,7 @@ fi
 ## Step 5: Mode dispatch
 
 ```bash
-_OSS_MODE_DIR=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse/modes 2>/dev/null | sort -V | tail -1)
-[ -z "$_OSS_MODE_DIR" ] && _OSS_MODE_DIR="plugins/oss/skills/analyse/modes"
+_OSS_MODE_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/analyse/modes"
 ```
 
 Read `$_OSS_MODE_DIR/<mode>.md` and execute all steps defined there.

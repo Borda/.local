@@ -13,7 +13,7 @@ Set up foundry on new machine:
 
 | Action | What happens |
 | --- | --- |
-| Detect Python 3.10+ (`python` / `py -3` / `python3`); install `~/bin/python` shim if needed | ✓ |
+| Detect Python 3.10+ (`python` / `py -3` / `python3`); install `~/.local/bin/python` shim if needed | ✓ |
 | Merge `statusLine`, `permissions.allow`, `enabledPlugins` → `~/.claude/settings.json` | ✓ |
 | `rules/*.md` → `~/.claude/rules/` | symlink |
 | `TEAM_PROTOCOL.md` → `~/.claude/` | symlink |
@@ -434,7 +434,7 @@ Print summary:
 - Rules linked: N → ~/.claude/rules/
 - TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
 - Skills linked: N → ~/.claude/skills/
-- Backup at: ~/.claude/settings.json.bak
+- Backup at: ~/.claude/settings.json.bak-<timestamp>
 
 </workflow>
 

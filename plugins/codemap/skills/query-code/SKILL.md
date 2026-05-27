@@ -1,5 +1,5 @@
 ---
-name: query
+name: query-code
 description: |
   Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, and function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
   TRIGGER when: user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of".
@@ -26,7 +26,7 @@ Query codemap structural index for import-graph analysis, symbol-level source ex
 - `symbols <module>` — list all symbols in module (no file I/O)
 - `find-symbol <pattern>` — regex search across all symbol names in index
 
-**Function-level call graph queries** (v3 index — requires `/codemap:scan` with call graph):
+**Function-level call graph queries** (v3 index — requires `/codemap:scan-codebase` with call graph):
 - `fn-deps <qname>` — what does function/method call? (outgoing edges)
 - `fn-rdeps <qname>` — what functions call this one? (incoming edges)
 - `fn-central [--top N]` — most-called functions globally (default top 10)
@@ -34,7 +34,7 @@ Query codemap structural index for import-graph analysis, symbol-level source ex
 
 Use `module::function` format for qname, e.g. `mypackage.auth::validate_token`. Requires v3 index — v2 returns clear upgrade prompt.
 
-NOT for: building or rebuilding index (use `/codemap:scan`). All query subcommands are **read-only** — any request that modifies the index or project files belongs to `/codemap:scan` (index writes) or `/codemap:integration` (file injection). Ambiguous prompts like "show me the call graph" that imply read → query is correct; "update the call graph" → scan. If subcommand roster expands significantly, run `/foundry:calibrate routing` (requires `foundry` plugin) to verify no routing collisions.
+NOT for: building or rebuilding index (use `/codemap:scan-codebase`). All query subcommands are **read-only** — any request that modifies the index or project files belongs to `/codemap:scan-codebase` (index writes) or `/codemap:integration` (file injection). Ambiguous prompts like "show me the call graph" that imply read → query-code is correct; "update the call graph" → scan-codebase. If subcommand roster expands significantly, run `/foundry:calibrate routing` (requires `foundry` plugin) to verify no routing collisions.
 
 </objective>
 
@@ -84,7 +84,7 @@ Replace `<QUERY_ARGS>`:
 
 `scan-query` on PATH, locates index via git root — no setup. Missing index prints clear error.
 
-Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. Function qnames use `module::function` format (e.g. `mypackage.auth::validate_token`). Index must be current — re-run `/codemap:scan` if stale warning appears.
+Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. Function qnames use `module::function` format (e.g. `mypackage.auth::validate_token`). Index must be current — re-run `/codemap:scan-codebase` if stale warning appears.
 
 ## Budget and stop rules
 
@@ -98,7 +98,7 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 
 ## Step 2: Parse JSON output and format
 
-`scan-query` always emits JSON object — parse before rendering. Stale-index detection has two channels: (1) stderr: if contains `[stale]` or `⚠ codemap index stale` — surface warning; (2) JSON field `index.stale` (boolean) — check `result.index.stale`; if `true`, warn user to re-run `/codemap:scan`. Check `index.degraded` in result; if `> 0`, caveat that some modules unparsable.
+`scan-query` always emits JSON object — parse before rendering. Stale-index detection has two channels: (1) stderr: if contains `[stale]` or `⚠ codemap index stale` — surface warning; (2) JSON field `index.stale` (boolean) — check `result.index.stale`; if `true`, warn user to re-run `/codemap:scan-codebase`. Check `index.degraded` in result; if `> 0`, caveat that some modules unparsable.
 
 | Command | JSON key to use | Render as |
 | --- | --- | --- |
@@ -112,9 +112,9 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 | `fn-deps` / `fn-rdeps` | `calls` / `called_by` | `module::function (resolution)`, one per line |
 | `fn-central` | `fn_central` array | `count module::function`, one per line |
 | `fn-blast` | `blast_radius` array | `depth module::function` (if depth key present), sorted by depth then name |
-| stale check | `index.stale` (boolean) | if true → warn "index stale — run /codemap:scan" |
+| stale check | `index.stale` (boolean) | if true → warn "index stale — run /codemap:scan-codebase" |
 
-`{"error": "..."}`: surface error, suggest re-running `/codemap:scan`.
+`{"error": "..."}`: surface error, suggest re-running `/codemap:scan-codebase`.
 
 **Partial JSON handling**: if output is truncated (does not parse as complete JSON object — e.g., ends mid-value or missing closing `}`), log `⚠ partial JSON response — results may be incomplete` and attempt to parse only complete top-level fields present before truncation. Surface whatever was recovered; do not silently discard partial results.
 

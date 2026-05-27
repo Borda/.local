@@ -495,7 +495,7 @@ Call `AskUserQuestion` tool — do NOT write options as plain text first. Map op
 - (b) label: `Copy plan` — description: output plan table as clean markdown block, then stop
 - (c) label: `Revise spec first` — description: stop; revise spec and re-run `/brainstorm breakdown <spec>`
 
-On **(a)**: before dispatching, verify no active `/develop:feature` task for this spec already exists in TaskList — call `TaskList` and scan for tasks naming the spec slug or referencing `/develop:feature` against same spec file; if found, surface existing task to user and skip dispatch (prevents double-dispatch on re-entry). Otherwise proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
+On **(a)** (requires `develop` plugin): before dispatching, verify no active `/develop:feature` task for this spec already exists in TaskList — call `TaskList` and scan for tasks naming the spec slug or referencing `/develop:feature` against same spec file; if found, surface existing task to user and skip dispatch (prevents double-dispatch on re-entry). Otherwise proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
 
 End with `## Confidence` block per CLAUDE.md output standards.
 

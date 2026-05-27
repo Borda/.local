@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
             # oracle (e.g. `--diagnosis /etc/passwd` would otherwise report
             # success and echo the absolute path).
             print(
-                f"! BREAKING — diagnosis path outside project root: {resolved}",
+                f"! BREAKING — diagnosis path outside project root: {diag_file}",
                 file=sys.stderr,
             )
             print(

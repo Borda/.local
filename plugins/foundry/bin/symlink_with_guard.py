@@ -194,7 +194,11 @@ def _is_current(target: str, plugin_root: Path) -> bool:
         False
     """
     try:
-        resolved = Path(os.path.realpath(target) if not os.path.isabs(target) else target)
+        raw = os.path.realpath(target) if not os.path.isabs(target) else target
+        # Windows extended-path prefix (\\?\) breaks Path.is_relative_to comparisons
+        if isinstance(raw, str) and raw.startswith("\\\\?\\"):
+            raw = raw[4:]
+        resolved = Path(raw)
         return resolved.is_relative_to(plugin_root.resolve())
     except (ValueError, OSError):
         return str(plugin_root) in target  # fallback if resolution fails

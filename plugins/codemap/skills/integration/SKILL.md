@@ -14,7 +14,7 @@ Two modes: use `init` first-time to onboard, then `check` regularly to verify. D
 - **`check`** — fast diagnostic: finds `scan-query`, verifies index exists and fresh, runs smoke test, audits which skill files have injection block. Prints `✓`/`✗`/`⚠` per check with one-line remediation hints. Pure bash — no model reasoning needed for happy path.
 - **`init`** — interactive onboarding: builds index if missing, discovers all installed skills and agents, scores by how much codemap would help, presents recommendation table, asks which to wire in, inserts correct injection block into each selected file.
 
-NOT for: building or rebuilding index (use `/codemap:scan`); running structural query (use `/codemap:query`).
+NOT for: building or rebuilding index (use `/codemap:scan-codebase`); running structural query (use `/codemap:query-code`).
 
 Arguments: `check` (no args) or `init [--approve]` — `--approve` auto-applies all ★ recommendations non-interactively.
 
@@ -71,7 +71,7 @@ if [ "$C1_STATUS" = "failed" ]; then
 fi
 # PROJ/INDEX resolution — also used in Step I1 (init mode); keep in sync
 # NOTE: uses single-strategy basename lookup; scan-query uses three-strategy walk-up
-# If index not found here but scan-query works, run with explicit --index flag or re-run /codemap:scan from project root
+# If index not found here but scan-query works, run with explicit --index flag or re-run /codemap:scan-codebase from project root
 # bash 3.2 compatible — mapfile is bash 4+ only; macOS ships bash 3.2
 _idx=()
 while IFS= read -r line; do
@@ -87,7 +87,7 @@ if [ -f "$INDEX" ]; then
     printf "✓ index: exists\n"
 else
     printf "✗ index: not found\n"
-    printf "  → Run /codemap:scan to build the index\n"
+    printf "  → Run /codemap:scan-codebase to build the index\n"
     echo "failed" > "${TMPDIR:-/tmp}/codemap-c1-status"
     exit 1
 fi
@@ -124,11 +124,11 @@ AGE=$(echo "$SMOKE_RESULT" | jq -r '.age_hours')
 if [ "$OK" != "true" ]; then
     ERR=$(echo "$SMOKE_RESULT" | jq -r '.error // "unknown"')
     printf "✗ smoke test: %s\n" "$ERR"
-    printf "  → Re-run /codemap:scan to rebuild index\n"
+    printf "  → Re-run /codemap:scan-codebase to rebuild index\n"
 else
     printf "✓ smoke test: index valid (mtime-age=%sh)\n" "$AGE"
     if [ "$STALE" = "true" ]; then
-        printf "  ⚠ Index older than freshness threshold — run /codemap:scan to update\n"
+        printf "  ⚠ Index older than freshness threshold — run /codemap:scan-codebase to update\n"
     fi
 fi
 ```
@@ -170,14 +170,14 @@ Use `AskUserQuestion`:
 No codemap index found for project: $PROJ
 
 a) Build now ★ — scans all .py files via ast.parse (Python only), <60s on most projects
-b) Skip — I'll run /codemap:scan later (recommendations will be generic, no module-count weighting)
+b) Skip — I'll run /codemap:scan-codebase later (recommendations will be generic, no module-count weighting)
 ```
 
 If **a** (or auto-approved): verify binary exists first, then run scanner:
 
 ```bash
 # timeout: 5000
-[ -x "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" ] || { printf "✗ scan-index not found at ${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index\nTry: /codemap:scan to install and rebuild.\n"; exit 1; }
+[ -x "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" ] || { printf "✗ scan-index not found at ${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index\nTry: /codemap:scan-codebase to install and rebuild.\n"; exit 1; }
 # timeout: 360000
 ${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index
 ```
@@ -305,7 +305,7 @@ Use `AskUserQuestion`:
 Install post-commit git hook for automatic incremental rebuild?
 
 a) Install ★ — runs scan-index --incremental in background after every commit; index stays current with zero developer action
-b) Skip — I'll run /codemap:scan or /codemap:scan --incremental manually
+b) Skip — I'll run /codemap:scan-codebase or /codemap:scan-codebase --incremental manually
 ```
 
 ### I5b — Write hook file

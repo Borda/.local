@@ -82,7 +82,7 @@ class TestFormatStatus:
         scan = now - timedelta(days=10)
         line = cif.format_status("2025-12-31T00:00:00Z", scan, now)
         assert "⚠ freshness: 10 day(s) ago (2025-12-31)" in line
-        assert "Run /codemap:scan to refresh" in line
+        assert "Run /codemap:scan-codebase to refresh" in line
 
     def test_missing_scanned_at_message(self):
         """Missing scanned_at surfaces the corruption hint."""
@@ -147,7 +147,7 @@ class TestMain:
         assert cif.main([str(path)]) == 0
         captured = capsys.readouterr()
         assert captured.out.startswith("⚠ freshness:")
-        assert "Run /codemap:scan to refresh" in captured.out
+        assert "Run /codemap:scan-codebase to refresh" in captured.out
 
     def test_missing_scanned_at_field(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         """Valid JSON without scanned_at prints the corruption warning."""

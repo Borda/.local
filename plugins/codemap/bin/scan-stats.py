@@ -47,7 +47,7 @@ def _load_index(root: str) -> dict:
     try:
         size = os.path.getsize(index_path)
     except FileNotFoundError:
-        print(f"Index not found: {index_path} — run /codemap:scan first")
+        print(f"Index not found: {index_path} — run /codemap:scan-codebase first")
         sys.exit(1)
     if size > MAX_INDEX_SIZE:
         print(f"Index too large ({size} bytes; max {MAX_INDEX_SIZE}): {index_path}")
@@ -56,7 +56,7 @@ def _load_index(root: str) -> dict:
         with open(index_path) as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"Index not found: {index_path} — run /codemap:scan first")
+        print(f"Index not found: {index_path} — run /codemap:scan-codebase first")
         sys.exit(1)
 
 

@@ -33,18 +33,6 @@ _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
 
-<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
-
-## Anti-Rationalizations
-
-| Temptation | Reality |
-| --- | --- |
-| "The feature is clear — I can skip the demo and go straight to code" | Without crystallized API contract, implementation drifts. Demo = spec. |
-| "I know this library — no need to check docs" | Training data contains deprecated patterns. One fetch prevents hours of rework. |
-| "I'll write tests after the implementation is stable" | Tests drive design. Writing first reveals API problems before baked in. |
-| "The existing suite still passes — the feature is good" | Existing suite doesn't cover new feature. Demo and edge-case tests do. |
-| "Step 1 analysis is unnecessary for a small addition" | Scope analysis reveals reuse opportunities and blast radius. Small additions regularly grow. |
-
 Read `$_DEV_SHARED/task-hygiene.md`.
 
 ## Project Detection
@@ -199,7 +187,7 @@ fi
 
 If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/*.py`) to search related code. Path hint: use `src/` if that directory exists, otherwise search from project root (`.`).
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`** (values normalized by `bin/codemap-resolve` and `bin/semble-resolve`): read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 
@@ -518,8 +506,22 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 **Refinements**: N passes.
 ```
 
-## Team Assignments
-
-**Reference only** — full spawn prompts, coordination order, and health monitoring are defined in `## Team Mode Branch` above. When `--team` flag set, that branch runs and exits. Use team mode when: feature spans 3+ modules, changes public API, or involves auth/payment/data scope.
+<!-- Team spawn logic: see ## Team Mode Branch above -->
 
 </workflow>
+
+<notes>
+
+<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
+
+## Anti-Rationalizations
+
+| Temptation | Reality |
+| --- | --- |
+| "The feature is clear — I can skip the demo and go straight to code" | Without crystallized API contract, implementation drifts. Demo = spec. |
+| "I know this library — no need to check docs" | Training data contains deprecated patterns. One fetch prevents hours of rework. |
+| "I'll write tests after the implementation is stable" | Tests drive design. Writing first reveals API problems before baked in. |
+| "The existing suite still passes — the feature is good" | Existing suite doesn't cover new feature. Demo and edge-case tests do. |
+| "Step 1 analysis is unnecessary for a small addition" | Scope analysis reveals reuse opportunities and blast radius. Small additions regularly grow. |
+
+</notes>

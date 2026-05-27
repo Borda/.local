@@ -447,7 +447,7 @@ class TestCreateLink:
         sidecar = dest.parent / f".{dest.name}.sourced_from"
         content = sidecar.read_text()
         assert content == src.as_posix() + "\n"
-        assert content.startswith("/")  # absolute fallback
+        assert Path(content.strip()).is_absolute()  # absolute fallback
 
     def test_main_create_mode_missing_src(
         self,

@@ -80,7 +80,7 @@ def iter_bin_scripts(plugins_dir: Path) -> list[tuple[str, str, str]]:
                 continue
             if script.name.startswith("_"):
                 continue
-            results.append((plugin_dir.name, script.name, str(script)))
+            results.append((plugin_dir.name, script.name, script.as_posix()))
     return results
 
 

@@ -1,8 +1,9 @@
 ---
-name: scan
+name: scan-codebase
 description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics)."
 argument-hint: "[--root <path>] [--incremental]"
 allowed-tools: Bash, Write, AskUserQuestion
+model: haiku
 disable-model-invocation: true
 effort: low
 ---
@@ -15,7 +16,7 @@ Index captures per module: import graph, blast-radius metrics, **symbol list** (
 
 Agents + develop skills query index via `scan-query` for module deps, blast radius, coupling, symbol source before editing.
 
-NOT for querying existing index (use `/codemap:query`); NOT for integration health checks or injection (use `/codemap:integration`).
+NOT for querying existing index (use `/codemap:query-code`); NOT for integration health checks or injection (use `/codemap:integration`).
 
 </objective>
 
@@ -80,11 +81,11 @@ If `--incremental` passed and scan-stats reports 0 modules indexed (or same coun
 
 ```text
 Index ready. Query it with:
-  /codemap:query central --top 10
-  /codemap:query deps <module>
-  /codemap:query rdeps <module>
-  /codemap:query coupled --top 10
-  # see /codemap:query for full list of subcommands
+  /codemap:query-code central --top 10
+  /codemap:query-code deps <module>
+  /codemap:query-code rdeps <module>
+  /codemap:query-code coupled --top 10
+  # see /codemap:query-code for full list of subcommands
 ```
 
 </workflow>

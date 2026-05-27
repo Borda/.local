@@ -7,6 +7,7 @@ git-bound behaviour via ``monkeypatch`` and the CLI surface via ``capsys``.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -62,7 +63,7 @@ class TestResolveMemoryDir:
         _patch_run(monkeypatch, boom)
         monkeypatch.setenv("HOME", "/home/test")
         result = resolve_memory_dir.resolve_memory_dir("/some/Project")
-        assert result == "/home/test/.claude/projects/-some-project/memory"
+        assert Path(result).as_posix() == "/home/test/.claude/projects/-some-project/memory"
 
     def test_git_fallback_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Empty arg → git rev-parse provides the root."""
@@ -73,7 +74,7 @@ class TestResolveMemoryDir:
         _patch_run(monkeypatch, fake_run)
         monkeypatch.setenv("HOME", "/home/test")
         result = resolve_memory_dir.resolve_memory_dir(None)
-        assert result == "/home/test/.claude/projects/-users-x-project/memory"
+        assert Path(result).as_posix() == "/home/test/.claude/projects/-users-x-project/memory"
 
     def test_git_fallback_no_repo(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """git fails (non-zero) → None."""
@@ -104,7 +105,7 @@ class TestResolveMemoryDir:
         _patch_run(monkeypatch, fake_run)
         monkeypatch.setenv("HOME", "/h")
         result = resolve_memory_dir.resolve_memory_dir("")
-        assert result == "/h/.claude/projects/-repo/memory"
+        assert Path(result).as_posix() == "/h/.claude/projects/-repo/memory"
         assert calls["n"] == 1
 
 
@@ -126,7 +127,7 @@ class TestMain:
         rc = resolve_memory_dir.main([])
         assert rc == 0
         out = capsys.readouterr().out.strip()
-        assert out == "/h/.claude/projects/-users-x-repo/memory"
+        assert Path(out).as_posix() == "/h/.claude/projects/-users-x-repo/memory"
 
     def test_explicit_arg(
         self,
@@ -138,7 +139,7 @@ class TestMain:
         rc = resolve_memory_dir.main(["/some/Project"])
         assert rc == 0
         out = capsys.readouterr().out.strip()
-        assert out == "/h/.claude/projects/-some-project/memory"
+        assert Path(out).as_posix() == "/h/.claude/projects/-some-project/memory"
 
     def test_exit_1_when_no_git_root(
         self,
@@ -164,4 +165,4 @@ class TestMain:
         monkeypatch.setenv("HOME", "/custom/home")
         rc = resolve_memory_dir.main(["/x"])
         assert rc == 0
-        assert capsys.readouterr().out.strip().startswith("/custom/home/.claude/projects/")
+        assert Path(capsys.readouterr().out.strip()).as_posix().startswith("/custom/home/.claude/projects/")

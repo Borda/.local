@@ -29,7 +29,7 @@ COLAB_KNOWN_HW:             H100, L4, T4, A100
 SUMMARY_INTERVAL:           10 iterations
 DIMINISHING_RETURNS_WINDOW: 5 iterations < 0.5% each → warn user and suggest stopping
 STATE_DIR:                  .experiments/state/<run-id>/  (timestamped dir per run — see .claude/rules/artifact-lifecycle.md)
-CLAUDE_SKILL_DIR:           <UNRESOLVED — set at Agent Resolution step via cache-path resolution; bare `plugins/research/skills/run` is final fallback only, never consume before resolution block>
+CLAUDE_SKILL_DIR:           ""
 SENTINEL_SLUG_FORMULA: |
   REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
   BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')

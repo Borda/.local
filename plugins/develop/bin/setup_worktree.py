@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         if sentinel_name:
             (_sentinel_dir() / f"{sentinel_name}-{ts}").touch()
 
-    sys.stdout.write(f"{ts}\n{run_dir}\n")
+    sys.stdout.write(f"{ts}\n{run_dir.as_posix()}\n")
     return 0
 
 

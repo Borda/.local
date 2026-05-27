@@ -193,10 +193,10 @@ def _find_version_dir(match_path: Path, marker: str = "borda-ai-rig") -> Path | 
         ``marker`` as its grandparent's basename.
 
     Examples:
-        >>> _find_version_dir(Path("/x/borda-ai-rig/foundry/0.18.0/skills/_shared"))
-        PosixPath('/x/borda-ai-rig/foundry/0.18.0')
-        >>> _find_version_dir(Path("/x/borda-ai-rig/oss/0.9.0/skills/_shared/inner"))
-        PosixPath('/x/borda-ai-rig/oss/0.9.0')
+        >>> _find_version_dir(Path("/x/borda-ai-rig/foundry/0.18.0/skills/_shared")).as_posix()
+        '/x/borda-ai-rig/foundry/0.18.0'
+        >>> _find_version_dir(Path("/x/borda-ai-rig/oss/0.9.0/skills/_shared/inner")).as_posix()
+        '/x/borda-ai-rig/oss/0.9.0'
         >>> _find_version_dir(Path("/x/elsewhere/skills/_shared")) is None
         True
     """
@@ -239,8 +239,8 @@ def _from_cache_scan(skill: str, subdir: str, home: Path) -> Path | None:
         if len(depth) > 6:
             dirnames[:] = []
             continue
-        # Match dirs whose path ends with /<skill>/<subdir>
-        if dirpath.endswith(suffix):
+        # Match dirs whose path ends with /<skill>/<subdir> (normalize for Windows)
+        if dirpath.replace("\\", "/").endswith(suffix):
             match_path = Path(dirpath)
             version_dir = _find_version_dir(match_path)
             if version_dir is not None and (version_dir / ".orphaned_at").exists():
@@ -334,7 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(str(resolved))
+    print(resolved.as_posix())
     return 0
 
 

@@ -204,7 +204,7 @@ def _find_py_files(target: str) -> list[str]:
             except (ValueError, OSError):
                 continue
             # Match bash semantics: paths start with ./ when target starts with ./
-            s = str(p)
+            s = p.as_posix()
             if target.startswith("./") and not s.startswith("./"):
                 s = "./" + s
             paths.append(s)

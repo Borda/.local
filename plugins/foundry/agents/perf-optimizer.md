@@ -111,7 +111,7 @@ python -m cProfile -o output.prof script.py
 python -c "import pstats; pstats.Stats('output.prof').sort_stats('cumulative').print_stats(30)"
 
 # memory_profiler — line-level memory profiling via @profile decorator
-pip install memory_profiler
+uv tool install memory-profiler
 python -m memory_profiler script.py
 ```
 

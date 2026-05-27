@@ -10,7 +10,12 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="requires bash")
 
 SCRIPT = Path(__file__).parent.parent / "bin" / "resolve-quality-gates.sh"
 

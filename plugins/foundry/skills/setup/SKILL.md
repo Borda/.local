@@ -7,6 +7,8 @@ model: haiku
 argument-hint: "[--approve]"
 ---
 
+<!-- NOTE: Simplified variant of foundry:init; keep in sync with init/SKILL.md for Steps 1-9 shared logic. Substantive differences: no Python shim detection, no _jq_result error-guard improvements pending backport. -->
+
 <objective>
 
 Set up foundry on new machine:
@@ -100,6 +102,7 @@ If `~/.claude/settings.json` does not exist, create it using the Write tool with
 ```bash
 SETUP_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
 cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"  # timeout: 5000
+echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts"
 ```
 
 Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
@@ -137,9 +140,10 @@ If already set to the current `$PLUGIN_ROOT`: report "statusLine already set to 
 Writes `statusLine` key to `~/.claude/settings.json`:
 
 ```bash
-jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
+_jq_result=$(jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
     '.statusLine = {"async":true,"command":$cmd,"type":"command"}' \
-    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
 ```
 
 Write `${TMPDIR:-/tmp}/foundry_setup_tmp.json` back to `~/.claude/settings.json` using Write tool.
@@ -151,9 +155,10 @@ Read `$PLUGIN_ROOT/.claude-plugin/permissions-allow.json` using Read tool. Merge
 Writes merged `permissions.allow` array:
 
 ```bash
-jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
+_jq_result=$(jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
     '.permissions.allow = ((.permissions.allow // []) + $perms[0] | unique)' \
-    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
 ```
 
 Write back with Write tool. Report: "Added N new permissions.allow entries (M already present)."
@@ -163,9 +168,10 @@ Check whether `$PLUGIN_ROOT/.claude-plugin/permissions-deny.json` exists. If so,
 Writes merged `permissions.deny` array:
 
 ```bash
-jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
+_jq_result=$(jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
     '.permissions.deny = ((.permissions.deny // []) + $deny[0] | unique)' \
-    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
 ```
 
 Write back with Write tool. Report: "Added N new permissions.deny entries (M already present)."
@@ -202,8 +208,9 @@ If already `true`: report "enabledPlugins already set — skipping." Otherwise:
 Writes `enabledPlugins["codex@openai-codex"]` key:
 
 ```bash
-jq '.enabledPlugins["codex@openai-codex"] = true' \
-    ~/.claude/settings.json > ${TMPDIR:-/tmp}/foundry_setup_tmp.json  # timeout: 5000
+_jq_result=$(jq '.enabledPlugins["codex@openai-codex"] = true' \
+    ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
 ```
 
 Write back with Write tool.
@@ -216,7 +223,7 @@ After all writes, confirm file parses as valid JSON:
 jq empty ~/.claude/settings.json  # timeout: 5000
 ```
 
-If `jq` exits non-zero: restore from backup (`cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json`), report error, stop. If valid: continue.
+If `jq` exits non-zero: restore from backup: `SETUP_BAK_TS=$(cat "${TMPDIR:-/tmp}/foundry-setup-bak-ts" 2>/dev/null || ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//'); cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json`, report error, stop. If valid: continue.
 
 ## Step 9: Symlink rules and TEAM_PROTOCOL.md
 

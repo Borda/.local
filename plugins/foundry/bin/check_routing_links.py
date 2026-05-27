@@ -255,7 +255,7 @@ def _resolve_computed_rel(var: str, rel_path: str, plugins_dir: Path) -> str | N
     # Navigate one level up from root, then append rel_path
     root = Path(root_rel)
     resolved = plugins_dir / plugin / root.parent / rel_path
-    return str(resolved)
+    return resolved.as_posix()
 
 
 def _resolve_computed_abs(var: str, filename: str, plugins_dir: Path) -> str | None:
@@ -280,7 +280,7 @@ def _resolve_computed_abs(var: str, filename: str, plugins_dir: Path) -> str | N
         return None
     plugin, root_rel = _VAR_ROOTS[var]
     resolved = plugins_dir / plugin / root_rel / filename
-    return str(resolved)
+    return resolved.as_posix()
 
 
 def extract_path_refs(md_file: Path, plugin: str, plugins_dir: Path) -> list[PathRef]:

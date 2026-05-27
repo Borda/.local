@@ -6,6 +6,7 @@ Covers create / append / idempotency paths, shebang warnings, and the ``core.hoo
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -102,8 +103,9 @@ class TestInstallHook:
         assert content.startswith("#!/bin/sh")
         assert iph.HOOK_MARKER in content
         assert "scan-index --incremental" in content
-        # Executable for owner.
-        assert hook.stat().st_mode & 0o100
+        # Executable for owner — not settable on Windows.
+        if sys.platform != "win32":
+            assert hook.stat().st_mode & 0o100
         assert any("created" in line for line in lines)
 
     def test_appends_to_existing_hook_without_marker(self, tmp_path: Path):
