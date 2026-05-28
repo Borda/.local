@@ -83,6 +83,34 @@ After scoring, apply this judgement:
 - If recommending: state justification — what source provides that local setup lacks, why cherry-picking would dilute value
 - Present as explicit option in E13 (option b); omit if not recommended
 
+**E12.5: Challenger adversarial review**
+
+Before presenting proposals to the user, spawn **foundry:challenger** to adversarially review the adoption table. Challenger surfaces: claimed benefits that are already covered locally, cost/benefit miscalculations, proposals that add complexity without measurable gain.
+
+Substitute `$EXT_RUN_DIR` with its actual computed value (from the `EXT_RUN_DIR=` block at top of this mode file) before issuing the Agent call — spawned agents receive text, not shell context.
+
+```text
+Agent(subagent_type="foundry:challenger", prompt="
+Challenge these adoption proposals from /distill external mode on <source>. For each candidate in the adoption table:
+1. Strongest objection — is claimed benefit real? Already covered locally? Cost/benefit miscalculated?
+2. Merit worth preserving even if proposal as stated is flawed
+3. Verdict: ADOPT_AS_STATED | ADOPT_WITH_MODIFICATION | DISCARD | NEEDS_MORE_INFO
+
+Apply mandatory refutation step to your own findings.
+
+Adoption table:
+<paste full adoption table from E12>
+
+Local capability map (from E8):
+<paste local capability map summary>
+
+Write full analysis to <EXT_RUN_DIR>/challenger-review.md using Write tool.
+Return ONLY compact JSON as final line: {\"status\":\"done\",\"verdicts\":{\"<item-label>\":\"VERDICT\",...},\"confidence\":0.N}
+")
+```
+
+After challenger returns: read `$EXT_RUN_DIR/challenger-review.md`. Annotate each adoption table row with challenger verdict — add **Verdict** column. Rows marked `DISCARD`: move to separate **Discarded by challenger** section below table with one-line reason. Rows marked `ADOPT_WITH_MODIFICATION`: update **Action** cell to `Tweak*` and add footnote with challenger's modification requirement. Confidence < 0.85 → flag that group's findings with ⚠ and surface the named gap.
+
 **E13: Gate — AskUserQuestion**
 
 Present source report + adoption table + install-as-is recommendation (when applicable). Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:

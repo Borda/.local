@@ -233,6 +233,7 @@ Run each variant **sequentially** — parallel worktrees would conflict.
 ```bash
 ORIG_DIR="$(pwd)"  # timeout: 3000
 WORKTREE_PATHS_FILE=$(mktemp -t fortify-XXXX)  # timeout: 3000
+echo "$WORKTREE_PATHS_FILE" > "${TMPDIR:-/tmp}/fortify-paths-ptr"  # persist for trap block
 ```
 
 **On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. The trap below makes interrupt cleanup automatic — never rely on prose-only cleanup discipline.
@@ -258,6 +259,9 @@ git worktree add "$WORKTREE_BASE/$VARIANT_NAME" "$best_commit"  # timeout: 15000
 **4a-trap. Register cleanup trap immediately after worktree creation** (guarantees removal on EXIT / INT / TERM, even on uncaught error):
 
 ```bash
+# Reload well-known path (Check 41: shell var lost between Bash calls)
+WORKTREE_PATHS_FILE=$(cat "${TMPDIR:-/tmp}/fortify-paths-ptr" 2>/dev/null)
+[ -z "$WORKTREE_PATHS_FILE" ] && WORKTREE_PATHS_FILE="${TMPDIR:-/tmp}/fortify-worktree-paths-fallback"
 WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/$VARIANT_NAME}"
 # Append path to accumulator file — file persists across Bash calls; array variables do not
 echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"

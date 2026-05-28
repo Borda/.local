@@ -69,6 +69,10 @@ mkdir -p "$(dirname "$DATA_FILE")"  # timeout: 5000
 # shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in repo-warden.md, shepherd.md)
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+# Persist time anchors and input vars across Bash calls (Check 41: fresh shell per call)
+printf "%s" "$CUTOFF_3Y"   > "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y"
+printf "%s" "$CUTOFF_90D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d"
+printf "%s" "$CUTOFF_180D" > "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d"
 ```
 
 ## Step 2 — Data Fetch Group 1 (all parallel)
@@ -77,6 +81,10 @@ Run all calls simultaneously — independent. Extracted to `bin/fetch_gh_data_gr
 
 ```bash
 GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000
+# Reload time anchors (Check 41: fresh shell loses Step 1 vars)
+CUTOFF_3Y=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y" 2>/dev/null)
+CUTOFF_90D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d" 2>/dev/null)
+CUTOFF_180D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d" 2>/dev/null)
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/fetch_gh_data_group1.py" \
     --repo "$GH_OWNER/$GH_REPO" \
     --output-dir "$GROUP1_DIR" \

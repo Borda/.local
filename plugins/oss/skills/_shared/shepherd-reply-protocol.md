@@ -22,7 +22,7 @@ Agent(subagent_type="oss:shepherd", prompt="
 
   **Part 2 — Inline suggestions** (optional; single unified table, all findings in one place — no separate prose paragraphs):
   | Importance | Confidence | File | Line | Comment |
-  — Importance and Confidence as the two leftmost columns; high → medium → low, then most confident first within tier;
+  — Importance and Confidence as the two leftmost columns; high → medium → low → praise → learning, then most confident first within tier; `praise` = explicit positive reinforcement (good technique, structural decisions, test quality); `learning` = educational note with no defect (explain pattern/context); both appear after low findings, non-blocking;
   1–2 sentences per row for high items; include all high/medium/low findings in one table.
   No column-width line-wrapping in prose.
 

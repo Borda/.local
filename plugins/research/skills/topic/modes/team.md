@@ -31,7 +31,7 @@ You are an researcher teammate researching: [topic].
 Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages.
 Your cluster: [method family N] (e.g., "attention-free architectures" vs "linear attention variants").
 Research the top 3 methods in your cluster: comparison table + recommendation given constraints.
-Write your full findings (comparison table, analysis, Confidence block) to `.temp/output-research-<teammate-name>-$BRANCH-$SPAWN_DATE.md` using the Write tool.
+Write your full findings (comparison table, analysis, Confidence block) to `.temp/output-research-<teammate-name>-<SPAWN_BRANCH>-<SPAWN_DATE>.md` (substitute pre-computed values from bash block below) using the Write tool.
 Report completion with deltaT# HOOK:verify and include: papers=N recommendation="<method>" confidence=0.N file=.temp/output-research-<teammate-name>-<date>.md
 Compact Instructions: preserve paper titles, benchmarks, code links. Discard protocol handshakes.
 Task tracking: call TaskUpdate(in_progress) when you start your assigned task; call TaskUpdate(completed) when done, before sending your delta message.
@@ -46,4 +46,4 @@ SPAWN_DATE="$(date -u +%Y-%m-%d)"  # timeout: 3000
 # Substitute resolved path (not template) into each teammate spawn prompt
 mkdir -p .temp  # timeout: 3000
 ```
-For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.reports/research/topic-$SPAWN_BRANCH-$SPAWN_DATE.md`. Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"
+For 3 teammates, spawn consolidator researcher agent: "Read the research files at [paths from deltas]. Synthesize into the Step 3 unified report structure. Write to `.reports/research/topic-<SPAWN_BRANCH>-<SPAWN_DATE>.md` (substitute pre-computed values from bash block above). Return ONLY compact JSON: `{"status":"done","papers":N,"best_method":"<name>","confidence":0.N,"file":"<path>"}`"

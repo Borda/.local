@@ -39,6 +39,7 @@ Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE`, `PARTIAL_FILE`, `AXIS_GROUP` from prom
 # shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in gh-scraper.md, shepherd.md)
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/warden-oss-shared"  # persist (Check 41)
 ```
 
 Determine axes for group:
@@ -74,6 +75,7 @@ ANALYSIS_NOW=$(jq -r '.timestamp // empty' "$DATA_FILE" 2>/dev/null | head -1 ||
 ## Step 3 — Score Axes
 
 ```bash
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/warden-oss-shared" 2>/dev/null || echo "plugins/oss/skills/_shared")  # reload (Check 41)
 [ -f "$_OSS_SHARED/vitality-scoring.md" ] || { echo "[repo-warden] ERROR: vitality-scoring.md not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
 ```
 

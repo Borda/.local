@@ -192,6 +192,7 @@ Never claim pattern exists without confirming via Grep/Glob first. Applies to al
 | File uploads or `open()` calls | Check for size limits and path traversal prevention |
 | External API calls (`requests.`, `httpx.`, `aiohttp.`, `fetch`) | Check timeout, retry, and error handling *[sw-engineer domain — flag as observation only]* |
 | New `import`/`from` packages | Verify package exists in `pyproject.toml` / `requirements*.txt` |
+| `os.system(`, `subprocess.*`, `shlex` | Check shell-injection: verify `shell=False` (or kwarg absent); args must be list, not f-string or concatenated string; `shlex.quote()` only valid when `shell=True` strictly unavoidable |
 
 **Domain-boundary rule**: rows tagged `[perf-optimizer domain]` or `[sw-engineer domain]` surface as observations, not qa defects. Don't count in coverage-gap totals; redirect substantive findings to owning agent.
 

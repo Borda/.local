@@ -298,9 +298,9 @@ Evidence: <key signals>
 **Refinements**: N passes.
 ```
 
-**Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
+**Follow-up gate (NEVER SKIP)** — Call `AskUserQuestion` tool — do NOT write options as plain text first. Substitute actual `$DIAG_FILE` path (from bash block above) into option (a) label before calling tool. Map options directly into tool call arguments:
 - question: "Proceed with fix?"
-- (a) label: `/develop:fix --diagnosis $DIAG_FILE` — description: proceed with fix using confirmed diagnosis
+- (a) label: `/develop:fix --diagnosis <DIAG_FILE>` (substitute resolved path, e.g. `/develop:fix --diagnosis .plans/active/debug_<slug>.md`) — description: proceed with fix using confirmed diagnosis
 - (b) label: `skip` — description: no action
 
 

@@ -112,6 +112,7 @@ Pre-compute run dir before spawning:
 
 ```bash
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "judge" ".experiments" 2>/dev/null)  # timeout: 5000
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/judge-run-dir"  # persist for J3 block (Check 41)
 ```
 
 **Health monitoring** (CLAUDE.md §6) — create both checkpoints BEFORE dispatching any agents:
@@ -131,6 +132,8 @@ Before constructing the J3 prompts, expand all bash variables into concrete path
 
 ```bash
 PROGRAM_PATH=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
+# Reload RUN_DIR (Check 41: fresh shell per call — persisted in J2 block)
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir" 2>/dev/null)
 # RUN_DIR was assigned earlier in J3 via make_run_dir.py
 J3_ARCH_PROMPT="Act as a research supervisor reviewing a PhD student's experimental protocol.
 Your job is NOT to predict whether the experiment will succeed — it is to judge whether the experimental design is methodologically sound and whether the student should be allowed to proceed.
@@ -307,6 +310,7 @@ BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # t
 **Write full report** (never overwrite — use counter loop):
 ```bash
 mkdir -p .reports/research  # timeout: 3000
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000  # re-derive: separate bash block
 BASE=".reports/research/judge-$BRANCH-$(date +%Y-%m-%d).md"
 OUT="$BASE"; COUNT=2
 while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; ((COUNT++)); done

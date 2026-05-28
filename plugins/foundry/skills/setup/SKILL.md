@@ -124,6 +124,7 @@ if [ -z "$PLUGIN_ROOT" ]; then
             | sort -Vr | head -1)  # timeout: 10000
     [ -n "$PLUGIN_ROOT" ] && printf "  Note: foundry not in installed_plugins.json — using cache scan result; consider reinstalling\n"
 fi
+echo "$PLUGIN_ROOT" > "${TMPDIR:-/tmp}/setup-plugin-root"  # persist for later blocks (Check 41)
 ```
 
 If `$PLUGIN_ROOT` empty after both attempts, stop and report: "foundry plugin not found — install it first with: `claude plugin marketplace add /path/to/Borda-AI-Rig && claude plugin install foundry@borda-ai-rig`"
@@ -164,6 +165,7 @@ On **(a)**: use jq to strip `hooks` key, write back with Write tool, continue. O
 Check if statusLine already points to the **current** plugin's statusline.js (filename match alone is insufficient — a stale entry from an older plugin version survives upgrades and silently runs the previous hook). Verify both that the command contains `statusline.js` AND that the `$PLUGIN_ROOT` path (with its version segment) appears in the command string:
 
 ```bash
+PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root" 2>/dev/null)  # reload (Check 41)
 jq --arg root "$PLUGIN_ROOT" -e '
     (.statusLine.command // "") as $cmd
     | ($cmd | contains("statusline.js")) and ($cmd | contains($root))

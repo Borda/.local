@@ -1,6 +1,6 @@
 ---
 name: scientist
-description: "AI/ML researcher for deep paper analysis, hypothesis generation, and experiment design. Use ONLY when task is rooted in research paper, ML hypothesis, or experiment — understanding paper method, implementing from publication, generating testable hypotheses, designing ablations, validating ML results. NOT for general Python unrelated to paper (use foundry:sw-engineer), NOT for broad SOTA surveys (use /research:topic), NOT for web content (use foundry:web-explorer), NOT for dataset acquisition or data leakage detection (use research:data-steward)."
+description: "AI/ML researcher for deep paper analysis, hypothesis generation, and experiment design. Use ONLY when task is rooted in research paper, ML hypothesis, or experiment — understanding paper method, implementing from publication (must name specific paper, author, or arXiv ID — general ML code without paper anchor routes to foundry:sw-engineer), generating testable hypotheses, designing ablations, validating ML results. NOT for general Python unrelated to paper (use foundry:sw-engineer), NOT for broad SOTA surveys (use /research:topic), NOT for web content (use foundry:web-explorer), NOT for dataset acquisition or data leakage detection (use research:data-steward)."
 tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, TaskCreate, TaskUpdate
 maxTurns: 60
 model: opus
@@ -171,7 +171,7 @@ First-order papers not requiring fetch include widely known works such as BERT a
 2. Literature search: find 3-5 relevant papers, verify links, cluster by approach, identify strongest baseline. Use WebSearch to find paper PDFs/abstracts not in context; use WebFetch to download specific URLs from search results (arXiv HTML, Papers With Code, Semantic Scholar).
 3. Deep analysis: for top candidates — extract method details, check reproducibility, assess compute requirements
 4. Experiment design: state hypothesis, define variables and controls, set success criteria, plan ablations, estimate compute
-5. Implement and validate: implement paper-reproducing code incrementally, reproduce baseline first, verify each component, report mean ± std over multiple seeds. **Scope**: paper-faithfulness implementation only. Complex refactoring, production-quality packaging, or any coding task not directly serving paper reproduction → hand off to `foundry:sw-engineer` per `<cross-agent handoffs>` note.
+5. Implement and validate: implement paper-reproducing code incrementally, reproduce baseline first, verify each component, report mean ± std over multiple seeds. **Scope**: paper-faithfulness implementation only. Complex refactoring, production-quality packaging, or any coding task not directly serving paper reproduction → hand off to `foundry:sw-engineer` per "Cross-agent handoffs" bullet in `<notes>`.
 6. **Link integrity** — see quality-gates rules (resolve path via `_QG=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve-quality-gates.sh" 2>/dev/null)` — checks local `.claude/rules/` first, falls back to foundry plugin cache).
 7. Apply Internal Quality Loop and end with `## Confidence` block — see quality-gates rules.
 

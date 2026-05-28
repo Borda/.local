@@ -144,16 +144,16 @@ Full creative session — grow, deepen, and prune tree of directions. Tree is ou
 
 Before presenting formal branches, run brief free-form idea exchange — 2–3 rapid rounds. Goal: surface intuitions about direction before committing to structure. Like tennis rally — Claude serves first, user returns, branches emerge from what lands.
 
-1. State skill's opening hypothesis: 1–2 sentences on where problem looks most interesting or tricky. Not a branch — just a read. End with open question (e.g. "Does that resonate, or is the real tension elsewhere?")
-2. Call `AskUserQuestion` for user's reaction. Options: (a) "Yes, that direction — [anything to add]" · (b) "Not quite — [redirect]" · (c) "Skip warmup — show me the branches"
-3. Absorb response; optionally throw back one follow-up if user's reply opens new angle. Max 1 follow-up. Skip if user chose (c) or reply already rich enough.
-4. Proceed to **Seeding the tree** — branches must reflect what exchange surfaced.
+1. State skill's opening hypothesis: 1–2 sentences on where problem looks most interesting or tricky. Not a branch — just a read.
+2. Immediately present **3–5 initial branches** (see Seeding the tree below) in the same message — no separate round-trip.
+3. Call a single `AskUserQuestion` combining reaction + branch selection: "How does this look?" with options: (a–e) one per branch (labelled by name, ★ on most promising) · (f) Not quite — [redirect] · (g) Add more branches. User may select 1–3 branches as focus; all others remain open.
+4. Proceed to **Tree operations loop** — branches must reflect any redirect from (f).
 
 **Skip on re-entry**: when looping back from Step 6 (b) "Needs more exploration", skip pre-seeding exchange — go straight to seeding with existing tree context.
 
 ### Seeding the tree
 
-Present **3–5 initial branches** (top-level directions). For each include:
+Present **3–5 initial branches** (top-level directions) in the same message as the opening hypothesis (see pre-seeding exchange step 2 above). For each include:
 
 - **Name**: short label
 - **Core idea**: 2–3 sentences — what makes this branch distinct
@@ -163,14 +163,9 @@ Present **3–5 initial branches** (top-level directions). For each include:
 
 **YAGNI filter**: when generating branches, actively prune speculative "we might need this later" directions — include only branches that directly address stated problem. Flag any branch requiring features or scale not mentioned in clarifying questions as "speculative" in its **What it trades away** line.
 
-After presenting all initial branches, write **Opening framing** paragraph (2–3 sentences) sharing skill's initial read on problem space: what it sees as core tension, which branch(es) it finds most promising and why, and one thing it's uncertain about. Not recommendation to converge — divergence still goal — but honest perspective to spark reaction.
+Write **Opening framing** paragraph (2–3 sentences): skill's initial read on problem space — core tension, which branch(es) most promising and why, one thing it's uncertain about. Not recommendation to converge — divergence still goal — but honest perspective to spark reaction.
 
-Then call `AskUserQuestion` with one letter per branch (labelled by name), plus:
-
-- f) None of these — describe what you're thinking
-- g) Add more initial branches — I want more angles
-
-On **(f)**: ask what direction user is thinking, then generate 2–3 new branches incorporating it. On **(g)**: generate 2–3 fresh branches with genuinely different framing.
+The combined reaction + branch selection call is defined in pre-seeding exchange above. On redirect (f): generate 2–3 new branches incorporating described direction. On (g): generate 2–3 fresh branches with genuinely different framing.
 
 User may select **1–3 branches** to mark as initial focus. All other branches start as [open] too — not closed yet, just not initial focus.
 
@@ -364,7 +359,7 @@ Read all open branches from file. Show compact tree summary (same format as Step
 
 #### Step D2: Distillation questions
 
-Ask up to **5 distillation questions**, one at a time via `AskUserQuestion`, to narrow open branches into single direction:
+Ask up to **5 distillation questions** to narrow open branches into single direction — batch into `AskUserQuestion` calls of up to 3 questions each (max 2 calls):
 
 Start with these (adapt based on tree content):
 
@@ -377,15 +372,15 @@ After questions, briefly restate distilled direction in 2–3 sentences — synt
 
 #### Step D3: Write spec
 
-Build spec section by section, showing each section inline and asking for feedback before moving on. Write nothing to disk until full draft assembled.
+Build spec section by section, showing each section inline. Write nothing to disk until full draft assembled.
 
-For each section, write inline then call `AskUserQuestion`:
+Write all 6 sections inline, then invoke a single `AskUserQuestion` for the full spec:
 
-- a) Looks good — next section ★ recommended
-- b) Change this — [describe what to revise]
-- c) This section sparks a new thought — [add context]
+- a) Spec looks good — write to disk ★ recommended
+- b) Revise [section name(s)] — [describe what to change]
+- c) A section sparks a new thought — [add context]
 
-On **(b)**: revise inline, show updated version, re-offer. Max 2 revisions per section. On **(c)**: incorporate context, revise if needed, re-offer.
+On **(b)**: revise named sections inline, re-present those sections, re-offer. Max 2 revisions per section. On **(c)**: incorporate context, revise if needed, re-offer.
 
 **Sections**:
 
@@ -510,7 +505,7 @@ End with `## Confidence` block per CLAUDE.md output standards.
 - **Status field**: tree documents use `Status: tree`; spec documents use `Status: draft`; breakdown auto-detects which path to take
 - **Breakdown heading convention**: distillation mode uses D-prefix steps (D1–D4); action plan mode uses B-prefix steps (B1–B3)
 - **Exploration notes in spec**: Section 6 derived from tree's Pruning log — intentional context for future readers; do not remove in foundry:curator review
-- **Interaction budget**: idea mode — worst case: 13 (`--tight`) / 23 (default) / 33 (`--deep`) questions + operations + 3 approval cycles; breakdown distillation — max 5 questions + 6 section drafts ≈ 11; typical sessions use ~8–15 total AskUserQuestion calls across both. <!-- Branch-path audit: confirm no single branch through the workflow asks more than 4 AskUserQuestion calls in one response — communication.md 4-question-per-call cap is per invocation, not per branch; multiple sequential AskUserQuestion calls in one branch path are permitted but should be reviewed for batching opportunities. -->
+- **Interaction budget**: idea mode — worst case: 12 (`--tight`) / 22 (default) / 32 (`--deep`) (pre-seeding+branch selection merged to 1 call, saves ~1 vs prior counts); breakdown distillation — max 2 calls (D2 batched) + 1 call (D3 full-spec approval) ≈ 3–5; typical sessions use ~6–12 total AskUserQuestion calls across both. <!-- Branch-path audit: confirm no single branch through the workflow asks more than 4 AskUserQuestion calls in one response — communication.md 4-question-per-call cap is per invocation, not per branch; multiple sequential AskUserQuestion calls in one branch path are permitted but should be reviewed for batching opportunities. -->
 - **Flag modes**: `--tight` / `--deep` scale question and operation caps (5/15 vs default 10); `--type` enables type-aware scan and question framing in Steps 1–2; flags apply to idea mode only, ignored in breakdown
 - **Follow-up**: after spec approval in distillation mode → if targeting `.claude/` config: `/foundry:manage update <name> <spec-file>`; for application or mixed changes: `/brainstorm breakdown .plans/blueprint/<spec-file>` for action plan
 - **Rejected vs resolved distinction**: ⛔ marks branches dismissed as wrong direction; ✅ marks branch explicitly chosen as direction. Resolved branches do not count toward minimum-rejected-branches gate — they are the goal. Pruning log captures rejected only; resolved branches go in separate "Resolved branches" section.

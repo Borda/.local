@@ -94,6 +94,7 @@ Extract operation, type, name, optional arguments from `$ARGUMENTS`.
 SKIP_AUDIT=false
 [[ "$ARGUMENTS" == *"--skip-audit"* ]] && SKIP_AUDIT=true
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/\(^\|[[:space:]]\)--skip-audit\([[:space:]]\|$\)/ /g' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+echo "$SKIP_AUDIT" > "${TMPDIR:-/tmp}/manage-skip-audit"  # persist (Check 41)
 ```
 
 **Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-audit\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -242,7 +243,7 @@ MANAGE_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_su
 > Before passing schema file path to sw-engineer: verify file exists on disk using Read tool (limit=1). If schema file path from JSON envelope does not exist, proceed with default frontmatter fields (name, description, model, color) — note omission in Step 10 report.
 
 ```markdown
-Read the agent scaffold template at `$MANAGE_TPL/agent-scaffold.md`.
+Read the agent scaffold template at `<MANAGE_TPL>/agent-scaffold.md` (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields (skip if schema file not found — use default frontmatter fields: name, description, model, color).
 Scaffold `.claude/agents/<name>.md` with:
 - Frontmatter: name=<name>, description=<description>, model=<model>, color=<color>; add any broadly-useful new fields from the schema
@@ -295,7 +296,7 @@ Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skil
 
 ```markdown
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
-Read the skill scaffold template at `$MANAGE_TPL/skill-scaffold.md`.
+Read the skill scaffold template at `<MANAGE_TPL>/skill-scaffold.md` (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
 Read `<_FOUNDRY_SHARED_RESOLVED>/bin-authoring-guide.md` (substitute resolved path from bash block above) — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH.
 Scaffold `.claude/skills/<name>/SKILL.md` with:
@@ -719,6 +720,7 @@ For **create** and **update (rename)**: verify tool efficiency — cross-check a
 Invoke `Skill(skill="foundry:audit", args="--skip-gate")` to validate created/modified files without triggering interactive follow-up gate (requires `foundry` plugin). **Skip if invoked with `--skip-audit` or if current `manage` operation runs inside audit-initiated fix session** — outer audit covers it.
 
 ```bash
+SKIP_AUDIT=$(cat "${TMPDIR:-/tmp}/manage-skip-audit" 2>/dev/null || echo "false")  # reload (Check 41)
 [[ "$SKIP_AUDIT" == "true" ]] && { echo "[--skip-audit] skipping Step 9 audit"; }
 ```
 

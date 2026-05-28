@@ -64,15 +64,20 @@ RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "
 mkdir -p .reports/research
 BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done
 # Persist for V3/V4/V5 — each Bash call is a fresh shell, variables do not survive
-echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-run-dir"
-echo "$OUT" > "${TMPDIR:-/tmp}/verify-out"
+# Use BRANCH-DATE discriminator to prevent collisions between concurrent verify runs
+_VTAG="${BRANCH}-${DATE}"
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir"
+echo "$OUT" > "${TMPDIR:-/tmp}/verify-${_VTAG}-out"
+# Write latest-tag pointer so rehydration blocks can find the right files
+echo "$_VTAG" > "${TMPDIR:-/tmp}/verify-latest-tag"
 ```
 
 **State-rehydration block** (paste at the top of every separate Bash invocation in V3, V4, V5):
 
 ```bash
-RUN_DIR=$(cat "${TMPDIR:-/tmp}/verify-run-dir" 2>/dev/null)
-OUT=$(cat "${TMPDIR:-/tmp}/verify-out" 2>/dev/null)
+_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag" 2>/dev/null)
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir" 2>/dev/null)
+OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out" 2>/dev/null)
 [ -z "$RUN_DIR" ] || [ -z "$OUT" ] && { echo "verify: state files missing — V1 must run first" >&2; exit 1; }
 ```
 
@@ -100,14 +105,16 @@ for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
       ;;
   esac
 done
-echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-v2-status"
+_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag" 2>/dev/null)
+echo "$V2_STATUS" > "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status"
 [ "$V2_STATUS" = "failed" ] && exit 2
 ```
 
 **V3 entry guard** (run before any V3 work — paste immediately after the state-rehydration block):
 
 ```bash
-V2_STATUS=$(cat "${TMPDIR:-/tmp}/verify-v2-status" 2>/dev/null || echo "ok")
+_VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag" 2>/dev/null)
+V2_STATUS=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-v2-status" 2>/dev/null || echo "ok")
 if [ "$V2_STATUS" = "failed" ]; then
     echo "verify V3: dimension validation failed in V2 — skipping V3."
     exit 1

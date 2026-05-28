@@ -172,6 +172,11 @@ if [ -f "$REPORT_FILE" ]; then
     REPORT_MTIME=$(stat -f %m "$REPORT_FILE" 2>/dev/null || stat -c %Y "$REPORT_FILE")  # timeout: 5000
     FAST_PATH_TENTATIVE=true  # drift check deferred to Step 4 — type must be known first
 fi
+# Persist across Bash calls (Check 41: fresh shell loses vars)
+echo "$DRIFT" > "${TMPDIR:-/tmp}/analyse-drift"
+echo "$FAST_PATH" > "${TMPDIR:-/tmp}/analyse-fast-path"
+echo "$FAST_PATH_TENTATIVE" > "${TMPDIR:-/tmp}/analyse-fast-path-tentative"
+echo "${REPORT_MTIME:-0}" > "${TMPDIR:-/tmp}/analyse-report-mtime"
 ```
 
 - `FAST_PATH_TENTATIVE=true` → continue to Steps 3–4 for type detection and type-aware drift check. If no new activity confirmed: `FAST_PATH=true` → print `[resume] reusing existing report for #$CLEAN_ARGS` → jump to Step 7.
@@ -210,6 +215,11 @@ fi
 - `FAST_PATH_TENTATIVE=true`: run lightweight drift check now that `TYPE` known, then skip Step 4 type-detection API calls:
 
 ```bash
+# Reload drift state (Check 41: fresh shell; set in Step 2 block)
+DRIFT=$(cat "${TMPDIR:-/tmp}/analyse-drift" 2>/dev/null || echo "false")
+FAST_PATH=$(cat "${TMPDIR:-/tmp}/analyse-fast-path" 2>/dev/null || echo "false")
+FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative" 2>/dev/null || echo "false")
+REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime" 2>/dev/null || echo "0")
 # Cache hit + FAST_PATH_TENTATIVE: one lightweight API call to get updatedAt, then apply drift check
 # Drift check pattern (shared with Step 4): UPDATED_TS > REPORT_MTIME → DRIFT=true → full re-analysis
 if [ "$TYPE" = "discussion" ]; then
@@ -255,6 +265,10 @@ Issues, PRs, discussions share unified running index — given number is exactly
 Cache miss:
 
 ```bash
+# Reload drift state (Check 41: fresh shell; set in Step 2 block)
+DRIFT=$(cat "${TMPDIR:-/tmp}/analyse-drift" 2>/dev/null || echo "false")
+FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative" 2>/dev/null || echo "false")
+REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime" 2>/dev/null || echo "0")
 # 4a: try the issues API (covers both issues and PRs)
 ITEM=$(gh api "repos/{owner}/{repo}/issues/$CLEAN_ARGS" 2>/dev/null) # timeout: 6000
 

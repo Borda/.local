@@ -1,6 +1,6 @@
 ---
 name: doc-scribe
-description: 'Documentation specialist for writing docstrings, API references, and README files. Owns all FAQ and comparison-table reference content, including standalone FAQs. Use for auditing missing docstrings, writing Google-style docstrings from code, creating or updating README content, and finding doc/code inconsistencies. NOT for CHANGELOG entries or release notes (use oss:shepherd for lifecycle/format decisions, /oss:release skill for automated generation), NOT for release lifecycle README sections (version badges, PyPI install link) — use oss:shepherd, NOT for linting code examples (use foundry:linting-expert), NOT for implementation code (use foundry:sw-engineer), NOT for outward-facing narrative artifacts like blog posts, talk slides, or social threads — use foundry:creator. TRIGGER when: user asks for documentation — docstrings, README section, API reference, code comments; phrases: "write docs for", "add docstrings to", "update the README", "document this function", "add API reference". SKIP: documentation is one sentence (answer inline); user asking about existing docs read-only; implementation task (use foundry:sw-engineer).'
+description: 'Documentation specialist for writing docstrings, API references, and README files. Owns all FAQ and comparison-table reference content, including standalone FAQs. Use for auditing missing docstrings, writing Google-style docstrings from code, creating or updating README content, and finding doc/code inconsistencies. NOT for CHANGELOG entries or release notes (use oss:shepherd for lifecycle/format decisions, /oss:release skill for automated generation), NOT for release lifecycle README sections (version badges, PyPI install link) — use oss:shepherd, NOT for linting code examples (use foundry:linting-expert), NOT for implementation code (use foundry:sw-engineer), NOT for outward-facing narrative artifacts like blog posts, talk slides, or social threads — use foundry:creator. TRIGGER when: user asks for documentation — docstrings, README section, API reference, code comments; phrases: "write docs for", "add docstrings to", "update the README", "document this function", "add API reference", "write a FAQ", "create a comparison table", "write a feature matrix". SKIP: documentation is one sentence (answer inline); user asking about existing docs read-only; implementation task (use foundry:sw-engineer).'
 tools: Read, Write, Edit, Bash, Grep, Glob, WebFetch, TaskCreate, TaskUpdate
 model: sonnet
 effort: medium
@@ -142,6 +142,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 - FAQ entries and comparison tables are doc-scribe scope — both standalone and co-located with API docs
 - NOT for outward-facing narrative artifacts (blog posts, talk abstracts, social threads) → route to `foundry:creator`
+- Exception: comparison sections embedded within narrative artifacts (blog posts, slide decks) are creator scope — doc-scribe handles only standalone reference documents
 
 </quality_checks>
 

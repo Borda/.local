@@ -2,7 +2,7 @@
 name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design."
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
-allowed-tools: Read, Write, Edit, Bash, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
 effort: high
 ---
@@ -61,7 +61,7 @@ if [ ! -d "$_OSS_SHARED" ]; then
     fi
 fi
 
-Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
+Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`, `oss:cicd-steward`.
 
 <!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:perf-optimizer → general-purpose, foundry:doc-scribe → general-purpose, foundry:linting-expert → general-purpose, foundry:solution-architect → general-purpose, foundry:challenger → general-purpose. -->
 
@@ -174,7 +174,7 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
     fi
     # Persist mode flags to temp file — bash state lost between SKILL.md code blocks;
     # Step 2 EXPECTED_FILE construction (different bash block) reads these back.
-    _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-$$"
+    _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags"
     {
         echo "CICD_ONLY_MODE=$CICD_ONLY_MODE"
         echo "DOCS_ONLY_MODE=$DOCS_ONLY_MODE"
@@ -195,7 +195,7 @@ Before spawning agents (Python mode only — `CICD_ONLY_MODE`, `DOCS_ONLY_MODE`,
 
 - Count files changed, lines added/removed, new classes/modules
 - Classify: **FIX** (\<3 files, \<50 lines), **REFACTOR** (internal restructure, no new public API), **FEATURE** (new public API or module), **CHORE** (deps, config, tooling — no logic changes), or **MIXED**
-- **Complexity smell**: 8+ files changed → note in report header
+- **Complexity smell**: 8+ files changed OR `PY_LOC_DELTA >400` → note in report header
 
 H6 — assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) can branch on it without comparing to an undefined value:
 
@@ -227,7 +227,7 @@ echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$
 # construction is in a separate bash block; without persistence these expand empty.
 # CHORE_DEPS detection mirrors the conditional below (CHORE + dependency files exception).
 echo "$CHANGED_FILES" | grep -qE '(^|/)(requirements.*\.txt|pyproject\.toml|package.*\.json|Pipfile|poetry\.lock|setup\.cfg|.*\.lock)$' && CHORE_DEPS=true || CHORE_DEPS=false
-_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-$$"
+_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope"
 {
     echo "SCOPE=$SCOPE"
     echo "CHORE_DEPS=$CHORE_DEPS"
@@ -323,6 +323,8 @@ Every agent prompt must end with:
 
 **Agent 1 — foundry:sw-engineer**: Review architecture, SOLID, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking vs suggestions.
 
+**Reuse audit**: Before accepting any new helper, utility, or class introduced in the diff, search for existing equivalents: use `Grep` with semantic function-name patterns across `src/` (e.g. `grep -r "def <name_root>" src/`); if `SEMBLE_ENABLED=true`, also call `mcp__semble__search(query="<function purpose>", repo=<git_root>, top_k=10)`. Near-duplicate found → flag as MEDIUM: "existing utility at `<path>` covers this — reuse or extend instead of reimplementing."
+
 **Error path analysis** (new/changed code): For each error-handling path introduced or modified, produce table:
 
 | Location | Exception/Error | Caught? | Action if caught | User-visible? |
@@ -360,7 +362,7 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Security augmentation (conditional — fold into Agent 1, not separate spawn)**: Diff touches auth, user input, deps, or serialization → add to Agent 1 prompt: check SQL injection, XSS, insecure deserialization, hardcoded secrets, missing input validation. Run `pip-audit` if dep files changed. Skip if purely internal refactoring.
 
-**Agent 6 — foundry:solution-architect (optional, PRs touching public API boundaries)**: Diff touches `__init__.py` exports, adds/modifies Protocols/ABCs, changes module structure, or new public classes → evaluate API design, coupling, backward compat. Skip if internal only.
+**Agent 6 — foundry:solution-architect**: Spawns for FEATURE, MIXED, and REFACTOR scope. Public-API PRs (diff touches `__init__.py` exports, Protocols/ABCs, new public classes): evaluate API design, coupling, backward compat. REFACTOR-scope PRs (internal restructure, no new public API): evaluate module boundaries, coupling/cohesion, and whether restructuring introduces new architectural debt — even without public API changes, structural decisions affect maintainability.
 
 **Agent 7 — foundry:challenger (skip only if `CHALLENGE_ENABLED=false` — pass `--no-challenge` to opt out)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
 
@@ -374,7 +376,7 @@ touch "$REVIEW_CHECKPOINT"
 # Persist checkpoint path — the poll block (separate bash invocation) reads it back.
 # Without this persistence the poll block expands $REVIEW_CHECKPOINT empty and
 # `find -newer ""` errors out, masking stalled agents.
-echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint-$$"
+echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint"
 ```
 
 Launch Codex, issue agents, and all review agents in one message batch — zero hold between Codex and review agents:
@@ -403,8 +405,8 @@ Write expected paths to file (Bash arrays don't persist across tool invocations 
 # Restore mode flags + SCOPE persisted in Step 1 (each SKILL.md bash block runs in a
 # fresh shell — without this rehydration, CICD_ONLY_MODE/DOCS_ONLY_MODE/DOCS_CICD_MODE/SCOPE
 # expand empty here and EXPECTED_FILE branches on wrong values).
-_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-$$"
-_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-$$"
+_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags"
+_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope"
 [ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
 [ -f "$_REVIEW_SCOPE_FILE" ] && . "$_REVIEW_SCOPE_FILE"
 
@@ -429,7 +431,7 @@ EXPECTED_FILE="$RUN_DIR/.expected-files"
 
 Later poll blocks read paths back via `while read -r path; do [ -f "$path" ] || PENDING=1; done <"$EXPECTED_FILE"` — no in-memory array required.
 
-Every `$MONITOR_INTERVAL` seconds, in the poll bash block, rehydrate the checkpoint path first (separate bash invocations don't share variables): `REVIEW_CHECKPOINT=$(cat "${TMPDIR:-/tmp}/oss-review-checkpoint-$$" 2>/dev/null)` then `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
+Every `$MONITOR_INTERVAL` seconds, in the poll bash block, rehydrate the checkpoint path first (separate bash invocations don't share variables): `REVIEW_CHECKPOINT=$(cat "${TMPDIR:-/tmp}/oss-review-checkpoint" 2>/dev/null)` then `find $RUN_DIR -newer "$REVIEW_CHECKPOINT" -type f | wc -l` — non-zero = agents alive (refresh checkpoint: `touch "$REVIEW_CHECKPOINT"`); zero since last refresh for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` if `tail -20` output file explains delay; second stall = cutoff. On timeout: read partial results from stalled agent's file; surface with ⏱ in report. Never omit timed-out agents.
 
 After all outputs collected (or timed out), proceed to post-agent checks.
 

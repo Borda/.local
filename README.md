@@ -2,6 +2,8 @@
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg) [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-orange)](https://claude.ai/code) [![Codex CLI](https://img.shields.io/badge/Codex_CLI-config-green)](https://github.com/openai/codex)
 
+Specialist-agent infrastructure for Python/ML OSS — the scaffolding that lets you maintain at scale without becoming a full-time reviewer.
+
 **14 specialist agents · 20+ slash-command workflows · 5 domain plugins** — opinionated [Claude Code](https://claude.ai/code) + [Codex CLI](https://github.com/openai/codex) configuration for Python/ML OSS maintainers, version-controlled and self-calibrating.
 
 <details>
@@ -52,13 +54,10 @@ Things not possible with vanilla Claude Code:
 # Install Claude Code
 npm install -g @anthropic-ai/claude-code
 
-# 1. Clone (run from the directory that will CONTAIN the clone)
-git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
+# 1. Register from GitHub (no clone needed)
+claude plugin marketplace add Borda/AI-Rig
 
-# 2. Register as a local marketplace
-claude plugin marketplace add ./Borda-AI-Rig
-
-# 3. Install all five plugins
+# 2. Install plugins — pick what you need
 claude plugin install foundry@borda-ai-rig   # base agents + audit, manage, calibrate, brainstorm, …
 claude plugin install oss@borda-ai-rig       # OSS workflow: analyse, review, resolve, release
 claude plugin install develop@borda-ai-rig   # development: feature, fix, refactor, plan, debug
@@ -70,19 +69,20 @@ claude plugin install codemap@borda-ai-rig   # structural index: import graph, b
 >
 > **Safe to install alongside any existing Claude Code setup.** Plugins live in a private cache (`~/.claude/plugins/cache/<plugin>/`) under their own namespace. Your existing `~/.claude/agents/`, `~/.claude/skills/`, and `settings.json` are never modified or overwritten — custom agents and skills you have created remain fully independent. See the [Claude Code plugin reference](https://code.claude.com/docs/en/plugins-reference) for details.
 
-**4. One-time settings merge** — run inside Claude Code:
+**3. One-time settings merge** — run inside Claude Code:
 
 ```text
-/foundry:init
+/foundry:setup
 ```
 
 OSS, develop, and research skills always use their plugin prefix (`/oss:review`, `/develop:fix`, `/research:run`). Safe to re-run.
 
 > [!IMPORTANT]
 >
-> **Codex CLI** — optional companion; the plugins install Claude Code agents and skills only:
+> **Codex CLI** — optional companion; requires a local clone (`.codex/` config is not a plugin):
 >
 > ```bash
+> git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
 > npm install -g @openai/codex
 > cp -r Borda-AI-Rig/.codex/ ~/.codex/   # Codex agents and profiles
 > ```
@@ -125,6 +125,8 @@ Managing AI coding workflows for Python/ML OSS is complex — you need domain-aw
 - Python/ML OSS libraries requiring SemVer discipline and deprecation cycles
 - ML training and inference codebases needing GPU profiling and data pipeline validation
 - Multi-contributor projects with CI/CD, pre-commit hooks, and automated releases
+
+A typical maintainer morning — 15 issues, 3 PRs, a release due — handled in one session with four commands (see Daily OSS Workflow above).
 
 ## 💡 Design Principles
 
@@ -172,7 +174,7 @@ Agents and skills for [Claude Code](https://claude.ai/code) (Anthropic's AI codi
 
 Skills are multi-agent workflows invoked via slash commands. Each skill composes several agents in a defined topology.
 
-After running `/foundry:init`, foundry skills are available without a prefix. OSS, develop, and research skills always use their plugin prefix.
+After running `/foundry:setup`, foundry skills are available without a prefix. OSS, develop, and research skills always use their plugin prefix.
 
 | Skill                     | What It Does                                                                                                                                                                                                            |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -443,7 +445,6 @@ AI-Rig/
 ### Upgrade
 
 ```bash
-cd Borda-AI-Rig && git pull
 claude plugin install foundry@borda-ai-rig   # reinstalls from updated source
 claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
@@ -451,11 +452,12 @@ claude plugin install research@borda-ai-rig
 claude plugin install codemap@borda-ai-rig
 ```
 
-Re-run `/foundry:init` only if permissions or `enabledPlugins` changed. Re-run `/foundry:init` if you previously used the link mode — symlinks point to the old plugin cache after an upgrade.
+Re-run `/foundry:setup` only if permissions or `enabledPlugins` changed. Re-run `/foundry:setup` if you previously used the link mode — symlinks point to the old plugin cache after an upgrade.
 
 ### Session-only (no install, for development)
 
 ```bash
+git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
 claude --plugin-dir ./Borda-AI-Rig/plugins/foundry
 ```
 
@@ -469,7 +471,7 @@ claude plugin uninstall research
 claude plugin uninstall codemap
 ```
 
-Settings added by `/foundry:init` remain in `~/.claude/settings.json`; remove manually if desired. If `/foundry:init` was run, symlinks in `~/.claude/agents/` and `~/.claude/skills/` also persist and will be broken after uninstall — remove with `rm ~/.claude/agents/<name>.md` and `rm -rf ~/.claude/skills/<name>` for each.
+Settings added by `/foundry:setup` remain in `~/.claude/settings.json`; remove manually if desired. If `/foundry:setup` was run, symlinks in `~/.claude/agents/` and `~/.claude/skills/` also persist and will be broken after uninstall — remove with `rm ~/.claude/agents/<name>.md` and `rm -rf ~/.claude/skills/<name>` for each.
 
 ______________________________________________________________________
 

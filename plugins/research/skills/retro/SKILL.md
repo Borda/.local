@@ -23,7 +23,7 @@ NOT for: running experiments (use `/research:run`); designing experiments (use `
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 ```
 
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
+Read `$_RESEARCH_SHARED/agent-resolution.md` (use the path printed by the bash block above — substitute the resolved value, do not pass the literal `$_RESEARCH_SHARED` string to the Read tool). Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
 
 ## Retro Mode (Steps T1–T7)
 
@@ -218,10 +218,9 @@ Parse returned JSON envelope. Record `hypotheses` count and `confidence` for T6.
 
 ### Step T6: Write retro report
 
-Pre-compute branch (already done in T1).
-
 ```bash
 mkdir -p .reports/research  # timeout: 3000
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 ```
 
 Write full report to `.reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Anti-overwrite: `BASE=".reports/research/retro-$BRANCH-$(date +%Y-%m-%d).md"; OUT="$BASE"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done`

@@ -33,26 +33,14 @@ NOT for: implementation, code gen, README writing (use `foundry:doc-scribe`), st
 - If no $ARGUMENTS: AskUserQuestion — "What are you trying to write about, and for whom?" (free text). After receiving the answer, re-check against out-of-scope conditions: if answer describes FAQs, comparison tables, feature matrices, README content, or docstrings — stop. Respond: "This format doesn't fit a narrative arc — use `foundry:doc-scribe` for structured reference content." No further steps.
 - Out-of-scope gate (when $ARGUMENTS provided): if brief describes FAQs, comparison tables, feature matrices, or ref docs — stop. Respond: "This format doesn't fit a narrative arc — use `foundry:doc-scribe` for structured reference content." No further steps.
 
-## Step 2 — Format and audience (max 2 AskUserQuestion calls)
+## Step 2 — Format and audience (1 AskUserQuestion call — 2 questions)
 
-**Format question** (AskUserQuestion):
-> What content format?
-> a: blog post
-> b: conference / meetup talk with Marp slide deck ★
-> c: social thread (X/LinkedIn)
-> d: talk abstract (CFP submission)
-> e: lightning talk (5–10 min)
+**Format + audience** (single AskUserQuestion call with 2 questions):
 
-After answer: restate one sentence ("Got it — a [format] on [topic].").
+- Q1 "What content format?": (a) blog post · (b) conference / meetup talk with Marp slide deck ★ · (c) social thread (X/LinkedIn) · (d) talk abstract (CFP submission) · (e) lightning talk (5–10 min)
+- Q2 "Who is the audience?": (a) beginners — new to problem space ★ · (b) intermediate — familiar with basics, seeking depth · (c) expert — know landscape, want novel insight · (d) describe your own profile
 
-**Audience question** (AskUserQuestion):
-> Who is the audience?
-> a: beginners — new to problem space ★
-> b: intermediate — familiar with basics, seeking depth
-> c: expert — know landscape, want novel insight
-> d: describe your own profile
-
-After answer: restate one sentence, note implied audience needs.
+After answer: restate one sentence covering format + audience ("Got it — a [format] for [audience description].").
 
 ## Step 3 — Arc construction and conflict check
 
@@ -66,23 +54,17 @@ Propose four-beat arc from topic + audience:
 **Editorial conflict check**: if brief implies expert audience but topic introductory, or vice versa — surface before continuing:
 > "Your brief suggests [X] but audience profile is [Y] — recommend adjusting [Z]. Proceed as-is or adjust?"
 
-**Arc approval** (AskUserQuestion):
-> Show proposed arc. Ask: approve as-is, or which beat needs adjustment? (free text or "approve")
+**Arc approval + voice** (single AskUserQuestion call): show proposed arc, then ask voice choice — option (d) redirects to arc adjustment.
 
-After approval: restate confirmed arc two sentences.
+Options:
+- (a) Approve arc — neutral developer advocate (balanced, educational) ★
+- (b) Approve arc — opinionated / direct first-person, no hedging
+- (c) Approve arc — conversational / approachable, informal
+- (d) Adjust the arc first (free text — describe what to change)
 
-## Step 4 — Voice and tone (1 AskUserQuestion)
+On (d): revise arc, re-present, re-invoke this question. After (a)/(b)/(c): restate confirmed arc and voice in two sentences.
 
-**Voice question** (AskUserQuestion):
-> What voice/tone?
-> a: neutral developer advocate — balanced, educational ★
-> b: opinionated / direct first-person — no hedging
-> c: conversational / approachable — informal, relatable
-> d: provide your own style brief
-
-Never apply default silently. Always ask.
-
-## Step 5 — Write outline file
+## Step 4 — Write outline file
 
 - Derive slug from topic: kebab-case, max 5 words (e.g. `tracing-python-services-otel`).
 - Write creates `.plans/content/` if absent — no separate mkdir needed.

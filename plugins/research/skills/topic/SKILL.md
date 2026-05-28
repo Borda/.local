@@ -98,6 +98,9 @@ DATE=$(date +%Y-%m-%d)  # timeout: 3000
 AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE.md"
 _N=2; while [ -e "$AGENT_OUT" ]; do AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
 mkdir -p .temp  # timeout: 3000
+# Persist for later bash blocks (Check 41: fresh shell per call)
+echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch"
+echo "$DATE" > "${TMPDIR:-/tmp}/topic-date"
 ```
 
 **Note**: Substitute pre-computed values — do not pass raw $(date) expressions into spawn prompts. Substitute resolved `$AGENT_OUT` path (not template) so agent writes to correct non-conflicting file.
@@ -187,6 +190,9 @@ Path:        → .reports/research/topic-<branch>-<date>.md
 
 ```bash
 mkdir -p .reports/research  # timeout: 3000
+# Reload from Step 2a bash block (Check 41: fresh shell per call)
+BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch" 2>/dev/null || git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
+DATE=$(cat "${TMPDIR:-/tmp}/topic-date" 2>/dev/null || date +%Y-%m-%d)
 # Anti-overwrite counter-suffix loop (per quality-gates.md output routing rule)
 BASE=".reports/research/topic-$BRANCH-$DATE.md"; REPORT_OUT="$BASE"; COUNT=2
 while [ -f "$REPORT_OUT" ]; do REPORT_OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done  # timeout: 5000

@@ -1,0 +1,36 @@
+# Phase 5 — Verify metric — run/SKILL.md sidecar
+
+Loaded by the main iteration loop (Phase 5 step) in `run/SKILL.md`.
+
+#### Phase 5 — Verify metric
+
+**If `sandbox_mode = "docker"`**:
+
+```bash
+docker run --rm --network "${SANDBOX_NETWORK}" \
+    -v "$(pwd):/workspace:ro" \
+    -v "$(pwd)/.experiments:/workspace/.experiments:rw" \
+    --tmpfs /tmp:rw,size=256m \
+    python:3.11-slim \
+    sh -c "$METRIC_CMD"
+```
+
+No resource limits. Use Bash tool `timeout` parameter (not shell `timeout`): `timeout: $VERIFY_TIMEOUT_MS`.
+
+**If `sandbox_mode = "local"`**: Run `metric_cmd` via Bash (`timeout: $VERIFY_TIMEOUT_MS`). Not shell `timeout`. Different CWD → separate `cd <path>` call first. Complex metric parsing → write parser to `.experiments/state/<run-id>/scripts/parse-metric-<i>.py`, run with `python <path>` — no inline one-liner.
+
+**If `--colab` active**: routes through `mcp__colab-mcp__runtime_execute_code`; Docker not used. (`--colab` + `--compute=docker` conflict caught at R2.) If `colab_hw` non-null, prepend GPU identity check via `mcp__colab-mcp__runtime_execute_code` — substitute the configured hardware name (env var `COLAB_HW` overrides config) into the assertion string before sending:
+
+```python
+import os, torch
+expected_hw = os.environ.get("COLAB_HW", "")  # falls back to colab_hw from state.json injected at call site
+actual = torch.cuda.get_device_name(0)
+if expected_hw and expected_hw not in actual:
+    raise AssertionError(f"Wrong GPU: expected {expected_hw!r}, got {actual!r}")
+```
+
+If the assertion raises: print `"⚠ GPU mismatch: requested ${colab_hw} but runtime has {actual}. Change the Colab runtime type and re-run."` Stop — do not proceed to Phase 6. When `colab_hw` is null or `COLAB_HW` env var unset, the check is a no-op (environment-specific validation skipped).
+
+<!-- Colab assertion: MCP call, not Bash — exempt from the script-file rule; correct as an inline one-liner. -->
+
+If timeout expires: refresh sentinel (use REPO_SLUG and BRANCH_SLUG from `<constants>` — re-derive per canonical formula, then `touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"`), append `status: timeout`, revert via `git revert HEAD --no-edit` **only if revert not already performed this iteration** (check: `git log --oneline -1` still shows the experiment commit — if HEAD already points past revert commit, skip revert), continue loop.

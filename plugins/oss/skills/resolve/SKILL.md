@@ -276,6 +276,13 @@ Fetch (each gh call timeout 15000 ms; run as Bash):
    On GraphQL failure → treat as empty list.
 5. For each issue number in CLOSING_ISSUES: gh issue view <N> --json title,body
 
+Assign location field per source (determines GitHub resolvability):
+  Source 1 (gh pr view --comments) → location: discussion (PR main-thread; no GitHub "Resolve conversation" button)
+  Source 2 (gh api .../reviews) top-level body (no path/position) → location: discussion (review summary; no resolve button)
+  Source 3 (gh api .../comments) → location: inline (code-review thread; "Resolve conversation" button available)
+  [report] items (no GitHub source) → location: report
+Key invariant: location tracks "does this comment have a resolvable PullRequestReviewThread?" not which endpoint returned it.
+
 Synthesize contribution motivation (2–3 sentences using PR body + linked issues):
 what problem contributor solving, why this approach, expected user-visible outcome.
 This becomes the priority lens for conflict resolution.
@@ -284,18 +291,20 @@ Classify EVERY comment using these codes:
   [gh][req]      change required before merge (reviewer with write access / maintainer)
   [gh][suggest]  improvement, non-blocking
   [gh][question] open question — needs answer before deciding what code to write
-  [done]         thread isResolved=true OR subsequent commit/reply addressed it
+  [done]         location:inline thread isResolved=true OR subsequent commit/reply addressed it; location:discussion — no isResolved signal; mark [done] only if a subsequent reply clearly addresses it (discussion items will otherwise remain pending — GitHub has no resolve button for them)
   [info]         praise / acknowledgement / emoji-only — skip
   [self-review]  /oss:review finding — not a GitHub commenter
 
-Per inline comment: if its REST 'id' (= GraphQL databaseId) appears in resolved-thread
+Per location:inline comment: if its REST 'id' (= GraphQL databaseId) appears in resolved-thread
 list → mark [done] without reading content. All others: apply codes above.
+Per location:discussion comment: skip resolved-thread list entirely — PR discussion comments have no resolvable PullRequestReviewThread; apply classification codes directly.
 
 ACTION_ITEM fields: id (sequential int starting at 1), type, change, severity, author,
 summary (≤60 chars, truncated at word boundary with …), file, line, url (html_url from
-API, blank for report items), full_comment_text.
+API, blank for report items), full_comment_text, location.
   - change ∈ {code,test,docs,config,ci,style,refactor}; default=code when ambiguous
   - severity ∈ 1..5 (5=highest); [req] floor=3
+  - location ∈ {inline, discussion, report}; inline = code-review comment (GitHub "Resolve conversation" button available); discussion = PR main-thread comment (no resolve button — cannot be marked resolved in GitHub UI); report = /review finding (no GitHub source)
 
 Write THREE files using the Write tool (expand <IMPL_DIR> to the literal path above):
 
@@ -304,14 +313,14 @@ Write THREE files using the Write tool (expand <IMPL_DIR> to the literal path ab
    <N> reviews · <N> inline code comments · Report=not used
    Motivation paragraph (2–3 sentences).
    Table header: ### Action Items — PR #<PR_NUMBER>
-   Columns: # | Type | Change | Severity | Author | Status | Summary | Notes
-   Truncation: Summary ≤60 chars, Notes ≤45 chars (use — when empty). All Status=pending.
+   Columns: # | Type | Change | Severity | Author | Status | Summary | Loc | Notes
+   Truncation: Summary ≤60 chars, Notes ≤45 chars (use — when empty). Loc = inline / discussion / report. All Status=pending.
    MUST render as markdown table. Example row:
-   | 1 | [gh][req] | code | 4 | @reviewer | pending | rename param x to count | — |
+   | 1 | [gh][req] | code | 4 | @reviewer | pending | rename param x to count | inline | — |
 
 2. <IMPL_DIR>/action-items.jsonl
    One compact JSON object per line, one ACTION_ITEM each.
-   Fields: id, type, change, severity, author, summary, file, line, url, full_comment_text.
+   Fields: id, type, change, severity, author, summary, file, line, url, full_comment_text, location.
 
 3. <IMPL_DIR>/pr-vars.sh
    ONLY these assignments, one per line, each value single-quoted, no shell metacharacters:
@@ -320,6 +329,8 @@ Write THREE files using the Write tool (expand <IMPL_DIR> to the literal path ab
      ACTION_ITEMS_REQ='<int>'
      ACTION_ITEMS_SUGGEST='<int>'
      ACTION_ITEMS_DONE='<int>'
+     ACTION_ITEMS_INLINE='<int>'
+     ACTION_ITEMS_DISCUSSION='<int>'
      PR_MOTIVATION='<motivation text; replace any literal single-quotes in text with spaces>'
 
 DO NOT print table, motivation, or raw comment data in final message — write to files only.
@@ -351,7 +362,7 @@ jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl"  # timeout: 5000
 
 ### `[question]` item handling
 
-Answer `[question]` items resolvable from code — clear answer → present answer and proposed reclassification via `AskUserQuestion` before implementing: "[question] #N: '<summary>' — answer: '<answer>'. Reclassify as [req]?" Options: (a) Yes, implement · (b) Keep as question for maintainer. Never self-promote `[question]` to `[req]` without user confirmation. Maintainer judgement needed → surface and pause. Contributor answer ≠ auto-close — answer revealing known limitation/deferred work → keep `[question]`, surface for maintainer to accept/reject.
+Answer `[question]` items resolvable from code — collect all resolvable ones, then present in a single batched `AskUserQuestion` call (up to 4 questions per call): each question = "[question] #N: '<summary>' — answer: '<answer>'. Reclassify as [req]?" Options per item: (a) Yes, implement · (b) Keep as question for maintainer. For >4 [question] items, use 2 batched calls. Never self-promote `[question]` to `[req]` without user confirmation. Maintainer judgement needed → surface and pause. Contributor answer ≠ auto-close — answer revealing known limitation/deferred work → keep `[question]`, surface for maintainer to accept/reject.
 
 ## Step 3c: Merge report findings (pr + report mode only)
 
@@ -391,7 +402,7 @@ Sort: `[req]` first, then `[suggest]`. Constraint: max 3 items/question, max 4 q
 
 **Q4 = bulk action only — hard rule**: Q4 is always reserved for "Or choose a bulk action:" (single-select: "Apply selected" / "Apply all [req]" / "Apply all" / "Skip all"). Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
 
-**≤9 pending items**: group by proximity not by type — fill Q1→Q3 in order (≤3 items each). If items span 4+ type categories, distribute so all groups stay ≤3; don't reserve a whole group for a single type. Each group: one `multiSelect: true` question, header "Selecting items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>`. After item groups, always invoke Q4: single-select "Or choose a bulk action:" — "Apply selected" / "Apply all [req] (only)" / "Apply ALL (req + suggest)" / "Skip all".
+**≤9 pending items**: group by proximity not by type — fill Q1→Q3 in order (≤3 items each). If items span 4+ type categories, distribute so all groups stay ≤3; don't reserve a whole group for a single type. Each group: one `multiSelect: true` question, header "Selecting items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)` (implement action only; GitHub has no Resolve button for PR discussion comments). After item groups, always invoke Q4: single-select "Or choose a bulk action:" — "Apply selected" / "Apply all [req] (only)" / "Apply ALL (req + suggest)" / "Skip all".
 
 **10–19 pending items**: two calls — print `→ N pending items — selecting in 2 calls ([req] first, then [suggest])` before call 1. Call 1: `[req]` groups + Q4 bulk-action ("Apply selected" / "Apply all [req] (only)" / "Apply ALL (req + suggest)" / "Skip all [req]"). "Apply ALL (req + suggest)" in Call 1 → `SELECTED_ITEMS` = all pending IDs, skip Call 2. Otherwise: Call 2: `[suggest]` groups + Q4 bulk-action ("Apply selected" / "Apply all [suggest]" / "Skip all [suggest]"); merge selections from both calls.
 
@@ -577,6 +588,8 @@ gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messa
 
 Mark remaining open tasks `completed`. Read report template from `$_OSS_RESOLVE/templates/resolve-report.md` for section structure.
 
+In the action item disposition table, include `Loc` column (values: `inline` / `discussion` / `report`). For `location: discussion` rows, append `· thread (no GH resolve)` to the Status cell — these items have no GitHub Resolve button; they will remain "unresolved" in GitHub UI regardless of whether the action was implemented.
+
 Include `### Challenge Log` section in report — one row per item: id · evidence verdict · suggestion verdict · resolution (as-suggested / self-resolved / rejected). Omit section when `--no-challenge`.
 
 ```bash
@@ -620,6 +633,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **COMMIT_MODE**: set in Step 3d; `each` = commit after each item (default); `all` = single commit after loop; `stage` = no commits (⚠ branch restore in Step 11 leaves staged changes — warn user before attempting restore)
 - **`--agent <name>`**: agent name accepted with or without plugin prefix; bare name auto-prefixed with `foundry:` (e.g. `sw-engineer` → `foundry:sw-engineer`); must resolve to an installed implementation agent (NOT config-review agents such as `foundry:curator`); skip availability check — failure at dispatch time surfaces error naturally; omit Codex co-author trailer when IMPL_AGENT ≠ `codex:codex-rescue`
 - **Thread resolution via GraphQL** — `isResolved` lives on `PullRequestReviewThread` (GraphQL only); REST `/pulls/{PR}/comments` does not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId` values; GraphQL failure → `[]` fallback.
+- **Discussion vs inline comments** — `gh pr view --comments` = PR main-thread discussion (`location: discussion`; no GitHub "Resolve conversation" button); `gh api .../pulls/<N>/comments` = inline code-review threads (`location: inline`; resolvable). `isResolved` GraphQL field only applies to `location: inline` items. `location: discussion` items cannot be auto-closed — they remain `pending` in action items even after implementation; GitHub has no resolve mechanism for them. Surface this in Step 11 report (`Loc` column + status suffix) so maintainers do not look for a non-existent Resolve button. `[report]` items (`location: report`) follow same convention: implement-only, no GitHub close action.
 - **Commit attribution** — `[gh]` items: `[resolve #<id>] @<reviewer> (gh):`; `[report]` items: `[resolve #<id>] /review finding by <agent-name> (report: <report-path>):` — distinguishes automated findings in git history.
 - **Sources block**: print after all sources read, before action item table.
 - **Reference scenarios** (documentation only — not for `/calibrate`): (1) Mode selection: bare PR number → pr mode; `42 report` → pr + report mode; bare `report` → report mode; bare comment text → comment dispatch (Step 12). (2) Action item classification: LGTM/emoji → `[info]`; `nit:` suggestion → `[gh][suggest]`; resolved thread → `[done]`; "must fix before merge" from reviewer with write access → `[gh][req]`. (3) Challenge accuracy: evidence challenge on actually-present bug → VALID; already addressed in commit → REJECT; suggestion with better alternative available → REJECT with alternative.
