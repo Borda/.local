@@ -1,4 +1,4 @@
-# Agent Spawn Protocol — Background Health Monitoring (CLAUDE.md §8)
+# Agent Spawn Protocol — Background Health Monitoring (CLAUDE.md §6)
 
 Reference from any skill that spawns background agents:
 `Read $_FOUNDRY_SHARED/agent-spawn-protocol.md — apply §8 monitoring for <skill-name> run`
@@ -61,4 +61,4 @@ EXTENSION        = 300   (one +5 min extension allowed)
 - Never omit timed-out signal (⏱) — surface partial results always
 - Skills tighten (not loosen) HARD_CUTOFF and MONITOR_INTERVAL in own `<constants>`
 - Clean sentinel with `rm -f` on normal and timeout exit (use `trap` for crash safety)
-- Canonical reference: CLAUDE.md §8
+- Canonical reference: CLAUDE.md §6

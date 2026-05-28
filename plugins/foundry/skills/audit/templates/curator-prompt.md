@@ -6,6 +6,7 @@ Each invocation ask curator to check:
 - **Verbosity and duplication**: bloated steps, repeated instructions, copy-paste between files. **Token count is verbosity metric, not line count**:
   - prefer breaking long lines into shorter ones for clarity (line breaks help model processing)
   - flag splits that add words, padding, or prose beyond minimal formatting overhead (newline, list marker)
+  - N+1 backtick outer fence when inner content has N-backtick fences = correct CommonMark nesting — not formatting overhead; do not flag as non-standard
 - **Edit quality gate** — self-challenge every addition, edit, deletion:
   - best approach: simpler path exists → flag it; no unnecessary complexity or speculative abstractions
   - no side effects: cross-refs still resolve, existing callers unaffected, no behavior regression

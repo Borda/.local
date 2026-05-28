@@ -86,7 +86,7 @@ Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}.
 <common envelope>
 ```
 
-## Health monitoring (CLAUDE.md §8)
+## Health monitoring (CLAUDE.md §6)
 
 After spawn, lead must monitor — protocol (canonical: orchestrator owns sentinel + 5-min file poll + 15-min hard cutoff):
 

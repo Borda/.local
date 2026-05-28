@@ -562,9 +562,9 @@ Severity: **medium** for `effort:` (no default documented); **low** for `when_to
 | 31b — effort missing | `effort:` | always required | medium | yes |
 | 31b — when_to_use missing | `when_to_use:` | no `disable-model-invocation: true` | low | no |
 
-## Check C35 — Background agent health monitoring compliance (CLAUDE.md §8)
+## Check C35 — Background agent health monitoring compliance (CLAUDE.md §6)
 
-CLAUDE.md §8 requires every skill spawning background agents to implement: (1) launch sentinel creation, (2) 5-min file-activity poll, (3) 15-min hard cutoff. Absence = stalled agents silently drop findings.
+CLAUDE.md §6 requires every skill spawning background agents to implement: (1) launch sentinel creation, (2) 5-min file-activity poll, (3) 15-min hard cutoff. Absence = stalled agents silently drop findings.
 
 **Step 1 — Find skills with background agent spawns**:
 
@@ -590,7 +590,7 @@ for f in $BG_SKILLS; do  # timeout: 5000
     has_sentinel=$(grep -c 'LAUNCH_AT\|touch /tmp/' "$f" 2>/dev/null || echo 0)
     has_poll=$(grep -c 'find.*-newer.*-type f.*wc -l\|MONITOR_INTERVAL' "$f" 2>/dev/null || echo 0)
     has_cutoff=$(grep -c 'HARD_CUTOFF\|timed.out\|15 min\|900' "$f" 2>/dev/null || echo 0)
-    [ "$has_sentinel" -eq 0 ] && printf "⚠ C35a: %s — no launch sentinel (CLAUDE.md §8 step 1)\n" "$skill"
+    [ "$has_sentinel" -eq 0 ] && printf "⚠ C35a: %s — no launch sentinel (CLAUDE.md §6 step 1)\n" "$skill"
     [ "$has_poll" -eq 0 ]    && printf "⚠ C35b: %s — no 5-min file-activity poll (§8 step 2)\n" "$skill"
     [ "$has_cutoff" -eq 0 ]  && printf "⚠ C35c: %s — no 15-min hard cutoff (§8 step 3)\n" "$skill"
 done
@@ -862,7 +862,7 @@ Fix: collapse related sub-questions into one `AskUserQuestion` call (max 4 optio
 
 ## Check 40 — Health monitoring gap
 
-Any SKILL.md that spawns `Agent(...)` with `run_in_background=True` (or the Agent tool's equivalent) **must** implement the CLAUDE.md §8 health monitoring protocol: sentinel file creation + 5-min find-newer poll + 15-min hard cutoff + one extension.
+Any SKILL.md that spawns `Agent(...)` with `run_in_background=True` (or the Agent tool's equivalent) **must** implement the CLAUDE.md §6 health monitoring protocol: sentinel file creation + 5-min find-newer poll + 15-min hard cutoff + one extension.
 
 Scan all SKILL.md files in scope. For each file, detect `run_in_background` (case-insensitive). If found, verify that the SAME file also contains `health_sentinel` OR (`find ... -newer` AND `wc -l`). If not → flag.
 
@@ -878,7 +878,7 @@ done  # timeout: 5000
 ```
 
 **Severity**: high — background agents can silently time out with no user notification; lost work and false-progress indicators result.
-Fix: add CLAUDE.md §8 sentinel + poll protocol immediately after every `Agent(..., run_in_background=True)` spawn call.
+Fix: add CLAUDE.md §6 sentinel + poll protocol immediately after every `Agent(..., run_in_background=True)` spawn call.
 
 ## Check 41 — Shell variable persistence across Bash calls
 

@@ -15,7 +15,7 @@ Trigger when: 3+ distinct method families exist AND field has no clear leading m
 5. Lead routes key findings from one researcher to others for cross-challenge: `@AR2: AR1 found [finding] — does it hold under [condition]?`
 6. Lead synthesizes into Step 3 report, noting where researchers agreed or diverged
 
-**Note on CLAUDE.md §8 (background agent monitoring)**: Team mode spawns in-process teammates via TeamCreate — not background agents writing to run directory. In-process teammates send TeammateIdle notifications on completion — synchronous completion signals. File-activity polling protocol (§8) doesn't apply; TeammateIdle is equivalent liveness signal.
+**Note on CLAUDE.md §6 (background agent monitoring)**: Team mode spawns in-process teammates via TeamCreate — not background agents writing to run directory. In-process teammates send TeammateIdle notifications on completion — synchronous completion signals. File-activity polling protocol (§8) doesn't apply; TeammateIdle is equivalent liveness signal.
 
 Pre-compute before spawning:
 

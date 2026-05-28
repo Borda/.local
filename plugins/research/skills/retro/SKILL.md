@@ -208,7 +208,7 @@ Include ## Confidence block per quality-gates rules.
 Return ONLY: {"status":"done","hypotheses":N,"file":"<RUN_DIR>/retrospective.md","confidence":0.N}
 ```
 
-**Health monitoring note** (CLAUDE.md §8 deviation): the research:scientist agent here is spawned synchronously (not `run_in_background=true`), so CLAUDE.md §8 sentinel polling is unreachable mid-call. Health monitoring is approximated post-hoc: if the Agent() call returns after >15 min with no output file, treat as timed out. CLAUDE.md §8 full protocol applies only to background agents.
+**Health monitoring note** (CLAUDE.md §6 deviation): the research:scientist agent here is spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. Health monitoring is approximated post-hoc: if the Agent() call returns after >15 min with no output file, treat as timed out. CLAUDE.md §6 full protocol applies only to background agents.
 
 **Post-call timeout check**: after Agent() returns, verify:
 - File `$RUN_DIR/retrospective.md` exists and has content → success

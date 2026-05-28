@@ -1,3 +1,5 @@
+<!-- scope: project-local plugin authoring rules — not synced to ~/.claude/ -->
+
 # Plugin Authoring Rules
 
 Plugins under `plugins/`. See `README.md` for user-facing detail.
@@ -37,7 +39,7 @@ Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`
 - **No hardcoded absolute user paths** (`/Users/<name>/`, `/home/<name>/`, `/tmp/`) in any plugin file — critical installability violation; breaks on every other machine. Always use `~/`, `$(git rev-parse --show-toplevel)`, or `$CLAUDE_PLUGIN_ROOT`. Check R3 flags violations.
 - Validate: after `claude plugin install`, all agents/skills/rules/hooks resolve without local `plugins/` tree
 - **Bare `plugins/` path = only valid as final fallback** after cache-path resolution: `VAR="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)"; [ -z "$VAR" ] && VAR="plugins/<plugin>/skills/_shared"`. Never use bare `plugins/` as primary path. Check C32 flags violations.
-- **Health monitoring mandatory for background agents**: any skill spawning `Agent(..., run_in_background=true)` must implement CLAUDE.md §8 (sentinel + 5-min poll + 15-min cutoff). Reference `_FOUNDRY_SHARED/agent-spawn-protocol.md` rather than reproducing inline. Check C35 flags violations.
+- **Health monitoring mandatory for background agents**: any skill spawning `Agent(..., run_in_background=true)` must implement CLAUDE.md §6 (sentinel + 5-min poll + 15-min cutoff). Reference `_FOUNDRY_SHARED/agent-spawn-protocol.md` rather than reproducing inline. Check C35 flags violations.
 
 ## Naming
 

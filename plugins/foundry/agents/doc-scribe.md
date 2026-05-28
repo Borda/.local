@@ -26,7 +26,7 @@ Default: Google docstring style across all Python projects including ML/scientif
 
 ## Docstring Style Selection
 
-Follow `.claude/rules/python-code.md` (available post `/foundry:init`).
+Follow `.claude/rules/python-code.md` (available post `/foundry:setup`).
 Default: Google style (Napoleon). Exception: only if user explicitly requests with reason (e.g. existing codebase uses NumPy uniformly).
 
 </core_principles>
@@ -191,7 +191,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
   - Documentation build fails → `oss:cicd-steward` (requires `oss` plugin) diagnoses CI failure; doc-scribe fixes content
   - Full release notes from git history → `/oss:release` skill (requires `oss` plugin)
   - Documentation content complete → `foundry:linting-expert` sanitizes output (formatting, style, lint errors in code examples); doc-scribe owns content, linting-expert owns handover cleanup
-- **Docstring style**: follow `.claude/rules/python-code.md` (available post `/foundry:init`)
+- **Docstring style**: follow `.claude/rules/python-code.md` (available post `/foundry:setup`)
 - **Changelog automation**: if project uses towncrier or commitizen, don't edit CHANGELOG.md directly — hand off to `oss:shepherd` (requires `oss` plugin)
 - **Confidence calibration**: lower confidence when examples not read, signatures inferred from callers only, or caller didn't provide enough context for accurate parameter docs
 

@@ -1,13 +1,12 @@
 ---
 name: setup
 description: "Post-install setup for foundry plugin. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
+argument-hint: "[--approve]"
+when_to_use: "Run once after installing foundry plugin on a new machine, or after plugin version upgrade to sync settings and symlinks."
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
 model: haiku
-argument-hint: "[--approve]"
 ---
-
-<!-- NOTE: Simplified variant of foundry:init; keep in sync with init/SKILL.md for Steps 1-9 shared logic. Substantive differences: no Python shim detection, no _jq_result error-guard improvements pending backport. -->
 
 <objective>
 
@@ -15,6 +14,7 @@ Set up foundry on new machine:
 
 | Action | What happens |
 | --- | --- |
+| Detect Python 3.10+ (`python` / `py -3` / `python3`); install `~/.local/bin/python` shim if needed | ✓ |
 | Merge `statusLine`, `permissions.allow`, `enabledPlugins` → `~/.claude/settings.json` | ✓ |
 | `rules/*.md` → `~/.claude/rules/` | symlink |
 | `TEAM_PROTOCOL.md` → `~/.claude/` | symlink |
@@ -59,6 +59,41 @@ fi
 When `APPROVE_ALL=true`, every `AskUserQuestion` below **skipped** — ★ recommended option applied automatically. Print `[--approve] auto-accepting recommended option` in place of question.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+## Python detection
+
+Probe Python 3.10+ — required before any `bin/*.py` calls. Windows Store stub returns exit 9009 when given args; caught by `2>/dev/null`:
+
+```bash
+PYTHON_CMD=""
+SHIM_DIR="$HOME/.local/bin"
+if command -v python >/dev/null 2>&1 && python --version 2>/dev/null | grep -qE "Python 3\.(1[0-9]|[2-9][0-9])"; then
+    PYTHON_CMD="python"
+elif command -v py >/dev/null 2>&1 && py -3 --version 2>/dev/null | grep -qE "Python 3\.(1[0-9]|[2-9][0-9])"; then
+    PYTHON_CMD="py -3"
+    mkdir -p "$SHIM_DIR"
+    printf '#!/usr/bin/env bash\npy -3 "$@"\n' > "$SHIM_DIR/python"
+    chmod +x "$SHIM_DIR/python"
+    printf "  Python shim installed: %s/python → py -3\n" "$SHIM_DIR"
+elif command -v python3 >/dev/null 2>&1 && python3 --version 2>/dev/null | grep -qE "Python 3\.(1[0-9]|[2-9][0-9])"; then
+    PYTHON_CMD="python3"
+    mkdir -p "$SHIM_DIR"
+    printf '#!/usr/bin/env bash\npython3 "$@"\n' > "$SHIM_DIR/python"
+    chmod +x "$SHIM_DIR/python"
+    printf "  Python shim installed: %s/python → python3\n" "$SHIM_DIR"
+else
+    printf "! Python 3.10+ not found — install Python 3.10+ and re-run /foundry:setup\n"
+    exit 1
+fi
+printf "  Python: %s\n" "$PYTHON_CMD"
+
+# PATH guidance — ~/.local/bin standard on modern macOS/Linux (XDG Base Directory spec) but not always on PATH by default
+if [ -f "$SHIM_DIR/python" ] && ! echo ":$PATH:" | grep -q ":$SHIM_DIR:"; then
+    printf "  ⚠ %s not on PATH — add to shell rc:\n      export PATH=\"\$HOME/.local/bin:\$PATH\"\n" "$SHIM_DIR"
+fi
+```
+
+`~/.local/bin` is the XDG-standard user-bin directory on modern macOS/Linux. Shim created only when `python` absent or resolves to Store stub. Idempotent — re-running setup overwrites shim with same content. If `~/.local/bin` is not yet on `$PATH`, setup prints the `export PATH="$HOME/.local/bin:$PATH"` line for the user's shell rc.
 
 ## Step 1: Locate the installed plugin
 
@@ -363,10 +398,18 @@ for src_dir in "$PLUGIN_ROOT/skills/"*/; do
 done  # timeout: 10000
 ```
 
+## Step 9b: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
+
+```bash
+cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
+printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"
+```
+
 ## Step 10: Final report
 
 Print summary:
 
+- Python: `<PYTHON_CMD>` (shim installed at ~/.local/bin/python / already on PATH / n/a)
 - statusLine: set / skipped
 - permissions.allow: N entries added
 - enabledPlugins: set / skipped
@@ -376,6 +419,7 @@ Print summary:
 - Rules linked: N → ~/.claude/rules/
 - TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
 - Skills linked: N → ~/.claude/skills/
+- CLAUDE.md written → ~/.claude/CLAUDE.md
 - Backup at: ~/.claude/settings.json.bak
 
 </workflow>

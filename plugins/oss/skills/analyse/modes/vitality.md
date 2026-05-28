@@ -35,7 +35,7 @@ Spawn all 3 `oss:repo-warden` agents simultaneously in single response:
 > `Agent(subagent_type="oss:repo-warden", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE PARTIAL_FILE=$PARTIAL_B AXIS_GROUP=B")`
 > `Agent(subagent_type="oss:repo-warden", prompt="GH_OWNER=$GH_OWNER GH_REPO=$GH_REPO DATA_FILE=$DATA_FILE PARTIAL_FILE=$PARTIAL_C AXIS_GROUP=C")`
 
-**Health monitoring** (CLAUDE.md §8): before spawning, create checkpoint:
+**Health monitoring** (CLAUDE.md §6): before spawning, create checkpoint:
 
 ```bash
 SCORE_CHECKPOINT_FILE="/tmp/vitality-score-check-${GH_OWNER}-${GH_REPO}-${RUN_TS}"

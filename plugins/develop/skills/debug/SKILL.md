@@ -111,7 +111,7 @@ Subsequent steps branch by `DEBUG_MODE`:
 5. **Synthesis trace agent**: spawn one `foundry:sw-engineer` synthesis agent after individual teammate reports — read all teammate findings from `.temp/develop/$TS/debug-hypothesis-*.md`, produce unified cross-cutting trace map (entry point, modules crossed, state mutations, invariant violations across hypotheses). Write to `.temp/develop/$TS/debug-trace-synthesis.md`.
 6. Lead synthesises consensus root cause from synthesis trace + competing hypotheses. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on the winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2.
 
-Health monitoring (CLAUDE.md §8): for each spawned agent, create sentinel `touch ${TMPDIR:-/tmp}/debug-team-check-N`; poll every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-N -type f | wc -l`; hard cutoff 15 min no-file-activity; mark timed-out agents with ⏱ in synthesis.
+Health monitoring (CLAUDE.md §6): for each spawned agent, create sentinel `touch ${TMPDIR:-/tmp}/debug-team-check-N`; poll every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-N -type f | wc -l`; hard cutoff 15 min no-file-activity; mark timed-out agents with ⏱ in synthesis.
 
 ## Step 1: Understand the symptom
 

@@ -53,7 +53,7 @@ Spawn **foundry:curator** per plugin directory found under `$_SCAN_DIR` (one spa
 
 After all spawns complete: update `CHECK33_FILES` to point to the new files in `$RUN_DIR`.
 
-**Health monitoring for scan spawns** (CLAUDE.md §8):
+**Health monitoring for scan spawns** (CLAUDE.md §6):
 
 ```bash
 SCAN_CHECKPOINT="/tmp/distill-exec-scan-$(date +%s)"  # timeout: 3000
@@ -117,7 +117,7 @@ Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/extract-<cluster-id>.md\",
 ")
 ```
 
-**Health monitoring for extraction spawns** (CLAUDE.md §8):
+**Health monitoring for extraction spawns** (CLAUDE.md §6):
 
 ```bash
 EXTRACT_CHECKPOINT="/tmp/distill-exec-extract-$(date +%s)"  # timeout: 3000

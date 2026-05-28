@@ -112,7 +112,7 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight if flag se
 
 When `TEAM_MODE=true`:
 
-Guard: `[ -f "${HOME}/.claude/TEAM_PROTOCOL.md" ] || echo "TEAM_PROTOCOL_ABSENT"` — if output contains `TEAM_PROTOCOL_ABSENT`: invoke `AskUserQuestion` — question: "foundry plugin not installed (TEAM_PROTOCOL.md absent) — cannot run team mode. Continue solo instead?" · (a) Continue solo — fall back to Steps 1–5 solo workflow · (b) Abort — stop and run `/foundry:init` first. On (b): stop. On (a): set `TEAM_MODE=false` and continue.
+Guard: `[ -f "${HOME}/.claude/TEAM_PROTOCOL.md" ] || echo "TEAM_PROTOCOL_ABSENT"` — if output contains `TEAM_PROTOCOL_ABSENT`: invoke `AskUserQuestion` — question: "foundry plugin not installed (TEAM_PROTOCOL.md absent) — cannot run team mode. Continue solo instead?" · (a) Continue solo — fall back to Steps 1–5 solo workflow · (b) Abort — stop and run `/foundry:setup` first. On (b): stop. On (a): set `TEAM_MODE=false` and continue.
 
 Run Step 1 scope analysis inline (same analysis as solo Step 1) — teammates need orientation context. After Step 1 completes, broadcast to teammates: `{feature: <desc>, scope: <modules>, API: <proposed signature>}`.
 
@@ -158,7 +158,7 @@ done
 
 **Coordination order**: QA challenges SW API design — lead routes challenge back to SW before implementation starts. SW shares implementation details with QA so tests stay accurate. Lead synthesizes outputs in Step 5 onward as normal.
 
-Health monitoring (CLAUDE.md §8): re-derive `$TS` at block start (bash state lost between Bash() calls — read back from temp file the spawn block persisted):
+Health monitoring (CLAUDE.md §6): re-derive `$TS` at block start (bash state lost between Bash() calls — read back from temp file the spawn block persisted):
 
 ```bash
 # timeout: 5000

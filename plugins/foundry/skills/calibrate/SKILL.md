@@ -65,9 +65,9 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
 - CALIBRATE_LOG: `.claude/logs/calibrations.jsonl`
 - AB_ADVANTAGE_THRESHOLD: 0.10 (delta recall or F1 above this → meaningful advantage; below → marginal or none)
 - PHASE_TIMEOUT_MIN: 5 (per-phase budget — if spawned subagents haven't all returned, collect partial results and continue)
-- PIPELINE_TIMEOUT_MIN: 10 (hard cutoff — pipeline not notified within 10 min of launch is timed out; extendable if agent explains delay) # tighter than global 15-min cutoff from CLAUDE.md §8 — intentional for calibrate
-- HEALTH_CHECK_INTERVAL_MIN: 5 (orchestrator polls each running pipeline every 5 min for liveness) # = global default (CLAUDE.md §8)
-- EXTENSION_MIN: 5 # = global default (CLAUDE.md §8)
+- PIPELINE_TIMEOUT_MIN: 10 (hard cutoff — pipeline not notified within 10 min of launch is timed out; extendable if agent explains delay) # tighter than global 15-min cutoff from CLAUDE.md §6 — intentional for calibrate
+- HEALTH_CHECK_INTERVAL_MIN: 5 (orchestrator polls each running pipeline every 5 min for liveness) # = global default (CLAUDE.md §6)
+- EXTENSION_MIN: 5 # = global default (CLAUDE.md §6)
 - PIPELINE_BATCH_SIZE: 5 (max agent/skill pipeline subagents spawned concurrently within one mode — prevents agent count explosion on `all`; batch: spawn ≤5, wait for all results, then spawn next batch)
 - ROUTING_ACCURACY_THRESHOLD: 0.90 (below → agent descriptions need improvement) # keep in sync with modes/routing.md
 - ROUTING_HARD_THRESHOLD: 0.80 (below → high-overlap pair descriptions need disambiguation)
@@ -227,7 +227,7 @@ Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instru
 
 ## Step 3: Collect results and print combined report
 
-**Health monitoring** — follow CLAUDE.md §8 protocol. Run dir for liveness checks: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`. Skill-specific constants (tighter than global defaults — see `<constants>` block): `PIPELINE_TIMEOUT_MIN`, `PIPELINE_TIMEOUT_MIN_DUAL` (when Codex active in CODEX_MODES), `HEALTH_CHECK_INTERVAL_MIN`, `EXTENSION_MIN`.
+**Health monitoring** — follow CLAUDE.md §6 protocol. Run dir for liveness checks: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`. Skill-specific constants (tighter than global defaults — see `<constants>` block): `PIPELINE_TIMEOUT_MIN`, `PIPELINE_TIMEOUT_MIN_DUAL` (when Codex active in CODEX_MODES), `HEALTH_CHECK_INTERVAL_MIN`, `EXTENSION_MIN`.
 
 Per-target checkpoint init — **create checkpoint BEFORE spawning each pipeline** (sequential execution: only one runs at a time, do NOT pre-initialize checkpoints for unstarted targets). In Step 2, immediately before issuing each `Agent(...)` spawn call, run:
 ```bash
@@ -345,7 +345,7 @@ if [ "$LOCAL_MODE" = "true" ] && [ -f "plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE
     AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
 else
     AGENT_FILE=".claude/agents/$AGENT_BARE.md"
-    [ -f "$AGENT_FILE" ] || AGENT_FILE="$(find "${HOME}/.claude/plugins/cache/borda-ai-rig/$PLUGIN_PREFIX" -maxdepth 4 -name "$AGENT_BARE.md" -path "*/agents/*" 2>/dev/null | sort -Vr | head -1)"
+    [ -f "$AGENT_FILE" ] || AGENT_FILE="$(find "${HOME}/.claude/plugins/cache" -maxdepth 5 -name "$AGENT_BARE.md" -path "*/$PLUGIN_PREFIX/*/agents/*" 2>/dev/null | sort -Vr | head -1)"
     [ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
 fi
 # Skill target — substitute skills/<name>/SKILL.md in the same pattern (plugin prefix applies equally)

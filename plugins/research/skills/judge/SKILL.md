@@ -114,7 +114,7 @@ Pre-compute run dir before spawning:
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "judge" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
-**Health monitoring** (CLAUDE.md §8) — create both checkpoints BEFORE dispatching any agents:
+**Health monitoring** (CLAUDE.md §6) — create both checkpoints BEFORE dispatching any agents:
 
 ```bash
 _HM_ARCH=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "judge-architect" 2>/dev/null)  # timeout: 5000

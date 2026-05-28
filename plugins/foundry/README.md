@@ -1,6 +1,6 @@
 # 🏭 foundry — Claude Code Plugin
 
-OSS Claude Code config: 10 specialist agents, 9 skills, event-driven hooks, and a self-improvement loop for professional AI-assisted development.
+OSS Claude Code config: 10 specialist agents, 8 skills, event-driven hooks, and a self-improvement loop for professional AI-assisted development.
 
 > For OSS workflows, also install the `oss` plugin (`/oss:review`, `/oss:release`, ...). For development workflows, install `develop` (`/develop:feature`, `/develop:fix`, ...). For ML research, install `research` (`/research:run`, `/research:topic`, ...).
 
@@ -137,6 +137,7 @@ Post-install setup. Merges settings and creates symlinks. Run once after install
 
 What it does:
 
+- Detects Python 3.10+ (`python` / `py -3` / `python3`); installs `~/.local/bin/python` shim when `python` absent or resolves to Windows Store stub
 - Backs up `~/.claude/settings.json` before touching it
 - Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`
 - Copies `permissions-guide.md` to `.claude/` (only if absent — preserves project-local edits)
@@ -686,12 +687,11 @@ plugins/foundry/
 │   ├── permissions-allow.json   allow-list merged by /foundry:setup
 │   └── permissions-deny.json    deny-list merged by /foundry:setup
 ├── agents/                      10 specialist agent files
-├── skills/                      9 skill directories (audit, brainstorm, calibrate, create, distill,
-│                                    init, investigate, manage, session)
+├── skills/                      8 skill directories (audit, brainstorm, calibrate, create, distill, investigate, manage, session)
 ├── rules/                       10 rule files symlinked to ~/.claude/rules/ by /foundry:setup
-├── CLAUDE.md                    workflow rules distributed via /foundry:setup
+├── CLAUDE.src.md                workflow rules; /foundry:setup Step 9b copies → ~/.claude/CLAUDE.md
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol
-├── permissions-guide.md         annotated allow/deny reference (copied to .claude/ by init)
+├── permissions-guide.md         annotated allow/deny reference (copied to .claude/ by /foundry:setup)
 └── hooks/
     ├── hooks.json               hook registrations (${CLAUDE_PLUGIN_ROOT} paths)
     ├── task-log.js              SubagentStart/Stop tracking to /tmp/claude-state-<session>/

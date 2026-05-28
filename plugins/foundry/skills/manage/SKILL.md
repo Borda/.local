@@ -64,7 +64,7 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 - USED_COLORS: blue, cyan, green, orange, pink, purple, yellow
 - AVAILABLE_COLORS: indigo, lime, magenta, teal, violet
 
-<!-- Background agent health monitoring (CLAUDE.md §8) — used by every spawn in Step 4 -->
+<!-- Background agent health monitoring (CLAUDE.md §6) — used by every spawn in Step 4 -->
 - MONITOR_INTERVAL: 300   (5 minutes between polls)
 - HARD_CUTOFF:      900   (15 minutes of no file activity → declare timed out)
 - EXTENSION:        300   (one +5 min extension if output file tail explains delay)
@@ -210,7 +210,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
      ```
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
-   **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
+   **Health monitoring** (CLAUDE.md §6): After spawning web-explorer agent:
    ```bash
    MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer 2>/dev/null)"  # timeout: 5000
@@ -227,14 +227,14 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 3. Choose model based on role complexity:
 
    - `opusplan` — plan-gated roles (solution-architect, oss:shepherd, foundry:curator)
-   - `opus` — complex implementation roles (foundry:sw-engineer, foundry:qa-specialist, research:scientist, foundry:perf-optimizer)
-   - `sonnet` — focused execution roles (research:data-steward (requires `research` plugin), foundry:web-explorer, foundry:doc-scribe, foundry:creator, oss:cicd-steward)
+   - `opus` — complex implementation roles (foundry:sw-engineer, research:scientist, foundry:perf-optimizer)
+   - `sonnet` — focused execution roles (research:data-steward (requires `research` plugin), foundry:web-explorer, foundry:doc-scribe, foundry:creator, foundry:qa-specialist, oss:cicd-steward)
    - `haiku` — high-frequency diagnostics ONLY (e.g. linting-expert); NOT for analysis/auditing roles that require substantive reasoning
 
 4. Resolve template path (cascade primary → project-local → cache scan; only the cache scan runs if neither of the cheaper paths exists, since each candidate must satisfy `-d` before being assigned):
 
 ```bash
-MANAGE_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" manage templates) || { printf "! BREAKING: manage templates not found — run /foundry:init first\n"; exit 1; }  # timeout: 5000
+MANAGE_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" manage templates) || { printf "! BREAKING: manage templates not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
 ```
 
 5. Spawn **foundry:sw-engineer** subagent to scaffold and write the agent file. `foundry:curator` is the wrong delegate here — its NOT-for explicitly excludes creating or scaffolding agents/skills; curator only reviews and edits existing config. `foundry:sw-engineer` owns scaffolding (treat agent `.md` as a config artifact whose authoring is a software task — frontmatter schema, tool selection, structural completeness).
@@ -251,7 +251,7 @@ Write the file using the Write tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §8): After spawning foundry:sw-engineer agent:
+**Health monitoring** (CLAUDE.md §6): After spawning foundry:sw-engineer agent:
 ```bash
 MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-agent 2>/dev/null)"  # timeout: 5000
@@ -270,7 +270,7 @@ Every `$MONITOR_INTERVAL` seconds: `find .claude/agents -newer "$SENTINEL" -name
      ```
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SKILL_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SKILL_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
-   **Health monitoring** (CLAUDE.md §8): After spawning web-explorer agent:
+   **Health monitoring** (CLAUDE.md §6): After spawning web-explorer agent:
    ```bash
    MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer-skill 2>/dev/null)"  # timeout: 5000
@@ -305,7 +305,7 @@ Write using the Write tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §8): After spawning foundry:sw-engineer agent:
+**Health monitoring** (CLAUDE.md §6): After spawning foundry:sw-engineer agent:
 ```bash
 MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-skill 2>/dev/null)"  # timeout: 5000
@@ -485,8 +485,12 @@ Atomic update — write new file before deleting old:
 
 1. Read `.claude/rules/<old-name>.md` using the Read tool.
 2. Rule files have no `name:` frontmatter field — filename IS identifier. Write new file at `.claude/rules/<new-name>.md` with identical content.
-3. Verify new file exists.
-4. Delete old file only after new file confirmed: `rm .claude/rules/<old-name>.md` <!-- timeout: 5000 -->
+3. Verify new file exists: `Read(file_path=".claude/rules/<new-name>.md", limit=5)`
+
+```bash
+# 4. Delete old file only after new file confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
+rm .claude/rules/<old-name>.md  # timeout: 5000
+```
 
 ### Mode: Delete Rule
 
@@ -573,7 +577,7 @@ Adds rule to both `settings.json` and `permissions-guide.md` atomically.
     python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/jq_write.py" .claude/settings.json '.permissions.allow += [$rule]' --arg rule "<rule>"
     ```
 
-3. Also append to plugin's `permissions-allow.json` so `/foundry:init` syncs it to `~/.claude/settings.json` on reinstall:
+3. Also append to plugin's `permissions-allow.json` so `/foundry:setup` syncs it to `~/.claude/settings.json` on reinstall:
 
     ```bash
     # timeout: 5000
@@ -740,7 +744,7 @@ Skip calibration for: trivial edits, renames, deletes, rule operations, perm ope
 - **Current Roster**: agents (N) and skills (N) with comma-separated names (n/a for perm operations)
 - **Audit Result**: audit findings (pass / issues found) (n/a for perm operations)
 - **Calibration Result**: recall score and routing accuracy from Step 9 (n/a for trivial edits, renames, deletes, perms)
-- **Follow-up**: perm ops → confirm both `settings.json` and `permissions-guide.md` updated; run `/foundry:init` to sync `~/.claude/`
+- **Follow-up**: perm ops → confirm both `settings.json` and `permissions-guide.md` updated; run `/foundry:setup` to sync `~/.claude/`
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
@@ -758,6 +762,6 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 - Follow-up chains:
   - create or non-trivial update of agent/skill → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="<name>")` (mandatory) → `Skill(skill="foundry:calibrate", args="routing --fast")`
   - trivial update or rename or delete → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="routing --fast")` (if description changed)
-  - add/remove perm → confirm both files updated; run `/foundry:init`
+  - add/remove perm → confirm both files updated; run `/foundry:setup`
 
 </notes>

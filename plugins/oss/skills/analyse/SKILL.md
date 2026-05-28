@@ -32,7 +32,7 @@ NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code
 
 <constants>
 
-<!-- Background agent health monitoring (CLAUDE.md §8) — applies to Step 7 shepherd spawn -->
+<!-- Background agent health monitoring (CLAUDE.md §6) — applies to Step 7 shepherd spawn -->
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
@@ -377,7 +377,7 @@ Verify output file exists and is non-empty after spawn: `[ -s "<OUTPUT_PATH>" ] 
 
 If `DRIFT=true`: append `[analysis refreshed — new activity since last report]` to terminal summary.
 
-**Health monitoring** (CLAUDE.md §8): Agent spawns synchronous — Claude awaits natively. On timeout (`$HARD_CUTOFF` seconds): read `tail -100` of expected reply path; if none, use `{"verdict":"timed_out"}`; surface with ⏱. Never silently omit.
+**Health monitoring** (CLAUDE.md §6): Agent spawns synchronous — Claude awaits natively. On timeout (`$HARD_CUTOFF` seconds): read `tail -100` of expected reply path; if none, use `{"verdict":"timed_out"}`; surface with ⏱. Never silently omit.
 
 End response with `## Confidence` block per CLAUDE.md — always **absolute last thing**.
 

@@ -146,7 +146,7 @@ If `_FOUNDRY_AVAILABLE` empty: skip architecture and perf reviews entirely; prin
 PLAN_RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "plan" ".experiments" 2>/dev/null)  # timeout: 5000
 ```
 
-**Health monitoring** (CLAUDE.md §8) — create one checkpoint per parallel agent so individual stalls are detectable (ADV-H16). Without per-agent checkpoints a single live agent masks two stalled ones:
+**Health monitoring** (CLAUDE.md §6) — create one checkpoint per parallel agent so individual stalls are detectable (ADV-H16). Without per-agent checkpoints a single live agent masks two stalled ones:
 
 ```bash
 # Plan-mode health constants — ADV-L19 (constants YAML not auto-exported to bash)
@@ -278,6 +278,6 @@ Next steps:
 
 - **Scope boundary**: plan writes `program.md` only — methodology validation = `/research:judge`; execution = `/research:run`; full pipeline = `/research:sweep`.
 - **`--team` note**: `--team` applies at run step, not plan step. Plan produces standard `program.md`; pass flag when invoking `/research:run <program.md> --team`.
-- **TTL exemption**: plan run dirs (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from 30-day TTL cleanup per `.claude/rules/artifact-lifecycle.md` (installed via `/foundry:init` — requires `foundry` plugin); remove manually when no longer needed.
+- **TTL exemption**: plan run dirs (`.experiments/plan-<timestamp>/`) don't write `result.jsonl` — exempt from 30-day TTL cleanup per `.claude/rules/artifact-lifecycle.md` (installed via `/foundry:setup` — requires `foundry` plugin); remove manually when no longer needed.
 
 </notes>

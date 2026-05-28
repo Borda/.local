@@ -112,7 +112,7 @@ Then return ONLY a compact JSON envelope on your final line — nothing else aft
 ```
 
 **Health monitoring** — Agent tool synchronous; Claude awaits researcher response natively (no Bash checkpoint available). If researcher doesn't return within `$HARD_CUTOFF` seconds (~15 min), use Read tool to surface partial results from `.temp/`, continue with what found; mark timed-out agents with ⏱ in report.
-<!-- Deviation from CLAUDE.md §8: Agent(...) calls are synchronous — no Bash checkpoint/poll available; HARD_CUTOFF constant is sole liveness mechanism. Documented in <constants> block. -->
+<!-- Deviation from CLAUDE.md §6: Agent(...) calls are synchronous — no Bash checkpoint/poll available; HARD_CUTOFF constant is sole liveness mechanism. Documented in <constants> block. -->
 
 **If Agent tool unavailable** (running as subagent where nested spawning blocked), skip Agent call, conduct research inline: use WebSearch and WebFetch to find top 5 papers, synthesize comparison table yourself. Notify user: "Note: researcher agent could not be spawned in this context — conducting research inline."
 

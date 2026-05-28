@@ -2,6 +2,7 @@
 name: investigate
 description: 'Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug) or config quality (/foundry:audit). TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: "not working but config looks right", "hook not triggering", "why isn''t X running". SKIP: Python traceback present (use develop:debug); known code bug with repro (use develop:fix); pure config quality check (use foundry:audit).'
 argument-hint: "<symptom, question, or failing command> [--fast]"
+when_to_use: "Use when something is broken or misbehaving with no clear Python traceback — hook not firing, CI/local divergence, background agent stalled, config looks right but behavior is wrong."
 allowed-tools: Read, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opusplan
 effort: high
@@ -209,7 +210,7 @@ If `$INVESTIGATE_RUN/codex-review.md` or `$INVESTIGATE_RUN/challenger-review.md`
   - `/develop:fix` — code regression confirmed (application code only — NOT for `.claude/` changes) (requires `develop` plugin — check plugin availability before following this recommendation)
   - `/foundry:manage update <name> "<change directive>"` — `.claude/` agent/skill content needs adding or updating (NOT for structural/quality sweeps — use `/foundry:audit` for that)
   - `/foundry:audit` — structural/quality issue in `.claude/` config confirmed (e.g. broken cross-refs, missing blocks, tag imbalance); NOT for content additions — use `/manage update` for those
-  - `/foundry:init` — propagate project `.claude/` to `~/.claude/` (foundry plugin is the distribution path)
+  - `/foundry:setup` — propagate project `.claude/` to `~/.claude/` (foundry plugin is the distribution path)
   - Manual step: <exact command to run>
   - Further investigation needed: <what additional info would resolve it>
 ```

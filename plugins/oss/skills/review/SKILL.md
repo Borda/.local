@@ -33,7 +33,7 @@ NOT for local file review or current git diff — use `/develop:review` (require
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CODEMAP_ENABLED=false   # set to true via --codemap
 SEMBLE_ENABLED=false    # set to true via --semble
-<!-- Background agent health monitoring (CLAUDE.md §8) — applies to Step 3 parallel agent spawns -->
+<!-- Background agent health monitoring (CLAUDE.md §6) — applies to Step 3 parallel agent spawns -->
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
@@ -366,7 +366,7 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 8 — oss:cicd-steward (CI/CD-only mode and docs+CI/CD mode)**: Review CI/CD config changes. Check: correctness (valid YAML/syntax, correct job ordering, trigger expressions), security (pinned SHA for third-party actions, no secret exposure in logs, `permissions:` scopes minimal), best practices (cache keys, matrix strategy, workflow topology), and breaking changes to existing CI behavior (removed jobs, changed required checks). Write findings to `$RUN_DIR/oss--cicd-steward.md`.
 
-**Health monitoring** (CLAUDE.md §8): Create checkpoint BEFORE spawning agents — timing starts from first spawn:
+**Health monitoring** (CLAUDE.md §6): Create checkpoint BEFORE spawning agents — timing starts from first spawn:
 
 ```bash
 REVIEW_CHECKPOINT="${TMPDIR:-/tmp}/review-check-$(date +%s)"

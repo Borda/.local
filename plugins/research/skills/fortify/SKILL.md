@@ -193,7 +193,7 @@ Return ONLY: {\"status\":\"done\",\"components\":N,\"file\":\"${FORTIFY_DIR}/abl
 
 Pass `$F2_PROMPT` (fully expanded) as the `prompt=` argument to `Agent(...)`.
 
-**Health monitoring** (CLAUDE.md §8):
+**Health monitoring** (CLAUDE.md §6):
 
 ```bash
 # audit-skip: resilience-replication

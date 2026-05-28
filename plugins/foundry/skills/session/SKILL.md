@@ -2,6 +2,7 @@
 name: session
 description: 'Session parking lot — automatically parks diverging ideas and unanswered questions to project-scoped memory; /session resume shows pending items, /session archive closes them, /session summary gives a session digest TRIGGER when: user asks "what was I working on", "any pending items", "what''s in the parking lot", "remind me where we left off", "what did we defer"; resume intent clear from context. SKIP: new topic or explicit new task; user providing new context rather than resuming; archive mode requires user-supplied text (user-initiated only).'
 argument-hint: "resume | archive <text> | summary"
+when_to_use: "Use to list pending parked items (resume), close a completed item (archive), or get a digest of this session's work (summary)."
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 effort: low
 model: sonnet
@@ -27,12 +28,10 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 
 <constants>
 
-- Memory dir: `$HOME/.claude/projects/$(git rev-parse --show-toplevel | sed 's|[/.]|-|g')/memory`
+- Memory dir: resolved via `resolve_memory_dir.py` (canonical; see snippet below)
 - Canonical MEMORY_DIR snippet (use in every bash block that needs the path):
   ```bash
-  PROJECT="$(git rev-parse --show-toplevel)"
-  SLUG="$(echo "$PROJECT" | sed 's|[/.]|-|g')"
-  MEMORY_DIR="$HOME/.claude/projects/$SLUG/memory"
+  MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
   ```
 - File pattern: `session-open-*.md`
 - Resolution log: `.claude/logs/session-archive.jsonl`

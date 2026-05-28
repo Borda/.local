@@ -46,7 +46,6 @@ Mark GPU tests with `@pytest.mark.gpu` and `@pytest.mark.skipif(not torch.cuda.i
 
 > **Determinism with `num_workers > 0`**: when the DataLoader uses worker processes, **each worker has its own RNG state**. Reproducibility tests are non-deterministic unless every worker is seeded via `worker_init_fn`. The `reset_random_seeds` autouse fixture seeds the main process only — it does NOT propagate into worker processes. Pass a `worker_init_fn` and a `torch.Generator` to `DataLoader`, or restrict tests to `num_workers=0`.
 
-<!-- extraction-candidate: high — DataLoader pattern; candidate for bin/ extraction per bin-authoring-guide.md -->
 ```python
 import random
 import numpy as np

@@ -79,7 +79,7 @@
    Call TaskUpdate(in_progress) when starting; TaskUpdate(completed) when done.
    ```
 
-**Health monitoring** (CLAUDE.md §8): after spawning all agents in step 4, create checkpoint via shared helper:
+**Health monitoring** (CLAUDE.md §6): after spawning all agents in step 4, create checkpoint via shared helper:
 
 ```bash
 _HM=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "optimize-team" 2>/dev/null)  # timeout: 5000
@@ -268,7 +268,7 @@ After all hypotheses processed (or user stops early with Ctrl-C / user abort):
 
 4. No teammates to shut down — hypothesis agents completed in Phase A; Phase C implementation agents are one-shot spawns.
 
-**CLAUDE.md §8**: Phase A health monitoring described above (after step 4). Phase C implementation agents = standard single-iteration spawns — same timeouts as R5.
+**CLAUDE.md §6**: Phase A health monitoring described above (after step 4). Phase C implementation agents = standard single-iteration spawns — same timeouts as R5.
 
 **Resume support**: `resume` mode reads `state.json.team_mode` to determine phase:
 

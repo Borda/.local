@@ -474,7 +474,7 @@ Applied N changes — <date>
   Skipped:        N (already covered or too narrow)
 ```
 
-3. Remind user: "Run `/foundry:init` to propagate rule changes to `~/.claude/`"
+3. Remind user: "Run `/foundry:setup` to propagate rule changes to `~/.claude/`"
 
 4. **Git diff gate** — run after all writes complete. Derive the file list dynamically from the working tree so the diff command is executable rather than a literal placeholder:
 
@@ -556,8 +556,8 @@ Read and execute `$EXEC_MD`.
 - Follow-up chains:
 
   - Suggestion accepted for new agent/skill → `/foundry:manage create` to scaffold and register it
-  - Suggestion to enhance existing → edit agent/skill directly, then `/foundry:init`
-  - `lessons` proposals applied → `/foundry:init` to propagate; `/foundry:audit rules` to verify new rule files structurally sound
-  - `executables` extraction complete → `/foundry:init` to propagate bin/ scripts; run `/foundry:audit --efficiency` to confirm `clusters == 0`
+  - Suggestion to enhance existing → edit agent/skill directly, then `/foundry:setup`
+  - `lessons` proposals applied → `/foundry:setup` to propagate; `/foundry:audit rules` to verify new rule files structurally sound
+  - `executables` extraction complete → `/foundry:setup` to propagate bin/ scripts; run `/foundry:audit --efficiency` to confirm `clusters == 0`
 
 </notes>

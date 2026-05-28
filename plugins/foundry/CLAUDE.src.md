@@ -1,3 +1,5 @@
+<!-- source: plugins/foundry/CLAUDE.src.md → ~/.claude/CLAUDE.md via /foundry:setup Step 9b | NOT auto-loaded from cache (non-CLAUDE.md name intentional) -->
+
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default
@@ -20,7 +22,6 @@
 
 - After ANY correction: update `.notes/lessons.md` with preventative rule
 - Write rules that prevent same mistake; iterate until mistake rate drops
-- Review memory and lessons at session start
 
 ### 4. Verification Before Done
 
@@ -28,23 +29,11 @@
 - Ask "would staff engineer approve this?"
 - **Confidence scores**: request `## Confidence` block from every analysis agent (protocol in Output Standards); surface low confidence — never drop uncertain findings
 
-### 5. Demand Elegance (Balanced)
-
-- Non-trivial changes: pause, ask "is there more elegant way?"
-- Fix feels hacky: "Knowing everything I know now, implement elegant solution"
-- Skip for simple, obvious fixes — don't over-engineer
-
-### 6. Autonomous Bug Fixing
+### 5. Autonomous Bug Fixing
 
 Trivial/mechanical (typo, single-file): just fix it — logs, errors, failing tests; no hand-holding. Multi-file or behaviour-changing: follow Root Cause protocol (`rules/debugging.md`).
 
-### 7. Agent Teamwork
-
-- **Delegate to right agent** — task has designated owner → hand off; don't attempt yourself
-- **No territorial behaviour** — never contradict or redo another agent's output; build on it or flag concern constructively
-- **One voice per domain** — orchestrator picks one agent; others stay silent
-
-### 8. Background Agent Health Monitoring
+### 6. Background Agent Health Monitoring
 
 Any orchestrator spawning background agents writing to run directory **must** monitor — `/foundry:calibrate` canonical; skills customize defaults via `<constants>` block.
 
@@ -72,10 +61,10 @@ Operations in `settings.json` pre-approved — execute directly. Operation not c
 
 Teams always user-invoked:
 
-- **Models**: lead = session model; reasoning teammates (foundry:sw-engineer, foundry:qa-specialist, foundry:perf-optimizer, research:scientist) = `opus`; execution teammates (foundry:doc-scribe, foundry:linting-expert, oss:cicd-steward, research:data-steward, foundry:web-explorer) = `sonnet`; max 3–5
+- **Models**: lead = session model; reasoning (foundry:sw-engineer, foundry:qa-specialist, foundry:perf-optimizer, research:scientist) = `opus`; execution (foundry:doc-scribe, foundry:linting-expert, oss:cicd-steward, research:data-steward, foundry:web-explorer) = `sonnet`; max 3–5
 - **Protocol**: every spawn prompt must include `Read ~/.claude/TEAM_PROTOCOL.md and use AgentSpeak v2`; preserve file paths, errors, test results, task IDs; discard verbose output
 - **Security**: `foundry:qa-specialist` auto-includes OWASP Top 10 — no separate security agent
-- **File-based handoff applies in teams**: teammates writing parallel analysis still follow §2 file-handoff protocol — compact JSON envelope back to lead, full output to file
+- **File-based handoff in teams**: teammates writing parallel analysis follow §2 file-handoff protocol — compact JSON envelope back to lead, full output to file
 
 ## Task Management
 
@@ -112,18 +101,6 @@ Prevents zombie tasks accumulating across sessions and showing false progress.
 ## Self-Setup Maintenance
 
 See `.claude/rules/foundry-config.md` for `.claude/` editing checklist (plan mode gate, post-edit steps, XML conventions, sync). See `.claude/rules/claude-config.md` for universal Bash timeout and directory navigation rules.
-
-## Communication
-
-See `.claude/rules/communication.md` for Re: anchor format, progress narration, tone, output routing, breaking findings, and terminal colors.
-
-## External Data & APIs
-
-See `.claude/rules/external-data.md` for pagination rules, completeness requirements, and `gh` CLI usage.
-
-## Output Standards
-
-See `.claude/rules/quality-gates.md` for Confidence block format, Internal Quality Loop, link verification, and output routing rules.
 
 ## Compact Instructions
 

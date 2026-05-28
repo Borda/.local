@@ -229,7 +229,7 @@ Serialize teammates — sw-engineer applies refactor first, then qa-specialist w
 
 **Step T2 — Only after T1 returns success, spawn foundry:qa-specialist (model=sonnet) against the refactored source**. Prompt: "You are a foundry:qa-specialist teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: write characterization tests (Step 3) to build a safety net for the refactor — test the CURRENT (post-refactor) source produced by Teammate 1. Scope constraint: only create/edit files under `tests/`. Do NOT edit source files. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>, refactor_output: $RUN_DIR_LITERAL/refactor-sw-engineer.md}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-qa-specialist.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
 
-Health monitoring (CLAUDE.md §8): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files the spawn block persisted):
+Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files the spawn block persisted):
 
 ```bash
 # timeout: 5000

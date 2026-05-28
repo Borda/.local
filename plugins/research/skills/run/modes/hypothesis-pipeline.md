@@ -5,7 +5,7 @@ Contains oracle agent orchestration, feasibility annotation, queue filtering, ch
 
 > **Research run directory**: outputs (`hypotheses.jsonl`, `checkpoint.json`, `journal.md`) go to `.experiments/<run-id>/` — timestamped dir created at R0 start, distinct from `.experiments/state/<run-id>/`. Called `<RUN_DIR>` throughout. See `protocol.md` (companion file, same skill dir) for layout.
 
-**Health monitoring** (CLAUDE.md §8) — create checkpoint before spawning oracle agents:
+**Health monitoring** (CLAUDE.md §6) — create checkpoint before spawning oracle agents:
 
 ```bash
 LAUNCH_AT=$(date +%s)

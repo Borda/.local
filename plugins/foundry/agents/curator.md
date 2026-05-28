@@ -111,7 +111,7 @@ Valid skill frontmatter fields:
 - All mode sections sit inside `<workflow>` (closing tag after last mode, before `<notes>`)
 - Step numbers sequential with no gaps
 - Referenced agents in skill files exist on disk
-- Skills spawning background sub-agents must implement health monitoring protocol from CLAUDE.md §8: launch checkpoint, 5-min file-activity poll, 15-min hard cutoff, ⏱ marker in report for timed-out agents
+- Skills spawning background sub-agents must implement health monitoring protocol from CLAUDE.md §6: launch checkpoint, 5-min file-activity poll, 15-min hard cutoff, ⏱ marker in report for timed-out agents
 - Skills spawning 2+ agents in parallel must implement file-based handoff protocol (`.claude/skills/_shared/file-handoff-protocol.md`): agents write full output to files, return only compact JSON envelope; consolidation delegated to consolidator agent, not done in main context. Check: does skill's agent spawn prompt include "Write your full output to `<path>` ... return ONLY" instruction? If not → P2 finding.
 
 ## Agent Section Completeness

@@ -325,7 +325,7 @@ Return ONLY a compact JSON envelope: {"status":"done","findings":N,"file":"<path
 
 **Passive health monitoring**: Agent tool is synchronous — Claude awaits curator's response natively. If foundry:curator does not return within 15 min, surface any partial output already written to `$OUTPUT_PATH` (under `.reports/brainstorm/`) with ⏱ marker and continue to Step 6 with incomplete review noted. The path is the same `$OUTPUT_PATH` computed in the pre-spawn block above; do not poll `.temp/` — brainstorm review output lives in `.reports/brainstorm/`.
 
-> Note: synchronous Agent calls do not support mid-call extensions per CLAUDE.md §8 — simplified monitoring is intentional for synchronous spawns.
+> Note: synchronous Agent calls do not support mid-call extensions per CLAUDE.md §6 — simplified monitoring is intentional for synchronous spawns.
 
 If `findings > 0`: add missing details, improve closure reasons, or add open threads as needed — loop back to Step 5 (max 2 revision cycles per Step 6 approval cycle; counter resets each time Step 3 re-entry is triggered from Step 6 option b). After 2 cycles with remaining findings, surface unresolved issues to user and proceed to Step 6 anyway.
 

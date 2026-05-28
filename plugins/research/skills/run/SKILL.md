@@ -228,11 +228,11 @@ Run all checks before touching code. Fail fast with clear message:
 8. **Flag conflict**: if `--colab` and `--compute=docker` both active: print `⚠ --colab and --compute=docker are mutually exclusive. Use one or the other.` and **stop**.
 9. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
 
-**`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:init` (requires `foundry` plugin) from foundry plugin to `.claude/skills/_shared/`). If not found:
+**`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:setup` (requires `foundry` plugin) from foundry plugin to `.claude/skills/_shared/`). If not found:
 
 ```bash
-# codex-delegation.md is deployed by /foundry:init to .claude/skills/_shared/ (requires foundry plugin — if absent, R7 Codex delegation is skipped automatically)
-[ -f ".claude/skills/_shared/codex-delegation.md" ] || echo "⚠ .claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:init (requires foundry plugin) to install it."
+# codex-delegation.md is deployed by /foundry:setup to .claude/skills/_shared/ (requires foundry plugin — if absent, R7 Codex delegation is skipped automatically)
+[ -f ".claude/skills/_shared/codex-delegation.md" ] || echo "⚠ .claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:setup (requires foundry plugin) to install it."
 ```
 
 Set `CODEX_DELEGATION_AVAILABLE=true` if found, `false` otherwise. Continue regardless.
@@ -248,7 +248,7 @@ else
     VERIFY_TIMEOUT_SEC="${VERIFY_TIMEOUT_SEC:-120}"
 fi
 VERIFY_TIMEOUT_MS=$((VERIFY_TIMEOUT_SEC * 1000))
-# Health-monitoring window per CLAUDE.md §8 — keep aligned with markdown constants in <constants>
+# Health-monitoring window per CLAUDE.md §6 — keep aligned with markdown constants in <constants>
 MONITOR_INTERVAL="${MONITOR_INTERVAL:-300}"   # 5 min poll cadence
 HARD_CUTOFF="${HARD_CUTOFF:-900}"             # 15 min hard cutoff
 ```
@@ -720,6 +720,6 @@ Then re-run with --colab.
 - **State persistence enables resume** — if loop crashes/times out, `resume` picks up exactly where it stopped.
 - **Safety break**: max iterations = 20 (hard cap — values above 20 in program.md are silently clamped to 20 with a warning); skill never exceeds MAX_ITERATIONS.
 - **Explicit flags = hard requirements**: all flags (`--colab`, `--compute=docker`, `--codex`, `--researcher`, `--architect`) must be available at R2. If unavailable, stop — never silently degrade.
-- R7 Codex delegation requires `/foundry:init` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `.claude/skills/_shared/`; R7 is silently skipped if absent.
+- R7 Codex delegation requires `/foundry:setup` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `.claude/skills/_shared/`; R7 is silently skipped if absent.
 
 </notes>

@@ -270,7 +270,7 @@ else
         fi
     fi
 
-    # 8g — init skill: exists in plugin only (not in .claude/skills/), declares required behaviors
+    # 8g — setup skill: exists in plugin only (not in .claude/skills/), declares required behaviors
     SF_SKILL="$PLUGIN_DIR/skills/setup/SKILL.md"
     if [ ! -f "$SF_SKILL" ]; then
         printf "! HIGH: Check 8g — setup SKILL.md not found at %s\n" "$SF_SKILL"

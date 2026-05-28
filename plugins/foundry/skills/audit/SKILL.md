@@ -49,7 +49,7 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 
 <constants>
 
-<!-- Background agent health monitoring (CLAUDE.md §8) — applies to Step 3 foundry:curator spawns -->
+<!-- Background agent health monitoring (CLAUDE.md §6) — applies to Step 3 foundry:curator spawns -->
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
@@ -263,7 +263,7 @@ Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique 
 
 After spawns complete: short summaries in context; use to identify files with findings. Full content in run directory files.
 
-**Health monitoring** (CLAUDE.md §8): after spawning all batches, create a checkpoint:
+**Health monitoring** (CLAUDE.md §6): after spawning all batches, create a checkpoint:
 
 ```bash
 AUDIT_CHECKPOINT="${TMPDIR:-/tmp}/audit-check-$(date +%s)" # timeout: 5000
@@ -350,7 +350,7 @@ Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate
 
 Parse confidence scores from each file's `## Confidence` block in `<RUN_DIR>/<slug>.md` output files (use Glob + Read — batch envelopes carry aggregate confidence, not per-file scores; individual file reports are the authoritative source). For each slug where `Score` < **0.80**, run three parallel passes:
 
-**Health monitoring** (CLAUDE.md §8): before spawning passes A–C, create a checkpoint:
+**Health monitoring** (CLAUDE.md §6): before spawning passes A–C, create a checkpoint:
 
 ```bash
 STEP5B_CHECKPOINT="${TMPDIR:-/tmp}/audit-5b-check-$(date +%s)"  # timeout: 5000

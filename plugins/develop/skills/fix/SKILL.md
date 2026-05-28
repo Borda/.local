@@ -142,7 +142,7 @@ _SPAWN_ARGS="$ARGUMENTS"
 
 **Teammate 2 — foundry:sw-engineer (model=opus) — hypothesis B**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, and `$_SPAWN_ARGS` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read <_DEV_SHARED_LITERAL>/preflight-helpers.md §Team Spawn Template. Bug: <ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to .temp/develop/<TS_LITERAL>/fix-hypothesis-B-<TS_LITERAL>.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
 
-Health monitoring (CLAUDE.md §8): re-derive `$TS` at block start (bash state lost between Bash() calls — read back from temp file the spawn block persisted):
+Health monitoring (CLAUDE.md §6): re-derive `$TS` at block start (bash state lost between Bash() calls — read back from temp file the spawn block persisted):
 
 ```bash
 # timeout: 5000

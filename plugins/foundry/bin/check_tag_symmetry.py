@@ -57,14 +57,20 @@ def check_file(path: Path) -> list[str]:
 
     violations: list[str] = []
 
+    # Strip fenced code blocks (``` ... ```) to avoid counting tags inside them.
+    content_stripped = re.sub(r"```.*?```", "", content, flags=re.DOTALL)
+    # Strip inline backtick spans (`<tag>`) to avoid false positives from
+    # prose that documents structural tag names in inline code.
+    content_stripped = re.sub(r"`[^`\n]+`", "", content_stripped)
+
     for tag in STRUCTURAL_TAGS:
         # Empty block: open + optional whitespace + close
-        if re.search(rf"<{tag}>\s*</{tag}>", content, re.IGNORECASE):
+        if re.search(rf"<{tag}>\s*</{tag}>", content_stripped, re.IGNORECASE):
             violations.append(f"{path}: empty block <{tag}></{tag}>")
 
         # Unbalanced: open count != close count
-        opens = len(re.findall(rf"<{tag}>", content, re.IGNORECASE))
-        closes = len(re.findall(rf"</{tag}>", content, re.IGNORECASE))
+        opens = len(re.findall(rf"<{tag}>", content_stripped, re.IGNORECASE))
+        closes = len(re.findall(rf"</{tag}>", content_stripped, re.IGNORECASE))
         if opens != closes:
             violations.append(f"{path}: unbalanced <{tag}> — {opens} open, {closes} close")
 

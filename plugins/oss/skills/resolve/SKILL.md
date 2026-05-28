@@ -37,8 +37,8 @@ Bare comment text → skip to Codex dispatch (Step 12).
 </inputs>
 
 <constants>
-CHALLENGE_TIMEOUT_S=300  # tightened from CLAUDE.md §8 default 900s
-CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §8 default 300s
+CHALLENGE_TIMEOUT_S=300  # tightened from CLAUDE.md §6 default 900s
+CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §6 default 300s
 # Bash timeout convention — `# timeout: N` annotations in bash blocks are honored by the Claude Code
 # Bash tool (sets tool-level timeout). Shell enforcement (`timeout S cmd` prefix) is NOT required for
 # skills executed exclusively via Claude Code. Shell prefix added only for commands that could hang
@@ -328,7 +328,7 @@ Return ONLY this compact JSON as your FINAL message (nothing after it):
 ")
 ```
 
-> **Health monitoring** — CLAUDE.md §8: checkpoint before spawn; poll every 5 min; hard cutoff 15 min (tighten: use `CHALLENGE_TIMEOUT_S=300` from `<constants>` as the polling interval). On timeout ⏱: fall back to inline execution (fetch GitHub data directly in orchestrator context, classify inline) with explicit warning — never silently produce empty ACTION_ITEMS.
+> **Health monitoring** — CLAUDE.md §6: checkpoint before spawn; poll every 5 min; hard cutoff 15 min (tighten: use `CHALLENGE_TIMEOUT_S=300` from `<constants>` as the polling interval). On timeout ⏱: fall back to inline execution (fetch GitHub data directly in orchestrator context, classify inline) with explicit warning — never silently produce empty ACTION_ITEMS.
 
 Validate and source vars after agent returns:
 
@@ -614,7 +614,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **Merge-push sequencing** — `git merge` and `git push` not atomic; concurrent push to same branch between these steps causes non-fast-forward rejection. Fetch + pull and retry push step only — do not re-run full merge.
 - **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses (loses action-item commits); never `--rebase` (rewrites SHAs); default `--merge`.
 - **Escape hatch**: `git merge --abort` = undo all conflict state; `git push --force-with-lease` (never plain `--force`) only when user explicitly requests — if push rejected after local amend.
-- **Impl agent health**: IMPL_AGENT defaults to `codex:codex-rescue`; subject to CLAUDE.md §8 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file. `--agent foundry:sw-engineer` or other implementation agents: foreground only, no health monitoring needed.
+- **Impl agent health**: IMPL_AGENT defaults to `codex:codex-rescue`; subject to CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file. `--agent foundry:sw-engineer` or other implementation agents: foreground only, no health monitoring needed.
 - **Effort calibration**: effort set per item — never `low`; minimum `medium`; typo/doc/formatting/rename-simple → `medium`; multi-file/architecture/new-feature → `xhigh`; default → `high`; effort prefix in agent prompt; `CHANGE_SCOPE` aggregated for Step 9 test targeting
 - **Two-phase challenge**: evidence phase checks code reality (problem exists?); suggestion phase checks fix quality (right approach?); evidence reject → item skipped; suggestion reject → self-resolved fix using challenger's `alternative` field; all outcomes recorded to `CHALLENGE_LOG` and surfaced in Step 11 report
 - **COMMIT_MODE**: set in Step 3d; `each` = commit after each item (default); `all` = single commit after loop; `stage` = no commits (⚠ branch restore in Step 11 leaves staged changes — warn user before attempting restore)

@@ -11,7 +11,7 @@ Every hook file must start with:
 
 ```js
 #!/usr/bin/env node
- // <filename>.js — <HookType> hook  ← the word `hook` is literal, not a placeholder
+// <filename>.js — <HookType> hook  ← the word `hook` is literal, not a placeholder
 //
 // PURPOSE
 //   <one-paragraph description of what this hook does and why>
