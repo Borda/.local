@@ -274,7 +274,7 @@ Both `--reply` flags produce a two-part shepherd output: an overall PR comment (
 
 ## 🤖 Codex CLI
 
-Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.4-mini`, with 12 specialist agents and a mirrored skill backbone (`review/develop/resolve/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`).
+Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.5`, with 14 specialist agents and a mirrored skill backbone (`review/develop/resolve/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`).
 
 ### Install
 
@@ -429,7 +429,7 @@ AI-Rig/
 ├── .codex/                 # OpenAI Codex CLI
 │   ├── README.md           # full reference: agents, profiles, Claude integration
 │   ├── AGENTS.md           # global instructions and subagent spawn rules
-│   ├── config.toml         # multi-agent config (gpt-5.4-mini baseline)
+│   ├── config.toml         # multi-agent config (gpt-5.5 baseline)
 │   ├── agents/             # per-agent model and instruction overrides
 │   ├── calibration/        # self-calibration harness + fixed task set
 │   └── skills/             # codex-native workflow skills

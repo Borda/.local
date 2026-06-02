@@ -42,6 +42,20 @@
       "write-result.sh",
       "## Fail-fast Rules"
     ],
+    "calibrate": [
+      "behavioral-cases.json",
+      "behavioral-observations.jsonl",
+      "run_id",
+      "observed_at",
+      "recall",
+      "precision",
+      "confidence_accuracy",
+      "mean_overconfidence",
+      "gate_metrics_raw",
+      "by_source",
+      "observation_freshness",
+      "live_observations"
+    ],
     "develop": [
       "## Input Schema",
       "## Workflow \\(Exact Commands\\)",
@@ -68,6 +82,10 @@
     "review": [
       "## Input Schema",
       "## Workflow \\(Exact Commands\\)",
+      "T0 mechanical scope gate",
+      "T2 specialist fan-out",
+      "qa-specialist",
+      "challenger",
       "Cross-check every blocking finding",
       "independent second pass",
       "run-gates.sh",

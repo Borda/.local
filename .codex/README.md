@@ -109,7 +109,7 @@ When to address by name vs letting Codex decide:
 
 Session defaults:
 
-- `model = "gpt-5.4-mini"`
+- `model = "gpt-5.5"`
 - `review_model = "gpt-5.4-mini"`
 - `approval_policy = "on-request"`
 - `sandbox_mode = "workspace-write"`

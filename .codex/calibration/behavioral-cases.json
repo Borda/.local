@@ -1,0 +1,175 @@
+{
+  "cases": [
+    {
+      "expected_findings": [
+        "missing-regression-test",
+        "api-doc-mismatch"
+      ],
+      "id": "review-api-contract",
+      "prompt": "Review a synthetic public API diff that changes accepted input shape, updates no docs, and adds only happy-path tests.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "unsafe-deserialization",
+        "missing-negative-test"
+      ],
+      "id": "review-security-path",
+      "prompt": "Review a synthetic diff that loads user-provided serialized data and adds no negative-path tests.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "ci-matrix-regression",
+        "missing-config-test"
+      ],
+      "id": "review-ci-config-regression",
+      "prompt": "Review a CI diff that changes the Python matrix, removes one platform, and adds no workflow regression check.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "nan-inf-uncovered",
+        "dtype-shape-uncovered",
+        "boundary-test-missing"
+      ],
+      "id": "review-ml-tensor-boundaries",
+      "prompt": "Review an ML tensor utility diff that accepts tensors but tests only one finite float32 shape.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "missing-deprecation-path",
+        "migration-note-missing"
+      ],
+      "id": "review-release-deprecation",
+      "prompt": "Review a diff that removes a public alias and claims it is minor without migration docs or a deprecation path.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "split-leakage-risk",
+        "seed-reproducibility-missing"
+      ],
+      "id": "review-data-leakage",
+      "prompt": "Review a training data change that reshuffles splits without proving seed stability or split isolation.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "none-input",
+        "nan-tensor",
+        "wrong-shape"
+      ],
+      "id": "qa-tensor-boundaries",
+      "prompt": "Assess tests for an ML tensor transform that only checks a normal finite tensor.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "malformed-input",
+        "negative-path-missing"
+      ],
+      "id": "qa-error-path-coverage",
+      "prompt": "Assess tests for a parser that covers valid input but no malformed, missing, or negative-path payload.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "none-input",
+        "empty-input"
+      ],
+      "id": "qa-empty-inputs",
+      "prompt": "Assess tests for a collection transform that checks a populated list but no None or empty input.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "state-leakage",
+        "isolation-test-missing"
+      ],
+      "id": "qa-state-isolation",
+      "prompt": "Assess tests for a cache-backed helper where tests share state and only assert output values.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "public-api-compat",
+        "migration-risk"
+      ],
+      "id": "challenger-migration-risk",
+      "prompt": "Stress-test a plan that renames a public method and claims the migration is low risk without downstream search.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "trust-boundary-unclear",
+        "security-review-missing"
+      ],
+      "id": "challenger-security-assumption",
+      "prompt": "Stress-test a plan that assumes local file input is trusted and skips auth, path traversal, and deserialization review.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "profiling-absent",
+        "metric-baseline-missing"
+      ],
+      "id": "challenger-performance-claim",
+      "prompt": "Stress-test a plan that claims a throughput improvement without baseline metrics or profiling evidence.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "no-blocking-finding-supported"
+      ],
+      "id": "challenger-no-findings",
+      "prompt": "Stress-test a narrow comment-only diff with no behavior or API change and verify that non-issues are not escalated.",
+      "target": "challenger"
+    },
+    {
+      "expected_findings": [
+        "secrets-exposure",
+        "credential-logging-risk"
+      ],
+      "id": "security-credential-handling",
+      "prompt": "Audit a diff that adds environment-token handling and logs request headers on failure.",
+      "target": "security-auditor"
+    },
+    {
+      "expected_findings": [
+        "overbroad-token-permissions",
+        "missing-trusted-publishing"
+      ],
+      "id": "cicd-release-permissions",
+      "prompt": "Audit a release workflow that uses broad write permissions and token-based publishing.",
+      "target": "cicd-steward"
+    },
+    {
+      "expected_findings": [
+        "migration-contract-undefined",
+        "compatibility-risk"
+      ],
+      "id": "architecture-api-migration",
+      "prompt": "Assess a migration plan that changes a public constructor and leaves compatibility ownership undefined.",
+      "target": "solution-architect"
+    },
+    {
+      "expected_findings": [
+        "train-val-leakage",
+        "seed-policy-missing"
+      ],
+      "id": "data-split-reproducibility",
+      "prompt": "Assess a dataset split change with random shuffling and no seed, stratification, or leakage guard.",
+      "target": "data-steward"
+    }
+  ],
+  "thresholds": {
+    "max_confidence_mae": 0.2,
+    "max_mean_overconfidence": 0.15,
+    "min_observations": 16,
+    "min_precision": 0.75,
+    "min_recall": 0.75
+  },
+  "version": "1.1"
+}

@@ -28,7 +28,7 @@
       "goal": "Validate codex mirrored stack and detect leaks",
       "id": "calibrate-001",
       "skill": "calibrate",
-      "success": "calibration status and leaks are present"
+      "success": "calibration status, leaks, recall, precision, and confidence accuracy are present"
     },
     {
       "goal": "Check release readiness with SemVer safety",

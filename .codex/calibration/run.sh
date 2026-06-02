@@ -10,6 +10,10 @@ PROJECT_CFG="$ROOT/.codex/config.toml"
 HOME_CFG="$HOME/.codex/config.toml"
 TASKS="$ROOT/.codex/calibration/tasks.json"
 BENCHMARKS="$ROOT/.codex/calibration/benchmarks.json"
+BEHAVIORAL_CASES="$ROOT/.codex/calibration/behavioral-cases.json"
+BEHAVIORAL_OBSERVATIONS="$ROOT/.codex/calibration/behavioral-observations.jsonl"
+BEHAVIORAL_SCORER="$ROOT/.codex/calibration/score_behavioral.py"
+BEHAVIORAL_RESULT="$OUT_DIR/behavioral.json"
 SKILLS=(review develop resolve audit calibrate release investigate sync manage analyse optimize research)
 AGENTS=(sw-engineer qa-specialist squeezer doc-scribe security-auditor data-steward cicd-steward linting-expert oss-shepherd solution-architect web-explorer curator challenger scientist)
 
@@ -79,11 +83,11 @@ check_model() {
   local file="$1"
   local label="$2"
   local check_id="$3"
-  if check_model_value "$file" "gpt-5.4-mini"; then
+  if check_model_value "$file" "gpt-5.5"; then
     echo "$label:model=ok" >> "$OUT_DIR/checks.txt"
   else
     echo "$label:model=fail" >> "$OUT_DIR/checks.txt"
-    echo "model-not-gpt-5.4-mini:$file" >> "$OUT_DIR/leaks.txt"
+    echo "model-not-gpt-5.5:$file" >> "$OUT_DIR/leaks.txt"
     mark_check_failed "$check_id"
     FAILS=$((FAILS + 1))
     LEAKS=$((LEAKS + 1))
@@ -173,6 +177,27 @@ fi
 if [[ ! -f "$BENCHMARKS" ]]; then
   echo "missing-benchmarks:$BENCHMARKS" >> "$OUT_DIR/leaks.txt"
   mark_check_failed "benchmark-pattern-checks"
+  FAILS=$((FAILS + 1))
+  LEAKS=$((LEAKS + 1))
+fi
+
+if [[ ! -f "$BEHAVIORAL_CASES" ]]; then
+  echo "missing-behavioral-cases:$BEHAVIORAL_CASES" >> "$OUT_DIR/leaks.txt"
+  mark_check_failed "behavioral-metrics"
+  FAILS=$((FAILS + 1))
+  LEAKS=$((LEAKS + 1))
+fi
+
+if [[ ! -f "$BEHAVIORAL_OBSERVATIONS" ]]; then
+  echo "missing-behavioral-observations:$BEHAVIORAL_OBSERVATIONS" >> "$OUT_DIR/leaks.txt"
+  mark_check_failed "behavioral-metrics"
+  FAILS=$((FAILS + 1))
+  LEAKS=$((LEAKS + 1))
+fi
+
+if [[ ! -f "$BEHAVIORAL_SCORER" ]]; then
+  echo "missing-behavioral-scorer:$BEHAVIORAL_SCORER" >> "$OUT_DIR/leaks.txt"
+  mark_check_failed "behavioral-metrics"
   FAILS=$((FAILS + 1))
   LEAKS=$((LEAKS + 1))
 fi
@@ -289,6 +314,60 @@ if [[ -f "$OUT_DIR/leaks.txt" ]]; then
   fi
 fi
 
+if [[ -f "$BEHAVIORAL_CASES" && -f "$BEHAVIORAL_OBSERVATIONS" && -f "$BEHAVIORAL_SCORER" ]]; then
+  if python3 "$BEHAVIORAL_SCORER" \
+    --cases "$BEHAVIORAL_CASES" \
+    --observations "$BEHAVIORAL_OBSERVATIONS" \
+    --out "$BEHAVIORAL_RESULT" >/dev/null; then
+    BEHAVIORAL_STATUS="$(python3 - "$BEHAVIORAL_RESULT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text())
+overall = payload["overall"]
+freshness = payload.get("observation_freshness", {})
+print(
+    "status={status}:recall={recall}:precision={precision}:confidence_accuracy={confidence_accuracy}:live_observations={live_observations}".format(
+        status=payload["status"],
+        recall=overall["recall"],
+        precision=overall["precision"],
+        confidence_accuracy=overall["confidence_accuracy"],
+        live_observations=freshness.get("live_observations", 0),
+    )
+)
+PY
+)"
+    echo "behavioral:$BEHAVIORAL_STATUS" >> "$OUT_DIR/checks.txt"
+    if [[ "$BEHAVIORAL_STATUS" == status=fail:* ]]; then
+      BEHAVIORAL_FAIL_COUNT="$(python3 - "$BEHAVIORAL_RESULT" "$OUT_DIR/leaks.txt" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text())
+leaks_path = Path(sys.argv[2])
+checks_failed = payload.get("checks_failed", [])
+if not checks_failed:
+    checks_failed = ["behavioral-status"]
+with leaks_path.open("a", encoding="utf-8") as handle:
+    for check in checks_failed:
+        handle.write(f"behavioral-fail:{check}\n")
+print(len(checks_failed))
+PY
+)"
+      mark_check_failed "behavioral-metrics"
+      FAILS=$((FAILS + BEHAVIORAL_FAIL_COUNT))
+      LEAKS=$((LEAKS + BEHAVIORAL_FAIL_COUNT))
+    fi
+  else
+    echo "behavioral-scorer-error:$BEHAVIORAL_SCORER" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "behavioral-metrics"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+fi
+
 STATUS="pass"
 if [[ "$FAILS" -gt 0 || "$LEAKS" -gt 0 ]]; then
   STATUS="fail"
@@ -299,7 +378,7 @@ if [[ "${#CHECKS_FAILED[@]}" -gt 0 ]]; then
   CHECKS_FAILED_CSV="$(IFS=,; echo "${CHECKS_FAILED[*]}")"
 fi
 
-python3 - "$OUT_DIR/result.json" "$STATUS" "$TS" "$FAILS" "$LEAKS" "$CHECKS_FAILED_CSV" <<'PY'
+python3 - "$OUT_DIR/result.json" "$STATUS" "$TS" "$FAILS" "$LEAKS" "$CHECKS_FAILED_CSV" "$BEHAVIORAL_RESULT" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -310,6 +389,8 @@ timestamp = sys.argv[3]
 fail_count = int(sys.argv[4])
 leak_count = int(sys.argv[5])
 checks_failed = [check for check in sys.argv[6].split(",") if check]
+behavioral_path = Path(sys.argv[7])
+behavioral = json.loads(behavioral_path.read_text()) if behavioral_path.exists() else None
 
 payload = {
     "status": status,
@@ -326,6 +407,7 @@ payload = {
         "agent-model-policy",
         "fixed-task-set",
         "benchmark-pattern-checks",
+        "behavioral-metrics",
         "shared-script-selftests",
     ],
     "checks_failed": checks_failed,
@@ -338,9 +420,11 @@ payload = {
     "confidence": 0.95,
     "artifact_path": f".reports/codex/calibration/{timestamp}/result.json",
     "leaks_found": leak_count,
+    "behavioral": behavioral,
     "artifacts": {
         "checks": f".reports/codex/calibration/{timestamp}/checks.txt",
         "leaks": f".reports/codex/calibration/{timestamp}/leaks.txt",
+        "behavioral": f".reports/codex/calibration/{timestamp}/behavioral.json",
         "result": f".reports/codex/calibration/{timestamp}/result.json",
     },
 }
