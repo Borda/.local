@@ -70,6 +70,7 @@ Read `$DATA_FILE` fully via Read tool. Parse JSONL records into in-memory struct
 
 ```bash
 ANALYSIS_NOW=$(jq -r '.timestamp // empty' "$DATA_FILE" 2>/dev/null | head -1 || TZ=UTC date +%s)  # timeout: 5000
+CUTOFF_30D=$((ANALYSIS_NOW - 30*86400))  # CRITICAL-1 fix: explicit 30-day cutoff for Axis 9B window_30d filter
 ```
 
 ## Step 3 — Score Axes
@@ -82,7 +83,7 @@ _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/warden-oss-shared" 2>/dev/null || echo "plugi
 Read `$_OSS_SHARED/vitality-scoring.md` fully. Score each axis in assigned group per rubric. Use raw data from Step 2.
 
 **Group A** — any order (all independent; no cross-axis dependency; no internal parallelism needed):
-1. Axis 1 — Responsiveness: use `responsiveness_gql`; compute median_issue_response_days, median_pr_response_days, pct_responded_7d, pct_unresponded per rubric; exclude author's own responses
+1. Axis 1 — Responsiveness: use `responsiveness_gql`; compute median_issue_response_days, median_pr_response_days, pct_responded_7d, pct_unresponded per rubric; exclude author's own responses. **Zero-sample guard**: if PR sample count = 0 (no PRs in window), set `median_pr_response_days = "N/A"` and exclude PR metrics from the axis score — use issue metrics only; note data gap in signal string
 2. Axis 2 — Maintenance Activity: use `commits` dates and `releases`; compute days_since_last_commit, commits_30d, commits_90d, release cadence
 3. Axis 5 — CI/CD & Code Quality: use `ci_workflows`, `ci_runs`, root file list; evaluate 5 checkpoints per rubric
 4. Axis 6 — Documentation: use README content, root file list, `.github/` directory listing, CONTRIBUTING.md content; evaluate 9 checkpoints per rubric
@@ -90,16 +91,16 @@ Read `$_OSS_SHARED/vitality-scoring.md` fully. Score each axis in assigned group
 **Group B** — any order (all independent; no cross-axis dependency):
 1. Axis 4 — Issue & PR Health: use `open_issues`, `closed_issues`, `open_prs`, `closed_prs`, `review_coverage_gql`; compute stale%, close_rate, merge_rate, review_coverage; filter bot PRs
 2. Axis 7 — Governance: use root file list, `.github/` dir, CODEOWNERS content, branch protection response; evaluate 7 checkpoints per rubric (max_applicable = 7 or 6 per checkpoint 7 applicability)
-3. Axis 8 — Security Posture: use `dependabot_alerts` (403-tolerant), dep config signals, SECURITY.md depth; apply partial-scoring formula when Dependabot 403
+3. Axis 8 — Security Posture: use `dependabot_alerts` (403-tolerant), `secret_scanning_alerts` (403-tolerant), dep config signals, SECURITY.md depth; apply partial-scoring formula when Dependabot 403. For `secret_scanning_alerts`: if record is non-403 and non-empty, treat each open alert as equivalent risk to a Dependabot high alert — integrate into the scoring bands the same way Dependabot high-severity counts do; if 403 or absent, mark secret scanning signal as unavailable (does not trigger ⚪)
 
 **Group C** — sequential (Axis 3 FIRST, mandatory):
-1. Axis 3 — Contributor Health: use `contributor_stats` (weeks[] data); filter bots; compute bus_factor, top_contributor_pct, retention_rate; apply 202-fallback from `commits_50` if stats unavailable; after scoring, write an **intermediate** JSON to `PARTIAL_FILE` with only `{"axis3_weeks": [...]}` (or `{"axis3_weeks": null}` on fallback) — this is temporary passthrough for Axis 9A; Step 4 will overwrite PARTIAL_FILE with the complete final structure. Bash variables don't persist across tool calls — must persist via file.
+1. Axis 3 — Contributor Health: use `contributor_stats` (weeks[] data); filter bots; compute bus_factor, top_contributor_pct, retention_rate; apply 202-fallback from `commits_50` if stats unavailable; after scoring, write an **intermediate** JSON to `${PARTIAL_FILE%.json}-axis3-tmp.json` (NOT to `PARTIAL_FILE` — intermediate write must not trigger health monitor's file-existence signal prematurely) with only `{"axis3_weeks": [...]}` (or `{"axis3_weeks": null}` on fallback) — temporary passthrough for Axis 9A; Step 4 writes final PARTIAL_FILE. Bash variables don't persist across tool calls — must persist via file.
 2. Axis 9 — Trajectory: after Axis 3 intermediate write complete, score all 4 sub-signals:
-   - 9A (reviewer pool drift): reads `axis3_weeks` from the **intermediate** `PARTIAL_FILE` written by Axis 3 above (not bash variable); compute shrinkage_ratio from pool_recent vs pool_prior; if Axis 3 used fallback (`axis3_weeks: null`), mark 9A ⚪
+   - 9A (reviewer pool drift): reads `axis3_weeks` from `${PARTIAL_FILE%.json}-axis3-tmp.json` written by Axis 3 above (not bash variable); compute shrinkage_ratio from pool_recent vs pool_prior; if Axis 3 used fallback (`axis3_weeks: null`), mark 9A ⚪
    - 9B (time-to-merge trend): uses `merged_prs_90d`; filter bots; compute median_30d vs median_90d; trend_ratio
    - 9C (queue staleness depth): uses `open_issues` (reused from JSONL); compute P90 age
    - 9D (commit substance ratio): uses `commits_50`; dep_ratio = dep-bump commits / total
-   - **star velocity (Axis 8B sub-signal)**: if `star_dates` absent from DATA_FILE (gh-scraper does not collect per-star timestamps), skip star velocity scoring entirely — mark as N/A with note "star data unavailable"; do not infer or estimate star velocity from total star count alone
+   - **star velocity (Axis 9E sub-signal)**: if `star_dates` absent from DATA_FILE (gh-scraper does not collect per-star timestamps), skip star velocity scoring entirely — mark as N/A with note "star data unavailable"; do not infer or estimate star velocity from total star count alone. Note: this is a trajectory sub-signal (Axis 9), not a security sub-signal (Axis 8)
    - Axis 9 overall = mean of available sub-signals (0–10 float)
 
 Per axis, produce result object:
@@ -129,7 +130,7 @@ Unavailable axes (all API calls failed):
 ⚪ axes: set `score: null` and `conf: 0.0` in partial file (assembler treats null as excluded from health score).
 
 Signal string formats (must match scorecard Key Signal column):
-- Axis 1: `"median issue ${median_issue_response_days}d, PR ${median_pr_response_days}d; ${pct_responded_7d_pct}% ≤7d"`
+- Axis 1: `"median issue ${median_issue_response_days}d, PR ${median_pr_response_days}d; ${pct_responded_7d_pct}% ≤7d"` (use `"N/A"` for `median_pr_response_days` when zero PRs in sample)
 - Axis 2: `"last commit ${days_since_last_commit}d, ${commits_30d} commits/30d"`
 - Axis 3: `"bus factor ${bus_factor}, retention ${retention_pct}%"`
 - Axis 4: `"stale ${stale_pct}%, close rate ${close_rate}, review cov ${review_coverage_pct}%"`
@@ -198,7 +199,7 @@ echo "[repo-warden] group=$AXIS_GROUP complete → $PARTIAL_FILE"  # timeout: 50
 
 Compute group confidence as mean of per-axis confidence values (exclude ⚪ axes with conf=0.0; if all ⚪ return 0.0). Cap: strictly less than half assigned axes scored (e.g. 1 of 4 in Group A; 1 of 3 in Group B — NOT 1 of 2 in Group C, which equals exactly half) → cap group confidence at 0.7 to reflect incomplete coverage.
 
-**Group C multi-axis cap**: when processing more than 3 axes, cap Confidence Score at 0.85 regardless of how thorough the analysis — multi-axis coverage in one pass has inherent gaps. (Group C currently scores 2 axes — Axis 3 and Axis 9 with 4 sub-signals; if expanded to >3 distinct axes in future, this cap applies.)
+**Group C multi-axis cap**: when processing more than 3 **top-level axes** (Axis 3 and Axis 9 count as 2 regardless of sub-signals), cap Confidence Score at 0.85 regardless of how thorough the analysis. For cap purposes, "axes" = distinct top-level axes only (Axis 3, Axis 9) — Axis 9 sub-signals (9A, 9B, 9C, 9D) count as one axis; Group C currently scores 2 axes so this cap never triggers unless scope expands.
 
 Return ONLY this JSON as final output:
 

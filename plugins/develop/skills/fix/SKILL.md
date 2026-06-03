@@ -1,7 +1,7 @@
 ---
 name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop."
-argument-hint: '<symptom or issue # (plain 123 or #123)> [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -50,7 +50,18 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
-**Optional `--plan <path>`**: if `$ARGUMENTS` ends with `--plan <path>`, read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
+**Language preflight gate**: after runner-detection.md, check project type:
+
+```bash
+# Abort early on non-Python repos — toolchain assumes pytest  # timeout: 5000
+if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; then
+    NON_PY=$(ls package.json Cargo.toml go.mod 2>/dev/null | head -1)
+fi
+```
+
+If `NON_PY` is non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
+
+**Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
@@ -76,26 +87,33 @@ CHALLENGE_ENABLED=true
 ACCEPT_NO_PLAN=false
 SEMBLE_ENABLED=false
 TEAM_MODE=false
+REPO_NAME=""
 [[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
 [[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
 [[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
 [[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
+[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
 echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
 echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
 echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
+echo "$REPO_NAME"          > ${TMPDIR:-/tmp}/dev-upstream
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
-`CODEMAP_ENABLED` raw flag — scan `$ARGUMENTS`: `--no-codemap` → `off`; `--codemap` (without preceding `--no-`) → `strict`; else → `auto`. Substitute value below.
+**Codemap flag parsing** — derive raw flag first into shell variable, then normalize via `codemap-resolve`. `$CODEMAP_RAW` is a real shell variable resolved in-block — not an LLM-substitution placeholder:
 
 ```bash
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "<off|strict|auto>") || exit 1  # timeout: 5000; substitute raw flag from rule above
+# timeout: 5000
+CODEMAP_RAW=auto
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
+[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW") || exit 1
 echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -111,7 +129,7 @@ Root cause unclear after initial triage, OR bug spans 3+ modules and user accept
 **Coordination:**
 
 1. Lead broadcasts current evidence: `{bug: <description>, traceback: <key lines>}`
-2. Spawn **foundry:sw-engineer x 2-3 (model=opus)** — each investigates a distinct root-cause hypothesis independently. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`.
+2. Spawn **foundry:sw-engineer x 2 (model=opus)** — each investigates a distinct root-cause hypothesis (A, B) independently. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`. If user wants a third independent investigation, re-invoke with a narrower hypothesis spec rather than auto-scaling here.
 3. Each teammate investigates independently — claims hypothesis; returns full output to file (file-based handoff protocol).
 4. Lead facilitates cross-challenge between competing analyses.
 5. Lead synthesizes consensus root cause, then proceeds with Steps 2-4 (regression test, fix, review loop) alone.
@@ -160,9 +178,19 @@ Gather all available context about bug:
 > **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
 
 ```bash
-# If issue number: fetch the full issue with comments
-python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+# If issue number: fetch the full issue with comments  # timeout: 6000
+REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+if [ -n "$REPO_NAME" ]; then
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null
+else
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null
+fi
 ```
+
+**Cross-repo adaptation** (when `REPO_NAME` set) — issue was filed against a different codebase. After fetching issue, the analysis must:
+1. Understand the bug's root cause intent from the issue body — not just the symptoms or described fix (which may reference upstream structure)
+2. Locate the equivalent bug in LOCAL codebase — run Grep for relevant symbols/patterns; the code paths may differ due to divergence
+3. Treat the upstream issue as context, not as a prescription — implement the fix appropriate to local structure
 
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
 

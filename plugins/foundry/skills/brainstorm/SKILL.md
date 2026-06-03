@@ -85,8 +85,17 @@ On **(a)**:
 # timeout: 3000
 mkdir -p .plans/blueprint
 SIDECAR=".plans/blueprint/brainstorm-$(date -u +%Y-%m-%dT%H-%M-%SZ).json"
+echo "$SIDECAR" > "${TMPDIR:-/tmp}/brainstorm-state-sidecar"
 echo "$SIDECAR"
 ```
+
+**Persistence note**: shell variables do NOT persist across separate Bash calls. The `echo "$SIDECAR" > "${TMPDIR:-/tmp}/brainstorm-state-sidecar"` step above writes the path to a state file. At the top of every subsequent Bash block that references `$SIDECAR` (Steps 3–4), re-read it:
+
+```bash
+SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar" 2>/dev/null || echo "")
+```
+
+If `$SIDECAR` is empty after re-read, treat as viewer opt-out and skip all sidecar Write steps.
 
 Record `$SIDECAR` path — referenced in Steps 3 and 4. Write initial JSON to that path using the Write tool:
 
@@ -149,7 +158,7 @@ Before presenting formal branches, run brief free-form idea exchange — 2–3 r
 3. Call a single `AskUserQuestion` combining reaction + branch selection: "How does this look?" with options: (a–e) one per branch (labelled by name, ★ on most promising) · (f) Not quite — [redirect] · (g) Add more branches. User may select 1–3 branches as focus; all others remain open.
 4. Proceed to **Tree operations loop** — branches must reflect any redirect from (f).
 
-**Skip on re-entry**: when looping back from Step 6 (b) "Needs more exploration", skip pre-seeding exchange — go straight to seeding with existing tree context.
+**Skip on re-entry**: when looping back from Step 6 (b) "Needs more exploration", skip BOTH the pre-seeding exchange AND the Seeding the tree section — go straight to the Tree operations loop with existing branches as starting state. Do NOT re-seed (do NOT present new top-level branches as if starting fresh); user's previous tree is the operand for re-entry operations (add, close, deepen, etc.).
 
 ### Seeding the tree
 

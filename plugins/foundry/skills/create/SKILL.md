@@ -68,7 +68,8 @@ On (d): revise arc, re-present, re-invoke this question. After (a)/(b)/(c): rest
 
 - Derive slug from topic: kebab-case, max 5 words (e.g. `tracing-python-services-otel`).
 - Write creates `.plans/content/` if absent — no separate mkdir needed.
-- Write `.plans/content/<slug>-outline.md` with this structure:
+- **Anti-overwrite check before writing the outline**: list existing files matching `.plans/content/<slug>-outline*.md` (Bash `ls -1 .plans/content/<slug>-outline*.md 2>/dev/null || true`). If `.plans/content/<slug>-outline.md` already exists, append the smallest available counter suffix (`-2`, `-3`, …) per quality-gates.md output routing convention. Resulting path becomes the new `<outline-path>`; use it in the Write call AND in the Step 4 gate spawn prompt below. Print the resolved path before writing.
+- Write `<outline-path>` with this structure:
 
 ```md
 ---
@@ -117,17 +118,22 @@ created: YYYY-MM-DD
   Every supported format currently renders to a markdown source file, so `<ext>` resolves to `md` in every branch — but the substitution must still happen explicitly so the artifact path on disk is `.plans/content/<slug>.md`, not `.plans/content/<slug>.<ext>`. If a future format uses a different extension, extend the table.
 
 - End with an `AskUserQuestion` gate with two options:
-  (a) **Generate the full artifact now** — spawn `foundry:creator` via `Agent(subagent_type='foundry:creator', prompt='Read .plans/content/<slug>-outline.md and generate the complete <format> artifact. Output file path: .plans/content/<slug>.<ext>')` where `<slug>`, `<format>`, and `<ext>` are substituted from the generated outline (see extension table above) before the call — never pass literal angle-bracket placeholders to the spawned agent.
+  (a) **Generate the full artifact now** — spawn `foundry:creator` via `Agent(subagent_type='foundry:creator', prompt='Read <outline-path> and generate the complete <format> artifact. Output file path: .plans/content/<slug>.<ext>')` where `<outline-path>` is the resolved path from the anti-overwrite step above, and `<slug>`, `<format>`, `<ext>` are substituted from the generated outline (see extension table above) before the call — never pass literal angle-bracket placeholders to the spawned agent.
   (b) **Stop here** — I'll invoke `foundry:creator` manually when ready.
 
-  If the user selects (a), issue the Agent() call in the same response turn. Do not narrate intent — call the tool.
+  **Substitution verification before issuing the Agent call (mandatory)**:
+    1. Construct the final prompt string with all placeholders replaced
+    2. Scan the constructed string for any remaining `<` or `>` characters; if either is present, substitution is incomplete — resolve the missing value(s) before spawning
+    3. Confirm the outline file path in the prompt matches `<outline-path>` exactly (the resolved path including any counter suffix, not a guess)
+
+  If the user selects (a), issue the Agent() call in the same response turn AFTER the verification above passes. Do not narrate intent — call the tool.
 - End with `## Confidence` block per quality-gates.md protocol, score based on outline coverage of topic, arc, audience.
 
 </workflow>
 
 <notes>
 
-- **Execution model**: `disable-model-invocation: true` — Claude itself follows this SKILL.md as workflow template directly in the main context (no autonomous sub-agent dispatch during the outline phase). When the Step 5 gate selects (a), exactly one sub-agent is spawned: `foundry:creator` (executes the outline and writes the full artifact). No other sub-agent invocations are made by this skill.
+- **Execution model**: `disable-model-invocation: true` — Claude itself follows this SKILL.md as workflow template directly in the main context (no autonomous sub-agent dispatch during the outline phase). When the Step 4 gate selects (a), exactly one sub-agent is spawned: `foundry:creator` (executes the outline and writes the full artifact). No other sub-agent invocations are made by this skill.
 
 - 5 questions in baseline flow; up to 7 with arc-conflict resolution (steps 2–4 use exactly 4; step 1 adds one only when $ARGUMENTS absent; arc conflicts in step 3 may add 1–2 more).
 - Each AskUserQuestion uses lettered options with one ★ recommended default.

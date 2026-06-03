@@ -37,8 +37,8 @@ GUARD_CMD_DEFAULT:        "git diff --stat HEAD"
 
 - `METRIC_CMD` — command run inside each variant worktree to measure the ablation metric (default: `python -m pytest -x --tb=no -q`)
 - `GUARD_CMD` — command run inside each variant worktree to detect regressions (default: `git diff --stat HEAD`)
-- `STATE_DIR_BASE` — base directory for source-run state lookups (default: `.developments/fortify-state`)
-- `FORTIFY_DIR_BASE` — base directory for per-run fortify artifacts (default: `.developments/fortify`)
+- `STATE_DIR_BASE` — base directory for source-run state lookups (default: `.experiments/state`)
+- `FORTIFY_DIR_BASE` — base directory for per-run fortify artifacts (default: `.experiments`)
 
 The constants block defaults above are YAML-only — bash blocks read environment variables (with `${VAR:-default}` fallback) and never source values directly from YAML.
 
@@ -73,8 +73,8 @@ Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
 **Initialize base directory bash variables** (constants YAML is not auto-exported; environment overrides honored):
 
 ```bash
-STATE_DIR_BASE="${STATE_DIR_BASE:-.developments/fortify-state}"
-FORTIFY_DIR_BASE="${FORTIFY_DIR_BASE:-.developments/fortify}"
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"
+FORTIFY_DIR_BASE="${FORTIFY_DIR_BASE:-.experiments}"
 METRIC_CMD="${METRIC_CMD:-python -m pytest -x --tb=no -q}"
 GUARD_CMD="${GUARD_CMD:-git diff --stat HEAD}"
 ```
@@ -109,6 +109,12 @@ JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 |
 
 # Program cross-match: confirm verdict was issued for the current experiment's program, not a different one
 PROGRAM_FILE=$(grep -iE '^[*]*(Program(_file)?|Program file)[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
+# F-02 guard: empty PROGRAM_FILE means verdict lacks program metadata — cannot verify applicability
+if [ -z "$PROGRAM_FILE" ]; then
+    echo "fortify: BLOCKED — judge verdict missing Program: field; cannot verify verdict applies to current experiment."
+    echo "Re-run: /research:judge <program.md> to generate a fresh verdict with required metadata."
+    exit 1
+fi
 # Use explicit run-specific state.json path (resolved during F1 input resolution) — never CWD-relative
 STATE_PROGRAM=$(jq -r '.program_file // ""' "$STATE_DIR_BASE/$RUN_ID/state.json" 2>/dev/null)
 if [ -n "$STATE_PROGRAM" ] && [ -n "$PROGRAM_FILE" ] && [ "$PROGRAM_FILE" != "$STATE_PROGRAM" ]; then
@@ -203,15 +209,23 @@ LAUNCH_AT_F2=$(echo "$_HM_F2" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_F2=$(echo "$_HM_F2" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
-Poll every 5 min: `find <FORTIFY_DIR> -newer "$CHECKPOINT_F2" -type f | wc -l` (`timeout: 5000`) — new files = alive; zero = stalled.
+Poll every 5 min: `find "$FORTIFY_DIR" -newer "$CHECKPOINT_F2" -type f | wc -l` (`timeout: 5000`) — new files = alive; zero = stalled.
 
 - **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 <FORTIFY_DIR>/candidates-analysis.md` shows active progress, grant one extension; second stall = hard cutoff
-- **On timeout**: stop with `"fortify: Scientist timed out. Check <FORTIFY_DIR>/ for partial output."`; surface with ⏱
+- **One extension (+5 min)**: if `tail -20 "$FORTIFY_DIR"/candidates-analysis.md` shows active progress, grant one extension; second stall = hard cutoff
+- **On timeout**: stop with `"fortify: Scientist timed out. Check $FORTIFY_DIR/ for partial output."`; surface with ⏱
 
 Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations <M>` specified and component count + 1 (for full variant) exceeds M: sort by `expected_importance` (HIGH first, then MEDIUM, then LOW), keep top M-1 components plus always include `full` sanity-check variant. **Log dropped components**: print a warning listing each dropped component by `component_id` and `expected_importance` so users can verify the scientist's importance estimates before proceeding. Include this list in the F7 report under `## Dropped Variants`.
 
-**`--skip-run` early exit**: if `--skip-run` flag present, print candidate table (component_id, name, description, files, expected_importance) and exit. No ablation execution. Mark tasks F3, F4, F5, F6, F7 as `skipped` via TaskUpdate. Print: `"fortify: --skip-run — <N> candidates identified. Next: /research:fortify without --skip-run"`. Jump to F8 (skip-run variant).
+**`--skip-run` early exit**: if `--skip-run` flag present, print candidate table (component_id, name, description, files, expected_importance) and exit. No ablation execution. Mark tasks F3, F4, F5, F6, F7 as `skipped` via TaskUpdate. Print all three lines (no `.reports/research/fortify-*.md` is written in `--skip-run` mode — only `ablation-candidates.jsonl` lives under `$FORTIFY_DIR`; surface `$FORTIFY_DIR` explicitly so the user can locate the candidate list):
+
+```text
+fortify: --skip-run — <N> candidates identified.
+Candidates artifact: $FORTIFY_DIR/ablation-candidates.jsonl
+Next: /research:fortify without --skip-run to execute ablations
+```
+
+Jump to F8 (skip-run variant).
 
 ## Step F3: Generate ablation variants
 
@@ -232,8 +246,17 @@ Run each variant **sequentially** — parallel worktrees would conflict.
 
 ```bash
 ORIG_DIR="$(pwd)"  # timeout: 3000
-WORKTREE_PATHS_FILE=$(mktemp -t fortify-XXXX)  # timeout: 3000
+WORKTREE_PATHS_FILE=$(mktemp -t fortify-XXXX) || { echo "! BLOCKED — mktemp failed (tmpfs full or permission denied); cannot create cleanup accumulator. Aborting."; exit 1; }  # timeout: 3000
 echo "$WORKTREE_PATHS_FILE" > "${TMPDIR:-/tmp}/fortify-paths-ptr"  # persist for trap block
+
+# F-04: validate best_commit resolves to a concrete SHA (not a branch name) — `git worktree add` with a branch tip
+# would advance the branch and pollute shared history on subsequent `git revert`.
+if ! best_commit_sha=$(git rev-parse --verify "$best_commit^{commit}" 2>/dev/null); then
+    echo "! BLOCKED — best_commit '$best_commit' does not resolve to a commit. Re-run source experiment or correct state.json."
+    exit 1
+fi
+# Substitute resolved SHA for any branch-name input; downstream `git worktree add` now always sees a SHA → detached HEAD.
+best_commit="$best_commit_sha"
 ```
 
 **On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. The trap below makes interrupt cleanup automatic — never rely on prose-only cleanup discipline.
@@ -246,8 +269,16 @@ For each variant in `variants.jsonl`:
 # variant_spec = the JSON line currently being processed from variants.jsonl
 # Slugify: lowercase, spaces to hyphens, strip leading "variant-" if already present
 VARIANT_NAME="variant-$(echo "$variant_spec" | jq -r '.variant_name' 2>/dev/null | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
-# Fallback when variant_spec is just the bare name (not full JSON object):
-[ -z "$VARIANT_NAME" ] || [ "$VARIANT_NAME" = "variant-null" ] && VARIANT_NAME="variant-$(echo "${variant_spec:-unnamed}" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
+# Fallback when variant_spec is just the bare name (not full JSON object) OR jq returned empty/null/error.
+# Covers: empty (`variant-`), JSON null (`variant-null`), plain-text input that jq cannot parse.
+if [ -z "$VARIANT_NAME" ] || [ "$VARIANT_NAME" = "variant-null" ] || [ "$VARIANT_NAME" = "variant-" ]; then
+    VARIANT_NAME="variant-$(echo "${variant_spec:-unnamed}" | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
+fi
+# Final hard guard: after both attempts, VARIANT_NAME must be non-trivial (more than just "variant-").
+if [ "$VARIANT_NAME" = "variant-" ] || [ -z "$VARIANT_NAME" ]; then
+    echo "! BLOCKED — could not derive non-empty VARIANT_NAME from variant_spec; check variants.jsonl format. Skipping iteration."
+    continue
+fi
 ```
 
 **4a. Create isolated worktree at best_commit:**

@@ -2,12 +2,19 @@
 """Strip a leading ``#`` from an issue number and fetch the GitHub issue via ``gh``.
 
 Usage:
-    issue_fetch.py <issue-number-with-optional-hash>
+    issue_fetch.py <issue-number-with-optional-hash> [--repo <owner/repo>]
 
 Behaviour:
-    Forwards ``gh issue view <num> --comments`` with stdout/stderr inherited from the
-    caller. Validates that the stripped argument is digits-only and exits 1 with a stderr
-    message otherwise. Propagates ``gh``'s exit code on success.
+    Forwards ``gh issue view <num> --comments [--repo <owner/repo>]`` with
+    stdout/stderr inherited from the caller. Validates that the stripped
+    argument is digits-only and exits 1 with a stderr message otherwise.
+    Propagates ``gh``'s exit code on success.
+
+    The first positional argument may contain trailing flags (e.g. the full
+    ``$ARGUMENTS`` shell variable including ``--repo owner/repo``). Only the
+    first whitespace-separated token is used as the issue number; the rest is
+    ignored. Pass ``--repo <owner/repo>`` as a separate argument to route the
+    request to an upstream repository (fork workflow).
 
 Exit codes:
     0   — success (``gh`` exited 0).
@@ -51,17 +58,33 @@ def main(argv: list[str] | None = None) -> int:
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
-    raw = args[0] if args else ""
+
+    # Extract --repo flag (supports fork/upstream workflow).
+    repo: str | None = None
+    positional: list[str] = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--repo" and i + 1 < len(args):
+            repo = args[i + 1]
+            i += 2
+        else:
+            positional.append(args[i])
+            i += 1
+
+    # The first positional arg may be the raw ``$ARGUMENTS`` string which can include
+    # trailing flags (e.g. "123 --repo owner/repo"). Extract only the first token.
+    raw_str = positional[0] if positional else ""
+    raw = raw_str.split()[0] if raw_str.strip() else ""
     issue_num = raw.lstrip("#")
     if not issue_num or not issue_num.isdigit():
         print(f"issue-fetch: invalid issue number: '{issue_num}'", file=sys.stderr)
         return 1
     gh = _resolve("gh")
+    cmd = [gh, "issue", "view", issue_num, "--comments"]
+    if repo:
+        cmd += ["--repo", repo]
     # stdout/stderr inherited from caller — caller sees combined output as in bash `2>&1`.
-    result = subprocess.run(  # noqa: S603 — resolved binary + fixed argv, no shell.
-        [gh, "issue", "view", issue_num, "--comments"],
-        check=False,
-    )
+    result = subprocess.run(cmd, check=False)  # noqa: S603 — resolved binary + fixed argv, no shell.
     return result.returncode
 
 

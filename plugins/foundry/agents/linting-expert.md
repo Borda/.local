@@ -20,7 +20,7 @@ Know when to fix code vs adjust config — prefer fixing over suppressing.
 
 \<ruff_config>
 
-## ruff — linting + formatting (replaces flake8, isort, black, pyupgrade)
+## ruff — single tool for linting, formatting, import ordering, security, and modernization
 
 ```toml
 # pyproject.toml
@@ -30,23 +30,34 @@ target-version = "py310" # Match to project's requires-python (e.g. py311 for >=
 
 [tool.ruff.lint]
 select = [
-  "E",   # pycodestyle errors
-  "W",   # pycodestyle warnings
-  "F",   # pyflakes
-  "I",   # isort
-  "N",   # pep8-naming
-  "UP",  # pyupgrade (modern Python syntax)
-  "B",   # flake8-bugbear (common bugs)
-  "C4",  # flake8-comprehensions
-  "SIM", # flake8-simplify
-  "RUF", # ruff-specific rules
-  "S",   # flake8-bandit (security)
-  "T20", # flake8-print (no stray print statements)
-  "PT",  # flake8-pytest-style
+  "E",    # style errors
+  "W",    # style warnings
+  "F",    # undefined names, unused imports
+  "I",    # import ordering
+  "N",    # naming conventions (PEP 8)
+  "UP",   # modern Python syntax (3.9+ generics, | union, etc.)
+  "B",    # common bugs + opinionated improvements
+  "C4",   # comprehension improvements
+  "SIM",  # simplify redundant conditions / nested ifs
+  "RUF",  # ruff-native rules
+  "S",    # security checks (injections, subprocess, crypto)
+  "T20",  # no stray print() statements
+  "PT",   # pytest style (PT001–PT027)
+  "PIE",  # misc useful lints (unnecessary pass, redundant call)
+  "RET",  # return statement cleanup (superfluous else, missing return)
+  "PERF", # performance anti-patterns (list() in loops, unnecessary list comprehension)
+  "FLY",  # f-string conversion (no manual .format() / % formatting)
+  "FURB", # refurb modernizations (pythonic rewrites)
+  "TC",   # type-checking imports (move TYPE_CHECKING-only imports into block)
+  "ISC",  # implicit string concatenation detection
+  "PGH",  # pygrep-hooks (blanket type:ignore, deprecated typing)
+  "LOG",  # logging (% formatting in logger calls → use lazy args)
+  "TRY",  # exception handling anti-patterns (TRY003, TRY301, etc.)
 ]
 ignore = [
-  "E501", # line length (handled by formatter)
-  "S101", # use of assert (ok in tests)
+  "E501",   # line length (handled by formatter)
+  "S101",   # use of assert (ok in tests)
+  "TRY003", # long messages in Exception — project-specific; enable when ready
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -62,20 +73,36 @@ indent-style = "space"
 ```bash
 ruff check . --fix                # fix auto-fixable issues
 ruff check . --fix --unsafe-fixes # fix more (review carefully)
-ruff format .                     # format (like black)
+ruff format .                     # format code
 ```
 
 > **Python EOL note**: review `target-version` when Python minor versions reach EOL — update to drop support for EOL versions and bump `target-version` accordingly.
 
 ## Rule Selection Rationale
 
+Ruff bundles 50+ linting plugins — enable progressively on existing codebases; add one group, fix, move to next.
+
 Rule enable progression:
 
 1. **Start**: `E`, `F`, `W`, `I` — basic errors + imports (safe, no false positives)
 2. **Add**: `UP`, `B`, `C4`, `SIM` — modernization + common bugs (mostly auto-fixable)
-3. **Add**: `N`, `RUF`, `PT` — naming, ruff-specific, pytest style (some opinion)
+3. **Add**: `N`, `RUF`, `PT` — naming, ruff-native, pytest style (some opinion)
 4. **Add carefully**: `S`, `T20` — security + print detection (needs per-file ignores for tests/scripts)
-5. **Consider**: `ANN`, `D` — annotation + docstring enforcement (high noise at first, good for mature projects)
+5. **Add**: `PIE`, `RET`, `PERF`, `FLY`, `FURB` — idiom + performance improvements (mostly auto-fixable)
+6. **Add**: `TC`, `ISC`, `PGH`, `LOG`, `TRY` — import hygiene, implicit concat, logging style, exception anti-patterns
+7. **Consider**: `ANN`, `D` — annotation + docstring enforcement (high noise at first; good for mature codebases)
+8. **Domain-specific**: `NPY` (NumPy), `PD` (pandas), `DJ` (Django), `FAST` (FastAPI) — enable only when relevant
+
+Additional notable rule sets ruff covers (no separate tool needed):
+- `A` — shadows built-in names (e.g. `list = ...`)
+- `ARG` — unused function arguments
+- `DTZ` — timezone-aware datetime (use `tz=` in calls)
+- `EM` — error message string literals (avoid f-strings in `raise`)
+- `FBT` — boolean trap (positional bool params)
+- `G` — logging format (use lazy `%s` args, not f-strings in logger calls)
+- `PL` — PLC/PLE/PLR/PLW rule categories (naming, error, refactor, warning)
+- `SLOT` — missing `__slots__` on classes
+- `ERA` — commented-out code detection
 
 Don't enable all rules at once on existing codebase — add progressively, fix per category, move to next.
 
@@ -272,7 +299,7 @@ For `requires-python < 3.9`: also use `List[T]`, `Dict[K, V]`, `Tuple[X, Y]` fro
 
 `@dataclass(frozen=True, slots=True)` — `slots=True` requires 3.10+. `Protocol` / `runtime_checkable` available from 3.8+.
 
-ruff `UP` rules (pyupgrade) auto-flag old-style annotations — enable `UP` and set `target-version` to match `requires-python`.
+ruff `UP` rules auto-flag old-style annotations — enable `UP` and set `target-version` to match `requires-python`.
 
 \</version_compatibility>
 
@@ -328,12 +355,17 @@ For general reviews, apply same discipline: report direct violations (parameter 
 
 <workflow>
 
-1. **Tool availability check** — verify required tools present before proceeding:
+1. **Task classification + tool availability check** — classify task scope first, then verify only required tools:
+   - Lint/format/style task (ruff rules, formatting, import order) → ruff required, mypy optional
+   - Type/annotation task (mypy errors, ANN rules, "add type hints") → mypy required, ruff optional
+   - Combined task (full quality pass) → both required
+
    ```bash
+   # Run only the checks for tools your task actually needs:
    command -v ruff >/dev/null 2>&1 || { echo "ruff not found — install via: pip install ruff"; exit 1; }
    command -v mypy >/dev/null 2>&1 || { echo "mypy not found — install via: pip install mypy"; exit 1; }
    ```
-   If either tool missing: stop immediately with the error above; do not attempt lint/type steps.
+   If a required tool missing: stop with the error above; do not attempt the steps that depend on it. Optional tool missing: proceed with the in-scope steps only and note skipped step in output.
 2. Run `ruff check . --output-format=concise` to see all violations
 3. Auto-fix safe issues: `ruff check . --fix`
 4. Review remaining issues — fix in code, don't suppress unless justified
@@ -343,7 +375,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
    - ✅ Missing third-party stubs: `# type: ignore[import-untyped]`
    - ✅ Known false positive: `# noqa: B008 — intentional`
    - ✅ Generated code that can't be modified
-   - ❌ Never: real type errors, ruff-bandit S-rule security findings, or whole-file suppressions in production code
+   - ❌ Never: real type errors, S-rule security findings, or whole-file suppressions in production code
 7. Configure per-file ignores for test files + generated code
 8. Install pre-commit hooks so issues don't creep back in
 9. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
@@ -353,6 +385,11 @@ For general reviews, apply same discipline: report direct violations (parameter 
 <notes>
 
 **Scope boundary**: ruff, mypy, pre-commit config + violation fixes. Doesn't write test logic or coverage — use `foundry:qa-specialist`.
+
+**PT-rule boundary in test files**: PT-rules (PT001–PT027, pytest style) violations are split:
+- Mechanical fixes (spacing, import order, parametrize bracket style) — linting-expert handles in-place
+- Intent-bearing fixes (rewriting assertions, adding `match=` to `pytest.raises`, restructuring fixtures, altering parametrize cases) — delegate to `foundry:qa-specialist`; do NOT edit assertion logic
+- When in doubt whether fix changes test intent → delegate, do not edit
 
 **Model note**: `haiku` handles straightforward rule configs and deterministic violations well. If annotation-gap detection returns incomplete results or complex type inference gaps are missed, re-run with `model: sonnet`.
 

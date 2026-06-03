@@ -70,6 +70,7 @@ develop enforces a single discipline across the full implementation lifecycle: p
 - Building features safely: `/develop:feature` requires a failing demo test before any implementation — if you cannot write the test, the feature is underspecified
 - Fixing bugs correctly: `/develop:fix` requires a failing regression test that reproduces the bug — you cannot verify the fix until you can reproduce the failure
 - Refactoring without breakage: `/develop:refactor` audits coverage and locks in characterization tests before moving a single line
+- Fork workflows: pass `--upstream <owner/repo>` to `fix`, `debug`, or `feature` to fetch issue context from the original repo while your fix lands in the fork
 
 [Full documentation →](develop.md)
 
@@ -105,10 +106,8 @@ ______________________________________________________________________
 
 ## 📦 Install everything
 
-Run from the directory that **contains** your `Borda-AI-Rig` clone (not from inside it):
-
 ```bash
-claude plugin marketplace add ./Borda-AI-Rig
+claude plugin marketplace add Borda/AI-Rig
 claude plugin install foundry@borda-ai-rig
 claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
@@ -144,7 +143,7 @@ ______________________________________________________________________
 | Fix a bug and prove the fix                     | `/develop:fix`                                                  |
 | Run a structured ML experiment                  | `/research:plan` then `/research:judge` then `/research:run`    |
 | Cut a release with correct SemVer and changelog | `/oss:release`                                                  |
-| Understand blast radius before a refactor       | `/codemap:scan` then `scan-query rdeps <module>`                |
+| Understand blast radius before a refactor       | `/codemap:scan-codebase` then `scan-query rdeps <module>`       |
 | Measure whether agents are drifting in accuracy | `/foundry:calibrate`                                            |
 
 ______________________________________________________________________
@@ -164,7 +163,7 @@ The plugins are designed to be composed. Here are three workflows that span the 
 
 **Codemap → Develop → OSS: safe refactoring**
 
-1. `/codemap:scan` — build the structural index
+1. `/codemap:scan-codebase` — build the structural index
 2. `scan-query central --top 5` — identify the riskiest modules to touch
 3. `/develop:refactor` — lock in characterization tests, then refactor with full blast-radius awareness
 4. `/oss:resolve` — close any review feedback in one pass before merge

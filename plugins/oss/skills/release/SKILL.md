@@ -71,9 +71,9 @@ Gather + explore + validate produce large git/PR output bloating main context. I
    ```bash
    [ -n "$GATHER_FILE" ] && [ -n "$REPO_ROOT" ] && [ -n "$RANGE" ] || { echo "Error: GATHER_FILE, REPO_ROOT, or RANGE is empty — verify Shared setup and Gather changes completed"; exit 1; }  # timeout: 5000
    ```
-   Spawn `Agent(subagent_type="general-purpose")` — expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE` to literal values (REPO_ROOT and GATHER_FILE in Shared setup; RANGE in Gather changes) before spawning:
+   Spawn `Agent(subagent_type="foundry:sw-engineer")` for git/changelog gather — expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE` to literal values (REPO_ROOT and GATHER_FILE in Shared setup; RANGE in Gather changes) before spawning:
    ```text
-   Agent(subagent_type="general-purpose", prompt="Working directory: <REPO_ROOT>. Run all git commands from that directory (use: git -C <REPO_ROOT> <cmd> or cd <REPO_ROOT> first). For git range <RANGE>:
+   Agent(subagent_type="foundry:sw-engineer", prompt="Working directory: <REPO_ROOT>. Run all git commands from that directory (use: git -C <REPO_ROOT> <cmd> or cd <REPO_ROOT> first). For git range <RANGE>:
    Run gather phase: git log, git diff --stat, gh pr list.
    Run classify phase on all commits and PR data.
    Run explore phase: top 3–5 most significant changed files (read actual diffs).
@@ -92,7 +92,7 @@ Gather + explore + validate produce large git/PR output bloating main context. I
    ```
    Pass `$GATHER_FILE` path to artifact phase — do NOT read gather file into main context; artifact agent reads it directly.
 
-`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-${LAST_TAG:-HEAD~20}..HEAD} 2>/dev/null` (reuses `LAST_TAG` derived in Shared setup when available; falls back to `HEAD~20` only when `LAST_TAG` unset). If count exceeds 50, delegate gather to `general-purpose` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood. Define `GATHER_FILE` before spawning (mirrors prepare-mode step 1) so the envelope-validation block above can resolve the path:
+`notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-${LAST_TAG:-HEAD~20}..HEAD} 2>/dev/null` (reuses `LAST_TAG` derived in Shared setup when available; falls back to `HEAD~20` only when `LAST_TAG` unset). If count exceeds 50, delegate gather to `foundry:sw-engineer` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood. Define `GATHER_FILE` before spawning (mirrors prepare-mode step 1) so the envelope-validation block above can resolve the path:
 
 ```bash
 GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
@@ -132,12 +132,21 @@ After matching `notes`, parse flags from `$REST`:
 
 ```bash
 DO_CHANGELOG=false; DO_SUMMARY=false; DO_MIGRATION=false; RANGE=""
+# Detect spaced-arrow form ("v1 -> v2") BEFORE the flag loop — otherwise the loop
+# overwrites RANGE three times across `v1`, `->`, `v2` and ends with RANGE="v2" (arrow
+# lost, lower bound lost). Extract the full arrow expression in one shot.
+_SPACED_RANGE=$(echo "$REST" | grep -oE '[^ ]+[[:space:]]*->[[:space:]]*[^ ]+' | head -1)
+if [ -n "$_SPACED_RANGE" ]; then
+    RANGE=$(echo "$_SPACED_RANGE" | tr -d '[:space:]')  # collapse spaces around ->
+    # Strip the spaced range from REST so the flag loop below doesn't re-process its tokens
+    REST=$(echo "$REST" | sed "s|$_SPACED_RANGE||")
+fi
 for arg in $REST; do
   case "$arg" in
     --changelog)  DO_CHANGELOG=true ;;
     --summary)    DO_SUMMARY=true ;;
     --migration)  DO_MIGRATION=true ;;
-    *)            RANGE="$arg" ;;
+    *)            [ -z "$RANGE" ] && RANGE="$arg" ;;  # don't overwrite spaced-range form
   esac
 done
 # Convert v1->v2 shorthand to git range notation
@@ -173,21 +182,36 @@ Find common base tag across ALL branches. Strategy: `git tag --list` sorted by v
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 [ -z "$RANGE" ] && echo "Error: could not determine commit range" && exit 1
 
+# Quote "$RANGE" throughout — tags can carry unusual characters (e.g. `v1.2-rc.1+build.42`);
+# unquoted expansion would word-split them and feed git the wrong args.
 # One-liner overview (navigation index)
-git log $RANGE --oneline --no-merges # timeout: 3000
+git log "$RANGE" --oneline --no-merges # timeout: 3000
 
 # Full commit messages — read these to catch BREAKING CHANGE footers,
 # co-authors, and details omitted from the subject line
-git log $RANGE --no-merges --format="--- %H%n%B" # timeout: 3000
+git log "$RANGE" --no-merges --format="--- %H%n%B" # timeout: 3000
 
 # File-level diff stat — confirms what areas actually changed
 git diff --stat "$(echo "$RANGE" | sed 's/\.\.\./\ /;s/\.\./\ /')" # timeout: 3000
 
-# PR titles, bodies, and labels for merged PRs (richer context than commits)
-TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | { read -r _ _ val; echo "${val:-main}"; })
-# timeout: 15000
-gh pr list --state merged --base "${TRUNK:-main}" --paginate \
-    --json number,title,body,labels,mergedAt,author 2>/dev/null
+# PR titles, bodies, and labels for merged PRs (richer context than commits).
+# Default-branch detection: prefer gh (auth-backed, no extra network round-trip), then
+# `git remote show origin` as fallback. Never hardcode `main` — repos use `master`,
+# `develop`, `trunk`; hardcoding silently misses non-main-targeted PRs.
+TRUNK=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)  # timeout: 6000
+if [ -z "$TRUNK" ]; then
+    TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | { read -r _ _ val; echo "$val"; })  # timeout: 5000
+fi
+if [ -n "$TRUNK" ]; then
+    gh pr list --state merged --base "$TRUNK" --paginate \
+        --json number,title,body,labels,mergedAt,author 2>/dev/null  # timeout: 15000
+else
+    # No default branch detected — fetch all merged PRs (over-include is better than miss);
+    # downstream classification filters by range so non-relevant PRs are dropped anyway.
+    echo "⚠ Could not detect default branch — listing all merged PRs"
+    gh pr list --state merged --paginate \
+        --json number,title,body,labels,mergedAt,author 2>/dev/null  # timeout: 15000
+fi
 ```
 
 Cross-reference commit bodies against PR descriptions — canonical source of truth for *why* change was made. `BREAKING CHANGE:` footer = breaking change regardless of PR label.
@@ -204,8 +228,8 @@ Record all `REVERT_SET` pairs before Classify. Commits in `REVERT_SET` excluded 
 For top 3–5 significant changes (features, breaking, major behavior), read actual diff or changed files:
 
 ```bash
-git diff $RANGE -- <file>    # timeout: 3000
-git show <commit>:<file>     # timeout: 3000
+git diff "$RANGE" -- <file>    # timeout: 3000
+git show <commit>:<file>       # timeout: 3000
 ```
 
 Goal: understand implementation-level change — new APIs, parameters, behavior — so notes describe real functionality, not just commit subjects.
@@ -267,7 +291,7 @@ git show HEAD:<changed_file> | grep -n "<distinguishing_pattern>"  # timeout: 30
 - Not found in HEAD → post-range revert or merged to different branch; move to ⚠️ Unconfirmed with note: "classified from commit history but not found in HEAD — verify before publishing"; do NOT include in highlights or demo
 - Cannot determine (e.g. behavioral change without greppable symbol) → keep classification; add "(not verified)" qualifier
 
-**Gate rule**: ALL 🚀 Added or ⚠️ Breaking Changes must pass truth check before Identify highlights. Unconfirmed → ⚠️ Unconfirmed, requires user sign-off — never silently drop. Top 3 changes must confirm before proceeding; if they fail, stop and flag immediately.
+**Gate rule**: truth-check ALL 🚀 Added and ⚠️ Breaking Changes before Identify highlights. Unconfirmed → ⚠️ Unconfirmed, requires user sign-off — never silently drop. If any Breaking Change fails truth-check (not found in HEAD): invoke `AskUserQuestion` — "Breaking change not found in HEAD: `<description>`. Remove from release notes, or keep with ⚠️ Unconfirmed label?" Collect sign-off before continuing.
 
 ## Audit changelog
 
@@ -286,14 +310,14 @@ Always report: "N items added to changelog, M items flagged for review."
 ## Extract contributors
 
 ```bash
-# All commit authors and co-authors in range
-git log $RANGE --no-merges --format="%aN <%aE>%n%(trailers:key=Co-authored-by,valueonly)" \
+# All commit authors and co-authors in range — quote "$RANGE" to survive unusual tag chars
+git log "$RANGE" --no-merges --format="%aN <%aE>%n%(trailers:key=Co-authored-by,valueonly)" \
   | grep -v '^$' | sort -u  # timeout: 3000
 ```
 
 Deduplicate by email. Exclude bot accounts (e.g. `[bot]`, `noreply@`).
 
-For each contributor, inspect commits in range (`git log $RANGE --no-merges --author="<email>" --oneline`) and summarize in 3–6 words — area or feature. No PR numbers, no links.
+For each contributor, inspect commits in range (`git log "$RANGE" --no-merges --author="<email>" --oneline`) and summarize in 3–6 words — area or feature. No PR numbers, no links.
 
 Format per contributor: `- **Name** — <brief what they did>` (e.g. `- **Alice** — added streaming API`, `- **Bob** — fixed CUDA memory leak`).
 
@@ -322,14 +346,15 @@ Write demo to `$DEMO_OUT`. (`prepare` mode: `releases/$VERSION/demo.py` — see 
 
 **Gate: demo must execute to completion with expected outputs before proceeding to Draft executive summary.**
 
-Before running, invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OUT`? Review it first if desired." Options: (a) Run now · (b) Review first (print path; user confirms) · (c) Skip (mark unverified).
+Before running, invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OUT`? Review it first if desired." Options: (a) Run now · (b) Review first (print path; user confirms) · (c) Skip and **exclude from release artifacts** (demo will NOT be written to `releases/$VERSION/demo.py`).
 
 On (a) or user confirmation after (b): run:
 ```bash
 # Note: python invocation allowed by Bash(python:*) allow-list entry — runs without approval prompt
 python "$DEMO_OUT"  # timeout: 600000
+DEMO_EXIT=$?; echo "$DEMO_EXIT" > ${TMPDIR:-/tmp}/release-demo-exit
 ```
-If fails: fix and re-run. Don't proceed until exits 0 with expected output. Self-contained: package installed in current env; no live API calls or network deps; deterministic synthetic data; `# !pip install` lines are Python comments — interpreter skips.
+If fails: fix and re-run. Don't proceed until exits 0 with expected output. **Max 3 fix-and-re-run iterations** — on third failure invoke `AskUserQuestion` ("Demo still failing. Exclude from release and continue, or abort release?") and stop releasing if user aborts. Self-contained: package installed in current env; no live API calls or network deps; deterministic synthetic data; `# !pip install` lines are Python comments — interpreter skips.
 
 ## Draft executive summary
 
@@ -437,8 +462,8 @@ Read `$SHEPHERD_DIR/shepherd-revised.md` → validate before use: `if [ -s "$SHE
 Write to disk: (`BRANCH` and `DATE` from Shared setup block.)
 
 Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == true`):
-- **notes** (always): shepherd review → write to `DRAFT.md` at repo root. Notify: `→ written to DRAFT.md`
-- **`--changelog`** (if set): no shepherd (structured, internal) → invoke `AskUserQuestion`: "Ready to prepend to `$CHANGELOG_FILE`?" Options: (a) Proceed · (b) Preview only. On (b): display changelog entry content in terminal and stop — do not write to file. On (a): derive `VERSION` for idempotency check — `VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")` — then **idempotency check first** — if `$CHANGELOG_FILE` already contains the version header for this release (`grep -qF "## [$VERSION]" "$CHANGELOG_FILE"` or matching `## v$VERSION`), skip prepend to avoid duplicate entry and notify `→ CHANGELOG.md already contains version header — prepend skipped`; otherwise prepend after `# Changelog` heading (create if missing). Notify: `→ prepended to CHANGELOG.md`
+- **notes** (always): shepherd review → write to `DRAFT.md` at repo root. **Overwrite guard** — if `DRAFT.md` already exists and is non-empty, invoke `AskUserQuestion` ("DRAFT.md already exists (${size} bytes, modified $(stat ...)) — overwrite, append, or abort?") with options: (a) **Overwrite** — replace existing content · (b) **Append** — concatenate new draft after a `---` separator preserving prior edits · (c) **Abort** — leave DRAFT.md untouched and stop. Skip the prompt only when DRAFT.md is empty or missing. This protects manual edits the user made to DRAFT.md between runs. Notify: `→ written to DRAFT.md` (overwrite) or `→ appended to DRAFT.md` (append) or `→ DRAFT.md unchanged — aborted` (abort).
+- **`--changelog`** (if set): no shepherd (structured, internal) → invoke `AskUserQuestion`: "Ready to prepend to `$CHANGELOG_FILE`?" Options: (a) Proceed · (b) Preview only. On (b): display changelog entry content in terminal and stop — do not write to file. On (a): derive `VERSION` for idempotency check — `VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")` and `VERSION_BARE="${VERSION#v}"` (strip leading `v` so `v1.2.0` → `1.2.0`). Then **idempotency check first** — if `$CHANGELOG_FILE` already contains the version header for this release in any of the supported forms (`grep -qF "## [${VERSION_BARE}]" "$CHANGELOG_FILE"` for Keep-a-Changelog `## [1.2.0]`, OR `grep -qF "## [${VERSION}]" "$CHANGELOG_FILE"` for `## [v1.2.0]`, OR `grep -qE "^## v?${VERSION_BARE}([^0-9.]|$)" "$CHANGELOG_FILE"` for `## v1.2.0` / `## 1.2.0`), skip prepend to avoid duplicate entry and notify `→ CHANGELOG.md already contains version header — prepend skipped`; otherwise prepend after `# Changelog` heading (create if missing). Notify: `→ prepended to CHANGELOG.md`
 - **`--summary`** (if set): no shepherd (internal) → Draft executive summary saved to `.temp/output-release-summary-$BRANCH-$DATE.md` — confirm written. Notify: `→ saved to .temp/output-release-summary-<branch>-<date>.md`
 - **`--migration`** (if set): shepherd review (public-facing) → save to `.temp/output-release-migration-$BRANCH-$DATE.md`. Notify: `→ saved to .temp/output-release-migration-<branch>-<date>.md`
 
@@ -457,6 +482,18 @@ Read `$SKILL_DIR/modes/prepare.md` and execute.
 
 ```bash
 [ -f "$SKILL_DIR/modes/audit.md" ] || { echo "Error: modes/audit.md not found at $SKILL_DIR/modes/audit.md — verify oss plugin installation"; exit 1; }
+# Forward-readiness guard: refuse to audit an already-published release.
+# Audit checks forward readiness (blockers, version consistency, CVEs); running it on a
+# shipped version produces a misleading "ready/not ready" report for something already out.
+# Retrospective analysis belongs in /oss:analyse.
+_AUDIT_VERSION=$(echo "$REST" | awk '{print $1}')
+if [ -n "$_AUDIT_VERSION" ]; then
+    if gh release view "$_AUDIT_VERSION" --json tagName --jq .tagName >/dev/null 2>&1; then  # timeout: 15000
+        echo "! BLOCKED — $_AUDIT_VERSION is already a published release on GitHub. /release audit checks FORWARD readiness only."
+        echo "  For retrospective analysis use: /oss:analyse  (requires oss plugin)"
+        exit 1
+    fi
+fi
 ```
 Read `$SKILL_DIR/modes/audit.md` and execute.
 

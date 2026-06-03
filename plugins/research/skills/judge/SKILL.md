@@ -36,7 +36,7 @@ Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback 
 
 Triggered by `judge` or `judge <file.md>`.
 
-**Task tracking**: create tasks for J1, J2, J3, J4, J5 (includes J5a + J5b sub-steps), J6 at start — before any tool calls.
+**Task tracking**: create tasks for J1, J2, J3, J4, J5a, J5b, J6 at start — before any tool calls. (J5a = Codex adversarial review; J5b = resolve rating source.)
 
 ## Step J1: Locate and parse program.md
 
@@ -141,7 +141,19 @@ Your job is NOT to predict whether the experiment will succeed — it is to judg
 Read the campaign program file at ${PROGRAM_PATH}.
 Also read the codebase (Glob **/*.py, **/*.ts, **/*.js at project root, limit 50 files) for structural context.
 
-(Remainder of architect prompt follows verbatim — see prompt template below for the full text; substitute ${RUN_DIR} for each <RUN_DIR> token in the template.)"
+Validation status: ${SKIP_VALIDATION_NOTE}  ← expand to `Local validation skipped via --skip-validation — do NOT assess executability of metric_cmd/guard_cmd; note this limitation in your review.` when SKIP_VALIDATION=true, otherwise expand to `Local validation will run after this review (J4).`
+
+(Remainder of architect prompt follows verbatim — see prompt template below for the full text; replace every literal <RUN_DIR> token with the value of \${RUN_DIR} before passing the string to Agent(). The placeholder is a text-substitution instruction, not bash interpolation.)"
+```
+
+Compute `SKIP_VALIDATION_NOTE` before constructing the prompt:
+
+```bash
+if [ "${SKIP_VALIDATION:-false}" = "true" ]; then
+    SKIP_VALIDATION_NOTE="Local validation skipped via --skip-validation — do NOT assess executability of metric_cmd/guard_cmd; note this limitation in your review."
+else
+    SKIP_VALIDATION_NOTE="Local validation will run after this review (J4)."
+fi
 ```
 
 Spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opusplan`). The full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
@@ -165,12 +177,14 @@ Review the experimental protocol across seven dimensions:
 
 Also identify up to 3 **protocol gaps** — specific changes to `program.md` that would make the experiment more rigorous.
 
-Write your full review to `<RUN_DIR>/methodology.md` using the Write tool.
+Write your full review to `${RUN_DIR}/methodology.md` using the Write tool.
 Include a `## Verdict` section with a `methodology_rating`: `sound` (no significant design flaws), `needs-refinement` (fixable issues found), or `fundamentally-flawed` (a core design problem that would invalidate the experiment).
 Include a `## Confidence` block per quality-gates.md.
 Return ONLY a compact JSON envelope on your final line — nothing else after it:
-{"status":"done","review_dimensions":7,"methodology_rating":"sound|needs-refinement|fundamentally-flawed","protocol_gaps":N,"file":"<RUN_DIR>/methodology.md","confidence":0.N,"summary":"<one-line verdict>"}
+{"status":"done","review_dimensions":7,"methodology_rating":"sound|needs-refinement|fundamentally-flawed","protocol_gaps":N,"file":"${RUN_DIR}/methodology.md","confidence":0.N,"summary":"<one-line verdict>"}
 ```
+
+> **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in the template above MUST be replaced with the concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before the string is passed to `Agent(...)`. Passing the literal `${RUN_DIR}` to the agent will cause the agent to write to a directory named `${RUN_DIR}`. This applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation that the Agent runtime expands.
 
 Poll architect every 5 min: `find <RUN_DIR> -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
 
@@ -244,15 +258,21 @@ Record validation results for J6 report.
 
 **Note**: J4 executes on current machine. For cross-machine workflows, pass `--skip-validation`.
 
-## Step J5: Codex adversarial review
+## Step J5a: Codex adversarial review
 
-Check Codex availability:
+Check Codex availability. Distinguish two failure modes — CLI missing vs plugin missing:
 
 ```bash
-claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'
+if ! command -v claude >/dev/null 2>&1; then
+    CODEX_STATUS="cli-missing"
+elif claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'; then
+    CODEX_STATUS="available"
+else
+    CODEX_STATUS="plugin-missing"
+fi
 ```
 
-**If available**: invoke adversarial review on top 3 critical/high gaps from J2 and J3. Example (replace `<top finding N>` with actual findings):
+**`CODEX_STATUS=available`**: invoke adversarial review on top 3 critical/high gaps from J2 and J3. Example (replace `<top finding N>` with actual findings):
 
 ```text
 # codex:codex-rescue = dispatchable adversarial agent; codex:adversarial-review is user-only (/codex:adversarial-review slash command)
@@ -261,10 +281,16 @@ Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of run prog
 
 Incorporate Codex findings into overall findings list with `source: "codex"`.
 
-**If unavailable**: print one line and continue:
+**`CODEX_STATUS=plugin-missing`**: print one line and continue:
 
 ```text
 note: codex plugin not installed — skipping adversarial review (Claude-only judge)
+```
+
+**`CODEX_STATUS=cli-missing`**: print diagnostic and continue (distinguish from plugin-absent so a user with Codex installed but `claude` CLI not in PATH is not silently denied the review):
+
+```text
+note: `claude` CLI not in PATH — Codex availability cannot be verified; skipping adversarial review. To enable: ensure `claude` binary is on PATH and Codex plugin installed.
 ```
 
 ## Step J5b: Resolve rating source
@@ -294,8 +320,9 @@ Top-to-bottom; **first match wins**. BLOCKED takes precedence — stop at first 
 | `methodology_rating == "fundamentally-flawed"` (exact string match, J3) | BLOCKED |
 | `scientific_rating == "fundamentally-flawed"` (exact string match, J3) | BLOCKED |
 | J3 agent timed out (`methodology_rating == "timed_out"` — exact match — or null; note: `timed_out` does **not** trigger BLOCKED — it falls to NEEDS-REVISION) | NEEDS-REVISION |
+| `scientific_rating == "timed_out"` (exact match — scientist review did not complete; adversarial review absent → APPROVED not safe) | NEEDS-REVISION |
 | 0 critical AND (high > 0 OR `methodology_rating == "needs-refinement"`) | NEEDS-REVISION |
-| 0 critical AND 0 high AND `methodology_rating == "sound"` | APPROVED |
+| 0 critical AND 0 high AND `methodology_rating == "sound"` AND `scientific_rating != "timed_out"` | APPROVED |
 
 **Verdict matching rules**: all `*_rating` comparisons require exact string match. Reject partial/substring matches — e.g., `timed_out_partial` does NOT match `timed_out`; `flawed` does NOT match `fundamentally-flawed`. Use `==` equality only; never `=~`, `startswith`, or pattern matching.
 

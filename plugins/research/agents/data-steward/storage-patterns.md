@@ -10,12 +10,18 @@ Contains: DVC versioning, Polars tabular loading, HuggingFace datasets, 3D volum
 ## Data Version Control (DVC)
 
 ```bash
+# Prerequisite: verify a DVC remote is configured BEFORE first push — otherwise
+# `dvc push` exits 0 with a "no remote storage" warning and the dataset is NOT
+# uploaded anywhere, but the `.dvc` stub records a hash that nothing can resolve.
+dvc remote list  # must list at least one remote; if empty, configure first:
+# dvc remote add -d myremote s3://bucket/path
+
 # Track large dataset files without storing in git
 dvc add data/raw/dataset.zip
 git add data/raw/dataset.zip.dvc .gitignore
-dvc push # push to remote storage (S3, GCS, SSH)
+dvc push --verbose  # --verbose surfaces upload errors that bare `dvc push` swallows
 
-# Reproduce a specific dataset version
+# Reproduce a specific dataset version (requires the push above to have actually uploaded)
 git checkout v1.2.0
 dvc checkout
 ```
@@ -66,12 +72,19 @@ Key considerations for volumetric data:
   # HDF5 (h5py) — optimal chunk alignment for patch extraction
   import h5py
 
-  # Create/write: use 'w' mode
+  # Create/write: 'w' TRUNCATES any existing file at this path — use 'a' (append)
+  # to add datasets without destroying existing content. NEVER open with 'w' while
+  # any reader (DataLoader worker, debug session) has the file open — concurrent
+  # 'w' open corrupts active reads.
   with h5py.File("data.h5", "w") as f:
       # Align chunk size to your patch size (e.g., 64x64x64) for minimal partial reads
       f.create_dataset("volumes", shape=(N, D, H, W), chunks=(1, 64, 64, 64), dtype="float32")
+      # After create_dataset, POPULATE the dataset — otherwise reads return all-zeros silently.
+      # Example:
+      # for i, volume in enumerate(volumes):
+      #     f["volumes"][i] = volume
 
-  # Read patches: use 'r' mode
+  # Read patches: 'r' mode is safe for concurrent multi-worker DataLoaders
   with h5py.File("data.h5", "r") as f:
       ds = f["volumes"]
       patch = ds[idx, z : z + 64, y : y + 64, x : x + 64]  # reads exactly one chunk

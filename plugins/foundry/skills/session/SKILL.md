@@ -32,6 +32,7 @@ NOT for: general persistent notes or diary entries (use .notes/ directly); manag
 - Canonical MEMORY_DIR snippet (use in every bash block that needs the path):
   ```bash
   MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
+  [ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
   ```
 - File pattern: `session-open-*.md`
 - Resolution log: `.claude/logs/session-archive.jsonl`
@@ -177,7 +178,8 @@ Append one-line JSON entry atomically with bash redirection, using `ITEM_NAME` r
 
 ```bash
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-printf '{"ts":"%s","item":"%s","action":"archived"}\n' "$TS" "$ITEM_NAME" >> .claude/logs/session-archive.jsonl  # timeout: 5000
+# Use jq to safely escape ITEM_NAME (prevents injection via special chars/quotes)
+jq -n --arg ts "$TS" --arg item "$ITEM_NAME" '{"ts":$ts,"item":$item,"action":"archived"}' >> .claude/logs/session-archive.jsonl  # timeout: 5000
 ```
 
 ### Substep 2e: Confirm to user

@@ -1,7 +1,7 @@
 ---
 name: refactor
 description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop."
-argument-hint: '<target file or directory> <goal> [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: '<target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -17,6 +17,8 @@ NOT for:
 - `.claude/` config changes (use `/foundry:manage` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
 - mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature; do not attempt both in single skill run
+
+Quality stack (Branch Safety Guard, Codex Pre-pass, Progressive Review) requires `foundry` plugin; when absent, Step 5 quality stack is skipped with a visible warning — output is lower quality but workflow still completes.
 
 </objective>
 
@@ -36,6 +38,7 @@ NOT for:
 _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
@@ -72,26 +75,49 @@ CHALLENGE_ENABLED=true
 SEMBLE_ENABLED=false
 TEAM_MODE=false
 ACCEPT_NO_PLAN=false
+REPO_NAME=""
 [[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
 [[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
 [[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
 [[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
+[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
 echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
 echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
 echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
+echo "$REPO_NAME"          > ${TMPDIR:-/tmp}/dev-upstream
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
-`CODEMAP_ENABLED` raw flag — scan `$ARGUMENTS`: `--no-codemap` → `off`; `--codemap` (without preceding `--no-`) → `strict`; else → `auto`. Substitute value below.
-
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
-
-**Codemap auto-detection** — run after flag parsing, substituting raw flag (`off`/`strict`/`auto`) from rule above:
+**Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap-resolve`:
 
 ```bash
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "<off|strict|auto>") || exit 1  # timeout: 5000
+# timeout: 5000
+CODEMAP_RAW=auto
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
+[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
+echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-codemap-raw
+```
+
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Codemap auto-detection** — run after flag parsing. Behaviour differs by mode: `strict` (user explicitly passed `--codemap`) hard-fails when codemap unavailable; `auto` and `off` soft-degrade to `false` (do not abort skill):
+
+```bash
+# timeout: 5000
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
+RESOLVE_EXIT=$?
+if [ "$RESOLVE_EXIT" -ne 0 ]; then
+    if [ "$CODEMAP_RAW" = "strict" ]; then
+        echo "! codemap unavailable but --codemap (strict) passed — aborting"
+        exit 1
+    fi
+    # auto/off: soft degrade — skill continues without codemap
+    echo "⚠ codemap unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
+    CODEMAP_ENABLED=false
+fi
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
 
@@ -223,6 +249,8 @@ echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir
 
 **IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with the actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
 
+**Note on `model=` assignments**: `model=opus`/`model=sonnet` in the spawn prompts below are advisory hints — effective only when the actual foundry agents are installed. When falling back to `general-purpose` (foundry absent), the prompt-prepend `model=` does not reliably override the agent-resolution fallback tier; effective model is set by `agent-resolution.md`'s fallback table, not the spawn prompt. This is intentional — sonnet is sufficient for the qa-specialist characterization-test task and opus for sw-engineer refactor implementation; on fallback, expect tier degradation noted in Final Report.
+
 Serialize teammates — sw-engineer applies refactor first, then qa-specialist writes characterization tests against the refactored source. Running in parallel produces a race: qa-specialist may write tests against the pre-refactor implementation, which then fail spuriously once sw-engineer completes.
 
 **Step T1 — Spawn foundry:sw-engineer (model=opus) and wait for completion**. Prompt: "You are a foundry:sw-engineer teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: apply the refactoring steps (Steps 4–5: change with safety net, review). Scope constraint: only edit source files (not under `tests/`). Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-sw-engineer.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
@@ -270,7 +298,7 @@ echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
 ```bash
 GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-gate-exit 2>/dev/null || echo 1)
 if [ "${GATE_EXIT}" -eq 5 ]; then
-    echo "GATE WARN: no tests collected (exit 5) — characterization test file missing or not detected by pytest; fix collection, not the code"
+    echo "GATE FAIL: no tests collected (exit 5) — characterization test file missing or not detected by pytest; cannot proceed to Step 4 without a safety net"
 elif [ "$GATE_EXIT" -ne 0 ]; then
     echo "GATE FAIL: characterization test(s) failed (exit $GATE_EXIT) — fix the test, not the code"
     # The test is wrong if it fails on unmodified code
@@ -279,7 +307,7 @@ else
 fi
 ```
 
-If `GATE_EXIT -ne 0`: characterization test is wrong — must document *current* behavior, not desired. Fix test to match what code actually does, then re-run.
+If `GATE_EXIT -ne 0` (including exit 5): characterization tests are missing or wrong — **cannot proceed to Step 4 without a passing safety net**. Invoke `AskUserQuestion` — "Characterization test gate failed (exit `$GATE_EXIT`). How to proceed?" · (a) **Fix test collection path / fix test assertions** (recommended — re-spawn qa-specialist with corrected path or assertions) · (b) **Proceed without safety net** (accept risk — record decision in `$DEV_DIR/checkpoint.md`) · (c) **Abort**. On (b): document explicit acceptance in `checkpoint.md` (`step: 3 — gate exit $GATE_EXIT — proceed without safety net (user accepted)`) before continuing.
 
 ## Step 4: Refactor with safety net
 
@@ -294,15 +322,34 @@ For each change:
 3. Tests pass: proceed to next change
 4. Tests fail: revert, try different approach
 
-**Safety break**: track cycle count and wall time in scratch:
+**Safety break**: track cycle count and wall time via temp files (bash state lost between Bash() calls — `$INNER_CYCLE` and `$START_TIME` declared inline are unavailable in subsequent Bash blocks; persistence is mandatory):
 
 ```bash
-INNER_CYCLE=0
-START_TIME=$(date +%s)
+# timeout: 3000
+# Initialize once at Step 4 entry — overwrites any prior session's values
+echo "0"             > ${TMPDIR:-/tmp}/dev-inner-cycle
+echo "$(date +%s)"   > ${TMPDIR:-/tmp}/dev-start-time
 MAX_WALL_SECONDS=1800  # 30 min hard cap (5 outer × MAX_INNER_CYCLES inner worst case)
 ```
 
-After each change-test pair: `INNER_CYCLE=$((INNER_CYCLE+1))`. After `MAX_INNER_CYCLES` cycles, stop — report what succeeded, what broke, what remains. Also check wall time at each inner iteration: `if [ $(( $(date +%s) - START_TIME )) -ge $MAX_WALL_SECONDS ]; then echo "⚠ wall-time cap reached (30 min) — stopping refactor loop"; break; fi`
+At each inner iteration start, read back, increment, check:
+
+```bash
+# timeout: 3000
+INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle 2>/dev/null || echo 0)
+START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time 2>/dev/null || echo $(date +%s))
+INNER_CYCLE=$((INNER_CYCLE+1))
+echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle
+if [ "$INNER_CYCLE" -gt 5 ]; then
+    echo "⚠ MAX_INNER_CYCLES (5) reached — stopping refactor loop; report what succeeded, what broke, what remains"
+fi
+ELAPSED=$(( $(date +%s) - START_TIME ))
+if [ "$ELAPSED" -ge 1800 ]; then
+    echo "⚠ wall-time cap reached (30 min) — stopping refactor loop"
+fi
+```
+
+After each change-test pair: re-read counter from temp file, increment, write back. Stop when `INNER_CYCLE > MAX_INNER_CYCLES` or elapsed ≥ `MAX_WALL_SECONDS`.
 
 **Refactoring categories:**
 
@@ -344,7 +391,16 @@ Full review of refactored code. **Loop** — review -> targeted refactoring (ret
 
 **After 3 cycles**: substantive issues remain → stop, surface to user.
 
-Read `$_FOUNDRY_SHARED/quality-stack.md` (if not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
+**Foundry availability check** before quality stack:
+
+```bash
+# timeout: 3000
+if [ ! -d "$_FOUNDRY_SHARED" ] || [ ! -f "$_FOUNDRY_SHARED/quality-stack.md" ]; then
+    echo "⚠ foundry plugin not installed — quality stack skipped (install foundry for full refactor quality gate: Branch Safety Guard, Codex Pre-pass, Progressive Review Loop, Codex Mechanical Delegation)"
+fi
+```
+
+Read `$_FOUNDRY_SHARED/quality-stack.md` (if not found → skip quality stack entirely, note "foundry plugin absent — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review, Codex Mechanical Delegation)" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
 
 ## Final Report
 

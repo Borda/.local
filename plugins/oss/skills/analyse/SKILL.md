@@ -3,7 +3,7 @@ name: analyse
 description: |
   Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd (requires `oss` plugin). NOT for PR readiness assessment or code review (use oss:review).
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
-  SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review).
+  SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review); user phrasing is "review PR" meaning code quality assessment, not thread triage (route to oss:review).
 argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]"
 allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
@@ -15,7 +15,7 @@ effort: medium
 
 Analyze GitHub threads + repo vitality. Help maintainers triage, respond, decide fast. Output actionable + structured — not just summaries.
 
-NOT for implementing PR action items (use oss:resolve). NOT for multi-agent code review (use oss:review). NOT for CI pipeline diagnosis (use oss:cicd-steward (requires `oss` plugin)).
+NOT for implementing PR action items (use oss:resolve). NOT for **code-quality assessment on a PR** — phrasing like "review PR #N" or "does this PR look good?" routes here via the TRIGGER (PR number + "analyze/summarize" verbs) but yields thread analysis, not code review. When the request is code quality, route to `oss:review` (requires `oss` plugin) instead. NOT for multi-agent code review (use oss:review). NOT for CI pipeline diagnosis (use oss:cicd-steward (requires `oss` plugin)).
 
 </objective>
 
@@ -48,7 +48,19 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 ```bash
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
-FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/)
+# Validate up-front: an empty $_OSS_SHARED means resolve_shared_path.py failed (missing python,
+# missing script, or oss plugin not installed). Without this check, downstream `[ -f "$_OSS_SHARED/..." ]`
+# paths silently expand to `/path...` and Step 7 fails only after full analysis completes.
+# For --reply runs the failure is hard; for non-reply runs degrade gracefully.
+if [ -z "$_OSS_SHARED" ]; then
+    if [ "$REPLY_MODE" = "true" ]; then
+        echo "! BLOCKED — could not resolve _OSS_SHARED (oss plugin missing, python unavailable, or resolve_shared_path.py absent); --reply mode requires it"
+        exit 1
+    else
+        echo "⚠ _OSS_SHARED empty — oss plugin shared dir unresolved; continuing with degraded functionality (--reply will fail in this run)"
+    fi
+fi
+FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/); consumed by modes/thread.md, modes/vitality.md, modes/ecosystem.md
 ```
 # loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
@@ -58,9 +70,11 @@ FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_p
 ```bash
 REPLY_MODE=false
 CLEAN_ARGS=$ARGUMENTS
-if [[ "$ARGUMENTS" == *"--reply"* ]]; then
+# Use anchored token match (whitespace or start/end), NOT substring match — a substring match
+# on `--reply` falsely fires for tokens like `--reply-later` or repo names containing `--reply-bot`.
+if [[ " $ARGUMENTS " == *" --reply "* ]]; then
     REPLY_MODE=true
-    CLEAN_ARGS=$(echo "$ARGUMENTS" | sed 's/ --reply\b//')
+    CLEAN_ARGS=$(echo "$ARGUMENTS" | sed -E 's/(^| )--reply($| )/\1\2/')
     CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
 fi # timeout: 5000
 ```
@@ -84,7 +98,15 @@ if [[ "$CLEAN_ARGS" == *.md ]] && [[ "$CLEAN_ARGS" != vitality* ]] && [[ "$CLEAN
     DIRECT_PATH_MODE=true
     REPORT_FILE="$CLEAN_ARGS"
 fi # timeout: 5000
-TODAY=$(date +%Y-%m-%d)
+# Persist $TODAY across Bash blocks — subsequent bash invocations re-derive `date +%Y-%m-%d`
+# and may roll over midnight, producing mismatched cache + report paths within a single run.
+_TODAY_FILE="${TMPDIR:-/tmp}/analyse-today"
+if [ -f "$_TODAY_FILE" ]; then
+    TODAY=$(cat "$_TODAY_FILE")
+else
+    TODAY=$(date +%Y-%m-%d)
+    echo "$TODAY" > "$_TODAY_FILE"
+fi
 ```
 
 `DIRECT_PATH_MODE=true` only valid when `REPLY_MODE=true` — if combined without `--reply`, Step 2 prints plain-text error and stops; execution never reaches Step 5 mode dispatch.
@@ -148,11 +170,26 @@ fi
 
 Skip when `REPLY_MODE=false` and `DIRECT_PATH_MODE=false`.
 
-**Direct report path** (`DIRECT_PATH_MODE=true` — checked first):
+**Direct report path** (`DIRECT_PATH_MODE=true` — checked first). The error branches below execute as explicit bash `exit 1` blocks — `stop` is not prose advice; the workflow must terminate hard before any downstream step can fire a misleading `Item .md not found on GitHub` error:
 
-- `REPLY_MODE=false` → print: "A report path was passed without `--reply`. Did you mean `/analyse <path.md> --reply`? Re-run with `--reply` to continue, or use `/analyse <N> | vitality | ecosystem`." and stop.
-- `REPLY_MODE=true` and file missing (`[ ! -f "$REPORT_FILE" ]`) → print `Error: report not found: $REPORT_FILE` and stop.
-- `REPLY_MODE=true` and file exists → print `[direct] using $REPORT_FILE` → skip to Step 7. Don't run auto-detection fast-path below.
+```bash
+if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "false" ]; then
+    echo "! Error: report path '$REPORT_FILE' passed without --reply."
+    echo "  Re-run as: /oss:analyse $REPORT_FILE --reply"
+    echo "  Or use:    /oss:analyse <N> | vitality | ecosystem"
+    exit 1
+fi
+if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "true" ] && [ ! -f "$REPORT_FILE" ]; then
+    echo "! Error: report not found at $REPORT_FILE"
+    exit 1
+fi
+if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "true" ] && [ -f "$REPORT_FILE" ]; then
+    echo "[direct] using $REPORT_FILE"
+    # Caller must skip to Step 7 — orchestrator branches on $DIRECT_PATH_MODE=true && $REPLY_MODE=true
+fi
+```
+
+After the block above: `DIRECT_PATH_MODE=true && REPLY_MODE=true && file exists` → skip to Step 7 (don't run auto-detection fast-path below).
 
 Remaining fast-path logic (TODAY, REPORT_FILE auto-construction, drift check) only runs when `DIRECT_PATH_MODE=false`.
 
@@ -163,7 +200,9 @@ When `REPLY_MODE=true`, check if fresh report already exists before any API call
 # vitality/ecosystem modes: REPORT_FILE set inside modes/vitality.md and modes/ecosystem.md respectively.
 # DIRECT_PATH_MODE: REPORT_FILE already set from $CLEAN_ARGS above.
 SUBDIR="thread"  # default for numeric args; overridden for health/ecosystem in their mode files
-REPORT_FILE=".reports/analyse/$SUBDIR/output-analyse-$SUBDIR-$CLEAN_ARGS-$TODAY.md"
+_REPO_SLUG=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-' | tr -cd '[:alnum:]-')
+[ -z "$_REPO_SLUG" ] && _REPO_SLUG="local"
+REPORT_FILE=".reports/analyse/$SUBDIR/output-analyse-$SUBDIR-${_REPO_SLUG}-$CLEAN_ARGS-$TODAY.md"
 DRIFT=false
 FAST_PATH=false
 FAST_PATH_TENTATIVE=false
@@ -220,6 +259,8 @@ DRIFT=$(cat "${TMPDIR:-/tmp}/analyse-drift" 2>/dev/null || echo "false")
 FAST_PATH=$(cat "${TMPDIR:-/tmp}/analyse-fast-path" 2>/dev/null || echo "false")
 FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative" 2>/dev/null || echo "false")
 REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime" 2>/dev/null || echo "0")
+# Validate TYPE read from cache before using it — corrupt cache guard
+[ "$TYPE" = "pr" ] || [ "$TYPE" = "issue" ] || [ "$TYPE" = "discussion" ] || { echo "! Error: corrupt cache — invalid type '\empty' for #$CLEAN_ARGS; delete .cache/gh/ to reset"; exit 1; }
 # Cache hit + FAST_PATH_TENTATIVE: one lightweight API call to get updatedAt, then apply drift check
 # Drift check pattern (shared with Step 4): UPDATED_TS > REPORT_MTIME → DRIFT=true → full re-analysis
 if [ "$TYPE" = "discussion" ]; then
@@ -410,8 +451,8 @@ Scenarios:
 
 <notes>
 
-- **Thread analysis output schema** (canonical section order): `## Item Type`, `## Summary`, `## Related Items`, `## Reproduction Steps` (issues only), `## Risks / Blockers`, `## Next Steps`. Use these exact headings — consistent section names enable downstream parsing and diff-based change detection across runs.
-- **Precision guidance**: flag issues, do not solve them; flag blockers, do not design solutions. Reference `/develop:fix` and `/develop:feature` (requires `develop` plugin) for implementation work. Verbose implementation sketches in triage output dilute signal-to-noise ratio.
+- **Thread analysis output schema** (canonical section order): `## Item Type`, `## Summary`, `## Related Items`, `## Reproduction Steps` (issues only), `## Risks / Blockers`, `## Next Steps`, `## Confidence`. Use these exact headings — consistent section names enable downstream parsing and diff-based change detection across runs. `## Confidence` is mandatory and always last — omitting it triggers calibration failure (confidence defaults to 0.5, producing large negative bias).
+- **Precision guidance**: flag issues, do not solve them; flag blockers, do not design solutions. Reference `/develop:fix` and `/develop:feature` (requires `develop` plugin) for implementation work. Verbose implementation sketches in triage output dilute signal-to-noise ratio. Each flagged item (duplicate, blocker, next step) must carry an explicit severity or priority label (high/medium/low) inline — enables downstream triage and satisfies format scoring.
 - **Vitality mode repo resolution**: `GH_OWNER` and `GH_REPO` set in Step 1 from: (1) explicit URL/owner-repo arg, (2) `gh repo view`, (3) `git remote origin`. vitality.md uses `-R "$GH_OWNER/$GH_REPO"` on all gh commands and literal `$GH_OWNER/$GH_REPO` in all `gh api` paths — never `{owner}/{repo}` template substitution in vitality mode.
 - Mode files live in `$_OSS_MODE_DIR/` (resolved in Step 5; falls back to bare `plugins/oss/skills/analyse/modes/` only when cache path missing) — one file per mode, fully self-contained
 - `modes/thread.md` handles all three thread types (issue, PR, discussion) via internal branching

@@ -29,10 +29,14 @@ Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `
 ```bash
 # scan-index handles v2→v3 fallback internally
 SCAN_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index"
-SCAN_ARGS_RAW="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS")"  # timeout: 5000 — parse_scan_args.py validates $ARGUMENTS (allowlist: --root, --incremental); word-splitting safe because output is controlled flag tokens only
-# Persist for usage block — fresh shell per Bash() call loses bash variables
-echo "$SCAN_BIN" > "${TMPDIR:-/tmp}/codemap-scan-bin"
-echo "$SCAN_ARGS_RAW" > "${TMPDIR:-/tmp}/codemap-scan-args"
+# Validate binary exists before invoking — avoids cryptic "command not found" on bad installs
+[ -x "$SCAN_BIN" ] || { printf "! scan-index binary not found at %s — reinstall: claude plugin install codemap@borda-ai-rig\n" "$SCAN_BIN"; exit 1; }
+SCAN_ARGS_RAW="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS")" || { printf "! parse_scan_args.py failed — check Python availability and plugin installation\n"; exit 1; }  # timeout: 5000 — parse_scan_args.py validates $ARGUMENTS (allowlist: --root, --incremental); word-splitting safe because output is controlled flag tokens only
+# Use project-unique tmp paths — prevents race when two parallel scans run in different projects
+PROJ_SLUG=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")" | tr -cd '[:alnum:]-')
+echo "$SCAN_BIN" > "${TMPDIR:-/tmp}/codemap-scan-bin-${PROJ_SLUG}"
+echo "$SCAN_ARGS_RAW" > "${TMPDIR:-/tmp}/codemap-scan-args-${PROJ_SLUG}"
+echo "$PROJ_SLUG" > "${TMPDIR:-/tmp}/codemap-scan-proj"
 
 # Pre-scan warning: if --incremental requested but no prior index, log fallback BEFORE starting scan
 if [[ " $ARGUMENTS " == *" --incremental "* ]]; then
@@ -47,11 +51,12 @@ fi
 
 ```bash
 # timeout: 360000
-SCAN_BIN=$(cat "${TMPDIR:-/tmp}/codemap-scan-bin")
-SCAN_ARGS_RAW=$(cat "${TMPDIR:-/tmp}/codemap-scan-args")
-# Word-splitting safe: parse_scan_args.py output is controlled flag tokens only
-# Unquoted expansion intentional to preserve word boundaries between flags
-timeout 360 "$SCAN_BIN" $SCAN_ARGS_RAW
+PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-scan-proj" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")" | tr -cd '[:alnum:]-')
+SCAN_BIN=$(cat "${TMPDIR:-/tmp}/codemap-scan-bin-${PROJ_SLUG}")
+SCAN_ARGS_RAW=$(cat "${TMPDIR:-/tmp}/codemap-scan-args-${PROJ_SLUG}")
+# parse_scan_args.py uses shlex.quote for paths with spaces — use eval set to expand safely
+eval set -- "$SCAN_ARGS_RAW"
+timeout 360 "$SCAN_BIN" "$@"
 ```
 
 Scanner writes to `<root>/.cache/scan/<project>.json` and prints summary line:

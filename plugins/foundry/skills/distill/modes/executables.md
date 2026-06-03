@@ -91,7 +91,9 @@ Then call `AskUserQuestion` — do NOT write options as plain text first. Map op
 
 ## Step E4: Extract
 
-For each selected cluster, resolve `$_FS` path and spawn **foundry:sw-engineer** (one per cluster, all in parallel — issue all in a single response):
+> **Worktree isolation caveat** — `foundry:sw-engineer` runs with `isolation: worktree`. File writes inside the agent (including the `$RUN_DIR/extract-<cluster-id>.md` summary) land in the agent's worktree under `.claude/worktrees/<id>/`, NOT in the main working tree. After the agent returns its JSON envelope, the orchestrator must either (a) read the summary from the returned worktree path declared in the agent's stdout, or (b) cherry-pick / merge the worktree branch before reading `$RUN_DIR/extract-<cluster-id>.md` from the main tree. Path resolution: use the absolute main-tree path `$(git rev-parse --show-toplevel)/$RUN_DIR/extract-<cluster-id>.md` in the prompt so the agent has an unambiguous target; the agent's worktree shares the same path layout, and merging the worktree branch back will deposit the summary at the same path in main tree.
+
+For each selected cluster, resolve `$_FS` path and spawn **foundry:sw-engineer** (one per cluster, all in parallel — issue all in a single response). Substitute the absolute `$RUN_DIR` value into the prompt before spawning (resolve via `$(git rev-parse --show-toplevel)/$RUN_DIR`):
 
 ```text
 Agent(subagent_type="foundry:sw-engineer", prompt="

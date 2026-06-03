@@ -198,7 +198,7 @@ Key `.github/workflows/benchmark.yml` settings:
 
 - Trigger: `push: branches: [main]`
 - Run: `pytest tests/benchmarks/ --benchmark-json output.json`
-- Use `benchmark-action/github-action-benchmark` with `tool: pytest`, `alert-threshold: 120%`, `fail-on-alert: true`
+- Use `benchmark-action/github-action-benchmark@<SHA>  # vN` with `tool: pytest`, `alert-threshold: 120%`, `fail-on-alert: true` — resolve SHA: `gh api repos/benchmark-action/github-action-benchmark/commits/<tag> --jq .sha` (same SHA-pinning pattern as `<github_actions_patterns>` — never reference by name only or by mutable tag)
 - Track: training step time, inference latency, peak memory, data loading throughput
 - Alert when any metric regresses > 20% vs main branch baseline
 

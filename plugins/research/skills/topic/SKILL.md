@@ -27,9 +27,11 @@ NOT for deep single-paper analysis or experiment design — use `research:scient
 
 <constants>
 
-HARD_CUTOFF: 900   # 15 min — if researcher does not return, surface partial results from .temp/
-# Agent calls are synchronous — timeout is handled by Claude Code's native call timeout; no manual extension possible.
-# Deviation from §8: Agent tool is synchronous; no file-activity poll available; timeout enforced by HARD_CUTOFF only
+HARD_CUTOFF: 900   # 15 min — ADVISORY ONLY, not enforced.
+# Synchronous Agent() call cannot be polled or interrupted mid-flight — parent has no way to detect elapsed time mid-call.
+# Single timeout policy: after Agent() returns (however it terminates), check whether $AGENT_OUT exists and has content.
+# If file absent or empty → researcher timed out or crashed; surface partial results from .temp/ and mark ⏱ in report.
+# If file present → parse normally regardless of nominal budget. Same limitation as research:verify.
 
 </constants>
 
@@ -70,12 +72,24 @@ ARGUMENTS_LOWER=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]')
 
 Use `$ARGUMENTS_LOWER` for all flag/mode dispatch checks (`--team`, `--plan`, leading `plan` token); preserve original `$ARGUMENTS` only where literal substitution into prompts is required (e.g. topic string).
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS_LOWER` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes):
 
-**Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3 to avoid wasted SOTA search compute:
+```bash
+# timeout: 5000
+UNKNOWN_FLAGS=$(echo "$ARGUMENTS_LOWER" | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)
+```
 
-- If `$ARGUMENTS_LOWER` starts with `plan` token (first word is exactly `plan`) → skip Steps 2-3; jump directly to **Plan Mode** section below.
+If `$UNKNOWN_FLAGS` non-empty: print `! Unknown flag(s): \`${UNKNOWN_FLAGS}\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3 to avoid wasted SOTA search compute. Priority: `--team` wins over `plan` (invocation `plan --team` → Team Mode, topic string = "plan"):
+
+```bash
+# timeout: 5000
+FIRST_WORD=$(echo "$ARGUMENTS_LOWER" | awk '{print $1}')
+```
+
 - If `$ARGUMENTS_LOWER` contains `--team` flag → skip Steps 2-3; jump directly to **Team Mode** section below.
+- Else if `$FIRST_WORD` equals exactly `plan` → skip Steps 2-3; jump directly to **Plan Mode** section below.
 
 Steps 2-3 execute only when neither `--team` nor `plan` mode is detected.
 
@@ -101,6 +115,7 @@ mkdir -p .temp  # timeout: 3000
 # Persist for later bash blocks (Check 41: fresh shell per call)
 echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch"
 echo "$DATE" > "${TMPDIR:-/tmp}/topic-date"
+echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out"  # persist resolved counter-suffixed path so Step 3 reload uses the correct file
 ```
 
 **Note**: Substitute pre-computed values — do not pass raw $(date) expressions into spawn prompts. Substitute resolved `$AGENT_OUT` path (not template) so agent writes to correct non-conflicting file.
@@ -114,8 +129,8 @@ Then return ONLY a compact JSON envelope on your final line — nothing else aft
 {"status":"done","papers":N,"recommendation":"<method name>","file":"<$AGENT_OUT>","confidence":0.N}
 ```
 
-**Health monitoring** — Agent tool synchronous; Claude awaits researcher response natively (no Bash checkpoint available). If researcher doesn't return within `$HARD_CUTOFF` seconds (~15 min), use Read tool to surface partial results from `.temp/`, continue with what found; mark timed-out agents with ⏱ in report.
-<!-- Deviation from CLAUDE.md §6: Agent(...) calls are synchronous — no Bash checkpoint/poll available; HARD_CUTOFF constant is sole liveness mechanism. Documented in <constants> block. -->
+**Single timeout policy** (post-hoc only): synchronous `Agent()` calls cannot be polled or interrupted mid-flight. After `Agent()` returns, apply the policy declared in `<constants>` — check whether `$AGENT_OUT` exists and has content. If file absent or empty → researcher timed out or crashed; surface partial results from `.temp/` and mark ⏱ in report. If file present → parse normally regardless of nominal budget. Same limitation as `research:verify` — no proactive liveness monitoring.
+<!-- Deviation from CLAUDE.md §6: Agent(...) calls are synchronous — no Bash checkpoint/poll available; HARD_CUTOFF is advisory documentation only, not an enforced cutoff. -->
 
 **If Agent tool unavailable** (running as subagent where nested spawning blocked), skip Agent call, conduct research inline: use WebSearch and WebFetch to find top 5 papers, synthesize comparison table yourself. Notify user: "Note: researcher agent could not be spawned in this context — conducting research inline."
 
@@ -219,6 +234,19 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 ## Team Mode — only when `--team` flag present
 
 # loads: modes/team.md
+**Mode-file existence check** — verify before reading:
+
+```bash
+_TEAM_MODE="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"
+[ -f "$_TEAM_MODE" ] || { echo "! MISSING — modes/team.md not found at $_TEAM_MODE. Plugin may not be fully installed. Falling back to single-agent mode."; exit 1; }
+```
+
+Also verify `~/.claude/TEAM_PROTOCOL.md` exists (each teammate spawn prompt requires it):
+
+```bash
+[ -f "$HOME/.claude/TEAM_PROTOCOL.md" ] || { echo "! MISSING — ~/.claude/TEAM_PROTOCOL.md not found. Run /foundry:setup (requires foundry plugin) to install. Falling back to single-agent mode."; exit 1; }
+```
+
 Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"` and execute its workflow.
 
 **Mandatory termination gate**: after `modes/team.md` returns (consolidation complete, report written), continue to the `## Follow-up gate` section below — do NOT exit early. The `AskUserQuestion` call in `## Follow-up gate` is the only authorized terminal action for team mode; reaching the end of the team workflow without invoking it is a protocol violation.
@@ -226,6 +254,13 @@ Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"` and 
 ## Plan Mode — only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode)
 
 # loads: modes/plan.md
+**Mode-file existence check** — verify before reading:
+
+```bash
+_PLAN_MODE="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"
+[ -f "$_PLAN_MODE" ] || { echo "! MISSING — modes/plan.md not found at $_PLAN_MODE. Plugin may not be fully installed."; exit 1; }
+```
+
 Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"` and execute its workflow.
 
 **Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written), continue to the `## Follow-up gate` section below — do NOT exit early. The `AskUserQuestion` call in `## Follow-up gate` is the only authorized terminal action for plan mode; reaching the end of the plan workflow without invoking it is a protocol violation.

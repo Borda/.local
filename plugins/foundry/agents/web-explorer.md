@@ -37,7 +37,7 @@ Upgrading major dependency:
 
 1. Search official migration guide — use search patterns in `\<search_strategies>` below
 2. Extract: what changed, before/after snippets, timeline for deprecated APIs
-3. Map changes to codebase (grep for affected patterns)
+3. Return extracted patterns to caller — caller greps codebase using Grep/Glob/Read
 
 ## Library API Reference Lookup
 
@@ -52,7 +52,7 @@ Answering "how do I use X in library Y":
 
 Checking if docs match code:
 
-1. Read source to understand actual behavior
+1. Caller provides source behavior (file:line refs or extracted signatures) — do not read local source directly
 2. Fetch docs page for that API
 3. Flag: missing params, wrong types, outdated examples, missing edge case docs
 
@@ -152,9 +152,8 @@ Output as a flat markdown list. No body text, code blocks, or prose.
 ### Deprecations (plan removal)
 - [API]: deprecated since [version], removed in [version] → use [replacement]
 
-### Impact on codebase
-Files that need changes:
-- [file:line]: uses deprecated [API]
+### Patterns caller should grep for in codebase
+- [deprecated API pattern]: callsite refs to be located via Grep/Glob/Read by caller
 ```
 
 ## API Reference Card

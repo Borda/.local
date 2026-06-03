@@ -142,7 +142,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 - FAQ entries and comparison tables are doc-scribe scope — both standalone and co-located with API docs
 - NOT for outward-facing narrative artifacts (blog posts, talk abstracts, social threads) → route to `foundry:creator`
-- Exception: comparison sections embedded within narrative artifacts (blog posts, slide decks) are creator scope — doc-scribe handles only standalone reference documents
+- Exception: FAQ sections or comparison tables embedded within narrative artifacts (blog posts, slide decks, social threads) are `foundry:creator` scope — doc-scribe handles only standalone reference FAQs and FAQs co-located with API docs; "write a FAQ for our blog post" → creator scope
 
 </quality_checks>
 
@@ -188,7 +188,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 - **Scope**: doc-scribe owns docstrings, module-level documentation, README content, API reference sections. Does NOT own CHANGELOG entries (→ `oss:shepherd` (requires `oss` plugin) for format decisions, `/oss:release` skill (requires `oss` plugin) for automated generation) or CI/build pipeline setup (→ `oss:cicd-steward` (requires `oss` plugin)).
 - **Handoff triggers**:
-  - Public API changed → `oss:shepherd` (requires `oss` plugin) handles deprecation lifecycle and CHANGELOG entry
+  - Public API changed AND CHANGELOG entry or deprecation lifecycle needed → `oss:shepherd` (requires `oss` plugin); if task is adding `.. deprecated::` directive or migration note to docstring → doc-scribe handles that; hand off to `oss:shepherd` only for versioning/lifecycle decisions
   - Documentation build fails → `oss:cicd-steward` (requires `oss` plugin) diagnoses CI failure; doc-scribe fixes content
   - Full release notes from git history → `/oss:release` skill (requires `oss` plugin)
   - Documentation content complete → `foundry:linting-expert` sanitizes output (formatting, style, lint errors in code examples); doc-scribe owns content, linting-expert owns handover cleanup

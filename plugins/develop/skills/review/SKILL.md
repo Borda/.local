@@ -11,7 +11,7 @@ effort: high
 
 Comprehensive code review of local files or working-tree diff. Spawn specialized sub-agents in parallel, consolidate findings into structured feedback with severity levels.
 
-NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>` (requires oss plugin)); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` (requires foundry plugin) or `/foundry:audit` (requires foundry plugin)); non-Python-only projects (zero Python source files — pure JS/TS/Go/Rust) — review toolchain assumes Python/pytest; for polyglot projects with Python source, reviews Python files only.
+NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>` (requires oss plugin)); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` (requires foundry plugin) or `/foundry:audit` (requires foundry plugin)); non-Python-only projects (zero Python source files — pure JS/TS/Go/Rust) — review toolchain assumes Python/pytest; Python test-only targets where diff contains only test files (no `src/` or top-level `.py` source outside `tests/`) — review will be uninformative; for polyglot projects with Python source, reviews Python files only.
 
 </objective>
 
@@ -74,6 +74,8 @@ CODEX_TIMEOUT=120000    # hard cap (ms) on Codex co-review spawn — prevent ind
 _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
@@ -97,7 +99,7 @@ REVIEW_ARGS="${REVIEW_ARGS#"${REVIEW_ARGS%%[![:space:]]*}"}"  # trim leading whi
 ```bash
 # Preflight: fail early if requested tool not available
 if [ "$CODEMAP_ENABLED" = "true" ]; then
-    if ! command -v scan-query >/dev/null 2>&1; then
+    if ! claude plugin list 2>/dev/null | grep -q 'codemap@borda-ai-rig'; then
         printf "! --codemap requested but codemap plugin not installed.\n  Install: claude plugin install codemap@borda-ai-rig\n"; exit 1
     fi
     _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename)  # timeout: 3000
@@ -107,7 +109,16 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
 fi
 ```
 
-If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. If not: print `! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from "semble[mcp]" semble` and stop.
+If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. If not, print warning and stop. DMI skill — stop must be enforced via bash exit:
+
+```bash
+# timeout: 5000
+SEMBLE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-semble-enabled 2>/dev/null || echo false)
+if [ "$SEMBLE_ENABLED" = "true" ]; then
+    # Semble availability cannot be verified in bash; emit advisory warning only
+    echo "⚠ --semble enabled: if mcp__semble__search is unavailable, semble steps will be skipped silently"
+fi
+```
 
 Use `$REVIEW_ARGS` (not `$ARGUMENTS`) as path for rest of workflow.
 
@@ -125,6 +136,16 @@ else
 fi
 ```
 
+**Non-Python impact check** (runs BEFORE early exit — ensures warning always emits when relevant): scan diff for high-impact non-Python changes; collect warnings for report header:
+
+```bash
+NON_PY_WARNINGS=""  # timeout: 5000
+git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
+git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
+```
+
+If `$NON_PY_WARNINGS` non-empty: include in report header regardless of whether Python files exist.
+
 Filter to Python files only. No Python files → exit early (DMI skill — prose "stop" not executable; bash exit is the only enforceable mechanism):
 
 ```bash
@@ -138,16 +159,10 @@ else
 fi
 if [ -z "$PYTHON_FILES" ]; then
     echo "! Diff contains non-Python files only. This skill is scoped to Python. For other languages, use a general-purpose code reviewer."
+    [ -n "$NON_PY_WARNINGS" ] && printf "$NON_PY_WARNINGS"
     exit 0
 fi
 ```
-
-**Non-Python impact check**: after filtering, scan diff for high-impact non-Python changes, warn in report header:
-- `pyproject.toml`, `setup.cfg`, `requirements*.txt` → "⚠ dependency changes detected — not reviewed; verify Python imports still resolve"
-- `Dockerfile`, `docker-compose*.yml` → "⚠ container config changes detected — not reviewed"
-- `*.yaml`, `*.toml`, `*.json` in config directories → "⚠ config changes detected — not reviewed"
-
-Out of scope but must be flagged — dependency removal can silently break reviewed Python code.
 
 ### Scope pre-check
 
@@ -172,7 +187,7 @@ Extended scan for changed modules:
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 CODEMAP_CONTEXT=""
-if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/scan/${PROJ}.json" ]; then
+if claude plugin list 2>/dev/null | grep -q 'codemap@borda-ai-rig' && [ -f ".cache/scan/${PROJ}.json" ]; then
     CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')  # timeout: 3000
     # Note: this derivation assumes src-layout (files under src/). Files outside src/ (e.g.
     # scripts/, tools/) produce module names that may not be valid importable modules.
@@ -228,7 +243,9 @@ echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # persist: Bash() stat
 
 If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
 
-Spawn `codex:codex-rescue` agent (apply `$CODEX_TIMEOUT` ms hard cap — Bash tool `timeout: $CODEX_TIMEOUT` on the wait/poll call; if Codex hangs beyond this cap, abort spawn, print `⚠ Codex co-review timed out after ${CODEX_TIMEOUT}ms — proceeding without Codex seed`, treat as "Codex skipped"): "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
+Spawn `codex:codex-rescue` agent: "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
+
+Note: `$CODEX_TIMEOUT` is advisory only — Agent spawns are synchronous and cannot be timeout-wrapped via Bash `timeout:`. If hang risk is unacceptable, spawn with `run_in_background=true` and implement health-monitoring per CLAUDE.md §6. Without background spawning, move on after a reasonable wait (observe if Codex output file grows; no growth after ~2 min → treat as timed out).
 
 After Codex writes `$RUN_DIR/codex.md` (or times out), extract compact seed list (≤10 items, `[{"loc":"file:line","note":"..."}]`) to inject into agent prompts in Step 3 as pre-flagged issues to verify or dismiss. Codex skipped, timed out, or found nothing → proceed with empty seed.
 

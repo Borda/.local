@@ -45,14 +45,13 @@ _RESEARCH_SKILLS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills
 
 ### Step S1: Parse arguments
 
-**Existing program.md guard** — sweep creates a new program.md; if one already exists at the output path (default: `program.md` at project root, or `--out <path>` if provided), stop immediately:
+**Existing program.md guard** — sweep creates a new program.md; if one already exists at the output path (default: `program.md` at project root, or `--out <path>` if provided), invoke `AskUserQuestion` immediately — do NOT silently overwrite, do NOT hard-stop without recovery:
 
-```text
-! sweep: program.md already exists — sweep cannot overwrite existing program.
-  Use /research:run <program.md> to execute the existing program, or delete program.md to restart sweep.
-```
+- question: "program.md already exists at `<output path>` — how to proceed?"
+- (a) label: `Overwrite and re-sweep` — description: overwrite existing program.md, run plan+judge+run pipeline from scratch
+- (b) label: `Abort — use existing program` — description: stop sweep; use `/research:run <program.md>` to execute the existing program
 
-Check AFTER extracting `--out` flag so the correct output path is known before checking.
+On (a): proceed to flag extraction below. On (b): print follow-up hint and stop. Check AFTER extracting `--out` flag so the correct output path is known before checking. (This is the single overwrite gate — S2 P-P3 is bypassed for sweep since the decision was already made here.)
 
 Extract `<goal>` — first positional argument (quoted or unquoted string describing optimization target).
 
@@ -114,7 +113,7 @@ First, `Read $_RESEARCH_SKILLS/plan/SKILL.md` to load the plan mode step definit
 - **P-P2 (config presentation)**: Accept all auto-detected defaults without prompting. Print proposed config as informational block prefixed `sweep: auto-config →` — do NOT wait for confirmation.
 - If `--colab[=HW]` or `--compute=colab` passed, write `compute: colab` (and `colab_hw: <HW>` if provided) into Config block.
 - **scope_files**: derive from goal string — extract domain-relevant file patterns (e.g. goal mentioning "neural network" → `["*.py", "models/**", "train*.py"]`; goal mentioning "config" or "YAML" → `["*.yaml", "*.yml", "*.json"]`). Default `["**/*.py"]` only when goal provides no domain signals. **Multiple keyword matches**: merge (union) all matched patterns. Always include the derived `scope_files` in the `sweep: auto-config →` printout so users can verify before run — users cannot correct silently wrong scope without seeing it.
-- **agent_strategy**: set to a value accepted by judge C9 (`auto` / `perf` / `code` / `ml` / `arch`). Map flags to a valid strategy: `--researcher` or `--team` or `--architect` → `"arch"` (multi-agent research/architect work is closest to the `arch` ideation track); no flags → `"auto"`. Never write `"dual-agent: ..."`, `"team"`, `"researcher"`, or `"default"` — those values fail C9. Record the flag combination separately in `## Notes` (e.g. `dispatch: dual-agent (researcher + architect)`) so the orchestration intent is preserved without polluting the validated `agent_strategy` field.
+- **agent_strategy**: set to a value accepted by judge C9 (`auto` / `perf` / `code` / `ml` / `arch`). Map flags to the strategy that matches the **primary ideation agent** run will dispatch (per run/SKILL.md constants table): `--researcher` (with or without `--architect`) → `"ml"` (`research:scientist` is the primary ideation agent for paper-rooted hypotheses); `--architect` alone (no `--researcher`) → `"arch"` (`foundry:solution-architect`); `--team` alone → `"auto"` (team mode generates per-axis hypotheses); no flags → `"auto"`. Never write `"dual-agent: ..."`, `"team"`, `"researcher"`, or `"default"` — those values fail C9. Record the flag combination and dual-agent dispatch intent separately in `## Notes` (e.g. `dispatch: dual-agent (researcher primary + architect feasibility filter)`) so the orchestration intent is preserved without overriding the validated `agent_strategy` field.
 - **P-P3 (write program.md)**: Write to `<--out path>` if provided; else `program.md` at project root.
   - If output path exists: enforce the P-P3 AskUserQuestion overwrite gate — sweep does NOT bypass it. The gate's pipeline-mode exemption applies to non-interactive CI pipelines, not user-initiated sweeps. Invoke `AskUserQuestion`: (a) **Overwrite** — proceed; (b) **Abort** — stop. On Abort: print follow-up hint and stop.
 
@@ -128,7 +127,7 @@ sweep: plan → <output path> ✓
 
 > `$_RESEARCH_SKILLS` resolved in S2 — in scope throughout S3–S5.
 
-Initialize `REFINE_ITER = 0`, `MAX_REFINE = 3`.
+Initialize `REFINE_ITER = 0`, `MAX_REFINE = 3`, `NO_FIXES_ITER = 0`.
 
 Repeat up to `MAX_REFINE` times:
 
@@ -147,8 +146,8 @@ Repeat up to `MAX_REFINE` times:
 
    - If `REFINE_ITER < MAX_REFINE`:
      - Read `JUDGE_REPORT`. Extract `### Required Changes` section.
-     - If `### Required Changes` section absent: print `sweep: judge report missing Required Changes section — re-judging without edits` and continue loop (re-judge with unchanged file).
-     - If present: apply each fix to program file via Edit tool. **Always re-read the program file before each sequential Edit call; never assume file content is stable between tool calls** — earlier Edits in this batch may have shifted line offsets or modified surrounding context, so a stale `old_string` from the judge report may no longer match. Count applied fixes as `N_FIXES`; track failures as `N_FAILS`. If any Edit call fails (old_string not found or not unique): increment `N_FAILS`, continue remaining fixes. After all fixes attempted: if `N_FAILS > 0`, print `⚠ N_FAILS edit(s) failed — file may have changed since judge run; re-judging with partial fixes (N_FIXES applied)`. If `N_FIXES == 0` AND `N_FAILS > 0`: print `! All edits failed — re-judging without changes (edit conflict; check program file manually)`. Print: `sweep: applied N_FIXES fix(es) to <program path> — re-judging`
+     - If `### Required Changes` section absent: increment `NO_FIXES_ITER`. If `NO_FIXES_ITER >= 2` (two consecutive judge runs returning NEEDS-REVISION without a `### Required Changes` section): exit loop with outcome `judge-report-malformed` and print `! sweep: judge emitted NEEDS-REVISION but report contains no Required Changes section in 2 consecutive iterations — possible judge formatting issue. Inspect <JUDGE_REPORT>.` Invoke `AskUserQuestion` — (a) `proceed to run anyway` · (b) `abort`. On (a): proceed to S5. On (b): print follow-up hint and stop. Otherwise (NO_FIXES_ITER < 2): print `sweep: judge report missing Required Changes section — re-judging without edits (NO_FIXES_ITER=N)` and continue loop (re-judge with unchanged file).
+     - If present: reset `NO_FIXES_ITER = 0`. Apply each fix to program file via Edit tool. **Always re-read the program file before each sequential Edit call; never assume file content is stable between tool calls** — earlier Edits in this batch may have shifted line offsets or modified surrounding context, so a stale `old_string` from the judge report may no longer match. Count applied fixes as `N_FIXES`; track failures as `N_FAILS`. If any Edit call fails (old_string not found or not unique): increment `N_FAILS`, continue remaining fixes. After all fixes attempted: if `N_FAILS > 0`, print `⚠ N_FAILS edit(s) failed — file may have changed since judge run; re-judging with partial fixes (N_FIXES applied)`. If `N_FIXES == 0` AND `N_FAILS > 0`: print `! All edits failed — re-judging without changes (edit conflict; check program file manually)`. Print: `sweep: applied N_FIXES fix(es) to <program path> — re-judging`
      - Continue next iteration (loop item #1 will re-judge).
    - If `REFINE_ITER == MAX_REFINE` — exit loop, outcome `unresolved`.
 
@@ -161,6 +160,7 @@ Repeat up to `MAX_REFINE` times:
 | `approved` | Print `sweep: plan approved (REFINE_ITER/MAX_REFINE iteration(s)) ✓` → proceed to S5 |
 | `blocked` | Print `sweep: judge → BLOCKED ✗`; show all critical findings from report; print follow-up hint; stop |
 | `unresolved` | Print `sweep: judge unresolved after MAX_REFINE iterations ✗`; show remaining Required Changes from last report; call `AskUserQuestion` tool — do NOT write options as plain text: question "Unresolved — how to proceed?", (a) label `proceed to run anyway`, (b) label `fix manually then re-run`, (c) label `abort` — if `a`, proceed to S5; if `b` or `c`, print follow-up hint and stop |
+| `judge-report-malformed` | S3 already invoked `AskUserQuestion` with (a) proceed / (b) abort and handled the answer — S4 is a no-op for this outcome (S3 already proceeded to S5 or stopped). |
 
 Follow-up hint (blocked or unresolved):
 

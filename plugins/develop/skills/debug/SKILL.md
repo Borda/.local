@@ -1,7 +1,7 @@
 ---
 name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file."
-argument-hint: "<symptom or failing test> [--no-challenge] [--team] [--ci-run <run-id-or-url>]"
+argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--team] [--ci-run <run-id-or-url>]"
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -63,8 +63,10 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 CHALLENGE_ENABLED=true
 TEAM_MODE=false
 CI_RUN_ID=""
+REPO_NAME=""
 [[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
 [[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
+[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
 set -- $ARGUMENTS
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -77,6 +79,7 @@ done
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
 echo "$TEAM_MODE" > ${TMPDIR:-/tmp}/dev-team-mode
 echo "$CI_RUN_ID" > ${TMPDIR:-/tmp}/dev-ci-run-id
+echo "$REPO_NAME"  > ${TMPDIR:-/tmp}/dev-upstream
 # URL normalization and log fetching: see §URL Normalization in ci-log-extract.md below
 ```
 
@@ -84,13 +87,15 @@ Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challe
 
 Read `$_DEV_SHARED/ci-log-extract.md`. Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Mode selection** — debug runs in one of two mutually-exclusive modes; set explicitly before any Step:
 
 ```bash
 # timeout: 5000
-if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS" =~ ^#?[0-9]+$ ]]; then
+# Strip flags before integer detection so "123 --no-challenge" correctly detects issue mode
+ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+//g' | xargs)
+if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS_FOR_MODE_DETECT" =~ ^#?[0-9]+$ ]]; then
     DEBUG_MODE="issue"
 else
     DEBUG_MODE="symptom"
@@ -102,7 +107,7 @@ Subsequent steps branch by `DEBUG_MODE`:
 - **Issue mode**: Step 1 fetches issue body and extracts test path before invoking pytest; skip the symptom-text pytest block. Stop after Step 4 (handoff) — do not run symptom-text branches.
 - **Symptom mode**: Step 1 skips issue fetch; uses free-text symptom directly. Skip the issue-mode pytest block entirely.
 
-**If `TEAM_MODE=true`** — execute team investigation now and exit; skip standard Steps 1-4:
+**If `TEAM_MODE=true`** — execute team investigation now in place of standard Steps 1-2. After team synthesis completes, run Steps 3-4 inline (hypothesis gate + handoff to fix) on the winning hypothesis — do not return to standard Steps 1-2. Authoritative reading: team mode **replaces** Steps 1-2 (parallel hypothesis investigation supplants serial evidence gathering); Steps 3-4 still execute (inline within this block, not by looping back to the standard workflow):
 
 1. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template. Confirm `[ROLE_PHRASE]` = symptom text (from `$ARGUMENTS` stripped of flags), `[FILE_SLUG]` = `debug-hypothesis`.
 2. Run project detection (read `$_DEV_SHARED/runner-detection.md`) to set `$TEST_CMD` and `$PYTEST_CMD`.
@@ -111,7 +116,17 @@ Subsequent steps branch by `DEBUG_MODE`:
 5. **Synthesis trace agent**: spawn one `foundry:sw-engineer` synthesis agent after individual teammate reports — read all teammate findings from `.temp/develop/$TS/debug-hypothesis-*.md`, produce unified cross-cutting trace map (entry point, modules crossed, state mutations, invariant violations across hypotheses). Write to `.temp/develop/$TS/debug-trace-synthesis.md`.
 6. Lead synthesises consensus root cause from synthesis trace + competing hypotheses. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on the winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2.
 
-Health monitoring (CLAUDE.md §6): for each spawned agent, create sentinel `touch ${TMPDIR:-/tmp}/debug-team-check-N`; poll every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-N -type f | wc -l`; hard cutoff 15 min no-file-activity; mark timed-out agents with ⏱ in synthesis.
+Health monitoring (CLAUDE.md §6): for each spawned agent, use a **per-agent sentinel** keyed on the loop counter `$N` (not the literal `N`). Loop over agent indices in actual bash:
+
+```bash
+# timeout: 5000
+# For each spawned agent (N=1,2,3 ...) create its own sentinel
+for N in 1 2 3; do
+    touch "${TMPDIR:-/tmp}/debug-team-check-${N}"
+done
+```
+
+Poll each independently every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-${N} -type f | wc -l` where `$N` is the actual agent index in the loop variable. A single shared sentinel collapses health isolation — stalled agent N=2 cannot be distinguished from active agent N=1. Hard cutoff 15 min no-file-activity per agent; mark timed-out agents with ⏱ in synthesis.
 
 ## Step 1: Understand the symptom
 
@@ -120,7 +135,13 @@ Collect all signals before forming any hypothesis.
 **Issue-number mode first** — if `$ARGUMENTS` is issue number, fetch issue body and extract test path BEFORE invoking pytest:
 
 ```bash
-ISSUE_BODY=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null)  # timeout: 6000
+# timeout: 6000
+REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+if [ -n "$REPO_NAME" ]; then
+    ISSUE_BODY=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null)
+else
+    ISSUE_BODY=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null)
+fi
 echo "$ISSUE_BODY"
 ```
 
@@ -154,14 +175,23 @@ fi
 git log --oneline -20
 COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 LOOKBACK=$(( COMMIT_COUNT < 5 ? COMMIT_COUNT : 5 ))
-[ "$LOOKBACK" -gt 1 ] && git diff HEAD~${LOOKBACK}..HEAD -- "${SUSPECT_FILE:-}"  # set SUSPECT_FILE to the actual file path from failing test context
+SUSPECT_FILE="${TEST_PATH:-}"  # derive from TEST_PATH resolved above; empty -> full-repo diff (acceptable for small repos)
+[ "$LOOKBACK" -gt 1 ] && git diff HEAD~${LOOKBACK}..HEAD -- "${SUSPECT_FILE:-}"
 ```
 
-**Symptom-text mode** — if `$ARGUMENTS` is free-text, skip issue fetch + extraction; locate failing test path from symptom directly, then run:
+**Cross-repo adaptation** (when `REPO_NAME` set) — issue from different codebase. After fetching issue:
+1. Extract bug's root cause intent — what invariant is violated, not just described symptoms (which may reference upstream structure or code paths)
+2. Search LOCAL codebase for the equivalent failure site — grep for related symbols; code paths may differ from upstream due to divergence
+3. Treat upstream issue as debugging context, not as a map — trace the actual failure in local code
+
+**Symptom-text mode** — if `$ARGUMENTS` is free-text, skip issue fetch + extraction; locate failing test path from symptom directly. `<test_path>` is a **substitution token** — resolve it into the shell variable `$TEST_PATH` first (via Grep against symptom keywords or heuristic file search), then use `$TEST_PATH` in the pytest call. Do NOT execute with the literal `<test_path>` string — bash would interpret `<` as a stdin redirect from a file named `test_path`:
 
 ```bash
+# Resolve TEST_PATH before this block — e.g.:
+# TEST_PATH=$(grep -rE '<symptom keyword>' tests/ --include='*.py' -l | head -1)
+# Empty TEST_PATH → full suite (acceptable for symptom-text mode)
 # timeout: 600000
-$PYTEST_CMD --tb=long <test_path> -v 2>&1 | tail -60
+$PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
 GATE_EXIT=${PIPESTATUS[0]}
 echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
 if [ "$GATE_EXIT" -ne 0 ]; then
@@ -184,13 +214,17 @@ Spawn **foundry:sw-engineer** agent to map execution path and produce:
 
 Present agent's analysis summary before proceeding.
 
-**Flaky-test branch** — if symptom is intermittent (passes alone, fails in full suite): run binary-search isolation:
+**Flaky-test branch** — if symptom is intermittent (passes alone, fails in full suite): run binary-search isolation. `<failing-test-node-id>` is a **substitution token** — before executing this block, resolve the failing test node ID from `$ARGUMENTS` or from prior pytest output (captured in a shell variable, e.g. `FAILING_TEST_NODE=tests/foo.py::test_bar`), then substitute the literal node ID into the command. Do NOT execute with the literal `<failing-test-node-id>` string — bash would interpret `<` as a stdin redirect:
 
 ```bash
+# Resolve FAILING_TEST_NODE before this block — e.g.:
+# FAILING_TEST_NODE=$(echo "$ARGUMENTS" | grep -oE 'tests?/[^[:space:]]+::test_[^[:space:]]+' | head -1)
 _FOUNDRY_BIN=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig" -maxdepth 3 -type d -name "bin" -path "*/foundry/*" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
 [ -z "$_FOUNDRY_BIN" ] && _FOUNDRY_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin"
-if [ -f "$_FOUNDRY_BIN/find-polluter.py" ]; then
-    python "$_FOUNDRY_BIN/find-polluter.py" <failing-test-node-id>  # timeout: 60000
+if [ -z "$FAILING_TEST_NODE" ]; then
+    echo "⚠ FAILING_TEST_NODE not resolved — cannot run polluter isolation; surface failing test node ID first"
+elif [ -f "$_FOUNDRY_BIN/find-polluter.py" ]; then
+    python "$_FOUNDRY_BIN/find-polluter.py" "$FAILING_TEST_NODE"  # timeout: 60000
 else
     echo "⚠ foundry plugin absent — skipping flaky-test isolation; proceed with standard rerun"
 fi
@@ -302,7 +336,6 @@ Evidence: <key signals>
 - question: "Proceed with fix?"
 - (a) label: `/develop:fix --diagnosis <DIAG_FILE>` (substitute resolved path, e.g. `/develop:fix --diagnosis .plans/active/debug_<slug>.md`) — description: proceed with fix using confirmed diagnosis
 - (b) label: `skip` — description: no action
-
 
 </workflow>
 

@@ -235,6 +235,8 @@ touch ${TMPDIR:-/tmp}/calibrate-check-$batch_target; LAUNCH_AT=$(date +%s)
 ```
 Then spawn the pipeline. This ordering prevents false-alive readings on fast-exit agents (a checkpoint created after spawn may never see any writes if the agent exits before the first poll).
 
+> **Checkpoint granularity** — one checkpoint per **mode category** (e.g. `agents`, `skills`, `routing`, `communication`, `rules`), not one per individual agent within a mode. A mode stays "alive" as long as ANY of its pipelines (across all batches) writes a file under `.reports/calibrate/<TIMESTAMP>/<MODE>/` newer than the checkpoint. A fully stalled mode is one where zero pipelines have written in the check interval. The `$batch_target` substituted into the touch and poll commands is the **mode name** (e.g. `agents`), NOT a per-agent path.
+
 Poll every `$HEALTH_CHECK_INTERVAL_MIN` minutes: `find .reports/calibrate/$TIMESTAMP/$batch_target/ -newer ${TMPDIR:-/tmp}/calibrate-check-$batch_target -type f | wc -l` — new files = alive; use Read tool (limit=20) on `pipeline.jsonl` to check for PROGRESS:/HEARTBEAT: if stalled; apply `$PIPELINE_TIMEOUT_MIN_DUAL` instead of `$PIPELINE_TIMEOUT_MIN` for dual-source (Codex-active) targets.
 
 **On timeout**: read `tail -100 <output_file>` for partial JSON; if none use: `{"target":"<TARGET>","verdict":"timed_out","mean_recall":null,"gaps":["pipeline timed out — re-run individually with /calibrate <target> fast"]}`. Timed-out targets appear in report with ⏱ prefix and null metrics.
@@ -322,6 +324,7 @@ Mark "Apply findings" in_progress.
 ```bash
 LATEST=$(find .reports/calibrate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)
 TIMESTAMP=$(basename "$LATEST")
+[ -z "$TIMESTAMP" ] && { echo "! No prior calibration run found under .reports/calibrate/ — run /calibrate <targets> --fast first."; exit 1; }
 ```
 
 For each target in target list, check whether `.reports/calibrate/<TIMESTAMP>/<target>/proposal.md` exists. Collect targets with proposal (`found`) and without (`missing`).
@@ -333,6 +336,12 @@ Continue to next target. Only if ALL targets are missing: stop with `! No propos
 **Print run's report before applying**: for each found target, read and print `.reports/calibrate/<TIMESTAMP>/<target>/report.md` verbatim so user sees benchmark basis before any file changes.
 
 **Spawn one `foundry:curator` subagent per found target (`.md` files — agents and skills). Issue ALL spawns in single response — no waiting between spawns.**
+
+**Deduplicate by resolved physical path before spawning** — when two targets resolve to the same `<AGENT_FILE>` (e.g. project-local override vs plugin cache for the same logical agent, or `LOCAL_MODE=true` resolution colliding with a non-local resolution from a sibling target), concurrent curator spawns race on identical Edit calls and the second write may clobber the first. Build a `RESOLVED_PATHS` map after the per-target path-resolution loop above; for any group of targets that share the same `<AGENT_FILE>` after resolution:
+
+- Spawn one curator at a time for that group (sequential, not parallel)
+- Log: `! Sequential apply for <target-a> and <target-b> — both resolve to <AGENT_FILE>`
+- Other independent path groups remain parallel
 
 **`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. When `LOCAL_MODE=true`, source tree takes priority; otherwise project-local override first, then plugin cache, then source-tree fallback:
 ```bash

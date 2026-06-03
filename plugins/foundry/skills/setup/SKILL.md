@@ -124,10 +124,19 @@ if [ -z "$PLUGIN_ROOT" ]; then
             | sort -Vr | head -1)  # timeout: 10000
     [ -n "$PLUGIN_ROOT" ] && printf "  Note: foundry not in installed_plugins.json — using cache scan result; consider reinstalling\n"
 fi
+# Validate PLUGIN_ROOT — must be under ~/.claude/plugins/cache/ and have foundry plugin.json
+if [ -n "$PLUGIN_ROOT" ]; then
+    case "$PLUGIN_ROOT" in
+        "$HOME"/.claude/plugins/cache/*) ;;  # expected location — OK
+        *) echo "! SECURITY: PLUGIN_ROOT '$PLUGIN_ROOT' is outside expected cache dir — aborting setup"; exit 1 ;;
+    esac
+    _PR_NAME=$(jq -r '.name // empty' "$PLUGIN_ROOT/plugin.json" 2>/dev/null)
+    [ "$_PR_NAME" = "foundry" ] || { echo "! SECURITY: plugin.json name '$_PR_NAME' != foundry — aborting setup"; exit 1; }
+fi
 echo "$PLUGIN_ROOT" > "${TMPDIR:-/tmp}/setup-plugin-root"  # persist for later blocks (Check 41)
 ```
 
-If `$PLUGIN_ROOT` empty after both attempts, stop and report: "foundry plugin not found — install it first with: `claude plugin marketplace add /path/to/Borda-AI-Rig && claude plugin install foundry@borda-ai-rig`"
+If `$PLUGIN_ROOT` empty after both attempts, stop and report: "foundry plugin not found — install it first with: `claude plugin marketplace add Borda/AI-Rig && claude plugin install foundry@borda-ai-rig`"
 
 Confirm `$PLUGIN_ROOT/hooks/statusline.js` exists. If not, stop and report.
 
@@ -218,10 +227,8 @@ Write back with Write tool. Report: "Added N new permissions.deny entries (M alr
 Note: this step writes to `.claude/permissions-guide.md` relative to the current working directory — setup must be run from project root (a git repository root). Guard:
 
 ```bash
-[ -e ".git" ] || printf "! BLOCKED — /foundry:setup must run from project root (git repository root)\n"
+[ -e ".git" ] || { printf "! BLOCKED — /foundry:setup must run from project root (git repository root)\n"; exit 1; }
 ```
-
-If `! BLOCKED` printed above: stop — do not proceed with Step 6 or subsequent steps.
 
 Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — only if destination absent (preserves project-local edits via `/manage`):
 
@@ -306,7 +313,7 @@ The same cleanup also scans `~/.claude/agents/` for any foundry-managed symlinks
 mkdir -p "$HOME/.claude/skills"  # timeout: 5000
 mapfile -t LINK_CONFLICTS < <(python "$PLUGIN_ROOT/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
 # Persist for Phase 4 — Bash tool calls don't share shell state
-printf '%s\n' "${LINK_CONFLICTS[@]}" > ${TMPDIR:-/tmp}/foundry-setup-conflicts.txt  # timeout: 3000
+printf '%s\n' "${LINK_CONFLICTS[@]}" > ${TMPDIR:-/tmp}/foundry-setup-conflicts-${CLAUDE_SESSION_ID:-$$}.txt  # timeout: 3000
 ```
 
 The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
@@ -332,7 +339,7 @@ Options:
 - c) Review one by one
 
 On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
-On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
+On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. Iterate over each entry in `$LINK_CONFLICTS`; for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CLAUDE_SESSION_ID:-$$}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.
 
 **Phase 4 — Symlink** — for each approved, auto-replaced, or absent entry, `ln -sf` creates/replaces. Stale foundry symlinks from Phase 2 are included here (auto-replaced silently). Conflict guard depends on which Phase 3 branch fired:
 
@@ -342,8 +349,8 @@ On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=
 
 ```bash
 # Restore arrays from Phase 2/3 — Bash tool calls don't share shell state
-mapfile -t LINK_CONFLICTS < ${TMPDIR:-/tmp}/foundry-setup-conflicts.txt 2>/dev/null || LINK_CONFLICTS=()
-mapfile -t APPROVED_CONFLICT_ENTRIES < ${TMPDIR:-/tmp}/foundry-setup-approved.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
+mapfile -t LINK_CONFLICTS < ${TMPDIR:-/tmp}/foundry-setup-conflicts-${CLAUDE_SESSION_ID:-$$}.txt 2>/dev/null || LINK_CONFLICTS=()
+mapfile -t APPROVED_CONFLICT_ENTRIES < ${TMPDIR:-/tmp}/foundry-setup-approved-${CLAUDE_SESSION_ID:-$$}.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
 
 # Helper: is identifier in APPROVED_CONFLICT_ENTRIES?
 _approved() {
@@ -403,6 +410,8 @@ done  # timeout: 10000
 ## Step 9b: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
 
 ```bash
+# Backup existing CLAUDE.md before overwriting
+[ -f "$HOME/.claude/CLAUDE.md" ] && cp "$HOME/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md.bak"  # timeout: 5000
 cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"
 ```

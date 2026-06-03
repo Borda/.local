@@ -22,13 +22,13 @@ Rules:
 - Response body in blockquote (`>`) — visually distinct from tool/hook output in terminal
 - **Blockquote exceptions — render outside `>`**: tables (pipe-delimited rows break alignment inside `>`) and fenced code blocks (lose copy-paste fidelity inside `>`). Close the blockquote before the table/code block, then reopen `>` after if prose continues.
 - Never use table or pipe-delimited format for anchor line — pipe chars pollute copy-paste
-- No exceptions to the anchor rule — apply to every response including short ones
+- No exceptions to the anchor rule — a response beginning with any word other than `**Re:**` is non-compliant
 
 ## Reply Visibility
 
 Bold anchor + blockquote body creates a clear visual boundary from surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.
 
-**Exemption — machine-parsed responses**: omit Re: anchor and blockquote when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator.
+**Exemption — machine-parsed responses**: omit Re: anchor and blockquote when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
 
 ## Progress and Transparency
 
@@ -80,6 +80,8 @@ Compliant example — this is the only valid form:
 > Call `AskUserQuestion(questions=["What format is the data in? (JSON, CSV, XML)"])` — no prose question in the response body.
 
 - Plain text questions easily missed, don't block execution, don't surface as distinct UI affordance
+- Bracketed, annotated, or narrated tool calls are plain text and violate this constraint — examples of violations: `[AskUserQuestion: ...]`, `"I would ask..."`, `"AskUserQuestion would be invoked here"`, `(AskUserQuestion simulated)`
+- Only an actual tool invocation (tool call block in the response) satisfies this constraint
 - Applies to: ambiguous input, clarifying choices, scope decisions, continuation guards, any point where user input required before proceeding
 - **Scope decisions count**: user asks "should I also X?" mid-task → scope decision requiring AskUserQuestion — not rhetorical; never silently resolve
 - Applies globally — all skills, agents, model-generated questions without exception

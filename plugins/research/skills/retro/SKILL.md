@@ -11,7 +11,7 @@ disable-model-invocation: true
 
 Post-run retrospective analysis. After `/research:run` completes, reads `.experiments/state/<run-id>/experiments.jsonl`, computes statistical significance, detects dead iterations, flags suspicious metric jumps, generates learning summary with next-hypothesis queue.
 
-NOT for: running experiments (use `/research:run`); designing experiments (use `/research:plan`); validating methodology (use `/research:judge`); verifying paper implementation (use `/research:verify`). Read-only — never modifies code, commits, or experiment state.
+NOT for: running experiments (use `/research:run`); designing experiments (use `/research:plan`); validating methodology (use `/research:judge`); verifying paper implementation (use `/research:verify`); comparing runs from different programs or goals — `--compare` is valid only for same-program, same-metric runs. Read-only — never modifies code, commits, or experiment state.
 
 </objective>
 
@@ -46,10 +46,16 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
    No completed run found. Run /research:run first, or provide: /research:retro <run-id>
    ```
 
+**Newer-in-progress check** (only when path 2 was used — no explicit run-id given): after selecting the completed run, scan `.experiments/state/` for any directory with `status: running` and mtime newer than the selected dir. If found, surface a warning but do not stop — the user may intentionally retro the prior completed run:
+
+```text
+⚠ Newer in-progress run found: <newer-run-id> (status: running, started <ISO timestamp>). Retro will analyse <selected-run-id> instead. Use /research:retro <run-id> to override.
+```
+
 **Load files** from `.experiments/state/<run-id>/`:
 
 - `state.json`: extract `goal`, `best_metric`, `config` (including `metric.direction`), `iteration` count, `best_commit`. Compute `baseline_metric` from iteration 0 in `experiments.jsonl`.
-- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and skip.
+- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and **rewrite a sanitized copy to `$RUN_DIR/experiments-clean.jsonl`** (skip the truncated last line). All downstream steps (T2 retro_analyze.py, T3 dead-iter scan, T5 scientist) must read the sanitized copy — never the raw file — so every step sees the same iteration set. Persist the sanitized path: `echo "$RUN_DIR/experiments-clean.jsonl" > "${TMPDIR:-/tmp}/retro-jsonl-path"` (consumers re-hydrate from this file). If the JSONL is untruncated, the sanitized copy is byte-identical to the raw file.
 - `diary.md`: if present, read for qualitative context in T5.
 
 If `--compare <run-id-2>` present: load second run identically from `.experiments/state/<run-id-2>/`. If not found, stop: `"Compare target not found: .experiments/state/<run-id-2>/. Check run ID and retry."`
@@ -70,6 +76,9 @@ echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id"
 ```bash
 # RUN_ID = run-id argument if provided, else dir name of latest completed run  <!-- loads: find_run_id.py -->
 RUN_ID="${RUN_ID_ARG:-$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" .experiments/state 2>/dev/null)}"
+# T-G2: fail-fast if RUN_ID resolution returned empty — find_run_id.py errors are suppressed by `2>/dev/null`,
+# so the empty case must be surfaced here to avoid `.experiments/state//experiments.jsonl` (double-slash path).
+[ -z "$RUN_ID" ] && { echo "! Failed to resolve run ID — no completed run found or bin/find_run_id.py unavailable; check research plugin install."; exit 1; }
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved"  # persist resolved id for T3 / fallback paths
 ```
@@ -88,6 +97,8 @@ Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python wi
 ALPHA="${ALPHA:-0.05}"
 METRIC_DIRECTION=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/read_state_field.py" ".experiments/state/$RUN_ID/state.json" "config.metric.direction" --default "higher" 2>/dev/null || echo "higher")  # loads: read_state_field.py
 RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl ".experiments/state/$RUN_ID/experiments.jsonl" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
+RETRO_EXIT=$?
+[ "$RETRO_EXIT" -eq 2 ] && { echo "retro: Input error (exit 2) — run-id '$RUN_ID' missing, malformed, or has no baseline record; re-run /research:run to create baseline"; exit 1; }
 ```
 
 **Contract** — script reads JSONL, extracts metric values for ALL iterations with `status == "kept"`, pairs each against the baseline record (`status == "baseline"`), runs a one-sided Wilcoxon signed-rank test, and prints a single line of JSON to stdout:
@@ -142,7 +153,11 @@ RUN_DIR=$(cat "${TMPDIR:-/tmp}/retro-run-dir" 2>/dev/null)
 RUN_ID_ARG=$(cat "${TMPDIR:-/tmp}/retro-run-id" 2>/dev/null)
 RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved" 2>/dev/null)
 # Guard: any of these empty means T1 didn't run — surface and exit rather than write to a bare /
-[ -z "$RUN_DIR" ] || [ -z "$RUN_ID" ] && { echo "retro T3: state files missing — T1 must run first" >&2; exit 1; }
+# T-C1: separate guards — `|| ... &&` has subtle precedence; split for unambiguous evaluation.
+# `exit 1` terminates the Bash subprocess only — if either variable is empty, the orchestrator MUST
+# treat this Bash call's non-zero exit as a hard stop and NOT proceed to T4. Surface the diagnostic.
+[ -z "$RUN_DIR" ] && { echo "retro T3: RUN_DIR missing — T1 must run first" >&2; exit 1; }
+[ -z "$RUN_ID" ]  && { echo "retro T3: RUN_ID missing — T1 must run first" >&2; exit 1; }
 ```
 
 Write summary to `$RUN_DIR/dead-iters.json` via Write tool. Format:
@@ -259,6 +274,8 @@ Path:          → .reports/research/retro-<branch>-<date>.md
 
 **Effect size interpretation**: |r| < 0.3 = small, 0.3–0.5 = medium, > 0.5 = large.
 
+> **Independence caveat** — Wilcoxon assumes independent samples. Sequential optimization iterations are typically autocorrelated; p-value is indicative only, not formally valid. If `dead_pct > 30%` from the Dead Iterations section, escalate caveat to HIGH: "p-value unreliable — high autocorrelation from dead-plateau windows."
+
 ### Dead Iterations
 
 | Start | End | Count | Type | Notes |
@@ -324,9 +341,11 @@ Suspicious:    <N> jumps (<severity> — investigate: <sha1>, <sha2>)  [or: none
 Hypotheses:    <N> next steps generated
 -> saved to .reports/research/retro-<branch>-<date>.md
 ---
-Next: /research:run <program.md> --hypothesis <RUN_DIR>/hypotheses.jsonl
+Next: /research:run <program.md> --hypothesis <RUN_DIR>/hypotheses.jsonl    [only if scientist_status != "timed_out" AND <RUN_DIR>/hypotheses.jsonl exists]
      /research:fortify <run-id>    ← stress-test top hypothesis before full re-run
 ```
+
+If `scientist_status == "timed_out"` or `<RUN_DIR>/hypotheses.jsonl` does not exist on disk, omit the `--hypothesis` Next line entirely and replace with: `Next: /research:fortify <run-id>    ← scientist analysis unavailable; no hypotheses queue generated`.
 
 Call `AskUserQuestion` tool after summary — do NOT write options as plain text:
 - question: "What next?"
@@ -345,6 +364,7 @@ Call `AskUserQuestion` tool after summary — do NOT write options as plain text
 - `--compare` requires both runs use same metric; if metric names differ, stop: `"Cannot compare runs with different metrics: <metric-1> vs <metric-2>"`
 - Dead iteration threshold (`--threshold`) should match metric's noise floor — default 0.001 for normalized metrics; adjust for raw values (e.g. `--threshold 0.1` for loss in hundreds)
 - Statistical tests assume metric values are independent samples — if iterations highly correlated (e.g. cumulative optimization), note limitation in report
+- **Requires `scipy` in active Python environment** (`pip install scipy`) — `retro_analyze.py` runs the Wilcoxon signed-rank test via `scipy.stats`. Without scipy, the test is skipped and `retro_analyze.py` returns `{"significant": false, "p_value": null, "reason": "scipy not installed"}`; report includes descriptive stats only (mean/median/min/max/std). Install: `pip install scipy` or `uv add scipy`.
 - **Named anomaly patterns** (use consistently across reports):
   - `kept-regression`: a kept iteration where metric moved in wrong direction (positive delta for higher-is-better, negative delta for lower-is-better)
   - `reverted-improvement`: a reverted iteration where metric moved in correct direction — reverted for non-metric reasons (performance, OOM, instability); flag as "improvement-when-reverted — consider revisiting with adjusted constraints"

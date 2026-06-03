@@ -72,10 +72,22 @@ def make_dataloader(dataset: torch.utils.data.Dataset, seed: int, num_workers: i
 
 
 def test_dataloader_reproducibility():
+    # Explicitly seed before tensor construction — the autouse fixture seeds before
+    # the test body begins, but make the seed contract explicit at the construction
+    # site so this test does not rely on fixture-ordering for its dataset values.
+    torch.manual_seed(42)
     ds = torch.utils.data.TensorDataset(torch.randn(16, 3, 224, 224))
     loader1 = make_dataloader(ds, seed=42)
     loader2 = make_dataloader(ds, seed=42)
-    for (batch1,), (batch2,) in zip(loader1, loader2):
+    # Use zip_longest so a divergent batch count (e.g. drop_last asymmetry) raises
+    # rather than silently truncating to the shorter iterable.
+    from itertools import zip_longest
+
+    sentinel = object()
+    for pair1, pair2 in zip_longest(loader1, loader2, fillvalue=sentinel):
+        assert pair1 is not sentinel and pair2 is not sentinel, "loader batch counts diverged"
+        (batch1,) = pair1
+        (batch2,) = pair2
         torch.testing.assert_close(batch1, batch2)
 
 

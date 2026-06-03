@@ -95,7 +95,8 @@ ARGUMENTS=" $ARGUMENTS "
 ARGUMENTS="${ARGUMENTS// --local / }"; ARGUMENTS="${ARGUMENTS// --adversarial / }"
 ARGUMENTS="${ARGUMENTS// --efficiency / }"; ARGUMENTS="${ARGUMENTS// --upgrade / }"
 ARGUMENTS="${ARGUMENTS// --skip-gate / }"; ARGUMENTS="${ARGUMENTS// --challenge / }"
-ARGUMENTS="${ARGUMENTS# }"; ARGUMENTS="${ARGUMENTS% }"
+# Collapse multiple internal spaces from repeated stripping; trim leading/trailing
+ARGUMENTS=$(echo "$ARGUMENTS" | tr -s ' '); ARGUMENTS="${ARGUMENTS# }"; ARGUMENTS="${ARGUMENTS% }"
 
 # Mutual exclusion: --upgrade cannot be combined with --adversarial or --efficiency
 if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFFICIENCY_MODE" = "true" ]; }; then
@@ -144,7 +145,7 @@ else
     NODE_AVAILABLE=false
 fi
 
-AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local}) || { printf "! BREAKING: audit/templates not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
+AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" )) || { printf "! BREAKING: audit/templates not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
 
 # Persist LOCAL_MODE and AUDIT_TPL for subsequent Bash blocks (fresh-shell state loss).
 # Re-derive at start of each Step that uses them — see ADV-M1 protocol below.
@@ -159,7 +160,7 @@ If `.claude/` missing, abort immediately. Missing `jq` is warning — audit cont
 
 ```bash
 LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local})
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 ```
 
 Place these two lines at the top of every Bash block in Steps 2–11 that references either variable.
@@ -240,9 +241,10 @@ Set up the run directory once before spawning any agents:
 
 ```bash
 LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
-AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates ${LOCAL_MODE:+--local})
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
 
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make_run_dir.py" .reports/audit)  # timeout: 5000
+[ -z "$RUN_DIR" ] && { printf "! BREAKING: make_run_dir.py returned empty path — check Python availability and write permission on .reports/\n"; exit 1; }
 echo "Run dir: $RUN_DIR"
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/audit-state/run-dir"
 ```
@@ -329,7 +331,7 @@ Read `$AUDIT_TPL/checks-index.md` for the full check index (Checks 1–40, I1–
 ### Claude Code docs freshness (within Step 4)
 
 ```text
-Agent(subagent_type="foundry:web-explorer", prompt="Fetch current Claude Code docs (https://code.claude.com/docs/en/). Check: hook event names + type field vs documented schema (deprecated decision:/reason: fields); agent frontmatter fields + model values; skill frontmatter fields; new features passing genuine-value filter → Upgrade Proposals table (max 5, classify config or capability). Write full findings to $RUN_DIR/docs-freshness.md using the Write tool. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/docs-freshness.md\",\"findings\":N,\"deprecated\":N,\"new_features\":N,\"confidence\":0.N,\"summary\":\"N findings, N deprecated, N new features\"}")
+Agent(subagent_type="foundry:web-explorer", prompt="Fetch current Claude Code docs (https://code.claude.com/docs/en/). If that URL returns 404 or redirects, navigate from https://code.claude.com homepage to find the documentation section. If docs are entirely unavailable, return {\"status\":\"unavailable\",\"findings\":0}. Check: hook event names + type field vs documented schema (deprecated decision:/reason: fields); agent frontmatter fields + model values; skill frontmatter fields; new features passing genuine-value filter → Upgrade Proposals table (max 5, classify config or capability). Write full findings to $RUN_DIR/docs-freshness.md using the Write tool. End your full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Return ONLY: {\"status\":\"done\",\"file\":\"$RUN_DIR/docs-freshness.md\",\"findings\":N,\"deprecated\":N,\"new_features\":N,\"confidence\":0.N,\"summary\":\"N findings, N deprecated, N new features\"}")
 ```
 
 <!-- URLs fetched live by web-explorer at runtime; graceful degradation: if any 404, instruct navigation from code.claude.com homepage. -->
@@ -376,7 +378,7 @@ Spawn **foundry:web-explorer**:
 **C — Codex adversarial pass** (requires `codex` plugin):
 
 ```bash
-CODEX_AVAILABLE=$(find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1 | grep -q . && echo true || echo false)  # timeout: 5000
+claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=true || CODEX_AVAILABLE=false  # timeout: 15000
 ```
 
 If `CODEX_AVAILABLE=true`: spawn `Agent(subagent_type="codex:codex-rescue")`:
@@ -393,10 +395,11 @@ If `CODEX_AVAILABLE=false`: log `[Step 5b] Codex unavailable — adversarial pas
 
 ```bash
 _SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
-[ -f "$_SHARED/cross-validation-protocol.md" ] || { printf "⚠ WARNING: cross-validation-protocol.md not found at $_SHARED — skipping cross-validation\n"; }
+SKIP_CROSS_VAL=false
+[ -f "$_SHARED/cross-validation-protocol.md" ] || { printf "⚠ WARNING: cross-validation-protocol.md not found at $_SHARED — skipping cross-validation\n"; SKIP_CROSS_VAL=true; }
 ```
 
-Read and follow cross-validation protocol from `$_SHARED/cross-validation-protocol.md` (if exists).
+If `$SKIP_CROSS_VAL` = false: Read and follow cross-validation protocol from `$_SHARED/cross-validation-protocol.md`.
 
 **Skill-specific**: the verifier agent is always **foundry:curator**.
 
@@ -415,7 +418,7 @@ Before emitting, read current `$RUN_DIR/summary.jsonl` (may have been updated by
 
 ### Summary
 - Total: N (S security, C critical, H high, M medium, L low)
-- Fix via follow-up gate: (a) Fix SECURITY + CRITICAL + HIGH · (b) fix auto-fixable · (c) fix ALL incl. systemic
+- Fix via follow-up gate: (a) Fix auto-fixable (Recommended) · (b) Fix SECURITY + CRITICAL + HIGH · (c) fix ALL incl. systemic
 
 ### Upgrade Proposals (N — pick `/audit --upgrade` from gate to apply)
 | # | Feature | Type | Rationale |
@@ -494,7 +497,7 @@ Each subagent prompt: read from `$AUDIT_TPL/fix-prompt.md`, fill `<file path>` a
 
 <!-- loads: audit-fix-prompt.md -->
 
-After gate fires (Step 7): finding count > 10 or user picked option (b) "Fix auto-fixable" or (c) "Fix ALL" → use audit-fix sub-agent pattern below (handles Steps 8–10 in isolation); otherwise use inline batched pattern at end of this step.
+After gate fires (Step 7): finding count > 10 or user picked option (a) "Fix auto-fixable" or (c) "Fix ALL" → use audit-fix sub-agent pattern below (handles Steps 8–10 in isolation); otherwise use inline batched pattern at end of this step.
 
 **Gate authority**: sub-agent path → orchestrator Step 7 gate **skipped** — sub-agent runs own gate internally, authoritative. Inline batched path (≤10 findings) → orchestrator Step 7 gate authoritative, no sub-agent gate. Never double-gate.
 
@@ -502,7 +505,7 @@ After gate fires (Step 7): finding count > 10 or user picked option (b) "Fix aut
 
 Spawn a dedicated **audit-fix** sub-agent — read full prompt from `$AUDIT_TPL/audit-fix-prompt.md` and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into the prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false`, `failed > 0`, or `residual_criticals > 0`.
 
-Finding count ≤ 10 and user picked option (a) "Fix CRITICAL + HIGH" → inline batched pattern (one fix-agent per file, all parallel) acceptable; no dedicated sub-agent.
+Finding count ≤ 10 and user picked option (b) "Fix SECURITY + CRITICAL + HIGH" → inline batched pattern (one fix-agent per file, all parallel) acceptable; no dedicated sub-agent.
 
 **Findings that bypass fix-agent delegation:**
 
@@ -532,7 +535,7 @@ After subagents complete, collect results and proceed to Step 10.
 After Step 8 fix agents complete, before foundry:curator re-audit:
 
 ```bash
-CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
+claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=true || CODEX_AVAILABLE=""  # timeout: 15000
 _SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
 ```
@@ -611,6 +614,10 @@ EFFICIENCY_MD="$AUDIT_TPL/../modes/efficiency.md"
 
 Read and execute `$EFFICIENCY_MD`.
 
+## Combined-run output isolation
+
+When `--adversarial` and `--efficiency` both run in the same invocation: each mode writes its finding files to its own subdirectory to prevent overwriting — `$RUN_DIR/adversarial/` for adversarial mode output, `$RUN_DIR/efficiency/` for efficiency mode output. Step 5 consolidator reads both subdirs. Follow-up gate fires once after both complete with merged finding counts.
+
 ## Follow-up gate
 
 **Always fires** unless `--skip-gate` passed (programmatic callers). Call `AskUserQuestion` — do NOT write options as plain text first. Map options directly into tool call arguments.
@@ -620,16 +627,16 @@ When user picks fix option (a–c): run Steps 8–10 inline (state on disk in `s
 **HARD RULE — Fixed option labels**: Use exactly the labels below verbatim. Do NOT rewrite, paraphrase, or substitute finding-specific alternatives. Finding context must NOT influence option labels. This rule has been violated repeatedly in past runs; enforce strictly.
 
 **Mandatory options (always present, never omit)**:
-- (b) label: `Fix auto-fixable` — auto-fix critical, high, medium, and low findings (skip NON_AUTO_FIXABLE systemic issues); **recommended**
+- (a) label: `Fix auto-fixable (Recommended)` — auto-fix critical, high, medium, and low findings (skip NON_AUTO_FIXABLE systemic issues)
 - (c) label: `Fix ALL` — collect all NON_AUTO_FIXABLE decisions upfront (max 4 `AskUserQuestion` calls), then run one integrated fix pass covering auto-fixable + resolved systemic items + lows; most thorough option
 
 **Conditional options (include when condition met)**:
-- (a) label: `Fix SECURITY + CRITICAL + HIGH` — include only when security, critical, or high findings present; omit otherwise to stay within 4-option cap
+- (b) label: `Fix SECURITY + CRITICAL + HIGH` — include only when security, critical, or high findings present; omit otherwise to stay within 4-option cap
 - (d) label: `Skip` — always include; when `--efficiency` ran and `extract_count > 0` (HIGH or MEDIUM), replace with `` `Run /distill executables (N HIGH, M MEDIUM candidates)` `` instead
 
 **Option slot budget** (`AskUserQuestion` hard cap = 4 options; "Other" always auto-appended as 5th free-text slot):
 - Typical: (a) + (b) + (c) + (d) = 4 ✓
-- No sec/crit/high findings: (b) + (c) + (d) = 3 ✓ — slot freed; do NOT fill with custom finding-specific option
+- No sec/crit/high findings: (a) + (c) + (d) = 3 ✓ — slot freed; do NOT fill with custom finding-specific option
 - Efficiency override active: (a) + (b) + (c) + distill = 4 ✓ — (d) Skip replaced by distill label
 
 - question: "What next?" (include counts, e.g. "2 critical, 4 high, 3 medium, 1 low. What next?")

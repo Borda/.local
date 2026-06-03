@@ -32,7 +32,12 @@ Bare comment text → skip to Codex dispatch (Step 12).
   - `42 report` or `<URL> report` → **pr + report mode**: aggregate live GitHub comments + review report, deduplicated in one pass
   - Bare review comment text → **comment dispatch mode** (jumps to Step 12)
 - **`--no-challenge`**: optional — skip challenge gate per item; all selected items treated as `VALID`
-- **`--agent <name>`**: optional — use `<name>` agent for implementation instead of Codex; must be an implementation agent; bare name auto-prefixed with `foundry:` if no plugin prefix detected (e.g. `--agent sw-engineer` → `foundry:sw-engineer`; `--agent linting-expert` → `foundry:linting-expert`; `--agent doc-scribe` → `foundry:doc-scribe`); explicit prefix also accepted (`--agent foundry:sw-engineer`); see routing table in `action-item-dispatch.md`
+- **`--agent <name>`**: optional — use `<name>` agent for implementation instead of Codex; must be an implementation agent; bare name auto-prefixed with `foundry:` if no plugin prefix detected (e.g. `--agent sw-engineer` → `foundry:sw-engineer`; `--agent linting-expert` → `foundry:linting-expert`; `--agent doc-scribe` → `foundry:doc-scribe`); explicit prefix also accepted (`--agent foundry:sw-engineer`); see routing table in `action-item-dispatch.md`. **`--agent` also applies to `INTEL_AGENT` (Step 3b thread intelligence)** — explicit `--agent` overrides label/title routing for the thread-intelligence subagent as well, so a docs-focused PR routed via `--agent foundry:doc-scribe` uses doc-scribe for both classification and implementation.
+
+NOT-for additions (scope guards):
+
+- **NOT for non-Python source PRs** (TypeScript, Go, Rust, Java) unless action items are limited to documentation or CI/CD changes — Step 9's lint-qa gate runs Python-specific tools (`ruff`/`mypy`); non-Python PRs will receive partial or no static-analysis review. For non-Python repos, run `/oss:resolve` in `report` mode with manually-curated findings.
+- **NOT for branches with uncommitted local edits** — the `report`-mode no-PR# path operates on the current branch as-is; uncommitted changes will be committed alongside the action items. Stash (`git stash`) or commit local edits before invoking; the workflow does not auto-stash.
 
 </inputs>
 
@@ -73,13 +78,22 @@ Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 
 ## Step 1: Pre-flight
 
+Capture caller's branch first — needed for Step 11 restore even when Step 4 (`gh pr checkout`) is skipped or fails mid-checkout. Initialise here so the restore path in Step 11 is always well-defined:
+
+```bash
+SAVED_BRANCH=$(git branch --show-current 2>/dev/null || echo "")  # timeout: 3000
+```
+
 Extracted to `bin/resolve_preflight.py` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Emits `CODEX_AVAILABLE=<bool>` and `GH_OK=true` on stdout for `eval`; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
 
 ```bash
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_preflight.py")"  # timeout: 30000
+_PREFLIGHT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_preflight.py" 2>&1)  # timeout: 30000
+_PREFLIGHT_RC=$?
+[ "$_PREFLIGHT_RC" -ne 0 ] && { echo "$_PREFLIGHT_OUT"; exit 1; }
+eval "$_PREFLIGHT_OUT"
 ```
 
-gh missing or not authenticated → script exits 1 (error printed above).
+gh missing or not authenticated → script exits 1 (error printed above; eval skipped when exit code non-zero).
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
@@ -192,7 +206,7 @@ Map each finding to action item schema:
 
 PR# found in report header → set `$ARGUMENTS = <N>`, go to Step 4; skip Step 3b entirely. After checkout, set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs (report mode executes all findings; no user selection step); skip to Step 8.
 
-No PR# in header → skip Steps 3b and 4; work on current branch as-is. Set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs; skip to Step 8.
+No PR# in header → skip Steps 3b and 4; work on current branch as-is. Before skipping, set fallback values for variables Step 8 reads: `HEAD_REF=$(git branch --show-current 2>/dev/null || echo "")` and `IS_FORK=false` (no cross-repo context). Set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs; skip to Step 8.
 
 **Report mode — Step 8 behavior**: `SELECTED_ITEMS` initialized above; Step 3d (user selection) is skipped; Step 8 proceeds with all report-derived items. If report produces zero action items: `SELECTED_ITEMS=[]` → Step 8 skipped, jump to Step 9.
 
@@ -234,7 +248,11 @@ Extract and record:
 Set up implementation work directory and fetch repo name (used throughout the workflow):
 
 ```bash
+# Guarantee $IMPL_DIR is an absolute path before subagent dispatch — subagents may run
+# with a CWD different from the orchestrator's; a relative $IMPL_DIR would resolve to
+# the wrong directory inside the subagent and silently lose files.
 [ -z "$IMPL_DIR" ] && IMPL_DIR=$(mktemp -d)  # timeout: 3000
+[[ "$IMPL_DIR" = /* ]] || IMPL_DIR=$(mktemp -d)  # replace any relative path with a fresh absolute tempdir
 mkdir -p "$IMPL_DIR"  # timeout: 3000
 REPO_NAME=$(gh repo view --json name --jq .name 2>/dev/null)  # timeout: 6000
 ```
@@ -249,6 +267,8 @@ Infer `INTEL_AGENT` from `PR_LABELS` + `PR_TITLE` (lowercase, first match wins) 
 | `doc`, `readme`, `changelog`, `sphinx` | `foundry:doc-scribe` |
 | `lint`, `style`, `format`, `ruff`, `mypy` | `foundry:linting-expert` |
 | (no match / mixed) | `foundry:sw-engineer` |
+
+**`--agent` override applies to `INTEL_AGENT`**: when the caller passes `--agent <name>`, the resolved (auto-prefixed) agent overrides the routing table for `INTEL_AGENT` as well as the Step 8 implementation agent — caller's explicit agent choice always wins. Exception: when the resolved agent is `codex:codex-rescue` (Codex is the implementation default; not a classification agent), fall back to the routing table for `INTEL_AGENT`.
 
 Apply `agent-resolution.md` fallback to `INTEL_AGENT` (foundry absent → substitute with `general-purpose` + role prefix).
 
@@ -474,14 +494,17 @@ if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     exit 1
 fi
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
-gh pr checkout <PR#>   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
+# Hard-exit on checkout failure — silent failure leaves git on the caller's branch while
+# $HEAD_REF is set from Step 3b, causing Step 8 commits to land on the wrong branch.
+gh pr checkout <PR#> || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
 ```
 
-`gh pr checkout` auto-handles forks — adds contributor's remote, configures tracking. Verify:
+`gh pr checkout` auto-handles forks — adds contributor's remote, configures tracking. Verify checkout landed on expected branch — if not, abort before Step 8 can commit:
 
 ```bash
 git remote -v | grep '(fetch)' | head -10 # timeout: 3000
 git status                                # confirm we are on HEAD_REF  # timeout: 3000
+[ "$(git branch --show-current)" = "$HEAD_REF" ] || { echo "⛔ checkout did not land on $HEAD_REF (current: $(git branch --show-current)) — aborting before Step 8 can commit to wrong branch"; exit 1; }  # timeout: 3000
 ```
 
 Determine `FORK_REMOTE` for push in Step 10:

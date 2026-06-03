@@ -54,10 +54,10 @@ SENTINEL_SLUG_FORMULA: |
 **Auto-inference keyword heuristics** (when `agent_strategy: auto` or omitted; checked against `## Goal` text AND metric command):
 
 **Precedence order** (first match wins; ML keywords take priority over test-framework keywords). ML-specific compound terms (not bare tokens) required to prevent over-triggering on `eval`/`train`/`val` as common words:
-- contains `accuracy`, `loss` (when paired with `train_loss`/`val_loss`/`eval_loss`), `f1_score`, `auc_roc`, `auroc`, `train_step`, `val_acc`, `eval_loss`, `epoch`, `gradient`, `tensor`, OR explicit `--scientist` flag → `ml` → `research:scientist`
+- contains `accuracy`, `loss` (when paired with `train_loss`/`val_loss`/`eval_loss`), `f1_score`, `auc_roc`, `auroc`, `train_step`, `val_acc`, `eval_loss`, `epoch`, `gradient`, `tensor`, `overfit`, `generaliz`, `regulariz`, `validation`, `dropout`, `weight_decay`, `lr_schedule`, `cross_val`, `precision`, `recall`, OR explicit `--scientist` flag → `ml` → `research:scientist`
 - contains `time`, `latency`, `bench`, `throughput`, `memory` → `perf` → `foundry:perf-optimizer`
 - contains `pytest`, `coverage`, `complexity` → `code` → `foundry:sw-engineer`
-- no keyword match → `perf` (default fallback)
+- no keyword match → `perf` (default fallback) — **WARN**: print `⚠ No keyword match — defaulting to 'perf' strategy. If this is an ML task, set agent_strategy: ml in program.md.` Log resolved agent + reason in state.json `strategy_resolution`.
 
 Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml` routing — too common in non-ML contexts (test eval scripts, training-environment configs, validator command names).
 
@@ -119,6 +119,8 @@ Triggered by `run <goal|file.md>`.
 ### Step R0: Hypothesis pre-phase (`--researcher` / `--architect`)
 
 If no `--researcher`/`--architect`, skip to R1.
+
+**Flag combination guard**: if `--researcher` is set but `--architect` is NOT, print `⚠ --researcher without --architect: hypotheses will NOT be validated for architectural feasibility before execution — infeasible hypotheses may waste iterations. Add --architect for feasibility filtering.` then continue (this is advisory, not blocking). If only `--architect` is set without `--researcher`, the feasibility filter applies to oracle-generated hypotheses — valid combination.
 
 Read `${CLAUDE_SKILL_DIR}/modes/hypothesis-pipeline.md`
 
@@ -226,7 +228,8 @@ Run all checks before touching code. Fail fast with clear message:
 6. **`--codex` check**: verify `claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'`. If unavailable: print `⚠ codex plugin not found. Install it with: /plugin marketplace add openai/codex-plugin-cc` and **stop**.
 7. **`compute: docker` check**: run `docker ps` via Bash (`timeout: 5000`). If non-zero: print `⚠ Docker daemon not running. Start Docker Desktop and retry.` and **stop**.
 8. **Flag conflict**: if `--colab` and `--compute=docker` both active: print `⚠ --colab and --compute=docker are mutually exclusive. Use one or the other.` and **stop**.
-9. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
+9. **`--colab` + `--codex` compatibility note** (non-blocking): if both flags active, print `ℹ --colab + --codex active: Codex Phase 2c will receive colab_hw context so generated code can target the right GPU (H100/T4 bf16 vs fp16). Phase 5 metric verification runs through Colab MCP as usual.` and continue. Pass `colab_hw` to Codex spawn prompt (Phase 2c — see `modes/codex-copilot.md`).
+10. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
 
 **`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:setup` (requires `foundry` plugin) from foundry plugin to `.claude/skills/_shared/`). If not found:
 
@@ -491,8 +494,8 @@ Record pass (exit 0) or fail (non-zero).
 
 | Condition | Action |
 | --- | --- |
-| metric improved AND guard pass | Keep commit. Update `state.json`: `best_metric`, `best_commit`. |
-| metric improved AND guard fail | Rework: re-spawn agent with guard failure output. Max `GUARD_REWORK_MAX` (2) attempts. If still failing: revert. |
+| metric improved AND guard pass | Keep commit. Update `state.json`: `best_metric`, `best_commit`. "Improved" = `new_metric > best_metric` when `direction: higher`; `new_metric < best_metric` when `direction: lower`. |
+| metric improved AND guard fail | Rework: re-spawn agent with guard failure output. Max `GUARD_REWORK_MAX` (2) attempts. If still failing after all rework attempts: revert (`git revert HEAD --no-edit`); diary status = `"reverted"`, decision = `"Guard failed after GUARD_REWORK_MAX rework attempts — reverted"`. |
 | metric improved AND gain < 0.1% AND change > 50 lines | Refresh sentinel; discard: `git revert HEAD --no-edit`. (Line count computed via `CHANGE_LINES` — see note below table.) |
 | no improvement | Refresh sentinel; revert: `git revert HEAD --no-edit`. |
 

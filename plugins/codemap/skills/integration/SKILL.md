@@ -79,9 +79,13 @@ while IFS= read -r line; do
 done < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_proj_index.py")
 PROJ="${_idx[0]:-}"
 INDEX="${_idx[1]:-}"
+if [ -z "$PROJ" ]; then
+    printf "✗ resolve_proj_index.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
+    echo "failed" > "${TMPDIR:-/tmp}/codemap-c1-status"
+    exit 1
+fi
 # Persist for C3/C4 — fresh shell per Bash() call loses bash variables
 echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-index"
-echo "$PROJ" > "${TMPDIR:-/tmp}/codemap-proj"
 printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
 if [ -f "$INDEX" ]; then
     printf "✓ index: exists\n"
@@ -118,6 +122,7 @@ if [ "$C1_STATUS" = "failed" ]; then
 fi
 INDEX=$(cat "${TMPDIR:-/tmp}/codemap-index")
 SMOKE_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/smoke_test_index.py" --index-path "$INDEX")  # timeout: 10000
+command -v jq >/dev/null 2>&1 || { printf "✗ jq not found — required for smoke test; install via brew install jq or apt-get install jq\n"; exit 1; }
 OK=$(echo "$SMOKE_RESULT" | jq -r '.ok')
 STALE=$(echo "$SMOKE_RESULT" | jq -r '.stale')
 AGE=$(echo "$SMOKE_RESULT" | jq -r '.age_hours')
@@ -144,7 +149,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 
 ### I0 — Detect --approve
 
-`--approve` in `$ARGUMENTS` → skip all `AskUserQuestion` calls, auto-select ★ option for every prompt. Print `[--approve] applying recommended options` in place of each question. Reasoning instruction — no bash variable needed. All subsequent `AskUserQuestion` calls follow this automatically.
+`--approve` in `$ARGUMENTS` → skip `AskUserQuestion` for files under `$CLAUDE_PLUGIN_ROOT`; files from other plugins still require interactive confirmation per I5. Print `[--approve] applying recommended options` in place of each skipped question. Reasoning instruction — no bash variable needed. All subsequent `AskUserQuestion` calls follow this automatically.
 
 **Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -160,6 +165,10 @@ while IFS= read -r line; do
 done < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_proj_index.py")
 PROJ="${_idx[0]:-}"
 INDEX="${_idx[1]:-}"
+if [ -z "$PROJ" ]; then
+    printf "✗ resolve_proj_index.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
+    exit 1
+fi
 ```
 
 Index exists: report and proceed. Index missing:
@@ -299,7 +308,9 @@ Report each edit: `✓ injected: <plugin>/<skill-or-agent> at line N`
 
 ### I5a — Offer git post-commit hook
 
-Use `AskUserQuestion`:
+If `--approve` active: auto-select (a) Install, skip `AskUserQuestion`, proceed directly to I5b.
+
+Otherwise use `AskUserQuestion`:
 
 ```text
 Install post-commit git hook for automatic incremental rebuild?
@@ -310,7 +321,7 @@ b) Skip — I'll run /codemap:scan-codebase or /codemap:scan-codebase --incremen
 
 ### I5b — Write hook file
 
-If **a** (or auto-approved): before writing, check `--approve` flag. If `--approve` active (set at I0): skip `AskUserQuestion` and proceed directly to hook write — I0 already disables all confirmation gates. If `--approve` not active: invoke `AskUserQuestion`: "Install post-commit hook to `<path>`? This modifies `.git/hooks/` which is outside artifact dirs." Options: (a) **Install** · (b) **Skip**. On Skip: report `✓ post-commit hook skipped` and proceed to I6.
+If arriving from I5a with user's **a** selection (or auto-approved via `--approve` at I5a): skip further confirmation — I5a answer is sufficient. Proceed directly to hook write. On **b** (Skip): report `✓ post-commit hook skipped` and proceed to I6.
 
 Then write `.git/hooks/post-commit`. Idempotent — check for `# codemap: incremental` marker before writing.
 

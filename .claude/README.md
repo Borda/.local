@@ -48,12 +48,12 @@ Things that are not possible with vanilla Claude Code:
 
 ## ♻️ Restore This Setup
 
-`.claude/` is entirely restored from the installed plugins — there is nothing to manually copy or edit. After a fresh clone or machine setup:
+`.claude/` is entirely restored from the installed plugins — there is nothing to manually copy or edit. After a fresh install or machine setup:
 
-**Step 1** — install the plugins (run from the directory containing your clone):
+**Step 1** — install the plugins:
 
 ```bash
-claude plugin marketplace add ./Borda-AI-Rig
+claude plugin marketplace add Borda/AI-Rig
 claude plugin install foundry@borda-ai-rig
 claude plugin install oss@borda-ai-rig
 claude plugin install develop@borda-ai-rig
@@ -64,18 +64,18 @@ claude plugin install codemap@borda-ai-rig
 **Step 2** — run inside Claude Code:
 
 ```text
-/foundry:init
+/foundry:setup
 ```
 
 This merges `statusLine`, `permissions.allow`, and `enabledPlugins` (codex plugin) into `~/.claude/settings.json`; symlinks `rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Agents, skills, and hooks are exposed natively by the Claude Code plugin system — no symlinks needed.
 
 **What is restored:** `~/.claude/rules/*.md` and `~/.claude/TEAM_PROTOCOL.md` become symlinks into the installed foundry plugin. `~/.claude/settings.json` is updated in-place. All other plugin files (agents, skills, hooks, CLAUDE.md) are served directly by the plugin system. The only local-machine files are `settings.local.json` and `settings.json` (project prefs + permissions).
 
-Re-run `/foundry:init` after any plugin upgrade — rule symlinks point to versioned cache paths and go stale after reinstall.
+Re-run `/foundry:setup` after any plugin upgrade — rule symlinks point to versioned cache paths and go stale after reinstall.
 
 ## 🔄 Distribution
 
-`plugins/foundry/` is the **source of truth** for all foundry configuration. The Claude Code plugin system natively exposes agents and skills; `/foundry:init` symlinks rules and `TEAM_PROTOCOL.md` into `~/.claude/` so they load on every session.
+`plugins/foundry/` is the **source of truth** for all foundry configuration. The Claude Code plugin system natively exposes agents and skills; `/foundry:setup` symlinks rules and `TEAM_PROTOCOL.md` into `~/.claude/` so they load on every session.
 
 ```text
 plugins/foundry/           ← source of truth
@@ -91,14 +91,14 @@ plugins/foundry/           ← source of truth
 **Distributing to `~/.claude/`** — run after install or upgrade:
 
 ```text
-/foundry:init   # symlink rules/*.md + TEAM_PROTOCOL.md → ~/.claude/;
+/foundry:setup   # symlink rules/*.md + TEAM_PROTOCOL.md → ~/.claude/;
                 # merge statusLine, permissions.allow, enabledPlugins → ~/.claude/settings.json
                 # (re-run after plugin upgrade to refresh stale rule symlinks)
 ```
 
 **What is NOT distributed:** `settings.local.json` (machine-local overrides — API keys, MCP server activation, local permissions).
 
-**statusLine path:** home `settings.json` uses `$HOME` prefix (`node $HOME/.claude/hooks/statusline.js`) — `/foundry:init` sets this automatically.
+**statusLine path:** home `settings.json` uses `$HOME` prefix (`node $HOME/.claude/hooks/statusline.js`) — `/foundry:setup` sets this automatically.
 
 ## 📦 Plugin Architecture
 

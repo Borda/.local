@@ -15,6 +15,10 @@ import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 
 patient_ids = metadata["patient_id"].values
+# random_state MUST be pinned and logged — omitting produces a different split per
+# run; the patient-overlap assertion below still passes (the split stays group-aware),
+# silently masking the non-reproducibility. Cross-run model comparisons require the
+# exact same seed.
 gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
 train_idx, temp_idx = next(gss.split(metadata, groups=patient_ids))
 
@@ -32,6 +36,7 @@ Checklist for medical imaging datasets:
 [ ] Multi-site data: stratify by site to avoid site-specific bias
 [ ] Temporal data: no future scans leaking into training from same patient
 [ ] Annotation consistency: inter-reader variability measured (Fleiss' kappa)
+[ ] `random_state` pinned and logged in artifacts (required for cross-run split reproducibility — the group-overlap assertion alone does NOT guarantee reproducibility)
 ```
 
 Verify zero patient overlap between splits (uses `verify_patient_split.py` from `bin/`):
@@ -44,6 +49,12 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/verify_patient_split.py" \
 ## Temporal Split (time-series or streaming data)
 
 Sort by time, sequential split: 70%/15%/15% train/val/test, no shuffle.
+
+**Caveats — apply BEFORE the sort/split:**
+
+- **Duplicate timestamps**: tie-break deterministically (e.g., secondary sort by stable row index or surrogate key) — otherwise the 70/85% boundary lands inside an arbitrarily ordered tie and bleeds near-boundary leakage.
+- **Multi-granularity time**: if data mixes event timestamps (ms) and day-level aggregates, normalise to a single granularity (or split on the coarser one) before sorting — global sort otherwise places aggregates non-deterministically.
+- **Multi-entity datasets (e.g., per-patient time-series)**: a global temporal sort does NOT isolate entity-level ordering — patient A's future can land before patient B's past. Combine with Patient-Level Split above: group by entity, sort within each group, allocate each group's rows to splits independently. Use the Patient-Level Split pattern as the outer split and apply this temporal sort *within* each group.
 
 \</split_strategies>
 

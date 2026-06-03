@@ -71,6 +71,6 @@ When user asks "why" about something (deleted content, unexpected state, missing
 
 - **Never act** — do not restore, revert, or modify anything
 - State clearly cause unknown and why (e.g. "pre-session change not made by me")
-- Ask user what they want done before any action — use `AskUserQuestion` tool (required by `communication.md`)
+- Call the `AskUserQuestion` tool directly — prose questions in brackets (`[AskUserQuestion: ...]`, `[Invoking AskUserQuestion: ...]`) do NOT satisfy this requirement; only an actual tool invocation does
 
 Restoring without being asked = overstepping. "Why" = question, not request to fix.

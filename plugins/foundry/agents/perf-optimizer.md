@@ -93,9 +93,10 @@ def test_speed(benchmark):
 
 ```bash
 strace -c python script.py # system call tracing (Linux only)
-# Note: dtruss/dtrace/Instruments are blocked by macOS SIP and have been replaced.
-# macOS alternative: use py-spy (sampling profiler) + cProfile to attribute time to user code paths,
-# then use memory_profiler for allocation-side I/O behavior.
+# Note: dtruss/dtrace are blocked by macOS SIP (kernel-level tracing); Instruments.app is available
+# (Time Profiler, Allocations, Metal System Trace work under SIP).
+# macOS alternative for syscall-level I/O: use `fs_usage -w -f filesystem -p <PID>` or Instruments
+# Time Profiler; py-spy + cProfile attribute CPU time but not syscall-level I/O.
 iostat -x 1 # file I/O stats
 ```
 
@@ -210,7 +211,9 @@ Rank by impact (highest first). Separate statically-confirmed from profiling-req
 Launch all five in parallel; each targets known Python/ML bottleneck class:
 
 ```text
-Grep: pattern="for .+ in .+:[\s\S]{0,80}for .+ in"   glob="**/*.py"   # nested loops → O(n²) candidates  (multiline: true required)
+# Nested loops — Grep tool does not support multiline; use two-pass Bash:
+# Bash: grep -rn "for .* in .*:" --include="*.py" | grep -o "^[^:]*" | sort -u
+# → get candidate files, then Read each and scan for double-for pattern manually
 Grep: pattern="\.mean\(\)|\.std\(\)"                  glob="**/*.py"   # repeated stats computation per batch
 Grep: pattern="num_workers\s*=\s*0"                   glob="**/*.py"   # DataLoader CPU bottleneck
 Grep: pattern="pin_memory\s*=\s*False"                glob="**/*.py"   # slow CPU-GPU transfer
@@ -227,10 +230,11 @@ time python -c "import <module>; <representative_workload>"
 
 # GPU utilization (is GPU actually busy?)
 # nvidia-smi: CUDA hosts only — skip on Apple MPS, ROCm, Intel Arc, CPU-only hosts
-# On non-CUDA hosts use platform profiler: py-spy + cProfile (macOS/MPS — Instruments blocked by SIP), rocprof (ROCm), VTune (Intel)
+# On non-CUDA hosts use platform profiler: py-spy + cProfile or Instruments (macOS/MPS — dtruss/dtrace blocked by SIP; Instruments.app available), rocprof (ROCm), VTune (Intel)
 # Background nvidia-smi: write PID to file since job control (kill %1) doesn't persist across Bash tool calls
 command -v nvidia-smi &>/dev/null && {
   TMPDIR="${TMPDIR:-$(python -c "import tempfile; print(tempfile.gettempdir())")}"
+  trap "kill \$(cat \$TMPDIR/gpu_util.pid 2>/dev/null) 2>/dev/null" EXIT
   nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv -l 1 > "$TMPDIR/gpu_util.log" & echo $! > "$TMPDIR/gpu_util.pid"
   python <script.py>
   kill "$(cat "$TMPDIR/gpu_util.pid" 2>/dev/null)"; tail "$TMPDIR/gpu_util.log"

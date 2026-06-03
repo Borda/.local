@@ -59,8 +59,7 @@ ______________________________________________________________________
 ## 📦 Install
 
 ```bash
-# Run from the directory that CONTAINS your Borda-AI-Rig clone
-claude plugin marketplace add ./Borda-AI-Rig
+claude plugin marketplace add Borda/AI-Rig
 claude plugin install oss@borda-ai-rig
 ```
 
@@ -90,7 +89,6 @@ All `oss` skills degrade gracefully when optional plugins are absent — you get
 <summary><strong>Upgrade</strong></summary>
 
 ```bash
-cd Borda-AI-Rig && git pull
 claude plugin install oss@borda-ai-rig
 ```
 
@@ -593,7 +591,7 @@ Cached GitHub API responses are served from `.cache/gh/`. Delete the cache file 
 
 **Skills not found after install**
 
-Run `claude plugin install oss@borda-ai-rig` again from the directory containing your Borda-AI-Rig clone, then `/reload-plugins` in Claude Code.
+Run `claude plugin install oss@borda-ai-rig` again, then `/reload-plugins` in Claude Code.
 
 ______________________________________________________________________
 

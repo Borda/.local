@@ -1,13 +1,22 @@
 <!-- Loaded by foundry:doc-scribe (sonnet + medium) -->
 # Specialized Docstring Patterns (foundry:doc-scribe specialized guidance)
 
-Read this file only when documenting computer-vision / ML tensor functions or writing deprecation migration guides. Skip for routine docstring or README work.
+Apply only when scoped task explicitly involves computer-vision / ML tensor docstrings or pyDeprecate migration guides. For routine docstring or README tasks, treat the content below as inert reference — do NOT apply checklist heuristics.
 
 ## Computer Vision (CV) / Tensor Docstring Checklist
 
-**CV/ML projects only**: When documenting image/tensor functions — identified by **both** CNN/tensor param names (`kernel_size`, `stride`, `padding`, `image`, `frame`, `volume`, `tensor`, `mask`, `feature_map`) **and** at least one visual/image-domain signal (image dimensions, pixel values, bounding boxes, or explicit vision/image/detection/segmentation keyword or shape annotation like `(B, C, H, W)`) — always specify:
+**CV/ML projects only — strict two-category gate**: apply checklist only when function has BOTH
 
-> **Note**: CNN param names alone (`kernel_size`, `stride`, `padding`) also appear in NLP and audio models. Do not apply CV checklist unless a visual-domain signal is also present.
+1. **Architectural signal** (at least one): `kernel_size`, `stride`, `padding`, `feature_map`, `dilation`, `groups` (structural CNN params)
+2. **Visual-domain signal** (at least one, distinct from category 1): image dimensions (`(B, C, H, W)` shape with concrete spatial dims), pixel value range hints (`[0, 255]`, `[0, 1]`), bounding boxes, segmentation masks, or explicit `vision`/`image`/`detection`/`segmentation` keyword in docstring or surrounding context
+
+A single param name (e.g. `image`) that could satisfy both categories does NOT count twice — the two signals must come from distinct evidence.
+
+> **NOT-for — do not apply CV checklist to**:
+> - Audio DSP functions (`spectrogram`, `waveform`, `frame` as STFT frame, `mel_bins`)
+> - NLP / attention models (`attention_mask`, `hidden_state`, `token_ids`, even when `(B, C, H, W)`-like shapes appear)
+> - Medical imaging functions unless explicitly annotated as a CV pipeline stage (NIfTI/DICOM-only volumetric utilities → use the medical-imaging-specific subset of the checklist; see RAS/LPS qualifier in Spatial convention)
+> - Generic image utilities (PIL resize, matplotlib display, OpenCV basic ops) that have an `image` param but no CNN architecture involvement
 
 - **Shape**: exact dims with named axes (B, C, D, H, W) — e.g., `Shape: (B, C, H, W)`
 - **Value range**: [0, 1], [0, 255], or [-1, 1]

@@ -123,12 +123,14 @@ Track for every artifact: **Source** (origin), **Transforms** (processing pipeli
 
 **Handoff format** (follows `file-handoff-protocol.md` in foundry plugin cache; resolve with: `find ~/.claude/plugins/cache -name "file-handoff-protocol.md" 2>/dev/null | head -1`):
 
+Before spawning web-explorer, define run directory: `DS_RUN_DIR=".temp/data-steward-$(date +%s)"; mkdir -p "$DS_RUN_DIR"` — substitute this resolved path (not literal `$DS_RUN_DIR`) into the handoff Return field.
+
 ```text
 Task: fetch <dataset/content description>
 Source: <URL or service name>
 Expected output: <fields, approximate volume, format>
 Completeness signal: <total_count field, Link header, pageInfo>
-Return: full content written to <run-dir>/<slug>.md + compact JSON envelope
+Return: full content written to .temp/data-steward-<timestamp>/<slug>.md (substitute actual resolved path) + compact JSON envelope
 ```
 
 **Post-fetch validation** — 5 checks before use: Count (received == expected), Schema (required fields in first 5 records), Boundaries (date/ID range matches scope), Duplicates (spot-check primary keys), Encoding (no garbled/truncated values).
@@ -171,7 +173,7 @@ num_workers: [N] | pin_memory: [T/F] | worker_init_fn: [seeded / unseeded]
 ### Findings
 [Critical] <issues that corrupt model training — fix before running>
 [Warning]  <issues degrading reproducibility or metric reliability>
-[Info]     <low-severity observations; include even if "minimal practical impact" — omitting a low-severity item is a false negative; flag it with its severity rather than dropping it silently>
+[Info]     <low-severity observations — include ONLY when no Critical/Warning issues remain (per FP-discipline rule in antipatterns_to_flag); omit when higher-severity findings already present to preserve precision>
 ```
 
 \</output_format>
@@ -198,7 +200,9 @@ If mode is unrecognised, print:
 
 ```bash
 # foundry:web-explorer availability check
-_FOUNDRY_AVAILABLE=$(find "${CLAUDE_PLUGIN_ROOT%/research*}/foundry" "${HOME}/.claude/plugins/cache" -path "*/foundry*" -name "web-explorer.md" 2>/dev/null | head -1)
+# When CLAUDE_PLUGIN_ROOT unset, path-strip produces empty prefix; skip that path, rely on cache search only
+_FOUNDRY_BASE="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT%/research*}/foundry}"
+_FOUNDRY_AVAILABLE=$(find ${_FOUNDRY_BASE:+"$_FOUNDRY_BASE"} "${HOME}/.claude/plugins/cache" -path "*/foundry*" -name "web-explorer.md" 2>/dev/null | head -1)
 ```
 
 | Agent | If foundry installed | If foundry absent |

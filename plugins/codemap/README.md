@@ -105,10 +105,8 @@ ______________________________________________________________________
 
 **Install the plugin**
 
-Run this from the directory that **contains** your Borda-AI-Rig clone:
-
 ```bash
-claude plugin marketplace add ./Borda-AI-Rig
+claude plugin marketplace add Borda/AI-Rig
 claude plugin install codemap@borda-ai-rig
 ```
 
@@ -130,7 +128,6 @@ Reload your shell (`source ~/.zshrc`) and `scan-query` is available everywhere. 
 <summary><strong>Upgrade</strong></summary>
 
 ```bash
-cd Borda-AI-Rig && git pull
 claude plugin install codemap@borda-ai-rig
 ```
 
@@ -607,7 +604,6 @@ After any edit to agents, skills, or the index schema, update this README before
 **Plugin updates** propagate via the normal install path:
 
 ```bash
-cd Borda-AI-Rig && git pull
 claude plugin install codemap@borda-ai-rig
 ```
 

@@ -43,7 +43,11 @@ Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 EAGER=false
 [[ "$ARGUMENTS" == *"--eager"* ]] && EAGER=true
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--eager//g' | xargs)  # timeout: 3000
+echo "EAGER=$EAGER"  # Read this stdout line to know EAGER value — shell vars don't persist across Bash calls
+echo "ARGUMENTS_STRIPPED=$ARGUMENTS"  # Read this stdout line for stripped ARGUMENTS value
 ```
+
+> **Note**: `EAGER` and stripped `ARGUMENTS` are set by this Bash block, but shell variable state does **not** persist across separate Bash() tool calls. After this block runs, read its stdout (`EAGER=true/false`, `ARGUMENTS_STRIPPED=...`) and carry those values as model-context references for all subsequent mode dispatch and threshold decisions. Do not rely on `$EAGER` as a live shell variable in later steps — substitute the literal boolean value read from stdout.
 
 ## Step 1: Inventory existing agents and skills
 
@@ -57,13 +61,15 @@ For each agent/skill found, extract: name, description, tools, purpose. Tag each
 
 ## Step 2: Analyze work patterns
 
-**If `$ARGUMENTS` first whitespace-delimited token equals `executables`** (i.e. `executables` alone or `executables <path>`, NOT a path or word that merely starts with the string `executables`): skip Steps 2–5 entirely and go to "Mode: Executables Extraction" below.
+> **Mode-token normalization** — all mode dispatches below compare against the **first whitespace-delimited token** of the stripped `ARGUMENTS` (after `--eager` removal). Use this single rule consistently; do not rely on exact equality of the full `$ARGUMENTS` string, since trailing flags/spaces from prior parsing may differ.
 
-**If `$ARGUMENTS` is `prune`**: skip Steps 2–5 entirely and go to "Mode: Memory Pruning" below.
+**If first token equals `executables`** (i.e. `executables` alone or `executables <path>`, NOT a path or word that merely starts with the string `executables`): skip Steps 2–5 entirely and go to "Mode: Executables Extraction" below.
 
-**If `$ARGUMENTS` is `lessons`**: skip Steps 2–5 entirely and go to "Mode: Lessons Distillation" below.
+**If first token equals `prune`**: skip Steps 2–5 entirely and go to "Mode: Memory Pruning" below.
 
-**If `$ARGUMENTS` first whitespace-delimited token equals `external`** (i.e. `external <source>`, NOT a word that merely starts with the string `external`): skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
+**If first token equals `lessons`**: skip Steps 2–5 entirely and go to "Mode: Lessons Distillation" below.
+
+**If first token equals `external`** (i.e. `external <source>`, NOT a word that merely starts with the string `external`): skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
 
 **If `$ARGUMENTS` is `review`**: skip git analysis below and go directly to Step 3 (Gap analysis). Use agent/skill descriptions from Step 1 as sole input — goal is to assess quality and coverage of existing roster, not look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries. With `--eager`: apply stricter overlap detection in Step 4 (threshold drops to >30%; any shared single named capability flags as boundary issue); add "Recommend: Sharpen Boundary" section to Step 5 output listing all partial-overlap pairs with specific capability to split.
 
@@ -463,7 +469,10 @@ If user selects (a) or (c) from eager flow, or (a) from standard flow, apply cha
 
 After applying:
 
-1. Run cross-reference checks — use Grep to verify new rule files are referenced from `CLAUDE.md` or agent files that govern them (rule with project-wide applicability should appear as `See .claude/rules/<name>.md` reference in `CLAUDE.md`; agent-scoped rules should appear in relevant agent file)
+1. Run cross-reference checks — verify outbound references resolve, not the reverse:
+   - For each updated agent or skill file that gained a `See .claude/rules/<name>.md` reference, confirm the target rule file actually exists on disk (Glob `.claude/rules/<name>.md`); missing target → log warning, leave the dangling reference for the user to repair
+   - For each newly-written rule file, locate the agent/skill file whose update introduced it (from L4 proposal metadata) and confirm at least one reference to the new rule exists somewhere under `.claude/` (Grep for the basename); if no inbound reference exists yet AND the rule is agent-scoped (not project-wide), add a `See rules/<name>.md` line under the appropriate section of the originating agent file
+   - Do NOT require new rule files to appear in `CLAUDE.md` — project-local rules are valid additions without that gate; `CLAUDE.md` inclusion is a Memory Policy decision, not a structural requirement
 2. Print compact apply summary:
 
 ```text
@@ -502,11 +511,15 @@ RUN_DIR=$(cat "${TMPDIR:-/tmp}/foundry-distill-run-dir" 2>/dev/null)
 echo "Using RUN_DIR=$RUN_DIR"  # timeout: 5000
 ```
 
-Substitute the resolved `$RUN_DIR` value inline before issuing the Agent call:
+**Substitute the resolved `$RUN_DIR` value AND the list of changed files inline before issuing the Agent call** — the template below shows the structure; replace every angle-bracket placeholder with its actual value (concrete path string for `<RUN_DIR>`, comma-separated file list for `<list new rule files…>`) before invoking. Never pass literal `<RUN_DIR>` to the curator subagent — paths must be fully resolved strings.
+
+Concrete example with substitution applied (replace `.reports/distill/2026-06-03T12-34-56Z` with your actual `$RUN_DIR` value from the bash block above):
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to <RUN_DIR>/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"<RUN_DIR>/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: .claude/rules/example.md, .claude/agents/example.md. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to .reports/distill/2026-06-03T12-34-56Z/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\".reports/distill/2026-06-03T12-34-56Z/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
+
+Verification before issuing the call: scan your prompt string for any remaining `<` or `>` characters — if present, substitution is incomplete; resolve before spawning.
 
 Surface curator findings as advisory block in terminal output. Do not block on curator findings — quality recommendations, not release gates.
 

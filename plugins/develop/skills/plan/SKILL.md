@@ -27,7 +27,7 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:challenger`.
 
 **Checkpoint**: plan is single-pass — `.plans/active/<slug>` file existence = implicit resume signal. No `.developments/` checkpoint needed; if interrupted, re-run `/develop:plan` to regenerate (no code changes made).
 
@@ -43,24 +43,29 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 ## Flag parsing
 
-Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
+Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to a **per-invocation namespaced** temp directory for cross-block access (bash state lost between Bash() calls). Namespace by PID to prevent collision when two `/develop:plan` invocations run concurrently:
 
 ```bash
 # timeout: 5000
+PLAN_NS="${TMPDIR:-/tmp}/dev-plan-$$"
+mkdir -p "$PLAN_NS"
+echo "$PLAN_NS" > "${TMPDIR:-/tmp}/dev-plan-ns-current"  # downstream blocks recover namespace
 CHALLENGE_ENABLED=true
 CODEMAP_ENABLED=false
 SEMBLE_ENABLED=false
 [[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
 [[ " $ARGUMENTS " == *" --codemap "* ]] && CODEMAP_ENABLED=true
 [[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
-MAX_DEPTH=$(echo "$ARGUMENTS" | grep -oP '(?<=--max-depth )\d+' || echo "3")
-echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
-echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
-echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
-echo "$MAX_DEPTH"         > ${TMPDIR:-/tmp}/dev-max-depth
+# POSIX-portable max-depth extraction (grep -P unavailable on BSD/macOS grep)
+MAX_DEPTH=$(echo "$ARGUMENTS" | sed -n 's/.*--max-depth[[:space:]]\([0-9][0-9]*\).*/\1/p')
+[ -z "$MAX_DEPTH" ] && MAX_DEPTH=3
+echo "$CHALLENGE_ENABLED" > "$PLAN_NS/challenge-enabled"
+echo "$CODEMAP_ENABLED"   > "$PLAN_NS/codemap-enabled"
+echo "$SEMBLE_ENABLED"    > "$PLAN_NS/semble-enabled"
+echo "$MAX_DEPTH"         > "$PLAN_NS/max-depth"
 ```
 
-Downstream blocks read back, e.g. `CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled 2>/dev/null || echo false)`.
+Downstream blocks recover namespace then read back, e.g. `PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null); CODEMAP_ENABLED=$(cat "$PLAN_NS/codemap-enabled" 2>/dev/null || echo false)`.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -78,17 +83,19 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
 
 - Classify task as `feature`, `fix`, `refactor`, or `debug`
   - `debug`: root cause unknown — symptoms present but cause unclear, investigation needed before a fix can be scoped; when classified `debug`, recommend running `/develop:debug` first, then re-run `/develop:plan` once root cause identified to produce a fix plan
-  - **WARNING**: debug classification triggers `/develop:debug` which can re-invoke `/develop:plan` — caller tracks dispatch depth to prevent infinite loop via `--max-depth` flag. Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). At limit (`--max-depth 0`): stop, report current plan state, invoke `AskUserQuestion` — (a) Accept plan as-is · (b) Re-scope with reduced depth requirement. Pass `--max-depth $((MAX_DEPTH - 1))` when invoking `/develop:debug` to decrement counter.
+  - **WARNING**: debug classification triggers `/develop:debug` which can re-invoke `/develop:plan` — caller tracks dispatch depth to prevent infinite loop via a shared checkpoint file (not a CLI flag — `/develop:debug` does not accept `--max-depth`). Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). Persistence: write current depth to `${TMPDIR:-/tmp}/dev-plan-depth-checkpoint` (single shared file) before invoking `/develop:debug`; downstream `/develop:plan` re-invocation reads same file and decrements. At limit (depth 0): stop, report current plan state, invoke `AskUserQuestion` — (a) Accept plan as-is · (b) Re-scope with reduced depth requirement.
 - Identify affected files and modules (search codebase — no guessing)
 - Assess complexity: small (1-3 files, self-contained), medium (4-8 files or 1-2 modules), large (cross-module, API changes, or 3+ modules)
-- List risks: breaking changes, missing tests, unclear requirements, external dependencies
+- Return **two separate** structured fields (not merged into a flat risks list):
+  - `breaking_changes`: list of changes that affect **public API only** — see criteria below; empty list when none
+  - `risks`: non-breaking concerns (missing tests, unclear requirements, external dependencies, internal coupling)
 - Note complexity smells: ambiguous goal, scope creep risk, missing reproduction case, directory-wide refactor without explicit goal
 
 Agent returns findings inline (no file handoff — output short).
 
-**Breaking change gate**: if agent lists any breaking change in risks — stop before writing plan. Call `AskUserQuestion` per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body does NOT count — `AskUserQuestion` mandatory per `communication.md`. If user selects No/Abort/Decline: stop immediately — do not proceed to Step 2 or subsequent steps.
+**Breaking change gate**: gate triggers only when `breaking_changes` is non-empty — items in `risks` do NOT trigger this gate. Stop before writing plan. Call `AskUserQuestion` per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body does NOT count — `AskUserQuestion` mandatory per `communication.md`. If user selects No/Abort/Decline: stop immediately — do not proceed to Step 2 or subsequent steps.
 
-Breaking change criteria — a change is breaking when any of these apply: removed public API (function, class, method, or module), changed function signatures (parameter names, types, order, or defaults), changed config key names or schema, changed output format (return type, serialization structure, CLI output shape).
+Breaking change criteria — a change is breaking when it affects **public API** (exported from `__init__.py`, documented in README, or stable interface used by external consumers) and any of these apply: removed public API (function, class, method, or module), changed function signatures (parameter names, types, order, or defaults), changed config key names or schema, changed output format (return type, serialization structure, CLI output shape). Internal/private signature changes (functions prefixed `_`, classes not exported) do NOT count as breaking — list under `risks` instead.
 
 ## Step 2: Structured plan
 
@@ -135,10 +142,12 @@ Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-se
 
 Spawn execution agents by classification in parallel. Each reads `<PLAN_FILE>`, returns **only** compact JSON — no prose, no analysis:
 
-- **feature**: foundry:sw-engineer, foundry:qa-specialist, foundry:linting-expert
-- **fix**: foundry:sw-engineer, foundry:qa-specialist, foundry:linting-expert
-- **refactor**: foundry:sw-engineer, foundry:linting-expert, foundry:qa-specialist
+- **feature**: foundry:sw-engineer, foundry:qa-specialist
+- **fix**: foundry:sw-engineer, foundry:qa-specialist
+- **refactor**: foundry:sw-engineer, foundry:qa-specialist
 - **debug**: skip feasibility review — no implementation plan to review; proceed directly to Final output with debug recommendation
+
+> `foundry:linting-expert` intentionally excluded — its role is post-implementation static analysis (ruff/mypy), not pre-plan architectural feasibility. Including it produces noise (trivial `ok: true`) or false blockers on linting-config concerns. Surface lint-specific notes (e.g. "target module has no type annotations — mypy will flag everything") in the Final output advisory notes section instead.
 
 Each agent receives only plan file path and role — no conversation history, no unrelated context. Prompt (substitute `<ROLE>` and `<PLAN_FILE>`):
 
@@ -166,7 +175,10 @@ For each blocker or open question:
 `[ $ITER -ge 3 ] && { echo "Max feasibility iterations reached — escalating to user"; break; }`
 `ITER=$((ITER+1))`
 
-1. **Attempt autonomous resolution** — search codebase, read relevant files, re-read goal. Fetch primary-source docs for relevant issues (official docs, RFCs, library changelogs, migration guides) via WebFetch — known URLs only; WebFetch fetches specific URL, does not search. Before updating `<PLAN_FILE>` with any WebFetch result: verify per quality-gates.md link verification (Fetch+Read+Match) — do not incorporate content from a URL that hasn't been read and matched. If answer determinable from any verified source, update `<PLAN_FILE>` and mark resolved.
+1. **Attempt autonomous resolution** — search codebase, read relevant files, re-read goal. Fetch primary-source docs for relevant issues (official docs, RFCs, library changelogs, migration guides) via WebFetch — known URLs only; WebFetch fetches specific URL, does not search.
+   - **Unknown-URL path**: if the URL needed to resolve the blocker is unknown (e.g. "what does library X's new API look like?"), do NOT guess or invent a URL. Mark the blocker `requires-user-input` and skip WebFetch — escalate to user with a note that documentation lookup is required.
+   - **Known URL — mandatory verification gate**: after each WebFetch call, before incorporating content into `<PLAN_FILE>`, perform the three-step verification per quality-gates.md link verification: (a) Fetch returned non-error (HTTP 200), (b) Read the returned content, (c) Match content against the specific blocker — confirm topic alignment. If any step fails: mark URL non-resolving, do not write content to `<PLAN_FILE>`, escalate to user. Each URL requires its own Fetch+Read+Match pass — no exemption for same-domain or "similar" URLs.
+   - If answer determinable from a verified source, update `<PLAN_FILE>` and mark resolved.
 2. **Re-query raising agent** — send only resolved item: `{"a":"<ROLE>","resolved":"<item>","answer":"<resolution>"}`. If agent returns `ok: true` -> resolved; remove from blockers list.
 3. After all resolvable items cleared, re-check: if all agents `ok: true` -> `✓ agents ready`.
 

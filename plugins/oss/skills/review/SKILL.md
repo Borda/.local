@@ -11,7 +11,7 @@ effort: high
 
 Spawn specialized sub-agents in parallel. Consolidate findings into structured feedback with severity levels.
 
-NOT for local file review or current git diff — use `/develop:review` (requires `develop` plugin). NOT for non-Python source PRs (TypeScript, Go, Rust, etc.) unless they include Python files — docs-only and CI/CD-only PRs are in scope. NOT for standalone GitHub issue analysis or thread summarization — use `oss:analyse`. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
+NOT for local file review or current git diff — use `/develop:review` (requires `develop` plugin). NOT for non-Python source PRs (TypeScript, Go, Rust, etc.) unless they include Python files — docs-only and CI/CD-only PRs are in scope. NOT for standalone GitHub issue analysis or thread summarization — use `oss:analyse`. NOT for **draft PRs** (GitHub draft status — `isDraft=true`) — draft PRs are work-in-progress; reviewing them wastes the multi-agent fan-out on findings the contributor has not yet addressed. Step 1 detects `isDraft` and invokes `AskUserQuestion` to confirm before proceeding; user may opt to review the draft anyway. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
 
 </objective>
 
@@ -174,7 +174,8 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
     fi
     # Persist mode flags to temp file — bash state lost between SKILL.md code blocks;
     # Step 2 EXPECTED_FILE construction (different bash block) reads these back.
-    _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags"
+    echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag"  # persist PR identifier for cross-block file path reconstruction
+    _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
     {
         echo "CICD_ONLY_MODE=$CICD_ONLY_MODE"
         echo "DOCS_ONLY_MODE=$DOCS_ONLY_MODE"
@@ -187,7 +188,7 @@ fi
 
 **CI/CD-only mode** (`CICD_ONLY_MODE=true`): PR changes only CI/CD config files (`.github/workflows/`, `.github/actions/`, `azure-pipelines.yml`, `.circleci/config.yml`, `Jenkinsfile`, etc.), no `.py` or `.md`/`.rst`. Spawn `oss:cicd-steward` + Agent 1 (sw-engineer) + Agent 7 (challenger, if `CHALLENGE_ENABLED=true`) + Codex (if available); skip Agents 2, 3, 4, 5, 6. Skip scope classification below — proceed directly to agent launch.
 
-**Docs-only mode** (`DOCS_ONLY_MODE=true`): PR changes only `.md`/`.rst` files, no `.py`. Spawn Agent 4 (foundry:doc-scribe), Agent 7 (challenger, if `CHALLENGE_ENABLED=true`), and Codex (if available); skip Agents 1 (sw-engineer — NOT for docs per agent NOT-for clause), 2, 3, 5, 6. Skip scope classification below — proceed directly to agent launch.
+**Docs-only mode** (`DOCS_ONLY_MODE=true`): PR changes only `.md`/`.rst` files, no `.py`. **foundry:doc-scribe (Agent 4) leads** — it owns the docs domain and is the canonical reviewer here. **foundry:sw-engineer (Agent 1) is explicitly skipped** per its `NOT for docs` clause; spawning it in DOCS_ONLY_MODE produces wrong-domain analysis. Spawn: Agent 4 (foundry:doc-scribe), Agent 7 (challenger, if `CHALLENGE_ENABLED=true`), and Codex (if available). Skip Agents 1, 2, 3, 5, 6. Skip scope classification below — proceed directly to agent launch. Note: linked-issue spawns also skip Agent 1 in DOCS_ONLY_MODE — see linked-issue analysis block below.
 
 **Docs + CI/CD mode** (`DOCS_CICD_MODE=true`): PR changes only `.md`/`.rst` and CI/CD config — no Python source. Spawn `oss:cicd-steward` (Agent 8) + `foundry:doc-scribe` (Agent 4) only; optionally `foundry:challenger` (Agent 7) when `CHALLENGE_ENABLED=true`. Skip Agents 1, 2, 3, 5, 6 — there is no Python source to analyse. Skip scope classification below — proceed directly to agent launch. The 7-agent Python fan-out is incorrect for CI+docs PRs and would produce mostly empty findings.
 
@@ -195,6 +196,7 @@ Before spawning agents (Python mode only — `CICD_ONLY_MODE`, `DOCS_ONLY_MODE`,
 
 - Count files changed, lines added/removed, new classes/modules
 - Classify: **FIX** (\<3 files, \<50 lines), **REFACTOR** (internal restructure, no new public API), **FEATURE** (new public API or module), **CHORE** (deps, config, tooling — no logic changes), or **MIXED**
+- **Caveat — short-diff multi-concern refactors**: the FIX heuristic ("\<3 files, \<50 lines") classifies by diff size, not intent. A short-diff change can still be REFACTOR when it spans multiple concerns: PR labels include `perf`, `performance`, `optimization`, `refactor`, `architecture`, or `cleanup`; commit message keywords `refactor:`, `perf:`, `rewrite`; or the diff touches different modules (e.g. `core/` + `api/`). Detect via PR labels/title (`gh pr view --json labels,title`) — if any signal present, **override FIX → REFACTOR** so perf-optimizer (Agent 3) and solution-architect (Agent 6) still run. Small-diff perf refactors (list-comprehension → generator on a hot path) are exactly the case FIX would silently mishandle.
 - **Complexity smell**: 8+ files changed OR `PY_LOC_DELTA >400` → note in report header
 
 H6 — assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) can branch on it without comparing to an undefined value:
@@ -202,6 +204,10 @@ H6 — assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health moni
 ```bash
 # Count Python files + total Python LOC delta for the classification heuristic
 PY_FILE_COUNT=$(echo "$PY_FILES" | grep -c . 2>/dev/null || echo 0)
+# PY_LOC_DELTA = total churn (added + deleted lines), NOT net delta (added − deleted).
+# Pure rename refactors (e.g. delete 24 + add 24) produce PY_LOC_DELTA=48 even though the
+# net change is 0; this can mis-route as FIX. The label/keyword override above (REFACTOR
+# escape hatch) is the intended mitigation; classify churn-bias as a known limitation.
 PY_LOC_DELTA=$(gh pr diff $CLEAN_ARGS 2>/dev/null | grep -E '^[+-][^+-]' | grep -vE '^[+-]{3}' | wc -l | tr -d ' ')  # timeout: 6000
 
 # Detect new public API surface: added lines in src/**/__init__.py
@@ -227,7 +233,7 @@ echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$
 # construction is in a separate bash block; without persistence these expand empty.
 # CHORE_DEPS detection mirrors the conditional below (CHORE + dependency files exception).
 echo "$CHANGED_FILES" | grep -qE '(^|/)(requirements.*\.txt|pyproject\.toml|package.*\.json|Pipfile|poetry\.lock|setup\.cfg|.*\.lock)$' && CHORE_DEPS=true || CHORE_DEPS=false
-_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope"
+_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${CLEAN_ARGS}"
 {
     echo "SCOPE=$SCOPE"
     echo "CHORE_DEPS=$CHORE_DEPS"
@@ -340,7 +346,11 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 `ISSUE_NUMS` non-empty: read `$RUN_DIR/issue-*.md`. Evaluate whether changes address root cause, not just symptom. PR addresses symptom only → `[blocking] HIGH — root cause misalignment`. PR description diverges from issue problem → `HIGH — PR/issue scope divergence`.
 
-**Agent 2 — foundry:qa-specialist**: Audit test coverage. Find untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. Also check explicitly (GT-level findings, not afterthoughts):
+**Agent 2 — foundry:qa-specialist**: Audit test coverage and run quick security/vulnerability scan. Find untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests.
+
+**Security scan (runs on every PR — not conditional)**: Check OWASP Top 10 — SQL injection, XSS, insecure deserialization, hardcoded secrets/tokens, missing input validation, path traversal. Run `pip-audit` if `requirements*.txt`, `pyproject.toml`, or any `*.lock` in diff. Surface dep CVEs as HIGH; secrets as CRITICAL.
+
+Also check explicitly (GT-level findings, not afterthoughts):
 
 - Concurrent access to shared state (when locks or shared variables present)
 - Error paths: calling methods in wrong order (e.g., `log()` before `start()`)
@@ -360,7 +370,7 @@ Read `$REVIEW_SKILL_DIR/checklist.md` — apply CRITICAL/HIGH patterns as severi
 
 **Agent 5 — foundry:linting-expert**: Static analysis. Check ruff/mypy pass. Type annotation gaps on public APIs, suppressed violations without explanation, missing pre-commit hooks. Flag mismatched Python version.
 
-**Security augmentation (conditional — fold into Agent 1, not separate spawn)**: Diff touches auth, user input, deps, or serialization → add to Agent 1 prompt: check SQL injection, XSS, insecure deserialization, hardcoded secrets, missing input validation. Run `pip-audit` if dep files changed. Skip if purely internal refactoring.
+**Security scan ownership**: Agent 2 (foundry:qa-specialist) owns all security/vulnerability scanning — runs on every PR unconditionally. Agent 1 (sw-engineer) adds supplementary security scrutiny only when diff explicitly touches auth, input parsing, or serialization logic: flag insecure implementation patterns (e.g. string-formatted SQL, raw `eval()`). No separate security agent spawn.
 
 **Agent 6 — foundry:solution-architect**: Spawns for FEATURE, MIXED, and REFACTOR scope. Public-API PRs (diff touches `__init__.py` exports, Protocols/ABCs, new public classes): evaluate API design, coupling, backward compat. REFACTOR-scope PRs (internal restructure, no new public API): evaluate module boundaries, coupling/cohesion, and whether restructuring introduces new architectural debt — even without public API changes, structural decisions affect maintainability.
 
@@ -397,7 +407,9 @@ CODEX_OUT="$RUN_DIR/foundry--codex.md"
 # [if CICD_ONLY_MODE=true OR DOCS_CICD_MODE=true] Agent(subagent_type="oss:cicd-steward", ...) ← Agent 8
 ```
 
-Unified wait — poll until all expected outputs present or each hits hard cutoff.
+**Ordering — authoritative**: agent spawns in Step 2 issue in a single message batch and run **concurrently**. The "wait" below is a polling phase, not a sequential gate: orchestrator polls every `$MONITOR_INTERVAL` for expected output files. Step 3 post-agent checks (3a ecosystem, 3b OSS) may issue in the same response turn as the final Step 2 polls — they depend only on `$PR_BASE` being bound (computed at the top of Step 3), not on Step 2 agents completing. Do not block Step 3 on Step 2 outputs.
+
+Poll for expected output files per `$MONITOR_INTERVAL` / `$HARD_CUTOFF` until all present or each hits hard cutoff.
 
 Write expected paths to file (Bash arrays don't persist across tool invocations — file-based handoff lets later poll blocks read the same list):
 
@@ -405,8 +417,9 @@ Write expected paths to file (Bash arrays don't persist across tool invocations 
 # Restore mode flags + SCOPE persisted in Step 1 (each SKILL.md bash block runs in a
 # fresh shell — without this rehydration, CICD_ONLY_MODE/DOCS_ONLY_MODE/DOCS_CICD_MODE/SCOPE
 # expand empty here and EXPECTED_FILE branches on wrong values).
-_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags"
-_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope"
+_PR_TAG=$(cat "${TMPDIR:-/tmp}/oss-review-pr-tag" 2>/dev/null || echo "unknown")
+_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${_PR_TAG}"
+_REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${_PR_TAG}"
 [ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
 [ -f "$_REVIEW_SCOPE_FILE" ] && . "$_REVIEW_SCOPE_FILE"
 

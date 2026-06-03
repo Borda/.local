@@ -17,7 +17,7 @@ else
         "$REGISTRY" 2>/dev/null | head -1)  # timeout: 5000
     if [ -z "$INSTALL_PATH" ]; then
         printf "! HIGH: Check I1 — foundry not found in installed_plugins.json\n"
-        printf "  Fix: claude plugin marketplace add ./Borda-AI-Rig && claude plugin install foundry@borda-ai-rig\n"
+        printf "  Fix: claude plugin marketplace add Borda/AI-Rig && claude plugin install foundry@borda-ai-rig\n"
     elif [ ! -d "$INSTALL_PATH" ]; then
         printf "! HIGH: Check I1 — install cache missing: %s\n" "$INSTALL_PATH"
         printf "  Fix: claude plugin install foundry@borda-ai-rig  (reinstall to rebuild cache)\n"

@@ -1,9 +1,9 @@
 ---
 name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop."
-argument-hint: "<goal> [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
+argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
 effort: high
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
 
@@ -67,38 +67,54 @@ CODEMAP_ENABLED=auto
 SEMBLE_ENABLED=false
 TEAM_MODE=false
 ACCEPT_NO_PLAN=false
+REPO_NAME=""
 [[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_ENABLED=off
 [[ " $ARGUMENTS " == *" --codemap "* ]] && CODEMAP_ENABLED=strict
 [[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
 [[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
 [[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
+[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
 echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
 echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
 echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
+echo "$REPO_NAME"          > ${TMPDIR:-/tmp}/dev-upstream
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
 ```bash
 # Parse --issue flag for issue-linked feature scaffolding  # timeout: 6000
-ISSUE_REF=$(echo "$ARGUMENTS" | grep -oP '(?<=--issue )[^ ]+' || echo "")
+ISSUE_REF=""
+[[ "$ARGUMENTS" =~ --issue[[:space:]]+([^[:space:]]+) ]] && ISSUE_REF="${BASH_REMATCH[1]}"
 echo "$ISSUE_REF" > ${TMPDIR:-/tmp}/dev-issue-ref
 if [ -n "$ISSUE_REF" ]; then
-    gh issue view "$ISSUE_REF" 2>/dev/null || echo "⚠ Could not fetch issue $ISSUE_REF — proceeding without issue context"
+    REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+    if [ -n "$REPO_NAME" ]; then
+        gh issue view "$ISSUE_REF" --repo "$REPO_NAME" 2>/dev/null || echo "⚠ Could not fetch issue $ISSUE_REF from $REPO_NAME — proceeding without issue context"
+    else
+        gh issue view "$ISSUE_REF" 2>/dev/null || echo "⚠ Could not fetch issue $ISSUE_REF — proceeding without issue context"
+    fi
 fi
 ```
 
 If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, and labels in Step 1 scope analysis as pre-populated requirements context.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--no-codemap\`, \`--codemap\`, \`--semble\`, \`--accept-no-plan\`, \`--issue\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Cross-repo adaptation** (when `REPO_NAME` set) — issue filed against different codebase. After fetching issue, Step 1 scope analysis must also:
+1. Extract intent from issue — what problem does it solve in abstract terms, not just described implementation details (which assume upstream's structure)
+2. Check local divergences: run `git log --oneline -10` and grep for symbols mentioned in issue; identify where local codebase differs structurally from what issue assumes
+3. Produce adaptation plan: upstream intent → local implementation using local conventions, existing abstractions, and current code structure — never assume upstream approach ports directly
 
-**Codemap auto-detection** — run after flag parsing:
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--no-codemap\`, \`--codemap\`, \`--semble\`, \`--accept-no-plan\`, \`--issue\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Codemap auto-detection** — run after flag parsing; overwrites the temp file with the normalized (`true`/`false`) value so downstream blocks reading from disk see post-normalization state, not the raw `auto`/`strict`/`off`:
 
 ```bash
+# timeout: 5000
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
 
 **Semble preflight** — if `SEMBLE_ENABLED=true`:
@@ -138,18 +154,24 @@ _SPAWN_TEAM_DIR="$TEAM_DIR"
 
 Use `$_SPAWN_TS` (or the literal resolved value) inside spawn prompt strings, not bare `$TS`.
 
-Spawn 3 teammates in parallel using Agent() tool:
+Spawn teammates in **two serialized waves** — qa-specialist and doc-scribe cannot meaningfully audit/document an implementation that does not yet exist; running them in parallel with sw-engineer produces tests written against guessed APIs and docs of placeholder structure:
 
-**Teammate 1 — foundry:sw-engineer (model=opus)**: implements the feature (Steps 2-3: demo test, TDD loop). Prompt: "You are a foundry:sw-engineer teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: implement the feature (Steps 2-3: demo test, TDD loop). Scope constraint: only edit files in `src/`, the target module directory, and non-test Python files. Do NOT edit files under `tests/`. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-sw-engineer-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+- **Wave 1 — foundry:sw-engineer alone**: spawn Teammate 1 (sw-engineer) and wait for `Status: complete`.
+- **Wave 2 — foundry:qa-specialist + foundry:doc-scribe in parallel**: after Wave 1 returns, spawn Teammates 2 and 3 together. Both receive the actual implementation file path from Wave 1's output as input context (resolved via `.temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md`).
 
-**Teammate 2 — foundry:qa-specialist (model=sonnet)**: audits test coverage, adds edge-case and regression tests in parallel + security checks for auth/payment/data scope (TDD demo/red-green tests stay with sw-engineer per qa-specialist NOT-for). Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: audit test coverage and add edge-case, boundary, and regression tests around the SW implementation; include security checks for any auth/payment/data-handling code. Do NOT write the primary TDD demo/red-green tests — those stay with sw-engineer (Teammate 1) as part of the TDD loop. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-qa-specialist-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+Spawn prompts below (Wave 1 first, then Wave 2):
 
-**Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepares documentation structure in parallel (Step 5 prep — docstrings and README only; CHANGELOG handled by lead via foundry:sw-engineer after synthesis). Prompt: "You are a foundry:doc-scribe teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: prepare documentation structure in parallel (Step 5 prep — docstrings and README only; do NOT write to CHANGELOG.md — that is handled separately). Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$TS/feature-doc-scribe-$TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+**Teammate 1 — foundry:sw-engineer (model=opus)**: implements the feature (Steps 2-3: demo test, TDD loop). Prompt: "You are a foundry:sw-engineer teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: implement the feature (Steps 2-3: demo test, TDD loop). Scope constraint: only edit files in the source package directory and non-test Python files. Common layouts: `src/<module>/`, `<module>/`, or root-level `.py` files — use whichever exists; check for `src/` first, fall back to project root layout. Do NOT edit files under `tests/`. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
 
-**Path verification**: after team spawns, verify agents received correct paths — check expected output files exist:
+**Teammate 2 — foundry:qa-specialist (model=sonnet)**: audits test coverage, adds edge-case and regression tests in parallel + security checks for auth/payment/data scope (TDD demo/red-green tests stay with sw-engineer per qa-specialist NOT-for). Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: audit test coverage and add edge-case, boundary, and regression tests around the SW implementation; include security checks for any auth/payment/data-handling code. Do NOT write the primary TDD demo/red-green tests — those stay with sw-engineer (Teammate 1) as part of the TDD loop. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$_SPAWN_TS/feature-qa-specialist-$_SPAWN_TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+
+**Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepares documentation structure in parallel (Step 5 prep — docstrings and README only; CHANGELOG handled by lead via foundry:sw-engineer after synthesis). Prompt: "You are a foundry:doc-scribe teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: prepare documentation structure in parallel (Step 5 prep — docstrings and README only; do NOT write to CHANGELOG.md — that is handled separately). Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$_SPAWN_TS/feature-doc-scribe-$_SPAWN_TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+
+**Path verification**: after team spawns, verify agents received correct paths — check expected output files exist. Re-read `$TS` from temp file (bash state lost between Bash() calls — spawn block persisted it):
 
 ```bash
 # timeout: 5000
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || date -u +%Y-%m-%dT%H-%M-%SZ)
 for agent in sw-engineer qa-specialist doc-scribe; do
     expected=".temp/develop/$TS/feature-${agent}-$TS.md"
     [ -f "$expected" ] && echo "✓ $agent wrote $expected" || echo "⚠ $agent missing expected output $expected"
@@ -178,16 +200,23 @@ Gather full context before writing any code:
 > **Issue ID parsing rule**: Issue IDs must be prefixed with `#`; bare numbers ≥1000 are treated as issue IDs only if the `--issue` flag is present. Bare numbers <1000 without `#` prefix are treated as issue IDs unconditionally (legacy behavior). To avoid ambiguity when numeric goals appear, prefer descriptive text arguments or use `#<N>` prefix for issue references.
 
 ```bash
-# Strip leading '#' so both '123' and '#123' work; only fetch if numeric
-ISSUE_NUM="${ARGUMENTS#\#}"
+# Strip leading '#' and trailing flags so both '123' and '#123 --repo ...' work
+_RAW="${ARGUMENTS#\#}"
+ISSUE_NUM=$(echo "$_RAW" | grep -oE '^[0-9]+' | head -1)
+ISSUE_NUM="${ISSUE_NUM:-$_RAW}"
 if [[ "$ISSUE_NUM" =~ ^[0-9]+$ ]]; then
-  python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+  REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
+  if [ -n "$REPO_NAME" ]; then
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null  # timeout: 6000
+  else
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null  # timeout: 6000
+  fi
 fi
 ```
 
 If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/*.py`) to search related code. Path hint: use `src/` if that directory exists, otherwise search from project root (`.`).
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`** (values normalized by `bin/codemap-resolve` and `bin/semble-resolve`): read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`** (codemap normalized by `bin/codemap-resolve`; semble verified by `preflight-helpers.md` §Semble preflight): read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 

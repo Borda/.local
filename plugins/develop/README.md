@@ -62,21 +62,12 @@ ______________________________________________________________________
 
 ## 📦 Install
 
-**Prerequisites**
-
-You need Claude Code installed and access to the `Borda-AI-Rig` repository.
-
-```bash
-# Verify Claude Code is available
-claude --version
-```
+**Prerequisites**: Claude Code installed. Verify: `claude --version`
 
 **Install develop**
 
-Run from the directory that **contains** your `Borda-AI-Rig` clone (not from inside it):
-
 ```bash
-claude plugin marketplace add ./Borda-AI-Rig
+claude plugin marketplace add Borda/AI-Rig
 claude plugin install develop@borda-ai-rig
 ```
 
@@ -205,24 +196,26 @@ ______________________________________________________________________
 
 ```text
 /develop:feature "<goal>"
-/develop:feature "<goal>" --plan <path>    # skip cold analysis, use existing plan
-/develop:feature "<goal>" --team           # parallel agents for complex/cross-module features
+/develop:feature "<goal>" --plan <path>                     # skip cold analysis, use existing plan
+/develop:feature 123 --repo owner/upstream-repo         # implement issue from upstream repo (fork workflow)
+/develop:feature "<goal>" --team                            # parallel agents for complex/cross-module features
 ```
 
 **Flags**:
 
-| Flag               | Description                                                                                                                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--plan <path>`    | Read classification, scope, and approach from an existing plan file                                                                                                                        |
-| `--team`           | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope |
-| `--no-codemap`     | Disable codemap even if available                                                                                                                                                          |
-| `--codemap`        | Strict codemap — fail if index missing                                                                                                                                                     |
-| `--accept-no-plan` | Skip inline plan generation for medium/large scope (trust your own scoping)                                                                                                                |
-| `--no-challenge`   | Skip challenger adversarial gate                                                                                                                                                           |
+| Flag                  | Description                                                                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--repo <owner/repo>` | Route issue fetch to an upstream repository. Use when working in a fork and the issue is on the original repo (e.g. `--repo owner/my-project`).                                            |
+| `--plan <path>`       | Read classification, scope, and approach from an existing plan file                                                                                                                        |
+| `--team`              | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope |
+| `--no-codemap`        | Disable codemap even if available                                                                                                                                                          |
+| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                     |
+| `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust your own scoping)                                                                                                                |
+| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                           |
 
 **Workflow**:
 
-1. **Scope analysis** (`foundry:sw-engineer`): understand existing patterns, reuse opportunities, affected files, and compatibility concerns. If a GitHub issue number is provided, fetches the full issue with comments.
+1. **Scope analysis** (`foundry:sw-engineer`): understand existing patterns, reuse opportunities, affected files, and compatibility concerns. If a GitHub issue number is provided, fetches the full issue with comments (from upstream repo if `--repo` specified).
 2. **Source verification** (conditional): if the feature calls an external library API, detects the installed version from `pyproject.toml`, fetches the official docs page via WebFetch, and cites the relevant passage in code comments.
 3. **Demo use-case**: crystallises the API contract as either an inline doctest (simple functions) or an example script (complex features with setup). The demo must fail against current code before proceeding. Gate enforced via exit code — not output text.
 4. **TDD implementation loop** (`foundry:sw-engineer`): makes tests pass one at a time, running the full suite after each change to catch regressions.
@@ -253,23 +246,25 @@ ______________________________________________________________________
 
 ```text
 /develop:fix "<symptom description>"
-/develop:fix 88                              # GitHub issue number — fetches full issue + comments
-/develop:fix "<symptom>" --plan <path>       # use existing plan
-/develop:fix "<symptom>" --diagnosis <path>  # skip root cause analysis; use debug output
-/develop:fix "<symptom>" --team              # parallel root-cause investigation
+/develop:fix 88                                     # GitHub issue number — fetches full issue + comments
+/develop:fix 88 --repo owner/upstream-repo          # issue on upstream repo (fork workflow)
+/develop:fix "<symptom>" --plan <path>              # use existing plan
+/develop:fix "<symptom>" --diagnosis <path>         # skip root cause analysis; use debug output
+/develop:fix "<symptom>" --team                     # parallel root-cause investigation
 ```
 
 **Flags**:
 
-| Flag                 | Description                                                                                                 |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `--plan <path>`      | Read scope and approach from an existing plan file                                                          |
-| `--diagnosis <path>` | Read confirmed root cause from a `/develop:debug` output file; skips Step 1 analysis entirely               |
-| `--team`             | Spawn 2-3 `foundry:sw-engineer` teammates each investigating a distinct root-cause hypothesis independently |
+| Flag                  | Description                                                                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--repo <owner/repo>` | Route issue fetch to an upstream repository. Use when working in a fork and the issue is on the original repo (e.g. `--repo owner/my-project`). |
+| `--plan <path>`       | Read scope and approach from an existing plan file                                                                                              |
+| `--diagnosis <path>`  | Read confirmed root cause from a `/develop:debug` output file; skips Step 1 analysis entirely                                                   |
+| `--team`              | Spawn 2-3 `foundry:sw-engineer` teammates each investigating a distinct root-cause hypothesis independently                                     |
 
 **Workflow**:
 
-1. **Understand the problem** (`foundry:sw-engineer`): reads the full traceback, searches for the failing code path, traces call graph, identifies root cause, state mutation, and blast radius. If the argument is a positive integer, fetches the GitHub issue.
+1. **Understand the problem** (`foundry:sw-engineer`): reads the full traceback, searches for the failing code path, traces call graph, identifies root cause, state mutation, and blast radius. If the argument is a positive integer, fetches the GitHub issue (from upstream repo if `--repo` specified).
 2. **Reproduce the bug** (`foundry:qa-specialist`): writes a regression test that fails on unfixed code. Gate: test must exit non-zero before proceeding.
 3. **Apply the fix** (`foundry:sw-engineer`): minimal change — only what is necessary to make the regression test pass.
 4. **Review and close gaps**: 5-axis quality scan → fix loop, max 3 cycles. Adjacent bugs are documented as observations and handled in a separate session — never fixed in the same pass.
@@ -307,19 +302,21 @@ ______________________________________________________________________
 ```text
 /develop:refactor "<target file or directory> <goal>"
 /develop:refactor "<goal>" --plan <path>
-/develop:refactor "<goal>" --team            # parallel: foundry:sw-engineer refactors + foundry:qa-specialist writes tests simultaneously
+/develop:refactor "<goal>" --repo owner/upstream-repo   # context from upstream issue (fork workflow)
+/develop:refactor "<goal>" --team                       # parallel: foundry:sw-engineer refactors + foundry:qa-specialist writes tests simultaneously
 ```
 
 **Flags**:
 
-| Flag               | Description                                                                                                                                                          |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--plan <path>`    | Read scope and approach from an existing plan file                                                                                                                   |
-| `--team`           | Spawn `foundry:sw-engineer` (refactoring) and `foundry:qa-specialist` (characterization tests) in parallel. Use when target is a directory or spans multiple modules |
-| `--no-codemap`     | Disable codemap even if available                                                                                                                                    |
-| `--codemap`        | Strict codemap — fail if index missing                                                                                                                               |
-| `--accept-no-plan` | Skip inline plan generation for medium/large scope                                                                                                                   |
-| `--no-challenge`   | Skip challenger adversarial gate                                                                                                                                     |
+| Flag                  | Description                                                                                                                                                                                         |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--repo <owner/repo>` | Route issue fetch to an upstream repository. Use when working in a fork and the refactor context is tied to an upstream issue. Parsed for consistency; refactor has no issue-fetch step by default. |
+| `--plan <path>`       | Read scope and approach from an existing plan file                                                                                                                                                  |
+| `--team`              | Spawn `foundry:sw-engineer` (refactoring) and `foundry:qa-specialist` (characterization tests) in parallel. Use when target is a directory or spans multiple modules                                |
+| `--no-codemap`        | Disable codemap even if available                                                                                                                                                                   |
+| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                              |
+| `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                                                  |
+| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                    |
 
 **Workflow**:
 
@@ -361,20 +358,22 @@ ______________________________________________________________________
 
 ```text
 /develop:debug "<symptom description>"
-/develop:debug 88                       # GitHub issue number
-/develop:debug "<symptom>" --team       # parallel hypothesis investigation
+/develop:debug 88                                   # GitHub issue number
+/develop:debug 88 --repo owner/upstream-repo        # issue on upstream repo (fork workflow)
+/develop:debug "<symptom>" --team                   # parallel hypothesis investigation
 ```
 
 **Flags**:
 
 | Flag                   | Description                                                                                                                                                                                                                                         |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--repo <owner/repo>`  | Route issue fetch to an upstream repository. Use when working in a fork and the issue is on the original repo (e.g. `--repo owner/my-project`).                                                                                                     |
 | `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating a distinct root-cause hypothesis independently. Use when root cause is unclear after initial analysis, or failure spans 3+ modules                                                    |
 | `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures with no local repro. |
 
 **Workflow**:
 
-1. **Understand the symptom** (`foundry:sw-engineer`): reads full tracebacks, recent git changes near the failing code, and traces the call path from entry point to failure site.
+1. **Understand the symptom** (`foundry:sw-engineer`): reads full tracebacks, recent git changes near the failing code, and traces the call path from entry point to failure site. If a GitHub issue number is provided, fetches the full issue with comments (from upstream repo if `--repo` specified).
 2. **Pattern analysis**: finds 2-3 similar working code paths and compares them exhaustively against the broken path — across input, environment, call order, conditional branches, and None/empty guards.
 3. **Hypothesis and gate**: states root cause explicitly with supporting and contradicting evidence and a confidence level (high / medium / low). Presents hypothesis to you and waits for confirmation before proceeding. Low confidence triggers a targeted probe (minimal script, added assertion) to gather missing signal.
 4. **Hand off to fix**: writes a diagnosis file to `.plans/active/debug_<slug>.md` and emits `-> /develop:fix --diagnosis <path>`. Fix's Step 1 analysis is pre-answered by the diagnosis.
@@ -508,6 +507,23 @@ Skills chain together naturally. A typical development session looks like this:
 /develop:review    # reviews the full current diff (staged + unstaged vs HEAD)
 ```
 
+### Fork workflow (upstream issue)
+
+You have forked a repository and want to fix or implement an issue reported on the original upstream repo. Pass `--repo <owner/repo>` to route issue fetching to the upstream instead of your fork:
+
+```text
+# Debug an upstream issue in your fork
+/develop:debug 88 --repo owner/my-project
+
+# Fix it — skip debug if root cause is clear
+/develop:fix 88 --repo owner/my-project
+
+# Implement a feature request from upstream
+/develop:feature 123 --repo owner/my-project
+```
+
+The `--repo` flag is accepted by `fix`, `feature`, `debug`, and `refactor`. It affects only the `gh issue view` call that fetches issue body and comments — the rest of the workflow operates on your local fork as normal.
+
 ### Complex or high-stakes work
 
 Add `--team` to any code-changing skill. It spawns parallel specialist agents exploring the implementation space independently. Significantly higher token cost — reserve for changes spanning multiple modules, public API additions, or work in auth/payment/data scope.
@@ -529,7 +545,7 @@ ______________________________________________________________________
 | `oss` plugin     | optional    | `/oss:review` used in the progressive review loop (quality stack); `oss:review` checklist used by `develop:review` Agent 1. Absent — review loop step skipped gracefully.                                                        |
 | `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                 |
 | `codemap`        | optional    | `scan-query` for blast-radius check in quality stack; structural context for refactor, plan, and review. Silently skipped if absent or index missing.                                                                            |
-| `gh` CLI         | optional    | Used in `fix` and `debug` when argument is a GitHub issue number (`gh issue view`).                                                                                                                                              |
+| `gh` CLI         | optional    | Used in `fix`, `debug`, and `feature` when argument is a GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to an upstream repo (fork workflow).                                             |
 
 ### Python tooling
 
@@ -598,11 +614,9 @@ This plugin is part of the `borda-ai-rig` plugin suite. The canonical source is 
 
 To report a bug or suggest an improvement, open an issue in the repository. Include the skill name, the invocation you used, and what the actual vs expected behavior was.
 
-**To update the plugin after a repository pull**:
+**To update the plugin**:
 
 ```bash
-cd Borda-AI-Rig
-git pull
 claude plugin install develop@borda-ai-rig
 ```
 

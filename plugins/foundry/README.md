@@ -79,8 +79,7 @@ ______________________________________________________________________
 **Prerequisites**: Claude Code with plugin support; `jq` on PATH; `node` on PATH (required by hooks).
 
 ```bash
-# Run from the directory that CONTAINS your Borda-AI-Rig clone
-claude plugin marketplace add ./Borda-AI-Rig
+claude plugin marketplace add Borda/AI-Rig
 claude plugin install foundry@borda-ai-rig
 ```
 
@@ -715,8 +714,6 @@ ______________________________________________________________________
 <summary><strong>🔄 Upgrade</strong></summary>
 
 ```bash
-cd Borda-AI-Rig
-git pull
 claude plugin install foundry@borda-ai-rig
 ```
 
@@ -813,6 +810,6 @@ foundry is part of the Borda-AI-Rig repository. To suggest an improvement or rep
 
 1. Run `/foundry:brainstorm "your idea"` to develop the idea before filing anything
 2. File an issue on the repository — include the output of `/foundry:audit setup` and your Claude Code version
-3. Plugin updates propagate to users via `git pull` + `claude plugin install foundry@borda-ai-rig` + `/foundry:setup`
+3. Plugin updates propagate to users via `claude plugin install foundry@borda-ai-rig` + `/foundry:setup`
 
 To add a new agent or skill, use `/foundry:manage create` — it handles scaffolding, README sync, and MEMORY.md updates automatically.

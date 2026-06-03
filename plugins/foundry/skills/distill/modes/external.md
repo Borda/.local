@@ -111,6 +111,13 @@ Return ONLY compact JSON as final line: {\"status\":\"done\",\"verdicts\":{\"<it
 
 After challenger returns: read `$EXT_RUN_DIR/challenger-review.md`. Annotate each adoption table row with challenger verdict — add **Verdict** column. Rows marked `DISCARD`: move to separate **Discarded by challenger** section below table with one-line reason. Rows marked `ADOPT_WITH_MODIFICATION`: update **Action** cell to `Tweak*` and add footnote with challenger's modification requirement. Confidence < 0.85 → flag that group's findings with ⚠ and surface the named gap.
 
+**Fallback when challenger is unavailable or fails** — if `$EXT_RUN_DIR/challenger-review.md` does not exist after the spawn returns, OR the returned JSON envelope has `status != "done"`, OR the agent itself is missing (`foundry:challenger` not installed):
+
+- Print: `⚠ Challenger review unavailable — proceeding without adversarial annotation. Manual review of adoption table recommended before E13 apply.`
+- Skip the per-row Verdict column and the **Discarded by challenger** section
+- Continue to E13 with the unannotated adoption table
+- Do NOT block the workflow — challenger is advisory, not gating
+
 **E13: Gate — AskUserQuestion**
 
 Present source report + adoption table + install-as-is recommendation (when applicable). Then call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:

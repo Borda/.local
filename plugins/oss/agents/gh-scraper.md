@@ -71,6 +71,7 @@ _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 # Persist time anchors and input vars across Bash calls (Check 41: fresh shell per call)
 printf "%s" "$CUTOFF_3Y"   > "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y"
+printf "%s" "$CUTOFF_30D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-30d"
 printf "%s" "$CUTOFF_90D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d"
 printf "%s" "$CUTOFF_180D" > "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d"
 ```
@@ -155,9 +156,9 @@ fi
 # Axis 6: branch protection on default branch — substitute $DEFAULT_BRANCH (resolved from repo_meta.json above); literal {default_branch} never substituted by gh, returns 404 silently
 _BRANCH_PROTECTION=$(gh api "repos/$GH_OWNER/$GH_REPO/branches/$DEFAULT_BRANCH/protection" 2>/dev/null)  # timeout: 10000
 
-# Axis 8B: star velocity — NOT IMPLEMENTED: gh api stargazers endpoint does not expose per-star timestamps
-# without Accept: application/vnd.github.star+json; that header is unofficial and unreliable. Axis 8B
-# star_dates are unavailable — repo-warden Group C scores Axis 8B as N/A when star_dates absent.
+# Axis 9E: star velocity — NOT IMPLEMENTED: gh api stargazers endpoint does not expose per-star timestamps
+# without Accept: application/vnd.github.star+json; that header is unofficial and unreliable. Axis 9E
+# star_dates are unavailable — repo-warden Group C scores star velocity as N/A when star_dates absent.
 
 # Axis 8C: package registry — detect package from root contents, then WebFetch
 # NOT IMPLEMENTED: registry download stats require WebFetch to PyPI/npm APIs and package name
@@ -203,15 +204,15 @@ Use Write tool to create `$DATA_FILE`. Format: one JSON object per line (overwri
 One line per dataset. Record type specs and schema: `$_OSS_SHARED/vitality-data-schema.md`.
 
 Rules:
-- Skip datasets returning 403, persistent 202, or empty
+- Skip datasets returning empty; write `"data":"403"` for expected 403s (Dependabot, secret scanning — push access required; repo-warden applies partial-scoring formula); write `"data":null, "partial":true, "202_pending":true` for persistent 202 (contributor stats); skip empty responses entirely
 - Set `"partial": true` when truncation detected
 - Set `"records"` to item count in `data`
 - After writing: `echo "[gh-scraper] raw data: N datasets → $DATA_FILE" >&2`
 - Include text-content records using captured variables — set `"data"` as plain string; skip if variable empty:
-  - `_README_DECODED` → `"type":"readme_text"`
+  - `_README_DECODED` → `"type":"readme_content"`
   - `_CONTRIB_DECODED` → `"type":"contributing_text"`
   - `_CO_DECODED` → `"type":"codeowners_text"` (Axis 7 scorer reads this; absent record = no CODEOWNERS file)
-  - `_WORKFLOW_CONTENT` → `"type":"workflow_content"` (Axis 5 scorer greps it for test/lint/SAST signals)
+  - `_WORKFLOW_CONTENT` → `"type":"workflow_files"` (Axis 5 scorer greps it for test/lint/SAST signals)
 
 ## Step 5 — Return Envelope
 
@@ -237,7 +238,7 @@ Return ONLY this JSON as final output line:
 - **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501`); if response length equals limit → at least that many items exist (truncation at target count); set `"partial": true` in JSONL record; scorers apply confidence degraders. Note: unambiguous — 501 returned means ≥501 items exist, not off-by-one ambiguity
 - **Stats 202 retry**: contributor stats returns 202 on first call for large repos — retry up to 6× with 10s sleep (60s total); if still 202 after all retries, write record with `"partial": true, "data": null, "202_pending": true`; scorer Group C handles fallback
 - **403 on security APIs**: Dependabot and secret scanning require push access; 403 = expected; write `"data": "403"` string in JSONL record; Group B scorer applies partial-scoring formula
-- **CUTOFF_* variables**: computed in Step 1; CUTOFF_90D/CUTOFF_30D used in Axis 9 merged PR fetch; ANALYSIS_NOW used for all age calculations throughout
+- **CUTOFF_* variables**: computed in Step 1; CUTOFF_30D/CUTOFF_90D/CUTOFF_180D/CUTOFF_3Y all persisted to /tmp; repo-warden Group C reads CUTOFF_30D via ANALYSIS_NOW - 30*86400 (computed from JSONL timestamp); ANALYSIS_NOW used for all age calculations throughout
 - **Scoring removed**: scoring steps removed — scoring handled by 3 parallel oss:repo-warden instances; this agent is fetch-only
 
 </notes>

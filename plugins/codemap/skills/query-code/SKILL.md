@@ -4,7 +4,7 @@ description: |
   Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, and function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
   TRIGGER when: user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of".
   SKIP: codemap index not built (skill self-checks and no-ops gracefully); simple grep would suffice; non-Python repo.
-argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]>"
+argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]> [--exhaustive]"
 allowed-tools: Bash, Write, AskUserQuestion
 model: haiku
 effort: low
@@ -55,7 +55,7 @@ NOT for: building or rebuilding index (use `/codemap:scan-codebase`). All query 
 
 **Common mistake — direction matters**: "which modules need updating if X changes?" = `rdeps` (callers), NOT `deps`. `deps` returns wrong direction — 0% recall.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--top\`, \`--exclude-tests\`, \`--limit\`, \`--index\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--top\`, \`--exclude-tests\`, \`--limit\`, \`--index\`, \`--exhaustive\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 Run `scan-query` via Bash:
 
@@ -90,7 +90,7 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 
 **Query budget**: max 3 calls per task. Stop after 3 even if not exhaustive — report what found. Exception: explicit exhaustive multi-target analysis requests — state exhaustive intent before first call, budget extends to 6. Declaring exhaustive intent after the first call has already been made is invalid — treat that run as non-exhaustive (budget=3).
 
-**Exhaustive path/fn-blast traversal** — `path` and `fn-blast` queries traverse the graph internally and may require deeper exploration than 3 surface calls allow. For these subcommands, increase guidance to **10 calls** when caller declares exhaustive intent OR set `budget_override=unlimited` before first call. Without override, path/fn-blast still capped at 6 (exhaustive-mode default) — caller must opt in explicitly for unbounded traversal.
+**Exhaustive path/fn-blast traversal** — `path` and `fn-blast` queries traverse the graph internally and may require deeper exploration than 3 surface calls allow. For these subcommands, increase budget to **10 calls** when `--exhaustive` flag is present in `$ARGUMENTS`. Without `--exhaustive`, path/fn-blast still capped at 6 (exhaustive-mode default).
 
 **exhaustive: true — STOP ALL TOOL CALLS:** When `rdeps` or `deps` result contains `"exhaustive": true`, list complete and authoritative for **unfiltered** index. Note: if `--exclude-tests` used, exhaustive reflects unfiltered coverage — filtered results may omit callers; state caveat if relevant. Write answer immediately. Do NOT call codemap again. Do NOT run grep, bash, or Glob passes to verify or extend. No exceptions.
 
@@ -117,6 +117,8 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 `{"error": "..."}`: surface error, suggest re-running `/codemap:scan-codebase`.
 
 **Partial JSON handling**: if output is truncated (does not parse as complete JSON object — e.g., ends mid-value or missing closing `}`), log `⚠ partial JSON response — results may be incomplete` and attempt to parse only complete top-level fields present before truncation. Surface whatever was recovered; do not silently discard partial results.
+
+**Output routing** — if result count ≥ 5 items (applies to: `rdeps`, `deps`, `central`, `coupled`, `fn-rdeps`, `fn-central`, `list` on medium+ projects): write full rendered output to `.temp/output-codemap-query-<branch>-<YYYY-MM-DD>.md` via Write tool, then print terminal summary (YAML header + path + top-5 items). Skip file write for ≤ 4 items — terminal only.
 
 **Flags available on multiple commands** (`--exclude-tests`, `--limit`, `--index`):
 - `--exclude-tests` — drop test modules from results; applies to: `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central`; **not supported on `path`** (see `path` row in table above)

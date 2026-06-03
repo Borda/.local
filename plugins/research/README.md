@@ -64,12 +64,10 @@ ______________________________________________________________________
 
 ## 📦 Install
 
-**Prerequisite**: Claude Code with plugin support. The plugin lives in the Borda-AI-Rig repository.
-
-Run these commands from the directory that *contains* your `Borda-AI-Rig` clone (not from inside it):
+**Prerequisite**: Claude Code with plugin support.
 
 ```bash
-claude plugin marketplace add ./Borda-AI-Rig
+claude plugin marketplace add Borda/AI-Rig
 claude plugin install research@borda-ai-rig
 ```
 
@@ -87,7 +85,6 @@ claude plugin install research@borda-ai-rig
 <summary><strong>Upgrade</strong></summary>
 
 ```bash
-cd Borda-AI-Rig && git pull
 claude plugin install research@borda-ai-rig
 ```
 

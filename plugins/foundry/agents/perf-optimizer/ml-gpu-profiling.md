@@ -35,7 +35,7 @@ nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.free \
     --format=csv -l 1 # CSV every second
 
 # nvitop — interactive GPU process monitor (better than nvidia-smi)
-pip install nvitop
+uv tool install nvitop  # or: pip install nvitop
 nvitop
 ```
 
@@ -46,12 +46,13 @@ nvitop
 
 ## DataLoader Bottleneck Detection
 
-`data_fraction = data_time / step_time > 0.3` → pipeline CPU-bound.
-Fix: increase `num_workers` or switch to faster augmentations (e.g. albumentations).
+`data_fraction = data_time / step_time` then `cpu_bound = data_fraction > 0.3` → pipeline CPU-bound.
+Fix: increase `num_workers`, add `pin_memory=True`, `persistent_workers=True` — or switch to faster augmentations (e.g. albumentations) when augmentation dominates `data_time`.
 
 ## DataLoader Optimization
 
-DataLoader pipeline config (`num_workers`, `persistent_workers`, `pin_memory`, `prefetch_factor`): see `research:data-steward` (requires `research` plugin).
+**Throughput parameters** (`num_workers`, `persistent_workers`, `pin_memory`, `prefetch_factor`): owned by `foundry:perf-optimizer` — tune based on `data_fraction` ratio (see Detection section above). Set `num_workers > 0`, `pin_memory=True`, `persistent_workers=True` as first fix when DataLoader is bottleneck.
+**Correctness/reproducibility** (`worker_init_fn` seeding, split isolation, leakage detection): see `research:data-steward` (requires `research` plugin). If `research` plugin unavailable, apply throughput tuning only and flag correctness audit as out-of-scope.
 
 ## Mixed Precision (torch.amp — PyTorch 2.0+)
 
@@ -71,7 +72,16 @@ for batch in loader:
 
 # Memory reduction: ~50% for fp16; also faster on Tensor Core GPUs
 # Measure: torch.cuda.memory_allocated() / torch.cuda.max_memory_allocated()
-# For bfloat16 (better numerical stability on Ampere+): dtype=torch.bfloat16
+```
+
+```python
+# bfloat16: remove GradScaler — bfloat16 has float32 exponent range, no underflow risk
+# (GradScaler is only needed for float16; using it with bfloat16 is wasteful and misleading)
+with autocast("cuda", dtype=torch.bfloat16):
+    output = model(batch)
+    loss = criterion(output, targets)
+loss.backward()   # no scaler
+optimizer.step()  # no scaler
 ```
 
 ## Distributed Training Profiling
@@ -79,7 +89,7 @@ for batch in loader:
 Profile DDP overhead by measuring all-reduce time. Common bottlenecks:
 
 - Gradient bucket too small → too many all-reduce calls: `DDP(model, bucket_cap_mb=25)` (increase for large models)
-- Uneven data distribution → fast workers wait for slow: `DistributedSampler(drop_last=True)` equalizes batches
+- Uneven data distribution → fast workers wait for slow: `DistributedSampler(drop_last=True)` equalizes batches  # NOTE: drops up to (world_size-1) samples per epoch — do not use in eval loops
 - SyncBatchNorm overhead in small-batch regime: only use `sync_batchnorm` when `batch_per_gpu < 16`
 
 ## 3D Volumetric Data Performance

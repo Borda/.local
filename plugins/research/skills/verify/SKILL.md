@@ -19,8 +19,9 @@ NOT for: running experiments (use `/research:run`); judging experimental methodo
 
 HARD_CUTOFF: 900   # 15 min — ADVISORY ONLY, not enforced.
 # Synchronous Agent() has no escape — the parent cannot interrupt mid-flight call.
-# If the agent exceeds the expected ~15 min budget, the parent must handle the timeout in the NEXT turn
-# (e.g., user re-invokes, or orchestrator surfaces partial results from $RUN_DIR/audit-raw.md after Agent returns).
+# Single authoritative timeout semantics — applied uniformly at HIGH-1: after Agent() returns,
+# check `$RUN_DIR/audit-raw.md`. If absent or empty: fidelity = null, status = TIMED_OUT, mark ⏱ in report.
+# If present: parse normally regardless of whether the 15-min budget was nominally exceeded.
 # Same limitation as research:topic — documented, not bypassable from within the skill.
 
 </constants>
@@ -65,7 +66,7 @@ mkdir -p .reports/research
 BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done
 # Persist for V3/V4/V5 — each Bash call is a fresh shell, variables do not survive
 # Use BRANCH-DATE discriminator to prevent collisions between concurrent verify runs
-_VTAG="${BRANCH}-${DATE}"
+_VTAG="${BRANCH}-${DATE}-$$-$(date +%s)"  # PID + epoch suffix: distinguishes concurrent invocations on same branch/day (HIGH-2)
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir"
 echo "$OUT" > "${TMPDIR:-/tmp}/verify-${_VTAG}-out"
 # Write latest-tag pointer so rehydration blocks can find the right files
@@ -88,6 +89,10 @@ OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out" 2>/dev/null)
 1. `--scope <glob>` flag — use directly
 2. `--program <program.md>` flag — Read file, extract `scope_files` from `## Config` fenced block
 3. Auto-detect — `Glob(pattern="**/*.py")` up to 100 files; prefer files with ML-relevant imports (`torch`, `tensorflow`, `sklearn`, `numpy`, `jax`). If Glob returns 100 files and additional `.py` files exist (i.e., total may exceed 100): print `⚠ Scope truncated at 100 files — large codebase. Fidelity score reflects verified subset only. Use --scope or --program to narrow to relevant modules.`
+
+**Post-resolution validation** (applies to ALL three resolution methods above, including `--scope` and `--program`): after `scope_files` is resolved, count entries:
+- `len(scope_files) == 0` → print `! MISSING — Scope resolved to 0 files. Check --scope glob (typos like '**/*.pytroch' return zero matches), --program config block, or auto-detect coverage.` and stop.
+- `len(scope_files) > 100` → print the truncation warning above regardless of resolution method, so user is aware fidelity reflects verified subset only.
 
 Apply `--dim` filter: if `--dim F,H` specified, only audit those dimensions. Default: all five (`F,H,E,N,C`).
 
@@ -125,7 +130,7 @@ fi
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`. Single agent handles all five dimensions — cross-dimension context requires holistic paper understanding.
 
-<!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is declared as a reference constant but is NOT enforceable within the skill — Agent() has no timeout parameter. If scientist does not return: surface whatever is in `$RUN_DIR/audit-raw.md` (may be empty); mark result "TIMED OUT (unconfirmed)". Same limitation as research:topic. -->
+<!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is declared as a reference constant but is NOT enforceable within the skill — Agent() has no timeout parameter. After Agent() returns, apply the single timeout policy declared in `<constants>`: check `$RUN_DIR/audit-raw.md`; if absent or empty, set `fidelity = null`, `status = TIMED_OUT`, mark ⏱ in report; if present, parse normally. Same limitation as research:topic. -->
 
 **Scientist prompt**:
 
@@ -174,9 +179,9 @@ Include ## Confidence block.
 Return ONLY: {"status":"done","claims_verified":N,"mismatches":N,"high":N,"medium":N,"low":N,"fidelity":0.N,"file":"$RUN_DIR/audit-raw.md","confidence":0.N}
 ```
 
-`timeout` is not a valid parameter on `Agent()` — do NOT pass it. The `HARD_CUTOFF: 900` constant is advisory only (see `<constants>`); synchronous `Agent()` calls cannot be polled or interrupted mid-flight. Parent handles timeout in the NEXT turn.
+`timeout` is not a valid parameter on `Agent()` — do NOT pass it. The `HARD_CUTOFF: 900` constant is advisory only (see `<constants>`); synchronous `Agent()` calls cannot be polled or interrupted mid-flight.
 
-On timeout: use whatever partial results Agent returned before context compaction (read `$RUN_DIR/audit-raw.md` if file exists post-return). If empty or unparsable: set `fidelity = null`, continue to V4 with `timed_out` status.
+**Single timeout policy** (matches `<constants>`): after `Agent()` returns, read `$RUN_DIR/audit-raw.md`. If absent or empty → set `fidelity = null`, status = `TIMED_OUT`, continue to V4 with ⏱ marker in the report. If present → parse normally regardless of nominal budget. Never defer handling to a "next turn" or rely on context compaction.
 
 ### Step V4: Severity assessment and fidelity rating
 
@@ -195,15 +200,16 @@ Post-process envelope from scientist:
 ! BREAKING — HIGH severity mismatch in critical dimension (F or E). Fix before running experiments.
 ```
 
-Before stopping, write a **partial report** to `$OUT` (compute `$OUT` per V5 path scheme) containing the verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top; full audit remains at `$RUN_DIR/audit-raw.md`.
+**Do NOT write the partial report yet** — hold the partial-report markdown content in memory only. Premature writes to `$OUT` get overwritten by V5 if the user picks (b), and the (a) "keep partial report" description below is only honest if the write happens AFTER the user opts in.
 
-Then invoke `AskUserQuestion` — do NOT write options as plain text:
+Invoke `AskUserQuestion` — do NOT write options as plain text:
 - question: "Strict mode hit HIGH severity mismatch — how to proceed?"
-- (a) label: `Stop here` — description: keep partial report (passing claims only); fix mismatches and re-run `/research:verify`
+- (a) label: `Stop here` — description: write partial report (passing claims only) to `$OUT`; fix mismatches and re-run `/research:verify`
 - (b) label: `Continue to full report` — description: proceed to V5/V6 and include failed claims in the full verification report
 
-On (a): stop — do not proceed to V5/V6. Report specific mismatches to terminal and exit.
-On (b): proceed to V5/V6 normally (failed claims included).
+**On (a)**: rehydrate `$OUT` (`OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out" 2>/dev/null)`), write the held partial-report markdown to `$OUT` (verification table built so far plus a `! STRICT STOP — partial report; failed claims not yet written` banner at the top), surface the file path, and exit. Full audit remains at `$RUN_DIR/audit-raw.md`. Do NOT also dump the mismatch table to terminal — it is already inside the partial report.
+
+**On (b)**: discard the held partial-report markdown and proceed directly to V5/V6 — V5 writes the full report to `$OUT` (failed claims included).
 
 ### Step V5: Write verification report
 
@@ -304,5 +310,6 @@ Call `AskUserQuestion` tool after V6 output — do NOT write options as plain te
 - Re-run verify after fixing mismatches to confirm fixes resolved flagged items
 - For papers with appendices beyond 20 pages, iterate Read with `pages: "21-40"` etc. to capture full hyperparameter tables
 - Fidelity score = ratio, not probability — 0.9 means 90% of verified claims match, not 90% confidence
+- **Dimension [C] (Citation chain) is best-effort** — paper provenance is rarely resolvable from code alone; expect most [C] findings to come back as `UNVERIFIABLE`. To skip [C] entirely for faster, cleaner output, run with `--dim F,H,E,N`. Keep [C] when you have specific provenance suspicions (e.g., code may implement variant from different paper than the one cited).
 
 </notes>
