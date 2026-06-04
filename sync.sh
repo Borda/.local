@@ -116,7 +116,7 @@ for p in "${PLUGINS[@]}"; do
 done
 
 echo "Initializing Foundry (sync settings + symlinks)..."
-claude --print "/foundry:setup"
+claude --print "/foundry:setup --approve"
 
 fi  # SYNC_CLAUDE
 

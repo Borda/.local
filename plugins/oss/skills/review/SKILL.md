@@ -372,7 +372,7 @@ Also check explicitly (GT-level findings, not afterthoughts):
 
 **Security scan ownership**: Agent 2 (foundry:qa-specialist) owns all security/vulnerability scanning — runs on every PR unconditionally. Agent 1 (sw-engineer) adds supplementary security scrutiny only when diff explicitly touches auth, input parsing, or serialization logic: flag insecure implementation patterns (e.g. string-formatted SQL, raw `eval()`). No separate security agent spawn.
 
-**Agent 6 — foundry:solution-architect**: Spawns for FEATURE, MIXED, and REFACTOR scope. Public-API PRs (diff touches `__init__.py` exports, Protocols/ABCs, new public classes): evaluate API design, coupling, backward compat. REFACTOR-scope PRs (internal restructure, no new public API): evaluate module boundaries, coupling/cohesion, and whether restructuring introduces new architectural debt — even without public API changes, structural decisions affect maintainability.
+**Agent 6 — foundry:solution-architect**: Spawns for FEATURE, MIXED, and REFACTOR scope. Public-API PRs (diff touches `__init__.py` exports, Protocols/ABCs, new public classes): evaluate API design, coupling, backward compat. **Backward-compat caveat for removals**: only flag a removed export as requiring a deprecation period if it was present in the latest published release (`git describe --tags --abbrev=0`). Exports added after the latest tag were never released — clean removal is acceptable and must NOT be flagged as a breaking change or deprecation gap. REFACTOR-scope PRs (internal restructure, no new public API): evaluate module boundaries, coupling/cohesion, and whether restructuring introduces new architectural debt — even without public API changes, structural decisions affect maintainability.
 
 **Agent 7 — foundry:challenger (skip only if `CHALLENGE_ENABLED=false` — pass `--no-challenge` to opt out)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: per preamble above (output to `foundry--challenger.md`). Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
 
@@ -497,8 +497,20 @@ gh pr diff $CLEAN_ARGS -- pyproject.toml 'requirements*.txt' 2>/dev/null # timeo
 # Check for secrets accidentally committed — scoped to .py files only (oss:review is Python-only)
 gh pr diff $CLEAN_ARGS -- '*.py' 2>/dev/null | grep -iE "(password|secret|api_key|token|private_key|auth_token)\s*[=:]\s*['\"]?[A-Za-z0-9+/._-]{8,}['\"]?" # timeout: 6000
 
-# Check for API stability: are public APIs being removed without deprecation?
-gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null # timeout: 6000
+# Check for API stability: removals needing deprecation — only if the removed export was in a published release
+LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")  # timeout: 6000
+REMOVED_EXPORTS=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep '^-[^-]' | grep -oP '\b[A-Za-z_]\w*\b' | sort -u)  # timeout: 6000
+if [ -n "$LATEST_TAG" ] && [ -n "$REMOVED_EXPORTS" ]; then
+    for export in $REMOVED_EXPORTS; do
+        if git show "$LATEST_TAG" -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -qF "$export"; then
+            echo "DEPRECATION_NEEDED: $export (present in $LATEST_TAG — was released)"
+        else
+            echo "UNRELEASED_REMOVAL: $export (absent from $LATEST_TAG — clean removal OK, no deprecation needed)"
+        fi
+    done  # timeout: 15000
+elif [ -z "$LATEST_TAG" ]; then
+    echo "NO_RELEASE_TAG: cannot determine release history — skip deprecation check"
+fi
 
 # Check CHANGELOG was updated
 gh pr diff $CLEAN_ARGS -- CHANGELOG.md CHANGES.md 2>/dev/null # timeout: 6000
@@ -535,6 +547,7 @@ Spawn **foundry:sw-engineer** consolidator agent with prompt:
 > - Codex deduplication: include `foundry--codex.md` unique findings under `### Codex Co-Review`; same file:line raised by both agent and Codex → keep agent version, mark 'also flagged by Codex'.
 >
 > **Issue alignment (when `issue-*.md` files exist in `$RUN_DIR`):** Include `### Issue Root Cause Alignment` section placed immediately after `### [blocking] Critical`. Per linked issue: state root cause hypothesis, whether PR addresses it (yes / partially / no), whether PR description diverges from issue's stated problem, whether reproduction scenario tested. Any `root cause misalignment` or `scope divergence` finding is at least HIGH severity.
+> **PR description drift**: PR descriptions routinely diverge from actual implementation — reviewers request changes mid-review that get implemented but not reflected in PR body. Before flagging `scope divergence`, cross-check PR thread and review comments to determine what was actually agreed upon; description diverges from *thread consensus* (not original description) is the signal worth flagging.
 >
 > **CI status:** If `CI_RED=true` (literal value expanded by orchestrator): set report header `CI:` field to `failing — [CI_FAILING_CHECKS literal list]`. Otherwise set to `passing` or `pending` per `gh pr checks` output.
 >

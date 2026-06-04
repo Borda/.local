@@ -306,6 +306,7 @@ Key invariant: location tracks "does this comment have a resolvable PullRequestR
 Synthesize contribution motivation (2–3 sentences using PR body + linked issues):
 what problem contributor solving, why this approach, expected user-visible outcome.
 This becomes the priority lens for conflict resolution.
+**PR body = stated intent; thread = authoritative record**: PR descriptions often drift from actual implementation when reviewers request changes mid-review. When PR body conflicts with what thread discussion/reviewer requests agreed upon, thread wins. Use thread consensus to understand what was actually implemented, not original PR description.
 
 Classify EVERY comment using these codes:
   [gh][req]      change required before merge (reviewer with write access / maintainer)
@@ -318,6 +319,14 @@ Classify EVERY comment using these codes:
 Per location:inline comment: if its REST 'id' (= GraphQL databaseId) appears in resolved-thread
 list → mark [done] without reading content. All others: apply codes above.
 Per location:discussion comment: skip resolved-thread list entirely — PR discussion comments have no resolvable PullRequestReviewThread; apply classification codes directly.
+
+**Deprecation false-positive filter**: Before finalising any action item whose `full_comment_text` requests adding a deprecation warning (keywords: "deprecate", "deprecation", "DeprecationWarning", "deprecated") for a removed argument, parameter, or function:
+1. Determine the removed symbol name from comment context or diff.
+2. Get latest release tag: `LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null)`  # timeout: 6000
+3. Check if symbol existed in that release: `git show "$LATEST_TAG" -- <file_path> 2>/dev/null | grep -qF "<symbol>"`  # timeout: 6000
+4. **Not found in latest tag** → symbol was never released; downgrade item to `[done]`; set Notes to "unreleased API — deprecation not required; clean removal OK".
+5. **Found in latest tag** → symbol was released; keep original classification ([gh][req] or [gh][suggest]) — deprecation is legitimately needed.
+6. **No tag found** → cannot determine; keep original classification but add Notes "no release tag — deprecation status unknown".
 
 ACTION_ITEM fields: id (sequential int starting at 1), type, change, severity, author,
 summary (≤60 chars, truncated at word boundary with …), file, line, url (html_url from
