@@ -43,7 +43,7 @@ Four things this Codex setup can do that vanilla Codex can't:
 
 ## 🔄 Config Sync
 
-This repo (`.codex/`) is the source of truth. Home (`~/.codex/`) is a downstream copy:
+This repo (`.codex/`) is the source of truth. Home (`~/.codex/`) is a downstream copy. Before config edits, keep project-local backups under `.reports/codex/manage/<timestamp>/backup/` so the source-of-truth state is reversible without relying on home config:
 
 ```bash
 cp -r .codex/ ~/.codex/ # activate globally (config_file paths are relative)
@@ -90,6 +90,7 @@ Codex selects agents autonomously based on task type (defined in `AGENTS.md`). Y
 
 Automatic spawn patterns (from `AGENTS.md`):
 
+- Symptom-first failures route to `investigate` before implementation: failing tests, failing CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, and workaround requests without verified cause
 - `sw-engineer` handles core implementation; on completion Codex can fan out to `qa-specialist` + `doc-scribe`
 - `security-auditor` is used when tasks touch auth, credentials, external APIs, model weights, or deserialization
 - `data-steward` is used when tasks touch data pipelines, splits, augmentation, or DataLoaders
@@ -154,10 +155,10 @@ Each skill enforces a complete quality loop that prompt-style invocation does no
 | Skill         | What it enables                                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `review`      | Diff-scoped review with measurable gates: classifies findings by severity, writes a JSON artifact so results are comparable across runs     |
-| `develop`     | TDD-first implementation: writes a failing test first, implements to pass it, then reruns all gates before handing back                     |
+| `develop`     | TDD-first implementation: writes a failing test first, requires root-cause evidence for symptom-first failures, then reruns all gates       |
 | `resolve`     | Findings closure: applies fixes in priority order (critical → high → medium), reruns gates, surfaces what remains                           |
 | `audit`       | Config hygiene: detects broken refs, inventory drift, instruction overlap; produces a scored report with keep/sharpen/prune recommendations |
-| `calibrate`   | Benchmarks recall vs confidence bias on a fixed task set so you know if stated confidence is reliable                                       |
+| `calibrate`   | Benchmarks recall vs confidence bias on a fixed task set and emits measured recommendations for the next fixes or improvements              |
 | `release`     | SemVer-disciplined release: changelog entry, migration guide, and readiness check in one structured pass                                    |
 | `investigate` | Root-cause diagnosis for unknown failures — env, tools, hooks, CI divergence — with ranked hypotheses and a handoff artifact                |
 | `manage`      | Scaffolds agents, skills, and config with cross-ref propagation; prevents orphaned references                                               |
@@ -172,6 +173,7 @@ Interactive prompt usage:
 
 ```text
 run investigate on this branch and find root cause of failing CI
+run investigate before fixing this failing pytest; do not suggest a workaround unless it is explicitly temporary
 run resolve on the current working tree and fix high-severity findings
 run review, then develop, then audit for issue #42
 ```
@@ -261,6 +263,8 @@ Calibration runner:
 ```bash
 .codex/calibration/run.sh
 ```
+
+Each run writes `result.json`, `behavioral.json`, and `recommendations.md`. Recommendations are generated from failed gates, leaks, behavioral false positives/negatives, confidence calibration gaps, and live-observation coverage.
 
 ### AGENTS.md layering
 

@@ -13,6 +13,12 @@
       "success": "checks and gate status are present"
     },
     {
+      "goal": "Reject workaround-only fixes for symptom-first failures",
+      "id": "develop-002",
+      "skill": "develop",
+      "success": "investigate handoff or root-cause evidence is required before editing"
+    },
+    {
       "goal": "Apply findings and report unresolved items",
       "id": "resolve-001",
       "skill": "resolve",
@@ -40,7 +46,7 @@
       "goal": "Narrow unknown failure to likely root cause",
       "id": "investigate-001",
       "skill": "investigate",
-      "success": "hypothesis ranking and gate status are present"
+      "success": "hypothesis ranking, rejected alternatives, workaround-only rejection, and gate status are present"
     },
     {
       "goal": "Detect and report project/home drift",

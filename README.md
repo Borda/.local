@@ -274,16 +274,16 @@ Both `--reply` flags produce a two-part shepherd output: an overall PR comment (
 
 ## 🤖 Codex CLI
 
-Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.5`, with 14 specialist agents and a mirrored skill backbone (`review/develop/resolve/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`).
+Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.5`, with 14 specialist agents and a mirrored skill backbone (`review/develop/resolve/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`). Symptom-first failures route through `investigate` before implementation, and calibration emits measured recommendations for what to fix or improve next.
 
 ### Install
 
 ```bash
 npm install -g @openai/codex          # install Codex CLI
-cp -r Borda-AI-Rig/.codex/ ~/.codex/ # activate globally (run from parent of clone)
+cp -r Borda-AI-Rig/.codex/ ~/.codex/ # activate globally from the project source of truth
 ```
 
-After pulling updates, re-apply: `cp -r Borda-AI-Rig/.codex/ ~/.codex/` — or `rsync -av` to preserve local customizations.
+This repo's `.codex/` directory is the source of truth; `~/.codex/` is a downstream copy. After pulling updates, re-apply: `cp -r Borda-AI-Rig/.codex/ ~/.codex/` — or `rsync -av` to preserve local customizations.
 
 ### Usage
 
@@ -297,6 +297,7 @@ codex --profile deep-review "full security audit of src/api/" # activate a profi
 
 ```text
 run investigate on this branch and find root cause of failing CI
+run investigate before fixing this failing pytest; do not suggest a workaround unless it is explicitly temporary
 run resolve for the current working tree and fix high-severity findings
 ```
 
@@ -426,7 +427,7 @@ AI-Rig/
 │   ├── rules/              # per-topic coding and config standards (symlinks → plugins/foundry/rules/)
 │   └── hooks/              # symlinks → plugins/foundry/hooks/
 ├── .mcp.json               # MCP server definitions
-├── .codex/                 # OpenAI Codex CLI
+├── .codex/                 # OpenAI Codex CLI source of truth
 │   ├── README.md           # full reference: agents, profiles, Claude integration
 │   ├── AGENTS.md           # global instructions and subagent spawn rules
 │   ├── config.toml         # multi-agent config (gpt-5.5 baseline)

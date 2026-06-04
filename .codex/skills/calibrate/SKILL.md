@@ -21,23 +21,27 @@ Run a linear calibration loop for codex workflow integrity and behavioral scorin
 
 ## Workflow
 
-1. Load calibration task set from `.codex/calibration/tasks.json`.
-2. Load behavioral cases from `.codex/calibration/behavioral-cases.json`.
-3. Load behavioral observations from `.codex/calibration/behavioral-observations.jsonl`.
-   - Require `source`, `run_id`, and `observed_at` on each observation where available.
-4. Run `.codex/calibration/run.sh`.
-5. Inspect `checks_failed`, `leaks_found`, and `behavioral`.
-6. Review behavioral metrics:
-   - `recall`: expected finding IDs recovered from known cases.
-   - `precision`: reported finding IDs that match expected finding IDs.
-   - `confidence_accuracy`: `1 - mean(abs(confidence - per-case F1))`.
-   - `mean_overconfidence`: average positive confidence bias over per-case F1.
-   - `gate_metrics_raw`: unrounded overall values used for pass/fail thresholds.
-   - `by_source`: recall, precision, and confidence calibration grouped by observation source.
-   - `observation_freshness`: latest `observed_at`, missing timestamp count, and live-vs-fixture observation counts.
-7. Classify gaps as blocking or non-blocking.
-8. Recommend minimal fixes for blocking gaps.
-9. Write artifact to `.reports/codex/calibrate/<timestamp>/result.json`.
+01. Load calibration task set from `.codex/calibration/tasks.json`.
+02. Load behavioral cases from `.codex/calibration/behavioral-cases.json`.
+03. Load behavioral observations from `.codex/calibration/behavioral-observations.jsonl`.
+    - Require `source`, `run_id`, and `observed_at` on each observation where available.
+04. Run `.codex/calibration/run.sh`.
+05. Inspect `checks_failed`, `leaks_found`, and `behavioral`.
+06. Review behavioral metrics:
+    - `recall`: expected finding IDs recovered from known cases.
+    - `precision`: reported finding IDs that match expected finding IDs.
+    - `confidence_accuracy`: `1 - mean(abs(confidence - per-case F1))`.
+    - `mean_overconfidence`: average positive confidence bias over per-case F1.
+    - `gate_metrics_raw`: unrounded overall values used for pass/fail thresholds.
+    - `by_source`: recall, precision, and confidence calibration grouped by observation source.
+    - `observation_freshness`: latest `observed_at`, missing timestamp count, and live-vs-fixture observation counts.
+07. Classify gaps as blocking or non-blocking.
+08. Emit measured recommendations for what should be fixed or improved next.
+    - Failed checks and leaks come first.
+    - Behavioral recommendations must name the metric gap and the affected cases when available.
+    - Fixture-only caveats must be separate from live-quality claims.
+09. Write artifacts to `.reports/codex/calibration/<timestamp>/result.json` and `.reports/codex/calibration/<timestamp>/recommendations.md`.
+10. Write the skill-level artifact to `.reports/codex/calibrate/<timestamp>/result.json` when this skill wraps the runner.
 
 ## Usage Notes
 
@@ -91,6 +95,15 @@ Minimum artifact payload:
     "missing_observed_at": 0,
     "fixture_observations": 0,
     "live_observations": 0
+  },
+  "recommendations": [
+    "measured fix or improvement recommendation"
+  ],
+  "follow_up": [
+    "non-blocking next check"
+  ],
+  "artifacts": {
+    "recommendations": ".reports/codex/calibration/<timestamp>/recommendations.md"
   },
   "artifact_path": ".reports/codex/calibrate/<timestamp>/result.json"
 }

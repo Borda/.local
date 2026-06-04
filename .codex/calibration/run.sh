@@ -378,7 +378,7 @@ if [[ "${#CHECKS_FAILED[@]}" -gt 0 ]]; then
   CHECKS_FAILED_CSV="$(IFS=,; echo "${CHECKS_FAILED[*]}")"
 fi
 
-python3 - "$OUT_DIR/result.json" "$STATUS" "$TS" "$FAILS" "$LEAKS" "$CHECKS_FAILED_CSV" "$BEHAVIORAL_RESULT" <<'PY'
+python3 - "$OUT_DIR/result.json" "$STATUS" "$TS" "$FAILS" "$LEAKS" "$CHECKS_FAILED_CSV" "$BEHAVIORAL_RESULT" "$OUT_DIR/recommendations.md" "$OUT_DIR/leaks.txt" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -390,7 +390,131 @@ fail_count = int(sys.argv[4])
 leak_count = int(sys.argv[5])
 checks_failed = [check for check in sys.argv[6].split(",") if check]
 behavioral_path = Path(sys.argv[7])
+recommendations_path = Path(sys.argv[8])
+leaks_path = Path(sys.argv[9])
 behavioral = json.loads(behavioral_path.read_text()) if behavioral_path.exists() else None
+
+def metric(behavioral_payload, name, default=0.0):
+    if not behavioral_payload:
+        return default
+    return behavioral_payload.get("gate_metrics_raw", behavioral_payload.get("overall", {})).get(name, default)
+
+def rounded(value):
+    return round(float(value), 3)
+
+def top_case_gaps(behavioral_payload, key, limit=5):
+    if not behavioral_payload:
+        return []
+    cases = [case for case in behavioral_payload.get("case_results", []) if int(case.get(key, 0)) > 0]
+    return sorted(
+        cases,
+        key=lambda case: (int(case.get(key, 0)), float(case.get("confidence_error", 0.0))),
+        reverse=True,
+    )[:limit]
+
+def confidence_outliers(behavioral_payload, limit=5):
+    if not behavioral_payload:
+        return []
+    cases = behavioral_payload.get("case_results", [])
+    return sorted(cases, key=lambda case: float(case.get("confidence_error", 0.0)), reverse=True)[:limit]
+
+def build_recommendations(behavioral_payload, failed_checks, leak_total):
+    recommendations = []
+    follow_up = []
+
+    if failed_checks:
+        recommendations.append(
+            "Fix failed calibration checks first: " + ", ".join(failed_checks) + "."
+        )
+    if leak_total:
+        recommendations.append(
+            f"Inspect leaks.txt and fix {leak_total} missing or mismatched config references before widening changes."
+        )
+
+    if not behavioral_payload:
+        recommendations.append("Restore behavioral scoring output; behavioral.json was not produced.")
+        return recommendations, follow_up
+
+    thresholds = behavioral_payload.get("thresholds", {})
+    raw = behavioral_payload.get("gate_metrics_raw", behavioral_payload.get("overall", {}))
+    recall = float(raw.get("recall", 0.0))
+    precision = float(raw.get("precision", 0.0))
+    confidence_mae = float(raw.get("confidence_mae", 0.0))
+    confidence_accuracy = max(0.0, 1.0 - confidence_mae)
+    mean_overconfidence = float(raw.get("mean_overconfidence", 0.0))
+    observations = int(raw.get("observations", 0))
+    min_observations = float(thresholds.get("min_observations", 1.0))
+    min_recall = float(thresholds.get("min_recall", 0.75))
+    min_precision = float(thresholds.get("min_precision", 0.75))
+    max_confidence_mae = float(thresholds.get("max_confidence_mae", 0.2))
+    max_mean_overconfidence = float(thresholds.get("max_mean_overconfidence", 0.15))
+
+    if observations < min_observations:
+        recommendations.append(
+            f"Add behavioral observations: {observations} present, threshold is {rounded(min_observations)}."
+        )
+    if recall < min_recall or int(raw.get("fn", 0)) > 0:
+        gaps = top_case_gaps(behavioral_payload, "fn")
+        if gaps:
+            detail = "; ".join(
+                f"{case['case_id']} missed {case['fn']} expected finding(s)"
+                for case in gaps
+            )
+            recommendations.append(
+                f"Improve recall by addressing missing expected findings: {detail}."
+            )
+        else:
+            recommendations.append(
+                f"Improve behavioral recall from {rounded(recall)} toward threshold {rounded(min_recall)}."
+            )
+    if precision < min_precision or int(raw.get("fp", 0)) > 0:
+        gaps = top_case_gaps(behavioral_payload, "fp")
+        if gaps:
+            detail = "; ".join(
+                f"{case['case_id']} reported {case['fp']} unsupported finding(s)"
+                for case in gaps
+            )
+            recommendations.append(
+                f"Improve precision by removing unsupported observations or updating expected ground truth with evidence: {detail}."
+            )
+        else:
+            recommendations.append(
+                f"Improve behavioral precision from {rounded(precision)} toward threshold {rounded(min_precision)}."
+            )
+    if confidence_mae > max_confidence_mae:
+        recommendations.append(
+            f"Reduce confidence calibration error: MAE {rounded(confidence_mae)} exceeds threshold {rounded(max_confidence_mae)}."
+        )
+    elif confidence_accuracy < 0.9:
+        outliers = confidence_outliers(behavioral_payload, limit=3)
+        detail = "; ".join(
+            f"{case['case_id']} confidence {case['confidence']} vs F1 {case['f1']}"
+            for case in outliers
+        )
+        recommendations.append(
+            f"Review stale confidence labels; confidence accuracy is {rounded(confidence_accuracy)}. Largest gaps: {detail}."
+        )
+    if mean_overconfidence > max_mean_overconfidence:
+        recommendations.append(
+            f"Reduce overconfidence: mean overconfidence {rounded(mean_overconfidence)} exceeds threshold {rounded(max_mean_overconfidence)}."
+        )
+
+    freshness = behavioral_payload.get("observation_freshness", {})
+    if int(freshness.get("live_observations", 0) or 0) == 0:
+        follow_up.append(
+            "Add source=live-* observations from real Codex calibration prompts before treating fixture metrics as live model quality."
+        )
+    if int(freshness.get("missing_observed_at", 0) or 0) > 0:
+        follow_up.append("Backfill missing observed_at timestamps in behavioral observations.")
+
+    if not recommendations:
+        recommendations.append(
+            "No blocking calibration fixes found; maintain the current gates and collect live observations next."
+        )
+
+    return recommendations, follow_up
+
+recommendations, follow_up = build_recommendations(behavioral, checks_failed, leak_count)
 
 payload = {
     "status": status,
@@ -421,14 +545,51 @@ payload = {
     "artifact_path": f".reports/codex/calibration/{timestamp}/result.json",
     "leaks_found": leak_count,
     "behavioral": behavioral,
+    "recommendations": recommendations,
+    "follow_up": follow_up,
     "artifacts": {
         "checks": f".reports/codex/calibration/{timestamp}/checks.txt",
         "leaks": f".reports/codex/calibration/{timestamp}/leaks.txt",
         "behavioral": f".reports/codex/calibration/{timestamp}/behavioral.json",
+        "recommendations": f".reports/codex/calibration/{timestamp}/recommendations.md",
         "result": f".reports/codex/calibration/{timestamp}/result.json",
     },
 }
 result_path.write_text(json.dumps(payload, indent=2) + "\n")
+
+lines = [
+    "# Calibration Recommendations",
+    "",
+    f"Status: {status}",
+    f"Checks failed: {', '.join(checks_failed) if checks_failed else 'none'}",
+    f"Leaks found: {leak_count}",
+]
+if behavioral:
+    overall = behavioral.get("overall", {})
+    freshness = behavioral.get("observation_freshness", {})
+    lines.extend(
+        [
+            "",
+            "## Behavioral Summary",
+            "",
+            f"- Recall: {overall.get('recall')}",
+            f"- Precision: {overall.get('precision')}",
+            f"- F1: {overall.get('f1')}",
+            f"- Confidence accuracy: {overall.get('confidence_accuracy')}",
+            f"- Mean overconfidence: {overall.get('mean_overconfidence')}",
+            f"- Fixture observations: {freshness.get('fixture_observations', 0)}",
+            f"- Live observations: {freshness.get('live_observations', 0)}",
+        ]
+    )
+lines.extend(["", "## Recommendations", ""])
+lines.extend(f"- {item}" for item in recommendations)
+if follow_up:
+    lines.extend(["", "## Follow-Up", ""])
+    lines.extend(f"- {item}" for item in follow_up)
+if leaks_path.exists() and leaks_path.read_text(encoding="utf-8").strip():
+    lines.extend(["", "## Leak Details", ""])
+    lines.extend(f"- {line}" for line in leaks_path.read_text(encoding="utf-8").splitlines() if line.strip())
+recommendations_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
 
 if [[ ! -f "$OUT_DIR/leaks.txt" ]]; then

@@ -42,6 +42,8 @@ Run a linear implementation loop with strict gates.
 
    - Existing code and tests for the target surface have been read.
    - Failure mode or new behavior is captured by a failing doctest, pytest, or explicit acceptance check.
+   - If the task starts from a symptom, failing test, failing CI, flaky behavior, regression, tool/environment error, or unexplained metric shift, run `investigate` first or document equivalent root-cause evidence before editing.
+   - Root-cause evidence includes the claim, supporting logs/code, a falsification check, and at least one rejected alternative. A workaround-only change is a temporary mitigation, not completion, unless explicitly requested by the user.
    - Behavior-preserving refactors have characterization tests or an equivalent current-behavior safety net.
    - The next edit is the smallest reversible step, not a speculative refactor.
 
@@ -86,7 +88,9 @@ Run a linear implementation loop with strict gates.
 3. Any critical finding => fail.
 4. Ambiguous scope or missing ownership => fail.
 5. Missing failing doctest, pytest, or explicit acceptance check for changed behavior => fail.
-6. Result artifact missing => fail.
+6. Symptom-first task edited without `investigate` output or equivalent root-cause evidence => fail.
+7. Workaround-only fix presented as completion without explicit temporary-mitigation instruction => fail.
+8. Result artifact missing => fail.
 
 ## Output Contract
 

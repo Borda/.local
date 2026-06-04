@@ -21,6 +21,8 @@ For docs, dependencies, CI/CD, releases, security, and deprecations, prefer curr
 - When multiple agents contribute, keep handoffs compact and ownership clear. Never redo another agent's work unless you are resolving a conflict or an explicit gap.
 - If progress stalls or the path starts to drift, re-plan instead of forcing the current approach through.
 - When confidence is limited, say so explicitly and separate verified facts from hypotheses.
+- Treat symptom-first failures as investigation tasks before implementation. Failing tests or CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, and user reports that describe symptoms without a verified cause must route through `investigate` or equivalent documented evidence before `develop`, `resolve`, or workaround recommendations.
+- Workarounds are temporary mitigations only. Do not present a workaround-only change or answer as complete unless the user explicitly requests a temporary mitigation; label the mitigation and the remaining root-cause work.
 
 ## Coordination Discipline
 
@@ -141,6 +143,12 @@ Parent agent responsibilities:
 - Scope the task, owned files, and acceptance criteria before delegation
 - Integrate subagent outputs back into one coherent change
 - Make final judgment on conflicts, overlaps, and release readiness
+
+### Required workflow routing
+
+- Unknown failure/root-cause work starts with `investigate`: failing tests, failing CI, flaky behavior, regressions, tool or environment failures, unexplained metric changes, and any symptom-only report where the cause is not already verified.
+- Before implementation for those tasks, record the root-cause claim, supporting evidence, a falsification check, and at least one rejected alternative. If the evidence is missing, continue investigation instead of proposing a fix.
+- After `investigate`, hand off to the relevant domain agent or `develop`/`resolve` with the evidence summary. Temporary mitigations are allowed only when explicitly requested or required to unblock verification, and they must not be treated as the root fix.
 
 ### Automatic spawn patterns (all agents)
 

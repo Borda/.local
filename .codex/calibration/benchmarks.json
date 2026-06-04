@@ -54,12 +54,17 @@
       "gate_metrics_raw",
       "by_source",
       "observation_freshness",
-      "live_observations"
+      "live_observations",
+      "recommendations",
+      "follow_up"
     ],
     "develop": [
       "## Input Schema",
       "## Workflow \\(Exact Commands\\)",
       "anti-rationalization gate",
+      "root-cause evidence",
+      "rejected alternative",
+      "temporary mitigation",
       "characterization tests",
       "run-gates.sh",
       "write-result.sh",

@@ -162,6 +162,17 @@
       "id": "data-split-reproducibility",
       "prompt": "Assess a dataset split change with random shuffling and no seed, stratification, or leakage guard.",
       "target": "data-steward"
+    },
+    {
+      "expected_findings": [
+        "route-to-investigate",
+        "reject-workaround-only",
+        "root-cause-evidence-required",
+        "rejected-alternative-required"
+      ],
+      "id": "develop-root-cause-routing",
+      "prompt": "Assess a symptom-first request where tests fail after a dependency or tooling change and the proposed response suggests pinning, skipping, or bypassing the failure without logs, hypotheses, or a falsification check.",
+      "target": "develop"
     }
   ],
   "thresholds": {
