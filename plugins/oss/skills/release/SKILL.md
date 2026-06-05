@@ -11,6 +11,8 @@ effort: high
 
 Prepare release communication from changes. Output adapts to audience — user-facing notes, CHANGELOG entry, internal summary, migration guide.
 
+**All outputs are documentation artifacts** (CHANGELOG.md, DRAFT.md, MIGRATION.md, SUMMARY.md, demo.py) — they accompany a release as complementary communication material. The released product is the code/package published separately via project tooling (`git tag`, `gh release create`, PyPI upload). This skill prepares the communication layer; it does not perform the release.
+
 NOT for ecosystem impact without release (use oss:analyse (requires `oss` plugin)). NOT for contributor communication or post-release announcements (use oss:shepherd (requires `oss` plugin)). NOT for retrospective analysis (audit checks forward readiness only — historical review → oss:analyse (requires `oss` plugin)).
 
 </objective>
@@ -257,13 +259,19 @@ Section order (fixed — never reorder): 🚀 Added → ⚠️ Breaking Changes 
 | **Internal** | *(omit)* | Refactors, CI/tooling, deps, code cleanup, developer-facing housekeeping — omit unless directly user-impacting |
 | **Reverted** | 🔄 Reverted | Introduced AND reverted within range (REVERT_SET pairs) — net effect zero; list as "Reverted: <original description>"; do NOT classify original in any other section; omit from highlights, demo, migration guide |
 
+**Same-release feature+fix dedup** — 🔧 Fixed targeting code introduced in same release = behavior never shipped = not a real fix. Fold into 🚀 Added prose or omit. Test: "did users ever see broken behavior?" No → collapse into feature entry.
+
+**Unintentionally-working behavior** — accidental behavior (undocumented, unsupported) users relied on → 🔧 Fixed or 🌱 Changed, NOT Internal; change is user-visible. Note: "behavior was not intentionally supported; now [formalized/changed/removed]."
+
+**Borderline keep/drop** — behavior that worked in some cases, undefined in others: gate on include/exclude first. Include: users could have relied on it, or silent breakage possible. Exclude: no observable effect, no realistic user surface. When included: propagate consistently across ALL downstream docs (CHANGELOG, DRAFT.md, MIGRATION.md if breaking, SUMMARY.md if significant) — no partial mentions. Note: "Previously undefined — now [X]. Users relying on this: [action]."
+
 **Self-correction discipline**: if classification revised during self-review, present only final corrected table — do not show intermediate wrong classifications. Single authoritative table expected.
 
 **Breaking vs Deprecated vs Removed**: old call still works (even with warning) → Deprecated, never Breaking. API deprecated in prior release and now removed → Removed, never Breaking — users had fair warning. Breaking = upgrade causes immediate failures with **no prior deprecation period** between two consecutive versions. **Prior-deprecation body-signal**: if commit body contains "deprecated in vX", "previously deprecated", "was deprecated", "emits DeprecationWarning since", or "deprecated since" — treat as Removed regardless of `feat!:` or `BREAKING CHANGE:` markers; cross-version deprecation history in body overrides commit type prefix. **Bug fixed to match documented spec**: if behavior changes from buggy to correct (matching docs) but users relied on the buggy behavior, classify as 🌱 Changed (not 🔧 Fixed) and note the behavioral impact explicitly — use ⚠️ Breaking Changes only if the bug was load-bearing and fixing it causes widespread breakage.
 
 **OMIT-INTERNAL body-signal override**: if commit body contains any of — "No code changes", "no user-facing changes", "internal only", "no public API changes", "internal buffer changes only", "internal restructure" — OR all changed file paths restricted to `.github/`, `ci/`, `scripts/`, `Makefile`, `*.yml` under `.github/` — classify as Internal regardless of `fix:`, `feat:`, `perf:`, `chore:` conventional commit prefix. For `perf:` commits: if body contains unsubstantiated language ("should be faster", "might improve", "potentially") without a benchmark artifact reference, rewrite claim to "improved X performance" without number rather than including the unsubstantiated claim verbatim. Conventional commit type is a hint, not a classification gate. **Exception**: BREAKING CHANGE footer or confirmed user-visible breakage always overrides OMIT-INTERNAL — "Always include: breaking changes" takes priority over body-signal omission.
 
-Filter out: merge commits, minor dep bumps, CI/tooling config, comment typos, internal refactors, code cleanup, internal-only dep bumps, developer housekeeping, no-user-impact changes. **Never include internal staff names or internal maintenance details in public-facing output.** Always include: breaking changes, behavior changes, new API surface.
+Filter out: merge commits, minor dep bumps, CI/tooling config, comment typos, internal refactors, code cleanup, internal-only dep bumps, developer housekeeping, no-user-impact changes. **New CLI function/command added but no change to usage, flow, or observable behavior** (e.g. internal helper exposed via CLI surface without user-visible effect) → classify Internal; do NOT promote to 🚀 Added unless the addition changes what a user can do. Test: "can an end user invoke this and get a different result than before?" No → Internal. **Never include internal staff names or internal maintenance details in public-facing output.** Always include: breaking changes, behavior changes, new API surface.
 
 **Cherry-pick annotation (stable-branch mode)**: when `$CHERRY_PICK_SUBJECTS` set (gather phase, stable/bug-fix branches), check each commit's subject against it. Match → backport from `$SOURCE_TAG_REF`; append "(backported from $SOURCE_TAG_REF)". No match → original to this stable branch; no annotation. Note: subject-text matching is heuristic — verify manually for generic subjects (e.g., "Fix typo", "Update deps") that could false-positive.
 
@@ -428,6 +436,27 @@ Use this format:
 
 Read `$SKILL_DIR/modes/adversarial-review.md` and execute.
 
+### Semantic consistency review
+
+Runs on full draft content after adversarial review, before writing to disk. Distinct from: copyedit (grammar/style), factual audit (did code land), classification audit (Added vs Fixed vs Changed).
+
+Check for each:
+
+| Check | What to look for | Flag format |
+| --- | --- | --- |
+| **Double-mention** | Same concept named twice under different labels (e.g. "async functions" and "async generators" as separate entries for the same change) | `DUPLICATE: "<A>" and "<B>" describe the same change — merge or drop one` |
+| **Impossible fix** | 🔧 Fixed entry whose subject was introduced in this same release (can't fix what was never shipped) | `IMPOSSIBLE-FIX: "<entry>" — feature added this release, can't be a fix` |
+| **Causation non sequitur** | "X: Y" where Y doesn't explain or follow from X | `NON-SEQUITUR: "<X>: <Y>" — Y doesn't explain X` |
+| **Contradictory claim** | Headline or first sentence asserts X; immediate caveat or next sentence denies X | `CONTRADICTION: "<headline>" contradicted by "<caveat>"` |
+| **Verbatim duplication** | Identical or near-identical sentence appearing in ≥2 sections (Summary, Spotlight, Notable changes, Migration guide) | `VERBATIM-DUP: "<sentence>" appears in <section A> and <section B>` |
+| **Misclassified scope** | Internal-only change (dead code removal, doc reformat, test-only, CI config) appearing in user-facing section | `SCOPE: "<entry>" is internal-only — move to Internal or remove` |
+
+For each finding: emit one flag line with location (`§<section-name>`, item text). Collect all findings before taking action — do not fix inline during scan.
+
+**After scan**:
+- Zero findings → proceed to Polish
+- Findings present → present all as a numbered list; fix each before continuing; re-scan once after fixes; proceed only when scan is clean
+
 ### Polish and write to disk
 
 Read writing guidelines from $SKILL_DIR/guidelines/writing-rules.md and follow them. If file absent, proceed without style guidelines.
@@ -508,6 +537,7 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 
 <notes>
 
+- **Doc artifacts ≠ released product**: CHANGELOG.md, DRAFT.md, MIGRATION.md, SUMMARY.md, demo.py are complementary communication artifacts — they support the release but are not the release itself. The released product is the code/package; publishing it (tagging, PyPI upload, `gh release create`) is a separate, user-run step after reviewing these artifacts.
 - **Numbers reference**: all numeric limits and claims in this skill documented with rationale and evidence in `guidelines/numbers-reference.md`; update whenever limits change
 - Filter noise (CI config, dep bumps, typos) unless user-impacting
 - **Public-facing content policy**: release notes, changelogs, migration guides = user-visible changes only. Never include: internal staff names, internal maintenance, internal refactors, CI/tooling changes, internal dep bumps, code cleanup, developer housekeeping with no user impact.

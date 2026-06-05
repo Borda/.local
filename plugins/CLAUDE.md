@@ -6,7 +6,9 @@ Plugins under `plugins/`. See `README.md` for user-facing detail.
 
 ## Writing Style
 
-Use `/caveman` compression for all agent, skill, rule file edits — drop articles, filler, hedging; keep full technical substance.
+Apply caveman compression to **all** plugin file edits (agents, skills, rules, modes, templates, guidelines, bin/ docstrings) — drop articles, filler, hedging; keep full technical substance. Compact but complete: every rule, constraint, and example must survive; only padding dies.
+
+**Exception — READMEs and `docs/`**: write verbose. Full sentences, context, examples, rationale. These are user-facing documentation; readers need explanation, not compression.
 
 ## File Layout
 
@@ -105,7 +107,7 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 
 **Example**: start `0.2.0`, session: wording fix + feature add → commit as `0.3.0` (not `0.2.1`).
 
-**Pre-bump checklist** — run before writing any version change to disk:
+**Pre-bump checklist** — all 5 steps mandatory; skipping any step is a violation:
 
 1. Read HEAD baseline: `git show HEAD:<plugin-path>/.claude-plugin/plugin.json | grep version`
 2. **Read on-disk version: `grep version <plugin-path>/.claude-plugin/plugin.json`** — if on-disk ≠ HEAD → session bump already applied → **STOP; do not proceed**

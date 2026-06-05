@@ -68,7 +68,7 @@ Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gat
 [readiness table from Phase 1, condensed]
 [any warnings carried forward]
 
-### Written
+### Written (documentation artifacts — complementary to the release, not the release itself)
 - `$CHANGELOG_FILE` — $VERSION entry stamped (Phase 2b); `releases/$VERSION/CHANGELOG.md` symlinks here
 - `releases/$VERSION/HIGHLIGHTS.md` — top 3–5 spotlights with code examples (Phase 3a)
 - `releases/$VERSION/MIGRATION.md` — migration guide (N breaking changes, or "No breaking changes") (Phase 3b)
@@ -80,8 +80,9 @@ Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gat
 1. Review all written files
 2. Bump version in the project manifest
 3. Commit, push, open PR
-4. On merge: create GitHub release from DRAFT.md
-5. Convert demo: `jupytext --to notebook releases/$VERSION/demo.py`
+4. On merge: publish the release — `gh release create $VERSION --notes-file releases/$VERSION/DRAFT.md` (user-run; DRAFT.md is source for release notes, not the release itself)
+5. Upload package to PyPI (or relevant registry) — separate step after GitHub release
+6. Convert demo: `jupytext --to notebook releases/$VERSION/demo.py`
 ```
 
 End terminal response (not written artifacts) with `## Confidence` block per CLAUDE.md output standards: `**Score**: 0.0–1.0 — [label]`; omit Refinements if 0 passes.
