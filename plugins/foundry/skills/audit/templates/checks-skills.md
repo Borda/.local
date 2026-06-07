@@ -749,6 +749,71 @@ fi
 Severity: **medium** — near-duplicate scripts = duplicated maintenance; a bug fix in one copy likely missed in the other.
 Auto-fix: no — merge requires semantic review of both scripts and all callers; confirm no behavioral difference before merging.
 
+## Check 32f — Mode-file body shadowed in SKILL.md (extraction integrity)
+
+Detects the "extraction done but inline twin survived" topology: `modes/<name>.md` is referenced from `SKILL.md` AND its body is also present inline in `SKILL.md`. Complements Check 32a (which catches unreferenced mode files — the inverse polarity).
+
+```bash
+printf "=== Check 32f: mode-file body shadowed in SKILL.md ===\n"
+if [ "$LOCAL_MODE" != "true" ]; then
+    printf "✓: Check 32f skipped in non-local mode (no plugin source tree)\n"
+else
+    _C32F_FINDINGS=0
+    for skill_md in plugins/*/skills/*/SKILL.md; do
+        skill_dir=$(dirname "$skill_md")
+        modes_dir="$skill_dir/modes"
+        [ -d "$modes_dir" ] || continue
+        for mode_file in "$modes_dir"/*.md; do
+            basename_mode=$(basename "$mode_file")
+            # skip if mode file not referenced from SKILL.md
+            grep -qF "$basename_mode" "$skill_md" || continue
+            # count non-blank, non-heading lines in mode file
+            mode_lines=$(grep -c -v '^[[:space:]]*$\|^#' "$mode_file" 2>/dev/null || echo 0)
+            [ "$mode_lines" -lt 20 ] && continue
+            # count matching non-blank lines in SKILL.md
+            overlap=$(grep -Fxf <(grep -v '^[[:space:]]*$\|^#' "$mode_file") "$skill_md" 2>/dev/null | wc -l | tr -d ' ')
+            if [ "$overlap" -ge 20 ]; then
+                printf "⚠ 32f [medium] %s — body of %s shadowed inline (%d overlapping lines); delete inline twin\n" \
+                    "$skill_md" "$basename_mode" "$overlap"
+                _C32F_FINDINGS=$(( _C32F_FINDINGS + 1 ))
+            fi
+        done
+    done
+    [ "$_C32F_FINDINGS" -eq 0 ] && printf "✓: Check 32f — no mode-body shadows found\n"
+fi  # timeout: 15000
+```
+
+Severity: **medium** — inline twin diverges silently from canonical mode file on every future edit.
+Auto-fix: delete inline block from SKILL.md; replace with bash+read pattern matching other modes.
+
+## Check 32g — Self-confessed manual sync markers
+
+Detects explicit sync instructions in plugin `.md` files (`SYNC:`, `lock-step`, `keep both`, `duplicated from`, `mirror this in`, `keep.*copies.*sync`). Each marker = author admitted manual sync is required = extraction not yet done.
+
+```bash
+printf "=== Check 32g: self-confessed sync markers ===\n"
+_C32G_HITS=$(grep -rn \
+    -e 'SYNC:' \
+    -e 'lock-step' \
+    -e 'lockstep' \
+    -e 'keep both' \
+    -e 'keep.*copies.*sync' \
+    -e 'duplicated from' \
+    -e 'mirror this in' \
+    plugins/*/agents/*.md plugins/*/skills/*/SKILL.md plugins/*/skills/*/modes/*.md \
+    plugins/*/rules/*.md 2>/dev/null | grep -v '# audit-skip:')
+if [ -n "$_C32G_HITS" ]; then
+    echo "$_C32G_HITS" | while IFS= read -r hit; do
+        printf "⚠ 32g [medium] %s — self-confessed manual sync; extract canonical source or delete duplicate\n" "$hit"
+    done
+else
+    printf "✓: Check 32g — no sync markers found\n"
+fi  # timeout: 10000
+```
+
+Severity: **medium** — self-confessed sync = guaranteed future drift.
+Auto-fix: run `/distill lessons` or extract to `modes/` + replace inline block with bash+read pattern.
+
 ## Check 33 — Code block duplication (NxN similarity matrix)
 
 Full-spectrum detection of duplicate or near-duplicate fenced code blocks across all .md files (SKILL.md, agents, rules, templates, modes) — any language (bash, python, sh, perl, ruby, js, etc.). Produces NxN pairwise similarity matrix to surface extraction candidates: 33a within-file (same block 3+ times — bin/ script or helper function candidate); 33b cross-file NxN (same block in 3+ .md files — shared bin/ script candidate).

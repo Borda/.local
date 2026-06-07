@@ -73,6 +73,14 @@ Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry
 
 **Task tracking**: TaskCreate each major phase. Mark in_progress/completed throughout. Loop retry or scope change → new task.
 
+Create these tasks **before** starting Step 1 (in order, all at once):
+
+- **"Step 1: Scope and context detection"** — TaskUpdate(in_progress) at Step 1 start; TaskUpdate(completed) when all scope vars set (SCOPE, REPLY_MODE, mode flags)
+- **"Steps 2–3: Agent launch + post-agent checks"** — TaskUpdate(in_progress) before spawning agents; TaskUpdate(completed) when all agent output files collected (or timed out); per task-lifecycle.md: TaskUpdate BEFORE long output blocks
+- **"Step 4: Cross-validate critical findings"** — TaskUpdate(in_progress) before spawning verifier agents; TaskUpdate(completed) when all verdicts received; **skip task creation entirely** when no critical/blocking findings exist after Step 3
+- **"Step 5: Consolidate findings"** — TaskUpdate(in_progress) before spawning consolidator; TaskUpdate(completed) before printing terminal block (per task-lifecycle.md: before long output)
+- **"Step 8: Contributor reply draft"** — create only when REPLY_MODE=true, before spawning oss:shepherd; TaskUpdate(in_progress) immediately after creation; TaskUpdate(completed) when shepherd output written
+
 ## Step 1: Identify scope and context (run in parallel for PR mode)
 
 Parse `$ARGUMENTS` flags (applied directly — no subprocess):

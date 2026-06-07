@@ -118,6 +118,8 @@ From `$ARGUMENTS`, determine:
   ARGUMENTS="${ARGUMENTS//--skip-gate/}"
   ARGUMENTS="${ARGUMENTS//--local/}"
   ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
+  mkdir -p "${TMPDIR:-/tmp}/calibrate-state"
+  echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/calibrate-state/local-mode"
   ```
 - **Target list** — remaining tokens after flag-strip; union of resolved targets:
   - `all` or omitted → all agents + `/audit` + routing + communication + all rules
@@ -205,6 +207,7 @@ For multiple tokens, merge resolved targets into per-mode groups before spawning
 
 Before spawning **any** pipeline (when target includes `agents`, `skills`, or `all`), check cross-plugin availability. When `LOCAL_MODE=true`, check `plugins/` source tree (local edits not yet installed); otherwise check installed plugin cache:
 ```bash
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state/local-mode" 2>/dev/null || echo "false")
 if [ "$LOCAL_MODE" = "true" ]; then
     [ -d "plugins/oss" ]      && OSS_AVAILABLE="plugins/oss"           || OSS_AVAILABLE=""
     [ -d "plugins/research" ] && RESEARCH_AVAILABLE="plugins/research" || RESEARCH_AVAILABLE=""
@@ -316,7 +319,7 @@ Mark "Apply findings" in_progress.
 
   ```bash
   TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
-  [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — falling back to latest run dir"; TIMESTAMP=$(basename "$(find .reports/calibrate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)"); }
+  [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — falling back to latest run dir"; TIMESTAMP=$(basename "$(find .reports/calibrate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)"); }  # safe: uses existing dir from find, not new $(date) timestamp — won't create phantom run dir
   ```
 
 - Pure apply mode (only `--apply`, no pace flag): find most recent run:
@@ -345,6 +348,9 @@ Continue to next target. Only if ALL targets are missing: stop with `! No propos
 
 **`<AGENT_FILE>` and `<PROPOSAL_PATH>` resolution**: before spawning, resolve file paths for each target. When `LOCAL_MODE=true`, source tree takes priority; otherwise project-local override first, then plugin cache, then source-tree fallback:
 ```bash
+TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
+[ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state/local-mode" 2>/dev/null || echo "false")
 # Agent target — parse plugin prefix from target name (<plugin>:<agent> pattern)
 # e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default)
 PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')

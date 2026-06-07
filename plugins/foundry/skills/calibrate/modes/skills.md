@@ -24,6 +24,7 @@ Skill domains:
 - `/distill:lessons` → synthetic `.notes/lessons.md` corpus with N injected lessons of known disposition (→ rule, → agent update, → skill update, → already covered, → too narrow); measure whether distill correctly classifies each lesson and generates accurate proposals; ground truth = injected dispositions and target files
 - `/manage:create` → synthetic create-agent and create-skill directives; measure whether output file has valid frontmatter, correct structure, NOT-for clause, non-empty domain content; ground truth = structural completeness checklist
 - `/manage:update` → synthetic rename and content-edit directives against fixture agent/skill file; measure whether cross-reference propagation complete and description-changed flag correctly set; ground truth = known cross-ref targets in fixture
+- `/brainstorm` → synthetic creative brief or feature goal; measure whether brainstorm correctly generates spec file with required sections (goal, constraints, options) and blueprint tree with coherent structure; ground truth = required sections checklist
 
 ### Step 2: Spawn skill pipeline subagents
 

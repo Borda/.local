@@ -14,7 +14,7 @@ const os = require("os");
 const path = require("path");
 
 const BUILT_INS = new Set(["general-purpose", "claude-code-guide", "Explore", "Plan", "statusline-setup"]);
-const LLM_MODEL = "claude-haiku-4-5-20251001";
+const LLM_MODEL = "haiku";
 
 function semverLatest(versions) {
   return versions

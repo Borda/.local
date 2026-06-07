@@ -18,7 +18,7 @@ Know when to fix code vs adjust config — prefer fixing over suppressing.
 
 <!-- Routing: workflow always runs both ruff and mypy; pre-commit configuration only loaded when scope explicitly requests it. -->
 
-\<ruff_config>
+<ruff_config>
 
 ## ruff — single tool for linting, formatting, import ordering, security, and modernization
 
@@ -106,9 +106,9 @@ Additional notable rule sets ruff covers (no separate tool needed):
 
 Don't enable all rules at once on existing codebase — add progressively, fix per category, move to next.
 
-\</ruff_config>
+</ruff_config>
 
-\<mypy_config>
+<mypy_config>
 
 ## mypy — static type checking
 
@@ -154,9 +154,9 @@ mypy "$mypy_target"
 >   `pip install basedpyright && basedpyright src/`. (experimental — verify production readiness before CI adoption)
 > - **pyrefly** — Meta's type checker (Rust-based, fast). Rust implementation; verify stub coverage for your dependencies before CI adoption. (experimental — verify production readiness before CI adoption)
 
-\</mypy_config>
+</mypy_config>
 
-\<precommit_config>
+<precommit_config>
 
 ## pre-commit — enforce at commit time
 
@@ -197,9 +197,9 @@ pre-commit autoupdate      # bump all hook revs to latest — run this regularly
 
 > **Tip**: Enable pre-commit.ci to auto-run + auto-fix hooks on every PR without local setup burden.
 
-\</precommit_config>
+</precommit_config>
 
-\<pre_commit_versioning>
+<pre_commit_versioning>
 
 ### Version Pinning
 
@@ -237,9 +237,9 @@ Cache version lookups: store result in session variable, reuse; avoid re-fetchin
 
 - `rev: latest` — not a valid git ref; autoupdate never writes it; treat as placeholder mistake
 
-\</pre_commit_versioning>
+</pre_commit_versioning>
 
-\<pytorch_migration>
+<pytorch_migration>
 
 ## PyTorch API Migration
 
@@ -249,9 +249,9 @@ Cache version lookups: store result in session variable, reuse; avoid re-fetchin
 
 For CI quality gate workflow YAML, see `oss:cicd-steward` (requires `oss` plugin) agent (`quality` job with ruff + mypy steps).
 
-\</pytorch_migration>
+</pytorch_migration>
 
-\<common_fixes>
+<common_fixes>
 
 Most common violations — missing return types, `Optional` vs `| None` (UP007), `Any` in strict mode, B006 mutable default arg, E711/E712 identity comparisons — auto-fixable via `ruff check . --fix` and `mypy --strict`.
 Non-obvious cases worth keeping inline:
@@ -276,9 +276,9 @@ def __init__(self) -> None:
 Separate `no-untyped-def` finding, not implied by annotating other methods.
 Annotate `self.<attr>` assignments in `__init__` too — avoids `var-annotated` errors on empty containers.
 
-\</common_fixes>
+</common_fixes>
 
-\<version_compatibility>
+<version_compatibility>
 
 ## Python Version — Annotation Syntax Gate
 
@@ -301,9 +301,9 @@ For `requires-python < 3.9`: also use `List[T]`, `Dict[K, V]`, `Tuple[X, Y]` fro
 
 ruff `UP` rules auto-flag old-style annotations — enable `UP` and set `target-version` to match `requires-python`.
 
-\</version_compatibility>
+</version_compatibility>
 
-\<antipatterns_to_flag>
+<antipatterns_to_flag>
 
 - **Annotation syntax incompatible with `requires-python`** — e.g., `X | Y` union or `list[T]` built-in generics in project targeting Python < 3.10 or < 3.9; always read `pyproject.toml` first. ruff `UP` + `target-version` flags automatically; `mypy` with `python_version` set to minimum also catches it.
 - **Suppressing S-category (security) rules without justification**: adding `# noqa: S603` or similar on security violations without comment explaining safe context — comment must explain why call is safe (e.g., `# noqa: S603 — subprocess input is a hardcoded constant, not user-supplied`)
@@ -313,9 +313,9 @@ ruff `UP` rules auto-flag old-style annotations — enable `UP` and set `target-
 - **Instance method missing `self` / class method missing `cls`**: method inside class body lacking `self` (not decorated `@staticmethod`) raises `TypeError: takes 0 positional arguments but 1 was given` at runtime. Flag as N805 (ruff) + mypy `no-self-argument`. Fix: add `self` or apply correct decorator — don't skip as naming style issue.
 - **Under-rating E711/E712 identity comparison violations**: rating `== None` / `!= None` / `== True` / `== False` as "low" or "style" severity — these are "high" because they bypass `__eq__` overrides (e.g., NumPy arrays, SQLAlchemy models) and produce incorrect boolean results silently. Report as `high` severity. Fix (`is None`, `is True`) trivial; bug consequence is not.
 
-\</antipatterns_to_flag>
+</antipatterns_to_flag>
 
-\<output_format>
+<output_format>
 
 Per violation:
 
@@ -351,7 +351,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
 
 **Exception — annotation-scoped tasks**: when task explicitly requests annotation review (e.g. "annotation gaps", "mypy type errors"), promote ANN202 and other missing-annotation findings — including `__init__ -> None` — to **primary**; the secondary demotion rule above is for ruff/style-focused tasks only.
 
-\</output_format>
+</output_format>
 
 <workflow>
 
@@ -378,7 +378,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
    - ❌ Never: real type errors, S-rule security findings, or whole-file suppressions in production code
 7. Configure per-file ignores for test files + generated code
 8. Install pre-commit hooks so issues don't creep back in
-9. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md`.
+9. Apply Internal Quality Loop and end with `## Confidence` block — see `.claude/rules/quality-gates.md` (available post `/foundry:setup`).
 
 </workflow>
 
@@ -394,6 +394,8 @@ For general reviews, apply same discipline: report direct violations (parameter 
 **Model note**: `haiku` handles straightforward rule configs and deterministic violations well. If annotation-gap detection returns incomplete results or complex type inference gaps are missed, re-run with `model: sonnet`.
 
 **Re-invocation on incomplete results**: when dispatched with "add annotations" or "annotate" and initial results incomplete (files processed < files in scope, type inference gaps remain after first pass), name unresolved files in Confidence block Gaps; Caller re-invokes with narrower scope if N+ findings remain.
+
+**Full-codebase scope advisory**: for full-codebase annotation audits or mypy strict passes, `effort: high` may be needed despite the haiku model — consider scope-narrowing to stay within single invocation.
 
 **Confidence calibration**: tier by finding type — thresholds align with `quality-gates.md` (`high ≥0.90 | moderate 0.85–0.90 | low <0.85`):
 - Unambiguous violations (F401 unused import, missing return annotation, incompatible return): score ≥0.90 (high)

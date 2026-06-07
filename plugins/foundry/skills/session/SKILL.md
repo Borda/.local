@@ -76,7 +76,9 @@ Derive `MEMORY_DIR` using the canonical snippet defined in `<constants>` above. 
 ### Substep 1b: Age-out expired items (≥ 30 days) silently
 
 ```bash
-# MEMORY_DIR derived in Substep 1a — reuse that value
+# MEMORY_DIR — must re-derive here; shell state lost across Bash calls
+MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
+[ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
 # Log files before deleting so removals are auditable
 find "$MEMORY_DIR" -name "session-open-*.md" -mtime +30 2>/dev/null | while IFS= read -r f; do
     echo "Removing aged file: $f"
@@ -98,7 +100,9 @@ For each file path returned, read with Read tool to extract `name` and `descript
 Compute age in days per file using `session_age_files.py` (cross-platform; output is `<age>\t<path>` per line): <!-- file: session_age_files.py — consumers: foundry:session Substep 1c -->
 
 ```bash
-# MEMORY_DIR derived in Substep 1a — reuse that value
+# MEMORY_DIR — must re-derive here; shell state lost across Bash calls
+MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
+[ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/session_age_files.py" "$MEMORY_DIR" # timeout: 5000
 ```
 
@@ -153,12 +157,16 @@ MATCHED_SOURCE="file"          # "file" for session-open-*.md, "context" for ses
 MATCHED_FILE="<full path>"     # only when MATCHED_SOURCE="file"
 MATCHED_SLUG="<slug>"          # the item's short slug (from bullet or filename)
 ITEM_NAME="<name>"             # name from frontmatter or slug
+printf '%s\n' "$MATCHED_SOURCE" "$MATCHED_FILE" "$MATCHED_SLUG" "$ITEM_NAME" \
+    > "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
 ```
 
 ### Substep 2c: Remove the matched item
 
 **If `MATCHED_SOURCE="file"`** (legacy `session-open-*.md`):
 ```bash
+IFS=$'\n' read -r MATCHED_SOURCE MATCHED_FILE MATCHED_SLUG ITEM_NAME \
+    < "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
 rm "$MATCHED_FILE"  # timeout: 5000
 echo "deleted"
 ```
@@ -177,6 +185,8 @@ mkdir -p .claude/logs # timeout: 5000
 Append one-line JSON entry atomically with bash redirection, using `ITEM_NAME` resolved in Substep 2b. Entry format: `{"ts":"<ISO8601-UTC>","item":"<name>","action":"archived"}`
 
 ```bash
+IFS=$'\n' read -r MATCHED_SOURCE MATCHED_FILE MATCHED_SLUG ITEM_NAME \
+    < "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Use jq to safely escape ITEM_NAME (prevents injection via special chars/quotes)
 jq -n --arg ts "$TS" --arg item "$ITEM_NAME" '{"ts":$ts,"item":$item,"action":"archived"}' >> .claude/logs/session-archive.jsonl  # timeout: 5000

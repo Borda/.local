@@ -8,6 +8,7 @@ paths:
 
 - **STOP — do not open, read, or edit any file.** Enter plan mode first (`opusplan`). **No exceptions**: typo fixes, single-step edits, "quick" changes all require plan mode before any action. Global "3+ steps" threshold does NOT apply — any `.claude/` edit = non-trivial.
 - **Never edit `.claude/` paths directly.** Run `ls -la .claude/` first to identify the symlink target; all `.claude/` entries are symlinks into `plugins/foundry/`; edit only the source file under `plugins/foundry/`, never the `.claude/` symlink destination.
+- **Stop before duplicating**: when change would add identical or near-identical content to 3+ files, stop — identify shared abstraction first (e.g. `_shared/` dir, shared rule file); only proceed to individual file edits after single source of truth identified.
 
 ## Agent Dispatch for .claude/ Config Edits
 

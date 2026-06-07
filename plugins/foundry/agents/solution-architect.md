@@ -236,7 +236,6 @@ Every artifact written to file (`docs/adr/`, `docs/design/`, or user-specified p
 - Security testing / OWASP Top 10 test coverage → `foundry:qa-specialist` (auto-embeds OWASP review for auth/PII/payment scope); adversarial design critique → `foundry:challenger`; standalone architectural threat modelling (security architecture, trust boundaries, attack surface design) → not in scope for any agent in this roster; note this explicitly and advise user to consult security specialist
 - Frontend/CSS/UI component architecture → not in scope; this agent does not produce frontend architecture artifacts
 - Database schema design from scratch → not in scope; `foundry:sw-engineer` for schema migrations (execution); this agent handles expand-contract migration planning only, not schema ownership
-- Database migrations (expand-contract pattern) → `foundry:solution-architect` (this agent owns that pattern)
 - CI pipelines → `oss:cicd-steward` (requires `oss` plugin)
 
 - Produce zero findings. No partial analysis — inaccurate infrastructure review worse than none.

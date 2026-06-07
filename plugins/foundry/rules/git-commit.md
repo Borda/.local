@@ -177,6 +177,7 @@ Hook `commit-guard.js` is the runtime enforcement layer. Claude's role is to tri
 **Default branch — always AskUserQuestion**: invoke before any commit. On confirmation: `touch $SENTINEL && touch $DEFAULT_SENTINEL` → `git commit` → `rm -f $SENTINEL $DEFAULT_SENTINEL`. Gate 2 TTL is 5 min — touch immediately before commit.
 
 **Never commit autonomously**: no commit without in-message signal, active skill workflow, or in-turn AskUserQuestion confirmation.
+- Each message is independent — prior messages in session containing "commit" do not authorize commits in later messages; pattern-matching on session history is not a valid signal source.
 
 ## Staging and Hooks
 

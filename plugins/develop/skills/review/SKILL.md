@@ -82,6 +82,14 @@ Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
+After Step 1 completes (scope and `TARGET` known), create these tasks **before any agent spawns** (in order, all at once):
+
+- **"Step 1: Identify scope"** — mark `in_progress` at Step 1 start; mark `completed` when `TARGET` and `SCOPE` set and Python file check passes
+- **"Step 2: Codex co-review"** — create before Step 2 (skip task if Codex unavailable); mark `in_progress` before Codex spawn; mark `completed` when codex seed extracted (or timed out)
+- **"Step 3: Spawn review agents"** — mark `in_progress` before agents launch; mark `completed` when all agent output files collected (or health-monitoring cutoff reached)
+- **"Step 4: Cross-validate critical findings"** — mark `in_progress` before verifier spawns; mark `completed` when all verdicts received; **skip task creation when no critical/blocking findings exist after Step 3**
+- **"Step 5: Consolidate findings"** — mark `in_progress` before spawning consolidator; mark `completed` before printing terminal block (per task-lifecycle.md: `TaskUpdate(completed)` BEFORE long output)
+
 ## Flag parsing
 
 Strip flags from `$ARGUMENTS` before using as path:

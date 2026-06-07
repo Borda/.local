@@ -1,5 +1,4 @@
-<!-- file: lessons.md — consumers: foundry:distill (inline lessons mode in SKILL.md duplicates this content; kept as canonical extraction reference for executables-mode fallback and future re-modularization) -->
-<!-- SYNC: keep in lock-step with the inline "Mode: Lessons Distillation" section in ../SKILL.md — any edit here must be mirrored there, and vice versa -->
+<!-- file: lessons.md — consumers: foundry:distill (SKILL.md reads this file directly; single source of truth) -->
 
 # Mode: Lessons Distillation
 

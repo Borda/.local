@@ -474,7 +474,7 @@ Narrate phase boundaries: `"Phase 1: N parallel-safe fixes launched"` → `"Phas
 
 **Adversarial pre-apply validation gate** — each proposed fix must clear two-agent gate before spawning fix agent:
 
-1. Spawn **foundry:challenger** with finding text, file path, proposed fix — challenge: "Is this finding real? Is fix appropriate? Does it risk removing load-bearing behavioral content (runtime gates, behavioral invariants, execution constraints, `<notes>` checkpoints)?"
+1. Spawn **foundry:challenger** with finding text, file path, proposed fix — challenge: "Is this finding real? Is fix appropriate? Does it risk removing load-bearing behavioral content (runtime gates, behavioral invariants, execution constraints, `notes` checkpoints)?"
 2. Spawn **foundry:curator** same context — validate: "Fix correct per Fix Action Hierarchy? Preserves behavioral integrity? Could silently remove load-bearing content even if appearing redundant or verbose?"
 3. Both spawns in parallel per file. Each writes verdict to `<RUN_DIR>/gate-<file-basename>-<finding-id>.md`; returns only: `{"verdict":"approved"|"blocked","reason":"<one-line>","file":"<path>"}`
 4. **Either** returns `blocked` → skip fix agent; add to `blocked_findings` with reason; surface as `⚠ GATE-BLOCKED — needs human review: <reason>`

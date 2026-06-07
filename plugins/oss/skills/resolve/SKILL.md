@@ -459,12 +459,14 @@ Options:
   (b) Commit all at once — stage as you go, single commit after all items
   (c) Stage only — no commits; changes stay staged on PR branch
       ⚠ Stage-only: cannot cleanly restore original branch after Step 11 — stash or pop manually
+  (d) Commit by logical/topic group — ask for topic labels, then group related items into themed commits
 ```
 
 Set `COMMIT_MODE`:
 - (a) → `each`
 - (b) → `all`
 - (c) → `stage`
+- (d) → `grouped`
 
 ## Step 3e: Create tasks for selected items
 
@@ -662,7 +664,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **Impl agent health**: IMPL_AGENT defaults to `codex:codex-rescue`; subject to CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file. `--agent foundry:sw-engineer` or other implementation agents: foreground only, no health monitoring needed.
 - **Effort calibration**: effort set per item — never `low`; minimum `medium`; typo/doc/formatting/rename-simple → `medium`; multi-file/architecture/new-feature → `xhigh`; default → `high`; effort prefix in agent prompt; `CHANGE_SCOPE` aggregated for Step 9 test targeting
 - **Two-phase challenge**: evidence phase checks code reality (problem exists?); suggestion phase checks fix quality (right approach?); evidence reject → item skipped; suggestion reject → self-resolved fix using challenger's `alternative` field; all outcomes recorded to `CHALLENGE_LOG` and surfaced in Step 11 report
-- **COMMIT_MODE**: set in Step 3d; `each` = commit after each item (default); `all` = single commit after loop; `stage` = no commits (⚠ branch restore in Step 11 leaves staged changes — warn user before attempting restore)
+- **COMMIT_MODE**: set in Step 3d; `each` = commit after each item (default); `all` = single commit after loop; `stage` = no commits (⚠ branch restore in Step 11 leaves staged changes — warn user before attempting restore); `grouped` = stage all items first, then ask for topic labels, commit one commit per topic group — falls back to `each` when user skips label assignment
 - **`--agent <name>`**: agent name accepted with or without plugin prefix; bare name auto-prefixed with `foundry:` (e.g. `sw-engineer` → `foundry:sw-engineer`); must resolve to an installed implementation agent (NOT config-review agents such as `foundry:curator`); skip availability check — failure at dispatch time surfaces error naturally; omit Codex co-author trailer when IMPL_AGENT ≠ `codex:codex-rescue`
 - **Thread resolution via GraphQL** — `isResolved` lives on `PullRequestReviewThread` (GraphQL only); REST `/pulls/{PR}/comments` does not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId` values; GraphQL failure → `[]` fallback.
 - **Discussion vs inline comments** — `gh pr view --comments` = PR main-thread discussion (`location: discussion`; no GitHub "Resolve conversation" button); `gh api .../pulls/<N>/comments` = inline code-review threads (`location: inline`; resolvable). `isResolved` GraphQL field only applies to `location: inline` items. `location: discussion` items cannot be auto-closed — they remain `pending` in action items even after implementation; GitHub has no resolve mechanism for them. Surface this in Step 11 report (`Loc` column + status suffix) so maintainers do not look for a non-existent Resolve button. `[report]` items (`location: report`) follow same convention: implement-only, no GitHub close action.

@@ -4,11 +4,29 @@
 
 Plugins under `plugins/`. See `README.md` for user-facing detail.
 
-## Writing Style
+## Writing Style — Compression Tiers
 
-Apply caveman compression to **all** plugin file edits (agents, skills, rules, modes, templates, guidelines, bin/ docstrings) — drop articles, filler, hedging; keep full technical substance. Compact but complete: every rule, constraint, and example must survive; only padding dies.
+Three tiers based on reader:
 
-**Exception — READMEs and `docs/`**: write verbose. Full sentences, context, examples, rationale. These are user-facing documentation; readers need explanation, not compression.
+| Content | Tier | Rule |
+| --- | --- | --- |
+| READMEs, `docs/`, user-facing guides | Verbose | Full sentences, rationale, examples |
+| Final reports (`.reports/`), human-read output | Normal caveman | Drop articles/filler/hedging; full sentences where clarity needs |
+| Agent source (`<workflow>`, `<role>`, `<notes>`, skills, rules, modes), handover files (`.temp/`), inter-agent prose | Ultra caveman | Max compression — fragments OK, zero filler, shortest synonyms |
+
+Verbatim always (no compression): code blocks, bash commands, tool citations, file:line refs, JSON keys, structured field labels, compact JSON envelopes.
+
+When unsure: human reads artifact directly → normal; only agents read it → ultra.
+
+## Length Unit Convention
+
+All size/length limits in plugin files must express size as **tokens primary, lines secondary**:
+
+Format: `N tokens (~M lines)` — e.g. `10K tokens (~500 lines)`.
+
+- Never lines-only or chars-only as sole unit — line length unbounded; chars opaque to humans
+- Token estimate: `$(( $(wc -c < file) / 4 ))` (chars / 4; conservative for dense markdown/code)
+- Apply to: per-file limits, per-turn budgets, envelope size caps, output size constraints, consolidator thresholds
 
 ## File Layout
 

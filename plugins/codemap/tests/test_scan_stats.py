@@ -101,6 +101,31 @@ class TestLoadIndex:
             _load_index(str(tmp_path))
         assert exc_info.value.code == 1
 
+    def test_exits_1_when_index_exceeds_size_limit(self, tmp_path: Path) -> None:
+        """Index file larger than MAX_INDEX_SIZE causes sys.exit(1) — DoS guard (SEC-M10)."""
+        proj = tmp_path.name
+        idx_dir = tmp_path / ".cache" / "scan"
+        idx_dir.mkdir(parents=True)
+        idx_file = idx_dir / f"{proj}.json"
+        idx_file.write_text("{}")
+        oversized = _mod.MAX_INDEX_SIZE + 1
+        with patch("os.path.getsize", return_value=oversized):
+            with pytest.raises(SystemExit) as exc_info:
+                _load_index(str(tmp_path))
+        assert exc_info.value.code == 1
+
+    def test_exits_1_on_race_condition_file_disappears(self, tmp_path: Path) -> None:
+        """sys.exit(1) when file exists at getsize but is gone when open() is called (TOCTOU race)."""
+        proj = tmp_path.name
+        idx_dir = tmp_path / ".cache" / "scan"
+        idx_dir.mkdir(parents=True)
+        idx_file = idx_dir / f"{proj}.json"
+        idx_file.write_text("{}")
+        with patch("builtins.open", side_effect=FileNotFoundError("gone")):
+            with pytest.raises(SystemExit) as exc_info:
+                _load_index(str(tmp_path))
+        assert exc_info.value.code == 1
+
 
 # ---------------------------------------------------------------------------
 # Helpers

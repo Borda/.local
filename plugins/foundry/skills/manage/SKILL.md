@@ -542,6 +542,7 @@ After deleting the hook file, also remove its entry from `.claude/settings.json`
 ```bash
 # timeout: 5000
 HOOK_NAME="<name>"        # e.g. "rtk-rewrite" — basename of deleted hook, no .js suffix
+echo "$HOOK_NAME" > "${TMPDIR:-/tmp}/manage-hook-name-${CLAUDE_SESSION_ID:-$$}"
 # Remove every PreToolUse / PostToolUse / SessionStart / etc. entry whose hooks[].command references this file
 jq --arg hook "$HOOK_NAME" '
     .hooks //= {}
@@ -558,6 +559,7 @@ jq --arg hook "$HOOK_NAME" '
 Verify the entry is gone:
 
 ```bash
+HOOK_NAME=$(cat "${TMPDIR:-/tmp}/manage-hook-name-${CLAUDE_SESSION_ID:-$$}" 2>/dev/null)
 jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook + "\\.js"))] | length' .claude/settings.json  # timeout: 5000
 # Expected output: 0
 ```
@@ -566,6 +568,7 @@ jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook 
 
 ```bash
 # timeout: 5000
+HOOK_NAME=$(cat "${TMPDIR:-/tmp}/manage-hook-name-${CLAUDE_SESSION_ID:-$$}" 2>/dev/null)
 PLUGIN_HOOKS_JSON="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/.claude-plugin/hooks.json"
 if [ -f "$PLUGIN_HOOKS_JSON" ]; then
     jq --arg hook "$HOOK_NAME" '

@@ -218,6 +218,47 @@ Mark item's task completed:
 TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
 
+**After loop — `COMMIT_MODE=grouped` only**: collect topic labels, group items, commit each group.
+
+Invoke `AskUserQuestion` after the implementation loop completes (all items staged, no commits yet):
+
+```text
+AskUserQuestion: "Assign a topic label to each implemented item (e.g. style, logic, tests, docs, config).
+Items implemented:
+  <for each item in SELECTED_ITEMS: "#<id>: <summary>">
+Type a topic for each item ID (e.g. '1=style 2=logic 3=tests'), or type 'auto' to infer labels from change field."
+```
+
+- User types labels → parse `<id>=<topic>` pairs from response
+- User types `auto` → infer topic from each item's `.change` field: `style`→`style`, `test`→`tests`, `docs`→`docs`, `ci`→`ci`, `config`→`config`, `code`|`refactor`→`logic`; default `misc` when unclassified
+- Any item not assigned a label → assign topic `misc`
+- User skips (empty response or blank) → fall back to `each` mode: commit each already-staged item individually using the same `commit_action_item.py` path as `COMMIT_MODE=each`
+
+Group items by topic label. For each unique topic group (ordered by first item ID in group):
+
+```bash
+# For each topic group:
+GROUP_IDS=(<item ids in this group>)
+GROUP_SUMMARIES=(<item summaries in this group>)
+COMBINED_SUMMARY=$(echo "${GROUP_SUMMARIES[@]}" | tr ' ' '\n' | head -5 | paste -sd '; ')
+COMMIT_MSG=$(mktemp)  # timeout: 3000
+trap 'rm -f "$COMMIT_MSG"' RETURN
+cat >"$COMMIT_MSG" <<EOF
+<topic>: ${COMBINED_SUMMARY}
+
+[resolve group] PR #<PR_NUMBER> — items ${GROUP_IDS[*]}
+
+---
+Co-authored-by: Claude Code <noreply@anthropic.com>
+$([ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "Co-authored-by: OpenAI Codex <codex@openai.com>")
+EOF
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" \
+    --message-file "$COMMIT_MSG" \
+    --files <all files changed by items in this group>  # timeout: 10000
+```
+
+Commit subject format: `<topic>: <combined summary of items in group>` (≤72 chars total; truncate combined summary with `…` if needed). One commit per unique topic. Print `→ Committed group "<topic>" — items <ids>` after each commit.
+
 **After loop — `COMMIT_MODE=all` only**: derive counters from `CHALLENGE_LOG`, create single commit:
 
 ```bash

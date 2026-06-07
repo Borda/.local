@@ -53,7 +53,7 @@ const BUILT_INS = new Set(["general-purpose", "claude-code-guide", "Explore", "P
 const OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
 const COSINE_THRESHOLD = 0.65;
 
-const ANTHROPIC_LLM_MODEL = "claude-haiku-4-5-20251001";
+const ANTHROPIC_LLM_MODEL = "haiku";
 
 // ── Semver sort ───────────────────────────────────────────────────────────────
 

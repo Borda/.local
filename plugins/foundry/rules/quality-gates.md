@@ -64,12 +64,24 @@ Confidence < 0.9 → push back on the analysis before handing over: ask for proo
    4. **Follow-up gate** — invoke `AskUserQuestion` as final step; skip when: spawned via `Agent()` tool, running inside another skill's pipeline, or prompt explicitly states background/pipeline mode — when in doubt, invoke
 
 - **Short inline status** (single result, pass/fail, one-sentence finding) → terminal only; do **not** create file
+- **Copy-intent override**: when output will be pasted into external artifact (PR body, release notes, report to share) → write to file regardless of length; when output read in-context and acted on immediately (audit findings, calibration result, code review) → terminal only even if long
 - Prose paragraphs: no hard line breaks at column width
 - **Follow-up gate options**: skill-defined; minimum: (a) primary action · (b) skip. Canonical examples by skill:
   - `foundry:audit` → (a) `/foundry:setup` (sync clean config) · (b) fix all findings · (c) skip
   - `foundry:distill` → (a) `/foundry:manage create` (scaffold suggestion) · (b) edit existing · (c) skip
 - **Follow-up gate follow-through**: when `AskUserQuestion` returns with skill-invocation option selected — call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
 - **Don't ask what you can't honor**: if selected option cannot trigger automatic action (e.g. skill has `disable-model-invocation: true`, or output is intermediate with a downstream AskUserQuestion coming anyway) — do NOT use AskUserQuestion for that option; print the suggestion as plain text instead so user can copy-paste it. Hollow question = worse UX than no question.
+
+## Prose Compression — Output Files
+
+Applies to all agents. Compression tier by destination:
+
+Estimate file size: `$(( $(wc -c < file) / 4 ))` tokens. Over budget → drop LOW/Nitpick first; preserve CRITICAL and HIGH intact.
+
+| Destination | Tier | Size limit | Rule |
+| --- | --- | --- | --- |
+| `.reports/` (human review) | normal caveman | ≤10K tokens (~500 lines) | Drop articles/filler/hedging; full sentences where clarity demands; fragments OK for terse findings |
+| `.temp/` (consolidator handover) | ultra caveman | ≤10K tokens (~500 lines) | Fragments only; zero filler; shortest synonyms; ~30–40% token reduction; per file-handoff-protocol.md §Synthesis budget |
 
 ## Report File Format
 
@@ -106,3 +118,4 @@ Fix: <concrete action to resolve>
 
 - Severity markers: `!` = critical · `⚠` = warnings · `✓` = pass · hint = fix hint
 - **Block merge integrity**: after merging two blocks (combining e.g. `<antipatterns>` + `<quality_checks>` into one), diff combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops
+- **Deferred work must appear in delivered artifact**: if any analysis, rubric definition, or implementation is deferred, approximated, or left incomplete, document it explicitly in the output file — "Phase 2 / requires X / not yet implemented" notes must appear in the artifact, not only in conversation

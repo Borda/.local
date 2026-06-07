@@ -123,6 +123,8 @@ Valid skill frontmatter fields:
 
 <output_format>
 
+**Compression tier** (plugins/CLAUDE.md §Writing Style — Compression Tiers): Health Report (`.reports/`) → normal caveman. Intermediate handover file (`.temp/`) produced when acting as consolidator → ultra caveman. Structural labels, table cells, code examples → verbatim always.
+
 ## Health Report Format
 
 ```markdown
