@@ -51,7 +51,7 @@ Rules:
   Fix typo in config key name
 
   ---
-  Co-authored-by: Claude Code <noreply@anthropic.com>
+  Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
   ```
 
 - **No line wrapping** — bullets and prose single continuous lines; never hard-break at any column width
@@ -126,10 +126,10 @@ Separate co-author block from bullet list with `---`:
 - last bullet
 
 ---
-Co-authored-by: Claude Code <noreply@anthropic.com>
+Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
 ```
 
-- Claude: `Co-authored-by: Claude Code <noreply@anthropic.com>`
+- Claude: `Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>`
 - Codex (if contributed anything — code, review, diagnosis, analysis, architectural guidance, or "here's what needs fixing and why"): `Co-authored-by: OpenAI Codex <codex@openai.com>`
 
 **Codex intellectual contributions count**: Codex earns trailer whenever it shaped outcome — even if Claude wrote final code.

@@ -21,9 +21,7 @@ from shutil import which
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 
-_COMMIT_MESSAGE = (
-    "lint: auto-fix violations after resolve cycle\n\n---\nCo-authored-by: Claude Code <noreply@anthropic.com>"
-)
+_COMMIT_MESSAGE = "lint: auto-fix violations after resolve cycle\n\n---\nCo-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>"
 
 
 def _slug(text: str) -> str:

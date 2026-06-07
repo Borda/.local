@@ -124,7 +124,7 @@ def build_commit_message(
         True
         >>> "3 as-suggested" in msg
         True
-        >>> "Co-authored-by: Claude Code" in msg
+        >>> "Co-authored-by: claude[bot]" in msg
         True
     """
     codex_trailer = "\nCo-authored-by: OpenAI Codex <codex@openai.com>" if include_codex else ""
@@ -135,7 +135,7 @@ def build_commit_message(
         f"Challenge log: {n_as_suggested} as-suggested, "
         f"{n_self_resolved} self-resolved, {n_rejected} rejected\n"
         f"\n---\n"
-        f"Co-authored-by: Claude Code <noreply@anthropic.com>"
+        f"Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>"
         f"{codex_trailer}"
     )
 

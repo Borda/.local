@@ -148,5 +148,5 @@ def test_build_commit_message_pure() -> None:
     assert "5 as-suggested" in msg
     assert "2 self-resolved" in msg
     assert "1 rejected" in msg
-    assert "Co-authored-by: Claude Code" in msg
+    assert "Co-authored-by: claude[bot]" in msg
     assert "OpenAI Codex" not in msg

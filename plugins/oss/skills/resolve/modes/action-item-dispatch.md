@@ -197,7 +197,7 @@ cat >"$COMMIT_MSG" <<EOF
 Challenge: evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>
 
 ---
-Co-authored-by: Claude Code <noreply@anthropic.com>
+Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
 Co-authored-by: OpenAI Codex <codex@openai.com>
 EOF
 
@@ -249,7 +249,7 @@ cat >"$COMMIT_MSG" <<EOF
 [resolve group] PR #<PR_NUMBER> — items ${GROUP_IDS[*]}
 
 ---
-Co-authored-by: Claude Code <noreply@anthropic.com>
+Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
 $([ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "Co-authored-by: OpenAI Codex <codex@openai.com>")
 EOF
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" \
