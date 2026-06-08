@@ -41,6 +41,13 @@ Use `foundry:curator`, not `foundry:sw-engineer`, for `.claude/` edits (agents, 
 - **Non-structural section tags** (e.g. `\<antipatterns_to_flag>`, `\<toolchain>`, `\<core_principles>`): backslash-escaped — internal org, Claude Code ignores
 - New section tag: use `\<tag>` for subsections inside `<role>` or `<workflow>`; leave three structural tags unescaped
 
+## Audit Check Numbering Convention
+
+- **Top-level**: integer (`12`, `29`, `32`)
+- **Sub-checks**: lowercase letter suffix — never decimal (`29.5`)
+- **First sub-check always starts at `a`** (`29a`, `32a`) — never skip letters
+- **Additional sub-checks**: continue from last used letter (`29a`, `29b` → next is `29c`)
+
 ## Distribution
 
 - Source of truth: `plugins/foundry/` for foundry-owned files (rules, agents, skills, hooks, CLAUDE.md, TEAM_PROTOCOL.md, permissions-guide.md); other plugins (`plugins/oss/`, `plugins/research/`, etc.) own their own agents/skills — edit in their respective `plugins/<name>/` source dirs

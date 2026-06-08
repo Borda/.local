@@ -40,6 +40,19 @@ Default focus: PUBLIC API surface; test internals only when caller asks. Apply c
 - **Mocking discipline**: only mock external dependencies outside user control (network, filesystem, time, third-party services); never mock internals of system under test
 - **Security embedding (all modes)**: when task scope includes authentication or authorization logic, payment flows or financial data handling, or user PII or sensitive data (storage, transmission, access control) — embed OWASP Top 10 review automatically; applies in solo mode and team mode alike; not gated on team invocation
 
+## Multi-level Test Validation
+
+Every test must pass three levels before considered complete — apply in sequence:
+
+**Level 1 — Name/Scenario Clarity**
+Test function name must unambiguously declare what is being tested. Format: `test_<unit>_<condition>_<expected>` or `test_<behavior>_when_<condition>`. If name alone is insufficient (complex scenario, multi-step flow, stateful sequence), add a one-line docstring: `"""Scenario: user does X with Y under Z, expects W."""` Criteria: reviewer must understand the test's purpose without reading the test body.
+
+**Level 2 — Contract Validation (implementation-blind)**
+Validate test purpose against SW goals/blueprints BEFORE inspecting test code. Derive expected behavior from: docs, docstrings, README, type hints, `Raises:` entries, API specs — never from observing implementation. Ask: "Does this scenario represent real user behavior? Is the expected outcome derivable from the documented contract alone?" If test scenario cannot be justified from docs without reading implementation, the test asserts implementation detail — rewrite from contract.
+
+**Level 3 — Coverage Completeness**
+Confirm test code is faithful to its declared scenario and covers: all documented parameter variants, boundary values, and error paths named in the scenario. Each parametrize case must map to a distinct documented sub-scenario; no case is a duplicate under different framing; no declared variation missing from the parametrize list.
+
 ## Edge Case Matrix
 
 For every public API entry point (function, class method, CLI flag, endpoint parameter), apply this checklist:
@@ -232,7 +245,11 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 07. Write parametrized tests covering all cases — each test reads as "user doing X expects Y"
 08. Run tests and verify they actually FAIL when code is broken
 09. Check for missing assertions (test with no assertions = useless)
-10. Review test names: use `test_<unit>_<condition>_<expected>` or `test_<behavior>_when_<condition>`; when tests grouped in class, class name carries unit (and optionally condition), method names need only describe expected outcome
+10. **Multi-level validation gate** — apply to every test written or reviewed:
+    - **L1 (name/scenario)**: test name declares scenario without reading body; add one-line docstring when name insufficient
+    - **L2 (contract)**: scenario independently justifiable from docs/blueprints alone — NOT from reading implementation; if expected outcome requires reading code, rewrite from contract
+    - **L3 (coverage)**: test code is faithful to scenario; all declared variations, boundary values, and error paths present in parametrize list; no undeclared case, no duplicate framing
+    - Test name format: `test_<unit>_<condition>_<expected>` or `test_<behavior>_when_<condition>`; class name carries unit when grouped
 11. **Coverage checklist gate**: before declaring done, re-enumerate public API inventory from step 01 and confirm each symbol has: (a) documented happy path covered, (b) at least one edge-case variant, (c) every `Raises:` path covered; flag any gap as primary finding
 12. Run full test suite after all fixes applied: `uv run pytest --tb=short -q` (or `pytest --tb=short -q` if uv unavailable) to ensure all tests pass; never create standalone `tmp_test.py` to verify behavior
 13. Report findings using two-section structure defined in `<reporting_format>` above.
@@ -267,6 +284,8 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 <antipatterns_to_flag>
 
 - **Out-of-scope items to skip (not flag)**: syntactic issues (dead imports, unused variables, naming conventions, import ordering) — exclude silently rather than routing to "secondary observations"
+- **Scenario-opaque test name with no docstring**: test name does not communicate scenario (`test_function_1`, `test_process`, `test_case_2`) AND no scenario docstring — reviewer cannot determine intent without reading body; flag as `[medium]`; fix = rename to `test_<unit>_<condition>_<expected>` or add `"""Scenario: ..."""` docstring; applies to all new tests and any test flagged during review
+- **Scenario declared but not fully covered**: test name/docstring declares a scenario but parametrize cases or assertions omit documented variations, boundary values, or error paths — flag as `[medium]`; fix = extend parametrize list to cover all sub-cases declared in the scenario name or docstring
 - Tests with no assertions
 - Test names that describe implementation, not behavior (e.g. `test_function_1`)
 - No test for error/failure path
@@ -286,6 +305,7 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 - **Thread-safety assertion missing**: when class claims thread-safety via `threading.Lock`, `threading.RLock`, or similar, flag absence of concurrent-access test — minimum viable: N threads performing competing put/get or read/write; assert final state consistent. Primary if class explicitly described as thread-safe; secondary if implied.
 - **Inline skip in test body**: `if <condition>: pytest.skip(...)` or `pytest.skipif(...)` called inside test function body — use decorator form instead: `@pytest.mark.skipif(<condition>, reason="...")`. Decorator makes skip conditions visible at collection time, works with `--collect-only`. Exception: `pytest.skip()` inside body acceptable only when skip condition can't be evaluated at import time. Applies to all skip conditions.
 - **`try`/`except` in test body to suppress failures**: `try: <act>; <assert>; except: pass` or `except: pytest.skip(...)` — test always green regardless of behavior; flag as `[critical]`; fix = remove wrapper and fix the implementation bug causing the failure
+- **`try`/`finally` in test body for cleanup**: `try: <setup>; <act>; <assert>; finally: <teardown>` — manual teardown in test body is a sign that fixtures are not being used; flag as `[medium]`; fix = extract setup/teardown into a `pytest.fixture` with `yield` (function-scope by default; widen scope only when setup is expensive and state resets cleanly); inline `try`/`finally` acceptable only when the teardown is inherently part of the assertion logic, not pure resource cleanup
 - **`@pytest.mark.xfail` without `raises=` and issue reference**: open-ended `xfail` = permanent silent regression hole; require `raises=<ExceptionType>` + `reason="<url-to-tracked-issue>"` — flag either missing element
 - **Mock added to make a test pass, not to isolate external dependency**: mock introduced after test started failing (not as upfront isolation design) = covering implementation bug; flag and suggest removing mock to expose root cause
 - **`# doctest: +SKIP` in doctest body**: skipped doctest = dead documentation; use `+REQUIRES(module:X)` for optional deps, `__doctest_skip__ = [...]` for missing abstractions, `@pytest.mark.skipif(...)` for env conditions — `+SKIP` never acceptable

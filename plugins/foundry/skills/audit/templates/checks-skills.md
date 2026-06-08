@@ -81,32 +81,32 @@ After scan, apply model reasoning to each match — exclude cases where shell co
 | `echo … >` / `tee` to write a file | Write tool | medium |
 | `sed`/`awk` for text substitution | Edit tool | medium |
 
-### Sub-check 23e — python inline policy (CLAUDE.md / MEMORY.md violation)
+### Sub-check 23a — python inline policy (CLAUDE.md / MEMORY.md violation)
 
 `Bash(python:*)` IS in the allow list, covering bare `python script.py` calls. However, `python -c "..."` does NOT match `Bash(python:*)` — Claude Code's permission matcher tokenizes the full prefix, so `python -c` requires a separate `Bash(python -c:*)` entry (intentionally absent). Any `python -c` in a skill body still pauses for a permission prompt mid-workflow; user deny = phase fails. This is the enforcement mechanism for the inline-Python antipattern, not a coverage gap.
 
 ```bash
-printf "=== Check 23e: python inline policy ===\n"
+printf "=== Check 23a: python inline policy ===\n"
 grep -rn 'python -c\b' $_SKILL_GLOB 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: python not in allow list by design — move logic to bin/*.py or use native tools (Read/Write/Edit/Bash with jq)\n" || true
-printf "=== Check 23e: heredoc python policy ===\n"
+printf "=== Check 23a: heredoc python policy ===\n"
 grep -rn "python << '\|python <<\"" $_SKILL_GLOB 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' &&
 printf "  hint: CLAUDE.md bans heredoc python; use bin/*.py instead\n" || true
-printf "✓: Check 23e scan complete\n"  # timeout: 5000
+printf "✓: Check 23a scan complete\n"  # timeout: 5000
 ```
 
 Severity: **high** — permission prompt mid-workflow blocks automation; user deny = skill phase fails.
 
 | Sub-check | Pattern | Severity |
 | --- | --- | --- |
-| 23e — python -c inline | `python -c` in skill body | high |
-| 23e — python heredoc | `python << '` in skill body | high |
+| 23a — python -c inline | `python -c` in skill body | high |
+| 23a — python heredoc | `python << '` in skill body | high |
 
 **Report only** — never auto-fix; some Bash invocations in example/illustration code blocks intentional.
 
-### Sub-check 23f — `# timeout:` annotation without shell enforcement
+### Sub-check 23b — `# timeout:` annotation without shell enforcement
 
 `# timeout: N` on a bash line is a hint to Claude Code's Bash tool — it has no effect when the command runs outside the tool (bin/ scripts, CI, direct shell). Hard enforcement requires `timeout S <cmd>` prefix (bash) or `--timeout S` via argparse + passed to every blocking call (Python subprocess). See `bin-authoring-guide.md` §Timeout Policy for canonical patterns and ms→s conversion table.
 
@@ -116,7 +116,7 @@ Rules:
 - **Python `bin/` scripts with subprocess**: must expose `--timeout SECS` and pass it to every `subprocess.*` call.
 
 ```bash
-printf "=== Check 23f: # timeout: comment without shell enforcement ===\n"
+printf "=== Check 23b: # timeout: comment without shell enforcement ===\n"
 # Bash call sites: # timeout: N without timeout S shell prefix
 # Exempt: python invocations (timeout enforced by --timeout default inside script)
 # (colon in timeout: distinguishes comment from command)
@@ -129,19 +129,19 @@ printf "  hint: prepend 'timeout S' (S = ms ÷ 1000) — e.g. 'timeout 5 \$(comm
 
 # Python bin/ scripts: subprocess without timeout= (hard enforcement missing even with --timeout default)
 [ "$LOCAL_MODE" = "true" ] && _BIN_PY_GLOB="plugins/*/bin/*.py" || _BIN_PY_GLOB=".claude/bin/*.py"
-printf "=== Check 23f: Python subprocess missing timeout= ===\n"
+printf "=== Check 23b: Python subprocess missing timeout= ===\n"
 grep -rn 'subprocess\.\(check_output\|run\|call\|Popen\)' $_BIN_PY_GLOB 2>/dev/null |
   grep -v 'timeout=' |
   grep -v '^\s*#' &&
 printf "  hint: add timeout=args.timeout to every subprocess call; --timeout default must equal # timeout: N ÷ 1000\n" || true
 
 # Python bin/ scripts: --timeout argparse default missing or zero
-printf "=== Check 23f: Python --timeout default compliance ===\n"
+printf "=== Check 23b: Python --timeout default compliance ===\n"
 grep -rln 'subprocess\.' $_BIN_PY_GLOB 2>/dev/null | while read -r f; do
   grep -q 'add_argument.*--timeout' "$f" ||
     printf "  %s: --timeout argparse argument absent; add with default= matching call site # timeout: N ÷ 1000\n" "$f"
 done || true
-printf "✓: Check 23f scan complete\n"  # timeout: 5000
+printf "✓: Check 23b scan complete\n"  # timeout: 5000
 ```
 
 After scan, apply model reasoning — exclude lines inside illustration/example code blocks (marked `# ✗`, surrounded by explanatory prose, or not reachable as actual tool-call commands). Flag only live executable lines.
@@ -150,9 +150,9 @@ Severity: **medium** — bash comment-only timeout silently ignored at runtime; 
 
 | Sub-check | Pattern | Severity |
 | --- | --- | --- |
-| 23f — bash comment-only timeout | `# timeout: N` without `timeout S` shell prefix (non-python invocations) | medium |
-| 23f — subprocess no timeout= | `subprocess.*` call without `timeout=` in `bin/*.py` | medium |
-| 23f — missing --timeout default | Python `bin/` script uses subprocess but no `--timeout` argparse arg | medium |
+| 23b — bash comment-only timeout | `# timeout: N` without `timeout S` shell prefix (non-python invocations) | medium |
+| 23b — subprocess no timeout= | `subprocess.*` call without `timeout=` in `bin/*.py` | medium |
+| 23b — missing --timeout default | Python `bin/` script uses subprocess but no `--timeout` argparse arg | medium |
 
 **Report only** — flag for human review; timeout default values must match `# timeout: N` at call site (N ÷ 1000).
 
@@ -444,7 +444,7 @@ Fix: after detecting TEST_CMD, derive `PYTEST_CMD` for targeted runs: `tox` → 
 
 ### 30e — Heredoc python in skill bodies
 
-Heredoc python blocks (`python << 'EOF'`) banned by CLAUDE.md. Distinct from 23e (targets `python -c` one-liners); 30e catches multi-line heredoc forms that bypass one-liner size limit.
+Heredoc python blocks (`python << 'EOF'`) banned by CLAUDE.md. Distinct from 23a (targets `python -c` one-liners); 30e catches multi-line heredoc forms that bypass one-liner size limit.
 
 ```bash
 printf "=== Check 30e: Heredoc python ===\n"
@@ -527,12 +527,12 @@ Auto-fix: append missing tool name to `allowed-tools:` frontmatter line.
 | --- | --- | --- | --- |
 | 31 — tool-body mismatch | body calls `Skill()`, `AskUserQuestion()`, or `Agent()` but tool absent from `allowed-tools` | critical | yes — add to frontmatter |
 
-### Sub-check 31b — Skill frontmatter completeness
+### Sub-check 31a — Skill frontmatter completeness
 
 Verify required frontmatter fields present in every SKILL.md. Missing fields cause undocumented default behavior or miscategorized routing.
 
 ```bash
-printf "=== Check 31b: Frontmatter completeness ===\n"
+printf "=== Check 31a: Frontmatter completeness ===\n"
 found=0
 for f in $_SKILL_GLOB; do  # timeout: 5000
     [ -f "$f" ] || continue
@@ -540,18 +540,18 @@ for f in $_SKILL_GLOB; do  # timeout: 5000
     fm=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null)
     # effort: — required always; no documented default
     echo "$fm" | grep -q '^effort:' || {
-        printf "⚠ 31b: %s — missing effort: field (required; no default)\n" "$skill"
+        printf "⚠ 31a: %s — missing effort: field (required; no default)\n" "$skill"
         found=1
     }
     # when_to_use: — required when disable-model-invocation absent (routing signal)
     has_dmi=$(echo "$fm" | grep -c 'disable-model-invocation: true' || true)
     has_wtu=$(echo "$fm" | grep -c '^when_to_use:' || true)
     [ "$has_dmi" -eq 0 ] && [ "$has_wtu" -eq 0 ] && {
-        printf "⚠ 31b: %s — missing when_to_use: (needed when auto-invocation allowed)\n" "$skill"
+        printf "⚠ 31a: %s — missing when_to_use: (needed when auto-invocation allowed)\n" "$skill"
         found=1
     }
 done
-[ "$found" -eq 0 ] && printf "✓: Check 31b — frontmatter complete across all skills\n"
+[ "$found" -eq 0 ] && printf "✓: Check 31a — frontmatter complete across all skills\n"
 ```
 
 Severity: **medium** for `effort:` (no default documented); **low** for `when_to_use:` (routing impact).
@@ -559,8 +559,8 @@ Severity: **medium** for `effort:` (no default documented); **low** for `when_to
 | Sub-check | Field | Condition | Severity | Auto-fix |
 | --- | --- | --- | --- | --- |
 | 31 — tool-body mismatch | `allowed-tools` | body calls Skill/AskUserQuestion/Agent, not in frontmatter | critical | yes |
-| 31b — effort missing | `effort:` | always required | medium | yes |
-| 31b — when_to_use missing | `when_to_use:` | no `disable-model-invocation: true` | low | no |
+| 31a — effort missing | `effort:` | always required | medium | yes |
+| 31a — when_to_use missing | `when_to_use:` | no `disable-model-invocation: true` | low | no |
 
 ## Check C35 — Background agent health monitoring compliance (CLAUDE.md §6)
 

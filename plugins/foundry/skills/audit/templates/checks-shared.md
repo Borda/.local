@@ -293,6 +293,24 @@ Per finding: location (section heading + approx line range) · pattern type (rep
 
 **Severity**: **medium** — total savings >= medium across >= 2 distinct locations. **low** — isolated small savings only. **Report only** — never auto-fix; minimization risks removing load-bearing nuance.
 
+**29a — Trigger-inverse restatement**: TRIGGER/SKIP or fires-when/skip-when adjacent pairs where second item is pure logical negation of first. Example: "TRIGGER when X" immediately followed by "SKIP when not X" — second adds zero information.
+
+Via model reasoning: extract TRIGGER and SKIP bullet lists from agent and skill files. For each TRIGGER condition, check adjacent SKIP section for negation complement (same subject, negated predicate). Flag pair if second is reconstructable from first by negation alone.
+
+Information gap test (mandatory): "If SKIP bullet removed, can reader infer from TRIGGER + closed-world assumption?" YES = flag. NO = retain (SKIP carries additive context — e.g. different agent type, overlapping domain clarification).
+
+Per finding: file · TRIGGER line · SKIP line · one-line reason second is pure negation. **Severity**: **low** — report only; never auto-remove (negation-form SKIP bullets may carry implicit scope narrowing not obvious from trigger alone).
+
+**29b — Non-actionable / hedged absolute directive**: directive using "consider", "may", "might", "should ideally", "try to", "where possible" where surrounding context makes rule absolute (no conditionality intended). Also: step missing verb+object+condition triad — subject-only or object-only instructions with no triggering condition.
+
+Via model reasoning per file: scan workflow steps and rule bullets. Flag where:
+- Hedging word present + no conditional clause justifying it (absolute rule weakened by hedge)
+- Step body is object-only ("error handling", "edge cases") with no verb or condition
+
+Information gap test (mandatory): "Does hedge word change correct behavior?" YES (hedge load-bearing) = skip. NO = flag as prose-inflation variant.
+
+Per finding: file · section · hedged phrase → proposed imperative form. **Severity**: **low** — report only.
+
 ## Check 26 — Symbol and shortcut consistency
 
 Three sub-checks for within-file consistency of emoji symbols, slash-command notation, legend alignment.

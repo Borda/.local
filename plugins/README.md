@@ -39,14 +39,14 @@ All entries are merged from `plugins/foundry/.claude-plugin/permissions-allow.js
 
 | Entry                                       | Reason                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `python -c "..."` inline code               | `python -c` does not match `Bash(python:*)` — Claude Code's matcher tokenizes the full prefix; a separate `Bash(python -c:*)` entry would be required (intentionally absent). Check 23e is the policy enforcement; the prompt is a side-effect of matcher tokenization, not a designed security feature. |
+| `python -c "..."` inline code               | `python -c` does not match `Bash(python:*)` — Claude Code's matcher tokenizes the full prefix; a separate `Bash(python -c:*)` entry would be required (intentionally absent). Check 23a is the policy enforcement; the prompt is a side-effect of matcher tokenization, not a designed security feature. |
 | `Bash(python3:*)`                           | Standardized to `python`; `python3` invocations signal unconverted code                                                                                                                                                                                                                                  |
 | `git push`                                  | Push requires explicit user confirmation per session — intentional friction                                                                                                                                                                                                                              |
 | Any `python*` wildcard beyond bare `python` | Only bare `python:*` was added; `python3.11`, `python3.x` etc. still prompt                                                                                                                                                                                                                              |
 
-### Check 23e — inline Python detector
+### Check 23a — inline Python detector
 
-`/audit` Check 23e scans all SKILL.md files for `python -c` and `python <<` patterns and flags them HIGH. The `Bash(python:*)` allow entry does **not** exempt inline code from this check — the matcher requires `Bash(python -c:*)` for that. If you see a Check 23e finding, fix it by extracting the logic to a `bin/*.py` script.
+`/audit` Check 23a scans all SKILL.md files for `python -c` and `python <<` patterns and flags them HIGH. The `Bash(python:*)` allow entry does **not** exempt inline code from this check — the matcher requires `Bash(python -c:*)` for that. If you see a Check 23a finding, fix it by extracting the logic to a `bin/*.py` script.
 
 ______________________________________________________________________
 
@@ -93,7 +93,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/bin/script.py" ...
 # ✗ timeout S wrapper — redundant with # timeout: N annotation, adds subprocess fork
 _FS=$(timeout 5 python "${CLAUDE_PLUGIN_ROOT}/bin/resolve_shared_path.py" foundry skills/_shared ...)  # timeout: 5000
 
-# ✗ inline python — Check 23e HIGH violation, triggers prompt
+# ✗ inline python — Check 23a HIGH violation, triggers prompt
 RESULT=$(python -c "import json; ...")
 ```
 
@@ -124,7 +124,7 @@ Every `bin/` Python script ships with a `pytest` test suite in the plugin's `tes
 
 Counts from `pytest --collect-only -q` run in `plugins/`; regenerate after test additions.
 
-`/audit` Check 23e and Check C32 continuously verify that SKILL.md files don't introduce inline Python or bare `plugins/` path references — structural violations are caught before they reach users.
+`/audit` Check 23a and Check C32 continuously verify that SKILL.md files don't introduce inline Python or bare `plugins/` path references — structural violations are caught before they reach users.
 
 The CI matrix ensures bin/ scripts run correctly on the platforms users install plugins on. A green CI badge = all executables behave identically on Linux, macOS, and Windows with both Python 3.10 and 3.12.
 

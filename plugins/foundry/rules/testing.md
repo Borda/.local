@@ -29,6 +29,7 @@ paths:
 - No `if`/`for` logic in test bodies
   - Exception: list-comprehension/generator inside `@pytest.mark.parametrize(...)` to build args — allowed if it spans <30% of the decorator's own lines (lines inside the outer parentheses only, not the test body)
 - Parametrize aggressively — 3+ test functions same structure → `@pytest.mark.parametrize`
+- Test case IDs: use `pytest.param(..., id="slug")` per case — never `ids=[...]` on the decorator; keeps ID and args co-located, survives reordering
 - Group topic-related tests into class; class name carries unit (and optionally condition) so method names describe expected outcome only
 
 ## File Layout
@@ -110,6 +111,7 @@ testpaths = ["src", "tests"]
 Never soften a failing test to make it pass. Every softening pattern signals wrong testing approach or implementation bug — investigate root cause:
 
 - **`try`/`except` in test body**: `try: <act>; assert ...; except: pass` = test always passes regardless of behavior; remove wrapper, fix implementation
+- **`try`/`finally` in test body**: teardown belongs in pytest fixture `yield` + cleanup block — not inline `finally`; use `autouse` or explicit fixture instead
 - **Silent `pytest.skip()` without root cause**: skipping without understanding why hides regressions; trace failure, fix or open tracked issue; never skip as first response to failure
 - **`@pytest.mark.xfail` without `raises=` and issue link**: open-ended `xfail` = permanent silent hole; require `raises=<ExceptionType>` + `reason="<issue-URL>"` — both mandatory
 - **Over-mocking to avoid real failures**: adding mocks after tests start failing (not upfront as isolation design) covers implementation bugs; remove mock to expose root cause

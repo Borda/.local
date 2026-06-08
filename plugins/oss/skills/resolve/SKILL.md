@@ -431,23 +431,23 @@ Sort: `[req]` first, then `[suggest]`. Constraint: max 3 items/question, max 4 q
 
 **Q4 = bulk action only — hard rule**: Q4 is always reserved for "Or choose a bulk action:" (single-select: "Apply selected" / "Apply all [req]" / "Apply all" / "Skip all"). Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
 
-**≤9 pending items**: group by proximity not by type — fill Q1→Q3 in order (≤3 items each). If items span 4+ type categories, distribute so all groups stay ≤3; don't reserve a whole group for a single type. Each group: one `multiSelect: true` question, header "Selecting items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)` (implement action only; GitHub has no Resolve button for PR discussion comments). After item groups, always invoke Q4: single-select "Or choose a bulk action:" — "Apply selected" / "Apply all [req] (only)" / "Apply ALL (req + suggest)" / "Skip all".
+**≤9 pending items**: group by proximity not by type — fill Q1→Q3 in order (≤3 items each). If items span 4+ type categories, distribute so all groups stay ≤3; don't reserve a whole group for a single type. Each group: one `multiSelect: true` question, header "Selecting items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)` (implement action only; GitHub has no Resolve button for PR discussion comments). After item groups, always invoke Q4: single-select "Or choose a bulk action:" — "Apply selected" / "Apply req (only)" / "Apply req + suggest" / "Skip all".
 
-**10–19 pending items**: two calls — print `→ N pending items — selecting in 2 calls ([req] first, then [suggest])` before call 1. Call 1: `[req]` groups + Q4 bulk-action ("Apply selected" / "Apply all [req] (only)" / "Apply ALL (req + suggest)" / "Skip all [req]"). "Apply ALL (req + suggest)" in Call 1 → `SELECTED_ITEMS` = all pending IDs, skip Call 2. Otherwise: Call 2: `[suggest]` groups + Q4 bulk-action ("Apply selected" / "Apply all [suggest]" / "Skip all [suggest]"); merge selections from both calls.
+**10–19 pending items**: two calls — print `→ N pending items — selecting in 2 calls ([req] first, then [suggest])` before call 1. Call 1: `[req]` groups + Q4 bulk-action ("Apply selected" / "Apply req (only)" / "Apply req + suggest" / "Skip all [req]"). "Apply req + suggest" in Call 1 → `SELECTED_ITEMS` = all pending IDs, skip Call 2. Otherwise: Call 2: `[suggest]` groups + Q4 bulk-action ("Apply selected" / "Apply all [suggest]" / "Skip all [suggest]"); merge selections from both calls.
 
 **≥20 pending items — context-budget mode**: skip per-item multiSelect; print compressed table (type · id · summary ≤40 chars · file) then single bulk-action call only:
 
 ```text
 AskUserQuestion: "N pending items (X [req], Y [suggest]). Choose bulk action:"
-Options: (a) Apply all [req] (X items) · (b) Apply all (N items) · (c) Skip all
+Options: (a) Apply req (X items) · (b) Apply req + suggest (N items) · (c) Skip all
 ```
 
 If per-item control needed: advise re-run after reducing source (e.g. use `report` mode instead of `pr + report`, or `--no-challenge` to cut upstream findings).
 
 Resolve `SELECTED_ITEMS`:
 - "Skip all" or "Skip all [req]" / "Skip all [suggest]" or no selections → `[]` → skip Step 8, jump to Step 9 (checkout + conflict resolution still run)
-- "Apply all [req] (only)" → all `[req]` IDs
-- "Apply ALL (req + suggest)" → all pending IDs (if from Call 1 of 10–19 path, skip Call 2 entirely)
+- "Apply req (only)" → all `[req]` IDs
+- "Apply req + suggest" → all pending IDs (if from Call 1 of 10–19 path, skip Call 2 entirely)
 - "Apply selected" → checked IDs from item questions; for two-call flow, merge checked IDs from both calls
 
 **Commit mode** — after resolving `SELECTED_ITEMS` (non-empty), invoke `AskUserQuestion` as a separate call:

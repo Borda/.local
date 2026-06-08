@@ -28,13 +28,13 @@
 | 20 | Agent description routing | medium/low | agents | 20a overlap pairs, 20b NOT-for coverage, 20c trigger specificity, 20d keep/sharpen/prune |
 | 21 | Skill frontmatter conflicts | critical | skills | context:fork + disable-model-invocation:true is broken |
 | 22 | Calibration coverage gap | medium/low | agents/skills | Unregistered calibratable skills/agents; stale domain table entries |
-| 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools; 23e python inline; 23f `# timeout: N` without `timeout S` shell prefix or Python `subprocess.*` without `timeout=` |
+| 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools; 23a python inline; 23b `# timeout: N` without `timeout S` shell prefix or Python `subprocess.*` without `timeout=` |
 | 24 | Skill sequence compatibility | high/medium | skills | 24a target skill not on disk; 24b argument absent from argument-hint; scans skills, agents, READMEs |
 | 25 | Implicit agent references | high | agents/skills | subagent_type without plugin prefix; exempt: built-in types |
 | 26 | Symbol and shortcut consistency | medium/low | agents/skills | 26a same-concept emoji conflict, 26b slash notation mixed, 26c body contradicts legend |
 | 27 | Cross-plugin shared-file ref integrity | critical/high/med | skills | 27a absent from foundry/\_shared/; 27b catch-22 (fallback needs foundry); 27c plugin-local \_shared/ unmounted |
 | 28 | Cross-plugin agent dispatch fallback | high/medium | skills | 28a no fallback for cross-plugin dispatch; 28b fallback present but incomplete |
-| 29 | LLM context minimality | medium/low | agents/skills/rules | Within-file repetition, prose inflation, obvious-consequence restatement — report only |
+| 29 | LLM context minimality | medium/low | agents/skills/rules | Within-file repetition, prose inflation, obvious-consequence restatement — report only; 29a trigger-inverse restatement; 29b hedged/non-actionable directives |
 | 30 | Config token overhead | medium/low | setup | 30a CLAUDE.md + global + rules/ > 100 KB; 30b single rules file > 10 KB |
 | 31 | Tool-body consistency | medium | skills | Skill `allowed-tools` must include every tool the workflow body invokes; see `checks-skills.md` for full spec |
 | 32 | Dead file detection | medium/low | skills/rules | 32a mode files in `*/modes/` not referenced from parent SKILL.md; 32b template files in `*/templates/` not referenced; 32c rule files whose `paths:` globs match no project files; 32d orphaned bin/ scripts not referenced by any plugin .md file (LOCAL_MODE only) |

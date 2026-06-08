@@ -173,7 +173,7 @@ Every OSS Python project needs:
 2. **Running tests**: `pytest tests/`
 3. **Linting**: `ruff check . && mypy src/`
 4. **PR requirements**: tests, docstrings, CHANGELOG entry
-5. **Code of conduct reference**
+5. **Code of conduct reference**: verify CONTRIBUTING.md links or mentions a code of conduct; flag as missing if absent
 
 ## Responding to First-Time Contributors
 

@@ -95,6 +95,16 @@ Compliant example — this is the only valid form:
 - When `AskUserQuestion` not in skill's `allowed-tools`, add it before asking any question
 - Max 4 questions per call; group related sub-questions into one option set rather than asking sequentially
 
+## Long Reply File Dump
+
+**Trigger**: reply >1 sentence OR contains MD formatting (headers `#`, bullets `-`/`*`, fenced code ` ``` `, tables `|`).
+
+**Rule**: write full reply to `.temp/reply-<slug>-<YYYY-MM-DD>.md`; print path as first output line: `→ .temp/reply-<slug>-<YYYY-MM-DD>.md`.
+- `<slug>` = 3–4 word kebab summary of reply subject
+- Verbatim — no extra wrapping, no ANSI codes
+
+**Exemptions**: machine-parsed responses; pure status/narration lines.
+
 ## Output Routing
 
 Full rules (including anti-overwrite counter-suffix and branch-slug format) and breaking-findings format: see `quality-gates.md`.

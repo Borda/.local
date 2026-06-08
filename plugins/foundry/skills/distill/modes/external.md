@@ -83,7 +83,7 @@ After scoring, apply this judgement:
 - If recommending: state justification — what source provides that local setup lacks, why cherry-picking would dilute value
 - Present as explicit option in E13 (option b); omit if not recommended
 
-**E12.5: Challenger adversarial review**
+**E12a: Challenger adversarial review**
 
 Before presenting proposals to the user, spawn **foundry:challenger** to adversarially review the adoption table. Challenger surfaces: claimed benefits that are already covered locally, cost/benefit miscalculations, proposals that add complexity without measurable gain.
 
