@@ -166,9 +166,11 @@ process.stdin.on("end", () => {
     }
 
     if (remaining !== null) {
-      // remaining_percentage === 0 after /clear means context was just reset, not genuinely full.
-      // Treat it as 0% used; a truly full context triggers compaction before this point.
-      const pct = remaining === 0 ? 0 : Math.max(0, Math.min(100, 100 - remaining)); // pct = context used (100 - remaining_pct)
+      // remaining_percentage === 0 means EITHER fresh/just-cleared (total_input_tokens≈0) OR genuinely full (total_input_tokens≫0).
+      // Discriminate by token count: <1000 tokens = fresh or /clear → show empty bar (0% used);
+      // ≥1000 tokens = context genuinely full → show full bar (100% used).
+      const totalTokens = context_window?.total_input_tokens || 0;
+      const pct = remaining === 0 && totalTokens < 1000 ? 0 : Math.max(0, Math.min(100, 100 - remaining)); // pct = context used (100 - remaining_pct)
       const filled = Math.round(pct / 10);
       const bar = "█".repeat(filled) + "░".repeat(10 - filled);
       const color = pct < 50 ? 32 : pct < 75 ? 33 : 31; // green / yellow / red

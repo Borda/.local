@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
             break
         chunks.append(chunk)
         total += len(chunk)
-    returncode = proc.wait()
+    returncode = proc.wait(timeout=600)  # 10-min hard cap; pytest_cmd callers set # timeout: 600000 in bash
     output = "".join(chunks)
     if truncated:
         output += f"\n[run-pytest-short: output truncated at {_MAX_OUTPUT_BYTES} bytes]"

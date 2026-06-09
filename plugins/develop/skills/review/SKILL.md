@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope."
-argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--semble]"
+argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--no-codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 effort: high
@@ -47,18 +47,18 @@ fi
 
 If `$OSS_AVAILABLE` is `skip`: proceed to Step 1 normally (path / diff / dir mode).
 
-If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → strip develop-specific flags (`--team`, `--issue`, `--dry-run`, `--local`) from `$ARGUMENTS` before forwarding; call `Skill(skill="oss:review", args="<stripped-args>")`; (b) "No — review local code at a path instead" → ask for path to review.
+If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → strip develop-specific flags (`--team`, `--issue`, `--dry-run`, `--local`) from `$ARGUMENTS` before forwarding; call `Skill(skill="oss:review", args="<stripped-args>")`; (b) "No — review local code" → call `AskUserQuestion` immediately: "Provide the file path or directory to review:" — use the user's response as `$REVIEW_ARGS` and proceed to Step 1.
 
-If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but the oss plugin is not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — provide a local file or directory path to review"; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
+If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but the oss plugin is not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — review local code" → call `AskUserQuestion` again immediately: "Provide the file path or directory to review:" — use the user's response as `$REVIEW_ARGS` and proceed to Step 1; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
 
 </inputs>
 
 <constants>
 
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
-CODEMAP_ENABLED=false   # set to true via --codemap
+CODEMAP_ENABLED=false   # auto-detect: true if codemap installed + index found; --codemap = strict; --no-codemap = always false
 SEMBLE_ENABLED=false    # set to true via --semble
-CODEX_TIMEOUT=120000    # hard cap (ms) on Codex co-review spawn — prevent indefinite hang
+CODEX_TIMEOUT=120000    # advisory cap (ms) on Codex co-review spawn — Agent() calls are synchronous; actual enforcement requires run_in_background=true + health monitoring (see Step 2 note)
 
 </constants>
 
@@ -95,36 +95,40 @@ After Step 1 completes (scope and `TARGET` known), create these tasks **before a
 Strip flags from `$ARGUMENTS` before using as path:
 
 ```bash
-REVIEW_ARGS="$ARGUMENTS"
-[[ "$REVIEW_ARGS" == *"--no-challenge"* ]] && { CHALLENGE_ENABLED=false; REVIEW_ARGS="${REVIEW_ARGS//--no-challenge/}"; }
-[[ "$REVIEW_ARGS" == *"--codemap"* ]]      && { CODEMAP_ENABLED=true;    REVIEW_ARGS="${REVIEW_ARGS//--codemap/}"; }
-[[ "$REVIEW_ARGS" == *"--semble"* ]]       && { SEMBLE_ENABLED=true;     REVIEW_ARGS="${REVIEW_ARGS//--semble/}"; }
-REVIEW_ARGS="${REVIEW_ARGS#"${REVIEW_ARGS%%[![:space:]]*}"}"  # trim leading whitespace
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    "$ARGUMENTS" \
+    --neg-bool no-challenge CHALLENGE_ENABLED true \
+    --bool semble SEMBLE_ENABLED false \
+    --codemap CODEMAP_RAW auto)"
+REVIEW_ARGS="$CLEAN_ARGS"
+echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-review-challenge-enabled
+echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-review-semble-enabled
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
-# Preflight: fail early if requested tool not available
-if [ "$CODEMAP_ENABLED" = "true" ]; then
-    if ! claude plugin list 2>/dev/null | grep -q 'codemap@borda-ai-rig'; then
-        printf "! --codemap requested but codemap plugin not installed.\n  Install: claude plugin install codemap@borda-ai-rig\n"; exit 1
-    fi
-    _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename)  # timeout: 3000
-    if [ ! -f ".cache/scan/${_PROJ}.json" ]; then
-        printf "! --codemap requested but no index found for project '%s'.\n  Build index: /codemap:scan-codebase\n" "$_PROJ"; exit 1
-    fi
+# Codemap auto-detection — normalize CODEMAP_RAW to true/false; strict exits on unavailability  # timeout: 5000
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
+RESOLVE_EXIT=$?
+if [ "$RESOLVE_EXIT" -ne 0 ]; then
+    [ "$CODEMAP_RAW" = "strict" ] && exit 1
+    CODEMAP_ENABLED=false
 fi
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-review-codemap-enabled
 ```
 
-If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. If not, print warning and stop. DMI skill — stop must be enforced via bash exit:
+If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. DMI skill — stop enforced via bash exit when semble not configured:
 
 ```bash
 # timeout: 5000
 SEMBLE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-semble-enabled 2>/dev/null || echo false)
 if [ "$SEMBLE_ENABLED" = "true" ]; then
-    # Semble availability cannot be verified in bash; emit advisory warning only
-    echo "⚠ --semble enabled: if mcp__semble__search is unavailable, semble steps will be skipped silently"
+    # Semble MCP availability cannot be reliably verified in bash — check must be done in LLM context.
+    # If mcp__semble__search is NOT available in your tools when you reach this point:
+    #   echo "! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from 'semble[mcp]' semble"
+    #   exit 1
+    echo "⚠ --semble enabled: verify mcp__semble__search is available in your tools before proceeding; if absent, abort with error above"
 fi
 ```
 
@@ -195,7 +199,8 @@ Extended scan for changed modules:
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 CODEMAP_CONTEXT=""
-if claude plugin list 2>/dev/null | grep -q 'codemap@borda-ai-rig' && [ -f ".cache/scan/${PROJ}.json" ]; then
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-enabled 2>/dev/null || echo false)
+if [ "$CODEMAP_ENABLED" = "true" ]; then
     CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')  # timeout: 3000
     # Note: this derivation assumes src-layout (files under src/). Files outside src/ (e.g.
     # scripts/, tools/) produce module names that may not be valid importable modules.

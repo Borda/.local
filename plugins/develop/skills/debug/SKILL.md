@@ -1,7 +1,7 @@
 ---
 name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file."
-argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--team] [--ci-run <run-id-or-url>]"
+argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap]"
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -12,6 +12,8 @@ disable-model-invocation: true
 Investigation-first debugging. Gather evidence, trace data flow, form confirmed root-cause hypothesis, hand off to fix mode.
 
 NOT for: production incidents without any CI run ID or local traceback (use `/foundry:investigate` (requires foundry plugin) for triage); `.claude/` config issues (use `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead. CI-only failures ARE supported — pass `--ci-run <run-id or URL>` to use GitHub Actions logs as evidence source.
+
+**Issue ID routing note**: bare numbers ≥1000 are treated as issue IDs only when `--issue` flag is present (same rule as `/develop:feature`). Pass `--issue <N>` for high-numbered issues to avoid ambiguity.
 
 </objective>
 
@@ -50,51 +52,55 @@ If `LANG_HINT` not `python`: invoke `AskUserQuestion` — "Non-Python project de
 
 **Checkpoint**: debug = investigation only — no code changes. `.plans/active/debug_<slug>.md` (written in Step 4) serves as implicit session state. No `.developments/` checkpoint needed.
 
-## Debug Mode
-
-> **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
-
 ## Flag parsing
 
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values:
 
 ```bash
 # timeout: 5000
-CHALLENGE_ENABLED=true
-TEAM_MODE=false
-CI_RUN_ID=""
-REPO_NAME=""
-[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
-[[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
-[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
-set -- $ARGUMENTS
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --ci-run=*) CI_RUN_ID="${1#--ci-run=}" ;;
-    --ci-run) shift; CI_RUN_ID="${1:-}" ;;
-  esac
-  shift
-done
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    "$ARGUMENTS" \
+    --neg-bool no-challenge CHALLENGE_ENABLED true \
+    --bool team TEAM_MODE false \
+    --str ci-run CI_RUN_ID '' \
+    --str repo REPO_NAME '')"
 # Persist for cross-block access (bash state lost between Bash() calls)
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
-echo "$TEAM_MODE" > ${TMPDIR:-/tmp}/dev-team-mode
-echo "$CI_RUN_ID" > ${TMPDIR:-/tmp}/dev-ci-run-id
-echo "$REPO_NAME"  > ${TMPDIR:-/tmp}/dev-upstream
+echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
+echo "$CI_RUN_ID"         > ${TMPDIR:-/tmp}/dev-ci-run-id
+echo "$REPO_NAME"         > ${TMPDIR:-/tmp}/dev-upstream
 # URL normalization and log fetching: see §URL Normalization in ci-log-extract.md below
+```
+
+**Codemap flag parsing** — derive raw flag then normalize via `codemap-resolve`:
+
+```bash
+# timeout: 5000
+CODEMAP_RAW=auto
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
+[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
+RESOLVE_EXIT=$?
+if [ "$RESOLVE_EXIT" -ne 0 ]; then
+    [ "$CODEMAP_RAW" = "strict" ] && exit 1
+    CODEMAP_ENABLED=false
+fi
+# Skill-specific namespace — avoids reading stale true from prior feature --codemap run
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-debug-codemap-enabled
 ```
 
 Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled 2>/dev/null || echo true)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id 2>/dev/null || echo "")`.
 
 Read `$_DEV_SHARED/ci-log-extract.md`. Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Mode selection** — debug runs in one of two mutually-exclusive modes; set explicitly before any Step:
 
 ```bash
 # timeout: 5000
 # Strip flags before integer detection so "123 --no-challenge" correctly detects issue mode
-ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+//g' | xargs)
+ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+|--no-codemap|--codemap//g' | xargs)
 if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS_FOR_MODE_DETECT" =~ ^#?[0-9]+$ ]]; then
     DEBUG_MODE="issue"
 else
@@ -114,7 +120,7 @@ Subsequent steps branch by `DEBUG_MODE`:
 3. Compute `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)` and `mkdir -p ".temp/develop/$TS"`. Spawn 2-3 `foundry:sw-engineer` agents (model=opus) in parallel — each investigating one independent root-cause hypothesis. Use the Team Spawn Template from preflight-helpers: replace `[ROLE_PHRASE]` with the symptom, `[FILE_SLUG]` with `debug-hypothesis`, assign each agent a distinct hypothesis number N. Each agent writes full output to `.temp/develop/$TS/debug-hypothesis-N.md` and returns compact JSON `{"status":"done","file":"<path>","findings":N,"confidence":0.N,"summary":"<one-line description of hypothesis>"}`.
 4. **Coordination**: lead broadcasts `{symptom: <description>, traceback: <key lines>}` to teammates before spawning. After all return, facilitate cross-challenge between competing analyses. Convergence rule: select hypothesis with most direct evidence (observable in code or logs); if truly tied, invoke `AskUserQuestion` presenting top 2 competing hypotheses.
 5. **Synthesis trace agent**: spawn one `foundry:sw-engineer` synthesis agent after individual teammate reports — read all teammate findings from `.temp/develop/$TS/debug-hypothesis-*.md`, produce unified cross-cutting trace map (entry point, modules crossed, state mutations, invariant violations across hypotheses). Write to `.temp/develop/$TS/debug-trace-synthesis.md`.
-6. Lead synthesises consensus root cause from synthesis trace + competing hypotheses. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on the winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2.
+6. Lead synthesises consensus root cause from synthesis trace + competing hypotheses. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on the winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2. **Step 3 gate in team mode**: if convergence was reached by synthesis agent (all hypotheses point to same root cause with high confidence), present the converged hypothesis without a new user confirmation prompt — state "Team converged on root cause (no ambiguity)" and proceed directly to Step 4 handoff. Only invoke `AskUserQuestion` at Step 3 if competing hypotheses remain or convergence was declared by default (tied evidence).
 
 Health monitoring (CLAUDE.md §6): for each spawned agent, use a **per-agent sentinel** keyed on the loop counter `$N` (not the literal `N`). Loop over agent indices in actual bash:
 
@@ -131,6 +137,23 @@ Poll each independently every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:
 ## Step 1: Understand the symptom
 
 Collect all signals before forming any hypothesis.
+
+**Structural context (codemap — only if `CODEMAP_ENABLED=true`)**: if index available, run before codebase exploration to pre-load blast-radius context for the failing module:
+
+```bash
+# timeout: 10000
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled 2>/dev/null || echo false)
+if [ "$CODEMAP_ENABLED" = "true" ]; then
+    scan-query central --top 5 2>/dev/null
+    # Derive failing module from symptom/traceback — strip src/, .py suffix, replace / with .
+    # e.g. "src/mypackage/auth.py" → "mypackage.auth"; derive from $ARGUMENTS or traceback
+    # Run after traceback read to get TARGET_MODULE:
+    # scan-query rdeps <TARGET_MODULE> 2>/dev/null
+    # scan-query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
+fi
+```
+
+If codemap results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of the failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
 
 **Issue-number mode first** — if `$ARGUMENTS` is issue number, fetch issue body and extract test path BEFORE invoking pytest:
 
@@ -278,6 +301,14 @@ If confidence low: propose targeted probe (minimal script, added log statement, 
 
 Root cause confirmed. Transition to fix mode with diagnosis as input — fix's Step 1 pre-answered.
 
+```bash
+# Verify /develop:fix is available before writing handoff  # timeout: 5000
+if ! ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/fix/SKILL.md >/dev/null 2>&1 && \
+   [ ! -f "plugins/develop/skills/fix/SKILL.md" ]; then
+    echo "⚠ /develop:fix not found — partial install detected; diagnosis file will be written but handoff cannot be invoked automatically"
+fi
+```
+
 Emit handoff block:
 
 ```text
@@ -289,7 +320,8 @@ Evidence: <key signals that confirmed the hypothesis>
 **Write diagnosis to file** before handing off — enables `/develop:fix` to skip Step 1 analysis via `--diagnosis <path>`:
 
 ```bash
-SLUG=$(echo "$ARGUMENTS" | tr ' ' '\n' | grep -v '^--' | head -4 | tr '\n' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | sed 's/-$//'); [ -z "$SLUG" ] && SLUG="unnamed-$(date +%s)"
+SLUG=$(echo "$ARGUMENTS" | tr ' ' '\n' | grep -v '^--' | grep -v '^[0-9]\+$' | head -4 | tr '\n' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | sed 's/-$//'); [ -z "$SLUG" ] && SLUG="unnamed-$(date +%s)"
+# Note: grep -v '^[0-9]\+$' strips bare numeric tokens (e.g. CI run IDs) from the slug to avoid confusing filenames like debug_12345678.md
 DIAG_FILE=".plans/active/debug_${SLUG}.md"
 mkdir -p .plans/active
 ```

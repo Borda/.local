@@ -34,7 +34,7 @@ Query codemap structural index for import-graph analysis, symbol-level source ex
 
 Use `module::function` format for qname, e.g. `mypackage.auth::validate_token`. Requires v3 index — v2 returns clear upgrade prompt.
 
-NOT for: building or rebuilding index (use `/codemap:scan-codebase`). All query subcommands are **read-only** — any request that modifies the index or project files belongs to `/codemap:scan-codebase` (index writes) or `/codemap:integration` (file injection). Ambiguous prompts like "show me the call graph" that imply read → query-code is correct; "update the call graph" → scan-codebase. If subcommand roster expands significantly, run `/foundry:calibrate routing` (requires `foundry` plugin) to verify no routing collisions.
+NOT for: building or rebuilding index (use `/codemap:scan-codebase`); writing symbol output to project files (Write is in allowed-tools for output routing only — never use it to modify project source). All query subcommands are **read-only** — any request that modifies the index or project files belongs to `/codemap:scan-codebase` (index writes) or `/codemap:integration` (file injection). Ambiguous prompts like "show me the call graph" that imply read → query-code is correct; "update the call graph" → scan-codebase. If subcommand roster expands significantly, run `/foundry:calibrate routing` (requires `foundry` plugin) to verify no routing collisions.
 
 </objective>
 
@@ -60,8 +60,7 @@ NOT for: building or rebuilding index (use `/codemap:scan-codebase`). All query 
 Run `scan-query` via Bash:
 
 ```bash
-# timeout: 20000
-scan-query <QUERY_ARGS>
+scan-query --timeout 20 <QUERY_ARGS>
 ```
 
 Replace `<QUERY_ARGS>`:
@@ -82,47 +81,53 @@ Replace `<QUERY_ARGS>`:
 | most-called functions | `fn-central --top 10` |
 | transitive callers | `fn-blast module::function` |
 
-`scan-query` on PATH, locates index via git root — no setup. Missing index prints clear error.
+`scan-query` on PATH, locates index via git root — no setup. **Missing binary**: if `scan-query` not found on PATH, print `! scan-query not found — install codemap plugin: claude plugin install codemap@borda-ai-rig` and stop. Do not fall through to grep/bash fallback.
 
 Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. Function qnames use `module::function` format (e.g. `mypackage.auth::validate_token`). Index must be current — re-run `/codemap:scan-codebase` if stale warning appears.
 
+`find-symbol` pattern is a **Python regex** applied against the full qualified name — `auth` matches any symbol containing "auth" as a substring; `^Auth.*Handler$` matches only symbols starting with "Auth" and ending with "Handler". For exact match use anchors: `^MyClass.method$`. Bare substring (no anchors) = broad match — prefer anchored patterns for precision.
+
 ## Budget and stop rules
 
-**Query budget**: max 3 calls per task. Stop after 3 even if not exhaustive — report what found. Exception: explicit exhaustive multi-target analysis requests — state exhaustive intent before first call, budget extends to 6. Declaring exhaustive intent after the first call has already been made is invalid — treat that run as non-exhaustive (budget=3).
+**Query budget**:
+- Default: max **3** calls per task. Stop after 3 even if not exhaustive — report what found.
+- Exhaustive mode: declare exhaustive intent before first call → budget extends to **6** calls. Declaring after first call is invalid — treat as non-exhaustive (budget=3).
+- `path` or `fn-blast` with `--exhaustive` flag: budget extends to **6** calls (same as exhaustive mode). These subcommands traverse the graph internally; `--exhaustive` is the explicit signal to allow deeper exploration.
 
-**Exhaustive path/fn-blast traversal** — `path` and `fn-blast` queries traverse the graph internally and may require deeper exploration than 3 surface calls allow. For these subcommands, increase budget to **10 calls** when `--exhaustive` flag is present in `$ARGUMENTS`. Without `--exhaustive`, path/fn-blast still capped at 6 (exhaustive-mode default).
-
-**exhaustive: true — STOP ALL TOOL CALLS:** When `rdeps` or `deps` result contains `"exhaustive": true`, list complete and authoritative for **unfiltered** index. Note: if `--exclude-tests` used, exhaustive reflects unfiltered coverage — filtered results may omit callers; state caveat if relevant. Write answer immediately. Do NOT call codemap again. Do NOT run grep, bash, or Glob passes to verify or extend. No exceptions.
+**exhaustive: true — STOP ALL TOOL CALLS:** When `rdeps`, `deps`, or `fn-rdeps` result has `result["index"]["exhaustive"] == true`, list is complete and authoritative for the **unfiltered** index. Check the `index.exhaustive` field specifically (not any top-level field). Note: if `--exclude-tests` used, exhaustive reflects unfiltered coverage — filtered results may omit callers; state caveat if relevant. Write answer immediately. Do NOT call codemap again. Do NOT run grep, bash, or Glob passes to verify or extend. No exceptions. In the response, explicitly note: "Result is complete and authoritative for the unfiltered index." If `--exclude-tests` was used, add: "Note: filtered results may omit some callers — unfiltered list is complete."
 
 **Non-exhaustive result — convergence rule**: after budget calls still non-exhaustive, stop and report what found. Do NOT switch to grep/bash — index covers what it covers.
 
+**`--exclude-tests` + exhaustive**: when `--exclude-tests` is used and `index.exhaustive == true`, the exhaustive flag reflects unfiltered coverage (the index was fully searched). The STOP rule still applies — do NOT make additional calls. The caveat is informational: filtered results may omit callers that are in test files. State the caveat in the response but do not make additional non-filtered calls to compensate.
+
 ## Step 2: Parse JSON output and format
 
-`scan-query` always emits JSON object — parse before rendering. Stale-index detection has two channels: (1) stderr: if contains `[stale]` or `⚠ codemap index stale` — surface warning; (2) JSON field `index.stale` (boolean) — check `result.index.stale`; if `true`, warn user to re-run `/codemap:scan-codebase`. Check `index.degraded` in result; if `> 0`, caveat that some modules unparsable.
+`scan-query` always emits JSON object — parse before rendering. Stale-index detection has two channels: (1) stderr: if contains `[stale]` or `⚠ codemap index stale` — surface warning; (2) JSON field `index.stale` (boolean) — check `result.index.stale`; if `true`, warn user to re-run `/codemap:scan-codebase`. Check `index.degraded` in result; if `> 0`, caveat that some modules unparsable — for `path` queries, note that intermediate nodes may be missing and the path result may be incomplete.
 
 | Command | JSON key to use | Render as |
 | --- | --- | --- |
 | `rdeps` / `deps` | `imported_by` / `direct_imports` | list modules, one per line |
-| `central` / `coupled` | `central` / `coupled` array | list name + count with brief note |
+| `central` | `central` array | `name — N importers (high blast radius)`, one per line |
+| `coupled` | `coupled` array | `name — N imports (high coupling)`, one per line |
 | `path` | `path` array (or `null`) | chain `A → B → C → D`; if `null` → "No import path found." (`--exclude-tests` not supported on `path`) |
-| `symbol` | `symbols[].source` | fenced code block; caption = module + line range |
+| `symbol` | `symbols[].source` | fenced code block; caption = module + line range; if `source` is empty string → render `[source not available — re-run /codemap:scan-codebase]` instead of empty block |
 | `symbols` | `symbols` array | `type name (lines start–end)`, one per line |
 | `find-symbol` | `matches` array | `module:qualified_name (type)`, one per line |
 | `list` | `modules` array | `module (path)`, one per line |
 | `fn-deps` / `fn-rdeps` | `calls` / `called_by` | `module::function (resolution)`, one per line |
 | `fn-central` | `fn_central` array | `count module::function`, one per line |
-| `fn-blast` | `blast_radius` array | `depth module::function` (if depth key present), sorted by depth then name |
+| `fn-blast` | `blast_radius` array | `depth module::function` (if depth key present), sorted by depth then name; if `depth` key absent (older index format) → render `module::function` without depth prefix, note "depth unavailable — re-run /codemap:scan-codebase to upgrade index" |
 | stale check | `index.stale` (boolean) | if true → warn "index stale — run /codemap:scan-codebase" |
 
 `{"error": "..."}`: surface error, suggest re-running `/codemap:scan-codebase`.
 
-**Partial JSON handling**: if output is truncated (does not parse as complete JSON object — e.g., ends mid-value or missing closing `}`), log `⚠ partial JSON response — results may be incomplete` and attempt to parse only complete top-level fields present before truncation. Surface whatever was recovered; do not silently discard partial results.
+**Partial JSON handling**: if output is truncated (does not parse as complete JSON object — e.g., ends mid-value or missing closing `}`), log `⚠ partial JSON response — results may be incomplete`. Attempt recovery using `jq` with `--stream` mode if available; otherwise fall back to treating output as plain text and extracting visible module/function names by line matching (look for quoted strings resembling module paths or qnames). Surface whatever was recovered; do not silently discard partial results. If recovery produces zero items, report `⚠ could not recover partial results — re-run the query` and stop.
 
-**Output routing** — if result count ≥ 5 items (applies to: `rdeps`, `deps`, `central`, `coupled`, `fn-rdeps`, `fn-central`, `list` on medium+ projects): write full rendered output to `.temp/output-codemap-query-<branch>-<YYYY-MM-DD>.md` via Write tool, then print terminal summary (YAML header + path + top-5 items). Skip file write for ≤ 4 items — terminal only.
+**Output routing** — if result count ≥ 5 items: write full rendered output to `.temp/output-codemap-query-<branch>-<YYYY-MM-DD>.md` via Write tool, then print terminal summary (YAML header + path + top-5 items). Skip file write for ≤ 4 items — terminal only. Applies to: `rdeps`, `deps`, `central`, `coupled`, `fn-rdeps`, `fn-central`, `fn-deps`, `fn-blast`, `list`. For `fn-blast` on widely-called functions (>10 entries), always route to file — print file path and top-5 entries only to terminal to avoid burying the follow-up gate.
 
 **Flags available on multiple commands** (`--exclude-tests`, `--limit`, `--index`):
-- `--exclude-tests` — drop test modules from results; applies to: `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central`; **not supported on `path`** (see `path` row in table above)
-- `--limit N` (default 20, use `0` for all) — caps results on `symbol` and `find-symbol`; pass `--limit 0` before counting or ranking to avoid silent truncation
+- `--exclude-tests` — drop test modules from results; applies to: `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central`; **not supported on `path`** — if user passes `path ... --exclude-tests`, print `! --exclude-tests is not supported for path queries — flag ignored` and proceed without it
+- `--limit N` (default 20, use `0` for all) — caps results on `symbol`, `find-symbol`, `rdeps`, `deps`, `fn-rdeps`, and other list-type commands; **always pass `--limit 0` when counting or ranking** to avoid silent truncation at 20 items; output-routing count check and exhaustive assertions should be made only after `--limit 0` or confirmed item count is below 20
 - `--index <path>` — explicit index file path (bypasses auto-discovery; useful for monorepos or comparing two indexes)
 
 </workflow>

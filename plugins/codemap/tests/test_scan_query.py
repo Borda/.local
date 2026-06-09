@@ -154,3 +154,27 @@ def test_path_same_module(project, scan_query):
     assert result.returncode == 0
     data = json.loads(result.stdout)
     assert "path" in data
+
+
+class TestRdepsNewFields:
+    """rdeps output includes dynamic_imported_by and config_refs fields."""
+
+    def test_rdeps_has_dynamic_imported_by_key(self, query):
+        """rdeps result always carries dynamic_imported_by key, even when empty."""
+        data = query("rdeps", "gamma")
+        assert "dynamic_imported_by" in data
+
+    def test_rdeps_has_config_refs_key(self, query):
+        """rdeps result always carries config_refs key, even when empty."""
+        data = query("rdeps", "gamma")
+        assert "config_refs" in data
+
+    def test_rdeps_dynamic_imported_by_is_list(self, query):
+        """dynamic_imported_by is a list (may be empty for modules with no dynamic callers)."""
+        data = query("rdeps", "gamma")
+        assert isinstance(data["dynamic_imported_by"], list)
+
+    def test_rdeps_config_refs_is_list(self, query):
+        """config_refs is a list (may be empty when no config files reference the module)."""
+        data = query("rdeps", "gamma")
+        assert isinstance(data["config_refs"], list)

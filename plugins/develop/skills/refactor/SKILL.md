@@ -30,7 +30,7 @@ Quality stack (Branch Safety Guard, Codex Pre-pass, Progressive Review) requires
 
 <workflow>
 
-<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
+<!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at develop/skills/_shared/agent-resolution.md (installed path) -->
 
 ## Agent Resolution
 
@@ -45,6 +45,7 @@ Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
+<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
 ## Anti-Rationalizations
 
 | Temptation | Reality |
@@ -59,7 +60,7 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
-**Optional `--plan <path>`**: if `$ARGUMENTS` ends with `--plan <path>`, read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to inform Step 1 scope analysis. Skip redundant codebase exploration for already-classified files. Store plan path as `PLAN_FILE`.
+**Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to inform Step 1 scope analysis. Skip redundant codebase exploration for already-classified files. Store plan path as `PLAN_FILE`.
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
 
@@ -71,33 +72,30 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 
 ```bash
 # timeout: 5000
-CHALLENGE_ENABLED=true
-SEMBLE_ENABLED=false
-TEAM_MODE=false
-ACCEPT_NO_PLAN=false
-REPO_NAME=""
-[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
-[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
-[[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
-[[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
-[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    "$ARGUMENTS" \
+    --neg-bool no-challenge CHALLENGE_ENABLED true \
+    --bool semble SEMBLE_ENABLED false \
+    --bool team TEAM_MODE false \
+    --bool accept-no-plan ACCEPT_NO_PLAN false \
+    --str repo REPO_NAME '')"
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
 echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
 echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
 echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
-echo "$REPO_NAME"          > ${TMPDIR:-/tmp}/dev-upstream
+echo "$REPO_NAME"         > ${TMPDIR:-/tmp}/dev-upstream
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
-**Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap-resolve`:
+**Codemap flag parsing** — derive raw flag into a real shell variable, then normalize via `codemap-resolve`. Uses skill-specific temp file (`dev-refactor-codemap-raw`) to avoid reading stale values from prior feature/debug runs:
 
 ```bash
 # timeout: 5000
 CODEMAP_RAW=auto
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
-echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-codemap-raw
+echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -106,7 +104,7 @@ echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-codemap-raw
 
 ```bash
 # timeout: 5000
-CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-refactor-codemap-raw 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -118,7 +116,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     echo "⚠ codemap unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
     CODEMAP_ENABLED=false
 fi
-echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled
 ```
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
@@ -211,7 +209,7 @@ $PYTEST_CMD --co -q 2>&1 | grep -i "<module_name>" || echo "No tests found for <
 [ "${SKIP_COV}" -eq 0 ] && { $PYTEST_CMD --cov=<target_module> -q --cov-report=term-missing || true; }
 ```
 
-If `SKIP_COV=1`: skip coverage classification entirely — do not classify any function as UNCOVERED; note "coverage tool absent — coverage audit skipped" in the audit output and proceed to Step 3 with unknown coverage state.
+If `SKIP_COV=1`: skip coverage classification entirely — do not classify any function as UNCOVERED; note "coverage tool absent — coverage audit skipped" in the audit output. **Step 3 qa-specialist spawn behavior when `SKIP_COV=1`**: spawn qa-specialist with all public functions listed as `coverage: unknown` and instruction to write characterization tests for every public function (cannot prioritize uncovered functions when coverage unknown — test all to ensure safety net). Proceed to Step 3 with unknown coverage state.
 
 Classify each public function/method (only when `SKIP_COV=0`):
 
@@ -251,7 +249,7 @@ echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir
 
 **Note on `model=` assignments**: `model=opus`/`model=sonnet` in the spawn prompts below are advisory hints — effective only when the actual foundry agents are installed. When falling back to `general-purpose` (foundry absent), the prompt-prepend `model=` does not reliably override the agent-resolution fallback tier; effective model is set by `agent-resolution.md`'s fallback table, not the spawn prompt. This is intentional — sonnet is sufficient for the qa-specialist characterization-test task and opus for sw-engineer refactor implementation; on fallback, expect tier degradation noted in Final Report.
 
-Serialize teammates — sw-engineer applies refactor first, then qa-specialist writes characterization tests against the refactored source. Running in parallel produces a race: qa-specialist may write tests against the pre-refactor implementation, which then fail spuriously once sw-engineer completes.
+Serialize teammates — sw-engineer applies refactor first, then qa-specialist writes characterization tests against the **post-refactor** source. Running in parallel produces a race: qa-specialist would write tests against the pre-refactor implementation and they would fail once sw-engineer completes. **qa-specialist spawn prompt must include**: "Read `$RUN_DIR_LITERAL/refactor-sw-engineer.md` for the refactored source before writing any tests — do NOT test pre-refactor source files."
 
 **Step T1 — Spawn foundry:sw-engineer (model=opus) and wait for completion**. Prompt: "You are a foundry:sw-engineer teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: apply the refactoring steps (Steps 4–5: change with safety net, review). Scope constraint: only edit source files (not under `tests/`). Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-sw-engineer.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
 
@@ -340,8 +338,9 @@ INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle 2>/dev/null || echo 0)
 START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time 2>/dev/null || echo $(date +%s))
 INNER_CYCLE=$((INNER_CYCLE+1))
 echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle
-if [ "$INNER_CYCLE" -gt 5 ]; then
-    echo "⚠ MAX_INNER_CYCLES (5) reached — stopping refactor loop; report what succeeded, what broke, what remains"
+MAX_INNER_CYCLES=5  # must match <constants> block — bash cannot reference constants block directly
+if [ "$INNER_CYCLE" -gt $MAX_INNER_CYCLES ]; then
+    echo "⚠ MAX_INNER_CYCLES ($MAX_INNER_CYCLES) reached — stopping refactor loop; report what succeeded, what broke, what remains"
 fi
 ELAPSED=$(( $(date +%s) - START_TIME ))
 if [ "$ELAPSED" -ge 1800 ]; then

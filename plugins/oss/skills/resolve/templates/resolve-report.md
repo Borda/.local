@@ -11,7 +11,15 @@
 
 ### Action Items
 
-<!-- Use same action item schema as Step 3b (columns: item, type, status, commit, notes); statuses now final (✓ resolved / ⊘ skipped / ⊘ no action) -->
+<!-- One row per SELECTED item. Columns: # | Type | Change | Status | Resolution | Commit -->
+<!-- Status: ✓ implemented / ⊘ skipped / ✗ rejected by challenge -->
+<!-- Resolution: implemented / self-resolved / skipped / challenge-rejected -->
+<!-- Change: code / test / docs / config / ci / style / refactor -->
+<!-- Commit: short SHA or "—" when COMMIT_MODE=stage -->
+
+| # | Type | Change | Status | Resolution | Commit |
+| --- | --- | --- | --- | --- | --- |
+| 1 | [gh][req] | code | ✓ | implemented | `abc1234` |
 
 ### Lint + QA
 <linting-expert summary: N fixes applied | or "no violations"> / <foundry:qa-specialist summary: N blocking fixed, N warnings | or "clean">

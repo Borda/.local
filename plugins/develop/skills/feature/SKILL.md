@@ -50,6 +50,18 @@ fi
 
 If `NON_PY` is non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
 
+**Monorepo language-target gate**: if `NON_PY` is empty (Python markers found) but non-Python markers also exist, confirm target language:
+
+```bash
+# timeout: 5000
+MULTI_LANG=false
+[ -f "pyproject.toml" ] && [ -f "package.json" ] && MULTI_LANG=true
+[ -f "pyproject.toml" ] && [ -f "go.mod" ] && MULTI_LANG=true
+[ -f "pyproject.toml" ] && [ -f "Cargo.toml" ] && MULTI_LANG=true
+```
+
+If `MULTI_LANG=true`: invoke `AskUserQuestion` — "Monorepo detected (Python + non-Python markers coexist). This skill targets Python/pytest. Is the feature you're building Python-only?" · (a) **Yes — Python only** — proceed · (b) **No — involves non-Python code too** — abort; use a language-native toolchain for the non-Python portion. On (b): stop.
+
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
@@ -62,25 +74,20 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 
 ```bash
 # timeout: 5000
-CHALLENGE_ENABLED=true
-CODEMAP_ENABLED=auto
-SEMBLE_ENABLED=false
-TEAM_MODE=false
-ACCEPT_NO_PLAN=false
-REPO_NAME=""
-[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
-[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_ENABLED=off
-[[ " $ARGUMENTS " == *" --codemap "* ]] && CODEMAP_ENABLED=strict
-[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
-[[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
-[[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
-[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    "$ARGUMENTS" \
+    --neg-bool no-challenge CHALLENGE_ENABLED true \
+    --bool semble SEMBLE_ENABLED false \
+    --bool team TEAM_MODE false \
+    --bool accept-no-plan ACCEPT_NO_PLAN false \
+    --codemap CODEMAP_RAW auto \
+    --str repo REPO_NAME '')"
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
-echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
+echo "$CODEMAP_RAW"       > ${TMPDIR:-/tmp}/dev-codemap-raw
 echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
 echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
 echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
-echo "$REPO_NAME"          > ${TMPDIR:-/tmp}/dev-upstream
+echo "$REPO_NAME"         > ${TMPDIR:-/tmp}/dev-upstream
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
@@ -107,13 +114,14 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 2. Check local divergences: run `git log --oneline -10` and grep for symbols mentioned in issue; identify where local codebase differs structurally from what issue assumes
 3. Produce adaptation plan: upstream intent → local implementation using local conventions, existing abstractions, and current code structure — never assume upstream approach ports directly
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--no-codemap\`, \`--codemap\`, \`--semble\`, \`--accept-no-plan\`, \`--issue\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from the block above), scan `$ARGUMENTS` for remaining `--<token>` tokens that are not in the supported list. Do NOT include `--issue` in the "unknown" set — it is consumed in the second parse block above. Supported: `--plan`, `--team`, `--no-challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
-**Codemap auto-detection** — run after flag parsing; overwrites the temp file with the normalized (`true`/`false`) value so downstream blocks reading from disk see post-normalization state, not the raw `auto`/`strict`/`off`:
+**Codemap auto-detection** — run after flag parsing; reads raw value, normalizes to `true`/`false`, writes normalized result so downstream blocks see post-normalization state:
 
 ```bash
 # timeout: 5000
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_ENABLED") || exit 1
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW") || exit 1
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
 
@@ -144,7 +152,7 @@ TEAM_DIR="${_run[1]}"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts
 ```
 
-**IMPORTANT**: in spawn prompts below, replace `$TS` and `$TEAM_DIR` with the actual computed values from the bash block above — literal resolved strings, not shell variable references.
+**IMPORTANT**: in spawn prompts below, substitute `$_SPAWN_TS` and `$_SPAWN_TEAM_DIR` with the actual computed values from the bash block above — literal resolved strings, not shell variable references. Bare `$TS`/`$TEAM_DIR` inside a quoted Agent prompt string will NOT be expanded; the spawned agent receives the literal dollar-sign text, causing path mismatches and health-monitoring false timeouts.
 
 ```bash
 # Resolve variables to literals for spawn prompt embedding (matches fix/refactor pattern)  # timeout: 5000
@@ -152,7 +160,7 @@ _SPAWN_TS="$TS"
 _SPAWN_TEAM_DIR="$TEAM_DIR"
 ```
 
-Use `$_SPAWN_TS` (or the literal resolved value) inside spawn prompt strings, not bare `$TS`.
+Use `$_SPAWN_TS` (resolved to literal before prompt construction) inside spawn prompt strings — never bare `$TS`.
 
 Spawn teammates in **two serialized waves** — qa-specialist and doc-scribe cannot meaningfully audit/document an implementation that does not yet exist; running them in parallel with sw-engineer produces tests written against guessed APIs and docs of placeholder structure:
 
@@ -176,6 +184,21 @@ for agent in sw-engineer qa-specialist doc-scribe; do
     expected=".temp/develop/$TS/feature-${agent}-$TS.md"
     [ -f "$expected" ] && echo "✓ $agent wrote $expected" || echo "⚠ $agent missing expected output $expected"
 done
+```
+
+**Wave 1 output gate** — verify sw-engineer wrote expected file before launching Wave 2:
+
+```bash
+# Re-hydrate TS from persisted temp file (bash state lost between Bash() calls)  # timeout: 5000
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || echo "")
+[ -n "$TS" ] || { echo "! dev-feature-team-ts missing — cannot verify Wave 1 output; aborting team mode"; exit 1; }
+WAVE1_FILE=".temp/develop/$TS/feature-sw-engineer-$TS.md"
+if [ ! -f "$WAVE1_FILE" ]; then
+    echo "! Wave 1 output missing: $WAVE1_FILE — sw-engineer did not write expected file"
+    echo "! Cannot proceed to Wave 2 without implementation. Aborting."
+    exit 1
+fi
+echo "✓ Wave 1 output verified: $WAVE1_FILE"
 ```
 
 **Coordination order**: QA challenges SW API design — lead routes challenge back to SW before implementation starts. SW shares implementation details with QA so tests stay accurate. Lead synthesizes outputs in Step 5 onward as normal.
@@ -234,7 +257,7 @@ Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply usin
 
 Present analysis summary before proceeding.
 
-## Optional Step: Source Verification (when using external APIs or version-sensitive libraries)
+## Step 1b: Source Verification (optional — when using external APIs or version-sensitive libraries)
 
 Skip if feature calls no external library APIs — no new framework features, no third-party SDK methods, no stdlib functions changed in recent Python version.
 
@@ -323,10 +346,15 @@ elif [ "$COLLECT_EXIT" -ne 0 ]; then
     echo "⚠ Cannot collect doctests — check module for import errors (collect exit $COLLECT_EXIT)"
     GATE_EXIT=1  # collection failed — skip full run, treat as gate failure
 fi
+echo "${GATE_EXIT:-0}" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
+echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit
 ```
 
 ```bash
 # Step 2: run full gate only when collection succeeded (COLLECT_EXIT=0)  # timeout: 600000
+# Re-hydrate from persisted temp files (bash state lost between Bash() calls)
+COLLECT_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-collect-exit 2>/dev/null || echo 1)
+GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-gate-exit 2>/dev/null || echo 1)
 # Doctest form:
 if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
     $PYTEST_CMD --doctest-modules <module>.py -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
@@ -335,10 +363,12 @@ if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
     else
         echo "✓ GATE OK: demo failed as expected (exit $GATE_EXIT)"
     fi
+    echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
 fi
 
 # Script form (use instead of doctest when applicable):
 # python examples/demo_<feature>.py 2>&1 | tail -5; GATE_EXIT=$?
+# echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
 ```
 
 If `COLLECT_EXIT -ne 0`: stop — collection failed, gate skipped (GATE_EXIT=1). If `GATE_EXIT -eq 0`: invoke `AskUserQuestion` — do not silently proceed past a gate failure with prose alone: "Demo passed against current code — feature may already exist. How to proceed?" · (a) **Stop** — revisit Step 1 scope (recommended; feature likely already implemented) · (b) **Continue anyway** — proceed with TDD loop (gate explicitly overridden). On Stop: exit; do not advance to Step 3.

@@ -13,7 +13,7 @@ esac
 
 # auto or strict: probe binary + index
 if command -v scan-query >/dev/null 2>&1; then
-  PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo 'default')")
+  PROJ=$(basename "$(timeout 5 git rev-parse --show-toplevel 2>/dev/null || echo 'default')")
   # Strip any chars outside safe project-name set before path interpolation.
   PROJ=$(echo "$PROJ" | tr -cd 'a-zA-Z0-9._-')
   [ -z "$PROJ" ] && PROJ="default"

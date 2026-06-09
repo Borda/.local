@@ -12,7 +12,7 @@ disable-model-invocation: true
 Reproduce-first bug resolution. Capture bug in failing regression test, apply minimal fix, verify via quality stack and review loop.
 
 NOT for:
-- CI-only failures with no local traceback — use `/develop:debug --ci-run <run-id>` first
+- CI-only failures with no local traceback — use `/develop:debug --ci-run <run-id>` first (requires `codex` plugin for full CI log analysis)
 - production incidents without any CI run or traceback (use `/foundry:investigate` (requires foundry plugin))
 - `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
@@ -83,21 +83,18 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 
 ```bash
 # timeout: 5000
-CHALLENGE_ENABLED=true
-ACCEPT_NO_PLAN=false
-SEMBLE_ENABLED=false
-TEAM_MODE=false
-REPO_NAME=""
-[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
-[[ " $ARGUMENTS " == *" --accept-no-plan "* ]] && ACCEPT_NO_PLAN=true
-[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
-[[ " $ARGUMENTS " == *" --team "* ]] && TEAM_MODE=true
-[[ "$ARGUMENTS" =~ --repo[[:space:]]+([^[:space:]]+) ]] && REPO_NAME="${BASH_REMATCH[1]}"
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    "$ARGUMENTS" \
+    --neg-bool no-challenge CHALLENGE_ENABLED true \
+    --bool accept-no-plan ACCEPT_NO_PLAN false \
+    --bool semble SEMBLE_ENABLED false \
+    --bool team TEAM_MODE false \
+    --str repo REPO_NAME '')"
 echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
 echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
 echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
 echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
-echo "$REPO_NAME"          > ${TMPDIR:-/tmp}/dev-upstream
+echo "$REPO_NAME"         > ${TMPDIR:-/tmp}/dev-upstream
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
@@ -109,7 +106,13 @@ Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode
 CODEMAP_RAW=auto
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW") || exit 1
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW" 2>&1)
+RESOLVE_EXIT=$?
+if [ "$RESOLVE_EXIT" -ne 0 ]; then
+    echo "$CODEMAP_ENABLED" >&2  # surface stderr (e.g. strict-mode abort message) to caller
+    [ "$CODEMAP_RAW" = "strict" ] && exit 1
+    CODEMAP_ENABLED=false
+fi
 echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 ```
 
@@ -147,7 +150,7 @@ trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT
 
 Spawn 2 teammates in parallel using Agent() tool:
 
-**IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in the prompt strings:
+**IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in the prompt strings. `<TS_LITERAL>`, `<_DEV_SHARED_LITERAL>`, and `<ARGUMENTS_LITERAL>` in the prompt text below are placeholders — substitute the actual computed values before constructing the Agent call; the spawned agent cannot expand shell variables from its parent context:
 
 ```bash
 # Resolve variables to literals for spawn prompt embedding  # timeout: 5000
@@ -214,7 +217,7 @@ Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 **Cannot-reproduce gate**: if sw-engineer was unable to identify root cause, traceback, or any failing test, invoke `AskUserQuestion` — do NOT proceed to Step 2 with no reproduction path:
 - question: "Cannot confirm root cause from available information. How to proceed?"
 - (a) Use `/develop:debug` — investigate interactively first
-- (b) Provide additional context (traceback, logs, minimal reproduction)
+- (b) Provide additional context — user pastes traceback, logs, or minimal reproduction; after user replies, re-run Step 1 analysis with the new context in the same session (DMI: cannot wait for next invocation; apply additional context inline)
 - (c) Use `/foundry:investigate` (requires foundry plugin) — for production incidents with no CI trace
 Stop until user provides option (b) context or selects a redirect.
 
@@ -319,7 +322,15 @@ GATE_P2=$?
 [ $GATE_P2 -eq 0 ] && echo "GATE FAIL (Path 2): test passed — bug not captured" || echo "GATE OK (Path 2): failed as expected (exit $GATE_P2)"
 ```
 
-If either gate exit is 0: stop. Bug not reproduced on that path. Do not apply fix.
+If either gate exit is 0: stop. Bug not reproduced on that path. Do not apply fix. DMI skill — stop enforced via bash gate check:
+
+```bash
+# timeout: 3000
+if [ "${GATE_P1:-0}" -eq 0 ] || [ "${GATE_P2:-0}" -eq 0 ]; then
+    echo "! GATE FAIL: one or more reproduction tests passed — bug not captured; cannot apply fix against unverified bug"
+    exit 1
+fi
+```
 
 **Outcome B gate** (weak test fixed path): after fixing existing test, run it to confirm it now fails:
 
@@ -451,12 +462,6 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 **Refinements**: N passes.
 ```
 
-## Team Assignments
-
-<!-- Team branching logic is inline above at ## Team Mode Branch — executed immediately when TEAM_MODE=true, before Step 1. -->
-
-**When to use**: root cause unclear after initial triage, OR bug spans 3+ modules AND user accepted "Proceed anyway" at scope gate. Set via `--team` flag.
-
-See `## Team Mode Branch` above for spawn instructions, coordination protocol, and file-handoff pattern.
+<!-- Team branching logic is inline above at ## Team Mode Branch — executed immediately when TEAM_MODE=true, before Step 1. When to use: root cause unclear after initial triage, OR bug spans 3+ modules AND user accepted "Proceed anyway" at scope gate. Set via --team flag. -->
 
 </workflow>

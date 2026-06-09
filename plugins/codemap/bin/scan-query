@@ -42,6 +42,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 from collections import deque
@@ -101,10 +102,13 @@ def _git_root() -> Path | None:
     """Return the git repository root, or None if not inside a git repo."""
     try:
         root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"], text=True, stderr=subprocess.DEVNULL
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=_GIT_TIMEOUT_S,
         ).strip()
         return Path(root)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 
@@ -138,6 +142,9 @@ def find_index() -> Path:
     return root / ".cache" / "scan" / f"{root.name}.json"
 
 
+_MAX_INDEX_SIZE_BYTES = 512 * 1024 * 1024  # 512 MB — guard against bloated/malicious index causing OOM
+
+
 def load_index(path: Path) -> dict:
     """Load and return the JSON index from path; exit with a clear error if missing.
 
@@ -146,6 +153,13 @@ def load_index(path: Path) -> dict:
     """
     if not path.exists():
         _exit_error(f"Index not found at {path}. Run /codemap:scan-codebase first.")
+    index_size = path.stat().st_size
+    if index_size > _MAX_INDEX_SIZE_BYTES:
+        _exit_error(
+            f"Index file too large ({index_size // (1024 * 1024)} MB > "
+            f"{_MAX_INDEX_SIZE_BYTES // (1024 * 1024)} MB limit). "
+            "Re-run /codemap:scan-codebase to rebuild."
+        )
     with path.open() as f:
         return json.load(f)
 
@@ -357,8 +371,13 @@ def _require_call_graph(index: dict) -> None:
 def _current_git_sha() -> str | None:
     """Return current HEAD SHA, or None if git is unavailable."""
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=_GIT_TIMEOUT_S,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 
@@ -467,16 +486,34 @@ def cmd_deps(index: dict, module: str) -> None:
 def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False) -> None:
     """Print all modules that import a given module as JSON.
 
+    Includes static importers (``imported_by``), dynamic importers
+    (``dynamic_imported_by`` — from ``importlib.import_module`` / ``__import__`` string literals),
+    and config-file references (``config_refs`` — from ``pyproject.toml``, ``setup.cfg``, etc.).
+
     Args:
         index: parsed codemap index dict.
         module: dotted module name whose reverse dependencies are queried.
-        exclude_tests: if True, exclude test modules from results.
+        exclude_tests: if True, exclude test modules from static results.
     """
     modules_list = index.get("modules", [])
     if exclude_tests:
         modules_list = [m for m in modules_list if not m.get("is_test")]
     result = sorted(m["name"] for m in modules_list if module in m.get("direct_imports", []))
-    print(json.dumps({"module": module, "imported_by": result, "index": _coverage(index)}))
+    module_map = build_module_map(index)
+    entry = module_map.get(module, {})
+    dynamic = entry.get("dynamic_imported_by", [])
+    config = entry.get("config_refs", [])
+    print(
+        json.dumps(
+            {
+                "module": module,
+                "imported_by": result,
+                "dynamic_imported_by": dynamic,
+                "config_refs": config,
+                "index": _coverage(index),
+            }
+        )
+    )
 
 
 def cmd_central(index: dict, top: int, exclude_tests: bool = False) -> None:
@@ -952,8 +989,24 @@ def main() -> None:
     p_fn_blast.add_argument("qname", help="Full qname: module::symbol")
 
     parser.add_argument("--index", metavar="PATH", help="Explicit path to the index JSON (auto-discovered if omitted).")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Hard timeout in seconds; 0 = no limit (default). Uses SIGALRM — Unix only.",
+    )
 
     args = parser.parse_args()
+
+    if args.timeout > 0 and hasattr(signal, "SIGALRM"):
+
+        def _timeout_handler(signum: int, frame: object) -> None:  # noqa: ARG001
+            print(f"scan-query: timed out after {args.timeout}s", file=sys.stderr)
+            sys.exit(2)
+
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(args.timeout)
 
     if args.index:
         # Path traversal guard — restrict --index to within CWD or git root.
@@ -962,10 +1015,13 @@ def main() -> None:
         try:
             git_root = Path(
                 subprocess.check_output(
-                    ["git", "rev-parse", "--show-toplevel"], text=True, stderr=subprocess.DEVNULL
+                    ["git", "rev-parse", "--show-toplevel"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                    timeout=_GIT_TIMEOUT_S,
                 ).strip()
             ).resolve()
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             git_root = cwd
         if not (resolved.is_relative_to(cwd) or resolved.is_relative_to(git_root)):
             print(f"scan-query: --index path outside project root: {resolved}", file=sys.stderr)

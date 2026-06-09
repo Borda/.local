@@ -26,7 +26,8 @@ class _FakePopen:
         self.returncode = returncode
         self.stdout = io.StringIO(stdout)
 
-    def wait(self) -> int:
+    def wait(self, timeout: float | None = None) -> int:
+        """Return stored returncode; accepts optional timeout kwarg to match real Popen."""
         return self.returncode
 
 

@@ -1,7 +1,7 @@
 ---
 name: plan
 description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/."
-argument-hint: "<goal> [--no-challenge] [--codemap] [--semble] [--max-depth <N>]"
+argument-hint: "<goal> [--no-challenge] [--codemap] [--no-codemap] [--semble] [--max-depth <N>]"
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -50,28 +50,41 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 PLAN_NS="${TMPDIR:-/tmp}/dev-plan-$$"
 mkdir -p "$PLAN_NS"
 echo "$PLAN_NS" > "${TMPDIR:-/tmp}/dev-plan-ns-current"  # downstream blocks recover namespace
-CHALLENGE_ENABLED=true
-CODEMAP_ENABLED=false
-SEMBLE_ENABLED=false
-[[ " $ARGUMENTS " == *" --no-challenge "* ]] && CHALLENGE_ENABLED=false
-[[ " $ARGUMENTS " == *" --codemap "* ]] && CODEMAP_ENABLED=true
-[[ " $ARGUMENTS " == *" --semble "* ]] && SEMBLE_ENABLED=true
-# POSIX-portable max-depth extraction (grep -P unavailable on BSD/macOS grep)
-MAX_DEPTH=$(echo "$ARGUMENTS" | sed -n 's/.*--max-depth[[:space:]]\([0-9][0-9]*\).*/\1/p')
-[ -z "$MAX_DEPTH" ] && MAX_DEPTH=3
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    "$ARGUMENTS" \
+    --neg-bool no-challenge CHALLENGE_ENABLED true \
+    --bool semble SEMBLE_ENABLED false \
+    --codemap CODEMAP_RAW auto \
+    --int max-depth MAX_DEPTH 3)"
 echo "$CHALLENGE_ENABLED" > "$PLAN_NS/challenge-enabled"
-echo "$CODEMAP_ENABLED"   > "$PLAN_NS/codemap-enabled"
+echo "$CODEMAP_RAW"       > "$PLAN_NS/codemap-raw"
 echo "$SEMBLE_ENABLED"    > "$PLAN_NS/semble-enabled"
 echo "$MAX_DEPTH"         > "$PLAN_NS/max-depth"
 ```
 
 Downstream blocks recover namespace then read back, e.g. `PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null); CODEMAP_ENABLED=$(cat "$PLAN_NS/codemap-enabled" 2>/dev/null || echo false)`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--max-depth\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
-**Preflight** — if `CODEMAP_ENABLED=true`:
+**Codemap auto-detection** — normalize `CODEMAP_RAW` to `true`/`false`; strict mode hard-fails when codemap unavailable:
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.
+```bash
+# timeout: 5000
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+[ -n "$PLAN_NS" ] || { echo "! PLAN_NS empty — dev-plan-ns-current not found; re-run /develop:plan"; exit 1; }
+CODEMAP_RAW=$(cat "$PLAN_NS/codemap-raw" 2>/dev/null || echo auto)
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
+RESOLVE_EXIT=$?
+if [ "$RESOLVE_EXIT" -ne 0 ]; then
+    [ "$CODEMAP_RAW" = "strict" ] && exit 1
+    CODEMAP_ENABLED=false
+fi
+echo "$CODEMAP_ENABLED" > "$PLAN_NS/codemap-enabled"
+```
+
+**Preflight** — if `SEMBLE_ENABLED=true`:
+
+Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight. Codemap validation handled by auto-detect block above.
 
 ## Step 1: Classify and scope
 
@@ -83,7 +96,25 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
 
 - Classify task as `feature`, `fix`, `refactor`, or `debug`
   - `debug`: root cause unknown — symptoms present but cause unclear, investigation needed before a fix can be scoped; when classified `debug`, recommend running `/develop:debug` first, then re-run `/develop:plan` once root cause identified to produce a fix plan
-  - **WARNING**: debug classification triggers `/develop:debug` which can re-invoke `/develop:plan` — caller tracks dispatch depth to prevent infinite loop via a shared checkpoint file (not a CLI flag — `/develop:debug` does not accept `--max-depth`). Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). Persistence: write current depth to `${TMPDIR:-/tmp}/dev-plan-depth-checkpoint` (single shared file) before invoking `/develop:debug`; downstream `/develop:plan` re-invocation reads same file and decrements. At limit (depth 0): stop, report current plan state, invoke `AskUserQuestion` — (a) Accept plan as-is · (b) Re-scope with reduced depth requirement.
+  - **WARNING**: debug classification triggers `/develop:debug` which can re-invoke `/develop:plan` — caller tracks dispatch depth to prevent infinite loop via a shared checkpoint file (not a CLI flag — `/develop:debug` does not accept `--max-depth`). Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). Before invoking `/develop:debug`, execute the depth-checkpoint bash block below:
+
+```bash
+# Depth-checkpoint anti-loop guard  # timeout: 3000
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+MAX_DEPTH=$(cat "$PLAN_NS/max-depth" 2>/dev/null || echo 3)
+DEPTH_FILE="${TMPDIR:-/tmp}/dev-plan-depth-checkpoint"
+CURRENT_DEPTH=$(cat "$DEPTH_FILE" 2>/dev/null || echo "$MAX_DEPTH")
+if [ "$CURRENT_DEPTH" -le 0 ]; then
+    echo "! depth limit ($MAX_DEPTH) reached — stopping plan→debug→plan loop"
+    # Do NOT invoke /develop:debug; proceed to AskUserQuestion below
+else
+    NEXT_DEPTH=$(( CURRENT_DEPTH - 1 ))
+    echo "$NEXT_DEPTH" > "$DEPTH_FILE"
+    echo "→ invoking /develop:debug (depth remaining: $NEXT_DEPTH)"
+fi
+```
+
+At depth 0: stop, report current plan state, invoke `AskUserQuestion` — (a) Accept plan as-is · (b) Re-scope with reduced depth requirement.
 - Identify affected files and modules (search codebase — no guessing)
 - Assess complexity: small (1-3 files, self-contained), medium (4-8 files or 1-2 modules), large (cross-module, API changes, or 3+ modules)
 - Return **two separate** structured fields (not merged into a flat risks list):
@@ -93,13 +124,19 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
 
 Agent returns findings inline (no file handoff — output short).
 
-**Breaking change gate**: gate triggers only when `breaking_changes` is non-empty — items in `risks` do NOT trigger this gate. Stop before writing plan. Call `AskUserQuestion` per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body does NOT count — `AskUserQuestion` mandatory per `communication.md`. If user selects No/Abort/Decline: stop immediately — do not proceed to Step 2 or subsequent steps.
+**Breaking change gate**: gate triggers only when `breaking_changes` is non-empty — items in `risks` do NOT trigger this gate. Stop before writing plan. Call `AskUserQuestion` per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Options: (a) **Accept breaking change** — proceed with plan as-is · (b) **Revise to non-breaking** — return to Step 1 with constraint to avoid this breaking change · (c) **Abort** — stop immediately. Proceed only on explicit user selection of (a). Prose question in response body does NOT count — `AskUserQuestion` mandatory per `communication.md`. If user selects (b) or (c): stop immediately — do not proceed to Step 2 or subsequent steps.
 
 Breaking change criteria — a change is breaking when it affects **public API** (exported from `__init__.py`, documented in README, or stable interface used by external consumers) and any of these apply: removed public API (function, class, method, or module), changed function signatures (parameter names, types, order, or defaults), changed config key names or schema, changed output format (return type, serialization structure, CLI output shape). Internal/private signature changes (functions prefixed `_`, classes not exported) do NOT count as breaking — list under `risks` instead.
 
 ## Step 2: Structured plan
 
 Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-separated (e.g. `"improve caching in data loader"` -> `plan_improve-caching-data-loader.md`). If `.plans/active/<slug>` already exists, append counter suffix (`-2`, `-3`, etc.) before writing — never silently overwrite. Store full path as `PLAN_FILE` — used in Steps 3 and Final output.
+
+```bash
+# Persist PLAN_FILE for cross-block access (bash state lost between Bash() calls)  # timeout: 3000
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+echo "$PLAN_FILE" > "$PLAN_NS/plan-file"
+```
 
 ```markdown
 # Plan: <goal>
@@ -203,7 +240,9 @@ Do not escalate: items resolvable from codebase, items that are risks (not block
 **Skip if `CHALLENGE_ENABLED=false`.**
 
 ```bash
-# Validate plan file exists before spawning challenger
+# Re-hydrate PLAN_FILE from persisted temp file (bash state lost between Bash() calls)  # timeout: 3000
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+PLAN_FILE=$(cat "$PLAN_NS/plan-file" 2>/dev/null)
 [ -f "$PLAN_FILE" ] || { echo "plan: PLAN_FILE not found: $PLAN_FILE" >&2; exit 1; }
 ```
 

@@ -370,6 +370,8 @@ ______________________________________________________________________
 | `--repo <owner/repo>`  | Route issue fetch to an upstream repository. Use when working in a fork and the issue is on the original repo (e.g. `--repo owner/my-project`).                                                                                                     |
 | `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating a distinct root-cause hypothesis independently. Use when root cause is unclear after initial analysis, or failure spans 3+ modules                                                    |
 | `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures with no local repro. |
+| `--codemap`            | Strict codemap — fail if index missing (auto-enabled when installed)                                                                                                                                                                                |
+| `--no-codemap`         | Disable codemap even if available                                                                                                                                                                                                                   |
 
 **Workflow**:
 
@@ -539,13 +541,27 @@ ______________________________________________________________________
 
 ### Dependencies by capability
 
-| Dependency       | Required    | Unlocks                                                                                                                                                                                                                          |
-| ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry` plugin | recommended | `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, and others; quality stack shared file. Without foundry, all agents fall back to `general-purpose` with role-description prompts. |
-| `oss` plugin     | optional    | `/oss:review` used in the progressive review loop (quality stack); `oss:review` checklist used by `develop:review` Agent 1. Absent — review loop step skipped gracefully.                                                        |
-| `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                 |
-| `codemap`        | optional    | `scan-query` for blast-radius check in quality stack; structural context for refactor, plan, and review. Silently skipped if absent or index missing.                                                                            |
-| `gh` CLI         | optional    | Used in `fix`, `debug`, and `feature` when argument is a GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to an upstream repo (fork workflow).                                             |
+| Dependency       | Required    | Unlocks                                                                                                                                                                                                                                                                |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry` plugin | recommended | `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, and others; quality stack shared file. Without foundry, all agents fall back to `general-purpose` with role-description prompts.                                       |
+| `oss` plugin     | optional    | `/oss:review` used in the progressive review loop (quality stack); `oss:review` checklist used by `develop:review` Agent 1. Absent — review loop step skipped gracefully.                                                                                              |
+| `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                                                       |
+| `codemap`        | optional    | `scan-query` for blast-radius, import graph, and call-graph context. **Auto-enabled** in all skills when installed and index found; silently skipped if absent or index missing. Install: `claude plugin install codemap@borda-ai-rig`, then `/codemap:scan-codebase`. |
+| `gh` CLI         | optional    | Used in `fix`, `debug`, and `feature` when argument is a GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to an upstream repo (fork workflow).                                                                                   |
+
+### Codemap behavior
+
+Codemap is auto-enabled in all skills when the plugin is installed and the index exists. No flag needed for the default experience.
+
+| State                              | Behavior                                |
+| ---------------------------------- | --------------------------------------- |
+| Installed + index found + no flag  | Auto-enabled                            |
+| Not installed + no flag            | Silent skip                             |
+| Not installed + `--codemap`        | AskUser: install codemap? (strict mode) |
+| Installed + no index + `--codemap` | Fail with: build index first            |
+| Any state + `--no-codemap`         | Always disabled                         |
+
+Use `--codemap` as a **strict assertion** — useful in CI or when you need to guarantee structural context is always applied. Use `--no-codemap` to skip codemap for a specific run (e.g., when working on a non-Python submodule).
 
 ### Python tooling
 

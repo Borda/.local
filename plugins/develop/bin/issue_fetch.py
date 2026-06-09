@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     if repo:
         cmd += ["--repo", repo]
     # stdout/stderr inherited from caller — caller sees combined output as in bash `2>&1`.
-    result = subprocess.run(cmd, check=False)  # noqa: S603 — resolved binary + fixed argv, no shell.
+    result = subprocess.run(cmd, check=False, timeout=30)  # noqa: S603 — resolved binary + fixed argv, no shell.
     return result.returncode
 
 

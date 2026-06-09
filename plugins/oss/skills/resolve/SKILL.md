@@ -427,28 +427,30 @@ Report merged: <N> findings from /review · <M> deduplicated against GitHub comm
 
 Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero pending → set `SELECTED_ITEMS` = all pending IDs, skip to Step 3e.
 
-Sort: `[req]` first, then `[suggest]`. Constraint: max 3 items/question, max 4 questions/call (3 item-group + 1 bulk-action). Note: `AskUserQuestion` always appends "Type something" outside the option list — 3 items + Type something = 4 visible per page; 4 items + Type something = 5 visible (cluttered); keep ≤3.
+Sort all pending items by severity descending (most impactful first). Constraint: max 3 items/question, max 4 questions/call — Q1–Q3 = item checkboxes, Q4 = bulk action. Note: `AskUserQuestion` always appends "Type something" outside the option list — 3 items + Type something = 4 visible per page; keep ≤3 items per group.
 
-**Q4 = bulk action only — hard rule**: Q4 is always reserved for "Or choose a bulk action:" (single-select: "Apply selected" / "Apply all [req]" / "Apply all" / "Skip all"). Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
-
-**≤9 pending items**: group by proximity not by type — fill Q1→Q3 in order (≤3 items each). If items span 4+ type categories, distribute so all groups stay ≤3; don't reserve a whole group for a single type. Each group: one `multiSelect: true` question, header "Selecting items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)` (implement action only; GitHub has no Resolve button for PR discussion comments). After item groups, always invoke Q4: single-select "Or choose a bulk action:" — "Apply selected" / "Apply req (only)" / "Apply req + suggest" / "Skip all".
-
-**10–19 pending items**: two calls — print `→ N pending items — selecting in 2 calls ([req] first, then [suggest])` before call 1. Call 1: `[req]` groups + Q4 bulk-action ("Apply selected" / "Apply req (only)" / "Apply req + suggest" / "Skip all [req]"). "Apply req + suggest" in Call 1 → `SELECTED_ITEMS` = all pending IDs, skip Call 2. Otherwise: Call 2: `[suggest]` groups + Q4 bulk-action ("Apply selected" / "Apply all [suggest]" / "Skip all [suggest]"); merge selections from both calls.
-
-**≥20 pending items — context-budget mode**: skip per-item multiSelect; print compressed table (type · id · summary ≤40 chars · file) then single bulk-action call only:
+**Q4 = bulk action only — hard rule**: Q4 is always the last question, single-select, fixed options — never varies by item count or path:
 
 ```text
-AskUserQuestion: "N pending items (X [req], Y [suggest]). Choose bulk action:"
-Options: (a) Apply req (X items) · (b) Apply req + suggest (N items) · (c) Skip all
+"Or choose a bulk action:"
+  (a) +all [req]           — checked items UNION all [req] items
+  (b) +all [suggest]       — checked items UNION all [suggest] items
+  (c) Apply ALL [req + suggest] — all pending items (ignore checkboxes)
+  (d) Skip all             — nothing; terminate after push
 ```
 
-If per-item control needed: advise re-run after reducing source (e.g. use `report` mode instead of `pr + report`, or `--no-challenge` to cut upstream findings).
+Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
+
+**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "Apply ALL [req + suggest]" in Call 1 → skip Call 2.
+
+**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only.
 
 Resolve `SELECTED_ITEMS`:
-- "Skip all" or "Skip all [req]" / "Skip all [suggest]" or no selections → `[]` → skip Step 8, jump to Step 9 (checkout + conflict resolution still run)
-- "Apply req (only)" → all `[req]` IDs
-- "Apply req + suggest" → all pending IDs (if from Call 1 of 10–19 path, skip Call 2 entirely)
-- "Apply selected" → checked IDs from item questions; for two-call flow, merge checked IDs from both calls
+- Q4 = "Skip all" → `[]` → skip Step 8, jump to Step 9 (checkout + conflict resolution still run)
+- Q4 = "+all [req]" → checked IDs ∪ all `[req]` IDs
+- Q4 = "+all [suggest]" → checked IDs ∪ all `[suggest]` IDs
+- Q4 = "Apply ALL [req + suggest]" → all pending IDs; skip Call 2 when in two-call flow
+- Q4 = "Type something" / no bulk selected → checked IDs from Q1–Q3 only; for two-call flow, merge both calls
 
 **Commit mode** — after resolving `SELECTED_ITEMS` (non-empty), invoke `AskUserQuestion` as a separate call:
 
@@ -476,11 +478,11 @@ Mark Step 2 task `completed`:
 TaskUpdate(task_id=<step2_task_id>, status="completed")
 ```
 
-Create tasks **only for `SELECTED_ITEMS`** — not all pending items; avoids context bloat when 20+ action items exist but only a subset is actioned:
+For each item in `SELECTED_ITEMS`, call `TaskCreate` **once per item** — one task per action item; scoped to selected items only, not all pending (avoids bloat when 20+ items exist but only a subset is selected):
 
 ```text
 TaskCreate(
-  subject="<type> <summary> — PR #<number>",   # <type> = full string with brackets
+  subject="<type> <summary> — PR #<number>",   # <type> = full string with brackets, e.g. "[gh][req] rename param — PR #42"
   description="Author: @<author> | Change: <change> | Severity: <severity> | File: <file:line or '—'> | <full_comment_text>",
   activeForm="Implementing: <summary>"          # <summary> truncated to 80 chars
 )
@@ -555,7 +557,7 @@ if [ "$_RESOLVE_IMPL_AGENT" = "codex:codex-rescue" ] && [ "$(echo "$SELECTED_ITE
 fi
 ```
 
-If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] items only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
+If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
 
 <!-- Step 8 defined in action-item-dispatch.md — see that file for phase/sub-step detail -->
 
@@ -622,7 +624,13 @@ gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messa
 
 Mark remaining open tasks `completed`. Read report template from `$_OSS_RESOLVE/templates/resolve-report.md` for section structure.
 
-In the action item disposition table, include `Loc` column (values: `inline` / `discussion` / `report`). For `location: discussion` rows, append `· thread (no GH resolve)` to the Status cell — these items have no GitHub Resolve button; they will remain "unresolved" in GitHub UI regardless of whether the action was implemented.
+**Action Items table** — one row per selected item, columns: `#` | `Type` | `Change` | `Status` | `Resolution` | `Commit`:
+
+- `Status`: ✓ implemented · ⊘ skipped · ✗ challenge-rejected
+- `Resolution`: `implemented` · `self-resolved` (challenger provided alternative) · `skipped` · `challenge-rejected`
+- `Change`: action type — `code` / `test` / `docs` / `config` / `ci` / `style` / `refactor`
+- `Commit`: short SHA (7 chars); `—` when `COMMIT_MODE=stage`
+- For `location: discussion` rows append `· thread (no GH resolve)` to Status — no GitHub Resolve button exists for PR main-thread comments
 
 Include `### Challenge Log` section in report — one row per item: id · evidence verdict · suggestion verdict · resolution (as-suggested / self-resolved / rejected). Omit section when `--no-challenge`.
 

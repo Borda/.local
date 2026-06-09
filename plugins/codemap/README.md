@@ -22,6 +22,7 @@ ______________________________________________________________________
   - [integration](#integration)
   - [scan-codebase](#scan-codebase)
   - [query-code](#query-code)
+  - [rename-refs](#rename-refs)
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -401,6 +402,75 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 
 # Query a specific index file (monorepo with multiple projects)
 /codemap:query-code central --index /path/to/.cache/scan/subproject.json
+```
+
+</details>
+
+______________________________________________________________________
+
+<a id="rename-refs"></a>
+
+<details>
+
+<summary>
+
+### rename-refs — atomic symbol and module rename
+
+</summary>
+
+### rename-refs
+
+**Trigger**: `/codemap:rename-refs symbol <old_qname> <new_qname>` or `/codemap:rename-refs module <old_module_path> <new_module_path>`
+
+**Auto-invokes when:** user asks to rename a function, class, method, or module; phrases: "rename X to Y", "rename function", "rename class", "rename module", "move module X to Y", "update all references to X". Requires codemap index (run `/codemap:scan-codebase` first).
+
+Atomically renames a Python symbol or module using the structural index. Finds and updates:
+
+- Definition site (the `def` / `class` line)
+- `__all__` re-exports in `__init__.py` files
+- Import call sites across all callers (indexed via fn-rdeps)
+- Sphinx docstring cross-refs (`:func:`, `:class:`, `:meth:`, `:mod:`, `:attr:`) in `.py` and `.rst` files
+
+Presents a blast-radius report before applying any edits. Shows which files and call sites will change, warns if the index is non-exhaustive, and asks for confirmation before touching anything.
+
+#### Subcommands
+
+| Subcommand                                   | What it renames                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `symbol <old_qname> <new_qname>`             | Function, class, or method. qname = bare name, qualified, or full `module::symbol` |
+| `module <old_module_path> <new_module_path>` | Dotted module path. Renames file (`git mv`) + all import lines                     |
+
+#### Flags
+
+| Flag                     | Effect                                                                     |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `--dry-run`              | Print all sites that would change; no edits applied                        |
+| `--deprecate`            | Symbol only: keep old name as `@deprecated` alias pointing to new name     |
+| `--since <ver>`          | Version when the symbol was deprecated (passed to deprecation decorator)   |
+| `--removed-in <ver>`     | Version when the old name will be removed                                  |
+| `--remove-if-no-callers` | Symbol only: hard-delete definition when index exhaustive and zero callers |
+
+#### Hard limits
+
+Two cases are outside static analysis and cannot be renamed automatically:
+
+1. `getattr(obj, "old_name")` **dynamic dispatch** — the string has no static binding to the symbol; the skill emits a `grep` advisory so you can check manually.
+2. **Cross-repo consumers** — external packages are out of scope by definition. Use `--deprecate` combined with a semver bump and CHANGELOG entry for public API renames.
+
+#### Examples
+
+```text
+# Rename a function and update all call sites
+/codemap:rename-refs symbol mypackage.auth::validate_token mypackage.auth::verify_token
+
+# Preview what would change without editing
+/codemap:rename-refs symbol MyClass MyNewClass --dry-run
+
+# Rename with backward-compatible deprecated alias
+/codemap:rename-refs symbol mypackage.utils::compute_score mypackage.utils::score --deprecate --since 2.1 --removed-in 3.0
+
+# Rename a module (renames file + all import lines)
+/codemap:rename-refs module mypackage.old_utils mypackage.utils
 ```
 
 </details>

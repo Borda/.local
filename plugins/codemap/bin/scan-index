@@ -24,6 +24,7 @@ import json
 import multiprocessing
 import os
 import re
+import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -110,6 +111,7 @@ def _iter_python_files(root: Path) -> list[Path]:
 
 
 _GIT_TIMEOUT_S = 10  # max seconds to wait for any git subprocess (H78: hung process guard)
+_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file — guard against auto-generated files causing OOM (S3)
 
 
 def find_root() -> Path:
@@ -682,6 +684,105 @@ def _count_loc_and_main_guard(source: str) -> tuple[int, bool]:
     return loc, has_guard
 
 
+def extract_dynamic_imports(tree: ast.Module) -> list[dict]:
+    """Extract string-literal dynamic import paths from AST.
+
+    Covers ``importlib.import_module("X")``, ``pkgutil.import_module("X")``,
+    and ``__import__("X")``. Only string-constant first arguments are captured —
+    non-literal expressions (e.g. ``importlib.import_module(name)``) are skipped.
+
+    Args:
+        tree: parsed AST of a Python module.
+
+    Returns:
+        List of ``{"literal": str, "line": int}`` dicts, one per match.
+
+    Examples:
+        >>> import ast
+        >>> src = 'import importlib\\nimportlib.import_module("my.pkg")'
+        >>> extract_dynamic_imports(ast.parse(src))
+        [{'literal': 'my.pkg', 'line': 2}]
+        >>> extract_dynamic_imports(ast.parse("__import__('os.path')"))
+        [{'literal': 'os.path', 'line': 1}]
+        >>> extract_dynamic_imports(ast.parse("importlib.import_module(name)"))
+        []
+    """
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        arg0 = node.args[0] if node.args else None
+        if arg0 is None or not (isinstance(arg0, ast.Constant) and isinstance(arg0.value, str)):
+            continue
+        # importlib.import_module("X") or pkgutil.import_module("X")
+        if isinstance(func, ast.Attribute) and func.attr == "import_module":
+            results.append({"literal": arg0.value, "line": node.lineno})
+        # __import__("X")
+        elif isinstance(func, ast.Name) and func.id == "__import__":
+            results.append({"literal": arg0.value, "line": node.lineno})
+    return results
+
+
+_CONFIG_SCAN_PATTERNS = ("pyproject.toml", "setup.cfg", "setup.py", "*.yml", "*.yaml")
+# Match dotted names with ≥1 dot — simple module path heuristic (no single-word false positives).
+_DOTTED_NAME_RE = re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)(?:\.[a-zA-Z_][a-zA-Z0-9_]+)+\b")
+
+
+def scan_config_refs(root: Path, module_names: set[str]) -> dict[str, list[dict]]:
+    """Scan config files for string references to known module paths.
+
+    Targets: ``pyproject.toml``, ``setup.cfg``, ``setup.py``, ``*.yml``, ``*.yaml``
+    at the project root (non-recursive). Uses line-by-line regex scan — no TOML/YAML
+    parser required; produces minor false-positive risk mitigated by exact-match against
+    the known module names set.
+
+    Args:
+        root: project root path.
+        module_names: set of known dotted module names from the index.
+
+    Returns:
+        Dict mapping module name → list of ``{"file": str, "line": int, "context": str}``.
+    """
+    refs: dict[str, list[dict]] = {}
+    config_files: list[Path] = []
+    for pattern in _CONFIG_SCAN_PATTERNS:
+        config_files.extend(root.glob(pattern))
+    for cfg_path in sorted(config_files):
+        rel = str(cfg_path.relative_to(root))
+        try:
+            lines = cfg_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for lineno, line in enumerate(lines, start=1):
+            for m in _DOTTED_NAME_RE.finditer(line):
+                candidate = m.group()
+                if candidate in module_names:
+                    refs.setdefault(candidate, []).append(
+                        {
+                            "file": rel,
+                            "line": lineno,
+                            "context": line.strip()[:120],
+                        }
+                    )
+    return refs
+
+
+def _apply_config_refs(root: Path, modules: list[dict]) -> None:
+    """Attach config_refs from scan_config_refs to matching module entries in-place.
+
+    Args:
+        root: project root used for config file discovery.
+        modules: module entry list (mutated in-place).
+    """
+    module_names = {m["name"] for m in modules if m.get("status") == "ok"}
+    refs = scan_config_refs(root, module_names)
+    for m in modules:
+        name = m.get("name", "")
+        if name in refs:
+            m["config_refs"] = refs[name]
+
+
 def _parse_file_star(args: tuple[Path, Path, Path]) -> dict:
     """Unpack args tuple and delegate to _parse_file (required for ProcessPoolExecutor.map)."""
     return _parse_file(*args)
@@ -701,6 +802,19 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
     except ValueError:
         name = path_to_module(filepath, root)
 
+    file_size = filepath.stat().st_size
+    if file_size > _MAX_FILE_SIZE_BYTES:
+        print(
+            f"[codemap] ⚠ skipping {rel_path}: file too large ({file_size // (1024 * 1024)} MB > "
+            f"{_MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB limit)",
+            file=sys.stderr,
+        )
+        return {
+            "name": name,
+            "path": str(rel_path),
+            "status": "degraded",
+            "error": f"file too large ({file_size} bytes) — skipped to prevent OOM",
+        }
     try:
         source = filepath.read_text(encoding="utf-8", errors="replace")
         tree = ast.parse(source, filename=str(filepath))
@@ -711,8 +825,9 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             imports = extract_imports(tree)
             nm, mm, star_imports = {}, {}, []
         symbols = extract_symbols(tree, name, nm, mm, star_imports or None)
+        dynamic_imports = extract_dynamic_imports(tree)
         _loc, _is_entry = _count_loc_and_main_guard(source)
-        return {
+        entry: dict = {
             "name": name,
             "path": str(rel_path),
             "loc": _loc,
@@ -724,6 +839,9 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             "has_star_imports": bool(star_imports),
             "status": "ok",
         }
+        if dynamic_imports:
+            entry["dynamic_imports"] = dynamic_imports
+        return entry
     except SyntaxError as exc:
         return {"name": name, "path": str(rel_path), "status": "degraded", "reason": f"SyntaxError: {exc}"}
     except Exception as exc:
@@ -752,6 +870,32 @@ def _recompute_metrics(modules: list[dict]) -> None:
             m["rdep_count"] = rdep_counts.get(m["name"], 0)
             m["rcall_count"] = rcall_counts.get(m["name"], 0)
             m["dep_count"] = len(m.get("direct_imports", []))
+    # Phase 2: dynamic_imported_by — cross-reference dynamic_imports literals against known modules.
+    all_module_names = {m["name"] for m in modules if m.get("status") == "ok"}
+    dynamic_rdeps: dict[str, list[dict]] = {}
+    for m in modules:
+        caller_name = m.get("name", "")
+        caller_path = m.get("path", "")
+        for entry in m.get("dynamic_imports", []):
+            literal: str = entry["literal"]
+            # Match exact module name; avoid matching sub-paths of a shorter module name twice.
+            if literal in all_module_names:
+                dynamic_rdeps.setdefault(literal, []).append(
+                    {"importer": caller_name, "path": caller_path, "line": entry["line"], "literal": literal}
+                )
+            else:
+                # literal may be a sub-path like "pkg.sub.mod" — attribute to the longest prefix match.
+                matched = next(
+                    (n for n in sorted(all_module_names, key=len, reverse=True) if literal.startswith(n + ".")), None
+                )
+                if matched:
+                    dynamic_rdeps.setdefault(matched, []).append(
+                        {"importer": caller_name, "path": caller_path, "line": entry["line"], "literal": literal}
+                    )
+    for m in modules:
+        name = m.get("name", "")
+        if name in dynamic_rdeps:
+            m["dynamic_imported_by"] = dynamic_rdeps[name]
 
 
 def scan(root: Path) -> dict:
@@ -784,6 +928,8 @@ def scan(root: Path) -> dict:
     modules = deduped
 
     _recompute_metrics(modules)
+    # Phase 3: config-file refs — scan pyproject.toml, setup.cfg, *.yml, *.yaml.
+    _apply_config_refs(root, modules)
 
     return {
         "scan_version": SCAN_VERSION,
@@ -832,6 +978,7 @@ def incremental_scan(root: Path, old_index: dict) -> dict:
 
     modules = list(modules_by_path.values())
     _recompute_metrics(modules)
+    _apply_config_refs(root, modules)
 
     return {
         **old_index,
@@ -876,7 +1023,23 @@ def main() -> None:
         action="store_true",
         help="Re-parse only files changed since last scan (requires an existing v3 index).",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Hard timeout in seconds; 0 = no limit (default). Uses SIGALRM — Unix only.",
+    )
     args = parser.parse_args()
+
+    if args.timeout > 0 and hasattr(signal, "SIGALRM"):
+
+        def _timeout_handler(signum: int, frame: object) -> None:  # noqa: ARG001
+            print(f"scan-index: timed out after {args.timeout}s", file=sys.stderr)
+            sys.exit(2)
+
+        signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(args.timeout)
 
     try:
         root = args.root or find_root()

@@ -1,8 +1,8 @@
 {
-  "autoCompactThreshold": 0.7,
   "autoUpdatesChannel": "stable",
   "effortLevel": "high",
   "env": {
+    "CLAUDE_CODE_AUTOCOMPACT_PCT_OVERRIDE": "80",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "fastModePerSessionOptIn": false,

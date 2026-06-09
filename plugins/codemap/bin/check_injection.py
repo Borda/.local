@@ -239,15 +239,28 @@ def build_audit_lines(cache: Path) -> list[str]:
     return lines
 
 
-def run_audit(plugin_root_arg: str | None) -> AuditResult:
+def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = None) -> AuditResult:
     """Run the audit and return its result (lines + exit code).
 
     Args:
         plugin_root_arg: caller-supplied plugin root (may be empty).
+        cache_root_override: when provided, scan this directory directly as the cache root
+            instead of deriving it from ``plugin_root_arg``. Useful for non-standard
+            cache locations (e.g. a custom plugin registry). Path traversal guard: resolved
+            path must be an existing directory.
 
     Returns:
         ``AuditResult`` capturing exit code and output lines.
     """
+    if cache_root_override:
+        cache = Path(cache_root_override).expanduser().resolve()
+        if not cache.is_dir():
+            return AuditResult(
+                exit_code=1,
+                lines=(f"✗ --cache-root path not found or not a directory: {cache}",),
+            )
+        return AuditResult(exit_code=0, lines=tuple(build_audit_lines(cache)))
+
     plugin_root = resolve_plugin_root(plugin_root_arg)
     if plugin_root is None:
         return AuditResult(
@@ -279,9 +292,20 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Optional path to the codemap plugin install root (auto-discovers if empty).",
     )
+    parser.add_argument(
+        "--cache-root",
+        default="",
+        metavar="PATH",
+        help=(
+            "Explicit path to the plugin cache root directory to scan (e.g. "
+            "~/.claude/plugins/cache/borda-ai-rig). "
+            "Bypasses plugin-root auto-discovery and the default borda-ai-rig scope; "
+            "useful for non-standard cache locations or auditing a custom plugin registry."
+        ),
+    )
     args = parser.parse_args(argv)
 
-    result = run_audit(args.plugin_root or None)
+    result = run_audit(args.plugin_root or None, cache_root_override=args.cache_root or None)
     sys.stdout.write("\n".join(result.lines) + "\n")
     return result.exit_code
 

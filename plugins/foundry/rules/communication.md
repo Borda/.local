@@ -31,6 +31,16 @@ Rules:
 
 Pattern: close `>` before table/code block, reopen after if prose continues. Never emit `> |` sequence.
 
+```markdown
+> Prose before table.
+
+| Col A | Col B |
+|-------|-------|
+| row   | row   |
+
+> Prose after table (optional).
+```
+
 ## Reply Visibility
 
 Bold anchor + blockquote body creates a clear visual boundary from surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.

@@ -97,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
     result = subprocess.run(  # noqa: S603 — allowlisted cmd + resolved binary, no shell.
         [*parts, "--tb=short", target, "-v"],
         check=False,
+        timeout=120,  # 2-min cap; pytest_gate is the inner-loop fast-iteration variant
     )
     return result.returncode
 
