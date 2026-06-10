@@ -343,15 +343,17 @@ These work with any v2 or v3 index.
 
 #### Symbol-level queries
 
-Retrieve function or class source by name instead of reading the full file — dramatically fewer tokens than reading whole files.
+Retrieve function or class source by name instead of reading the full file — dramatically fewer tokens than reading whole files — 91–95% reduction for targeted method lookups on large files (benchmark: pytorch-lightning `Trainer.fit`, 1 790 tokens with imports vs 19 824 tokens full file).
 
-| Subcommand              | What it answers                                             |
-| ----------------------- | ----------------------------------------------------------- |
-| `symbol <name>`         | Source of a function, class, or method by name              |
-| `symbols <module>`      | All symbols in a module with type and line range            |
-| `find-symbol <pattern>` | Regex search across all symbol qualified_names in the index |
+| Subcommand                       | What it answers                                                                                                            |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `symbol <name> [--with-imports]` | Source of a function, class, or method by name; add `--with-imports` to include module-level import block alongside source |
+| `symbols <module>`               | All symbols in a module with type and line range                                                                           |
+| `find-symbol <pattern>`          | Regex search across all symbol qualified_names in the index                                                                |
 
 `symbol` accepts bare name (`authenticate`), qualified name (`MyClass.authenticate`), or a case-insensitive substring fallback. `find-symbol` and `symbol` cap results at 20 by default — pass `--limit 0` to retrieve all matches before counting or ranking.
+
+Every `symbol` result includes `"stale": bool` and `"stale_reason": string | null`. When `stale: true`, the index line range no longer matches the current file — fall back to `Read(<path>)` instead. Common reasons: `"file deleted"`, `"line range past EOF"`, `"symbol name not in slice header"` (function moved or renamed since last scan). The `path` field is always valid even when `stale: true`.
 
 #### Function-level call graph queries (v3 index)
 
@@ -370,11 +372,13 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 
 #### Common flags
 
-| Flag              | Applies to                                                                       | Effect                                          |
-| ----------------- | -------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `--exclude-tests` | `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central` | Drop test modules from results                  |
-| `--limit N`       | `symbol`, `find-symbol`                                                          | Max results (default 20). Use `0` for unlimited |
-| `--index <path>`  | all commands                                                                     | Explicit index file; bypasses auto-discovery    |
+| Flag              | Applies to                                                                       | Effect                                                               |
+| ----------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `--exclude-tests` | `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central` | Drop test modules from results                                       |
+| `--limit N`       | `symbol`, `find-symbol`                                                          | Max results (default 20). Use `0` for unlimited                      |
+| `--with-imports`  | `symbol`                                                                         | Include module-level import block alongside each symbol's source     |
+| `--root <path>`   | all commands                                                                     | Override project root for file path resolution (see scan_root below) |
+| `--index <path>`  | all commands                                                                     | Explicit index file; bypasses auto-discovery                         |
 
 #### Common patterns
 
@@ -390,6 +394,9 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 
 # Read just the validate_token function without loading the whole file
 /codemap:query-code symbol validate_token
+
+# Read a function and its module-level imports (for type-context analysis)
+/codemap:query-code symbol --with-imports validate_token
 
 # Find all functions whose name starts with "validate" (unlimited results)
 /codemap:query-code find-symbol "^validate" --limit 0
@@ -502,18 +509,19 @@ The index lives at `.cache/scan/<project>.json` where `<project>` is the basenam
 
 Key fields per module entry:
 
-| Field            | Meaning                                                                                               |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| `name`           | Fully qualified module name (e.g. `mypackage.auth`)                                                   |
-| `path`           | Path to the `.py` file relative to project root                                                       |
-| `rdep_count`     | Number of project modules that import this one (blast-radius proxy)                                   |
-| `dep_count`      | Number of modules this one imports (coupling proxy)                                                   |
-| `rcall_count`    | Number of functions across the project that call into this module (function-level blast-radius proxy) |
-| `direct_imports` | List of modules this file imports                                                                     |
-| `symbols`        | Functions, classes, and methods with line ranges and call edges                                       |
-| `status`         | `ok` or `degraded`                                                                                    |
-| `is_test`        | Whether the file is in a test directory                                                               |
-| `file_shas`      | Git blob SHA or MD5 hash for incremental rebuild detection                                            |
+| Field            | Meaning                                                                                                                              |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`           | Fully qualified module name (e.g. `mypackage.auth`)                                                                                  |
+| `path`           | Path to the `.py` file relative to project root                                                                                      |
+| `rdep_count`     | Number of project modules that import this one (blast-radius proxy)                                                                  |
+| `dep_count`      | Number of modules this one imports (coupling proxy)                                                                                  |
+| `rcall_count`    | Number of functions across the project that call into this module (function-level blast-radius proxy)                                |
+| `direct_imports` | List of modules this file imports                                                                                                    |
+| `symbols`        | Functions, classes, and methods with line ranges and call edges                                                                      |
+| `status`         | `ok` or `degraded`                                                                                                                   |
+| `is_test`        | Whether the file is in a test directory                                                                                              |
+| `file_shas`      | Git blob SHA or MD5 hash for incremental rebuild detection                                                                           |
+| `scan_root`      | Absolute path of the project root at scan time — used by `scan-query` to resolve file paths; superseded by `--root` flag if provided |
 
 ### How agents use it
 
@@ -548,6 +556,14 @@ Or from the terminal:
 ```bash
 scan-index --root src/mypackage
 ```
+
+When you specify a custom root, `scan-index` stores it as `scan_root` in the index. `scan-query` reads this field automatically so file path resolution works correctly even when you query from a different working directory — for example, querying a sub-project index from a monorepo root. To override the stored root at query time:
+
+```bash
+scan-query --root path/to/project symbol MyFunction
+```
+
+Priority chain: `--root` flag › `scan_root` in index › `git rev-parse --show-toplevel` › current directory.
 
 ### Automatic index freshness (post-commit hook)
 

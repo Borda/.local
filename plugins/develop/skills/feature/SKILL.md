@@ -50,6 +50,11 @@ fi
 
 If `NON_PY` is non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
 
+<!--
+  NON_PY and MULTI_LANG gates are mutually exclusive — NON_PY fires only when no Python markers exist;
+  MULTI_LANG fires only when Python markers AND non-Python markers coexist. Both cannot be true on the
+  same repo; never reorder so MULTI_LANG runs before NON_PY.
+-->
 **Monorepo language-target gate**: if `NON_PY` is empty (Python markers found) but non-Python markers also exist, confirm target language:
 
 ```bash

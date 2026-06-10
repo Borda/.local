@@ -72,7 +72,7 @@ elif echo "$ARGUMENTS" | grep -q -- '--deprecate'; then
 fi
 ```
 
-Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`--dry-run`, `--deprecate`, `--since`, `--removed-in`, `--remove-if-no-callers`). If found: print `! Unknown flag(s): --<token>. Supported flags: --dry-run, --deprecate[=<decorator>], --since, --removed-in, --remove-if-no-callers.` then invoke `AskUserQuestion` — (a) Abort · (b) Continue ignoring unknown flags. On Abort: stop.
+Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`--dry-run`, `--deprecate`, `--since`, `--removed-in`, `--remove-if-no-callers`). If found: print `! Unknown flag(s): --<token>. Supported flags: --dry-run, --deprecate[=<decorator>], --since, --removed-in, --remove-if-no-callers. Re-invoke with corrected flags.` and stop — do not invoke AskUserQuestion (fail-fast keeps the worst-case AQQ path at 4 calls: STALE-index, multiple-matches, apply/dry-run, hard-delete confirmation).
 
 ## Step 1: Validate index
 

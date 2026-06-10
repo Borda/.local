@@ -79,10 +79,13 @@ Before training, audit dataset:
 
 \</core_principles>
 
-> **Sidecar reference files** (loaded conditionally by workflow — resolve agent dir via:
-> `_RESEARCH_AGENT_DIR=$(find ~/.claude/plugins/cache -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1); [ -z "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/agents/data-steward"`):
+> **Sidecar reference files** (loaded conditionally by workflow — resolve agent dir via the
+> shared `Resolve agent dir` preamble below, which sets `$_RESEARCH_AGENT_DIR`):
 > - `${_RESEARCH_AGENT_DIR}/ml-pipeline-patterns.md` — split strategies, class imbalance, DataLoader patterns (pipeline-audit mode)
 > - `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — DVC, Polars, HuggingFace, 3D volumetric patterns (acquisition mode)
+>
+> **Resolve agent dir** (shared preamble — both acquisition and pipeline-audit modes call this; safe to invoke once per agent run; idempotent):
+> `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/data-steward"; [ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop.
 
 \<data_contracts>
 
@@ -211,7 +214,7 @@ _FOUNDRY_AVAILABLE=$(find ${_FOUNDRY_BASE:+"$_FOUNDRY_BASE"} "${HOME}/.claude/pl
 
 ## Mode: acquisition
 
-Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/data-steward"; [ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop. Read `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — storage and loading patterns for this mode. If Read fails or file not found: emit `⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only.` and continue.
+Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then Read `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — storage and loading patterns for this mode. If Read fails or file not found: emit `⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only.` and continue.
 
 1. **Identify sources** — review data requirements: note which sources have known URLs (handle directly) vs unknown URLs or HTML pages (delegate to `foundry:web-explorer`); document expected volume and completeness signal (pagination mechanism, `total_count` field)
 
@@ -227,7 +230,7 @@ Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT
 
 ## Mode: pipeline-audit
 
-Resolve agent dir if not already set: `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/data-steward"; [ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop. Read `${_RESEARCH_AGENT_DIR}/ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode. If Read fails or file not found: emit `⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only.` and continue.
+Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then Read `${_RESEARCH_AGENT_DIR}/ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode. If Read fails or file not found: emit `⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only.` and continue.
 
 1. **Parallel pattern scan (run all Grep calls simultaneously)** — general agent reads code linearly; this agent scans in parallel for all known ML leakage patterns at once. Launch six Grep calls together — independent:
 

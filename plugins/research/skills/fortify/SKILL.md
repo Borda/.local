@@ -44,6 +44,21 @@ The constants block defaults above are YAML-only — bash blocks read environmen
 
 <workflow>
 
+<!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
+
+## Agent Resolution
+
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:fortify from project root."; exit 1; }
+```
+
+Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agent this skill dispatches: `research:scientist` (same plugin — no fallback if research plugin installed).
+
+| Agent | Fallback if absent |
+| --- | --- |
+| `research:scientist` | `general-purpose` (ablation candidate identification and reviewer Q&A quality reduced — **⚠ general-purpose agent may not emit the JSON envelope this skill parses; surface partial output and surface ⚠ in F7 report**) |
+
 ## CRITICAL: Worktree-based isolation
 
 **Do NOT use `git checkout -b <branch>` for ablations** — dirties main working tree, corrupts concurrent tool calls. Each ablation gets own git worktree under `$FORTIFY_DIR/worktrees/<variant>`, created from `best_commit`. Main working tree NEVER modified. Cleanup: `git worktree remove --force` per variant; `git worktree prune` on interrupt.
@@ -583,6 +598,14 @@ Next: run /research:fortify without --skip-run to execute ablations
 ```
 
 </workflow>
+
+<calibration>
+
+Calibratable: F1–F3 sub-steps only — synthetic ablation plan with known component importance order; score whether fortify correctly ranks components and identifies reviewer questions. Full F4–F6 execution loop (worktree creation, metric runs, real guard scripts) excluded — requires live git state and metric commands.
+
+See `plugins/foundry/skills/calibrate/modes/skills.md` domain table entry for `/research:fortify` for the full ground-truth checklist.
+
+</calibration>
 
 <notes>
 

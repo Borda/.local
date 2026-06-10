@@ -18,11 +18,11 @@ NOT for: running experiments (use `/research:run`); judging experimental methodo
 <constants>
 
 HARD_CUTOFF: 900   # 15 min — ADVISORY ONLY, not enforced.
-# Synchronous Agent() has no escape — the parent cannot interrupt mid-flight call.
-# Single authoritative timeout semantics — applied uniformly at HIGH-1: after Agent() returns,
-# check `$RUN_DIR/audit-raw.md`. If absent or empty: fidelity = null, status = TIMED_OUT, mark ⏱ in report.
-# If present: parse normally regardless of whether the 15-min budget was nominally exceeded.
-# Same limitation as research:topic — documented, not bypassable from within the skill.
+> Synchronous Agent() has no escape — the parent cannot interrupt mid-flight call.
+> Single authoritative timeout semantics — applied uniformly at HIGH-1: after Agent() returns,
+> check `$RUN_DIR/audit-raw.md`. If absent or empty: fidelity = null, status = TIMED_OUT, mark ⏱ in report.
+> If present: parse normally regardless of whether the 15-min budget was nominally exceeded.
+> Same limitation as research:topic — documented, not bypassable from within the skill.
 
 </constants>
 
@@ -274,7 +274,7 @@ Full audit: <RUN_DIR>/audit-raw.md
 **Gaps**:
 - [e.g., implementation details not directly verifiable from paper alone]
 
-**Refinements**: [N] passes — omit line if 0 passes
+**Refinements**: N passes.
 ```
 
 ### Step V6: Terminal summary
@@ -294,10 +294,21 @@ Next: fix mismatches, then /research:verify <paper> --scope <glob>
 
 Omit "Next" line if no mismatches found.
 
-Call `AskUserQuestion` tool after V6 output — do NOT write options as plain text:
+Call `AskUserQuestion` tool after V6 output — do NOT write options as plain text. Before invoking, check whether `/develop:fix` is available so we don't offer a dead option when the develop plugin is absent:
+
+```bash
+ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/fix/SKILL.md >/dev/null 2>&1 && DEVELOP_FIX_AVAILABLE=true || DEVELOP_FIX_AVAILABLE=false  # timeout: 5000
+```
+
+**When `$DEVELOP_FIX_AVAILABLE = true`**:
 - question: "What next?"
 - (a) label: `fix mismatches then re-run verify` — description: fix listed mismatches and re-run `/research:verify <paper>`
-- (b) label: `/develop:fix` — description: implement fixes via development agent (requires `develop` plugin)
+- (b) label: `/develop:fix` — description: implement fixes via development agent
+- (c) label: `skip` — description: no further action
+
+**When `$DEVELOP_FIX_AVAILABLE = false`** (omit option (b) — offering an unavailable command misleads the user):
+- question: "What next?"
+- (a) label: `fix mismatches then re-run verify` — description: fix listed mismatches and re-run `/research:verify <paper>`
 - (c) label: `skip` — description: no further action
 
 </workflow>

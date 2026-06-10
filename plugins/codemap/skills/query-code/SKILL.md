@@ -4,7 +4,10 @@ description: |
   Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, and function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
   TRIGGER when: user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of".
   SKIP: codemap index not built (skill self-checks and no-ops gracefully); simple grep would suffice; non-Python repo.
-argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]> [--exhaustive]"
+when_to_use: |
+  TRIGGER when: user asks about module relationships, dependency graph, callers/callees, blast radius, or central/coupled modules; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of", "list central modules".
+  SKIP: codemap index not built (run `/codemap:scan-codebase` first); user wants to rename a symbol (use `/codemap:rename-refs`); simple grep would suffice; non-Python repository.
+argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] [--with-imports] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]> [--exhaustive]"
 allowed-tools: Bash, Write, AskUserQuestion
 model: haiku
 effort: low
@@ -21,8 +24,8 @@ Query codemap structural index for import-graph analysis, symbol-level source ex
 - `rdeps <module>` — what imports module
 - `path <from> <to>` — shortest import path between two modules
 
-**Symbol-level queries** (use instead of reading full files — ~94% token reduction):
-- `symbol <name>` — get source of function/class/method by name
+**Symbol-level queries** (use instead of reading full files — ~70–94% token reduction (single known-name lookup on large file)):
+- `symbol <name> [--with-imports]` — get source of function/class/method by name; returns `stale: bool` per result; add `--with-imports` to include module-level import block alongside source
 - `symbols <module>` — list all symbols in module (no file I/O)
 - `find-symbol <pattern>` — regex search across all symbol names in index
 
@@ -55,12 +58,40 @@ NOT for: building or rebuilding index (use `/codemap:scan-codebase`); writing sy
 
 **Common mistake — direction matters**: "which modules need updating if X changes?" = `rdeps` (callers), NOT `deps`. `deps` returns wrong direction — 0% recall.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--top\`, \`--exclude-tests\`, \`--limit\`, \`--index\`, \`--exhaustive\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--top\`, \`--exclude-tests\`, \`--limit\`, \`--index\`, \`--exhaustive\`; \`--with-imports\` applies to \`symbol\` subcommand only.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+
+**Symbol staleness contract**: every `symbol` result includes `"stale": bool`. When `stale: true`:
+- Do NOT use `source` — it may be wrong (function moved since last scan)
+- `stale_reason` explains why: `"file deleted"`, `"line range past EOF"`, `"symbol name not in slice header"`
+- Fall back: `Read(<result["path"]>)` — path is still valid even when content is stale
+- Fix: run `scan-index --incremental` then retry
+
+**Symbol vs Read — access pattern decision:**
+
+| Need | Use |
+| --- | --- |
+| Single known function/method body | `symbol Module.fn` |
+| Body + module-level imports (type context) | `symbol --with-imports Module.fn` |
+| >2 symbols in same file | `Read` on file |
+| Module-level constants / `__all__` | `Read` on file |
+| Discover functions matching a concept | `find-symbol <pattern>` → `symbol` (N≤2 hits only) |
+| Non-Python file | `Read` |
+
+**Qualified names reduce ambiguity**: `symbol MyClass.method` returns one result; bare `symbol authenticate` may return N matches across modules. Prefer qualified form when module path known.
+
+**On-demand freshness** (when index may be stale after recent file edits):
+
+```bash
+scan-index --incremental  # timeout: 5000 — ~0.5s flat; refreshes any changed files
+scan-query ...
+```
+
+Skip if incremental already ran earlier this turn. Full scan (`scan-index` without `--incremental`) only needed after large structural changes.
 
 Run `scan-query` via Bash:
 
 ```bash
-scan-query --timeout 20 <QUERY_ARGS>
+scan-query <QUERY_ARGS>  # timeout: 5000
 ```
 
 Replace `<QUERY_ARGS>`:
@@ -72,7 +103,8 @@ Replace `<QUERY_ARGS>`:
 | central modules | `central --top 10` |
 | coupling rank | `coupled --top 10` |
 | import path | `path <from> <to>` |
-| symbol source | `symbol <name>` |
+| symbol source (body only) | `symbol <name>` |
+| symbol source + imports | `symbol <name> --with-imports` |
 | module symbols | `symbols <module>` |
 | symbol search | `find-symbol <pattern>` |
 | list modules | `list` |

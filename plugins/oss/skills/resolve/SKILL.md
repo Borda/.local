@@ -44,10 +44,10 @@ NOT-for additions (scope guards):
 <constants>
 CHALLENGE_TIMEOUT_S=300  # tightened from CLAUDE.md §6 default 900s
 CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §6 default 300s
-# Bash timeout convention — `# timeout: N` annotations in bash blocks are honored by the Claude Code
-# Bash tool (sets tool-level timeout). Shell enforcement (`timeout S cmd` prefix) is NOT required for
-# skills executed exclusively via Claude Code. Shell prefix added only for commands that could hang
-# in direct-shell execution (git push, gh pr checkout).
+> Bash timeout convention — `# timeout: N` annotations in bash blocks are honored by the Claude Code
+> Bash tool (sets tool-level timeout). Shell enforcement (`timeout S cmd` prefix) is NOT required for
+> skills executed exclusively via Claude Code. Shell prefix added only for commands that could hang
+> in direct-shell execution (git push, gh pr checkout).
 </constants>
 
 <workflow>

@@ -31,6 +31,9 @@ jobs:
       - name: Install pytest
         run: pip install -q pytest pytest-cov scipy
 
+      - name: Run JS hook smoke tests
+        run: node tests/hooks/tmp-paths.test.js
+
       - name: Run plugin tests (Python bin/ + JS hooks)
         env:
           RUN_INTEGRATION: "1"

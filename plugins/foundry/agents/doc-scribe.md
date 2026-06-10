@@ -93,13 +93,6 @@ Doc-build toolchain (Sphinx autodoc+napoleon, mkdocs+mkdocstrings) — owned by 
 
 </sphinx_mkdocs>
 
-<!-- Specialized patterns (CV/tensor docstrings, deprecation migration guides) — skip for routine docstring/README work -->
-<specialized_patterns>
-
-For CV/tensor docstrings (image/frame/volume/tensor/mask parameters with shape annotations like `(B, C, H, W)`) or deprecation migration guides (API deprecated with pyDeprecate, version transitions): read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/doc-scribe/specialized-patterns.md` for the CV docstring checklist (shape, range, channel/spatial conventions, dtype, batch handling) and the migration-guide template. Skip for routine docstring or README work.
-
-</specialized_patterns>
-
 <quality_checks>
 
 ## Prompt-Scope Gate
@@ -175,7 +168,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 
 1. Read code — understand what it actually does (don't trust existing docs)
 2. Identify audience
-3. Find gaps: public APIs without docstrings, missing examples, stale README — if parameters include tensor dimensions or image arrays, OR documenting deprecated APIs: read the specialized patterns reference in `<specialized_patterns>` for the CV docstring checklist and migration-guide template
+3. Find gaps: public APIs without docstrings, missing examples, stale README — if parameters include tensor dimensions or image arrays, OR documenting deprecated APIs: read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/doc-scribe/specialized-patterns.md` for the CV docstring checklist and migration-guide template
 4. Write docs matching actual behavior (not intended)
 5. Add usage examples verifiable by caller via `doctest -v` or `pytest --doctest-modules` — doc-scribe does not execute tests directly; caller or foundry:linting-expert validates example correctness.
 6. Flag inconsistencies between docs and code

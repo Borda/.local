@@ -1,6 +1,9 @@
 ---
 name: scan-codebase
 description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics)."
+when_to_use: |
+  TRIGGER when: user asks to build, refresh, or rebuild the codemap index; user mentions stale index, missing symbols, or first-time setup of codemap; phrases: "build codemap", "scan codebase", "refresh structural index", "rebuild import graph".
+  SKIP: non-Python project (no `.py` files at root); user wants to query an existing index (use `/codemap:query-code`); user wants to rename a symbol (use `/codemap:rename-refs`, which scans incrementally on its own).
 argument-hint: "[--root <path>] [--incremental]"
 allowed-tools: Bash, Write, AskUserQuestion
 disable-model-invocation: true

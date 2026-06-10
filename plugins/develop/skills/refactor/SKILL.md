@@ -338,7 +338,7 @@ INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle 2>/dev/null || echo 0)
 START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time 2>/dev/null || echo $(date +%s))
 INNER_CYCLE=$((INNER_CYCLE+1))
 echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle
-MAX_INNER_CYCLES=5  # must match <constants> block — bash cannot reference constants block directly
+MAX_INNER_CYCLES=5  # must match the constants block above — bash cannot reference constants block directly
 if [ "$INNER_CYCLE" -gt $MAX_INNER_CYCLES ]; then
     echo "⚠ MAX_INNER_CYCLES ($MAX_INNER_CYCLES) reached — stopping refactor loop; report what succeeded, what broke, what remains"
 fi

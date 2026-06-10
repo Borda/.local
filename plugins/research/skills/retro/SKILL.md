@@ -21,6 +21,7 @@ NOT for: running experiments (use `/research:run`); designing experiments (use `
 
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:retro from project root."; exit 1; }
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md` (use the path printed by the bash block above — substitute the resolved value, do not pass the literal `$_RESEARCH_SHARED` string to the Read tool). Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.

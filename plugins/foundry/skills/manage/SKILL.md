@@ -257,7 +257,7 @@ MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-agent 2>/dev/null)"  # timeout: 5000
 [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
 ```
-Every `$MONITOR_INTERVAL` seconds: `find .claude/agents -newer "$SENTINEL" -name "<name>.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
+Poll per `<constants>` interval — same pattern as first instance above; adjust find path/name glob to match this agent's output files.
 
 **CRITICAL — worktree isolation copy**: `foundry:sw-engineer` runs with `isolation: worktree` — scaffolded file lands in a temporary worktree, not the main tree. After agent completes: (1) read the worktree path from the agent result (returned in `worktree` field or as part of the result message); (2) run: `cp <worktree-path>/.claude/agents/<name>.md .claude/agents/<name>.md` (substitute actual paths); (3) proceed with Steps 5–9 on the main-tree copy. Without this step, Steps 5–9 Globs find nothing.
 
@@ -278,7 +278,7 @@ Every `$MONITOR_INTERVAL` seconds: `find .claude/agents -newer "$SENTINEL" -name
    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer-skill 2>/dev/null)"  # timeout: 5000
    [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
    ```
-   Every `$MONITOR_INTERVAL` seconds: `find "${TMPDIR:-/tmp}" -newer "$SENTINEL" -name "manage-skill-schema-*.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
+   Poll per `<constants>` interval — same pattern as first instance above; adjust find path/name glob to match this agent's output files.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
@@ -313,7 +313,7 @@ MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-skill 2>/dev/null)"  # timeout: 5000
 [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
 ```
-Every `$MONITOR_INTERVAL` seconds: `find .claude/skills -newer "$SENTINEL" -name "SKILL.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
+Poll per `<constants>` interval — same pattern as first instance above; adjust find path/name glob to match this agent's output files.
 
 ### Mode: Update Agent (rename)
 

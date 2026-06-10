@@ -39,6 +39,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -135,6 +136,11 @@ def find_index() -> Path:
                 return preferred
             candidates = sorted(scan_dir.glob("*.json"))
             if candidates:
+                if len(candidates) > 1 or candidates[0].stem != parent.name:
+                    print(
+                        f"⚠ codemap: loaded {candidates[0].name} via fallback; expected {parent.name}.json",
+                        file=sys.stderr,
+                    )
                 return candidates[0]
 
     # Strategy 3: fallback (will surface a clear "Index not found" error)
@@ -619,13 +625,35 @@ def cmd_list(index: dict) -> None:
     print(json.dumps({"modules": modules}))
 
 
-def cmd_symbol(index: dict, name: str, limit: int = 20, exclude_tests: bool = False) -> None:
+def _resolve_project_root(explicit_root: Path | None, index: dict) -> Path:
+    """Resolve project root for file path lookups using priority chain.
+
+    Priority: explicit --root flag > scan_root stored in index > git root from CWD > CWD.
+    """
+    if explicit_root is not None:
+        return explicit_root.resolve()
+    stored = index.get("scan_root")
+    if stored:
+        return Path(stored)
+    return _get_git_root_cached() or Path.cwd()
+
+
+def cmd_symbol(
+    index: dict,
+    name: str,
+    limit: int = 20,
+    exclude_tests: bool = False,
+    with_imports: bool = False,
+    project_root: Path | None = None,
+) -> None:
     """Find a symbol by name (exact match, then qualified_name substring) and return its source.
 
     Args:
         index: parsed codemap index dict.
         name: symbol name or qualified name to search for.
         limit: max results to return (0 = unlimited).
+        exclude_tests: if True, skip test modules during search.
+        with_imports: if True, attach the module-level import block to each symbol result.
     """
     matches: list[tuple[dict, Symbol]] = []
     for m in index.get("modules", []):
@@ -663,15 +691,51 @@ def cmd_symbol(index: dict, name: str, limit: int = 20, exclude_tests: bool = Fa
         by_path[m.get("path", "")].append((m, sym))
 
     results = []
-    git_root = _get_git_root_cached() or Path.cwd()
+    git_root = project_root if project_root is not None else (_get_git_root_cached() or Path.cwd())
     for rel_path, group in by_path.items():
         lines: list[str] = []
+        file_path: Path | None = None
         if rel_path:
             file_path = git_root / rel_path
             if file_path.exists():
                 lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+        # Extract module-level import block (only when --with-imports requested)
+        import_block: str | None = None
+        if with_imports:
+            if lines:
+                try:
+                    tree = ast.parse("\n".join(lines), filename=str(file_path or ""))
+                    collected: list[str] = []
+                    for node in tree.body:
+                        if isinstance(node, (ast.Import, ast.ImportFrom)):
+                            end = node.end_lineno or node.lineno
+                            collected.extend(lines[node.lineno - 1 : end])
+                    import_block = "\n".join(collected)
+                except (SyntaxError, ValueError):  # ValueError on null bytes
+                    import_block = ""
+            else:
+                import_block = ""
+
         for m, sym in group:
             source = "\n".join(lines[sym["start_line"] - 1 : sym["end_line"]]) if lines else ""
+            # Per-symbol stale detection (M2): skills must fall back to Read(path) when stale.
+            stale = False
+            stale_reason: str | None = None
+            if not rel_path:
+                stale, stale_reason = True, "no path"
+            elif file_path is None or not file_path.exists():
+                stale, stale_reason = True, "file deleted"
+            elif sym["end_line"] > len(lines):
+                stale, stale_reason = True, "line range past EOF"
+            elif source:
+                # Identifier-boundary check: name must follow def/class keyword exactly.
+                # scan-index records start_line at the def/class line (not decorator), so
+                # first non-blank line is always the signature. Regex prevents foo matching foo_bar.
+                first_nonblank = next((ln for ln in source.split("\n") if ln.strip()), "")
+                name_pattern = re.compile(rf"\b(?:def|async\s+def|class)\s+{re.escape(sym['name'])}\s*[:(]")
+                if not name_pattern.search(first_nonblank):
+                    stale, stale_reason = True, "symbol name not in slice header"
             results.append(
                 {
                     "name": sym["name"],
@@ -682,6 +746,9 @@ def cmd_symbol(index: dict, name: str, limit: int = 20, exclude_tests: bool = Fa
                     "start_line": sym["start_line"],
                     "end_line": sym["end_line"],
                     "source": source,
+                    "stale": stale,
+                    "stale_reason": stale_reason,
+                    "imports": import_block,
                 }
             )
     print(json.dumps({"symbols": results, "count": len(results), "index": _coverage(index)}))
@@ -958,6 +1025,12 @@ def main() -> None:
         "--limit", type=int, default=20, metavar="N", help="Max results (default 20). Use 0 for unlimited."
     )
     p_symbol.add_argument("--exclude-tests", action="store_true", default=False, help="Exclude test files from results")
+    p_symbol.add_argument(
+        "--with-imports",
+        action="store_true",
+        default=False,
+        help="Include module-level import block alongside each symbol's source.",
+    )
 
     p_symbols = sub.add_parser("symbols", help="List all symbols in a module.")
     p_symbols.add_argument("module", help="Dotted module name, e.g. 'mypackage.auth'")
@@ -989,6 +1062,13 @@ def main() -> None:
     p_fn_blast.add_argument("qname", help="Full qname: module::symbol")
 
     parser.add_argument("--index", metavar="PATH", help="Explicit path to the index JSON (auto-discovered if omitted).")
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Override project root for file path resolution (highest priority; supersedes scan_root in index and git root).",
+    )
     parser.add_argument(
         "--timeout",
         type=int,
@@ -1031,6 +1111,7 @@ def main() -> None:
         index_path = find_index()
     index = load_index(index_path)
     warn_if_stale(index)
+    project_root = _resolve_project_root(args.root, index)
 
     if args.command == "deps":
         cmd_deps(index, args.module)
@@ -1045,7 +1126,14 @@ def main() -> None:
     elif args.command == "list":
         cmd_list(index)
     elif args.command == "symbol":
-        cmd_symbol(index, args.name, args.limit, exclude_tests=args.exclude_tests)
+        cmd_symbol(
+            index,
+            args.name,
+            args.limit,
+            exclude_tests=args.exclude_tests,
+            with_imports=args.with_imports,
+            project_root=project_root,
+        )
     elif args.command == "symbols":
         cmd_symbols(index, args.module)
     elif args.command == "find-symbol":

@@ -230,7 +230,7 @@ time python -c "import <module>; <representative_workload>"
 
 # GPU utilization (is GPU actually busy?)
 # nvidia-smi: CUDA hosts only — skip on Apple MPS, ROCm, Intel Arc, CPU-only hosts
-# On non-CUDA hosts use platform profiler: py-spy + cProfile or Instruments (macOS/MPS — dtruss/dtrace blocked by SIP; Instruments.app available), rocprof (ROCm), VTune (Intel)
+# On non-CUDA hosts use platform profiler: py-spy + cProfile or Instruments (macOS/MPS — see `<profiling_tools>` §Profiling Command Lookup for SIP alternatives), rocprof (ROCm), VTune (Intel)
 # Background nvidia-smi: write PID to file since job control (kill %1) doesn't persist across Bash tool calls
 command -v nvidia-smi &>/dev/null && {
   TMPDIR="${TMPDIR:-$(python -c "import tempfile; print(tempfile.gettempdir())")}"
@@ -245,7 +245,7 @@ Steps 1a and 1b are independent — run same turn. Together cost same wall time 
 
 02. **Identify single biggest bottleneck**
 
-Apply optimization hierarchy from `<optimization_hierarchy>`. **Never recommend level 7 (GPU/torch.compile) before ruling out levels 1–6.**
+Apply optimization hierarchy — see `<optimization_hierarchy>` for level ordering and the level-7 guard.
 For ML workloads, measure `data_time` (DataLoader fetch + collate) and `step_time` (forward + backward + optimizer step) before computing the ratio:
 
 ```python
@@ -277,7 +277,7 @@ For top bottleneck, run appropriate profiler from `<profiling_tools>` or `<ml_gp
 
 04. **Fill output template per finding**
 
-Every recommendation MUST use `<output_format>` template. Never report optimization without [Before] and [After] — if profiling unavailable, mark "unconfirmed — measure before merging". Example:
+Every recommendation MUST use `<output_format>` template. Never report optimization without [Before] and [After] — if unavailable, mark "unconfirmed" per `<antipatterns_to_flag>` (reporting-without-measurement rule). Example:
 
 `DataLoader: num_workers=0` → Severity: high | Before: GPU util 23%, step 4.2s | Fix: num_workers=8, pin_memory=True, persistent_workers=True | After: unconfirmed | Impact: ~3× throughput
 

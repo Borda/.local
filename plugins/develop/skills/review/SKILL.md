@@ -58,7 +58,6 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
 CODEMAP_ENABLED=false   # auto-detect: true if codemap installed + index found; --codemap = strict; --no-codemap = always false
 SEMBLE_ENABLED=false    # set to true via --semble
-CODEX_TIMEOUT=120000    # advisory cap (ms) on Codex co-review spawn — Agent() calls are synchronous; actual enforcement requires run_in_background=true + health monitoring (see Step 2 note)
 
 </constants>
 
@@ -256,9 +255,9 @@ echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # persist: Bash() stat
 
 If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
 
-Spawn `codex:codex-rescue` agent: "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
+Spawn `codex:codex-rescue` agent (requires `codex` plugin): "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
 
-Note: `$CODEX_TIMEOUT` is advisory only — Agent spawns are synchronous and cannot be timeout-wrapped via Bash `timeout:`. If hang risk is unacceptable, spawn with `run_in_background=true` and implement health-monitoring per CLAUDE.md §6. Without background spawning, move on after a reasonable wait (observe if Codex output file grows; no growth after ~2 min → treat as timed out).
+Note: Agent spawns are synchronous and cannot be timeout-wrapped via Bash `timeout:`. If hang risk is unacceptable, spawn with `run_in_background=true` and implement health-monitoring per CLAUDE.md §6. Without background spawning, move on after a reasonable wait (observe if Codex output file grows; no growth after ~2 min → treat as timed out).
 
 After Codex writes `$RUN_DIR/codex.md` (or times out), extract compact seed list (≤10 items, `[{"loc":"file:line","note":"..."}]`) to inject into agent prompts in Step 3 as pre-flagged issues to verify or dismiss. Codex skipped, timed out, or found nothing → proceed with empty seed.
 

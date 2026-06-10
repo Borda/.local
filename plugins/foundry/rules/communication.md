@@ -22,6 +22,7 @@ Rules:
 - Response body in blockquote (`>`) — visually distinct from tool/hook output in terminal
 - Never use table or pipe-delimited format for anchor line — pipe chars pollute copy-paste
 - No exceptions to the anchor rule — a response beginning with any word other than `**Re:**` is non-compliant
+- **Never emit `> |`** — tables and fenced code blocks must never appear inside `>` lines; close `>` before any table or code fence, reopen after. `> | col |` renders as `▎ | col |` in terminal — pipe alignment destroyed.
 
 ## Blockquote Exceptions — Tables and Code Blocks
 

@@ -40,7 +40,7 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 
 **Task tracking**: create tasks for P-P0, P-P1, P-P2, P-P2b, P-P3 at start; add P-P4 only if `--team` detected in arguments.
 
-**Unsupported flag check** — strip `--team` from `$ARGUMENTS`, scan remaining tokens for any `--<token>`. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — strip `--team` from `$ARGUMENTS`, scan remaining tokens for any `--<token>`. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`. Re-invoke with correct flags.` then stop.
 
 ### Step P-P0: Detect input type
 
@@ -216,13 +216,20 @@ Advisory review:
   perf:       <issues or "metric/guard look valid">      [only if dispatched]
 ```
 
-Any agent returns `ok: false` → surface suggestions, then invoke `AskUserQuestion` — (a) **Revise config** → re-present P-P2 config block (re-enter P-P2; max 3 re-entries before forcing proceed-or-abort) · (b) **Proceed with current config** · (c) **Abort**. Do not block — user decides.
+**Pre-check output path** before presenting advisor results: resolve output path (second argument after `<goal>` if provided, else `program.md` at project root). Check if file exists: `test -f <output_path> && echo "EXISTS"`. Record result as `OUTPUT_EXISTS`.
+
+Any agent returns `ok: false` → surface suggestions, then invoke `AskUserQuestion` combining advisor feedback and (if `OUTPUT_EXISTS`) overwrite decision in one call:
+- question: "Advisor flagged issues (listed above). How to proceed?"
+- (a) **Revise config** → re-present P-P2 config block (re-enter P-P2; max 3 re-entries before forcing proceed-or-abort)
+- (b) **Proceed with current config** — if `OUTPUT_EXISTS`: warn "will overwrite `<output_path>`"; if not: proceed silently
+- (c) **Abort** — stop
+
+If all advisors return `ok: true` AND `OUTPUT_EXISTS`: invoke `AskUserQuestion` — (a) Overwrite `<output_path>` — proceed; (b) Abort — stop.
+If all advisors return `ok: true` AND NOT `OUTPUT_EXISTS`: proceed directly to writing — no AskUserQuestion needed.
 
 ### Step P-P3: Write program.md
 
-Output path: second argument after `<goal>` if provided, else `program.md` at project root.
-
-**Overwrite check**: path exists → print one-line warning, `AskUserQuestion`: (a) Overwrite — proceed; (b) Abort — stop. No silent overwrite.
+Output path: resolved above in P-P2b pre-check.
 
 Write file using canonical template, pre-populated from wizard findings:
 

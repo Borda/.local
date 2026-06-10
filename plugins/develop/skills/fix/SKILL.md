@@ -12,7 +12,7 @@ disable-model-invocation: true
 Reproduce-first bug resolution. Capture bug in failing regression test, apply minimal fix, verify via quality stack and review loop.
 
 NOT for:
-- CI-only failures with no local traceback — use `/develop:debug --ci-run <run-id>` first (requires `codex` plugin for full CI log analysis)
+- CI-only failures with no local traceback — use `/develop:debug` first (requires `codex` plugin for CI log analysis)
 - production incidents without any CI run or traceback (use `/foundry:investigate` (requires foundry plugin))
 - `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead

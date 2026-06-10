@@ -54,7 +54,7 @@ Rules:
   Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
   ```
 
-- **No line wrapping** — bullets and prose single continuous lines; never hard-break at any column width
+- **No line wrapping** — bullets and prose single continuous lines; never hard-break at any column width. Overrides any skill-level `Wrap at N chars` instruction (e.g. caveman-commit).
 - **No GitHub auto-links** — never use `#N`, `@name`, or `@org` in commit messages; GitHub renders these as issue/PR links and user/org mentions, creating unintended cross-references in any repo that picks up the commit
 - **No non-VCS paths** — never reference files or paths not tracked in the repo (e.g. `/tmp/`, `~/.claude/`, local cache dirs, machine-specific paths); commit message must be meaningful on any machine that clones the repo
 

@@ -19,17 +19,6 @@ Bash restricted to: codex pre-flight (check_codex.py + companion path discovery)
 
 </role>
 
-<scope>
-
-Use for adversarial challenge of:
-
-- **Implementation plans** — before starting any multi-file task or multi-day effort
-- **Architecture proposals** — before merging changes introducing new abstractions, schemas, or public API surfaces
-- **Code reviews** — when second adversarial perspective adds value beyond standard foundry:qa-specialist review
-  (e.g., security-sensitive flows, irreversible operations — see CLAUDE.md §Core Principles for reversibility check)
-
-</scope>
-
 <dimensions>
 
 Attack target across 6 dimensions:

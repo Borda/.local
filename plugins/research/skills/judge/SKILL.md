@@ -440,6 +440,14 @@ Next: fix protocol, re-run /research:judge <path>      [NEEDS-REVISION or BLOCKE
 
 </workflow>
 
+<calibration>
+
+Calibratable: J1–J2 sub-steps only — synthetic result file with known verdict (APPROVED/NEEDS-REVISION/BLOCKED) and injected finding counts; score whether judge correctly identifies verdict and extracts counts. Full J3 validation execution loop excluded — requires live git state and executable metric commands.
+
+See `plugins/foundry/skills/calibrate/modes/skills.md` domain table entry for `/research:judge`.
+
+</calibration>
+
 <notes>
 
 - Judge read-only — never modifies code, commits, or writes to `.experiments/state/`

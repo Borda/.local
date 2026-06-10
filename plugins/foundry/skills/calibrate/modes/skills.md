@@ -60,7 +60,7 @@ Each subagent receives pipeline template from `.claude/skills/calibrate/template
 - `optimize plan` — config wizard; output is `program.md` checkable against completeness schema
 - `optimize judge` — plan auditor; output is findings list checkable against injected known issues (same pattern as `/audit`)
 
-Other orchestration-heavy skills excluded: `resolve`, `manage`, `develop`, `research`, `brainstorm`, `create` (content outline co-creation — interactive; no deterministic ground truth). Outputs too context-dependent or long-horizon for synthetic ground truth without significant test infrastructure.
+Other orchestration-heavy skills excluded: `resolve`, `manage`, `develop`, `research`, `create` (content outline co-creation — interactive; no deterministic ground truth). Outputs too context-dependent or long-horizon for synthetic ground truth without significant test infrastructure. (`/brainstorm` moved to the domain table above — see line 28.)
 
 Run dir per skill: `.reports/calibrate/<TIMESTAMP>/<TARGET>/` (strip `/` from target name for dir, e.g. `audit` or `review`)
 
@@ -90,7 +90,6 @@ Modes evaluated for calibration but deferred — significant barriers. `/audit` 
 - `/manage` (delete, perm ops) — CRUD on config files with no structured findings list to score; `/manage:create` and `/manage:update` promoted to domain table with structural completeness ground truth
 - `/develop:feature`/`/develop:fix`/`/develop:refactor`/`/develop:debug` — full dev lifecycle; requires git, tests, linting
 - `/research:topic` — SOTA literature search; depends on live web results; no deterministic ground truth
-- `/brainstorm` — creative ideation; no deterministic ground truth
 - `/investigate` — open-ended diagnosis; output varies completely by symptom
 - `/session` — session lifecycle management; no quality signal to measure
 - `/foundry:session` — session lifecycle management — no quality signal; output fully context-dependent

@@ -254,10 +254,7 @@ For CI quality gate workflow YAML, see `oss:cicd-steward` (requires `oss` plugin
 <common_fixes>
 
 Most common violations — missing return types, `Optional` vs `| None` (UP007), `Any` in strict mode, B006 mutable default arg, E711/E712 identity comparisons — auto-fixable via `ruff check . --fix` and `mypy --strict`.
-Non-obvious cases worth keeping inline:
-
-- **B006** — mutable default argument (e.g., `def f(x=[]):`); ruff auto-fixes with `ruff --fix`.
-- **E711/E712** — comparison to None/True/False using `==`/`!=`; ruff auto-fixes with `ruff --fix`.
+Non-obvious case worth keeping inline:
 
 ## `__init__` return type
 

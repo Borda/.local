@@ -1,4 +1,4 @@
-<!-- Loaded by foundry:sw-engineer (opus + high) -->
+<!-- Loaded by foundry:sw-engineer (opus + xhigh) -->
 # Hook Authoring (foundry:sw-engineer specialized guidance)
 
 Read this file only when working on hook code (JavaScript files under `.claude/hooks/`, hook registrations in `settings.json`, `PostToolUse`/`PreToolUse`/`SubagentStop` event handlers). Skip for Python implementation tasks.

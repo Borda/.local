@@ -1,6 +1,9 @@
 ---
 name: release
 description: "Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format)."
+when_to_use: |
+  TRIGGER when: user requests release notes, CHANGELOG entry, migration guide, internal summary, release readiness audit, or release demo; phrases: "draft release notes", "prepare release", "audit release readiness", "generate CHANGELOG for v1->v2", "release demo notebook".
+  SKIP: actual git tagging or PyPI/registry upload (use `git tag`, `gh release create`, `twine upload` directly); release communication for a non-Python project where this skill's pytest-centric audit assumptions do not apply; PR-level review (use `/oss:review`); thread/issue analysis (use `/oss:analyse`).
 argument-hint: "[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion
 model: sonnet

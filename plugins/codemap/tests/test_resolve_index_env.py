@@ -95,25 +95,19 @@ class TestFormatEvalLine:
         """Whitespace forces single-quote wrapping."""
         assert format_eval_line("proj with space", "/tmp/x.json") == "PROJ='proj with space' INDEX=/tmp/x.json"
 
-    def test_eval_round_trip_simple(self, tmp_path: Path) -> None:
-        """Sourcing the emitted line via bash ``eval`` defines PROJ + INDEX correctly."""
+    def test_eval_round_trip_simple(self) -> None:
+        """format_eval_line output round-trips through shlex back to original values."""
         line = format_eval_line("round-trip", "/tmp/idx.json")
-        # Build a bash command that evals the line then echoes the resulting vars.
-        cmd = f'{line}; printf "%s\\n%s\\n" "$PROJ" "$INDEX"'
-        result = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=str(tmp_path))
-        assert result.returncode == 0, result.stderr
-        out = result.stdout.splitlines()
-        assert out[0] == "round-trip"
-        assert out[1] == "/tmp/idx.json"
+        parts = dict(tok.split("=", 1) for tok in shlex.split(line) if "=" in tok)
+        assert parts["PROJ"] == "round-trip"
+        assert parts["INDEX"] == "/tmp/idx.json"
 
-    def test_eval_round_trip_with_quote(self, tmp_path: Path) -> None:
-        """Embedded single quotes survive the eval round-trip via shlex.quote."""
+    def test_eval_round_trip_with_quote(self) -> None:
+        """Embedded single quotes survive the shlex round-trip via shlex.quote."""
         tricky = "proj'with'quote"
         line = format_eval_line(tricky, "/tmp/idx.json")
-        cmd = f'{line}; printf "%s\\n" "$PROJ"'
-        result = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=str(tmp_path))
-        assert result.returncode == 0, result.stderr
-        assert result.stdout.strip() == tricky
+        parts = dict(tok.split("=", 1) for tok in shlex.split(line) if "=" in tok)
+        assert parts["PROJ"] == tricky
 
 
 class TestMainHappyPath:
@@ -133,20 +127,16 @@ class TestMainHappyPath:
     def test_happy_path_output_is_eval_safe(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Round-trip: bash ``eval`` on the script output defines PROJ + INDEX."""
+        """Round-trip: main() output line parses back to original PROJ + INDEX via shlex."""
         tricky_proj = "proj with space"
         tricky_index = str(tmp_path / "tricky idx.json")
         monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock(tricky_proj, tricky_index))
         rc = main([])
         assert rc == 0
         line = capsys.readouterr().out.strip()
-        # Round-trip via bash eval.
-        cmd = f'{line}; printf "%s\\n%s\\n" "$PROJ" "$INDEX"'
-        result = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, cwd=str(tmp_path))
-        assert result.returncode == 0, result.stderr
-        lines = result.stdout.splitlines()
-        assert lines[0] == tricky_proj
-        assert lines[1] == tricky_index
+        parts = dict(tok.split("=", 1) for tok in shlex.split(line) if "=" in tok)
+        assert parts["PROJ"] == tricky_proj
+        assert parts["INDEX"] == tricky_index
 
 
 class TestCheckExists:

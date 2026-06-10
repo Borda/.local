@@ -154,9 +154,13 @@ Full creative session — grow, deepen, and prune tree of directions. Tree is ou
 Before presenting formal branches, run brief free-form idea exchange — 2–3 rapid rounds. Goal: surface intuitions about direction before committing to structure. Like tennis rally — Claude serves first, user returns, branches emerge from what lands.
 
 1. State skill's opening hypothesis: 1–2 sentences on where problem looks most interesting or tricky. Not a branch — just a read.
-2. Immediately present **3–5 initial branches** (see Seeding the tree below) in the same message — no separate round-trip.
-3. Call a single `AskUserQuestion` combining reaction + branch selection: "How does this look?" with options: (a–e) one per branch (labelled by name, ★ on most promising) · (f) Not quite — [redirect] · (g) Add more branches. User may select 1–3 branches as focus; all others remain open.
-4. Proceed to **Tree operations loop** — branches must reflect any redirect from (f).
+2. Immediately present **3–5 initial branches** (see Seeding the tree below) in the same message — no separate round-trip. Each branch is numbered (1, 2, 3, …) and ★ on the most promising one.
+3. Call a single `AskUserQuestion` for the **reaction choice** (≤4 options per call per AQQ cap): "How does this look?" with exactly four options: (a) ★ recommended — pick branches to focus on (reply naming 1–3 branch numbers in free text) · (b) Not quite — let me redirect (reply describing the redirect) · (c) add more branches first · (d) skip focus selection — start tree ops with all branches open. The branch list is in the message body for reference; users name branches by number rather than by sub-option letter so the AQQ stays at 4 options regardless of branch count.
+4. Proceed to **Tree operations loop**:
+   - (a) picked: user's free-text reply names 1–3 branches → set those as `▶️` focus; others remain `💭` open
+   - (b) picked: regenerate 2–3 fresh branches reflecting the redirect and re-enter step 3 (one re-entry allowed; second redirect proceeds with whatever branches exist)
+   - (c) picked: generate 2–3 additional branches with different framing and re-enter step 3
+   - (d) picked: enter tree ops with all branches `💭` open and no initial focus
 
 **Skip on re-entry**: when looping back from Step 6 (b) "Needs more exploration", skip BOTH the pre-seeding exchange AND the Seeding the tree section — go straight to the Tree operations loop with existing branches as starting state. Do NOT re-seed (do NOT present new top-level branches as if starting fresh); user's previous tree is the operand for re-entry operations (add, close, deepen, etc.).
 
@@ -174,9 +178,9 @@ Present **3–5 initial branches** (top-level directions) in the same message as
 
 Write **Opening framing** paragraph (2–3 sentences): skill's initial read on problem space — core tension, which branch(es) most promising and why, one thing it's uncertain about. Not recommendation to converge — divergence still goal — but honest perspective to spark reaction.
 
-The combined reaction + branch selection call is defined in pre-seeding exchange above. On redirect (f): generate 2–3 new branches incorporating described direction. On (g): generate 2–3 fresh branches with genuinely different framing.
+The reaction AskUserQuestion is defined in pre-seeding exchange above (4 options: focus / redirect / more branches / skip). When the reaction is (b) redirect: generate 2–3 new branches incorporating the described direction. When (c) add more: generate 2–3 fresh branches with genuinely different framing.
 
-User may select **1–3 branches** to mark as initial focus. All other branches start as [open] too — not closed yet, just not initial focus.
+User may select **1–3 branches** to mark as initial focus via the free-text reply to option (a). All other branches start as `💭` open too — not closed yet, just not initial focus.
 
 After user selects initial focus, write sidecar immediately with all branch details populated — set `core_idea`, `tension`, and `trades_away` on every branch node before first tree operation begins. Do not wait for first operation to write branch content into sidecar.
 
@@ -186,19 +190,24 @@ After seeding, enter operations loop. Each iteration:
 
 1. Show current **tree summary** (see format below)
 2. Write **Skill's moment** — 2–3 sentences of skill's current read: which open branches look most interesting and why, what closed branches revealed about problem, and what skill would explore next if it had a vote. Make specific to current tree state (refer to actual branch names by their labels). Gives user something to react to before choosing operation.
-3. Call `AskUserQuestion` with available operations, grouped:
+3. Call `AskUserQuestion` with **four operation-category** options (AQQ cap is 4 per call — pick a category here; if the category needs a specific operation, ask one follow-up AQQ enumerating the operations within it):
 
-   **Per-branch** (pick a branch, then what to do with it):
+   - (a) **per-branch operation** — deepen, reject, accept, or merge a branch (follow-up AQQ enumerates the four per-branch operations and asks which branch)
+   - (b) **tree-level operation** — add a new top-level branch, or reopen a closed one (follow-up AQQ enumerates the two tree-level operations)
+   - (c) **back to idea stacking** — free-form exchange, then return here (no follow-up needed)
+   - (d) **ready** — save tree and proceed to Step 4
+
+   When (a) is picked, the follow-up AQQ (still capped at 4 options) lists:
    - a) deepen [branch name] — add sub-directions
    - b) reject [branch name] — close with a reason
    - c) accept [branch name] — mark as the chosen direction
    - d) merge [branch name] + [branch name] — combine into one
 
-   **Tree-level**:
-   - e) add a new top-level branch — explore a fresh angle
-   - f) reopen [branch name] — revisit a closed branch
-   - g) back to idea stacking — free-form exchange, then return here
-   - h) ready — save tree and proceed
+   When (b) is picked, the follow-up AQQ lists:
+   - a) add a new top-level branch — explore a fresh angle
+   - b) reopen [branch name] — revisit a closed branch
+
+   For per-branch operations that need a branch name, ask the user for the branch number/name in the follow-up AQQ's free-text reply rather than enumerating each branch as a separate option (keeps every AQQ ≤ 4).
 
 4. **Write viewer state** (after any operation except Ready; skip entirely if `$SIDECAR` is empty — viewer opt-out): overwrite `$SIDECAR` with current full tree state using Write tool; set `ui.active_node_id` to just-operated node's `id`; update `updated_at` to current ISO timestamp; update `session.title` to current brainstorm title. All branch objects in JSON — regardless of status (open, rejected, merged, resolved) — must retain `core_idea`, `tension`, and `trades_away` fields; these are set at seeding time and must not be dropped when branch status changes. On write failure: log `> Viewer write failed: <reason>` inline and continue; on next successful write, set `ui.last_error: "<reason>"`.
 

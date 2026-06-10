@@ -4,6 +4,14 @@
 
 Plugins under `plugins/`. See `README.md` for user-facing detail.
 
+## Markdown Annotation Convention
+
+In `.md` plugin files: prose annotations/notes/load directives → `>` blockquote. `#` only inside ` ```bash ``` ` or ` ```python ``` ` fences (valid comment there). `#` in plain text = H1 heading — corrupts hierarchy.
+
+```
+> loads: modes/resume.md   ✓    # loads: modes/resume.md   ✗ (H1)
+```
+
 ## Writing Style — Compression Tiers
 
 Three tiers based on reader:

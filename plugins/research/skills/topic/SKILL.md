@@ -233,7 +233,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Team Mode — only when `--team` flag present
 
-# loads: modes/team.md
+> loads: modes/team.md
 **Mode-file existence check** — verify before reading:
 
 ```bash
@@ -253,7 +253,7 @@ Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"` and 
 
 ## Plan Mode — only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode)
 
-# loads: modes/plan.md
+> loads: modes/plan.md
 **Mode-file existence check** — verify before reading:
 
 ```bash

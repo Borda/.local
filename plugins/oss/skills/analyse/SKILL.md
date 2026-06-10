@@ -4,6 +4,9 @@ description: |
   Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd (requires `oss` plugin). NOT for PR readiness assessment or code review (use oss:review).
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
   SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review); user phrasing is "review PR" meaning code quality assessment, not thread triage (route to oss:review).
+when_to_use: |
+  TRIGGER when: user provides GitHub issue/PR/discussion number or URL and asks to analyze/summarize/triage; user asks for repo vitality or ecosystem stats; phrases: "summarize this issue", "is this a duplicate", "repo vitality", "ecosystem health".
+  SKIP: full thread text already pasted inline; oss:resolve active on same PR; code review requested (use oss:review); thread analysis on a non-GitHub repo.
 argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]"
 allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
@@ -62,8 +65,8 @@ if [ -z "$_OSS_SHARED" ]; then
 fi
 FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/); consumed by modes/thread.md, modes/vitality.md, modes/ecosystem.md
 ```
-# loads: oss-shared-resolver.md
-# Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
+> loads: oss-shared-resolver.md
+> Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
 ## Step 1: Flag parsing
 

@@ -479,8 +479,8 @@ If pre-commit hooks fail:
 
 #### Phase 5 — Verify metric
 
-# loads: phase5-metric.md
-Read `${CLAUDE_SKILL_DIR}/modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
+> loads: phase5-metric.md
+> Read `${CLAUDE_SKILL_DIR}/modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
 
 #### Phase 6 — Run guard
 
@@ -629,46 +629,13 @@ Call `AskUserQuestion` tool after R7 output — do NOT write options as plain te
 
 ## Resume Mode
 
-# loads: resume.md
-Read and execute `${CLAUDE_SKILL_DIR}/modes/resume.md`.
+> loads: resume.md
+> Read and execute `${CLAUDE_SKILL_DIR}/modes/resume.md`.
 
 ## Mode: colab
 
-Execute this section only when `--colab` flag is set. Skip entirely for local or docker runs.
-
-**Purpose**: route metric verification and GPU code testing to Colab runtime instead of local. Essential for ML training metrics, CUDA benchmarks, GPU-required workloads.
-
-**Hardware selection** (`--colab=HW`): optionally specify GPU type. Known: `H100`, `L4`, `T4`, `A100`. If omitted, Colab picks default. Advisory — actual hardware configured in notebook UI. Claude Code validates GPU identity at Phase 5 via `torch.cuda.get_device_name()` assertion; halts if mismatch.
-
-**Setup** (before running `--colab`):
-
-1. Add `"colab-mcp"` to `enabledMcpjsonServers` in `settings.local.json`:
-   ```json
-   {
-     "enabledMcpjsonServers": [
-       "colab-mcp"
-     ]
-   }
-   ```
-2. Ensure `colab-mcp` server defined in `.mcp.json` under `mcpServers` (see project `.mcp.json`).
-3. Open Colab notebook with runtime connected and execute MCP connection cell.
-
-**How it works during a run:**
-
-- Step R2 (preconditions): checks for `mcp__colab-mcp__runtime_execute_code` availability.
-- Phase 5 (verify metric): calls `mcp__colab-mcp__runtime_execute_code` with `metric_cmd` instead of local `timeout <cmd>`.
-- Phase 2 (ideate): `research:scientist` agent can call `mcp__colab-mcp__runtime_execute_code` to prototype GPU code before committing.
-- `VERIFY_TIMEOUT_SEC` = 300 (vs 120 local) to account for network + GPU startup latency.
-
-If Colab MCP unavailable at R2, print:
-
-```markdown
-⚠ Colab MCP not available. To enable:
-  1. Add "colab-mcp" to enabledMcpjsonServers in settings.local.json
-  2. Open a Colab notebook and connect the runtime
-  3. Execute the MCP connection cell in the notebook
-Then re-run with --colab.
-```
+> loads: colab-setup.md
+> Execute only when `--colab` flag active. Read and execute `${CLAUDE_SKILL_DIR:-plugins/research/skills/run}/modes/colab-setup.md`.
 
 </workflow>
 

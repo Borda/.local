@@ -1,6 +1,9 @@
 ---
 name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design."
+when_to_use: |
+  TRIGGER when: user provides a GitHub PR number (e.g. `42`, `#42`) and asks to review/audit/check it, or provides a saved review-report path with `--reply` to draft a contributor-facing comment; phrases: "review PR 123", "audit this pull request", "look at PR #42", "draft a reply for this review report".
+  SKIP: local file or current git diff review (use `/develop:review` (requires `develop` plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use `oss:analyse`).
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
@@ -11,7 +14,7 @@ effort: high
 
 Spawn specialized sub-agents in parallel. Consolidate findings into structured feedback with severity levels.
 
-NOT for local file review or current git diff — use `/develop:review` (requires `develop` plugin). NOT for non-Python source PRs (TypeScript, Go, Rust, etc.) unless they include Python files — docs-only and CI/CD-only PRs are in scope. NOT for standalone GitHub issue analysis or thread summarization — use `oss:analyse`. NOT for **draft PRs** (GitHub draft status — `isDraft=true`) — draft PRs are work-in-progress; reviewing them wastes the multi-agent fan-out on findings the contributor has not yet addressed. Step 1 detects `isDraft` and invokes `AskUserQuestion` to confirm before proceeding; user may opt to review the draft anyway. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
+NOT for local file review or current git diff — use `/develop:review` (requires `develop` plugin). NOT for non-Python source PRs (TypeScript, Go, Rust, etc.) unless they include Python files — docs-only and CI/CD-only PRs are in scope. NOT for standalone GitHub issue analysis or thread summarization — use `oss:analyse`. **Draft PRs** (GitHub `isDraft=true`) are work-in-progress; reviewing them spends the multi-agent fan-out on findings the contributor has not yet addressed — pass an explicit PR number anyway if you want the draft reviewed. Note: oss:review performs inline linked-issue analysis (root-cause alignment check in Step 1) as part of PR review — within scope, no conflict.
 
 </objective>
 
@@ -46,6 +49,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ## Agent Resolution
 
+```bash
 # loads: oss-shared-resolver.md
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
@@ -60,6 +64,7 @@ if [ ! -d "$_OSS_SHARED" ]; then
         echo "⚠ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — continuing with degraded functionality (oss skill-specific shared helpers unavailable; --reply mode will not work in this run)"
     fi
 fi
+```
 
 Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`, `oss:cicd-steward`.
 
@@ -618,24 +623,28 @@ else
 fi
 ```
 
-! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text before or instead of tool call. Map options directly into tool call arguments. Option set depends on `$RESOLVE_AVAILABLE`:
+! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text before or instead of tool call. Map options directly into tool call arguments. AskUserQuestion is capped at 4 options per call — when `$RESOLVE_AVAILABLE=true` the three `/oss:resolve` variants are merged into a single option whose description enumerates the variants; ask one follow-up only when the user picks that merged option. Option set depends on `$RESOLVE_AVAILABLE`:
 
-**When `$RESOLVE_AVAILABLE = true`** (full option list):
+**When `$RESOLVE_AVAILABLE = true`** (merged option list — 3 options):
 - question: "What next?"
+- (a) label: `/oss:resolve …` — description: launch oss:resolve in one of three variants (pick which after this question): `/oss:resolve $CLEAN_ARGS` (fix this PR) · `/oss:resolve report` (resolve from full report) · `/oss:resolve $CLEAN_ARGS report` (fix PR + resolve from report)
+- (b) label: `walk through findings` — description: go through each finding interactively
+- (c) label: `skip` — description: no action
+
+When the user selects (a), invoke a second `AskUserQuestion` to pick the variant — keeps the per-call cap satisfied while preserving all three flows:
+- question: "Which /oss:resolve variant?"
 - (a) label: `/oss:resolve $CLEAN_ARGS` — description: fix this PR
 - (b) label: `/oss:resolve report` — description: resolve from full report
 - (c) label: `/oss:resolve $CLEAN_ARGS report` — description: fix PR + resolve from report
-- (d) label: `walk through findings` — description: go through each finding interactively
-- (e) label: `skip` — description: no action
 
-**When `$RESOLVE_AVAILABLE = false`** (oss plugin missing or resolve skill absent): omit options (a)/(b)/(c) entirely (offering an unavailable command misleads the user):
+**When `$RESOLVE_AVAILABLE = false`** (oss plugin missing or resolve skill absent): omit the resolve option entirely (offering an unavailable command misleads the user):
 - question: "What next?"
-- (d) label: `walk through findings` — description: go through each finding interactively
-- (e) label: `skip` — description: no action
+- (a) label: `walk through findings` — description: go through each finding interactively
+- (b) label: `skip` — description: no action
 
-`oss:resolve` has `disable-model-invocation: true` — `Skill()` invocation blocked (exempt from follow-up gate rule in `quality-gates.md`). After AskUserQuestion returns:
-- Options (a)/(b)/(c): acknowledge selection; present chosen label as command user must run manually (e.g. `Run: /oss:resolve $CLEAN_ARGS` for option a); no `Skill()` call
-- Options (d)/(e): handle inline or stop
+`oss:resolve` has `disable-model-invocation: true` — `Skill()` invocation blocked (exempt from follow-up gate rule in `quality-gates.md`). After both AskUserQuestion calls return:
+- Resolve variant chosen: acknowledge selection; present chosen label as command user must run manually (e.g. `Run: /oss:resolve $CLEAN_ARGS`); no `Skill()` call
+- `walk through findings` / `skip`: handle inline or stop
 
 ### 7b — Confidence block
 
