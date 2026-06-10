@@ -4,7 +4,7 @@ description: |
   Atomic rename of Python symbols (functions, classes, methods) or modules using the structural index. Finds all static callers, import sites, __all__ re-exports, and Sphinx docstring cross-refs (:func:, :class:, :meth:, :mod:, :attr:). Optional: keep old name as deprecated alias via pydeprecate (--deprecate) or hard-delete when zero callers (--remove-if-no-callers).
   TRIGGER when: user asks to rename a Python function, class, method, or module; phrases: "rename X to Y", "rename function", "rename class", "rename module", "move module X to Y", "refactor symbol X into Y", "update all references to X".
   SKIP: non-Python project; codemap index not built (run /codemap:scan-codebase first); renaming a local variable (not a symbol definition or module path); user explicitly wants grep-only rename without index verification; user performing rename via IDE/LSP and only wants advisory coverage (use --dry-run).
-argument-hint: "symbol <old_qname> <new_qname> [--dry-run] [--deprecate [--since <ver>] [--removed-in <ver>]] [--remove-if-no-callers] | module <old_module_path> <new_module_path> [--dry-run]"
+argument-hint: "symbol <old_qname> <new_qname> [--dry-run] [--deprecate[=\"@deprecated(...)\"|\"@deprecated_class(...)\"]] [--since <ver>] [--removed-in <ver>] [--remove-if-no-callers] | module <old_module_path> <new_module_path> [--dry-run]"
 allowed-tools: Bash, Read, Edit, Write, AskUserQuestion
 model: sonnet
 effort: medium
@@ -47,7 +47,8 @@ Extract from `$ARGUMENTS`:
 - `OLD_REF` — second token
 - `NEW_REF` — third token
 - `DRY_RUN` — true if `--dry-run` present
-- `DEPRECATE` — true if `--deprecate` present (symbol only)
+- `DEPRECATE` — true if `--deprecate` or `--deprecate=<value>` present (symbol only)
+- `DEPRECATE_DECORATOR` — value after `--deprecate=` (empty if bare `--deprecate`); when non-empty, used as explicit decorator line passed to `gen_deprecation_wrapper.py --decorator`; example: `--deprecate="@deprecated(target=bar, deprecated_in='1.0', remove_in='2.0')"`
 - `SINCE_VER` — value after `--since` (empty if absent)
 - `REMOVED_IN_VER` — value after `--removed-in` (empty if absent)
 - `REMOVE_IF_ZERO` — true if `--remove-if-no-callers` present (symbol only)
@@ -59,7 +60,19 @@ Derive bare names for grep patterns:
 - `NEW_NAME="${NEW_REF##*::}"`
 - For module subcommand, `OLD_NAME="${OLD_REF##*.}"` (last dotted component) and `NEW_NAME="${NEW_REF##*.}"`
 
-Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`--dry-run`, `--deprecate`, `--since`, `--removed-in`, `--remove-if-no-callers`). If found: print `! Unknown flag(s): --<token>. Supported flags: --dry-run, --deprecate, --since, --removed-in, --remove-if-no-callers.` then invoke `AskUserQuestion` — (a) Abort · (b) Continue ignoring unknown flags. On Abort: stop.
+Parse `--deprecate` — may be bare flag or carry a decorator value:
+```bash
+DEPRECATE=false; DEPRECATE_DECORATOR=""
+if echo "$ARGUMENTS" | grep -qE -- '--deprecate=[^ ]+'; then
+    DEPRECATE=true
+    DEPRECATE_DECORATOR=$(echo "$ARGUMENTS" | grep -oE -- '--deprecate=[^ ]+' | head -1 | sed 's/--deprecate=//')
+    DEPRECATE_DECORATOR=$(echo "$DEPRECATE_DECORATOR" | sed "s/^['\"]//;s/['\"]$//")  # strip surrounding quotes
+elif echo "$ARGUMENTS" | grep -q -- '--deprecate'; then
+    DEPRECATE=true
+fi
+```
+
+Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`--dry-run`, `--deprecate`, `--since`, `--removed-in`, `--remove-if-no-callers`). If found: print `! Unknown flag(s): --<token>. Supported flags: --dry-run, --deprecate[=<decorator>], --since, --removed-in, --remove-if-no-callers.` then invoke `AskUserQuestion` — (a) Abort · (b) Continue ignoring unknown flags. On Abort: stop.
 
 ## Step 1: Validate index
 
@@ -69,8 +82,8 @@ Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`
 # Capture line 2 only (index path) — do not use bare $() which would combine both lines
 INDEX=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_proj_index.py" 2>/dev/null | sed -n '2p')
 [ -n "$INDEX" ] || { echo "! index not found — run /codemap:scan-codebase first"; exit 1; }
-SMOKE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/smoke_test_index.py" --index-path "$INDEX")  # timeout: 10000
-STALE=$(echo "$SMOKE" | jq -r '.stale // "unknown"' 2>/dev/null || echo "unknown")
+SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
+STALE=$(echo "$SMOKE_JSON" | jq -r '.stale // "unknown"' 2>/dev/null || echo "unknown")
 ```
 
 If `STALE=true` → invoke `AskUserQuestion` — (a) Proceed anyway (callers may be incomplete) · (b) Abort (re-run /codemap:scan-codebase first). On Abort: print "Run `/codemap:scan-codebase` then re-invoke" and stop.
@@ -81,10 +94,10 @@ If `STALE=unknown` (jq absent or JSON parse failed) → print `⚠ Could not det
 **Symbol subcommand**:
 
 ```bash
-scan-query --timeout 20 find-symbol "$OLD_REF" --limit 0
+FIND_SYMBOL_JSON=$(scan-query --timeout 20 find-symbol "$OLD_REF" --limit 0)  # timeout: 25000
 ```
 
-`find-symbol` returns `matches` array — each entry: `{name, qualified_name, type, module, path, start_line, end_line, source}`. The `source` field (symbol source text) is also present — same schema as `query-code` `symbol` command result. Use `path`, `start_line`, `end_line` for edits; use `qualified_name` for exact-match filtering when multiple results returned.
+`find-symbol` returns `matches` array — each entry: `{name, qualified_name, type, module, path, start_line, end_line, source}`. The `source` field (symbol source text) is also present — same schema as `query-code` `symbol` command result. Use `path`, `start_line`, `end_line` for edits; use `qualified_name` for exact-match filtering when multiple results returned. Capture as `FIND_SYMBOL_JSON` — Step 4e reads `.matches[0].type` from it.
 
 - 0 matches → `! Symbol '$OLD_REF' not found. Verify with: scan-query find-symbol <pattern>` and stop.
 - Multiple matches → invoke `AskUserQuestion` listing candidates (name, type, module, path) — ask which to rename.
@@ -151,7 +164,7 @@ Otherwise, invoke `AskUserQuestion` — (a) Apply edits · (b) Abort. On Abort: 
 
 ## Step 4: Apply edits — symbol rename
 
-Skip to Step 4M if `SUBCOMMAND=module`.
+Skip to Step 5 if `SUBCOMMAND=module`.
 
 **4a — Rename definition site**:
 Read `path` from find-symbol result. Edit the definition line at `start_line`:
@@ -198,62 +211,44 @@ Edit each match: replace `old_name`/`OldName` within the backtick-delimited role
 
 **4e — Deprecation wrapper** (if `DEPRECATE=true`, after 4a):
 
-First, read the `type` field from the `find-symbol` result for this symbol (`"function"`, `"method"`, or `"class"`). Generate the appropriate Python code string and insert it immediately after the new definition block in the same file.
+Call `gen_deprecation_wrapper.py` to produce the Python code string, then insert it immediately after the new definition block in the same file.
 
-**Determine decorator by type**:
-- `type == "class"` → use `deprecated_class` (preserves `isinstance` — `deprecated` on a class generates a function stub that breaks isinstance checks)
-- `type == "function"` or `type == "method"` → use `deprecated` with `target=new_fn`
+```bash
+# FIND_SYMBOL_JSON captured in Step 2 — extract type for auto mode
+SYMBOL_TYPE=$(echo "$FIND_SYMBOL_JSON" | jq -r '.matches[0].type // "function"')  # timeout: 3000
 
-**Generated code for function/method** (`type` is `"function"` or `"method"`):
-```python
-# Deprecated alias — remove after <REMOVED_IN_VER or "next major"> release
-try:
-    from deprecate import deprecated as _deprecated
-
-    @_deprecated(target=<new_name>, deprecated_in="<SINCE_VER or '?'>", remove_in="<REMOVED_IN_VER or '?'>")
-    def old_name(*args, **kwargs): ...
-except ImportError:
-    import warnings
-
-    def old_name(*args, **kwargs):
-        warnings.warn("<old_name> deprecated; use <new_name>", DeprecationWarning, stacklevel=2)
-        return new_name(*args, **kwargs)
-
-    old_name.__doc__ = "Deprecated alias for <new_name>."
+if [ -n "$DEPRECATE_DECORATOR" ]; then
+    # Explicit mode — user supplied full decorator line via --deprecate="@deprecated(...)"
+    DEPRECATION_CODE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/gen_deprecation_wrapper.py" \
+        --decorator "$DEPRECATE_DECORATOR" \
+        --old-name "$OLD_NAME" \
+        ${REMOVED_IN_VER:+--removed-in "$REMOVED_IN_VER"})  # timeout: 5000
+else
+    # Auto mode — derive decorator from symbol type + names + versions
+    DEPRECATION_CODE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/gen_deprecation_wrapper.py" \
+        --type "$SYMBOL_TYPE" \
+        --old-name "$OLD_NAME" \
+        --new-name "$NEW_NAME" \
+        ${SINCE_VER:+--since "$SINCE_VER"} \
+        ${REMOVED_IN_VER:+--removed-in "$REMOVED_IN_VER"})  # timeout: 5000
+fi
+[ $? -eq 0 ] || { echo "! gen_deprecation_wrapper failed — check symbol type and names"; exit 1; }
 ```
 
-**Generated code for class** (`type` is `"class"`):
-```python
-# Deprecated alias — remove after <REMOVED_IN_VER or "next major"> release
-try:
-    from deprecate import deprecated_class as _deprecated_class
+Insert `$DEPRECATION_CODE` as a new block immediately after the end of the new definition (after `end_line` from Step 2). Requires pyDeprecate installed in the target project; if absent, the inserted `from deprecate import ...` will raise `ImportError` at import time — surface this in the Step 6 summary advisory.
 
-    OldName = _deprecated_class(NewName, deprecated_in="<SINCE_VER or '?'>", remove_in="<REMOVED_IN_VER or '?'>")
-except ImportError:
-    import warnings
-
-    class OldName(NewName):
-        """Deprecated alias for NewName."""
-
-        def __init__(self, *args, **kwargs):
-            warnings.warn("OldName deprecated; use NewName", DeprecationWarning, stacklevel=2)
-            super().__init__(*args, **kwargs)
-```
-
-Notes:
-- `target=<new_name>` / first positional `NewName` — actual renamed object reference, not a string
-- `deprecated` with `target=callable` handles call forwarding; `...` body intentionally empty
-- `deprecated_class` returns a proxy preserving `isinstance(obj, OldName)` — required for correct class deprecation
-- `--since` / `--removed-in` → `deprecated_in` / `remove_in` params; default `"?"` if flag omitted
+Type→decorator mapping:
+- `"class"` → `@deprecated_class(target=NewName, ...)` — preserves `isinstance` via transparent proxy
+- `"function"` / `"method"` → `@deprecated(target=new_fn, ...)` — `...` body; pydeprecate handles call forwarding
 
 **4f — Hard-delete definition** (if `REMOVE_IF_ZERO=true`):
 Note: steps 4a–4e have already renamed the definition. The deletion here removes the **new-name** definition (which has zero callers as confirmed in Step 3).
 Invoke `AskUserQuestion` listing: file path, start_line–end_line, definition source (showing new name). Options: (a) Confirm delete (0 callers confirmed — safe to remove) · (b) Keep definition (skip deletion). On Keep: skip deletion; the new-name definition remains in place.
 On Confirm: Edit to remove the definition block (start_line through end_line, inclusive of any decorator lines immediately above).
 
-## Step 4M: Apply edits — module rename
+## Step 5: Apply edits — module rename
 
-**4M-a — File rename**:
+**5a — File rename**:
 
 ```bash
 git status --porcelain "<old_file_path>"  # timeout: 3000
@@ -269,7 +264,7 @@ Derive `old_file_path` from `old_module_path` (replace `.` with `/`, append `.py
 git mv "<old_file_path>" "<new_file_path>"  # timeout: 5000
 ```
 
-**4M-b — Direct imports**:
+**5b — Direct imports**:
 
 ```bash
 grep -rn "^import ${OLD_MODULE_PATH}\b\|^import ${OLD_MODULE_PATH} as " --include="*.py" .  # timeout: 5000
@@ -277,7 +272,7 @@ grep -rn "^import ${OLD_MODULE_PATH}\b\|^import ${OLD_MODULE_PATH} as " --includ
 
 Edit each: `import mypackage.old_name` → `import mypackage.new_name`.
 
-**4M-c — From-imports**:
+**5c — From-imports**:
 
 ```bash
 grep -rn "^from ${OLD_MODULE_PATH} import\|^from ${OLD_MODULE_PATH} as " --include="*.py" .  # timeout: 5000
@@ -285,7 +280,7 @@ grep -rn "^from ${OLD_MODULE_PATH} import\|^from ${OLD_MODULE_PATH} as " --inclu
 
 Edit each: `from mypackage.old_name import` → `from mypackage.new_name import`.
 
-**4M-d — `__init__.py` relative re-exports**:
+**5d — `__init__.py` relative re-exports**:
 
 ```bash
 OLD_BASENAME="${OLD_MODULE_PATH##*.}"  # last component of dotted path
@@ -298,7 +293,7 @@ grep -rn "from \.*[^.]*\.${OLD_BASENAME} import\|from \.${OLD_BASENAME} import\|
 
 Edit each match: `from .old_name import` → `from .new_name import`. Verify match is in the expected package directory before editing — skip matches in unrelated packages.
 
-**4M-e — pyproject.toml / setup.cfg**:
+**5e — pyproject.toml / setup.cfg**:
 
 ```bash
 # Use OLD_MODULE_PATH (dotted full path) for pyproject.toml/setup.cfg to avoid false-positive matches
@@ -308,7 +303,7 @@ grep -rn "${OLD_MODULE_PATH}" pyproject.toml setup.cfg 2>/dev/null  # timeout: 3
 
 Edit `packages` / `install_requires` entries matching old module path if found. Do NOT use bare `OLD_BASENAME` for this grep — too broad.
 
-**4M-f — Sphinx docstring `:mod:` refs**:
+**5f — Sphinx docstring `:mod:` refs**:
 
 ```bash
 grep -rn ":mod:\`[^']*${OLD_BASENAME}[^']*\`" --include="*.py" --include="*.rst" .  # timeout: 5000
@@ -316,7 +311,7 @@ grep -rn ":mod:\`[^']*${OLD_BASENAME}[^']*\`" --include="*.py" --include="*.rst"
 
 Edit each `:mod:` reference to use new module path.
 
-## Step 5: Re-scan + verify
+## Step 6: Re-scan + verify
 
 ```bash
 # --incremental: re-parses only files changed since last scan — sufficient for post-rename verification
@@ -331,7 +326,7 @@ Expected: old name absent from results (or present only as deprecated alias for 
 
 If old name still found outside deprecated alias: list residual hit files — surface as advisory in Step 6. These are hard-limit cases (dynamic refs, string refs in templates, config strings outside scanned scope).
 
-## Step 6: Summary
+## Step 7: Summary
 
 Print:
 

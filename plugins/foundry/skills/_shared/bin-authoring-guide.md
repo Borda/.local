@@ -8,6 +8,8 @@ Two audiences:
 1. **Check 33 auto-fix** — when a HIGH verdict is reached, reference this doc for how to perform the extraction
 2. **`foundry:manage create skill`** — reference when scaffolding any new skill that needs code blocks, to prevent inline blocks that will later need extraction
 
+See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plugins/README.md for the authoring motivations behind these rules.
+
 ---
 
 ## Language Policy (canonical — reproduced verbatim from `plugins/CLAUDE.md`)
@@ -22,9 +24,32 @@ Two audiences:
 
 ---
 
+## Cross-OS Compatibility
+
+`bin/` scripts run on macOS, Linux, and Windows (WSL/git-bash). Python scripts are preferred over bash for any logic beyond the three allowed bash cases — Python is portable by design; bash is not.
+
+**Bash: banned constructs** (GNU-only or platform-divergent):
+
+| Construct | Problem | Use instead |
+| --- | --- | --- |
+| `grep -P` | PCRE — GNU only; macOS BSD grep rejects | `grep -E` or Python `re` |
+| `sed -i` (no arg) | GNU accepts; BSD requires `sed -i ''` | Python `pathlib.write_text` |
+| `readlink -f` | BSD lacks `-f` | Python `Path.resolve()` |
+| `date -d` | GNU only | Python `datetime` |
+| `find -printf` | GNU only | Python `os.walk` |
+| `sort -V` (version sort) | GNU/recent BSD only | Python `packaging.version` |
+
+**Python: portability rules**:
+- Use `pathlib.Path` for all path operations — never `os.path.sep` string surgery
+- Never `os.system()` — use `subprocess.run(..., check=True)`
+- Add `LC_ALL=C` to subprocess env when calling `sort`/`grep` for stable locale-independent output
+- Test with `tmp_path` fixture (pytest) — never hard-code `/tmp/` or `C:\Temp`
+
+---
+
 ## Extraction Gate
 
-Before writing ANY inline code block, apply this gate. All three must pass — if any fails, stay inline.
+Before writing ANY inline code block, first apply the Prose check (§Prose over Code, Case 3). If prose is precision-equivalent and shorter — write prose and stop. Otherwise apply this gate. All three must pass — if any fails, stay inline.
 
 **Gate conditions (all three must pass):**
 
@@ -42,6 +67,7 @@ Before writing ANY inline code block, apply this gate. All three must pass — i
 | Lintable (shellcheck/ruff directly applicable) | +1 |
 | Run frequency (executes >1× per skill invocation) | +1 |
 | Standalone debuggable (runnable with no SKILL.md context) | +1 |
+| Reasoning complexity (3+ conditional branches, nested conditionals, or non-trivial regex/arithmetic) | +2 |
 
 **Verdict:**
 
@@ -54,8 +80,56 @@ Before writing ANY inline code block, apply this gate. All three must pass — i
 
 ---
 
+## Prose over Code (Token Compression)
+
+Prefer plain language, a table, or a schema over a code block when prose is **precision-equivalent** and shorter in tokens. Applies at authoring time and retrospectively.
+
+**Exempt** (fenced code blocks in `.md` files): examples, templates, and blocks whose purpose is to carry exact syntax for copy-paste or reproducible execution.
+
+**Precision-equivalent** means the prose expresses the logic with **100% precision and 100% reproducibility**: every input produces the same output from the prose description as from the code, with no ambiguity. This holds for: routing/switch logic with a fixed, bounded, enumerable input set (e.g. mode flags, classification labels, small enum dispatch). It does NOT hold for: free-form inputs, numeric ranges, regex pattern matching, file-system state checks, or any logic where edge cases cannot be fully enumerated in plain language. When uncertain, keep code.
+
+Tests and linting on a bin/ script are anti-regression tools — they are NOT a reason to keep a script that is fully replaceable with plain language. Delete the script and the tests with it when precision-equivalent prose is possible.
+
+### Case 1 — inline fenced code block in any `.md` file
+
+Replace with prose/table/schema when all REPLACE conditions apply AND no KEEP condition applies:
+
+| Condition | REPLACE | KEEP |
+| --- | --- | --- |
+| Variable only referenced in prose conditions (never in a later shell command) | ✓ | — |
+| Variable consumed by a later shell command or drives file I/O / cache state | — | ✓ |
+| Cases bounded, mutually exclusive, no shell/subshell semantics | ✓ | — |
+| Prose form is precision-equivalent (see definition above) | ✓ | — |
+
+Token test (apply only when all REPLACE conditions hold): `tokens(block) > tokens(prose/table/schema)` → replace.
+
+**Replace**: `manage/SKILL.md` `EDIT_TRIVIAL` classifier — only in prose conditions, no shell consumer → 2-row table.
+
+**Keep**: `STALE=$([ ! -f "$INDEX" ] || [ -n "$(find "$INDEX" -mmin +60 -print 2>/dev/null)" ] && echo true || echo false)` — `STALE` consumed by downstream shell command; `find -mmin` + `2>/dev/null` not precision-equivalent in prose.
+
+### Case 2 — existing `bin/` script
+
+`bin/` scripts enforce reproducibility and stay as executables. Deletion candidate only when ALL hold:
+
+- Logic is precision-equivalent (see definition above) — routing/switch with bounded input set; NOT free-form or range inputs
+- If a test file exists (`tests/test_<name>.py` or `tests/test_<name>_sh.py`): the test file is evidence that precision was non-obvious at authoring time. Before deleting, verify the prose covers every non-happy-path test scenario — if any test case produces an ambiguous prose answer, keep the script. Delete the test file only after this verification passes.
+- No cross-plugin consumers (not listed in `Known cross-plugin utilities` or any `<!-- file: ... consumers: ... -->` header)
+- Single consumer — called from exactly one `.md` file within the plugin; verify with `grep -rn "<script-basename>" plugins/*/skills/ plugins/*/agents/`
+- Token test: `tokens(call-site description in .md) > tokens(equivalent prose in .md)` — strict savings required
+
+Linting on the script is not a blocker. Tests are not a veto — but they document the precision cases the author considered non-obvious. Verify prose covers every test scenario before deleting. Delete the test file together with the script after verification.
+
+When all hold: delete script (and its test file if present), replace call-site with prose, run `check_orphaned_bin.py` (must exit 0).
+
+### Case 3 — new code at authoring time
+
+**Prose check runs first, before the Extraction Gate.** Ask: would one sentence, a table, or a schema express this with equal precision and fewer tokens? Yes → write prose; stop. No → proceed to Extraction Gate (G1/G2/G3).
+
+---
+
 ## Decision Flowchart
 
+0. **Prose check first**: would one sentence, a table, or a schema express this with precision-equivalent content and fewer tokens? Yes → write prose; stop here. No → continue.
 1. Writing a code block in SKILL.md? Apply gate (G1/G2/G3).
 2. Any gate fails? Inline is correct — stop here.
 3. Gate passes. Score positive dimensions.
@@ -76,6 +150,70 @@ RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/script-name.sh" arg1 arg2 2>/dev/null || ech
 
 # Python script — timeout enforced inside the script via --timeout default
 RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script-name.py" arg1 arg2)
+```
+
+---
+
+## Script Output Routing
+
+**Rule: match output channel to downstream consumer.**
+
+| Output needed for | Script writes | Skill reads via |
+| --- | --- | --- |
+| Shell command arg (`"$VAR"`) | `${TMPDIR:-/tmp}/<skill>-<name>` file | `VAR=$(cat "${TMPDIR:-/tmp}/<skill>-<name>")` |
+| Prose condition / display only | `${TMPDIR:-/tmp}/<skill>-<name>` file | Read tool or plain prose |
+| Single value, same bash block | stdout | `VAR=$(python script.py ...)` |
+
+**Multi-value DATA output: write to TMPDIR files — never `eval` stdout.**
+
+Shell variables set in one Bash tool call do not persist to the next separate Bash tool call — they only survive within a single invocation. TMPDIR files survive across all invocations. Any script returning 2+ values (e.g. `PROJ` + `INDEX`) must write each to its own file and exit 0/1. The skill checks exit code; downstream steps `cat` what they need.
+
+> **Scope**: this rule applies to DATA output (returning computed values to the skill). Shell-setup eval — e.g. `eval "$(python health_sentinel.py ...)"` that injects `SENTINEL=...` into the calling shell for health monitoring — is a different pattern and remains valid.
+
+**Naming convention**: `${TMPDIR:-/tmp}/<plugin>-<script-slug>-<value-name>`. When a script has more than one consumer (e.g. a shared `resolve-shared.py`), the calling skill passes a unique prefix: `--out-prefix <skill>-<run-id>`; the script writes `<prefix>-proj`, `<prefix>-index`. Never hardcode a prefix in a shared script — consumers will collide.
+
+```python
+# script — owns output routing; prefix passed by caller when multi-consumer
+import os, sys
+from pathlib import Path
+tmpdir = os.environ.get("TMPDIR", "/tmp")
+prefix = sys.argv[1]  # e.g. "codemap-integration"
+Path(f"{tmpdir}/{prefix}-proj").write_text(proj)
+Path(f"{tmpdir}/{prefix}-index").write_text(index)
+sys.exit(0)
+```
+
+```bash
+# skill — exit-code check only; no parsing
+python "${CLAUDE_PLUGIN_ROOT:-plugins/myplugin}/bin/resolve.py" "myplugin-resolve" ...  # timeout: 5000
+```
+
+```bash
+# downstream bash block — only when value feeds a shell command
+INDEX=$(cat "${TMPDIR:-/tmp}/myplugin-resolve-index")
+python scan.py --index "$INDEX"  # timeout: 30000
+```
+
+```text
+# downstream prose — when value used only for display or condition
+Read ${TMPDIR:-/tmp}/myplugin-resolve-index. If empty: print ✗ and stop.
+```
+
+**Anti-patterns — data output:**
+
+```bash
+# ✗ eval for data — shell-assignment output is fragile; shlex discipline required;
+#   vars die at next separate Bash tool call anyway
+eval "$(python resolve.py ...)"
+
+# ✗ tab-delimited read — vars still die at next separate Bash tool call
+IFS=$'\t' read -r PROJ INDEX < <(python resolve.py ...)
+
+# Determinism anti-pattern (separate concern): two calls for two values
+# Even with TMPDIR routing, the right design is one invocation that writes both files.
+# ✗ two calls — non-atomic; second call may return different state
+PROJ=$(python resolve.py --field proj)
+INDEX=$(python resolve.py --field index)
 ```
 
 ---
@@ -363,7 +501,7 @@ HARD_CUTOFF=${HARD_CUTOFF:-900}
 
 When `foundry:manage create skill <name>` scaffolds a new SKILL.md, include this instruction:
 
-> Before writing any fenced code block, read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate. Write bin/ script directly if verdict is MEDIUM or HIGH.
+> Before writing any fenced code block, read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate. Write bin/ script directly if verdict is MEDIUM or HIGH. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
 
 ---
 

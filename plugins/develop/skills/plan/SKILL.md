@@ -24,7 +24,9 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 ## Agent Resolution
 
 ```bash
-_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+_PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
+_DEV_SHARED=$(echo "$_PATHS" | head -1)
+_FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:challenger`.

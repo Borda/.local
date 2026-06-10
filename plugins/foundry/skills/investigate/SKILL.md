@@ -72,7 +72,7 @@ Collect evidence in parallel — do NOT form hypotheses yet.
 which python && python --version                                                                   # timeout: 5000
 which uv 2>/dev/null && uv --version 2>/dev/null || echo "uv: not found"                             # timeout: 5000
 node --version 2>/dev/null || echo "node: not found"                                                 # timeout: 5000
-jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && { jq -e '.enabledPlugins["codex@openai-codex"] == false' ~/.claude/settings.json >/dev/null 2>&1 && echo "codex (openai-codex): installed but disabled in settings.json" || echo "codex (openai-codex): enabled"; } || echo "codex (openai-codex): not found"  # timeout: 5000
+CODEX_STATUS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_codex.py" 2>/dev/null || echo "false"); echo "codex (openai-codex): $CODEX_STATUS"  # timeout: 5000
 ```
 
 ```bash

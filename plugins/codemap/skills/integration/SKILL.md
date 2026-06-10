@@ -70,32 +70,30 @@ if [ "$C1_STATUS" = "failed" ]; then
     echo "C1 failed — skipping this step."
     exit 0
 fi
-# PROJ/INDEX resolution — also used in Step I1 (init mode); keep in sync
-# NOTE: uses single-strategy basename lookup; scan-query uses three-strategy walk-up
-# If index not found here but scan-query works, run with explicit --index flag or re-run /codemap:scan-codebase from project root
-# bash 3.2 compatible — mapfile is bash 4+ only; macOS ships bash 3.2
-_idx=()
-while IFS= read -r line; do
-    _idx+=("$line")
-done < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_proj_index.py")
-PROJ="${_idx[0]:-}"
-INDEX="${_idx[1]:-}"
-if [ -z "$PROJ" ]; then
-    printf "✗ resolve_proj_index.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
-    echo "failed" > "${TMPDIR:-/tmp}/codemap-c2-status"
-    exit 1
-fi
-# Persist for C3/C4 — fresh shell per Bash() call loses bash variables
+# PROJ/INDEX resolution + existence check — also used in Step I1 (init mode, without --check-exists).
+# Stderr captured to tempfile so eval only sees KEY=value stdout (never mixed stderr).
+# Script always emits PROJ/INDEX on stdout regardless of exit code — no second invocation needed.
+_resolve_err=$(mktemp)
+RESOLVE_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists 2>"$_resolve_err")
+_resolve_rc=$?
+eval "$RESOLVE_OUT"
 echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-index"
-printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
-if [ -f "$INDEX" ]; then
+if [ "$_resolve_rc" -eq 0 ]; then
+    printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
     printf "✓ index: exists\n"
 else
-    printf "✗ index: not found\n"
-    printf "  → Run /codemap:scan-codebase to build the index\n"
-    echo "failed" > "${TMPDIR:-/tmp}/codemap-c1-status"
+    printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
+    if grep -q "INDEX file not found" "$_resolve_err"; then
+        printf "✗ index: not found\n"
+        printf "  → Run /codemap:scan-codebase to build the index\n"
+    else
+        printf "✗ resolve_proj_index.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
+    fi
+    echo "failed" > "${TMPDIR:-/tmp}/codemap-c2-status"
+    rm -f "$_resolve_err"
     exit 1
 fi
+rm -f "$_resolve_err"
 ```
 
 ### C3 — Index freshness (calendar age)
@@ -126,20 +124,14 @@ if [ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ]; then
     exit 0
 fi
 INDEX=$(cat "${TMPDIR:-/tmp}/codemap-index")
-SMOKE_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/smoke_test_index.py" --index-path "$INDEX")  # timeout: 10000
+SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
 command -v jq >/dev/null 2>&1 || { printf "✗ jq not found — required for smoke test; install via brew install jq or apt-get install jq\n"; exit 1; }
-OK=$(echo "$SMOKE_RESULT" | jq -r '.ok')
-STALE=$(echo "$SMOKE_RESULT" | jq -r '.stale')
-AGE=$(echo "$SMOKE_RESULT" | jq -r '.age_hours')
+read -r OK STALE AGE ERR < <(printf '%s' "$SMOKE_JSON" | jq -r '[.ok, .stale, .age_hours, (.error // "unknown")] | @tsv')
 if [ "$OK" != "true" ]; then
-    ERR=$(echo "$SMOKE_RESULT" | jq -r '.error // "unknown"')
-    printf "✗ smoke test: %s\n" "$ERR"
-    printf "  → Re-run /codemap:scan-codebase to rebuild index\n"
+    printf "✗ smoke test: %s\n  → Re-run /codemap:scan-codebase to rebuild index\n" "$ERR"
 else
     printf "✓ smoke test: index valid (mtime-age=%sh)\n" "$AGE"
-    if [ "$STALE" = "true" ]; then
-        printf "  ⚠ Index older than freshness threshold — run /codemap:scan-codebase to update\n"
-    fi
+    [ "$STALE" = "true" ] && printf "  ⚠ Index older than freshness threshold — run /codemap:scan-codebase to update\n"
 fi
 ```
 
@@ -166,20 +158,18 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 
 ```bash
 # timeout: 5000
-# PROJ/INDEX resolution — identical pattern used in Step C2; both call resolve_proj_index.py
-# bash 3.2 compatible — mapfile is bash 4+ only; macOS ships bash 3.2
-_idx=()
-while IFS= read -r line; do
-    _idx+=("$line")
-done < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_proj_index.py")
-PROJ="${_idx[0]:-}"
-INDEX="${_idx[1]:-}"
-if [ -z "$PROJ" ]; then
+# PROJ/INDEX resolution — shared with Step C2 (check mode); both call resolve_index_env.py.
+# Stderr to tempfile so eval only sees KEY=value stdout.
+_resolve_err=$(mktemp)
+if RESOLVE_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" 2>"$_resolve_err"); then
+    eval "$RESOLVE_OUT"
+    echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-init-index"
+    rm -f "$_resolve_err"
+else
     printf "✗ resolve_proj_index.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
+    rm -f "$_resolve_err"
     exit 1
 fi
-# Persist INDEX path for use in I2+ (var lost between Bash() calls)
-echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-init-index"
 ```
 
 Index exists: report and proceed. Index missing:

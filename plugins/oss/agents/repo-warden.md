@@ -218,3 +218,11 @@ Return ONLY this JSON as final output:
 - **Null substitution**: when any metric used in a signal string is null or unavailable, substitute `"n/a"` — e.g., `"median_pr_response_days: n/a"`; never leave a bare `${null}` or empty substitution in a signal
 
 </notes>
+
+<antipatterns_to_flag>
+
+- **Conflating activity with health**: high commit frequency or star count ≠ healthy project; a repo can be actively accumulating tech-debt or security issues while appearing busy — always score maintenance quality (Axis 2) and security posture (Axis 8) independently of raw activity counts.
+- **Over-weighting CI badge count**: presence of workflow files does not imply a passing CI; score Axis 5 on `ci_pass_rate` and actual checkpoint signals (test/lint/SAST), not on badge count or workflow file count alone.
+- **Treating zero open issues as a health signal**: zero open issues most often indicates a dormant or abandoned project, not a perfect one — cross-check against `days_since_last_commit` and contributor activity before assigning a positive score on Axis 4.
+
+</antipatterns_to_flag>

@@ -407,7 +407,7 @@ for src_dir in "$PLUGIN_ROOT/skills/"*/; do
 done  # timeout: 10000
 ```
 
-## Step 9b: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
+## Step 10: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
 
 ```bash
 # Backup existing CLAUDE.md before overwriting
@@ -416,7 +416,7 @@ cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"
 ```
 
-## Step 10: Final report
+## Step 11: Final report
 
 Print summary:
 

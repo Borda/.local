@@ -357,17 +357,13 @@ fi
 
 ## Step 5: Mode dispatch
 
-```bash
-_OSS_MODE_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/analyse/modes"
-```
-
-Read `$_OSS_MODE_DIR/<mode>.md` and execute all steps defined there.
+Read and execute the mode file from `${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/analyse/modes/`.
 
 | Argument | Mode file |
 | --- | --- |
-| number (any type) | `$_OSS_MODE_DIR/thread.md` |
-| `vitality` | `$_OSS_MODE_DIR/vitality.md` |
-| `ecosystem` | `$_OSS_MODE_DIR/ecosystem.md` |
+| number (any type) | `modes/thread.md` |
+| `vitality` | `modes/vitality.md` |
+| `ecosystem` | `modes/ecosystem.md` |
 
 ## Step 6: Reply gate — STOP CHECK
 
@@ -454,7 +450,7 @@ Scenarios:
 - **Thread analysis output schema** (canonical section order): `## Item Type`, `## Summary`, `## Related Items`, `## Reproduction Steps` (issues only), `## Risks / Blockers`, `## Next Steps`, `## Confidence`. Use these exact headings — consistent section names enable downstream parsing and diff-based change detection across runs. `## Confidence` is mandatory and always last — omitting it triggers calibration failure (confidence defaults to 0.5, producing large negative bias).
 - **Precision guidance**: flag issues, do not solve them; flag blockers, do not design solutions. Reference `/develop:fix` and `/develop:feature` (requires `develop` plugin) for implementation work. Verbose implementation sketches in triage output dilute signal-to-noise ratio. Each flagged item (duplicate, blocker, next step) must carry an explicit severity or priority label (high/medium/low) inline — enables downstream triage and satisfies format scoring.
 - **Vitality mode repo resolution**: `GH_OWNER` and `GH_REPO` set in Step 1 from: (1) explicit URL/owner-repo arg, (2) `gh repo view`, (3) `git remote origin`. vitality.md uses `-R "$GH_OWNER/$GH_REPO"` on all gh commands and literal `$GH_OWNER/$GH_REPO` in all `gh api` paths — never `{owner}/{repo}` template substitution in vitality mode.
-- Mode files live in `$_OSS_MODE_DIR/` (resolved in Step 5; falls back to bare `plugins/oss/skills/analyse/modes/` only when cache path missing) — one file per mode, fully self-contained
+- Mode files live in `${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/analyse/modes/` — one file per mode, fully self-contained
 - `modes/thread.md` handles all three thread types (issue, PR, discussion) via internal branching
 - Always use `gh` CLI — never hardcode repo URLs
 - Run `gh auth status` first if commands fail; user may need to authenticate

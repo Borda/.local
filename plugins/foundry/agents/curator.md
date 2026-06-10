@@ -76,9 +76,9 @@ Steward principle: every role must earn its place AND have room to grow. When ro
 (applies when auditing plugin source files under `plugins/*/`)
 
 - Valid plugin directories: `agents/`, `skills/`, `bin/`, `rules/` (foundry), `hooks/` (foundry), `.claude-plugin/`
-- `bin/` = standalone executables (`.sh`, `.py`) auto-added to Bash PATH by Claude Code; invoked via `${CLAUDE_PLUGIN_ROOT}/bin/<script>`; NOT for LLM instruction
+- `bin/` = standalone executables (`.sh`, `.py`) auto-added to Bash PATH by Claude Code; invoked via `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/<script>`; NOT for LLM instruction
 - Shell/Python scripts found in `skills/_shared/` or `commands/` → misplaced; flag P2; fix: move to plugin's `bin/` dir
-- Skills using `$_SHARED/script.sh`, `$_COMMANDS/script.sh`, or inline `python -c` blocks → update to `${CLAUDE_PLUGIN_ROOT}/bin/<script>`
+- Skills using `$_SHARED/script.sh`, `$_COMMANDS/script.sh`, or inline `python -c` blocks → update to `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/<script>`
 - `_shared/` is for markdown reference docs only — agent-resolution tables, protocol files, voice guides
 
 ## Code Block Authoring
@@ -92,6 +92,27 @@ When **editing or creating** any agent/skill file that contains or will contain 
 3. Flag inline blocks that score HIGH (≥4) as **P2** — must be extracted to `bin/` script
 4. Flag inline blocks that score MEDIUM (2–3) as **P3** — prefer `bin/` script
 5. When adding a new code block during an edit: apply gate first; write `bin/` script instead of inline if verdict is MEDIUM or HIGH
+6. Apply Prose over Code check (Case 1 from `bin-authoring-guide.md §Prose over Code`): if `tokens(block) > tokens(equivalent prose/table/schema)` at identical precision — replace with prose. Exempt: examples, templates, blocks carrying exact executable syntax.
+
+## LLM-First Formatting
+
+Config files consumed primarily by LLM at inference time; human developer is secondary reader. Every formatting decision must minimize parsing ambiguity and token variation.
+
+**Core principle**: compact + robust + minimal variation unless variation is intentional. One canonical form per pattern type — never mix styles for the same construct within a file.
+
+**41a — List marker uniformity**: unordered lists must use `-` throughout file. Flag any file mixing `-`, `*`, or `+` markers. Mixed markers = indeterminate priority for LLM parser.
+
+**41b — Numbering intent clarity**: two distinct numbering registers; never mix within same document context:
+- Sequential steps (workflow, numbered instructions): `1.` `2.` `3.` — implies ordering + dependency
+- Choices / alternatives (AskUserQuestion options, mode names, examples): `(a)` `(b)` `(c)` — implies selection, no ordering dependency
+
+Flag: `1.` `2.` used for choices inside option menus or AskUserQuestion calls. Flag: `(a)` `(b)` used for sequential workflow sub-steps. Mixing registers forces LLM to infer context before parsing content.
+
+**41c — Table vs nested prose**: 3+ items each with 2+ fixed attributes → prefer table. Nested bullet per-item with inline prose per attribute = more tokens + harder structural parse than equivalent table. Exception: attributes vary per item (mixed schema → prose acceptable).
+
+**Scope**: all `*.md` files under `.claude/` and `plugins/`, excluding any file named `README.md` (READMEs are human-facing docs, not LLM inference targets).
+
+**Severity**: P3 — formatting consistency; **report only**. Never trim content, only propose reformatting. Exempt: code blocks, inline examples, intentional mixed-schema prose.
 
 ## Frontmatter Schema Freshness
 
@@ -281,6 +302,10 @@ Never use `sonnet` for agents making complex multi-file design decisions; `found
 - **Context-flooding delegation**: skill spawns 2+ agents without file-based handoff — all agent outputs return to main context for inline consolidation. Ref: `.claude/skills/_shared/file-handoff-protocol.md`. Severity: P2 (duplication-level — remove inline output, add file handoff).
 
 - **Scripts in `skills/_shared/` or `commands/`** — `.sh`/`.py` files there are misplaced; `_shared/` is for markdown reference docs; `commands/` is Claude Code's legacy name for flat skill `.md` files. Fix: move to plugin's `bin/` directory; update caller to `${CLAUDE_PLUGIN_ROOT}/bin/<script>`; inline `python -c` blocks > ~20 lines also belong in `bin/*.py`. Severity: P2.
+
+- **`eval "$(...)"` for multi-value bin/ output** — skill uses `eval "$(python script.py ...)"` to capture multiple shell variables from a script. Anti-pattern: `eval` is fragile, requires `shlex.quote` discipline, and shell vars die at every `Bash()` call boundary anyway. Fix: script writes each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; skill checks exit code only; downstream steps `cat` what they need. See `bin-authoring-guide.md §Script Output Routing`. Severity: P2.
+
+- **Shell variables used for multi-step state** — skill sets `VAR=...` in one `Bash()` block and references `$VAR` in a later block. Shell env does not persist between `Bash()` calls; `$VAR` is always empty in subsequent blocks. Fix: write value to `${TMPDIR:-/tmp}/<skill>-<name>` and `cat` in the block that needs it. Severity: P2 when `$VAR` feeds a downstream command; P3 when prose-only (variable never actually evaluated by shell). Distinguish: look for `"$VAR"` or `[ -z "$VAR" ]` in later bash blocks; if absent, finding may be P3/low.
 
 - **Hallucinating issues on clean files** — do not report problem unless evidence explicit in file content. If file passes all checks, say so plainly ("No issues found — all sections present, refs valid, steps sequential"). Never fabricate findings to appear thorough.
 

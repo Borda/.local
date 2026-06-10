@@ -365,3 +365,62 @@ Via model reasoning: extract (symbol, concept) pairs from legend. Per concept, s
 | 26a — same concept, different symbols | medium | no |
 | 26b — directive notation mixed `/name` vs `name` | low | no |
 | 26c — body symbol contradicts legend | medium | no |
+
+## Check 41 — LLM-first formatting conventions
+
+Config files consumed primarily by LLM at inference time. Formatting inconsistencies force the LLM to resolve ambiguity before parsing content — wasted tokens, degraded reliability.
+
+**Principle**: compact + robust + minimal variation. One canonical form per pattern type per file.
+
+**Scan targets**: all `*.md` files under `.claude/` and `plugins/`, excluding any file named `README.md`.
+
+```bash
+mapfile -t MD_FILES < <(find .claude plugins -name "*.md" ! -name "README.md" 2>/dev/null | sort)  # timeout: 5000
+```
+
+Via model reasoning, apply three sub-checks per file:
+
+**41a — List marker uniformity**: scan all unordered list lines outside code fences. Collect distinct markers used (`-`, `*`, `+`). More than one distinct marker in same file = finding. Mixed markers = ambiguous parse order for LLM; `-` is canonical.
+
+```bash
+printf "=== Check 41a: List marker uniformity ===\n"
+for f in "${MD_FILES[@]}"; do  # timeout: 5000
+    [ -f "$f" ] || continue
+    markers=$(awk '/^```/{skip=!skip} !skip && /^[[:space:]]*[*+] /{print $1}' "$f" | sort -u | tr '\n' ' ')
+    [ -n "$markers" ] && echo "$f: uses markers: $markers"
+done
+```
+
+Via model reasoning: for each file printing markers, confirm multiple distinct markers present outside code fences. Flag files with `*` or `+` alongside `-`.
+
+**41b — Numbering intent clarity**: two numbering registers must not be mixed in same document context:
+- `1.` `2.` `3.` — sequential steps (implies ordering + dependency)
+- `(a)` `(b)` `(c)` — choices / alternatives (implies selection, no ordering)
+
+Violations to flag:
+- `1.` `2.` used for choices inside AskUserQuestion option blocks or "choose one" lists
+- `(a)` `(b)` used for sequential workflow sub-steps where ordering matters
+
+```bash
+printf "=== Check 41b: Numbering intent ===\n"
+for f in "${MD_FILES[@]}"; do  # timeout: 5000
+    [ -f "$f" ] || continue
+    grep -n 'AskUserQuestion' "$f" 2>/dev/null | grep -q '.' && grep -B5 -A5 'AskUserQuestion' "$f" | grep -n '^\s*[0-9]\.' 2>/dev/null | head -5 && echo "  ^^^ $f (numbered options in AskUserQuestion block)"
+done
+```
+
+Via model reasoning: around each AskUserQuestion block, check whether options use `1.`/`2.` (violation) or `(a)`/`(b)` (compliant). In workflow steps, verify numbered sub-items (`1.`, `2.`) represent sequential actions, not option choices.
+
+**41c — Table vs nested prose**: when content has 3+ list items each with 2+ fixed-schema attributes, a Markdown table is more compact and structurally clearer for LLM parse than nested prose bullets.
+
+Via model reasoning per file: identify nested bullet blocks where each top-level bullet has ≥2 sub-bullets with consistent attribute structure across items (e.g., every item has "Input:", "Output:", "When:"). If block has ≥3 top-level items with ≥2 uniform sub-attributes → flag as table candidate.
+
+Exception: skip when attributes vary per item (non-uniform schema — prose correct).
+
+**Severity**: P3 — report only. Never auto-fix; reformatting risks layout regression in rendered contexts. Flag only clear violations with concrete line references.
+
+| Sub-check | Severity | Auto-fix |
+| --- | --- | --- |
+| 41a — mixed list markers | low | no |
+| 41b — numbering register mismatch | medium | no |
+| 41c — nested prose where table fits | low | no |

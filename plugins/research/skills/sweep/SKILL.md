@@ -37,8 +37,8 @@ Triggered by `sweep "goal" [--flags]`. Non-interactive end-to-end: auto-plan →
 
 `_RESEARCH_SHARED` already resolved above (Agent Resolution block); reuse it here. Additionally resolve `_RESEARCH_SKILLS`:
 ```bash
-_RESEARCH_SKILLS=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills 2>/dev/null | head -1)
-[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills"
+_RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
+[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills"
 ```
 
 **Task tracking**: create tasks for S1–S5 at start.

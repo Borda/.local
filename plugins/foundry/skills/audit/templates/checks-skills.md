@@ -156,6 +156,31 @@ Severity: **medium** — bash comment-only timeout silently ignored at runtime; 
 
 **Report only** — flag for human review; timeout default values must match `# timeout: N` at call site (N ÷ 1000).
 
+### Sub-check 23c — `eval` for multi-value data output
+
+Skill uses `eval "$(...)"` or `eval "$(python ...)"` to capture data values from a bin/ script, rather than writing to TMPDIR files. Distinct from shell-setup eval (health_sentinel.py, ssh-agent) — those patterns are exempt.
+
+```bash
+# timeout: 10000
+printf "=== Check 23c: eval for data output ===\n"
+# Scan for eval of python script output — exclude known shell-setup patterns
+grep -rn 'eval.*"\$.*python\|eval.*"\$.*bin/' \
+    plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
+  grep -v 'health_sentinel\|ssh-agent\|direnv\|rbenv\|pyenv\|nvm\|# shell-setup' |
+  grep -v '^\s*#' | head -20
+```
+
+False-positive exemption: `eval "$(python .../health_sentinel.py ...)"` — health monitoring shell-setup (emits `SENTINEL=...` for calling shell, not data output). Any other `eval "$(python ...)` = finding.
+
+**Sub-check 23d** — shell variable used for state across separate Bash tool calls. **Not grep-detectable** (requires cross-block analysis of Bash call boundaries, which are runtime not lexical). Flag during curator per-file review only: when auditing a skill, scan for `VAR=$(...)` pattern in one fenced block and `"$VAR"` or `[ -z "$VAR" ]` in a later fenced block with no `cat "${TMPDIR:-/tmp}/..."` supplying `VAR` between them.
+
+| Sub-check | Pattern | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| 23c — eval for data output | `eval "$(python ...)` without `health_sentinel` context | medium | no — replace with TMPDIR-file pattern per `bin-authoring-guide.md §Script Output Routing` |
+| 23d — cross-call shell var | `$VAR` in block N, set in earlier block M, no TMPDIR bridge | medium | no — curator flag only |
+
+**Report only** — never auto-fix; replacement requires understanding the script's full output contract.
+
 ## Check 24 — Skill sequence compatibility
 
 Skill `<notes>` and `<workflow>` sections frequently document multi-skill chains (e.g., `→ /audit`, `suggested next: /brainstorm breakdown <file>`). Check verifies documented sequences internally consistent:

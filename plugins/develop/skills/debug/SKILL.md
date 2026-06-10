@@ -145,12 +145,15 @@ Collect all signals before forming any hypothesis.
 CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     scan-query central --top 5 2>/dev/null
-    # Derive failing module from symptom/traceback — strip src/, .py suffix, replace / with .
-    # e.g. "src/mypackage/auth.py" → "mypackage.auth"; derive from $ARGUMENTS or traceback
-    # Run after traceback read to get TARGET_MODULE:
-    # scan-query rdeps <TARGET_MODULE> 2>/dev/null
-    # scan-query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
 fi
+```
+
+After reading traceback or `$ARGUMENTS`, derive `TARGET_MODULE`: strip `src/`, `.py` suffix, replace `/` with `.` (e.g. `src/mypackage/auth.py` → `mypackage.auth`). Then run:
+
+```bash
+# timeout: 10000
+scan-query rdeps <TARGET_MODULE> 2>/dev/null
+scan-query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
 ```
 
 If codemap results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of the failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
@@ -242,7 +245,7 @@ Present agent's analysis summary before proceeding.
 ```bash
 # Resolve FAILING_TEST_NODE before this block — e.g.:
 # FAILING_TEST_NODE=$(echo "$ARGUMENTS" | grep -oE 'tests?/[^[:space:]]+::test_[^[:space:]]+' | head -1)
-_FOUNDRY_BIN=$(find "${HOME}/.claude/plugins/cache/borda-ai-rig" -maxdepth 3 -type d -name "bin" -path "*/foundry/*" 2>/dev/null | sort -Vr | head -1)  # timeout: 5000
+_FOUNDRY_BIN=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/bin 2>/dev/null | head -1)  # timeout: 5000
 [ -z "$_FOUNDRY_BIN" ] && _FOUNDRY_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin"
 if [ -z "$FAILING_TEST_NODE" ]; then
     echo "⚠ FAILING_TEST_NODE not resolved — cannot run polluter isolation; surface failing test node ID first"
@@ -303,8 +306,7 @@ Root cause confirmed. Transition to fix mode with diagnosis as input — fix's S
 
 ```bash
 # Verify /develop:fix is available before writing handoff  # timeout: 5000
-if ! ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/fix/SKILL.md >/dev/null 2>&1 && \
-   [ ! -f "plugins/develop/skills/fix/SKILL.md" ]; then
+if [ ! -f "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/fix/SKILL.md" ]; then
     echo "⚠ /develop:fix not found — partial install detected; diagnosis file will be written but handoff cannot be invoked automatically"
 fi
 ```

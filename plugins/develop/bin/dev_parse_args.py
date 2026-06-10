@@ -123,7 +123,7 @@ def _shell_quote(value: str) -> str:
         >>> _shell_quote("hello world")
         "'hello world'"
         >>> _shell_quote("it's")
-        "'it'\\''s'"
+        "'it'\\\\''s'"
         >>> _shell_quote("")
         "''"
     """
@@ -252,7 +252,7 @@ def run(arguments: str, spec_tokens: list[str]) -> str:
 
     Examples:
         >>> out = run('--semble fix auth.py', ['--bool', 'semble', 'SEMBLE_ENABLED', 'false'])
-        >>> 'SEMBLE_ENABLED=true' in out
+        >>> "SEMBLE_ENABLED='true'" in out
         True
         >>> "CLEAN_ARGS='fix auth.py'" in out
         True

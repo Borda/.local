@@ -11,7 +11,7 @@ effort: low
 
 Analyze how Claude Code is used and surface concrete improvements — new agents/skills to reduce repetition, or consolidate lessons into governance files (rules, agent instructions, skill updates) — without duplicating what exists.
 
-NOT for single-file edits or quality checks — see `when_to_use`.
+NOT for single-file edits or quality checks — use `/foundry:audit` for config quality checks.
 NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficiency` instead of `distill executables` for detection-only).
 
 </objective>
@@ -310,27 +310,15 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Mode: Lessons Distillation — only when `$ARGUMENTS == "lessons"`
 
-```bash
-LESSONS_MD="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/lessons.md"
-```
-
-Read and execute `$LESSONS_MD`.
+Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/lessons.md`.
 
 ## Mode: External Distillation — only when `$ARGUMENTS` begins with `external`
 
-```bash
-EXT_MD="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/external.md"
-```
-
-Read and execute `$EXT_MD`.
+Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/external.md`.
 
 ## Mode: Executables Extraction — only when `$ARGUMENTS` begins with `executables`
 
-```bash
-EXEC_MD="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/executables.md"
-```
-
-Read and execute `$EXEC_MD`.
+Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/executables.md`.
 
 </workflow>
 

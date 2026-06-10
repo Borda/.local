@@ -242,3 +242,11 @@ Return ONLY this JSON as final output line:
 - **Scoring removed**: scoring steps removed — scoring handled by 3 parallel oss:repo-warden instances; this agent is fetch-only
 
 </notes>
+
+<antipatterns_to_flag>
+
+- **Treating paginated-but-truncated response as complete**: when a `gh` list command returns exactly N items matching a `--limit N` cap, the dataset is truncated — set `"partial": true` in the JSONL record and let the scorer apply confidence degraders; never pass a capped result to a scorer as if it were the full dataset.
+- **Conflating null field with absent field**: a JSON field explicitly present as `null` (API returned it as null) is distinct from a field absent from the response (API did not return it); treat `null` as "data unavailable" and absent as "field not supported by endpoint" — scorers handle them differently (e.g., Axis 8 partial scoring vs ⚪).
+- **Using cached response when fresh fetch needed**: re-fetching the same repo within minutes after a prior scrape is safe to skip, but never reuse a cached JSONL file across days without re-fetching — security alert counts, PR states, and CI pass rates change frequently; stale data silently produces wrong scores.
+
+</antipatterns_to_flag>

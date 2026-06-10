@@ -315,11 +315,7 @@ REPORT_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR" # timeout: 5000
 ```
 
-```bash
-# find exit code lost through pipe; fallback guard below covers empty result
-REVIEW_SKILL_DIR="$(find ~/.claude/plugins -path "*/oss/skills/review" -type d 2>/dev/null)"
-[ -z "$REVIEW_SKILL_DIR" ] && REVIEW_SKILL_DIR="plugins/oss/skills/review"
-```
+**Resolve `REVIEW_SKILL_DIR`**: run `find ~/.claude/plugins -path "*/oss/skills/review" -type d 2>/dev/null`; if non-empty use that as the literal value, otherwise fall back to `plugins/oss/skills/review`. This resolved literal is `REVIEW_SKILL_DIR` — substitute it into every Agent spawn prompt below.
 
 **File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn: "file-handoff protocol not found — verify foundry plugin installed (`claude plugin list`); continuing without it." Then continue without it.
 

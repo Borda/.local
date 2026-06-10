@@ -28,7 +28,7 @@
 | 20 | Agent description routing | medium/low | agents | 20a overlap pairs, 20b NOT-for coverage, 20c trigger specificity, 20d keep/sharpen/prune |
 | 21 | Skill frontmatter conflicts | critical | skills | context:fork + disable-model-invocation:true is broken |
 | 22 | Calibration coverage gap | medium/low | agents/skills | Unregistered calibratable skills/agents; stale domain table entries |
-| 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools; 23a python inline; 23b `# timeout: N` without `timeout S` shell prefix or Python `subprocess.*` without `timeout=` |
+| 23 | Bash misuse / native tool substitution | medium | agents/skills | cat/grep/find/echo>/sed replaceable by native tools; 23a python inline; 23b `# timeout: N` without `timeout S` shell prefix or Python `subprocess.*` without `timeout=`; 23c `eval "$(...)"` for multi-value bin/ output — use §Script Output Routing (TMPDIR files) instead; 23d shell variable used across `Bash()` calls — var dies at shell boundary, write to TMPDIR file |
 | 24 | Skill sequence compatibility | high/medium | skills | 24a target skill not on disk; 24b argument absent from argument-hint; scans skills, agents, READMEs |
 | 25 | Implicit agent references | high | agents/skills | subagent_type without plugin prefix; exempt: built-in types |
 | 26 | Symbol and shortcut consistency | medium/low | agents/skills | 26a same-concept emoji conflict, 26b slash notation mixed, 26c body contradicts legend |
@@ -50,3 +50,4 @@
 | 39 | Plugin version freeze | medium | setup | `plugin.json` version unchanged vs HEAD despite modified plugin files |
 | 40 | Health monitoring gap | high | agents/skills | Skill using `Agent(..., run_in_background=true)` without health_sentinel sentinel + 5-min poll protocol |
 | R5 | Consumer→template orphan | medium | plugins (LOCAL_MODE only) | `<!-- loads: X -->` or `# loads: X` comment points to non-existent template file — reverse of R2 |
+| 41 | LLM-first formatting | low/medium | all .md excl. README | 41a list-marker uniformity (`-` only); 41b numbering-intent clarity (`1.`=steps, `(a)`=choices); 41c table-vs-prose preference (3+ items × 2+ attrs → table) |

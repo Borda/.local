@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 """check_tag_symmetry.py — Check structural XML tag symmetry in agent/skill .md files.
 
-Detects two failure modes:
+Detects three failure modes:
   1. Empty blocks — <tag></tag> with only whitespace between open and close.
   2. Unbalanced tags — <tag> count differs from </tag> count.
+  3. Escaped structural tags — \\<tag> in prose; should be unescaped for Claude navigation [low].
 
 Applies to structural tags: objective, workflow, inputs, notes, constants,
 calibration, not-for, role, initialization, antipatterns_to_flag, core_knowledge.
@@ -57,20 +58,37 @@ def check_file(path: Path) -> list[str]:
 
     violations: list[str] = []
 
-    # Strip fenced code blocks (``` ... ```) to avoid counting tags inside them.
-    content_stripped = re.sub(r"```.*?```", "", content, flags=re.DOTALL)
-    # Strip inline backtick spans (`<tag>`) to avoid false positives from
-    # prose that documents structural tag names in inline code.
-    content_stripped = re.sub(r"`[^`\n]+`", "", content_stripped)
+    # Strip HTML comments (<!-- ... -->) first to avoid false positives from
+    # convention-note comments that mention structural tag names by example.
+    content_no_comments = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+
+    # For empty-block check: use comment-stripped content but preserve code fences
+    # (a block is empty only when it has no content at all, including no code blocks).
+    content_for_empty = content_no_comments
+
+    # For balance check: also strip fences and inline backticks to avoid counting
+    # tags that appear inside example code or inline code spans.
+    content_for_balance = re.sub(r"```.*?```", "", content_no_comments, flags=re.DOTALL)
+    content_for_balance = re.sub(r"`[^`\n]+`", "", content_for_balance)
+
+    # Escaped structural tags: \<tag> in prose (after comment+fence+backtick stripping).
+    # Severity: low — prevents Claude navigation; autofix unsafe (may be intentional).
+    # Only flag open form \<tag>; closing \</tag> is rarer and not structural.
+    escaped_tag_pattern = r"\\<(" + "|".join(re.escape(t) for t in STRUCTURAL_TAGS) + r")>"
+    for match in re.finditer(escaped_tag_pattern, content_for_balance, re.IGNORECASE):
+        violations.append(
+            f"{path}: escaped structural tag \\<{match.group(1)}> — should be unescaped for Claude navigation [low]"
+        )
 
     for tag in STRUCTURAL_TAGS:
-        # Empty block: open + optional whitespace + close
-        if re.search(rf"<{tag}>\s*</{tag}>", content_stripped, re.IGNORECASE):
+        # Empty block: open + optional whitespace + close (check before fence-stripping)
+        if re.search(rf"<{tag}>\s*</{tag}>", content_for_empty, re.IGNORECASE):
             violations.append(f"{path}: empty block <{tag}></{tag}>")
 
-        # Unbalanced: open count != close count
-        opens = len(re.findall(rf"<{tag}>", content_stripped, re.IGNORECASE))
-        closes = len(re.findall(rf"</{tag}>", content_stripped, re.IGNORECASE))
+        # Unbalanced: open count != close count (check after fence+comment stripping).
+        # Exclude backslash-escaped form \<tag> — those are flagged separately above.
+        opens = len(re.findall(rf"(?<!\\)<{tag}>", content_for_balance, re.IGNORECASE))
+        closes = len(re.findall(rf"(?<!\\)</{tag}>", content_for_balance, re.IGNORECASE))
         if opens != closes:
             violations.append(f"{path}: unbalanced <{tag}> — {opens} open, {closes} close")
 

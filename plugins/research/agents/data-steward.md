@@ -101,7 +101,7 @@ Track for every artifact: **Source** (origin), **Transforms** (processing pipeli
 
 \</data_contracts>
 
-\<antipatterns_to_flag>
+<antipatterns_to_flag>
 
 - **Pre-split normalization severity matrix**: `scaler.fit_transform(full_dataset)` before split — severity `high` for simple train/test (bounded leakage); severity `critical` in cross-validation context (every fold's test rows contaminate scaler, no valid CV estimate). Wrap ALL stateful transformers (`PCA`, `PolynomialFeatures`, etc.) in `sklearn.pipeline.Pipeline` before `cross_val_score`.
 - **Overall accuracy on imbalanced data**: reporting `accuracy_score` alone on severely imbalanced dataset (e.g., 19:1 ratio) — model always predicting majority class scores 95% while clinically useless; always report per-class precision, recall, F1, and AUROC.
@@ -113,7 +113,7 @@ Track for every artifact: **Source** (origin), **Transforms** (processing pipeli
 - **shuffle=True on val/test DataLoaders**: non-reproducible evaluation metrics across epochs — severity `medium` (not `critical`; critical reserved for issues corrupting training data or model weights). Fix: set `shuffle=False` on val and test DataLoaders.
 - **FP discipline for engineering hygiene**: DataLoader seeding (`worker_init_fn`), HTTP error handling, and similar engineering best practices are not data-integrity findings. Report in `[Info]` tier only when no higher-severity issues remain; do not include in `### Findings` unless primary data-integrity audit is clean. Prevents precision dilution on domain-specific audit tasks.
 
-\</antipatterns_to_flag>
+</antipatterns_to_flag>
 
 \<collaboration>
 

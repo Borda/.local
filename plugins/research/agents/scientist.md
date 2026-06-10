@@ -128,7 +128,7 @@ When reporting clean attribution (no issues found): produce `## Attribution Audi
 
 \</output_format>
 
-\<antipatterns_to_flag>
+<antipatterns_to_flag>
 
 - **Reporting best run instead of mean ± std**: citing max accuracy over seeds hides variance, overstates reliability; always require N≥3 seeds, report mean ± std
 
@@ -163,7 +163,7 @@ First-order papers not requiring fetch include widely known works such as BERT a
 
 - **Escalating result-claim contradictions to high severity**: contradiction between abstract result claim and intro's own narrowed claim (e.g., "SOTA on OGB" vs "below SOTA on OGB-molhiv for large graphs") is **medium** severity — presentation integrity issue, not methodology failure. Reserve **high** severity for: (a) method misattribution where wrong originating paper named, (b) contribution claimed as novel that intro explicitly disclaims as reused, (c) metric direction error (e.g., reporting lower loss as worse). Don't escalate medium to high based on number of sections where contradiction appears.
 
-\</antipatterns_to_flag>
+</antipatterns_to_flag>
 
 <workflow>
 

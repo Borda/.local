@@ -109,20 +109,34 @@ python "${CLAUDE_PLUGIN_ROOT}/bin/script.py" args                               
 
 ______________________________________________________________________
 
+## bin/ Script Principles
+
+- **Token optimisation** — bin/ scripts and prose rules both serve to reduce tokens in SKILL.md; prefer prose when precision-equivalent and shorter; prefer bin/ when logic is too complex for prose.
+- **Reduce complexity** — keep skill files simple; complex logic belongs in tested executables, not inline.
+- **Cross-OS friendly** — bin/ scripts must work on macOS and Linux; avoid `grep -P`, `sed -i ''` vs `sed -i`, and other GNU vs BSD differences; Python scripts preferred over bash for portability.
+- **Reproducible and precise** — same input always produces same output; deterministic; no edge-case ambiguity; prose is only used when it achieves 100% precision and 100% reproducibility.
+- **Tests as safety net for non-obvious cases** — tests exist precisely when precision or reproducibility is not self-evident from reading the script; presence of tests signals the script should stay as an executable, not be converted to prose.
+- **Faster via direct executable call** — calling one tested executable is faster than requiring model reasoning through complex inline logic; extract to bin/ when the alternative is model-interpreted inline bash.
+- **Reusability** — a script used by 2+ skills or agents earns `Reuse +2` in the extraction score and must stay as an executable; shared logic belongs in `bin/`, not duplicated inline across multiple `.md` files.
+
+See [bin/ Authoring Guide](foundry/skills/_shared/bin-authoring-guide.md) for full extraction gate, scoring, and prose-over-code rules.
+
+______________________________________________________________________
+
 ## Test Coverage & CI
 
 Every `bin/` Python script ships with a `pytest` test suite in the plugin's `tests/` directory. Tests run on every PR and push to `main` via GitHub Actions (`ci-tests.yml`), across 6 matrix combinations (Ubuntu, macOS, Windows × Python 3.10, 3.12).
 
-| Plugin    | Test files | Tests   |
-| --------- | ---------- | ------- |
-| foundry   | 12         | 250     |
-| codemap   | 7          | 121     |
-| oss       | 5          | 60      |
-| develop   | 1          | 22      |
-| research  | 1          | 13      |
-| **Total** | **26**     | **466** |
+| Plugin        | Test files | Tests     | Coverage |
+| ------------- | ---------- | --------- | -------- |
+| foundry       | 25+        | 594+      | 90%      |
+| codemap       | 14+        | 284+      | 86%      |
+| oss           | 18+        | 256+      | 91%      |
+| develop       | 10+        | 160+      | 91%      |
+| research      | 11+        | 150+      | 90%      |
+| **Total/Avg** | **78+**    | **1444+** | **90%**  |
 
-Counts from `pytest --collect-only -q` run in `plugins/`; regenerate after test additions.
+`+` = at minimum; run `grep -r "^def test_" plugins/*/tests/ | wc -l` for current count. Coverage = avg line coverage across `bin/` modules (as of 2026-06-10).
 
 `/audit` Check 23a and Check C32 continuously verify that SKILL.md files don't introduce inline Python or bare `plugins/` path references — structural violations are caught before they reach users.
 

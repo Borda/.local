@@ -66,6 +66,8 @@ Every 5 min: `find "$RUN_DIR" -newer "$SCAN_CHECKPOINT" -type f | wc -l` — new
 
 For each file in `CHECK33_FILES`, read and extract clusters. Default: `Verdict = HIGH` or `Verdict = MEDIUM` only. With `--eager`: also include `Verdict = LOW` clusters. Build candidate list: cluster ID, files affected, language, block purpose, occurrence count, verdict, recommended extraction target, differs-by param slots.
 
+Also include **prose compression candidates** — inline blocks where `tokens(block) > tokens(prose equivalent)` or bin/ call-site descriptions where `tokens(description) >= tokens(prose equivalent)`. Tag these as `Verdict = PROSE` in the candidate list. Exempt: examples, templates, exact-syntax blocks.
+
 If no qualifying clusters found: print `✓ No extraction candidates at current threshold.` End with `## Confidence` block and stop.
 
 ## Step E3: Present candidates and gate
@@ -75,9 +77,10 @@ Print candidate summary table:
 ```text
 Bin/ extraction candidates:
 
-| Cluster | Verdict | Blocks | Language | Purpose | Recommended target |
-|---------|---------|--------|----------|---------|--------------------|
-| C1      | HIGH    | 3      | bash     | resolves _shared/ path | bin/find-shared.sh |
+| Cluster | Type  | Verdict | Blocks | Language | Purpose | Recommended target |
+|---------|-------|---------|--------|----------|---------|--------------------|
+| C1      | bin/  | HIGH    | 3      | bash     | resolves _shared/ path | bin/find-shared.sh |
+| C2      | prose | PROSE   | 1      | bash     | sets STALE var used only in prose conditions | replace with 2-row table |
 ```
 
 Then call `AskUserQuestion` — do NOT write options as plain text first. Map options directly into tool call arguments:
@@ -85,9 +88,10 @@ Then call `AskUserQuestion` — do NOT write options as plain text first. Map op
 - (a) label: `HIGH only` — description: extract only HIGH-verdict clusters
 - (b) label: `HIGH + MEDIUM` — description: extract all HIGH and MEDIUM clusters
 - (c) label: `HIGH + MEDIUM + LOW` — description: extract all clusters including LOW verdict; only shown when `--eager` active
-- (d) label: `Skip` — description: no extraction; review candidates manually
+- (d) label: `Prose only` — description: compress only PROSE-verdict candidates (replace blocks with prose/table/schema, delete script if bin/ call-site)
+- (e) label: `Skip` — description: no extraction; review candidates manually
 
-**If `$EAGER == false`**: omit option (c) — present only (a), (b), (d).
+**If `$EAGER == false`**: omit option (c) — present only (a), (b), (d), (e).
 
 ## Step E4: Extract
 

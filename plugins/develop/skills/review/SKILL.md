@@ -388,8 +388,8 @@ Main context receives only one-liner verdict.
 Report format — resolve template path first:
 
 ```bash
-_REVIEW_TEMPLATE=$(ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/review/templates/review-report.md 2>/dev/null | head -1)
-[ -z "$_REVIEW_TEMPLATE" ] && _REVIEW_TEMPLATE="plugins/develop/skills/review/templates/review-report.md"
+_REVIEW_TEMPLATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/review/templates 2>/dev/null | head -1); [ -z "$_REVIEW_TEMPLATE" ] && _REVIEW_TEMPLATE="${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates"
+_REVIEW_TEMPLATE="$_REVIEW_TEMPLATE/review-report.md"
 ```
 
 Pass `$_REVIEW_TEMPLATE` (pre-expanded literal) into consolidator spawn prompt: "Read `<resolved-template-path>` and use it as output structure."

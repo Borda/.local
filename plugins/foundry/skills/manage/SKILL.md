@@ -160,22 +160,14 @@ If validation fails, report error and stop.
 
 **Edit complexity classification** (content-edit mode only):
 
-```bash
-# DIRECTIVE is the change description string (second argument, stripped of quotes) or spec file contents
-# Set from argument parsing above before this block
-DIRECTIVE="${SECOND_ARGUMENT}"  # populated during discrimination step above
-# Classify directive as trivial vs substantive
-EDIT_TRIVIAL=false
-if [[ "$MODE" == "content-edit" ]]; then
-  WORD_COUNT=$(echo "$DIRECTIVE" | wc -w)
-  if [[ "$WORD_COUNT" -le 10 ]]; then
-    echo "$DIRECTIVE" | grep -qiE '(typo|spelling|rename .+ to .+|change .+ to .+|replace .+ with .+|fix (a |the )?(typo|bug|error)|add missing|remove (the |a )?[a-z]+|correct)' \
-      && EDIT_TRIVIAL=true
-  fi
-fi
-```
+Classify `$DIRECTIVE` as **trivial** when ALL conditions hold:
 
-Trivial = directive ≤10 words AND matches simple-change pattern. Trivial edits: apply inline with Edit tool — no agent spawn.
+| Condition | Required |
+| --- | --- |
+| Word count ≤ 10 | ✓ |
+| Matches pattern: `typo`, `spelling`, `rename X to Y`, `change X to Y`, `replace X with Y`, `fix (a/the)? (typo/bug/error)`, `add missing`, `remove [word]`, `correct` | ✓ |
+
+Both must hold — either failing → **substantive**. Trivial edits: apply inline with Edit tool — no agent spawn.
 
 **Step skip rules**:
 
@@ -307,7 +299,7 @@ Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skil
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
 Read the skill scaffold template at `<MANAGE_TPL>/skill-scaffold.md` (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
-Read `<_FOUNDRY_SHARED>/bin-authoring-guide.md` (substitute resolved `$_FOUNDRY_SHARED` value from bash block above — echoed as `"Shared dir: <path>"`) — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH.
+Read `<_FOUNDRY_SHARED>/bin-authoring-guide.md` (substitute resolved `$_FOUNDRY_SHARED` value from bash block above — echoed as `"Shared dir: <path>"`) — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; skill checks exit code only; never `eval` stdout.
 Scaffold `.claude/skills/<name>/SKILL.md` with:
 - Frontmatter: name=<name>, description=<description>; add other fields per schema and scaffold guidance
 - Body: rich workflow scaffold derived from the description, following all content rules in the scaffold template
@@ -414,7 +406,7 @@ Rules:
 - Preserve frontmatter fields (name, description, tools, model, color) unless the change explicitly targets them
 - Preserve XML tags (<role>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the agent's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
+- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
 - After editing: verify XML tag balance, step numbering, cross-ref validity
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -442,7 +434,7 @@ Rules:
 - Preserve frontmatter fields (name, description, argument-hint, disable-model-invocation, allowed-tools)
 - Preserve XML tags (<objective>, <inputs>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the skill's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH
+- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
 - After editing: verify XML tag balance, step numbering, workflow gate completeness
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -859,7 +851,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 - **README.md tables**: agent/skill tables in project `README.md`; rules table in `.claude/README.md` — keep row format consistent with existing rows
 - **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note
-- **Inline bash / extraction gate**: before writing any fenced bash block directly into a `.md` file (agent, skill, rule) via Edit/Write, apply the extraction gate from `bin-authoring-guide.md` — verdict MEDIUM or HIGH → write a `bin/` script instead; verdict LOW → inline is acceptable. The same rule is enforced in spawn prompts to foundry:curator and foundry:sw-engineer (see Content-Edit Agent/Skill modes). This note applies to orchestrator-level inline edits.
+- **Inline bash / extraction gate + prose compression**: before writing any fenced bash block directly into a `.md` file (agent, skill, rule) via Edit/Write, apply two checks from `bin-authoring-guide.md`: (1) extraction gate — verdict MEDIUM or HIGH → write a `bin/` script instead; verdict LOW → inline is acceptable; (2) Prose over Code — if `tokens(block) > tokens(equivalent prose/table/schema)` at identical precision → write prose/table instead. Exempt: examples, templates, exact-syntax blocks. The same rules are enforced in spawn prompts to foundry:curator and foundry:sw-engineer (see Content-Edit Agent/Skill modes). This note applies to orchestrator-level inline edits.
 - **Cycle detection**: sub-tasks spawned by manage (foundry:sw-engineer, foundry:curator, foundry:doc-scribe) must not invoke manage again. Circular dispatch — manage→sw-engineer→curator→manage — causes infinite loops. If a sub-task needs manage capabilities, surface the need back to the orchestrator; never chain manage from inside a manage-spawned sub-agent.
 - Follow-up chains:
   - create or non-trivial update of agent/skill → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="<name>")` (mandatory) → `Skill(skill="foundry:calibrate", args="routing --fast")`

@@ -186,16 +186,16 @@ Return ONLY a compact JSON envelope on your final line — nothing else after it
 
 > **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in the template above MUST be replaced with the concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before the string is passed to `Agent(...)`. Passing the literal `${RUN_DIR}` to the agent will cause the agent to write to a directory named `${RUN_DIR}`. This applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation that the Agent runtime expands.
 
-Poll architect every 5 min: `find <RUN_DIR> -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
+Poll architect every 5 min: `find $RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
 
 - **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 <RUN_DIR>/methodology.md` shows active progress, grant one extension; second stall = hard cutoff
-- **On timeout**: read `tail -100 <RUN_DIR>/methodology.md`; if file missing or empty, set `methodology_rating = "timed_out"`, continue to J6. Surface with ⏱ in report.
+- **One extension (+5 min)**: if `tail -20 $RUN_DIR/methodology.md` shows active progress, grant one extension; second stall = hard cutoff
+- **On timeout**: read `tail -100 $RUN_DIR/methodology.md`; if file missing or empty, set `methodology_rating = "timed_out"`, continue to J6. Surface with ⏱ in report.
 
-Poll scientist every 5 min: `find <RUN_DIR> -name "scientific-review.md" -newer "$CHECKPOINT_SCI" | wc -l` — file present = alive; zero = stalled.
+Poll scientist every 5 min: `find $RUN_DIR -name "scientific-review.md" -newer "$CHECKPOINT_SCI" | wc -l` — file present = alive; zero = stalled.
 
 - **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 <RUN_DIR>/scientific-review.md` shows active progress, grant one extension; second stall = hard cutoff
+- **One extension (+5 min)**: if `tail -20 $RUN_DIR/scientific-review.md` shows active progress, grant one extension; second stall = hard cutoff
 - **On timeout**: set `scientific_rating = "timed_out"`, continue to J6; surface with ⏱ in Scientific Rigor section.
 
 Use `methodology_rating` from returned envelope for verdict computation in J6:
@@ -225,10 +225,10 @@ Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** 
 
 **Source precedence for `scientific_rating`** (mandatory when both are present):
 
-1. **File-parsed value** from `<RUN_DIR>/scientific-review.md` (read after agent completes) — authoritative
+1. **File-parsed value** from `$RUN_DIR/scientific-review.md` (read after agent completes) — authoritative
 2. **Health-monitor / envelope value** from the agent's returned JSON — advisory only
 
-File-parsed value takes priority over the health monitor value; use the file-parsed value when both are present. Same precedence applies to `methodology_rating` parsed from `<RUN_DIR>/methodology.md` vs the envelope value. Use envelope value only when the file is missing or unparsable (e.g., timeout with no output).
+File-parsed value takes priority over the health monitor value; use the file-parsed value when both are present. Same precedence applies to `methodology_rating` parsed from `$RUN_DIR/methodology.md` vs the envelope value. Use envelope value only when the file is missing or unparsable (e.g., timeout with no output).
 
 ## Step J4: Local validation
 
@@ -299,7 +299,7 @@ Apply rating source precedence before J6 verdict computation — fixes ambiguity
 
 For each rating (`methodology_rating`, `scientific_rating`):
 
-1. If `<RUN_DIR>/methodology.md` (or `scientific-review.md`) is present AND parsable, use file-parsed value — authoritative.
+1. If `$RUN_DIR/methodology.md` (or `scientific-review.md`) is present AND parsable, use file-parsed value — authoritative.
 2. Else use envelope value from the agent's returned JSON — fallback.
 3. Log source used: print `→ methodology_rating source: file | envelope` and `→ scientific_rating source: file | envelope` before entering J6.
 

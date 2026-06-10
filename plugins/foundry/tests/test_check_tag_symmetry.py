@@ -70,6 +70,65 @@ class TestCheckFile:
         f.write_text("<example></example>\n<code></code>\n", encoding="utf-8")
         assert cts.check_file(f) == []
 
+    def test_html_comment_with_tag_names_not_flagged(self, tmp_path: Path) -> None:
+        """Structural tag names mentioned inside HTML comments don't inflate open count."""
+        f = tmp_path / "comment.md"
+        f.write_text(
+            "<!-- Tag convention: <role>, <workflow>, <notes> are structural. -->\n"
+            "<role>\ncontent\n</role>\n"
+            "<workflow>\ncontent\n</workflow>\n"
+            "<notes>\ncontent\n</notes>\n",
+            encoding="utf-8",
+        )
+        assert cts.check_file(f) == []
+
+    def test_code_fence_content_not_flagged_as_empty(self, tmp_path: Path) -> None:
+        """Block containing only a code fence is not flagged as empty."""
+        f = tmp_path / "fence.md"
+        f.write_text(
+            "<constants>\n\n```yaml\nKEY: value\n```\n\n</constants>\n",
+            encoding="utf-8",
+        )
+        assert cts.check_file(f) == []
+
+    def test_truly_empty_block_still_flagged(self, tmp_path: Path) -> None:
+        """Block with only whitespace (no code fence) is still flagged as empty."""
+        f = tmp_path / "empty.md"
+        f.write_text("<constants>\n\n</constants>\n", encoding="utf-8")
+        violations = cts.check_file(f)
+        assert any("empty block" in v and "constants" in v for v in violations)
+
+    def test_escaped_structural_tag_flagged_as_low(self, tmp_path: Path) -> None:
+        """Backslash-escaped structural tag in prose is flagged with [low] severity."""
+        f = tmp_path / "escaped.md"
+        f.write_text(
+            "<role>\ncontent\n</role>\nProse mentioning \\<antipatterns_to_flag> should be flagged.\n",
+            encoding="utf-8",
+        )
+        violations = cts.check_file(f)
+        assert any("escaped structural tag" in v and "antipatterns_to_flag" in v for v in violations)
+        assert any("[low]" in v for v in violations)
+
+    def test_escaped_tag_inside_backtick_not_flagged(self, tmp_path: Path) -> None:
+        """Escaped structural tag inside inline backtick span is not flagged."""
+        f = tmp_path / "backtick.md"
+        f.write_text(
+            "<role>\ncontent\n</role>\nUse `\\<notes>` to suppress navigation.\n",
+            encoding="utf-8",
+        )
+        violations = cts.check_file(f)
+        assert not any("escaped structural tag" in v for v in violations)
+
+    def test_escaped_tag_inside_code_fence_not_flagged(self, tmp_path: Path) -> None:
+        """Escaped structural tag inside fenced code block is not flagged."""
+        f = tmp_path / "fence.md"
+        f.write_text(
+            "<role>\ncontent\n</role>\n```markdown\n\\<workflow>\nexample\n```\n",
+            encoding="utf-8",
+        )
+        violations = cts.check_file(f)
+        assert not any("escaped structural tag" in v for v in violations)
+
     @pytest.mark.parametrize(
         "tag",
         [
