@@ -51,6 +51,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 ```bash
 # loads: oss-shared-resolver.md
+# loads: review-section-taxonomy.md
 # Cold-start fallback (sets $_OSS_SHARED — run this first):
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
@@ -518,7 +519,7 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 
 Spawn **foundry:sw-engineer** consolidator agent with prompt:
 
-> **Task:** Read all finding files in `$RUN_DIR/` (agent files: `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`, `foundry--challenger.md` if present, and `foundry--codex.md` if present — skip missing). Read `$REVIEW_SKILL_DIR/checklist.md` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). Include only findings that passed Step 4 cross-validation (verdict=CONFIRMED or un-cross-validated medium/low). For `foundry--challenger.md`: map severity keys Blockers → critical/high, Concerns → medium, Nitpicks → low when aggregating counts.
+> **Task:** Read all finding files in `$RUN_DIR/` (agent files: `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`, `foundry--challenger.md` if present, and `foundry--codex.md` if present — skip missing). Read `$REVIEW_SKILL_DIR/checklist.md` using Read tool and apply consolidation rules (signal-to-noise filter, annotation completeness, section caps). Read `$_OSS_SHARED/review-section-taxonomy.md` for canonical section header strings and agent-to-section ownership — use Section header column for `###` headers in the report, Owner agent column to attribute findings. Include only findings that passed Step 4 cross-validation (verdict=CONFIRMED or un-cross-validated medium/low). For `foundry--challenger.md`: map severity keys Blockers → critical/high, Concerns → medium, Nitpicks → low when aggregating counts.
 >
 > **Filtering rules:**
 > - Precision gate: only include findings with concrete, actionable location (function, line range, or variable name).

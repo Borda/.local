@@ -4,11 +4,13 @@ All git subprocess calls are monkeypatched via a sequential fake that
 returns pre-configured ``(returncode, stdout)`` pairs in call order.
 No real ``git`` invocations occur. The stable-branch path (3 git calls)
 and fallback path (8 calls) are both covered.
+
+Output is written to ``${TMPDIR}/release-setup/<KEY>`` files; tests use
+``monkeypatch.setenv("TMPDIR", str(tmp_path))`` to redirect writes.
 """
 
 from __future__ import annotations
 
-import shlex
 from typing import Any
 
 import pytest
@@ -41,8 +43,9 @@ def _patch_git_sequence(monkeypatch: pytest.MonkeyPatch, *outcomes: tuple[int, s
     return recorded
 
 
-def test_stable_branch_all_keys_emitted(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """Stable branch (BRANCH_TAG found) → all 7 keys present in stdout, exit 0."""
+def test_stable_branch_all_keys_emitted(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
+    """Stable branch (BRANCH_TAG found) → all 7 key files written under TMPDIR/release-setup/, exit 0."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     _patch_git_sequence(
         monkeypatch,
         (0, "/repo"),  # rev-parse --show-toplevel
@@ -51,21 +54,14 @@ def test_stable_branch_all_keys_emitted(monkeypatch: pytest.MonkeyPatch, capsys:
     )
     rc = rs.main()
     assert rc == 0
-    out = capsys.readouterr().out
-    for key in (
-        "SKILL_DIR=",
-        "REPO_ROOT=",
-        "BRANCH=",
-        "DATE=",
-        "LAST_TAG=",
-        "CHERRY_PICK_SUBJECTS=",
-        "SOURCE_TAG_REF=",
-    ):
-        assert key in out
+    out_dir = tmp_path / "release-setup"
+    for key in ("SKILL_DIR", "REPO_ROOT", "BRANCH", "DATE", "LAST_TAG", "CHERRY_PICK_SUBJECTS", "SOURCE_TAG_REF"):
+        assert (out_dir / key).exists(), f"expected output file missing: {key}"
 
 
-def test_stable_branch_last_tag_value(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """Stable branch → LAST_TAG equals the first-parent describe result."""
+def test_stable_branch_last_tag_value(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
+    """Stable branch → LAST_TAG file contains the first-parent describe result."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     _patch_git_sequence(
         monkeypatch,
         (0, "/repo"),
@@ -73,13 +69,14 @@ def test_stable_branch_last_tag_value(monkeypatch: pytest.MonkeyPatch, capsys: p
         (0, "v2.3.1"),
     )
     rs.main()
-    out = capsys.readouterr().out
-    assert f"LAST_TAG={shlex.quote('v2.3.1')}" in out
-    assert f"SOURCE_TAG_REF={shlex.quote('')}" in out
+    out_dir = tmp_path / "release-setup"
+    assert (out_dir / "LAST_TAG").read_text() == "v2.3.1"
+    assert (out_dir / "SOURCE_TAG_REF").read_text() == ""
 
 
-def test_branch_slash_replaced_with_hyphen(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """Branch name containing '/' → slashes replaced with '-' in BRANCH output."""
+def test_branch_slash_replaced_with_hyphen(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
+    """Branch name containing '/' → slashes replaced with '-' in BRANCH file."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     _patch_git_sequence(
         monkeypatch,
         (0, "/repo"),
@@ -87,14 +84,15 @@ def test_branch_slash_replaced_with_hyphen(monkeypatch: pytest.MonkeyPatch, caps
         (0, "v1.0.0"),
     )
     rs.main()
-    out = capsys.readouterr().out
-    assert f"BRANCH={shlex.quote('feature-my-thing')}" in out
+    assert (tmp_path / "release-setup" / "BRANCH").read_text() == "feature-my-thing"
 
 
 def test_fallback_path_emits_source_and_cherry(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pytest.TempPathFactory,
 ) -> None:
     """Fallback path (no first-parent tag) → LAST_TAG from common ancestor, SOURCE_TAG_REF set."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     _patch_git_sequence(
         monkeypatch,
         (0, "/repo"),  # rev-parse
@@ -108,9 +106,9 @@ def test_fallback_path_emits_source_and_cherry(
     )
     rc = rs.main()
     assert rc == 0
-    out = capsys.readouterr().out
-    assert f"LAST_TAG={shlex.quote('v0.8.0')}" in out
-    assert f"SOURCE_TAG_REF={shlex.quote('v0.9.0')}" in out
+    out_dir = tmp_path / "release-setup"
+    assert (out_dir / "LAST_TAG").read_text() == "v0.8.0"
+    assert (out_dir / "SOURCE_TAG_REF").read_text() == "v0.9.0"
 
 
 def test_fallback_path_stderr_banner(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -151,10 +149,9 @@ def test_no_tags_uses_initial_commit(monkeypatch: pytest.MonkeyPatch, capsys: py
     assert "No stable tags found" in captured.err
 
 
-def test_output_lines_are_key_equals_quoted_value(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Every stdout line matches ``KEY='value'`` bash-eval-safe format."""
+def test_all_output_files_written(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
+    """All 7 expected key files written to TMPDIR/release-setup/ with non-empty content for mandatory keys."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     _patch_git_sequence(
         monkeypatch,
         (0, "/my/repo"),
@@ -162,12 +159,11 @@ def test_output_lines_are_key_equals_quoted_value(
         (0, "v1.0.0"),
     )
     rs.main()
-    out = capsys.readouterr().out
-    import re
-
-    key_re = re.compile(r"^[A-Z_]+=")
-    for line in out.splitlines():
-        assert key_re.match(line), f"line not KEY=value format: {line!r}"
+    out_dir = tmp_path / "release-setup"
+    for key in ("SKILL_DIR", "REPO_ROOT", "BRANCH", "DATE", "LAST_TAG", "CHERRY_PICK_SUBJECTS", "SOURCE_TAG_REF"):
+        assert (out_dir / key).exists(), f"output file missing: {key}"
+    assert (out_dir / "REPO_ROOT").read_text() != ""
+    assert (out_dir / "LAST_TAG").read_text() == "v1.0.0"
 
 
 def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:

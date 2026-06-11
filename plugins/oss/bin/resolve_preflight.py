@@ -7,7 +7,7 @@ results under ``.claude/state/preflight/`` with a 4-hour TTL so repeat
 invocations short-circuit.
 
 Output:
-    stdout — KEY=value lines (eval'd by caller): CODEX_AVAILABLE, GH_OK
+    files — writes CODEX_AVAILABLE and GH_OK to ${TMPDIR:-/tmp}/resolve-preflight-<KEY>
     stderr — human-readable status (echoed to terminal)
 
 Exit:
@@ -16,12 +16,14 @@ Exit:
         conflict, or other hard error)
 
 Caller pattern:
-    eval "$(resolve_preflight.py 2>/dev/null)"  # timeout: 15000
+    python resolve_preflight.py  # timeout: 15000
+    CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE" 2>/dev/null || echo "false")
+    GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true")
 """
 
 from __future__ import annotations
 
-import shlex
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -205,9 +207,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
         else:
             print("✓ git: fetched origin (no upstream tracking on current branch — pull skipped)", file=sys.stderr)
 
-    # --- emit KEY=value to stdout for caller eval -------------------------------
-    print(f"CODEX_AVAILABLE={shlex.quote(str(codex_available).lower())}")
-    print("GH_OK=true")
+    # --- write vars to TMPDIR files for safe cross-block consumption ------------
+    tmpdir = Path(os.environ.get("TMPDIR", "/tmp"))
+    (tmpdir / "resolve-preflight-CODEX_AVAILABLE").write_text(str(codex_available).lower())
+    (tmpdir / "resolve-preflight-GH_OK").write_text("true")
     return 0
 
 

@@ -166,14 +166,25 @@ Run this first — cold-start fallback (sets `$_OSS_SHARED`):
 
 ```bash
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
+# Persist $_OSS_SHARED across Bash blocks (Check 41: fresh shell loses vars)
+echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/release-oss-shared"
 # loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 ```
 
-Extracted to `bin/release_setup.py` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, and the branch-aware `LAST_TAG` / `CHERRY_PICK_SUBJECTS` / `SOURCE_TAG_REF`. Emits `KEY=value` lines for `eval`; stable-branch banner and "no stable tag" warnings go to stderr.
+Extracted to `bin/release_setup.py` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, and the branch-aware `LAST_TAG` / `CHERRY_PICK_SUBJECTS` / `SOURCE_TAG_REF`. Writes each var as its own file under `${TMPDIR:-/tmp}/release-setup/`; stable-branch banner and "no stable tag" warnings go to stderr.
 
 ```bash
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/release_setup.py")"  # timeout: 10000
+# TMPDIR-file pattern (replaces eval antipattern — stderr no longer contaminates variable values)
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/release_setup.py"  # timeout: 10000
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup/REPO_ROOT" 2>/dev/null || echo "")
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
+LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup/LAST_TAG" 2>/dev/null || echo "")
+CHERRY_PICK_SUBJECTS=$(cat "${TMPDIR:-/tmp}/release-setup/CHERRY_PICK_SUBJECTS" 2>/dev/null || echo "")
+SOURCE_TAG_REF=$(cat "${TMPDIR:-/tmp}/release-setup/SOURCE_TAG_REF" 2>/dev/null || echo "")
+[ -z "$REPO_ROOT" ] && { echo "Error: release_setup.py failed — REPO_ROOT empty; verify oss plugin installation"; exit 1; }
 ```
 
 When no stable tags exist, `LAST_TAG` resolves to the initial commit — surface this to the user via `AskUserQuestion` ("No stable tags found. Range base is initial commit — proceed?") before any phase that consumes the range. Options: (a) Proceed with initial commit as base · (b) Abort — stop release process. If user selects (b): stop immediately, print "Release aborted — no stable tags found; create a tag first with `git tag v0.1.0`" and exit.
@@ -183,9 +194,14 @@ When no stable tags exist, `LAST_TAG` resolves to the initial commit — surface
 Find common base tag across ALL branches. Strategy: `git tag --list` sorted by version, then `git merge-base HEAD <tag-commit>` for deepest common ancestor. Use as range lower bound when current branch has no direct tag ancestry.
 
 ```bash
+# Reload Shared setup vars (Check 41: fresh shell loses vars)
+LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup/LAST_TAG" 2>/dev/null || echo "")
+CHERRY_PICK_SUBJECTS=$(cat "${TMPDIR:-/tmp}/release-setup/CHERRY_PICK_SUBJECTS" 2>/dev/null || echo "")
 # LAST_TAG and CHERRY_PICK_SUBJECTS set in Shared setup — use directly
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 [ -z "$RANGE" ] && echo "Error: could not determine commit range" && exit 1
+# Persist $RANGE across Bash blocks (Check 41: fresh shell loses vars)
+echo "${RANGE:-}" > "${TMPDIR:-/tmp}/release-range"
 
 # Quote "$RANGE" throughout — tags can carry unusual characters (e.g. `v1.2-rc.1+build.42`);
 # unquoted expansion would word-split them and feed git the wrong args.
@@ -321,6 +337,8 @@ Always report: "N items added to changelog, M items flagged for review."
 ## Extract contributors
 
 ```bash
+# Reload $RANGE (Check 41: fresh shell; set in Gather changes block)
+RANGE=$(cat "${TMPDIR:-/tmp}/release-range" 2>/dev/null || echo "")
 # All commit authors and co-authors in range — quote "$RANGE" to survive unusual tag chars
 git log "$RANGE" --no-merges --format="%aN <%aE>%n%(trailers:key=Co-authored-by,valueonly)" \
   | grep -v '^$' | sort -u  # timeout: 3000
@@ -347,10 +365,15 @@ Always produce migration guide. No breaking changes → single line "No breaking
 Generate self-contained Python script in jupytext percent (`# %%`) format. Based on highlights spotlights. Full story: install → setup → demonstrate each highlight → verify output.
 
 ```bash
+# Reload Shared setup vars (Check 41: fresh shell; set in Shared setup block)
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
 # BRANCH and DATE set in Shared setup block above
 # notes mode: always write to .temp/ — $LAST_TAG is the PREVIOUS release, not the one being drafted
 DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"
 mkdir -p .temp  # timeout: 5000
+# Persist $DEMO_OUT across Bash blocks (Check 41: fresh shell loses vars)
+echo "${DEMO_OUT:-}" > "${TMPDIR:-/tmp}/release-demo-out"
 ```
 
 Write demo to `$DEMO_OUT`. (`prepare` mode: `releases/$VERSION/demo.py` — see Phase 4.)
@@ -361,6 +384,8 @@ Before running, invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OU
 
 On (a) or user confirmation after (b): run:
 ```bash
+# Reload $DEMO_OUT (Check 41: fresh shell; set in Generate release demo block)
+DEMO_OUT=$(cat "${TMPDIR:-/tmp}/release-demo-out" 2>/dev/null || echo "")
 # Note: python invocation allowed by Bash(python:*) allow-list entry — runs without approval prompt
 python "$DEMO_OUT"  # timeout: 600000
 DEMO_EXIT=$?; echo "$DEMO_EXIT" > ${TMPDIR:-/tmp}/release-demo-exit
@@ -378,6 +403,10 @@ Save to `.temp/output-release-summary-$BRANCH-$DATE.md`. (`BRANCH` and `DATE` fr
 Pre-flight — verify all templates present before proceeding:
 
 ```bash
+# Reload Shared setup vars (Check 41: fresh shell; set in Shared setup block)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
 # $SKILL_DIR resolved in Shared setup block above
 [ -z "$SKILL_DIR" ] && echo "Error: could not locate release skill directory" && exit 1
 for tmpl in release-draft.md audit-checks.md; do # timeout: 5000
@@ -478,6 +507,8 @@ mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
 
 If `$SHEPHERD_AVAILABLE` equals `true`:
 ```bash
+# Reload $_OSS_SHARED (Check 41: fresh shell; persisted in Shared setup block)
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/release-oss-shared" 2>/dev/null || echo "")
 [ -f "$_OSS_SHARED/shepherd-voice.md" ] || { echo "⚠ shepherd-voice.md not found at $_OSS_SHARED — verify oss plugin installation; falling back to draft without shepherd review"; SHEPHERD_AVAILABLE=false; }  # timeout: 5000
 ```
 

@@ -306,6 +306,18 @@ Resolve runs in three phases:
 2. **Conflict resolution** — for merge conflicts, read intent from both sides; apply the semantically correct resolution (never mechanical "take ours" or "take theirs")
 3. **Action item implementation** — each item dispatched to Codex (or appropriate foundry agent per change type and complexity); soft codemap blast-radius check runs after the loop to flag callers of changed modules
 
+**Severity → triage type mapping** (report mode):
+
+| Review severity         | Section                                                        | Resolve `type`                                                           |
+| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| CRITICAL / `[blocking]` | any                                                            | `[req]`                                                                  |
+| HIGH                    | any                                                            | `[req]`                                                                  |
+| MEDIUM                  | Architecture, Performance, API Design (code-related)           | `[req]`                                                                  |
+| MEDIUM                  | Test Coverage, Documentation, Static Analysis, Codex Co-Review | `[suggest]`                                                              |
+| LOW                     | any                                                            | `[suggest]` — grouped by topic when count exceeds ceiling, never dropped |
+
+`[req]` items apply by default on bulk-action; `[suggest]` items require explicit selection. Security findings inherit severity from `/oss:review` (hardcoded secrets → CRITICAL, dep CVEs → HIGH) — no separate security category. LOW findings cluster into composite rows by logical theme when the total would exceed the AskUserQuestion ceiling (12 items); each composite carries the full member bullet list in `full_comment_text`.
+
 **Guard rails:**
 
 - More than 15 required items → pauses and asks you to confirm before continuing

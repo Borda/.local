@@ -60,6 +60,7 @@ CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §6 default 300s
 
 ```bash
 # loads: oss-shared-resolver.md
+# loads: review-section-taxonomy.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 _OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 2>/dev/null | head -1)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
@@ -84,13 +85,14 @@ Capture caller's branch first — needed for Step 11 restore even when Step 4 (`
 SAVED_BRANCH=$(git branch --show-current 2>/dev/null || echo "")  # timeout: 3000
 ```
 
-Extracted to `bin/resolve_preflight.py` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Emits `CODEX_AVAILABLE=<bool>` and `GH_OK=true` on stdout for `eval`; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
+Extracted to `bin/resolve_preflight.py` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Writes `CODEX_AVAILABLE` and `GH_OK` to `${TMPDIR:-/tmp}/resolve-preflight-*` files; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
 
 ```bash
-_PREFLIGHT_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_preflight.py" 2>&1)  # timeout: 30000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_preflight.py"  # timeout: 30000
 _PREFLIGHT_RC=$?
-[ "$_PREFLIGHT_RC" -ne 0 ] && { echo "$_PREFLIGHT_OUT"; exit 1; }
-eval "$_PREFLIGHT_OUT"
+[ "$_PREFLIGHT_RC" -ne 0 ] && exit 1
+CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE" 2>/dev/null || echo "false")
+GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true")
 ```
 
 gh missing or not authenticated → script exits 1 (error printed above; eval skipped when exit code non-zero).
@@ -188,20 +190,12 @@ Report : Read <path to report file>
 Building action items…
 ```
 
-Read report. Parse findings from each `###` header matching any of: `Critical` or `[blocking]`, `Architecture`, `Test Coverage`, `Performance`, `Documentation`, `Static Analysis`, `API Design`, `Codex Co-Review`. Use contains-match (`grep -E '^### .*(Critical|Architecture|Test Coverage|Performance Concerns|Documentation|Static Analysis|API Design|Codex Co-Review)'`) — headers may carry a `⚠ LOW CONFIDENCE — ` prefix (e.g. `### ⚠ LOW CONFIDENCE — Architecture & Quality`) that exact-match misses. Skip headers matching: `OSS Checks`, `Recommended Next Steps`, `Review Confidence`, `Issue Root Cause Alignment`.
+<!-- loads: review-section-taxonomy.md -->
+Read `$_OSS_SHARED/review-section-taxonomy.md` — use **Grep pattern** row for header matching (contains-match; headers may carry `⚠ LOW CONFIDENCE — ` prefix), **Severity → Resolve Type** table for `type` assignment, **LOW Grouping Rule** for composite rows, and **Owner agent** column for `author` field. Skip sections where Grep key is `— skip`.
 
-Map each finding to action item schema:
-
-| Severity in report | `type` |
-| --- | --- |
-| CRITICAL or `[blocking]` | `[req]` |
-| HIGH | `[req]` |
-| MEDIUM | `[suggest]` |
-| LOW | `[suggest]` (omit if total items > 10) |
-
-- `author`: section owner agent (e.g., `foundry:sw-engineer` for Architecture, `foundry:qa-specialist` for Test Coverage)
-- `file`/`line`: extract from `file:line` notation; blank if absent
-- `full_comment_text`: full finding bullet
+- `author`: Owner agent column from taxonomy
+- `file`/`line`: extract from `file:line` notation; blank if absent or grouped composite
+- `full_comment_text`: full finding bullet (or concatenated bullets for composites)
 - All items get `[report]` prefix on `type` (e.g., `[report][req]`, `[report][suggest]`)
 
 PR# found in report header → set `$ARGUMENTS = <N>`, go to Step 4; skip Step 3b entirely. After checkout, set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs (report mode executes all findings; no user selection step); skip to Step 8.
@@ -459,8 +453,7 @@ AskUserQuestion: "How should changes be committed?"
 Options:
   (a) Commit each item separately — one commit per item, staged+committed inline (default)
   (b) Commit all at once — stage as you go, single commit after all items
-  (c) Stage only — no commits; changes stay staged on PR branch
-      ⚠ Stage-only: cannot cleanly restore original branch after Step 11 — stash or pop manually
+  (c) Stage only — no commits; stays staged on PR branch (⚠ cannot cleanly restore original branch after Step 11 — stash/pop manually)
   (d) Commit by logical/topic group — ask for topic labels, then group related items into themed commits
 ```
 

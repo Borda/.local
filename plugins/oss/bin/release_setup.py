@@ -3,10 +3,11 @@
 
 Resolves skill directory (installed cache → source tree fallback), repo
 root, branch slug, current UTC date, and branch-aware last-stable-tag
-baseline. Emits ``KEY=value`` lines on stdout for caller ``eval``.
+baseline. Writes each resolved value to its own file under
+``${TMPDIR:-/tmp}/release-setup/`` for safe cross-block consumption.
 Informational notes go to stderr only.
 
-Output keys:
+Output files (written to ``${TMPDIR:-/tmp}/release-setup/``):
     SKILL_DIR, REPO_ROOT, BRANCH, DATE, LAST_TAG,
     CHERRY_PICK_SUBJECTS (may be empty), SOURCE_TAG_REF (may be empty)
 
@@ -18,12 +19,13 @@ and the source-tag commit.
 Exit: 0 always — caller validates resolved values.
 
 Usage:
-    eval "$(release_setup.py)"
+    python release_setup.py
+    SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR")
 """
 
 from __future__ import annotations
 
-import shlex
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -106,13 +108,13 @@ def _resolve_skill_dir() -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point — emits KEY=value lines for bash eval.
+    """Entry point — writes resolved vars to ${TMPDIR:-/tmp}/release-setup/<KEY> files.
 
     Args:
         argv: Unused; script takes no positional arguments.
 
     Returns:
-        Always 0 — caller validates resolved values.
+        Always 0 — caller validates resolved values by reading the output files.
 
     Examples:
         No doctest — subprocess-dependent; covered by pytest.
@@ -161,6 +163,9 @@ def main(argv: list[str] | None = None) -> int:
         source_tag_ref = source_tag
         print(f"ℹ Stable-branch mode: base={last_tag}  source={source_tag}", file=sys.stderr)
 
+    out_dir = Path(os.environ.get("TMPDIR", "/tmp")) / "release-setup"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     for key, val in (
         ("SKILL_DIR", skill_dir),
         ("REPO_ROOT", repo_root),
@@ -170,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         ("CHERRY_PICK_SUBJECTS", cherry_pick_subjects),
         ("SOURCE_TAG_REF", source_tag_ref),
     ):
-        print(f"{key}={shlex.quote(val)}")
+        (out_dir / key).write_text(val, encoding="utf-8")
 
     return 0
 

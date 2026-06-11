@@ -74,10 +74,9 @@ def test_gh_unauthenticated_exits_1(
     assert "gh found but not authenticated" in capsys.readouterr().err
 
 
-def test_gh_ok_codex_absent_exits_0(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Authenticated gh, codex absent → exit 0, CODEX_AVAILABLE=false, GH_OK=true."""
+def test_gh_ok_codex_absent_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Authenticated gh, codex absent → exit 0, CODEX_AVAILABLE file=false, GH_OK file=true."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(rp, "which", lambda cmd: "/fake/" + cmd)
     monkeypatch.setattr(
         rp.subprocess,
@@ -94,15 +93,13 @@ def test_gh_ok_codex_absent_exits_0(
     monkeypatch.chdir(tmp_path)
     rc = rp.main()
     assert rc == 0
-    out = capsys.readouterr().out
-    assert "CODEX_AVAILABLE='false'" in out or "CODEX_AVAILABLE=false" in out
-    assert "GH_OK=true" in out
+    assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE").read_text() == "false"
+    assert (tmp_path / "resolve-preflight-GH_OK").read_text() == "true"
 
 
-def test_gh_ok_codex_present_exits_0(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Authenticated gh, codex present in plugin list → CODEX_AVAILABLE=true."""
+def test_gh_ok_codex_present_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Authenticated gh, codex present in plugin list → CODEX_AVAILABLE file=true."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.setattr(rp, "which", lambda cmd: "/fake/" + cmd)
     monkeypatch.setattr(
         rp.subprocess,
@@ -119,8 +116,7 @@ def test_gh_ok_codex_present_exits_0(
     monkeypatch.chdir(tmp_path)
     rc = rp.main()
     assert rc == 0
-    out = capsys.readouterr().out
-    assert "CODEX_AVAILABLE='true'" in out or "CODEX_AVAILABLE=true" in out
+    assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE").read_text() == "true"
 
 
 def test_gh_cache_hit_skips_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

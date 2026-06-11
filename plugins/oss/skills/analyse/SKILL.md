@@ -64,6 +64,8 @@ if [ -z "$_OSS_SHARED" ]; then
     fi
 fi
 FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/); consumed by modes/thread.md, modes/vitality.md, modes/ecosystem.md
+# Persist $_OSS_SHARED across Bash blocks (Check 41: fresh shell loses vars)
+echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared"
 ```
 > loads: oss-shared-resolver.md
 > Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
@@ -162,6 +164,8 @@ if [[ "$CLEAN_ARGS" == vitality* ]]; then
     GH_REPO=$(echo "$VITALITY_REPO" | cut -d'/' -f2)  # timeout: 5000
     CLEAN_ARGS="vitality"  # normalise for mode dispatch
 fi
+# Persist $CLEAN_ARGS across Bash blocks (Check 41: fresh shell loses vars)
+echo "${CLEAN_ARGS:-}" > "${TMPDIR:-/tmp}/analyse-clean-args"
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: invoke `AskUserQuestion` with:
@@ -199,6 +203,9 @@ Remaining fast-path logic (TODAY, REPORT_FILE auto-construction, drift check) on
 When `REPLY_MODE=true`, check if fresh report already exists before any API calls:
 
 ```bash
+# Reload Step 1 vars (Check 41: fresh shell; set in Step 1 vitality block)
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
+TODAY=$(cat "${TMPDIR:-/tmp}/analyse-today" 2>/dev/null || date +%Y-%m-%d)
 # REPORT_FILE assigned here only for numeric (thread) mode.
 # vitality/ecosystem modes: REPORT_FILE set inside modes/vitality.md and modes/ecosystem.md respectively.
 # DIRECT_PATH_MODE: REPORT_FILE already set from $CLEAN_ARGS above.
@@ -229,6 +236,9 @@ echo "${REPORT_MTIME:-0}" > "${TMPDIR:-/tmp}/analyse-report-mtime"
 Check local cache before API calls — prevents redundant fetches, avoids GitHub rate limits when re-analysing same item same day.
 
 ```bash
+# Reload Step 1 vars (Check 41: fresh shell; set in Step 1 vitality block)
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
+TODAY=$(cat "${TMPDIR:-/tmp}/analyse-today" 2>/dev/null || date +%Y-%m-%d)
 CACHE_DIR=".cache/gh"
 # Include repo slug in cache key to prevent cross-repo cache poisoning (same issue# different repo)
 _CACHE_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr '/' '-')
@@ -238,6 +248,8 @@ if [ -z "$_CACHE_REPO" ]; then
 else
     CACHE_FILE="$CACHE_DIR/$_CACHE_REPO-$CLEAN_ARGS-$TODAY.json"
 fi
+# Persist $CACHE_FILE across Bash blocks (Check 41: fresh shell loses vars)
+echo "${CACHE_FILE:-}" > "${TMPDIR:-/tmp}/analyse-cache-file"
 mkdir -p "$CACHE_DIR" # timeout: 5000
 # Thread mode requires git+GitHub context for {owner}/{repo} substitution in API calls
 if [ -z "$_CACHE_REPO" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
@@ -286,6 +298,9 @@ UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M
 **Cache miss** — after fetching in `modes/thread.md`, write:
 
 ```bash
+# Reload Step 1/3 vars (Check 41: fresh shell loses vars)
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
+CACHE_FILE=$(cat "${TMPDIR:-/tmp}/analyse-cache-file" 2>/dev/null || echo "")
 [ -n "$ITEM" ] && [ -n "$CACHE_FILE" ] && jq -n \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg type "$TYPE" \
@@ -313,6 +328,7 @@ Cache miss:
 DRIFT=$(cat "${TMPDIR:-/tmp}/analyse-drift" 2>/dev/null || echo "false")
 FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative" 2>/dev/null || echo "false")
 REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime" 2>/dev/null || echo "0")
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
 # Detect type + updatedAt + drift in one call (covers issues, PRs, discussions).
 # Script writes TYPE, UPDATED_AT, DRIFT to ${TMPDIR:-/tmp}/oss-detect-<var> temp files.
 if [ "$FAST_PATH_TENTATIVE" = "true" ]; then
@@ -378,6 +394,10 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 ## Step 7: Draft contributor reply (only when --reply, thread mode only)
 
 ```bash
+# Reload Step 1 vars (Check 41: fresh shell; set in Agent Resolution + Step 1 blocks)
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared" 2>/dev/null || echo "")
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
+TODAY=$(cat "${TMPDIR:-/tmp}/analyse-today" 2>/dev/null || date +%Y-%m-%d)
 # Shepherd availability guard — oss plugin may not be installed
 # Check installed cache path specifically (bare _OSS_SHARED fallback is always non-empty — cannot use it as availability signal)
 SHEPHERD_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss shepherd 2>/dev/null)  # timeout: 5000
@@ -390,6 +410,8 @@ fi # timeout: 5000
 Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (Step 2, `FAST_PATH=true`) or freshly written by Step 5.
 
 ```bash
+# Reload $_OSS_SHARED (Check 41: fresh shell; persisted in Agent Resolution block)
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared" 2>/dev/null || echo "")
 [ -f "$_OSS_SHARED/shepherd-reply-protocol.md" ] || { echo "⚠ shepherd-reply-protocol.md not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
 ```
 
