@@ -110,89 +110,7 @@ DEFAULT_BRANCH=$(jq -r '.[]|select(.name=="default_branch")|.data' "${GROUP1_DIR
 ```
 
 ```bash
-# Axis 5: README content (decode base64; --ignore-garbage tolerates padded/partial base64 from API)
-# base64 fallback with explicit error check: empty decode output from non-empty raw = decode failure (rate limit or malformed); log + skip axis rather than score 'missing'
-_README_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/readme" --jq '.content' 2>/dev/null)  # timeout: 10000
-_README_DECODED=$(echo "$_README_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_README_RAW" | base64 -D 2>/dev/null)
-if [ -n "$_README_RAW" ] && [ -z "$_README_DECODED" ]; then
-    echo "[gh-scraper] WARN: base64 decode failed for README (possible rate limit) — skipping Axis 5 README content"  # timeout: 5000
-    _README_DECODED=""
-fi
-
-# Axis 5 checkpoints 8–10: CONTRIBUTING.md content (only if checkpoint 5 ✓ — CONTRIBUTING.md in root file list)
-if echo "$ROOT_FILES" | grep -q '"CONTRIBUTING.md"'; then  # M29: only fetch if present in root file list from Group 1
-    _CONTRIB_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/CONTRIBUTING.md" --jq '.content' 2>/dev/null)  # timeout: 10000
-    _CONTRIB_DECODED=$(echo "$_CONTRIB_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CONTRIB_RAW" | base64 -D 2>/dev/null)
-    if [ -n "$_CONTRIB_RAW" ] && [ -z "$_CONTRIB_DECODED" ]; then
-        echo "[gh-scraper] WARN: base64 decode failed for CONTRIBUTING.md (possible rate limit) — skipping Axis 5 CONTRIBUTING content"  # timeout: 5000
-        _CONTRIB_DECODED=""
-    fi
-fi
-
-# Axis 6: .github/ directory contents
-_GITHUB_DIR=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github" --jq '[.[] | .name]' 2>/dev/null)  # timeout: 10000
-
-# Axis 6 checkpoint 5+7: CODEOWNERS content (check .github/CODEOWNERS first, then root)
-_CO_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/CODEOWNERS" --jq '.content' 2>/dev/null)  # timeout: 10000
-if [ -n "$_CO_RAW" ]; then
-    _CO_DECODED=$(echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null)
-    if [ -z "$_CO_DECODED" ]; then
-        echo "[gh-scraper] WARN: base64 decode failed for .github/CODEOWNERS (possible rate limit) — skipping Axis 6 CODEOWNERS content"  # timeout: 5000
-    else
-        echo "$_CO_DECODED"
-    fi
-else
-    _CO_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/CODEOWNERS" --jq '.content' 2>/dev/null)
-    if [ -n "$_CO_RAW" ]; then
-        _CO_DECODED=$(echo "$_CO_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_CO_RAW" | base64 -D 2>/dev/null)
-        if [ -z "$_CO_DECODED" ]; then
-            echo "[gh-scraper] WARN: base64 decode failed for CODEOWNERS (possible rate limit) — skipping Axis 6 CODEOWNERS content"  # timeout: 5000
-        else
-            echo "$_CO_DECODED"
-        fi
-    fi
-fi
-
-# Axis 6: branch protection on default branch — substitute $DEFAULT_BRANCH (resolved from repo_meta.json above); literal {default_branch} never substituted by gh, returns 404 silently
-_BRANCH_PROTECTION=$(gh api "repos/$GH_OWNER/$GH_REPO/branches/$DEFAULT_BRANCH/protection" 2>/dev/null)  # timeout: 10000
-
-# Axis 9E: star velocity — NOT IMPLEMENTED: gh api stargazers endpoint does not expose per-star timestamps
-# without Accept: application/vnd.github.star+json; that header is unofficial and unreliable. Axis 9E
-# star_dates are unavailable — repo-warden Group C scores star velocity as N/A when star_dates absent.
-
-# Axis 8C: package registry — detect package from root contents, then WebFetch
-# NOT IMPLEMENTED: registry download stats require WebFetch to PyPI/npm APIs and package name
-# extraction from pyproject.toml/package.json — deferred; scorer marks sub-signal C as N/A if absent.
-
-# Axis 5: Workflow content analysis — detect test/lint/SAST signals
-# List .github/workflows/ directory (parallel with other Group 2 calls)
-_WORKFLOW_LIST=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/workflows" --jq '[.[] | .name]' 2>/dev/null)  # timeout: 10000
-# Fetch content of first 2 workflow files so Step 4 can grep for CI signals.
-# Concatenate decoded YAML into _WORKFLOW_CONTENT — scorer greps it for:
-#   has_tests: pytest|jest|cargo test|go test|npm test|mvn test|rspec|phpunit
-#   has_lint:  ruff|flake8|eslint|prettier|rubocop|golangci|black|mypy
-#   has_sast:  codeql|semgrep|sonar|snyk|trivy|bandit
-_WORKFLOW_CONTENT=""
-if [ -n "$_WORKFLOW_LIST" ] && [ "$_WORKFLOW_LIST" != "null" ]; then
-    _WORKFLOW_NAMES=$(echo "$_WORKFLOW_LIST" | jq -r '.[]' 2>/dev/null | head -2)
-    while IFS= read -r _wf_name; do
-        [ -z "$_wf_name" ] && continue
-        _WF_RAW=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/workflows/$_wf_name" --jq '.content' 2>/dev/null)  # timeout: 10000
-        _WF_DECODED=$(echo "$_WF_RAW" | base64 -d --ignore-garbage 2>/dev/null || echo "$_WF_RAW" | base64 -D 2>/dev/null)
-        if [ -n "$_WF_RAW" ] && [ -z "$_WF_DECODED" ]; then
-            echo "[gh-scraper] WARN: base64 decode failed for workflow $_wf_name (possible rate limit) — skipping"  # timeout: 5000
-            continue
-        fi
-        _WORKFLOW_CONTENT="${_WORKFLOW_CONTENT}
---- workflow: $_wf_name ---
-$_WF_DECODED"
-    done <<<"$_WORKFLOW_NAMES"
-fi
-
-# Axis 8: Dependabot/Renovate config check
-# renovate.json and .renovaterc are in root-contents (already fetched in Group 1) — check from list
-# .github/dependabot.yml requires this separate call:
-_DEPENDABOT_CONFIG=$(gh api "repos/$GH_OWNER/$GH_REPO/contents/.github/dependabot.yml" 2>/dev/null)  # timeout: 10000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/fetch_gh_data_group2.py" --owner "$GH_OWNER" --repo "$GH_REPO" --default-branch "$DEFAULT_BRANCH" --data-file "$DATA_FILE"  # timeout: 30000
 ```
 
 ## Step 4 — Raw Data Dump (JSONL)
@@ -208,11 +126,7 @@ Rules:
 - Set `"partial": true` when truncation detected
 - Set `"records"` to item count in `data`
 - After writing: `echo "[gh-scraper] raw data: N datasets → $DATA_FILE" >&2`
-- Include text-content records using captured variables — set `"data"` as plain string; skip if variable empty:
-  - `_README_DECODED` → `"type":"readme_content"`
-  - `_CONTRIB_DECODED` → `"type":"contributing_text"`
-  - `_CO_DECODED` → `"type":"codeowners_text"` (Axis 7 scorer reads this; absent record = no CODEOWNERS file)
-  - `_WORKFLOW_CONTENT` → `"type":"workflow_files"` (Axis 5 scorer greps it for test/lint/SAST signals)
+- Text-content records (`readme_content`, `contributing_text`, `codeowners_text`, `workflow_files`) written directly by `fetch_gh_data_group2.py` to `$DATA_FILE` — no shell variable needed
 
 ## Step 5 — Return Envelope
 

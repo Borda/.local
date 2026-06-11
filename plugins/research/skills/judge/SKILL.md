@@ -23,6 +23,7 @@ NOT for: running experiments (use `/research:run`); designing hypotheses (use `r
 
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
@@ -134,16 +135,6 @@ Before constructing the J3 prompts, expand all bash variables into concrete path
 PROGRAM_PATH=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
 # Reload RUN_DIR (Check 41: fresh shell per call — persisted in J2 block)
 RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir" 2>/dev/null)
-# RUN_DIR was assigned earlier in J3 via make_run_dir.py
-J3_ARCH_PROMPT="Act as a research supervisor reviewing a PhD student's experimental protocol.
-Your job is NOT to predict whether the experiment will succeed — it is to judge whether the experimental design is methodologically sound and whether the student should be allowed to proceed.
-
-Read the campaign program file at ${PROGRAM_PATH}.
-Also read the codebase (Glob **/*.py, **/*.ts, **/*.js at project root, limit 50 files) for structural context.
-
-Validation status: ${SKIP_VALIDATION_NOTE}  ← expand to `Local validation skipped via --skip-validation — do NOT assess executability of metric_cmd/guard_cmd; note this limitation in your review.` when SKIP_VALIDATION=true, otherwise expand to `Local validation will run after this review (J4).`
-
-(Remainder of architect prompt follows verbatim — see prompt template below for the full text; replace every literal <RUN_DIR> token with the value of \${RUN_DIR} before passing the string to Agent(). The placeholder is a text-substitution instruction, not bash interpolation.)"
 ```
 
 Compute `SKIP_VALIDATION_NOTE` before constructing the prompt:

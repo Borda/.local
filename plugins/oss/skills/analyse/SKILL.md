@@ -11,7 +11,7 @@ argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report
 allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
 model: sonnet
-effort: medium
+effort: high
 ---
 
 <objective>
@@ -313,41 +313,19 @@ Cache miss:
 DRIFT=$(cat "${TMPDIR:-/tmp}/analyse-drift" 2>/dev/null || echo "false")
 FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative" 2>/dev/null || echo "false")
 REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime" 2>/dev/null || echo "0")
-# 4a: try the issues API (covers both issues and PRs)
-ITEM=$(gh api "repos/{owner}/{repo}/issues/$CLEAN_ARGS" 2>/dev/null) # timeout: 6000
-
-if [ -n "$ITEM" ]; then
-    TYPE=$(echo "$ITEM" | jq -r 'if .pull_request then "pr" else "issue" end')  # timeout: 5000
-    # Apply drift check (pattern per Step 3 comment): updated_at already in $ITEM; no extra API call
-    if [ "$FAST_PATH_TENTATIVE" = "true" ]; then
-        UPDATED_AT=$(echo "$ITEM" | jq -r '.updated_at' 2>/dev/null)
-        UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$UPDATED_AT" +%s 2>/dev/null)  # timeout: 5000
-        [ -z "$UPDATED_TS" ] && DRIFT=true  # parse failed — treat as drifted
-        [ "$UPDATED_TS" -gt "$REPORT_MTIME" ] && DRIFT=true
-        [ "$DRIFT" = "false" ] && FAST_PATH=true && echo "[resume] reusing existing report for #$CLEAN_ARGS"
-    fi
+# Detect type + updatedAt + drift in one call (covers issues, PRs, discussions).
+# Script writes TYPE, UPDATED_AT, DRIFT to ${TMPDIR:-/tmp}/oss-detect-<var> temp files.
+if [ "$FAST_PATH_TENTATIVE" = "true" ]; then
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/detect_thread_type.py" --number "$CLEAN_ARGS" --report-mtime "$REPORT_MTIME" 2>/dev/null  # timeout: 15000
 else
-    # 4b: try discussions via GraphQL — fetch updatedAt in same query; no extra call for drift check
-    DISC_JSON=$(gh api graphql -f query='
-    query($owner:String!,$repo:String!,$number:Int!){
-      repository(owner:$owner,name:$repo){
-        discussion(number:$number){ title updatedAt }
-      }
-    }' -f owner='{owner}' -f repo='{repo}' -F number=$CLEAN_ARGS 2>/dev/null)  # timeout: 6000
-    DISC_TITLE=$(echo "$DISC_JSON" | jq -r '.data.repository.discussion.title // empty' 2>/dev/null)
-    if [ -n "$DISC_TITLE" ]; then
-        TYPE="discussion"
-        # Apply drift check (pattern per Step 3 comment): updatedAt from same GraphQL response
-        if [ "$FAST_PATH_TENTATIVE" = "true" ]; then
-            UPDATED_AT=$(echo "$DISC_JSON" | jq -r '.data.repository.discussion.updatedAt' 2>/dev/null)
-            UPDATED_TS=$(date -d "$UPDATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$UPDATED_AT" +%s 2>/dev/null)  # timeout: 5000
-            [ -z "$UPDATED_TS" ] && DRIFT=true  # parse failed — treat as drifted
-            [ "$UPDATED_TS" -gt "$REPORT_MTIME" ] && DRIFT=true
-            [ "$DRIFT" = "false" ] && FAST_PATH=true && echo "[resume] reusing existing report for #$CLEAN_ARGS"
-        fi
-    else
-        TYPE="unknown"
-    fi
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/detect_thread_type.py" --number "$CLEAN_ARGS" 2>/dev/null  # timeout: 15000
+fi
+TYPE=$(cat "${TMPDIR:-/tmp}/oss-detect-type" 2>/dev/null || echo "unknown")
+DRIFT=$(cat "${TMPDIR:-/tmp}/oss-detect-drift" 2>/dev/null || echo "false")
+# Shell-side fast-path decision (downstream of script-emitted TYPE/UPDATED_AT/DRIFT)
+if [ "$FAST_PATH_TENTATIVE" = "true" ] && [ "$TYPE" != "unknown" ] && [ "$DRIFT" = "false" ]; then
+    FAST_PATH=true
+    echo "[resume] reusing existing report for #$CLEAN_ARGS"
 fi
 # TYPE=unknown: stop immediately — do not fall through to Step 5 dispatch
 if [ "$TYPE" = "unknown" ]; then

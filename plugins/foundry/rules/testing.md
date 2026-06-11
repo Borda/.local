@@ -44,26 +44,7 @@ Mirror `src/` layout in `tests/unit/`: `src/foo/bar.py` → `tests/unit/foo/test
 - Use pytest fixture resetting all RNG sources: `torch.manual_seed`, `numpy.random.seed`, `random.seed`, `torch.cuda.manual_seed_all`
 - Fixture must use `autouse=True`
 
-```python
-@pytest.fixture(autouse=True)
-def reset_random_seeds():
-    """Ensure reproducible random state for every test."""
-    import random
-    random.seed(42)
-    try:
-        import numpy as np
-
-        np.random.seed(42)
-    except ImportError:
-        pass
-    try:
-        import torch
-
-        torch.manual_seed(42)
-        torch.cuda.manual_seed_all(42)
-    except ImportError:
-        pass
-```
+See `_shared/pytest-config.md` for the canonical `reset_random_seeds` autouse fixture.
 
 ## CUDA Skip Pattern
 

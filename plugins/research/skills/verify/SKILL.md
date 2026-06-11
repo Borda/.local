@@ -15,17 +15,6 @@ NOT for: running experiments (use `/research:run`); judging experimental methodo
 
 </objective>
 
-<constants>
-
-HARD_CUTOFF: 900   # 15 min — ADVISORY ONLY, not enforced.
-> Synchronous Agent() has no escape — the parent cannot interrupt mid-flight call.
-> Single authoritative timeout semantics — applied uniformly at HIGH-1: after Agent() returns,
-> check `$RUN_DIR/audit-raw.md`. If absent or empty: fidelity = null, status = TIMED_OUT, mark ⏱ in report.
-> If present: parse normally regardless of whether the 15-min budget was nominally exceeded.
-> Same limitation as research:topic — documented, not bypassable from within the skill.
-
-</constants>
-
 <workflow>
 
 ## Agent Resolution
@@ -315,6 +304,7 @@ ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/fix/SKILL.md >/dev/null
 
 <notes>
 
+- **Timeout advisory**: 900s HARD_CUTOFF is advisory only — synchronous `Agent()` cannot be interrupted mid-flight; after Agent() returns, check `$RUN_DIR/audit-raw.md`; if absent/empty → TIMED_OUT, mark ⏱.
 - Verify read-only — never modifies code, commits, or writes to `.experiments/state/`
 - `.experiments/verify-<timestamp>/` stores scientist agent's full audit output for reference
 - Verify run dirs don't write `result.jsonl` — exempt from 30-day TTL cleanup (exempt per `.claude/rules/artifact-lifecycle.md` — no `result.jsonl` = cleanup skipped); remove manually when no longer needed (`rm -rf .experiments/verify-*/`)

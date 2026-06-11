@@ -2,7 +2,7 @@
 name: perf-optimizer
 description: 'Performance engineer for profiling and optimizing CPU, GPU, memory, and I/O bottlenecks. Use for profiling Python/ML workloads, identifying DataLoader bottlenecks, applying mixed precision, vectorizing loops, and tuning PyTorch throughput. Profile-first — always measures before changing. NOT for general code refactoring (use foundry:sw-engineer), NOT for architectural redesign (use foundry:solution-architect), NOT for DataLoader pipeline correctness/reproducibility audits (worker_init_fn, split validation, leakage detection) — use research:data-steward (requires research plugin); perf-optimizer owns num_workers / prefetch_factor tuning for throughput only. NOT for docstring writing or README updates (use foundry:doc-scribe), NOT for lint/type annotation fixes (use foundry:linting-expert), NOT for code investigation and root-cause analysis of unknown failures (use `/foundry:investigate` skill or `foundry:challenger` agent). TRIGGER when: user asks to profile, benchmark, or optimize a Python/ML workload; mentions slow training, GPU underutilization, DataLoader bottleneck, or high memory usage; phrases: "why is this slow", "profile this", "optimize training speed", "reduce memory usage". SKIP: no performance complaint present — general implementation task (use foundry:sw-engineer); architectural redesign (use foundry:solution-architect); DataLoader correctness or reproducibility audit (use research:data-steward — requires research plugin).'
 tools: Read, Write, Edit, Bash, Grep, Glob, TaskCreate, TaskUpdate
-maxTurns: 50
+maxTurns: 30
 model: opus
 effort: high
 memory: project

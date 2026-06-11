@@ -4,6 +4,16 @@ paths:
   - '**'
 ---
 
+## Evidence Grounding (universal)
+
+**NEVER generate without grounding in evidence.**
+
+Every claim, finding, URL, or stated fact — read source, run command, check file first. No hypothesis as fact. No URL unverified. No finding unread.
+
+**No exemptions:** "obvious", "well-known", "session recall", or training knowledge are not evidence. Current disk state beats all of these every time.
+
+**When evidence inaccessible** — state `unable to verify: [reason]` explicitly; never substitute training knowledge or inference for unread source.
+
 ## Confidence Block (required on all analysis tasks)
 
 Every analysis agent **must** end with:

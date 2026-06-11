@@ -71,19 +71,9 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
 ```bash
-# timeout: 5000
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
-    "$ARGUMENTS" \
-    --neg-bool no-challenge CHALLENGE_ENABLED true \
-    --bool semble SEMBLE_ENABLED false \
-    --bool team TEAM_MODE false \
-    --bool accept-no-plan ACCEPT_NO_PLAN false \
-    --str repo REPO_NAME '')"
-echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
-echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
-echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
-echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
-echo "$REPO_NAME"         > ${TMPDIR:-/tmp}/dev-upstream
+# timeout: 10000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    --skill refactor --write-files "$ARGUMENTS"
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
@@ -237,9 +227,9 @@ Compute run directory and create health sentinel:
 
 ```bash
 # timeout: 5000
-mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py" --sentinel refactor-team-check)
-TS="${_run[0]}"
-RUN_DIR="${_run[1]}"
+_run=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py" --sentinel refactor-team-check)
+TS=$(echo "$_run" | head -1)
+RUN_DIR=$(echo "$_run" | tail -1)
 RUN_DIR_LITERAL="$RUN_DIR"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-refactor-team-ts
 echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir

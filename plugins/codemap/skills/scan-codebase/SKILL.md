@@ -31,43 +31,16 @@ Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `
 **Unsupported flag check** — scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop. Run this check BEFORE invoking `parse_scan_args.py`.
 
 ```bash
-# scan-index handles v2→v3 fallback internally
-SCAN_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index"
-# Validate binary exists before invoking — avoids cryptic "command not found" on bad installs
-[ -x "$SCAN_BIN" ] || { printf "! scan-index binary not found at %s — reinstall: claude plugin install codemap@borda-ai-rig\n" "$SCAN_BIN"; exit 1; }
-SCAN_ARGS_RAW="$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$ARGUMENTS")" || { printf "! parse_scan_args.py failed — check Python availability and plugin installation\n"; exit 1; }  # timeout: 5000
-# Use project-unique tmp paths — prevents race when two parallel scans run in different projects
-# Include hostname to reduce collision risk across same-named projects on different machines sharing tmp
-PROJ_SLUG="$(hostname -s 2>/dev/null | tr -cd '[:alnum:]-')-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")" | tr -cd '[:alnum:]-')"
-echo "$SCAN_BIN" > "${TMPDIR:-/tmp}/codemap-scan-bin-${PROJ_SLUG}"
-echo "$SCAN_ARGS_RAW" > "${TMPDIR:-/tmp}/codemap-scan-args-${PROJ_SLUG}"
-echo "$PROJ_SLUG" > "${TMPDIR:-/tmp}/codemap-proj-slug"
-
-# --root changes which project name scan-index uses for the index file path.
-# When --root provided, PROJ_NAME derives from --root basename, NOT from git top-level.
-if [[ " $ARGUMENTS " == *" --root "* ]]; then
-    # Extract --root value: take token after --root
-    ROOT_ARG=$(echo "$ARGUMENTS" | grep -oP '(?<=--root\s)\S+')
-    PROJ_NAME=$(basename "$ROOT_ARG")
-else
-    PROJ_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")")
-fi
-echo "$PROJ_NAME" > "${TMPDIR:-/tmp}/codemap-proj-name-${PROJ_SLUG}"
-
-# Pre-scan warning: if --incremental requested but no prior index, log fallback BEFORE starting scan
-# Note: if scan fails after sentinel is set, sentinel persists until next successful run.
-if [[ " $ARGUMENTS " == *" --incremental "* ]]; then
-    if [ ! -f ".cache/scan/${PROJ_NAME}.json" ]; then
-        echo "[codemap] No prior index: falling back to full scan"
-        touch "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}"
-    fi
-fi
+SCAN_STATE_FILE=$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/setup_scan_env.sh" --arguments "$ARGUMENTS" 2>/dev/null)  # timeout: 10000
+[ -z "$SCAN_STATE_FILE" ] && { echo "! setup_scan_env.sh failed"; exit 1; }
+source "$SCAN_STATE_FILE"
 ```
 
 ```bash
 # timeout: 360000
 # see also: integration/SKILL.md Step I1 (cdm-integration-B7) — parallel scan-index invocation
-PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")" | tr -cd '[:alnum:]-')
+PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null)
+[ -n "$PROJ_SLUG" ] || { printf "! codemap state missing — re-run from the beginning\n"; exit 1; }
 SCAN_BIN=$(cat "${TMPDIR:-/tmp}/codemap-scan-bin-${PROJ_SLUG}")
 SCAN_ARGS_RAW=$(cat "${TMPDIR:-/tmp}/codemap-scan-args-${PROJ_SLUG}")
 # parse_scan_args.py uses shlex.quote for paths with spaces — use eval set to expand safely
@@ -92,7 +65,8 @@ After scan, read index and report compact summary:
 # SCAN_ARGS provides root-path context for stats script to resolve relative module paths.
 # CLAUDE_PLUGIN_ROOT is set automatically by Claude Code when plugin is active.
 # timeout: 15000
-PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")" | tr -cd '[:alnum:]-')
+PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null)
+[ -n "$PROJ_SLUG" ] || { printf "! codemap state missing — re-run /codemap:scan-codebase\n"; exit 1; }
 PROJ_NAME=$(cat "${TMPDIR:-/tmp}/codemap-proj-name-${PROJ_SLUG}" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")")
 if [ -f ".cache/scan/${PROJ_NAME}.json" ]; then
     SCAN_ARGS="$ARGUMENTS" python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-stats.py"

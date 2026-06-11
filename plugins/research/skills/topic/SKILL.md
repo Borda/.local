@@ -25,16 +25,6 @@ NOT for deep single-paper analysis or experiment design — use `research:scient
 
 </inputs>
 
-<constants>
-
-HARD_CUTOFF: 900   # 15 min — ADVISORY ONLY, not enforced.
-# Synchronous Agent() call cannot be polled or interrupted mid-flight — parent has no way to detect elapsed time mid-call.
-# Single timeout policy: after Agent() returns (however it terminates), check whether $AGENT_OUT exists and has content.
-# If file absent or empty → researcher timed out or crashed; surface partial results from .temp/ and mark ⏱ in report.
-# If file present → parse normally regardless of nominal budget. Same limitation as research:verify.
-
-</constants>
-
 <workflow>
 
 <!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
@@ -44,6 +34,7 @@ HARD_CUTOFF: 900   # 15 min — ADVISORY ONLY, not enforced.
 ```bash
 # CLAUDE_PLUGIN_ROOT set by Claude Code to installed cache path; plugins/ fallback = source-tree only
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
 
 Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`.

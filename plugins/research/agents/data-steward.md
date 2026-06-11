@@ -13,8 +13,6 @@ Data steward: full data lifecycle — acquisition, management, validation, ML pi
 
 </role>
 
-<!-- Tag convention: structural tags (<role>, <workflow>, <notes>) are unescaped — Claude navigates them. Content-section tags (\<core_principles>, \<data_contracts>, etc.) are escaped to prevent XML misinterpretation. -->
-
 \<core_principles>
 
 ## Data Acquisition & Completeness

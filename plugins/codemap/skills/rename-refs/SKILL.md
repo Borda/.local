@@ -62,14 +62,9 @@ Derive bare names for grep patterns:
 
 Parse `--deprecate` — may be bare flag or carry a decorator value:
 ```bash
-DEPRECATE=false; DEPRECATE_DECORATOR=""
-if echo "$ARGUMENTS" | grep -qE -- '--deprecate=[^ ]+'; then
-    DEPRECATE=true
-    DEPRECATE_DECORATOR=$(echo "$ARGUMENTS" | grep -oE -- '--deprecate=[^ ]+' | head -1 | sed 's/--deprecate=//')
-    DEPRECATE_DECORATOR=$(echo "$DEPRECATE_DECORATOR" | sed "s/^['\"]//;s/['\"]$//")  # strip surrounding quotes
-elif echo "$ARGUMENTS" | grep -q -- '--deprecate'; then
-    DEPRECATE=true
-fi
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_deprecate_args.py" --arguments="$ARGUMENTS" 2>/dev/null  # timeout: 5000
+DEPRECATE=$(cat "${TMPDIR:-/tmp}/codemap-deprecate-flag" 2>/dev/null || echo "false")
+DEPRECATE_DECORATOR=$(cat "${TMPDIR:-/tmp}/codemap-deprecate-decorator" 2>/dev/null || echo "")
 ```
 
 Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`--dry-run`, `--deprecate`, `--since`, `--removed-in`, `--remove-if-no-callers`). If found: print `! Unknown flag(s): --<token>. Supported flags: --dry-run, --deprecate[=<decorator>], --since, --removed-in, --remove-if-no-callers. Re-invoke with corrected flags.` and stop — do not invoke AskUserQuestion (fail-fast keeps the worst-case AQQ path at 4 calls: STALE-index, multiple-matches, apply/dry-run, hard-delete confirmation).
@@ -78,9 +73,12 @@ Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`
 
 ```bash
 # timeout: 5000
-# resolve_proj_index.py outputs 2 lines: PROJ name on line 1, INDEX path on line 2
-# Capture line 2 only (index path) — do not use bare $() which would combine both lines
-INDEX=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_proj_index.py" 2>/dev/null | sed -n '2p')
+# resolve_index_env.py emits `PROJ='…' INDEX='…'` on stdout for eval — stderr to tempfile
+# so eval only sees KEY=VAL pairs. Shared pattern with integration/SKILL.md Step I1 / C2.
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" 2>/dev/null  # timeout: 5000
+PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index" 2>/dev/null || echo "")
+[ -n "$PROJ" ] || { printf "! resolve_index_env.py failed — check Python availability and CLAUDE_PLUGIN_ROOT\n"; exit 1; }
 [ -n "$INDEX" ] || { echo "! index not found — run /codemap:scan-codebase first"; exit 1; }
 SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
 STALE=$(echo "$SMOKE_JSON" | jq -r '.stale // "unknown"' 2>/dev/null || echo "unknown")

@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from dev_parse_args import FlagSpec, extract_flags, parse_specs, run
+from dev_parse_args import (
+    SKILL_SPECS,
+    FlagSpec,
+    extract_flags,
+    parse_specs,
+    run,
+    write_skill_files,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -263,3 +272,60 @@ class TestRunOutput:
         """No specs → only CLEAN_ARGS emitted with original args."""
         out = run("fix auth.py", [])
         assert out.strip() == "CLEAN_ARGS='fix auth.py'"
+
+
+# ---------------------------------------------------------------------------
+# write_skill_files — skill registry and per-flag temp file writes
+# ---------------------------------------------------------------------------
+
+
+class TestWriteSkillFiles:
+    """write_skill_files persists per-skill and legacy temp files."""
+
+    def test_unknown_skill_exits(self, tmp_path: Path):
+        """Unknown skill name calls sys.exit(1)."""
+        with pytest.raises(SystemExit) as exc:
+            write_skill_files("nonexistent-skill", "fix auth.py", tmp_dir=tmp_path)
+        assert exc.value.code == 1
+
+    @pytest.mark.parametrize("skill", sorted(SKILL_SPECS))
+    def test_registered_skills_emit_per_flag_files(self, skill: str, tmp_path: Path):
+        """Each registered skill writes one per-skill file per declared flag."""
+        write_skill_files(skill, "", tmp_dir=tmp_path)
+        for spec, _legacy in SKILL_SPECS[skill]:
+            key = spec.flag or "codemap"
+            assert (tmp_path / f"dev-{skill}-{key}").exists(), f"missing per-skill file for {skill}/{key}"
+
+    @pytest.mark.parametrize("skill", sorted(SKILL_SPECS))
+    def test_registered_skills_emit_legacy_files(self, skill: str, tmp_path: Path):
+        """Legacy filenames are written so downstream blocks reading shared paths still work."""
+        write_skill_files(skill, "", tmp_dir=tmp_path)
+        for _spec, legacy in SKILL_SPECS[skill]:
+            if legacy is None:
+                continue
+            assert (tmp_path / legacy).exists(), f"missing legacy file {legacy} for skill {skill}"
+
+    def test_feature_flag_values_persisted(self, tmp_path: Path):
+        """Feature skill: representative flags persist their parsed values."""
+        write_skill_files("feature", "--semble --no-challenge --codemap fix auth.py", tmp_dir=tmp_path)
+        assert (tmp_path / "dev-feature-semble").read_text() == "true"
+        assert (tmp_path / "dev-feature-no-challenge").read_text() == "false"
+        assert (tmp_path / "dev-feature-codemap").read_text() == "strict"
+        # Legacy paths mirror the same values
+        assert (tmp_path / "dev-semble-enabled").read_text() == "true"
+        assert (tmp_path / "dev-challenge-enabled").read_text() == "false"
+        assert (tmp_path / "dev-codemap-raw").read_text() == "strict"
+
+    def test_debug_codemap_raw_persisted(self, tmp_path: Path):
+        """Debug skill: --no-codemap writes 'off' to both per-skill and legacy CODEMAP_RAW files."""
+        write_skill_files("debug", "--no-codemap symptom", tmp_dir=tmp_path)
+        assert (tmp_path / "dev-debug-codemap").read_text() == "off"
+        assert (tmp_path / "dev-codemap-raw").read_text() == "off"
+
+    def test_defaults_applied_for_absent_flags(self, tmp_path: Path):
+        """Absent flags fall back to declared defaults in both file flavours."""
+        write_skill_files("refactor", "tidy module", tmp_dir=tmp_path)
+        assert (tmp_path / "dev-refactor-team").read_text() == "false"
+        assert (tmp_path / "dev-team-mode").read_text() == "false"
+        assert (tmp_path / "dev-refactor-repo").read_text() == ""
+        assert (tmp_path / "dev-upstream").read_text() == ""

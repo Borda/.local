@@ -1,24 +1,25 @@
 #!/usr/bin/env python
-"""resolve_index_env.py — resolve codemap PROJ + INDEX and emit eval-safe assignments.
+"""resolve_index_env.py — resolve codemap PROJ + INDEX and write to temp files.
 
 Calls ``bin/resolve_proj_index.py``, reads PROJ (line 1) and INDEX (line 2),
-and prints ``PROJ=<quoted> INDEX=<quoted>`` on a single stdout line for shell ``eval``.
-
-Quoting uses :func:`shlex.quote` so values containing single quotes, spaces, or
-shell metacharacters round-trip safely through ``eval``.
+and writes each to ``${TMPDIR:-/tmp}/codemap-resolve-{proj,index}`` for the
+caller to read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
 
 Usage:
-    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py")"
-    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists)"
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py"
+    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj")
+    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index")
+
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists
+    # exit 1 when INDEX file missing; temp files still written for diagnostics
 
 Flags:
     --check-exists   verify INDEX file exists; exit 1 with stderr message if missing.
 
 Exit codes:
-    0 — success (PROJ + INDEX printed on stdout)
-    1 — resolver produced no output (PROJ/INDEX printed empty so caller eval still
-        defines the variables), or (with ``--check-exists``) INDEX file missing
-        (PROJ + INDEX still printed)
+    0 — success (PROJ + INDEX written to temp files)
+    1 — resolver produced no output, or (with ``--check-exists``) INDEX file missing
+        (temp files still written so caller can read PROJ for diagnostics)
     2 — unknown flag
 """
 
@@ -30,6 +31,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+
 
 _SCRIPT_NAME = "resolve_index_env"
 
@@ -101,6 +103,22 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _write_temp_vars(proj: str, index: str) -> None:
+    """Write PROJ and INDEX to ``${TMPDIR:-/tmp}/codemap-resolve-{proj,index}`` temp files.
+
+    Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
+    Temp files are always written (even on resolver failure) so downstream ``cat``
+    calls can supply their own ``|| echo ""`` fallback without extra conditionals.
+
+    Args:
+        proj: Project name string (may be empty on resolver failure).
+        index: Index file path string (may be empty on resolver failure).
+    """
+    tmpdir = os.environ.get("TMPDIR", "/tmp")
+    for key, val in (("proj", proj), ("index", index)):
+        Path(tmpdir, f"codemap-resolve-{key}").write_text(val, encoding="utf-8")
+
+
 def _run_resolver(plugin_root: str) -> str:
     """Invoke ``resolve_proj_index.py`` via subprocess and return its stdout.
 
@@ -129,8 +147,8 @@ def _run_resolver(plugin_root: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns the process exit code.
 
-    Always emits the eval-safe ``PROJ=… INDEX=…`` line on stdout before any
-    failure exit so callers never need a second invocation to recover variables.
+    Always writes PROJ/INDEX to temp files before any failure exit so callers
+    can read partial results for diagnostics even when the script exits non-zero.
 
     Args:
         argv: Argument list (defaults to ``sys.argv[1:]``).
@@ -138,7 +156,6 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Exit code — 0 success, 1 resolver/check failure, 2 unknown flag.
     """
-    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = _build_parser()
     try:
         args = parser.parse_args(argv)
@@ -156,8 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     stdout = _run_resolver(plugin_root)
     proj, index = parse_resolver_output(stdout)
 
-    # Always emit PROJ/INDEX on stdout before any failure exit (legacy contract).
-    sys.stdout.write(format_eval_line(proj, index) + "\n")
+    # Always write to temp files before any failure exit — callers read with cat.
+    _write_temp_vars(proj, index)
 
     if not proj or not index:
         sys.stderr.write(f"{_SCRIPT_NAME}: resolve_proj_index.py produced no output (PROJ/INDEX empty)\n")

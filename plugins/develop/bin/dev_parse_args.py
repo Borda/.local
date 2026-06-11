@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
 """dev_parse_args.py — parse develop-skill flags from $ARGUMENTS.
 
-Outputs shell-eval-safe KEY=VALUE lines.  CLEAN_ARGS is always emitted last —
-$ARGUMENTS with all recognised flag tokens stripped and whitespace normalised.
+Two calling conventions:
 
-Usage (inside SKILL.md bash block):
+1. **Spec-driven (legacy)** — caller declares flag specs explicitly; script prints
+   shell-eval-safe ``KEY=VALUE`` lines on stdout, intended for ``eval "$(...)"``.
 
-    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \\
-        "$ARGUMENTS" \\
-        --neg-bool no-challenge CHALLENGE_ENABLED true \\
-        --bool semble SEMBLE_ENABLED false \\
-        --codemap CODEMAP_RAW auto \\
-        --int max-depth MAX_DEPTH 3 \\
-        --str plan PLAN_FILE '' \\
-    )"
+   Example::
+
+       eval "$(python dev_parse_args.py "$ARGUMENTS" \\
+           --neg-bool no-challenge CHALLENGE_ENABLED true \\
+           --bool semble SEMBLE_ENABLED false \\
+           --codemap CODEMAP_RAW auto)"
+
+2. **Skill-driven with file writes** — caller passes ``--skill <name>
+   --write-files <arguments>``; script looks up the per-skill flag set
+   internally and writes each resulting value to a per-flag temp file
+   under ``${TMPDIR:-/tmp}/`` (no ``eval`` required by the caller).
+
+   Example::
+
+       python dev_parse_args.py --skill feature --write-files "$ARGUMENTS"
+       # Now read: $(cat ${TMPDIR:-/tmp}/dev-feature-codemap)
+
+   Two files are written for every variable: a *per-skill* path
+   (``dev-<skill>-<flag>``) for the modern convention and a *legacy*
+   path (e.g. ``dev-team-mode``) so existing downstream blocks that
+   read the legacy names keep working without a flag-day rename.
 
 Flag spec types (each occupies 3 positional tokens after the type keyword):
 
@@ -24,20 +37,19 @@ Flag spec types (each occupies 3 positional tokens after the type keyword):
     --int FLAG VAR DEFAULT      --FLAG N or --FLAG=N → VAR=N (integer)
     --str FLAG VAR DEFAULT      --FLAG VAL or --FLAG=VAL → VAR=VAL (string)
 
-Output format: one KEY=VALUE line per declared variable (shell-safe single-quoted
-values where needed), then CLEAN_ARGS='...' on the final line.
-
 Exit codes:
     0 — success
-    1 — malformed spec (wrong number of tokens after type keyword)
+    1 — malformed spec, unknown skill, or missing ``--write-files`` argument
     2 — --int flag received a non-integer value
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 
@@ -264,13 +276,183 @@ def run(arguments: str, spec_tokens: list[str]) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
-    """CLI entry point."""
-    if len(sys.argv) < 2:
-        print("usage: dev_parse_args.py ARGUMENTS [SPEC...]", file=sys.stderr)
+# ---------------------------------------------------------------------------
+# Skill registry (used by --skill <name> --write-files)
+# ---------------------------------------------------------------------------
+
+
+def _spec(kind: SpecType, flag: str, var: str, default: str) -> FlagSpec:
+    """Tiny helper so the registry table below stays compact and readable."""
+    return FlagSpec(kind=kind, flag=flag, var=var, default=default)
+
+
+# Per-skill flag declarations. Keep in sync with each skill's SKILL.md.
+# Each entry: (FlagSpec, legacy_filename_or_None).
+#
+# ``legacy_filename`` preserves the original temp-file paths the existing
+# downstream Bash() blocks read (e.g. ``dev-team-mode``, ``dev-upstream``),
+# so the surgical replacement of the eval block in each SKILL.md does not
+# need to touch any later block.  ``None`` means no legacy path was written
+# before (e.g. a newly registered flag).
+SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
+    "feature": [
+        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
+        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+    ],
+    "fix": [
+        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
+        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+    ],
+    "debug": [
+        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec("str", "ci-run", "CI_RUN_ID", ""), "dev-ci-run-id"),
+        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+    ],
+    "refactor": [
+        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
+        (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
+        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
+    ],
+}
+
+
+def _per_skill_filename(skill: str, spec: FlagSpec) -> str:
+    """Compose the per-skill temp filename for a given spec.
+
+    For codemap (no ``flag`` token) the key is the literal string ``codemap``.
+
+    Examples:
+        >>> _per_skill_filename("feature", FlagSpec(kind="bool", flag="team", var="TEAM_MODE", default="false"))
+        'dev-feature-team'
+        >>> _per_skill_filename("debug", FlagSpec(kind="codemap", flag="", var="CODEMAP_RAW", default="auto"))
+        'dev-debug-codemap'
+    """
+    key = spec.flag or ("codemap" if spec.kind == "codemap" else spec.var.lower())
+    return f"dev-{skill}-{key}"
+
+
+def _tmp_dir() -> Path:
+    """Return the directory temp files are written to (mirrors shell ``${TMPDIR:-/tmp}``)."""
+    return Path(os.environ.get("TMPDIR", "/tmp"))
+
+
+def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -> dict[str, str]:
+    """Parse arguments using the registered ``skill`` specs and persist values to temp files.
+
+    Writes two files per variable when a legacy path is registered:
+
+    * Per-skill: ``${TMPDIR}/dev-<skill>-<flag>`` — modern convention used by callers
+      that read flags back with explicit per-skill paths.
+    * Legacy: ``${TMPDIR}/<legacy-name>`` — preserves backward compatibility with
+      downstream Bash() blocks that read shared paths like ``dev-team-mode``.
+
+    Args:
+        skill: registered skill name (key of ``SKILL_SPECS``).
+        arguments: raw ``$ARGUMENTS`` string.
+        tmp_dir: override for the temp directory (defaults to ``${TMPDIR:-/tmp}``).
+
+    Returns:
+        Dict mapping each declared shell variable name to its resolved string value.
+
+    Raises:
+        SystemExit(1): if ``skill`` is not a registered key.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     vals = write_skill_files("feature", "--semble fix auth.py", tmp_dir=Path(d))
+        ...     vals["SEMBLE_ENABLED"]
+        ...     (Path(d) / "dev-feature-semble").read_text()
+        ...     (Path(d) / "dev-semble-enabled").read_text()
+        'true'
+        'true'
+        'true'
+    """
+    if skill not in SKILL_SPECS:
+        known = ", ".join(sorted(SKILL_SPECS))
+        print(
+            f"dev_parse_args: unknown skill '{skill}' (registered: {known})",
+            file=sys.stderr,
+        )
         sys.exit(1)
-    arguments = sys.argv[1]
-    spec_tokens = sys.argv[2:]
+
+    target_dir = tmp_dir if tmp_dir is not None else _tmp_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    entries = SKILL_SPECS[skill]
+    specs = [spec for spec, _ in entries]
+    values, _clean = extract_flags(arguments, specs)
+
+    for spec, legacy in entries:
+        value = values[spec.var]
+        (target_dir / _per_skill_filename(skill, spec)).write_text(value)
+        if legacy is not None:
+            (target_dir / legacy).write_text(value)
+    return values
+
+
+def main() -> None:
+    """CLI entry point.
+
+    Two invocation forms:
+
+    * ``dev_parse_args.py ARGUMENTS [SPEC...]`` — print eval-able shell block on stdout
+      (legacy form used by ``eval "$(...)"`` callers).
+    * ``dev_parse_args.py --skill <name> --write-files ARGUMENTS`` — parse using the
+      registered skill specs and write each value to a temp file under ``${TMPDIR:-/tmp}``.
+    """
+    argv = sys.argv[1:]
+    if not argv:
+        print(
+            "usage:\n"
+            "  dev_parse_args.py ARGUMENTS [SPEC...]\n"
+            "  dev_parse_args.py --skill <name> --write-files ARGUMENTS",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if "--skill" in argv:
+        # Skill-driven write-files invocation
+        try:
+            skill_idx = argv.index("--skill")
+            skill_name = argv[skill_idx + 1]
+        except (ValueError, IndexError):
+            print("dev_parse_args: --skill requires a name argument", file=sys.stderr)
+            sys.exit(1)
+        if "--write-files" not in argv:
+            print(
+                "dev_parse_args: --skill requires --write-files (only mode supported)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        # Remaining positional after stripping both flag pairs is the ARGUMENTS string
+        remaining = [
+            tok for i, tok in enumerate(argv) if i not in {skill_idx, skill_idx + 1} and tok != "--write-files"
+        ]
+        if not remaining:
+            print("dev_parse_args: --skill mode needs the ARGUMENTS string", file=sys.stderr)
+            sys.exit(1)
+        arguments = remaining[0]
+        write_skill_files(skill_name, arguments)
+        return
+
+    # Legacy spec-driven invocation
+    arguments = argv[0]
+    spec_tokens = argv[1:]
     print(run(arguments, spec_tokens))
 
 

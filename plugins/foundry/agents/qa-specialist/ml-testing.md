@@ -38,7 +38,7 @@ def test_transform_preserves_range():
 
 ## GPU / CUDA Tests
 
-Define in conftest.py: `@pytest.fixture(autouse=True) def reset_random_seeds(): random.seed(42); np.random.seed(42); torch.manual_seed(42)` — `autouse=True` makes the fixture apply to every test without explicit request.
+> `reset_random_seeds` autouse fixture — see `_shared/pytest-config.md` for the canonical definition.
 
 Mark GPU tests with `@pytest.mark.gpu` and `@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")` so they skip on CPU-only runners without breaking suite.
 

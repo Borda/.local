@@ -229,17 +229,7 @@ NEW_API_LINES=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/nul
 # Detect pure config/deps changes (no .py logic changes)
 NON_CONFIG_PY=$(echo "$PY_FILES" | grep -vE '(pyproject\.toml|setup\.cfg|setup\.py|requirements.*\.txt|conftest\.py)' || true)
 
-if [ -z "$NON_CONFIG_PY" ] && [ "$PY_FILE_COUNT" -eq 0 ]; then
-    SCOPE=CHORE
-elif [ "$NEW_API_LINES" -gt 0 ]; then
-    SCOPE=FEATURE
-elif [ "$PY_FILE_COUNT" -lt 3 ] && [ "$PY_LOC_DELTA" -lt 50 ]; then
-    SCOPE=FIX
-elif [ "$PY_FILE_COUNT" -ge 3 ]; then
-    SCOPE=REFACTOR
-else
-    SCOPE=MIXED
-fi
+SCOPE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/classify_pr_scope.py" --py-files "$PY_FILE_COUNT" --loc-delta "$PY_LOC_DELTA" --new-api-lines "$NEW_API_LINES" --labels "$PR_LABELS" --title "$PR_TITLE" 2>/dev/null)  # timeout: 10000
 echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$NEW_API_LINES)"
 
 # Persist SCOPE and CHORE_DEPS flags alongside mode flags — Step 2 EXPECTED_FILE
@@ -500,29 +490,10 @@ gh pr diff $CLEAN_ARGS 2>/dev/null | grep -A2 "deprecated" # timeout: 6000
 ### 3b: OSS checks
 
 ```bash
-# Check for new dependencies — license compatibility
-gh pr diff $CLEAN_ARGS -- pyproject.toml 'requirements*.txt' 2>/dev/null # timeout: 6000
-
-# Check for secrets accidentally committed — scoped to .py files only (oss:review is Python-only)
-gh pr diff $CLEAN_ARGS -- '*.py' 2>/dev/null | grep -iE "(password|secret|api_key|token|private_key|auth_token)\s*[=:]\s*['\"]?[A-Za-z0-9+/._-]{8,}['\"]?" # timeout: 6000
-
-# Check for API stability: removals needing deprecation — only if the removed export was in a published release
+OSS_SIGNALS="${TMPDIR:-/tmp}/oss-review-signals-${CLEAN_ARGS}.json"
 LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")  # timeout: 6000
-REMOVED_EXPORTS=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep '^-[^-]' | grep -oP '\b[A-Za-z_]\w*\b' | sort -u)  # timeout: 6000
-if [ -n "$LATEST_TAG" ] && [ -n "$REMOVED_EXPORTS" ]; then
-    for export in $REMOVED_EXPORTS; do
-        if git show "$LATEST_TAG" -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -qF "$export"; then
-            echo "DEPRECATION_NEEDED: $export (present in $LATEST_TAG — was released)"
-        else
-            echo "UNRELEASED_REMOVAL: $export (absent from $LATEST_TAG — clean removal OK, no deprecation needed)"
-        fi
-    done  # timeout: 15000
-elif [ -z "$LATEST_TAG" ]; then
-    echo "NO_RELEASE_TAG: cannot determine release history — skip deprecation check"
-fi
-
-# Check CHANGELOG was updated
-gh pr diff $CLEAN_ARGS -- CHANGELOG.md CHANGES.md 2>/dev/null # timeout: 6000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_oss_pr_signals.py" --clean-args "$CLEAN_ARGS" --latest-tag "$LATEST_TAG" --output-file "$OSS_SIGNALS"  # timeout: 30000
+cat "$OSS_SIGNALS" 2>/dev/null
 ```
 
 ## Step 4: Cross-validate critical/blocking findings

@@ -5,7 +5,6 @@ when_to_use: |
   TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: "debug this failure", "why is X broken", "find the root cause of <error>", "investigate this CI failure".
   SKIP: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project.
 argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap]"
-model: opusplan
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -61,28 +60,17 @@ If `LANG_HINT` not `python`: invoke `AskUserQuestion` — "Non-Python project de
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values:
 
 ```bash
-# timeout: 5000
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
-    "$ARGUMENTS" \
-    --neg-bool no-challenge CHALLENGE_ENABLED true \
-    --bool team TEAM_MODE false \
-    --str ci-run CI_RUN_ID '' \
-    --str repo REPO_NAME '')"
-# Persist for cross-block access (bash state lost between Bash() calls)
-echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
-echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
-echo "$CI_RUN_ID"         > ${TMPDIR:-/tmp}/dev-ci-run-id
-echo "$REPO_NAME"         > ${TMPDIR:-/tmp}/dev-upstream
+# timeout: 10000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    --skill debug --write-files "$ARGUMENTS"
 # URL normalization and log fetching: see §URL Normalization in ci-log-extract.md below
 ```
 
-**Codemap flag parsing** — derive raw flag then normalize via `codemap-resolve`:
+**Codemap resolve** — `CODEMAP_RAW` is already written to `${TMPDIR:-/tmp}/dev-debug-codemap` (per-skill) and `${TMPDIR:-/tmp}/dev-codemap-raw` (legacy) by the flag-parsing block above (via `dev_parse_args.py --skill debug --write-files`). Read the per-skill path, then normalize via `codemap-resolve`:
 
 ```bash
 # timeout: 5000
-CODEMAP_RAW=auto
-[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
-[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then

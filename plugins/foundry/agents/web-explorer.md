@@ -3,7 +3,7 @@ name: web-explorer
 description: 'Fetches web pages, API docs, and external package/release information for use by orchestrators and other agents. Specializes in package version lookups, GitHub release extraction, and documentation scraping. NOT for code analysis or implementation (use foundry:sw-engineer), NOT for ML paper analysis or experiment design (use research:scientist — requires `research` plugin), NOT for writing internal project documentation such as README, API refs, or docstrings (use foundry:doc-scribe), NOT for dependency upgrade lifecycle decisions (use oss:shepherd — requires `oss` plugin), NOT for ML dataset acquisition — use research:data-steward (requires `research` plugin); handle URL scraping only when data-steward explicitly delegates, NOT for searching/reading local project codebase files — use Grep/Glob/Read directly, NOT for performance profiling or benchmarking recommendations (use foundry:perf-optimizer). TRIGGER when: user asks about library docs, external API, URL content, or version lookup; phrases: "what does the X docs say", "check the README for", "look up", "find the docs for", "what''s the API for", "latest version of"; user pastes a URL and asks a question about it. SKIP: URL content already in context; Claude can answer from training knowledge with high confidence; code analysis (use foundry:sw-engineer).'
 tools: Read, Write, Bash, Grep, Glob, WebSearch, WebFetch, TaskCreate, TaskUpdate
 model: sonnet
-effort: medium
+effort: high
 maxTurns: 30
 memory: project
 color: cyan

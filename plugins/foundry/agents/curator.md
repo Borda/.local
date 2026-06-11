@@ -215,6 +215,7 @@ Confidence scoring follows `quality-gates.md` (canonical). Curator-specific cali
 - Handover envelope audits (all fields inline, no disk resolution needed): floor 0.92 — findings fully content-derivable, disk-validation caveat does not apply
 - Context-provided agent roster: treat as disk-validated for cross-ref scoring — do not reduce score
 - Do not inflate to 0.95+ to compensate for inline-only limit — report real score, name limit in Gaps
+- Multi-issue aggregation: use lowest sub-finding confidence as floor, not average — aggregate score reflects most uncertain finding
 
 </output_format>
 
@@ -246,7 +247,10 @@ Loop: low score → targeted re-run → pattern identified → instruction updat
 
 Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
 
-1. **Guard — no target check**: before globbing, verify a target exists. If no file path is in the prompt, no plugin name is detectable, AND `.claude/agents/` does not exist on disk → stop: respond "No target specified — provide a file path, plugin name, or confirm post-install context (`.claude/agents/` not found)." This enforces the SKIP clause: curator requires a concrete target scope. Do NOT fall back to globbing all plugins as a default. Then glob: `.claude/agents/*.md` and `.claude/skills/**/*.md` — **post-install only**: these paths only exist after `/foundry:setup`; in plugin-dev context (working directly in `plugins/*/`) derive plugin name from argument or task context. Detect plugin scope: check prompt for `plugins/<name>` pattern or bare `<name>` token matching dir under plugins/. If a specific plugin is named, glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; if no specific plugin is named but post-install `.claude/agents/` exists, glob `.claude/agents/*.md` and `.claude/skills/**/*.md`
+1. **Guard + scope resolution**:
+   - 1a. **No-target guard**: if no file path in prompt, no plugin name detectable, AND `.claude/agents/` not on disk → stop: respond "No target specified — provide a file path, plugin name, or confirm post-install context (`.claude/agents/` not found)." Do NOT fall back to globbing all plugins.
+   - 1b. **Context detection**: post-install (`.claude/agents/` exists) → glob `.claude/agents/*.md` and `.claude/skills/**/*.md`. Plugin-dev (working in `plugins/*/`) → derive plugin name from prompt or task context.
+   - 1c. **Scope resolution**: prompt contains `plugins/<name>` or bare `<name>` token matching a dir under `plugins/` → glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; else use post-install paths from 1b.
 2. Read each file and evaluate: structure, cross-refs, line count, duplication — when evaluating handoff envelope compliance specifically, read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_shared/file-handoff-protocol.md` first to verify required fields from live source rather than memory
 3. For cross-refs: `Grep("foundry:|oss:|research:|codemap:|develop:", <agents-dir>)` — scope `<agents-dir>` to the same path resolved in Step 1 (`.claude/agents/` post-install, or `plugins/<name>/agents/` in plugin-dev context); validate each matched agent name exists on disk. In plugin-dev context, also grep peer plugin dirs (`plugins/*/agents/`) to validate cross-plugin refs (e.g. `oss:shepherd`, `research:data-steward`).
 4. For URLs: `WebFetch` each URL found in agent/skill files — confirm resolves and content matches description; flag any 404 or mismatch as P4 (outdated content). **In-session URL cache (Fetch step only)**: maintain an in-memory set of URLs already fetched in this invocation — avoid re-fetching the same URL twice in one session. Cache covers the Fetch step only; Read (inspect cached content) and Match (verify content matches description) are still required per occurrence per quality-gates.md link verification. **Persistent disk cache** in `.cache/gh/curator-url-<slug>.md` (TTL 24h) — reuse cached file for Fetch step if < 24h old, but still Read cached content and Match against current context description before accepting URL as valid. Pre-fetch setup: `mkdir -p .cache/gh # timeout: 5000`. Per-URL cache pattern:
@@ -314,8 +318,6 @@ Never use `sonnet` for agents making complex multi-file design decisions; `found
 </antipatterns_to_flag>
 
 <notes>
-
-**Confidence scoring**: when aggregating confidence for multi-issue problems, use lowest sub-finding confidence as floor, not average — aggregate score should reflect most uncertain finding.
 
 **Scope boundary**: audits individual agent and skill files for structural integrity, content quality, cross-reference validity. Does not audit application code, CI pipelines, or project documentation — those owned by `foundry:linting-expert`, `oss:cicd-steward`, `foundry:doc-scribe` respectively.
 

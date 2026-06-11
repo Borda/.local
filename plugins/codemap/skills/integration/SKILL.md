@@ -73,27 +73,25 @@ fi
 # PROJ/INDEX resolution + existence check — also used in Step I1 (init mode, without --check-exists).
 # Stderr captured to tempfile so eval only sees KEY=value stdout (never mixed stderr).
 # Script always emits PROJ/INDEX on stdout regardless of exit code — no second invocation needed.
-_resolve_err=$(mktemp)
-RESOLVE_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists 2>"$_resolve_err")
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists 2>/dev/null  # timeout: 5000
 _resolve_rc=$?
-eval "$RESOLVE_OUT"
+PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index" 2>/dev/null || echo "")
 echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-index"
 if [ "$_resolve_rc" -eq 0 ]; then
     printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
     printf "✓ index: exists\n"
 else
     printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
-    if grep -q "INDEX file not found" "$_resolve_err"; then
+    if [ -z "$INDEX" ] || [ ! -f "$INDEX" ]; then
         printf "✗ index: not found\n"
         printf "  → Run /codemap:scan-codebase to build the index\n"
     else
-        printf "✗ resolve_proj_index.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
+        printf "✗ resolve_index_env.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
     fi
     echo "failed" > "${TMPDIR:-/tmp}/codemap-c2-status"
-    rm -f "$_resolve_err"
     exit 1
 fi
-rm -f "$_resolve_err"
 ```
 
 ### C3 — Index freshness (calendar age)
@@ -126,7 +124,8 @@ fi
 INDEX=$(cat "${TMPDIR:-/tmp}/codemap-index")
 SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
 command -v jq >/dev/null 2>&1 || { printf "✗ jq not found — required for smoke test; install via brew install jq or apt-get install jq\n"; exit 1; }
-read -r OK STALE AGE ERR < <(printf '%s' "$SMOKE_JSON" | jq -r '[.ok, .stale, .age_hours, (.error // "unknown")] | @tsv')
+_TSV=$(printf '%s' "$SMOKE_JSON" | jq -r '[.ok, .stale, .age_hours, (.error // "unknown")] | @tsv')
+OK=$(echo "$_TSV" | cut -f1); STALE=$(echo "$_TSV" | cut -f2); AGE=$(echo "$_TSV" | cut -f3); ERR=$(echo "$_TSV" | cut -f4)
 if [ "$OK" != "true" ]; then
     printf "✗ smoke test: %s\n  → Re-run /codemap:scan-codebase to rebuild index\n" "$ERR"
 else
@@ -160,16 +159,11 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 # timeout: 5000
 # PROJ/INDEX resolution — shared with Step C2 (check mode); both call resolve_index_env.py.
 # Stderr to tempfile so eval only sees KEY=value stdout.
-_resolve_err=$(mktemp)
-if RESOLVE_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" 2>"$_resolve_err"); then
-    eval "$RESOLVE_OUT"
-    echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-init-index"
-    rm -f "$_resolve_err"
-else
-    printf "✗ resolve_proj_index.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
-    rm -f "$_resolve_err"
-    exit 1
-fi
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" 2>/dev/null  # timeout: 5000
+PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index" 2>/dev/null || echo "")
+[ -n "$PROJ" ] || { printf "✗ resolve_index_env.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"; exit 1; }
+echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-init-index"
 ```
 
 Index exists: report and proceed. Index missing:
@@ -187,10 +181,11 @@ b) Skip — I'll run /codemap:scan-codebase later (recommendations will be gener
 
 If **a** (or auto-approved): verify binary exists first, then run scanner:
 
-```bash
-# timeout: 370000
-[ -x "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" ] || { printf "✗ scan-index not found at ${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index\nTry: /codemap:scan-codebase to install and rebuild.\n"; exit 1; }
-"${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --timeout 360 || { printf "! scan-index failed (exit %d) — index may be incomplete; run /codemap:scan-codebase to retry\n" "$?"; exit 1; }
+```text
+# Delegate to codemap:scan-codebase skill — runs scan-index with correct timeout handling,
+# binary validation, --root/--incremental handling, and stats reporting. Reimplementing
+# the invocation here drifts from scan-codebase's contract; call the skill instead.
+Skill(skill="codemap:scan-codebase")
 ```
 
 Report result (module count, degraded count). If **b**: note "Proceeding without index — recommendations based on skill purpose only, not module count."

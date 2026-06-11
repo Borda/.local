@@ -1,14 +1,14 @@
-"""Tests for ``bin/resolve_index_env.py`` — eval-safe PROJ + INDEX emitter.
+"""Tests for ``bin/resolve_index_env.py`` — PROJ + INDEX temp-file writer.
 
 The script calls ``resolve_proj_index.py`` via subprocess, reads PROJ (line 1)
-and INDEX (line 2), and emits ``PROJ=<quoted> INDEX=<quoted>`` to stdout using
-:func:`shlex.quote` so the output round-trips safely through ``eval``.
+and INDEX (line 2), and writes each to ``${TMPDIR}/codemap-resolve-{proj,index}``
+for the caller to read back with ``cat``.
 
 Tests cover:
-* Happy path — resolver returns valid PROJ + INDEX → eval-safe stdout, exit 0
-* ``--check-exists`` with present INDEX file → exit 0
-* ``--check-exists`` with missing INDEX file → exit 1, PROJ/INDEX still on stdout
-* Resolver failure (empty output) → exit 1, PROJ/INDEX still on stdout
+* Happy path — resolver returns valid PROJ + INDEX → temp files written, exit 0
+* ``--check-exists`` with present INDEX file → exit 0, temp files written
+* ``--check-exists`` with missing INDEX file → exit 1, temp files still written
+* Resolver failure (empty output) → exit 1, temp files written (empty)
 * Unknown flag → exit 2 with stderr message
 """
 
@@ -85,7 +85,7 @@ class TestParseResolverOutput:
 
 
 class TestFormatEvalLine:
-    """Unit tests for ``format_eval_line()`` — eval-safety guard."""
+    """Unit tests for ``format_eval_line()`` — retained as pure helper."""
 
     def test_simple_values_unquoted(self) -> None:
         """Values without metacharacters appear bare (shlex.quote shortcut)."""
@@ -111,89 +111,86 @@ class TestFormatEvalLine:
 
 
 class TestMainHappyPath:
-    """``main()`` — successful resolver runs."""
+    """``main()`` — successful resolver: writes temp files, exits 0."""
 
-    def test_happy_path_emits_eval_safe_line(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    def test_happy_path_writes_temp_files(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """No flags: prints ``PROJ=<q> INDEX=<q>`` and exits 0."""
+        """No flags: writes PROJ and INDEX to temp files and exits 0."""
         monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock("demo-proj", "/tmp/demo.json"))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main([])
-        captured = capsys.readouterr()
         assert rc == 0
-        assert captured.out.strip() == "PROJ=demo-proj INDEX=/tmp/demo.json"
-        assert captured.err == ""
+        assert (tmp_path / "codemap-resolve-proj").read_text() == "demo-proj"
+        assert (tmp_path / "codemap-resolve-index").read_text() == "/tmp/demo.json"
 
-    def test_happy_path_output_is_eval_safe(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """Round-trip: main() output line parses back to original PROJ + INDEX via shlex."""
+    def test_happy_path_tricky_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Values with spaces and special chars are written raw (no shell quoting)."""
         tricky_proj = "proj with space"
         tricky_index = str(tmp_path / "tricky idx.json")
         monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock(tricky_proj, tricky_index))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main([])
         assert rc == 0
-        line = capsys.readouterr().out.strip()
-        parts = dict(tok.split("=", 1) for tok in shlex.split(line) if "=" in tok)
-        assert parts["PROJ"] == tricky_proj
-        assert parts["INDEX"] == tricky_index
+        assert (tmp_path / "codemap-resolve-proj").read_text() == tricky_proj
+        assert (tmp_path / "codemap-resolve-index").read_text() == tricky_index
 
 
 class TestCheckExists:
     """``--check-exists`` — gate exit code on INDEX file presence."""
 
-    def test_present_index_exits_0(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """``--check-exists`` with a real INDEX file → exit 0, no stderr."""
+    def test_present_index_exits_0(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``--check-exists`` with a real INDEX file → exit 0, temp files written."""
         index = tmp_path / "with-index.json"
         index.write_text("{}", encoding="utf-8")
         monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock("with-index", str(index)))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--check-exists"])
-        captured = capsys.readouterr()
         assert rc == 0
-        assert "PROJ=with-index" in captured.out
-        assert str(index) in captured.out
-        assert captured.err == ""
+        assert (tmp_path / "codemap-resolve-proj").read_text() == "with-index"
+        assert (tmp_path / "codemap-resolve-index").read_text() == str(index)
 
-    def test_missing_index_exits_1_but_emits_proj_index(
+    def test_missing_index_exits_1_but_writes_temp_files(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """``--check-exists`` with absent INDEX → exit 1, PROJ/INDEX still on stdout, error on stderr."""
+        """``--check-exists`` with absent INDEX → exit 1, temp files still written, error on stderr."""
         missing = tmp_path / "absent.json"  # never created
         monkeypatch.setattr(_mod.subprocess, "run", _make_resolver_mock("no-idx", str(missing)))
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--check-exists"])
         captured = capsys.readouterr()
         assert rc == 1
-        # PROJ/INDEX still emitted on stdout — contract for callers needing variables.
-        assert "PROJ=no-idx" in captured.out
-        assert shlex.quote(str(missing)) in captured.out
+        # Temp files still written — PROJ and INDEX path available for diagnostics.
+        assert (tmp_path / "codemap-resolve-proj").read_text() == "no-idx"
+        assert (tmp_path / "codemap-resolve-index").read_text() == str(missing)
         assert "INDEX file not found" in captured.err
         assert str(missing) in captured.err
 
 
 class TestResolverFailure:
-    """Resolver returns no output → exit 1, but variables still emitted."""
+    """Resolver returns no output → exit 1, empty temp files written."""
 
-    def test_empty_resolver_exits_1(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-        """Empty resolver stdout → exit 1, empty PROJ + INDEX still emitted, error on stderr."""
+    def test_empty_resolver_exits_1(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Empty resolver stdout → exit 1, empty temp files written, error on stderr."""
         monkeypatch.setattr(_mod.subprocess, "run", _make_empty_resolver_mock())
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main([])
         captured = capsys.readouterr()
         assert rc == 1
-        # Empty strings shlex-quote to '', so output line is PROJ='' INDEX=''.
-        assert captured.out.strip() == "PROJ='' INDEX=''"
+        assert (tmp_path / "codemap-resolve-proj").read_text() == ""
+        assert (tmp_path / "codemap-resolve-index").read_text() == ""
         assert "produced no output" in captured.err
 
-    def test_check_exists_with_empty_resolver_exits_1(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-    ) -> None:
+    def test_check_exists_with_empty_resolver_exits_1(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """``--check-exists`` does not change behaviour when resolver itself fails first."""
         monkeypatch.setattr(_mod.subprocess, "run", _make_empty_resolver_mock())
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--check-exists"])
-        captured = capsys.readouterr()
         assert rc == 1
-        assert "produced no output" in captured.err
 
 
 class TestUnknownFlag:

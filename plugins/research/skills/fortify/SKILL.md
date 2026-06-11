@@ -165,12 +165,13 @@ Also read `baseline_commit` — iteration 0 commit from `experiments.jsonl` (fir
 **Pre-compute run directory** (each in separate Bash call):
 
 ```bash
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)                                           # timeout: 3000
-FORTIFY_DIR="$FORTIFY_DIR_BASE/fortify-$TS"                                  # timeout: 5000
-STATE_DIR="$STATE_DIR_BASE/$TS"
+FORTIFY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "fortify" ".experiments" 2>/dev/null)  # timeout: 5000
+[ -z "$FORTIFY_DIR" ] && { echo "! make_run_dir.py failed — ensure research plugin installed"; exit 1; }
+mkdir -p "$FORTIFY_DIR"
 WORKTREE_BASE="$FORTIFY_DIR/worktrees"
-mkdir -p "$FORTIFY_DIR" "$STATE_DIR" "$WORKTREE_BASE"
+mkdir -p "$WORKTREE_BASE"
+STATE_DIR="${STATE_DIR_BASE:-/tmp}/fortify-$(basename "$FORTIFY_DIR")"
+mkdir -p "$STATE_DIR"
 ```
 
 ## Step F2: Identify ablation candidates via scientist
@@ -462,7 +463,7 @@ Before building the prompt, substitute all bash variables into a single concrete
 
 ```bash
 VENUE="${VENUE:-workshop}"  # parsed from --venue flag in F1
-PROGRAM_FILE="${PROGRAM_FILE:-$PROGRAM_FILE}"  # absolute path resolved in F1
+[ -z "$PROGRAM_FILE" ] && { echo "! fortify: BLOCKED — PROGRAM_FILE not set; re-invoke from F1"; exit 1; }  # absolute path resolved in F1
 F6_PROMPT="Act as a peer reviewer for ${VENUE}.
 
 Read:

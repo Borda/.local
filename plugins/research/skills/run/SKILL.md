@@ -29,7 +29,6 @@ COLAB_KNOWN_HW:             H100, L4, T4, A100
 SUMMARY_INTERVAL:           10 iterations
 DIMINISHING_RETURNS_WINDOW: 5 iterations < 0.5% each → warn user and suggest stopping
 STATE_DIR:                  .experiments/state/<run-id>/  (timestamped dir per run — see .claude/rules/artifact-lifecycle.md)
-CLAUDE_SKILL_DIR:           ""
 SENTINEL_SLUG_FORMULA: |
   REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
   BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
@@ -99,6 +98,7 @@ Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml`
 
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
 
 **`CLAUDE_SKILL_DIR` resolution** — constants block provides default `plugins/research/skills/run` (source-tree path). Resolve to installed path before use:

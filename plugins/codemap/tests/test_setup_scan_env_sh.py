@@ -1,0 +1,267 @@
+"""Tests for ``bin/setup_scan_env.sh`` — scan-codebase setup state file generation.
+
+Covered scenarios:
+- Bad CLI args → exit 3, no state file.
+- Missing ``scan-index`` binary (bogus ``CLAUDE_PLUGIN_ROOT``) → exit 1, message on stderr.
+- Happy path — state file written, sourceable, KEY=VAL contents match expected fields,
+  per-PROJ_SLUG tmpfiles populated.
+- ``--root`` extraction overrides ``PROJ_NAME`` (basename of ``--root`` value, not repo).
+- ``--incremental`` sentinel created when no prior index exists for ``PROJ_NAME``.
+- ``--incremental`` sentinel absent when prior index exists.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+SCRIPT = Path(__file__).parent.parent / "bin" / "setup_scan_env.sh"
+PLUGIN_ROOT = Path(__file__).parent.parent  # contains real bin/scan-index
+
+
+def sh(
+    *args: str,
+    env: dict[str, str] | None = None,
+    cwd: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run ``setup_scan_env.sh`` under bash with explicit env override.
+
+    Args:
+        *args: Positional arguments forwarded to the script.
+        env: Environment overlay (``None`` ⇒ inherit only).
+        cwd: Working directory for the invocation.
+
+    Returns:
+        Captured ``CompletedProcess`` with text-mode stdout/stderr.
+    """
+    e = {**os.environ, **(env or {})}
+    return subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        capture_output=True,
+        text=True,
+        env=e,
+        cwd=cwd,
+    )
+
+
+@pytest.fixture()
+def fake_repo(tmp_path: Path) -> Path:
+    """Initialise a throwaway git repo so the script's ``git rev-parse`` succeeds.
+
+    Returns:
+        Path to the newly-initialised repo root.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    # Configure identity so any future commits would succeed — not strictly needed
+    # for rev-parse but keeps the repo well-formed.
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    return tmp_path
+
+
+@pytest.fixture()
+def isolated_tmpdir(tmp_path: Path) -> Path:
+    """Provide a fresh ``TMPDIR`` so per-PROJ_SLUG tmpfiles don't leak across tests.
+
+    Returns:
+        Directory path passed as ``TMPDIR`` to the script.
+    """
+    d = tmp_path / "tmp"
+    d.mkdir()
+    return d
+
+
+# ---------------------------------------------------------------------------
+# Argument validation
+# ---------------------------------------------------------------------------
+
+
+class TestArgumentValidation:
+    """Bad CLI shapes must fail fast with exit 3 and never touch tmpfiles."""
+
+    def test_unknown_flag(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """An unknown long flag exits 3 with a stderr message."""
+        r = sh(
+            "--bogus",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 3
+        assert "unknown argument" in r.stderr
+
+    def test_arguments_without_value(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """``--arguments`` without a following token exits 3."""
+        r = sh(
+            "--arguments",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 3
+        assert "needs a value" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# Missing scan-index binary
+# ---------------------------------------------------------------------------
+
+
+class TestMissingScanIndex:
+    """Bogus ``CLAUDE_PLUGIN_ROOT`` ⇒ scan-index validation fails (exit 1)."""
+
+    def test_bogus_plugin_root(self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path) -> None:
+        """Pointing ``CLAUDE_PLUGIN_ROOT`` at an empty dir surfaces the missing-binary error."""
+        empty = tmp_path / "no-plugin"
+        empty.mkdir()
+        r = sh(
+            "--arguments",
+            "",
+            env={"CLAUDE_PLUGIN_ROOT": str(empty), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 1
+        assert "scan-index binary not found" in r.stderr
+        # No state file should have been printed.
+        assert r.stdout.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Happy path — state file + per-PROJ_SLUG tmpfiles
+# ---------------------------------------------------------------------------
+
+
+def _read_state(state_file: Path) -> dict[str, str]:
+    """Parse the script's KEY='value' state file into a dict.
+
+    Bash sourcing semantics are emulated via a small subshell that ``source``s
+    the file and prints each variable — preserves the script's contract that
+    the file is sourceable.
+
+    Args:
+        state_file: Path written by ``setup_scan_env.sh``.
+
+    Returns:
+        Mapping ``{PROJ_SLUG, SCAN_BIN, SCAN_ARGS_RAW, PROJ_NAME}``.
+    """
+    script = (
+        f'source "{state_file}" && '
+        'printf "PROJ_SLUG\\t%s\\n" "$PROJ_SLUG" && '
+        'printf "SCAN_BIN\\t%s\\n" "$SCAN_BIN" && '
+        'printf "SCAN_ARGS_RAW\\t%s\\n" "$SCAN_ARGS_RAW" && '
+        'printf "PROJ_NAME\\t%s\\n" "$PROJ_NAME"'
+    )
+    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True)
+    out: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        key, _, value = line.partition("\t")
+        out[key] = value
+    return out
+
+
+class TestHappyPath:
+    """Normal invocation produces a sourceable state file and per-slug tmpfiles."""
+
+    def test_minimal_invocation(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """No flags — PROJ_NAME derives from repo basename; no sentinel created."""
+        r = sh(
+            "--arguments",
+            "",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        state_path = Path(r.stdout.strip())
+        assert state_path.is_file(), f"state file not created at {state_path}"
+
+        state = _read_state(state_path)
+        assert state["PROJ_NAME"] == fake_repo.name
+        # PROJ_SLUG ends in the sanitised repo basename — the script's `tr -cd '[:alnum:]-'`
+        # strips underscores and other punctuation, so compare on the sanitised form.
+        sanitised_repo = "".join(c for c in fake_repo.name if c.isalnum() or c == "-")
+        assert state["PROJ_SLUG"].endswith(sanitised_repo)
+        assert state["SCAN_BIN"].endswith("/bin/scan-index")
+        assert state["SCAN_ARGS_RAW"] == ""
+
+        # Per-PROJ_SLUG tmpfiles exist with matching content.
+        slug = state["PROJ_SLUG"]
+        assert (isolated_tmpdir / "codemap-proj-slug").read_text() == slug
+        assert (isolated_tmpdir / f"codemap-proj-name-{slug}").read_text() == fake_repo.name
+        assert (isolated_tmpdir / f"codemap-scan-bin-{slug}").read_text() == state["SCAN_BIN"]
+        assert (isolated_tmpdir / f"codemap-scan-args-{slug}").read_text() == ""
+        # No --incremental requested ⇒ no sentinel.
+        assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}").exists()
+
+    def test_root_flag_overrides_proj_name(self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path) -> None:
+        """``--root /some/other`` ⇒ PROJ_NAME = basename(other), not repo basename."""
+        other = tmp_path / "alt-project"
+        other.mkdir()
+        r = sh(
+            "--arguments",
+            f"--root {other}",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        state = _read_state(Path(r.stdout.strip()))
+        assert state["PROJ_NAME"] == "alt-project"
+        assert state["SCAN_ARGS_RAW"] == f"--root {other}"
+
+
+# ---------------------------------------------------------------------------
+# --incremental sentinel behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestIncrementalSentinel:
+    """``--incremental`` flag interacts with the prior-index check."""
+
+    def test_sentinel_created_when_no_prior_index(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """``--incremental`` with no ``.cache/scan/<proj>.json`` writes the sentinel."""
+        r = sh(
+            "--arguments",
+            "--incremental",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        # Informational message routed to stderr — keeps stdout reserved for state path.
+        assert "No prior index" in r.stderr
+
+        state = _read_state(Path(r.stdout.strip()))
+        slug = state["PROJ_SLUG"]
+        sentinel = isolated_tmpdir / f"codemap-incremental-noop-{slug}"
+        assert sentinel.is_file(), "incremental-noop sentinel should have been created"
+
+    def test_sentinel_absent_when_prior_index_exists(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """``--incremental`` with an existing prior index ⇒ no sentinel, no stderr notice."""
+        cache_dir = fake_repo / ".cache" / "scan"
+        cache_dir.mkdir(parents=True)
+        (cache_dir / f"{fake_repo.name}.json").write_text("{}")
+
+        r = sh(
+            "--arguments",
+            "--incremental",
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        assert "No prior index" not in r.stderr
+
+        state = _read_state(Path(r.stdout.strip()))
+        slug = state["PROJ_SLUG"]
+        assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}").exists()
+
+
+# ---------------------------------------------------------------------------
+# Module-level skip — script depends on real `git` + `python` on PATH.
+# ---------------------------------------------------------------------------
+
+
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32" or shutil.which("git") is None or shutil.which("python") is None,
+    reason="setup_scan_env.sh uses POSIX-only tools (hostname -s, tr) — not supported on Windows",
+)

@@ -288,9 +288,8 @@ Poll per `<constants>` interval — same pattern as first instance above; adjust
 3. Resolve `$_FOUNDRY_SHARED` before spawning — sub-agents do not inherit shell variables:
 
 ```bash
-_FOUNDRY_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)"
-[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
-echo "Shared dir: $_FOUNDRY_SHARED"  # timeout: 5000
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+echo "Shared dir: $_FOUNDRY_SHARED"
 ```
 
 Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skill file (`foundry:curator` NOT-for excludes scaffolding new agents/skills — see Create Agent rationale above):
@@ -392,9 +391,8 @@ Before executing type-specific content-edit mode, determine approach:
 2. Resolve `_FS_VAL` (concrete path) before constructing spawn prompt — sub-agents do not inherit shell variables, so the prompt must contain a literal path, not a `$VAR` reference:
 
 ```bash
-_FS_VAL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)"
-[ -z "$_FS_VAL" ] && _FS_VAL="plugins/foundry/skills/_shared"
-echo "Shared dir for curator prompt: $_FS_VAL"  # timeout: 5000
+_FS_VAL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+echo "Shared dir for curator prompt: $_FS_VAL"
 ```
 
 3. Spawn **foundry:curator** subagent — substitute `<_FS_VAL>` with the path from above when emitting the prompt:
@@ -420,9 +418,8 @@ Use `description_changed` from returned JSON to decide whether Steps 5–7 need 
 2. Resolve `_FS_VAL` (concrete path) before constructing the spawn prompt:
 
 ```bash
-_FS_VAL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/_shared 2>/dev/null | head -1)"
-[ -z "$_FS_VAL" ] && _FS_VAL="plugins/foundry/skills/_shared"
-echo "Shared dir for curator prompt: $_FS_VAL"  # timeout: 5000
+_FS_VAL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+echo "Shared dir for curator prompt: $_FS_VAL"
 ```
 
 3. Spawn **foundry:curator** subagent — substitute `<_FS_VAL>` with the path from above:
@@ -536,16 +533,10 @@ After deleting the hook file, also remove its entry from `.claude/settings.json`
 HOOK_NAME="<name>"        # e.g. "rtk-rewrite" — basename of deleted hook, no .js suffix
 echo "$HOOK_NAME" > "${TMPDIR:-/tmp}/manage-hook-name-${CLAUDE_SESSION_ID:-$$}"
 # Remove every PreToolUse / PostToolUse / SessionStart / etc. entry whose hooks[].command references this file
-jq --arg hook "$HOOK_NAME" '
-    .hooks //= {}
-    | .hooks |= with_entries(
-        .value |= map(
-            .hooks |= map(select((.command // "") | test("\\.claude/hooks/" + $hook + "\\.js"; "i") | not))
-        )
-        | .value |= map(select((.hooks // []) | length > 0))
-    )
-    | .hooks |= with_entries(select((.value // []) | length > 0))
-' .claude/settings.json > "${TMPDIR:-/tmp}/settings-tmp.json" && mv "${TMPDIR:-/tmp}/settings-tmp.json" .claude/settings.json
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/remove_hook_from_registry.py" \
+    --json-file .claude/settings.json \
+    --hook-name "$HOOK_NAME" \
+    --path-pattern "\\.claude/hooks/${HOOK_NAME}\\.js"
 ```
 
 Verify the entry is gone:
@@ -563,16 +554,10 @@ jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook 
 HOOK_NAME=$(cat "${TMPDIR:-/tmp}/manage-hook-name-${CLAUDE_SESSION_ID:-$$}" 2>/dev/null)
 PLUGIN_HOOKS_JSON="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/.claude-plugin/hooks.json"
 if [ -f "$PLUGIN_HOOKS_JSON" ]; then
-    jq --arg hook "$HOOK_NAME" '
-        .hooks //= {}
-        | .hooks |= with_entries(
-            .value |= map(
-                .hooks |= map(select((.command // "") | test($hook + "\\.js"; "i") | not))
-            )
-            | .value |= map(select((.hooks // []) | length > 0))
-        )
-        | .hooks |= with_entries(select((.value // []) | length > 0))
-    ' "$PLUGIN_HOOKS_JSON" > "${TMPDIR:-/tmp}/hooks-tmp.json" && mv "${TMPDIR:-/tmp}/hooks-tmp.json" "$PLUGIN_HOOKS_JSON"
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/remove_hook_from_registry.py" \
+        --json-file "$PLUGIN_HOOKS_JSON" \
+        --hook-name "$HOOK_NAME" \
+        --path-pattern "${HOOK_NAME}\\.js"
     # Verify the entry is gone from the plugin registry too:
     jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook + "\\.js"))] | length' "$PLUGIN_HOOKS_JSON"  # expected: 0
 else

@@ -82,30 +82,18 @@ Diagnosis file format: see `/develop:debug` Final Report section for canonical f
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
 
 ```bash
-# timeout: 5000
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
-    "$ARGUMENTS" \
-    --neg-bool no-challenge CHALLENGE_ENABLED true \
-    --bool accept-no-plan ACCEPT_NO_PLAN false \
-    --bool semble SEMBLE_ENABLED false \
-    --bool team TEAM_MODE false \
-    --str repo REPO_NAME '')"
-echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-challenge-enabled
-echo "$ACCEPT_NO_PLAN"    > ${TMPDIR:-/tmp}/dev-accept-no-plan
-echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-semble-enabled
-echo "$TEAM_MODE"         > ${TMPDIR:-/tmp}/dev-team-mode
-echo "$REPO_NAME"         > ${TMPDIR:-/tmp}/dev-upstream
+# timeout: 10000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
+    --skill fix --write-files "$ARGUMENTS"
 ```
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
-**Codemap flag parsing** — derive raw flag first into shell variable, then normalize via `codemap-resolve`. `$CODEMAP_RAW` is a real shell variable resolved in-block — not an LLM-substitution placeholder:
+**Codemap resolve** — `CODEMAP_RAW` is already written to `${TMPDIR:-/tmp}/dev-codemap-raw` by the flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
 
 ```bash
 # timeout: 5000
-CODEMAP_RAW=auto
-[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
-[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
+CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW" 2>&1)
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then

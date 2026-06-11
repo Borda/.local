@@ -5,7 +5,7 @@ argument-hint: "[--approve]"
 when_to_use: "Run once after installing foundry plugin on a new machine, or after plugin version upgrade to sync settings and symlinks."
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
-model: haiku
+model: sonnet
 ---
 
 <objective>

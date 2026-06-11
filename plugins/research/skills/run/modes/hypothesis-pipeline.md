@@ -8,9 +8,10 @@ Contains oracle agent orchestration, feasibility annotation, queue filtering, ch
 **Health monitoring** (CLAUDE.md §6) — create checkpoint before spawning oracle agents:
 
 ```bash
-LAUNCH_AT=$(date +%s)
-CHECKPOINT="/tmp/hypothesis-check-$LAUNCH_AT"
-touch "$CHECKPOINT"  # timeout: 3000
+_HM=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "hypothesis-pipeline" 2>/dev/null)  # timeout: 5000
+LAUNCH_AT=$(echo "$_HM" | grep '^LAUNCH_AT=' | cut -d= -f2)
+CHECKPOINT=$(echo "$_HM" | grep '^SENTINEL=' | cut -d= -f2)
+[ -z "$LAUNCH_AT" ] && { echo "⚠ health_monitor_start.py returned empty LAUNCH_AT — using fallback"; LAUNCH_AT=$(date +%s); }
 ```
 
 Poll every 5 min: `find <RUN_DIR> -newer "$CHECKPOINT" -type f | wc -l` (`timeout: 5000`) — new files = alive; zero = stalled.

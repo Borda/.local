@@ -199,7 +199,7 @@ echo "[repo-warden] group=$AXIS_GROUP complete → $PARTIAL_FILE"  # timeout: 50
 
 Compute group confidence as mean of per-axis confidence values (exclude ⚪ axes with conf=0.0; if all ⚪ return 0.0). Cap: strictly less than half assigned axes scored (e.g. 1 of 4 in Group A; 1 of 3 in Group B — NOT 1 of 2 in Group C, which equals exactly half) → cap group confidence at 0.7 to reflect incomplete coverage.
 
-**Group C multi-axis cap**: when processing more than 3 **top-level axes** (Axis 3 and Axis 9 count as 2 regardless of sub-signals), cap Confidence Score at 0.85 regardless of how thorough the analysis. For cap purposes, "axes" = distinct top-level axes only (Axis 3, Axis 9) — Axis 9 sub-signals (9A, 9B, 9C, 9D) count as one axis; Group C currently scores 2 axes so this cap never triggers unless scope expands.
+**Group C multi-axis cap**: 0.85 cap applies when >3 top-level axes scored (Group C currently scores 2 — cap inactive unless scope expands; Axis 9 sub-signals count as one axis).
 
 Return ONLY this JSON as final output:
 
