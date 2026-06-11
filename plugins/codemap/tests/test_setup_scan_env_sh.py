@@ -220,7 +220,7 @@ class TestIncrementalSentinel:
     """``--incremental`` flag interacts with the prior-index check."""
 
     def test_sentinel_created_when_no_prior_index(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
-        """``--incremental`` with no ``.cache/scan/<proj>.json`` writes the sentinel."""
+        """``--incremental`` with no ``.cache/codemap/<proj>.json`` writes the sentinel."""
         r = sh(
             "--arguments",
             "--incremental",
@@ -238,7 +238,7 @@ class TestIncrementalSentinel:
 
     def test_sentinel_absent_when_prior_index_exists(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
         """``--incremental`` with an existing prior index ⇒ no sentinel, no stderr notice."""
-        cache_dir = fake_repo / ".cache" / "scan"
+        cache_dir = fake_repo / ".cache" / "codemap"
         cache_dir.mkdir(parents=True)
         (cache_dir / f"{fake_repo.name}.json").write_text("{}")
 

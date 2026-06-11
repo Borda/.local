@@ -40,7 +40,7 @@ scan_config_refs = _scan_index_mod.scan_config_refs
 
 
 def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):
-    """scan-index writes .cache/scan/<name>.json containing all modules."""
+    """scan-index writes .cache/codemap/<name>.json containing all modules."""
     (tmp_path / "gamma.py").write_text(gamma_src)
     (tmp_path / "beta.py").write_text(beta_src)
     (tmp_path / "alpha.py").write_text(alpha_src)
@@ -56,7 +56,7 @@ def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan
     )
     assert result.returncode == 0, result.stderr
 
-    index_path = tmp_path / ".cache" / "scan" / f"{tmp_path.name}.json"
+    index_path = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
     assert index_path.exists()
     index = json.loads(index_path.read_text())
     names = {m["name"] for m in index["modules"]}
@@ -82,7 +82,7 @@ def test_incremental_picks_up_new_file(tmp_path, scan_index):
     )
     assert result.returncode == 0, result.stderr
 
-    index_path = tmp_path / ".cache" / "scan" / f"{tmp_path.name}.json"
+    index_path = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
     index = json.loads(index_path.read_text())
     names = {m["name"] for m in index["modules"]}
     assert "new_mod" in names

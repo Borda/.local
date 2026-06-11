@@ -14,7 +14,7 @@ RANGE="${RANGE:-$LAST_TAG..HEAD}"
 
 ### Phase 1: Readiness audit
 
-Run all checks from **Mode: audit** with `$VERSION` as target. Present readiness table.
+Run all checks from **Mode: audit** with `$VERSION` as target. The `| Check | Status | Detail |` readiness table must appear inline in the terminal before proceeding — audit-checks.md requires this even in sub-phase context. If the table is absent from the response after running audit, re-execute the terminal output step from audit-checks.md before continuing.
 
 **If verdict is BLOCKED**: stop. List blockers, tell user to resolve before re-running `/release prepare $VERSION`. Write no artifacts.
 
@@ -22,7 +22,7 @@ Run all checks from **Mode: audit** with `$VERSION` as target. Present readiness
 
 ### Phase 2: Gather, classify, and changelog
 
-**a. Gather and classify** — spawn gather subagent per **Delegation strategy** for `$RANGE`; write findings to `GATHER_FILE`. Read returned JSON envelope; pass file path downstream. Don't read gather file into main context. Note `breaking` count from envelope — gates Phase 3b (migration guide).
+**a. Gather and classify** — spawn gather subagent per **Delegation strategy** for `$RANGE`; write findings to `GATHER_FILE`. Read returned JSON envelope; pass file path downstream. Don't read gather file into main context. Note `breaking` count from envelope — gates Phase 3b (migration guide). After envelope validation, check `unconfirmed_breaking` from envelope: if > 0, apply the post-validation truth-check gate from **Delegation strategy** (partial `[UNCONFIRMED]` read + `AskUserQuestion` per breaking item) before proceeding to 2b.
 
 **b. Audit changelog** — apply **Audit changelog** logic inline: locate `$CHANGELOG_FILE` (per search order in Audit changelog section), cross-check classified changes from `$GATHER_FILE`, add missing entries, stamp unreleased section as `## [$VERSION] — $DATE`. Report: "N items added, M flagged."
 

@@ -23,6 +23,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -269,7 +270,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # Index file missing → silent exit 0.
     project = _git_project_name(timeout=args.timeout)
-    index_path = Path(".cache") / "scan" / f"{project}.json"
+    _custom = os.environ.get("CODEMAP_INDEX_DIR")
+    index_path = (Path(_custom) if _custom else Path(".cache") / "codemap") / f"{project}.json"
     if not index_path.is_file():
         return 0
 

@@ -93,7 +93,8 @@ printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}"
 # --incremental requested but no prior index ⇒ scan-index will fall back to full scan.
 # Drop a sentinel so Step 2 can report the fallback after stats.
 if [[ " $ARGUMENTS " == *" --incremental "* ]]; then
-    if [ ! -f ".cache/scan/${PROJ_NAME}.json" ]; then
+    _INDEX_DIR="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+    if [ ! -f "${_INDEX_DIR}/${PROJ_NAME}.json" ]; then
         # stderr — keeps stdout reserved for the state file path so the caller
         # can capture only that path via $(...).
         printf '[codemap] No prior index: falling back to full scan\n' >&2

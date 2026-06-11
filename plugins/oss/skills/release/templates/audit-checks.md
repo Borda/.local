@@ -74,4 +74,4 @@ Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 [e.g., "resolve open PRs → re-run `/release audit v1.3.0` to verify → `/release prepare v1.3.0`"]
 ```
 
-**Terminal output** — after writing the report file, print the readiness check table (the `| Check | Status | Detail |` rows only, no YAML header, no verdict prose) directly to the terminal so it appears inline in the Claude response without requiring the user to open the file.
+**Terminal output** — after writing the report file, print the readiness check table (the `| Check | Status | Detail |` rows only, no YAML header, no verdict prose) directly to the terminal so it appears inline in the Claude response. This is mandatory even when audit runs as a sub-phase of `/release prepare` — do not treat the table as intermediate pipeline output or route it only to the report file; it must appear in the terminal response before prepare proceeds to Phase 2.

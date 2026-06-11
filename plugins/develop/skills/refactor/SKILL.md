@@ -134,7 +134,8 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")  # timeout: 3000
 # Affected modules from <target> path: strip src/ prefix, drop .py, slash→dot
 REFACTOR_FILES=$(find <target> -name '*.py' -type f 2>/dev/null)
 AFFECTED_MODULES=$(echo "$REFACTOR_FILES" | sed 's|^\./||;s|^src/||;s|\.py$||;s|/|.|g' | grep . || echo "")
-if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/scan/${PROJ}.json" ] && [ -n "$AFFECTED_MODULES" ]; then
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ] && [ -n "$AFFECTED_MODULES" ]; then
     # Reusability: who calls each affected module outside the refactoring scope
     while IFS= read -r mod; do
         scan-query rdeps "$mod" 2>/dev/null

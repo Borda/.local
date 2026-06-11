@@ -40,9 +40,15 @@ def _resolve_root(scan_args: str, timeout: int = 15) -> str:
 
 
 def _load_index(root: str) -> dict:
-    """Load .cache/scan/<project>.json; exit 1 if missing."""
+    """Load codemap index; exit 1 if missing.
+
+    Respects ``CODEMAP_INDEX_DIR`` env var — when set, reads
+    ``$CODEMAP_INDEX_DIR/<proj>.json`` instead of ``<root>/.cache/codemap/<proj>.json``.
+    """
     proj = os.path.basename(root)
-    index_path = os.path.join(root, ".cache", "scan", f"{proj}.json")
+    custom_dir = os.environ.get("CODEMAP_INDEX_DIR")
+    index_dir = custom_dir if custom_dir else os.path.join(root, ".cache", "codemap")
+    index_path = os.path.join(index_dir, f"{proj}.json")
     # DoS guard (SEC-M10): refuse oversized index files before json.load to avoid memory exhaustion.
     try:
         size = os.path.getsize(index_path)

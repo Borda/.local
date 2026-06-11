@@ -161,7 +161,7 @@ Two commands — then forget about codemap and just use your normal skills.
 Output:
 
 ```text
-[codemap] ✓ .cache/scan/myproject.json
+[codemap] ✓ .cache/codemap/myproject.json
 [codemap]   312 modules indexed, 2 degraded
 
 Modules: 312 indexed, 2 degraded
@@ -252,7 +252,7 @@ If you write custom skills or agents and want to add codemap yourself, drop this
 ```bash
 # Structural context (codemap — Python projects only, silent skip if absent)
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/scan/${PROJ}.json" ]; then
+if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/codemap/${PROJ}.json" ]; then
     scan-query central --top 3  # timeout: 5000
 fi
 # If results returned: prepend ## Structural Context (codemap) to the agent spawn prompt.
@@ -268,7 +268,7 @@ scan-query deps  "$TARGET_MODULE" 2>/dev/null  # timeout: 5000
 For agent `.md` files, add this instruction before the closing section:
 
 ```markdown
-**Structural context (codemap — Python projects only)**: if `.cache/scan/<project>.json` exists,
+**Structural context (codemap — Python projects only)**: if `.cache/codemap/<project>.json` exists,
 run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known)
 **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
 ```
@@ -277,7 +277,7 @@ run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a 
 
 **Trigger**: `/codemap:scan-codebase`
 
-Builds the structural index by running `ast.parse` across every `.py` file in the project. Writes the index to `.cache/scan/<project>.json`. Reports how many modules were indexed, how many were degraded (parse errors), and which five modules have the highest blast radius.
+Builds the structural index by running `ast.parse` across every `.py` file in the project. Writes the index to `.cache/codemap/<project>.json`. Reports how many modules were indexed, how many were degraded (parse errors), and which five modules have the highest blast radius.
 
 #### Flags
 
@@ -408,7 +408,7 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 /codemap:query-code central --exclude-tests --top 10
 
 # Query a specific index file (monorepo with multiple projects)
-/codemap:query-code central --index /path/to/.cache/scan/subproject.json
+/codemap:query-code central --index /path/to/.cache/codemap/subproject.json
 ```
 
 </details>
@@ -493,7 +493,7 @@ Two cases are outside static analysis and cannot be renamed automatically:
 3. Resolves call edges per function: cross-module calls tagged as `import`, same-file calls as `local`, `self.method()` patterns as `self`, star-import calls as `star`.
 4. Computes graph metrics for each module: `rdep_count` (how many project modules import this one), `dep_count` (how many modules this one imports), `rcall_count` (how many functions across the project call any function in this module).
 5. Stores per-file git blob SHAs (`file_shas`) so incremental rebuilds can identify exactly which files changed.
-6. Writes everything to `.cache/scan/<project>.json` as a single JSON file.
+6. Writes everything to `.cache/codemap/<project>.json` as a single JSON file.
 
 Files that cannot be parsed (syntax errors, encoding issues) are marked `degraded` with a reason. The scan never aborts — a file that fails parsing is noted and skipped.
 
@@ -505,7 +505,7 @@ All output is JSON. This makes it easy to pipe directly into agent spawn prompts
 
 ### The index file
 
-The index lives at `.cache/scan/<project>.json` where `<project>` is the basename of the git root directory. It is a single flat JSON file — nothing needs to keep running. The format is versioned (`scan_version: 3` in current builds).
+The index lives at `.cache/codemap/<project>.json` where `<project>` is the basename of the git root directory. It is a single flat JSON file — nothing needs to keep running. The format is versioned (`scan_version: 3` in current builds).
 
 Key fields per module entry:
 
@@ -537,7 +537,15 @@ codemap has no required configuration. Everything is automatic once installed.
 
 ### Index location
 
-The index is always written to `.cache/scan/<project>.json` at the project root. This directory is gitignored by default in the borda-ai-rig artifact layout. The project name is derived from `basename $(git rev-parse --show-toplevel)` — the directory name of your git root.
+The index is written to `.cache/codemap/<project>.json` at the project root by default. Set `CODEMAP_INDEX_DIR` to an absolute path to store the index elsewhere — useful when the project root is read-only, on a slow drive, or shared across machines via a home directory:
+
+```bash
+export CODEMAP_INDEX_DIR="$HOME/.codemap-cache"
+```
+
+With `CODEMAP_INDEX_DIR` set, the index lands at `$CODEMAP_INDEX_DIR/<project>.json`. All skills and bin scripts respect this variable automatically.
+
+This directory is gitignored by default in the borda-ai-rig artifact layout. The project name is derived from `basename $(git rev-parse --show-toplevel)` — the directory name of your git root.
 
 ### Non-git projects
 
@@ -629,7 +637,7 @@ Some files could not be parsed — usually generated code, files with syntax err
 python -c "
 import json, os, subprocess
 proj = os.path.basename(subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip())
-d = json.load(open(f'.cache/scan/{proj}.json'))
+d = json.load(open(f'.cache/codemap/{proj}.json'))
 for m in d['modules']:
     if m.get('status') == 'degraded':
         print(m['path'], '--', m.get('reason', 'unknown'))

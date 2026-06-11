@@ -4,7 +4,7 @@
 Scans all Python files in the project using ast.parse (import graph)
 and computes structural metrics (rdep_count, dep_count, rcall_count).
 Extracts per-symbol call-graph edges with import-based resolution.
-Writes .cache/scan/<project>.json.
+Writes .cache/codemap/<project>.json (or $CODEMAP_INDEX_DIR/<project>.json when set).
 
 Usage:
     scan-index
@@ -1045,7 +1045,8 @@ def main() -> None:
 
     try:
         root = args.root or find_root()
-        out_dir = root / ".cache" / "scan"
+        _custom = os.environ.get("CODEMAP_INDEX_DIR")
+        out_dir = Path(_custom) if _custom else root / ".cache" / "codemap"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{root.name}.json"
 

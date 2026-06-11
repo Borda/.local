@@ -3,7 +3,8 @@
 Covers:
 * ``compute_proj_index()`` uses git root basename when inside a repo
 * Falls back to CWD basename outside a repo
-* INDEX path is ``<root>/.cache/scan/<proj>.json``
+* INDEX path is ``<root>/.cache/codemap/<proj>.json`` by default
+* ``CODEMAP_INDEX_DIR`` env var overrides the index directory
 * ``--check`` exits 1 when index absent; exits 0 and prints ✓ when present
 * ``main()`` without ``--check`` always exits 0
 * Windows-portability invariants: no ``/tmp``, ``sys.stdout.reconfigure`` present,
@@ -62,11 +63,21 @@ class TestComputeProjIndex:
         assert proj == "my-project"
 
     def test_index_path_structure(self, tmp_path: Path) -> None:
-        """Index path is ``<root>/.cache/scan/<proj>.json``."""
+        """Index path is ``<root>/.cache/codemap/<proj>.json`` by default."""
         work = tmp_path / "my-project"
         work.mkdir()
         proj, index = compute_proj_index(cwd=work)
-        assert index == work / ".cache" / "scan" / f"{proj}.json"
+        assert index == work / ".cache" / "codemap" / f"{proj}.json"
+
+    def test_codemap_index_dir_env_overrides_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``CODEMAP_INDEX_DIR`` env var moves the index to an arbitrary directory."""
+        work = tmp_path / "my-project"
+        work.mkdir()
+        custom_dir = tmp_path / "custom-cache"
+        monkeypatch.setenv("CODEMAP_INDEX_DIR", str(custom_dir))
+        proj, index = compute_proj_index(cwd=work)
+        assert index == custom_dir / f"{proj}.json"
+        assert ".cache" not in str(index)
 
     def test_git_root_basename_used_when_available(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Uses git root dirname when subprocess returns a valid path."""
@@ -85,7 +96,7 @@ class TestComputeProjIndex:
         monkeypatch.setattr(_mod.subprocess, "run", mock_run)
         proj, index = compute_proj_index(cwd=sub)
         assert proj == "my-repo"
-        assert index == repo_root / ".cache" / "scan" / "my-repo.json"
+        assert index == repo_root / ".cache" / "codemap" / "my-repo.json"
 
     def test_git_failure_falls_back_to_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Falls back to CWD basename when git subprocess raises CalledProcessError."""
@@ -142,7 +153,7 @@ class TestMain:
             raise subprocess.CalledProcessError(128, cmd)
 
         monkeypatch.setattr(_mod.subprocess, "run", mock_run)
-        index = work / ".cache" / "scan" / "myproj.json"
+        index = work / ".cache" / "codemap" / "myproj.json"
         index.parent.mkdir(parents=True)
         index.write_text("{}", encoding="utf-8")
         rc = main(["--check"])

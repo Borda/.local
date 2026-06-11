@@ -89,7 +89,7 @@ class TestLoadIndex:
     def test_returns_parsed_json(self, tmp_path: Path) -> None:
         """Valid index JSON is loaded and returned as dict."""
         proj = tmp_path.name
-        idx_dir = tmp_path / ".cache" / "scan"
+        idx_dir = tmp_path / ".cache" / "codemap"
         idx_dir.mkdir(parents=True)
         payload: dict[str, Any] = {"modules": [{"name": "mod", "status": "ok", "symbols": []}]}
         (idx_dir / f"{proj}.json").write_text(json.dumps(payload))
@@ -104,7 +104,7 @@ class TestLoadIndex:
     def test_exits_1_when_index_exceeds_size_limit(self, tmp_path: Path) -> None:
         """Index file larger than MAX_INDEX_SIZE causes sys.exit(1) — DoS guard (SEC-M10)."""
         proj = tmp_path.name
-        idx_dir = tmp_path / ".cache" / "scan"
+        idx_dir = tmp_path / ".cache" / "codemap"
         idx_dir.mkdir(parents=True)
         idx_file = idx_dir / f"{proj}.json"
         idx_file.write_text("{}")
@@ -117,7 +117,7 @@ class TestLoadIndex:
     def test_exits_1_on_race_condition_file_disappears(self, tmp_path: Path) -> None:
         """sys.exit(1) when file exists at getsize but is gone when open() is called (TOCTOU race)."""
         proj = tmp_path.name
-        idx_dir = tmp_path / ".cache" / "scan"
+        idx_dir = tmp_path / ".cache" / "codemap"
         idx_dir.mkdir(parents=True)
         idx_file = idx_dir / f"{proj}.json"
         idx_file.write_text("{}")
@@ -135,7 +135,7 @@ class TestLoadIndex:
 def _write_index(tmp_path: Path, modules: list[dict[str, Any]]) -> None:
     """Write a minimal scan index JSON at the canonical path under *tmp_path*."""
     proj = tmp_path.name
-    idx_dir = tmp_path / ".cache" / "scan"
+    idx_dir = tmp_path / ".cache" / "codemap"
     idx_dir.mkdir(parents=True, exist_ok=True)
     (idx_dir / f"{proj}.json").write_text(json.dumps({"modules": modules}))
 

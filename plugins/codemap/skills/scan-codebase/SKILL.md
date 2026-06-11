@@ -12,7 +12,7 @@ effort: low
 
 <objective>
 
-**Python only** — uses `ast.parse` to extract import graph + symbol metadata across all `.py` files; non-Python files not indexed. Writes `.cache/scan/<project>.json`. No external deps. Zero-Python project (no `.py` files): index writes but empty — downstream queries return no results.
+**Python only** — uses `ast.parse` to extract import graph + symbol metadata across all `.py` files; non-Python files not indexed. Writes `.cache/codemap/<project>.json`. No external deps. Zero-Python project (no `.py` files): index writes but empty — downstream queries return no results.
 
 Index captures per module: import graph, blast-radius metrics, **symbol list** (classes, functions, methods with line ranges). Symbol data enables `scan-query symbol` / `find-symbol` to return target function source instead of full file reads.
 
@@ -48,10 +48,10 @@ eval set -- "$SCAN_ARGS_RAW"
 "$SCAN_BIN" --timeout 360 "$@" || { printf "! scan-index failed (exit %d) — index may be stale or incomplete\n" "$?"; exit 1; }
 ```
 
-Scanner writes to `<root>/.cache/scan/<project>.json` and prints summary line:
+Scanner writes to `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json` when set) and prints summary line:
 
 ```text
-[codemap] ✓ .cache/scan/<project>.json
+[codemap] ✓ .cache/codemap/<project>.json
 [codemap]   N modules indexed, M degraded
 ```
 
@@ -68,7 +68,8 @@ After scan, read index and report compact summary:
 PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null)
 [ -n "$PROJ_SLUG" ] || { printf "! codemap state missing — re-run /codemap:scan-codebase\n"; exit 1; }
 PROJ_NAME=$(cat "${TMPDIR:-/tmp}/codemap-proj-name-${PROJ_SLUG}" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")")
-if [ -f ".cache/scan/${PROJ_NAME}.json" ]; then
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if [ -f "${_IDX}/${PROJ_NAME}.json" ]; then
     SCAN_ARGS="$ARGUMENTS" python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-stats.py"
     # Check if --incremental was requested but fell back to full scan (sentinel set in Step 1)
     if [ -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}" ]; then

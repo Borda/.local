@@ -284,7 +284,8 @@ Per selected file, determine insertion point and content:
 # Structural context (codemap — Python projects only, silent skip if absent)
 # TARGET_MODULE — derive from $ARGUMENTS (e.g. strip leading ./ and .py suffix from file path argument)
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/scan/${PROJ}.json" ]; then
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     scan-query --timeout 5 central --top 3
 fi
 # If results returned: prepend a ## Structural Context (codemap) block to the agent spawn prompt.
@@ -305,7 +306,7 @@ scan-query --timeout 5 deps  "<TARGET_MODULE>" 2>/dev/null
 **For agent `.md` files** — append to last workflow instruction paragraph, before closing section or final notes. Agents have no `$ARGUMENTS` — derive `TARGET_MODULE` from user's input prompt:
 
 ```markdown
-**Structural context (codemap — Python projects only)**: if `.cache/scan/<project>.json` exists, run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known — derive target from user's task description, not `$ARGUMENTS`) **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
+**Structural context (codemap — Python projects only)**: if `.cache/codemap/<project>.json` exists (or `$CODEMAP_INDEX_DIR/<project>.json` when set), run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known — derive target from user's task description, not `$ARGUMENTS`) **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
 ```
 
 Report each edit: `✓ injected: <plugin>/<skill-or-agent> at line N`

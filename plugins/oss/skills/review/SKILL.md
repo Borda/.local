@@ -107,7 +107,8 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
         printf "! --codemap requested but codemap plugin not installed.\n  Install: claude plugin install codemap@borda-ai-rig\n"; exit 1
     fi
     _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename)  # timeout: 3000
-    if [ ! -f ".cache/scan/${_PROJ}.json" ]; then
+    _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+    if [ ! -f "${_IDX}/${_PROJ}.json" ]; then
         printf "! --codemap requested but no index found for project '%s'.\n  Build index: /codemap:scan-codebase\n" "$_PROJ"; exit 1
     fi
 fi
@@ -258,7 +259,8 @@ Skip optional agents by classification:
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/scan/${PROJ}.json" ]; then
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     # Reuse $CHANGED_FILES cached from the gh pr diff call above — no redundant fetch
     CHANGED_MODS=$(echo "$CHANGED_FILES" | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')
     scan-query central --top 5 2>/dev/null  # timeout: 5000

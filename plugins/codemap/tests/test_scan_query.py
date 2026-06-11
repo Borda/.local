@@ -146,7 +146,7 @@ class TestSymbolStaleAndImports:
             cwd=str(root),
             check=True,
         )
-        index_path = root / ".cache" / "scan" / f"{root.name}.json"
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
         (root / "myfunc.py").unlink()
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "myfunc"],
@@ -175,7 +175,7 @@ class TestSymbolStaleAndImports:
             cwd=str(root),
             check=True,
         )
-        index_path = root / ".cache" / "scan" / f"{root.name}.json"
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
         (root / "big.py").write_text("# truncated\n")
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "bigfunc"],
@@ -204,7 +204,7 @@ class TestSymbolStaleAndImports:
             cwd=str(root),
             check=True,
         )
-        index_path = root / ".cache" / "scan" / f"{root.name}.json"
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
         (root / "helpers.py").write_text("def helper_v2(x):\n    return x\n")
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "helper"],
@@ -233,7 +233,7 @@ class TestSymbolStaleAndImports:
             cwd=str(root),
             check=True,
         )
-        index_path = root / ".cache" / "scan" / f"{root.name}.json"
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "--with-imports", "dsfunc"],
             capture_output=True,
@@ -265,7 +265,7 @@ class TestSymbolStaleAndImports:
             cwd=str(root),
             check=True,
         )
-        index_path = root / ".cache" / "scan" / f"{root.name}.json"
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "--with-imports", "mlfunc"],
             capture_output=True,
@@ -302,7 +302,7 @@ class TestScanRoot:
             cwd=str(root),
             check=True,
         )
-        index_path = root / ".cache" / "scan" / f"{root.name}.json"
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
         # Run query from CWD = project root (different from scan root) — relies on scan_root
         result = subprocess.run(
             [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "rootfunc"],
@@ -329,7 +329,7 @@ class TestScanRoot:
             cwd=str(dir_a),
             check=True,
         )
-        index_path = dir_a / ".cache" / "scan" / f"{dir_a.name}.json"
+        index_path = dir_a / ".cache" / "codemap" / f"{dir_a.name}.json"
         # Copy file to dir_b with same relative path — --root dir_b overrides scan_root (dir_a)
         dir_b = tmp_path / "dir_b"
         dir_b.mkdir()

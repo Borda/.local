@@ -114,7 +114,7 @@ def test_main_missing_scan_query_silent_exit_0(in_tmp_cwd: Path, monkeypatch: py
 def test_main_missing_index_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_scan_query_present(monkeypatch, present=True)
     _stub_git(monkeypatch, project_name="myproj")
-    # No .cache/scan/myproj.json created → exit 0.
+    # No .cache/codemap/myproj.json created → exit 0.
     rc = cs.main(["--source=diff"])
     assert rc == 0
 
@@ -124,8 +124,8 @@ def test_main_find_mode_invokes_scan_query_per_module_and_coupled(
 ) -> None:
     # Arrange filesystem: project + index + .py target tree.
     project = in_tmp_cwd
-    (project / ".cache" / "scan").mkdir(parents=True)
-    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+    (project / ".cache" / "codemap").mkdir(parents=True)
+    (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     target = project / "src" / "pkg"
     target.mkdir(parents=True)
@@ -158,8 +158,8 @@ def test_main_find_missing_target_returns_1(
     in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     project = in_tmp_cwd
-    (project / ".cache" / "scan").mkdir(parents=True)
-    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+    (project / ".cache" / "codemap").mkdir(parents=True)
+    (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     _stub_scan_query_present(monkeypatch, present=True)
     _stub_git(monkeypatch, project_name=project.name)
@@ -171,8 +171,8 @@ def test_main_find_missing_target_returns_1(
 
 def test_main_diff_mode_invokes_per_module(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = in_tmp_cwd
-    (project / ".cache" / "scan").mkdir(parents=True)
-    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+    (project / ".cache" / "codemap").mkdir(parents=True)
+    (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     _stub_scan_query_present(monkeypatch, present=True)
     _stub_git(monkeypatch, project_name=project.name, diff_files=["src/pkg/a.py", "src/pkg/b.py"])
@@ -190,8 +190,8 @@ def test_main_diff_mode_invokes_per_module(in_tmp_cwd: Path, monkeypatch: pytest
 
 def test_main_diff_flat_layout_fallback(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = in_tmp_cwd
-    (project / ".cache" / "scan").mkdir(parents=True)
-    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+    (project / ".cache" / "codemap").mkdir(parents=True)
+    (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     _stub_scan_query_present(monkeypatch, present=True)
     # Only __init__.py files → primary derivation drops them → flat-layout fallback kicks in.
@@ -208,8 +208,8 @@ def test_main_diff_flat_layout_fallback(in_tmp_cwd: Path, monkeypatch: pytest.Mo
 
 def test_main_diff_empty_silent_exit_0(in_tmp_cwd: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = in_tmp_cwd
-    (project / ".cache" / "scan").mkdir(parents=True)
-    (project / ".cache" / "scan" / f"{project.name}.json").write_text("{}")
+    (project / ".cache" / "codemap").mkdir(parents=True)
+    (project / ".cache" / "codemap" / f"{project.name}.json").write_text("{}")
 
     _stub_scan_query_present(monkeypatch, present=True)
     _stub_git(monkeypatch, project_name=project.name, diff_files=[])

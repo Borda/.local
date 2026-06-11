@@ -90,7 +90,7 @@ def project(tmp_path_factory, gamma_src, beta_src, alpha_src, delta_src, scan_in
     )
     assert result.returncode == 0, result.stderr
 
-    index_path = root / ".cache" / "scan" / f"{root.name}.json"
+    index_path = root / ".cache" / "codemap" / f"{root.name}.json"
     assert index_path.exists(), "scan-index did not produce index file"
     return root, index_path
 

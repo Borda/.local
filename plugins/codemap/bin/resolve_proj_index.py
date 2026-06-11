@@ -2,7 +2,8 @@
 """resolve_proj_index.py — compute project name and codemap index path.
 
 Derives PROJ from the git root basename (or CWD basename when outside a repo).
-INDEX path is ``<git-root-or-cwd>/.cache/scan/<proj>.json``.
+INDEX path is ``<git-root-or-cwd>/.cache/codemap/<proj>.json`` by default.
+Override directory with ``CODEMAP_INDEX_DIR`` env var (e.g. ``~/codemap-cache``).
 
 Usage:
     python resolve_proj_index.py [--check]
@@ -21,6 +22,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -48,6 +50,9 @@ def _resolve(cmd: str) -> str:
 def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
     """Return ``(proj_name, index_path)`` derived from the git root or CWD.
 
+    Respects ``CODEMAP_INDEX_DIR`` env var — when set, index lives at
+    ``$CODEMAP_INDEX_DIR/<proj>.json`` regardless of git root location.
+
     Args:
         cwd: Working directory for git resolution (defaults to ``Path.cwd()``).
 
@@ -72,7 +77,9 @@ def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
 
     base = git_root or work_dir
     proj = base.name
-    index = base / ".cache" / "scan" / f"{proj}.json"
+    custom_dir = os.environ.get("CODEMAP_INDEX_DIR")
+    index_dir = Path(custom_dir) if custom_dir else base / ".cache" / "codemap"
+    index = index_dir / f"{proj}.json"
     return proj, index
 
 

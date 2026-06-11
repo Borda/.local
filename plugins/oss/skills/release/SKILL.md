@@ -80,22 +80,36 @@ Gather + explore + validate produce large git/PR output bloating main context. I
    ```text
    Agent(subagent_type="foundry:sw-engineer", prompt="Working directory: <REPO_ROOT>. Run all git commands from that directory (use: git -C <REPO_ROOT> <cmd> or cd <REPO_ROOT> first). For git range <RANGE>:
    Run gather phase: git log, git diff --stat, gh pr list.
-   Run classify phase on all commits and PR data.
+   Run classify phase: classify the NET state at HEAD, not each intermediate commit. When multiple commits within the range touch the same API or feature (add then modify, add then remove, add then rewrite), describe only what exists in HEAD — do not include features that were added and later undone within the same range regardless of whether the removal was an explicit revert commit or a follow-up PR.
    Run explore phase: top 3–5 most significant changed files (read actual diffs).
-   Write full findings — commit list, classified change table, diff excerpts — to <GATHER_FILE> using the Write tool.
-   Return ONLY: {\"status\":\"done\",\"file\":\"<GATHER_FILE>\",\"changes\":N,\"breaking\":N,\"confidence\":0.N}")
+   Run truth check phase: for each item classified as 🚀 Added or ⚠️ Breaking Changes that names a specific symbol (function, class, method, config key, CLI flag), verify the symbol is actually DEFINED in the codebase at HEAD — not just mentioned in a comment, docstring, or leftover reference. Prefer codemap over grep: first check if the codemap index is available (`scan-query list 2>/dev/null | wc -l` — non-zero = available), then run `scan-query find-symbol '^<symbol>$' 2>/dev/null`; empty output = absent. When codemap unavailable, fall back to definition-pattern grep: `git -C <REPO_ROOT> grep -wl 'def <symbol>\|class <symbol>' HEAD -- '*.py' 2>/dev/null` for Python, then `git -C <REPO_ROOT> grep -wl '<symbol>' HEAD -- '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null` for other languages. If both return nothing the symbol is absent — remove it from the classified section entirely and log 'REMOVED: <item> — symbol not found in HEAD'. Repeat for any newly revealed dependencies. Track count of removed items (unconfirmed_total) and how many were in ⚠️ Breaking Changes (unconfirmed_breaking).
+   Write full findings — commit list, verified-only classified change table, diff excerpts, and REMOVED log — to <GATHER_FILE> using the Write tool.
+   Return ONLY: {\"status\":\"done\",\"file\":\"<GATHER_FILE>\",\"changes\":N,\"breaking\":N,\"unconfirmed\":N,\"unconfirmed_breaking\":N,\"confidence\":0.N}")
    ```
 3. Validate envelope and pass file path downstream — every "abort" below is a hard `exit 1`, not a prose continuation:
    ```bash
    STATUS=$(echo "$ENVELOPE" | jq -r '.status' 2>/dev/null)
    GATHER_FILE=$(echo "$ENVELOPE" | jq -r '.file' 2>/dev/null)
    BREAKING=$(echo "$ENVELOPE" | jq -r '.breaking // 0' 2>/dev/null)  # default 0 — never skip migration guide on missing field
+   UNCONFIRMED=$(echo "$ENVELOPE" | jq -r '.unconfirmed // 0' 2>/dev/null)
+   UNCONFIRMED_BREAKING=$(echo "$ENVELOPE" | jq -r '.unconfirmed_breaking // 0' 2>/dev/null)
    if [ "$STATUS" != "done" ] || [ -z "$GATHER_FILE" ] || [ "$GATHER_FILE" = "null" ] || [ ! -f "$GATHER_FILE" ]; then
        echo "Error: delegation validation failed — status=$STATUS, file=$GATHER_FILE" >&2
        exit 1
    fi
    ```
-   Pass `$GATHER_FILE` path to artifact phase — do NOT read gather file into main context; artifact agent reads it directly.
+
+When `unconfirmed > 0`, the truth check removed items from the classified set because their symbols were absent from HEAD. Surface this to the user as notification (not a gate — items are already removed, no sign-off needed). Read the REMOVED log from `$GATHER_FILE` to surface the list:
+
+   ```bash
+   if [ "${UNCONFIRMED:-0}" -gt 0 ] 2>/dev/null; then
+       REMOVED_ITEMS=$(grep '^REMOVED:' "$GATHER_FILE" | head -20)  # timeout: 3000
+       echo "Truth check removed ${UNCONFIRMED} unverified claim(s) from release notes (not found in HEAD):"
+       echo "$REMOVED_ITEMS"
+   fi
+   ```
+
+   Pass `$GATHER_FILE` path to artifact phase — do NOT read gather file into main context; the targeted REMOVED log grep above is the sole sanctioned exception.
 
 `notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: before inline gather, estimate commit count with `git rev-list --count ${RANGE:-${LAST_TAG:-HEAD~20}..HEAD} 2>/dev/null` (reuses `LAST_TAG` derived in Shared setup when available; falls back to `HEAD~20` only when `LAST_TAG` unset). If count exceeds 50, delegate gather to `foundry:sw-engineer` subagent same as prepare mode — inline gather with >50 commits causes substantial context flood. Define `GATHER_FILE` before spawning (mirrors prepare-mode step 1) so the envelope-validation block above can resolve the path:
 
@@ -263,6 +277,8 @@ Check public API surface in docs/ (or README) matches diff. Flag any public symb
 
 ## Classify each change
 
+**Net-state principle**: release notes describe what was **released** (HEAD state), not the development journey. Commit history is evidence of activity; HEAD is the source of truth for what shipped. When multiple commits within the range touch the same API or feature, classify only the net final state — not each intermediate step. A feature added in commit A then removed in any subsequent commit within the range has net effect zero and must not appear in release notes; it was never released to users of this version.
+
 Section order (fixed — never reorder): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed → 🗑️ Deprecated → ❌ Removed → 🔧 Fixed → 🔒 Security → 🔄 Reverted
 
 | Category | Output section | What goes here |
@@ -296,29 +312,47 @@ Filter out: merge commits, minor dep bumps, CI/tooling config, comment typos, in
 
 ## Truth check
 
-Gate — runs after Classify, before Audit changelog. Verifies each classified change exists in HEAD (codebase is source of truth, not commit messages).
+Gate — runs after Classify, before Audit changelog. Enforces the net-state principle: commit history records what happened during development; only what exists at HEAD was actually released. Any classification derived from commit history must be confirmed against HEAD before it enters release notes — regardless of how the change was undone (explicit revert, follow-up removal PR, overwrite in same range).
 
 **Scope**: apply to 🚀 Added, ⚠️ Breaking Changes, 🌱 Changed that introduce/remove a named symbol (function, class, CLI flag, config key). Skip: 🔧 Fixed (absence not greppable), 🔒 Security, 🗑️ Deprecated (still present), ❌ Removed (confirmed absent), 🔄 Reverted (already excluded).
 
-**For each in-scope classified change**:
+**For each in-scope classified change** — prefer codemap over grep; codemap finds actual definitions and is immune to false positives from leftover comments, docstrings, and migration stubs:
 
 ```bash
-# For additions — confirm symbol present in implementation files at HEAD
-# Restrict to src/ directories; docs/, tests/, CHANGELOG exclude (they document, not implement)
-git grep -l "<symbol_name>" HEAD -- 'src/**' '*.py' '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null || \
-  git grep -l "<symbol_name>" HEAD -- . ':!docs' ':!tests' ':!.github'  # timeout: 3000
-# For removals / breaking changes — confirm symbol absent from implementation at HEAD
-git grep -l "<symbol_name>" HEAD -- 'src/**' '*.py' '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null && echo "PRESENT (unexpected)" || echo "ABSENT (confirmed)"  # timeout: 3000
+# Step 1: check codemap index available (installed by /codemap:scan-codebase)
+CODEMAP_OK=$(scan-query list 2>/dev/null | wc -l)  # timeout: 5000
+# Non-zero = index loaded; 0 or error = fall back to grep
+
+# Step 2a (codemap available): structural symbol lookup — exact definition match
+scan-query find-symbol '^<symbol_name>$' 2>/dev/null  # timeout: 5000
+# Non-empty output = symbol defined in codebase; empty = absent
+
+# Step 2b (codemap unavailable fallback): definition-pattern grep — checks definitions, not mentions
+# Python: 'def|class'; other languages added in second pass; skips comments and leftovers
+git grep -wl "def <symbol_name>\|class <symbol_name>" HEAD -- '*.py' 2>/dev/null || \
+  git grep -wl "<symbol_name>" HEAD -- '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null  # timeout: 3000
+
+# For removals / breaking changes — confirm symbol absent from codebase at HEAD
+# Use codemap first: empty find-symbol result = absent; then definition grep
+git grep -wl "def <symbol_name>\|class <symbol_name>" HEAD -- '*.py' 2>/dev/null && echo "PRESENT (unexpected)" || echo "ABSENT (confirmed)"  # timeout: 3000
+
 # For behavior changes — read the relevant file at HEAD and confirm the changed code path
 git show HEAD:<changed_file> | grep -n "<distinguishing_pattern>"  # timeout: 3000
 ```
 
-**Outcomes**:
+**Outcomes per item**:
 - Confirmed present → keep in classified section; note "truth-checked"
-- Not found in HEAD → post-range revert or merged to different branch; move to ⚠️ Unconfirmed with note: "classified from commit history but not found in HEAD — verify before publishing"; do NOT include in highlights or demo
-- Cannot determine (e.g. behavioral change without greppable symbol) → keep classification; add "(not verified)" qualifier
+- Not found in HEAD → **remove from release notes entirely** (the change was not released); log: `[REMOVED] <description> — symbol not found in HEAD; was present in commit history but absent from released codebase`
+- Cannot determine (behavioral change without greppable symbol) → keep classification; add "(not HEAD-verified)" qualifier
 
-**Gate rule**: truth-check ALL 🚀 Added and ⚠️ Breaking Changes before Identify highlights. Unconfirmed → ⚠️ Unconfirmed, requires user sign-off — never silently drop. If any Breaking Change fails truth-check (not found in HEAD): invoke `AskUserQuestion` — "Breaking change not found in HEAD: `<description>`. Remove from release notes, or keep with ⚠️ Unconfirmed label?" Collect sign-off before continuing.
+**Gate loop** — run truth-check, fix, repeat until clean (max 3 iterations):
+1. Truth-check all 🚀 Added and ⚠️ Breaking Changes items
+2. Remove every item not verified against HEAD; log each removal
+3. If any items were removed, re-run truth-check on the updated set (catches cascading dependencies)
+4. Continue until no removals in a pass, or 3 iterations reached — then proceed
+5. Surface removed items in response: "Removed N unverified claims from release notes (not found in HEAD)"
+
+This loop runs before Identify highlights — highlights and demo must never reference unverified items.
 
 ## Audit changelog
 

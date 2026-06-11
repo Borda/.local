@@ -2,7 +2,8 @@
 
 ```bash
 PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename)
-if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/scan/${PROJ}.json" ]; then
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     scan-query central --top 5
 fi
 ```
