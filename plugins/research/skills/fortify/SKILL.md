@@ -73,7 +73,8 @@ Triggered by `fortify` or `fortify <run-id|program.md>`.
 
 Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--venue\`, \`--max-ablations\`, \`--skip-run\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+<!-- loads: unsupported-flag-protocol.md -->
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--venue`, `--max-ablations`, `--skip-run`.
 
 **Input resolution** (priority order):
 
@@ -604,7 +605,11 @@ Next: run /research:fortify without --skip-run to execute ablations
 
 Calibratable: F1–F3 sub-steps only — synthetic ablation plan with known component importance order; score whether fortify correctly ranks components and identifies reviewer questions. Full F4–F6 execution loop (worktree creation, metric runs, real guard scripts) excluded — requires live git state and metric commands.
 
-See `plugins/foundry/skills/calibrate/modes/skills.md` domain table entry for `/research:fortify` for the full ground-truth checklist.
+See the domain table entry for `/research:fortify` for the full ground-truth checklist. Path resolution:
+```bash
+_FOUNDRY_CALIBRATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/calibrate/modes 2>/dev/null | head -1); [ -z "$_FOUNDRY_CALIBRATE" ] && _FOUNDRY_CALIBRATE="plugins/foundry/skills/calibrate/modes"
+# See: $_FOUNDRY_CALIBRATE/skills.md
+```
 
 </calibration>
 

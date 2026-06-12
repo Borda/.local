@@ -32,6 +32,10 @@ After any non-trivial fix (multi-file change, behaviour change, fix to previousl
 2. Challenger confirms: (a) root cause structurally consistent with diff, (b) all original symptoms resolved, (c) no new failure modes introduced
 3. Residual or new symptoms found → root cause incomplete → return to diagnosis loop
 
+**Batched challenger dispatch**: when multiple fixes are being committed together (same logical release, same session), batch them into **one** challenger call covering all groups — not one challenger per fix. Group fixes by logical concern (e.g. "research plugin", "hook fix", "rule change") and review together. Single-pass: avoids spawning N redundant agents for overlapping context; catches cross-group regressions a per-fix reviewer cannot see.
+
+**Delegation + file-handoff**: always delegate batch to `foundry:challenger` via `Agent()` — not inline. Challenger writes full findings to a `.temp/` file; returns only compact JSON envelope to orchestrator. Orchestrator reads envelope verdict; reads file only on FAIL or low confidence. Never accumulate full challenger output in main context.
+
 **Non-trivial threshold**: fix touching >1 file, or any logic previously believed working. Single-line typo fixes in isolated files exempt.
 
 ### Anti-patterns

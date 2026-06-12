@@ -1,3 +1,6 @@
+---
+model: sonnet
+---
 <!-- Loaded by research:scientist (opus + xhigh) -->
 # ML Concepts Reference — research:scientist
 

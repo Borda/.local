@@ -696,7 +696,7 @@ plugins/foundry/
     ├── task-log.js              SubagentStart/Stop tracking to /tmp/claude-state-<session>/
     ├── statusline.js            status bar agent counts
     ├── teammate-quality.js      TaskCompleted/TeammateIdle teammate output quality gate
-    ├── lint-on-save.js          runs pre-commit after every Write/Edit; async + cross-session lock; 15s timeout
+    ├── lint-on-save.js          runs pre-commit after every Write/Edit; async + cross-session lock; 15s timeout; skips .temp/
     ├── rtk-rewrite.js           transparently rewrites CLI calls for token compression
     ├── agent-router.js          PreToolUse Agent hook; 3-tier routing fallback (worktree → cache → local)
     ├── commit-guard.js          PreToolUse Bash guard that blocks git commit unless authorized by a skill sentinel

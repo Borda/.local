@@ -15,6 +15,9 @@ addopts = [
 
 [tool.ruff]
 line-length = 120
+extend-exclude = [
+    ".experiments/",  # Jupytext notebook scripts — IPython builtins (get_ipython, display) not in scope
+]
 
 [tool.ruff.format]
 # inherits line-length from [tool.ruff]

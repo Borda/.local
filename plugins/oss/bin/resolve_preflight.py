@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import which
@@ -208,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
             print("✓ git: fetched origin (no upstream tracking on current branch — pull skipped)", file=sys.stderr)
 
     # --- write vars to TMPDIR files for safe cross-block consumption ------------
-    tmpdir = Path(os.environ.get("TMPDIR", "/tmp"))
+    tmpdir = Path(os.environ.get("TMPDIR") or tempfile.gettempdir())
     (tmpdir / "resolve-preflight-CODEX_AVAILABLE").write_text(str(codex_available).lower())
     (tmpdir / "resolve-preflight-GH_OK").write_text("true")
     return 0

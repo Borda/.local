@@ -1,8 +1,8 @@
 ---
 name: topic
-description: "Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Delegates deep analysis to the research:scientist agent and codebase mapping to foundry:solution-architect."
+description: "Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Owns broad SOTA search end-to-end via foundry:web-explorer; delegates codebase mapping to foundry:solution-architect."
 argument-hint: "<topic> [--team] | plan [<output.md>]"
-allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion, TaskList
 disable-model-invocation: true
 effort: medium
 ---
@@ -63,14 +63,12 @@ ARGUMENTS_LOWER=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]')
 
 Use `$ARGUMENTS_LOWER` for all flag/mode dispatch checks (`--team`, `--plan`, leading `plan` token); preserve original `$ARGUMENTS` only where literal substitution into prompts is required (e.g. topic string).
 
-**Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes):
+**Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`.
 
 ```bash
 # timeout: 5000
 UNKNOWN_FLAGS=$(echo "$ARGUMENTS_LOWER" | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)
 ```
-
-If `$UNKNOWN_FLAGS` non-empty: print `! Unknown flag(s): \`${UNKNOWN_FLAGS}\`. Supported: \`--team\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3 to avoid wasted SOTA search compute. Priority: `--team` wins over `plan` (invocation `plan --team` → Team Mode, topic string = "plan"):
 
@@ -88,42 +86,29 @@ Steps 2-3 execute only when neither `--team` nor `plan` mode is detected.
 
 > **Parallelism scope**: 2a (Agent spawn) and 2b (Grep) issue in one response. Any WebSearch/WebFetch calls inside the researcher agent are issued sequentially — invoke all searches before synthesizing results. No mechanism exists to parallelize prose-driven searches across calls.
 
-### 2a: Spawn researcher agent (issue with 2b simultaneously in one response)
+### 2a: SOTA literature search (issue with 2b simultaneously in one response)
 
-Call `Agent(subagent_type="research:scientist", prompt=...)`. Task researcher: find top 5 papers for `$ARGUMENTS`, produce comparison table (method, key idea, benchmark results, compute, code availability), recommend single best method given codebase constraints from Step 1 — with brief implementation plan. Agent's own workflow handles research and experiment design details.
+Conduct broad SOTA search directly using `foundry:web-explorer` (or inline WebSearch/WebFetch if web-explorer unavailable) — topic skill owns SOTA end-to-end. Find top 5 papers for `$ARGUMENTS`, produce comparison table (method, key idea, benchmark results, compute, code availability), recommend single best method given codebase constraints from Step 1.
 
-Use this prompt scaffold (adapt constraints from Step 1):
+**Note**: do NOT dispatch to `research:scientist` for broad SOTA surveys — scientist is scoped to deep single-paper analysis with a named paper anchor. Use `research:scientist` directly only when: (a) a specific paper is identified and needs deep analysis, (b) hypothesis generation for an identified method, or (c) experiment design for a concrete approach. Broad SOTA = web-explorer territory.
 
-Note: pre-compute output paths before spawning — orchestrator must extract branch and evaluate date expressions, then substitute concrete paths into all spawn prompts:
+Pre-compute output paths before searching:
 
 ```bash
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main') # timeout: 3000
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 DATE=$(date +%Y-%m-%d)  # timeout: 3000
-# Anti-overwrite: resolve counter-suffix before spawn (quality-gates.md rule)
+# Anti-overwrite: resolve counter-suffix (quality-gates.md rule)
 AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE.md"
 _N=2; while [ -e "$AGENT_OUT" ]; do AGENT_OUT=".temp/output-research-agent-$BRANCH-$DATE-$_N.md"; _N=$((_N+1)); done  # timeout: 5000
 mkdir -p .temp  # timeout: 3000
-# Persist for later bash blocks (Check 41: fresh shell per call)
 echo "$BRANCH" > "${TMPDIR:-/tmp}/topic-branch"
 echo "$DATE" > "${TMPDIR:-/tmp}/topic-date"
-echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out"  # persist resolved counter-suffixed path so Step 3 reload uses the correct file
+echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out"
 ```
 
-**Note**: Substitute pre-computed values — do not pass raw $(date) expressions into spawn prompts. Substitute resolved `$AGENT_OUT` path (not template) so agent writes to correct non-conflicting file.
+Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of the top 5 papers found via WebSearch/WebFetch: extract method, key idea, benchmark results, compute cost, code availability. Write full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
 
-```text
-Research the literature on: <$ARGUMENTS>
-Codebase constraints: <framework, Python version, compute budget, existing dependencies from Step 1>
-Deliver: comparison table (method, key idea, benchmarks, compute, code available), recommendation for best method, a 3-step implementation plan for this codebase, key hyperparameters (name, typical range, what it controls) for the recommended method, and common gotchas (failure modes and how to avoid them).
-Write your full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `<$AGENT_OUT>` using the Write tool.
-Then return ONLY a compact JSON envelope on your final line — nothing else after it:
-{"status":"done","papers":N,"recommendation":"<method name>","file":"<$AGENT_OUT>","confidence":0.N}
-```
-
-**Single timeout policy** (post-hoc only): synchronous `Agent()` calls cannot be polled or interrupted mid-flight. After `Agent()` returns, apply the policy declared in `<constants>` — check whether `$AGENT_OUT` exists and has content. If file absent or empty → researcher timed out or crashed; surface partial results from `.temp/` and mark ⏱ in report. If file present → parse normally regardless of nominal budget. Same limitation as `research:verify` — no proactive liveness monitoring.
-<!-- Deviation from CLAUDE.md §6: Agent(...) calls are synchronous — no Bash checkpoint/poll available; HARD_CUTOFF is advisory documentation only, not an enforced cutoff. -->
-
-**If Agent tool unavailable** (running as subagent where nested spawning blocked), skip Agent call, conduct research inline: use WebSearch and WebFetch to find top 5 papers, synthesize comparison table yourself. Notify user: "Note: researcher agent could not be spawned in this context — conducting research inline."
+**If `foundry:web-explorer` available** (check `ls ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents/web-explorer.md 2>/dev/null`): spawn `Agent(subagent_type="foundry:web-explorer", prompt="...")` for parallel deep web research, then merge results into `$AGENT_OUT`. Otherwise conduct research inline using WebSearch and WebFetch directly.
 
 ### 2b: Check for existing implementations (main context)
 
@@ -142,7 +127,7 @@ Research — [topic]
 Date:        [YYYY-MM-DD]
 Scope:       [topic / research question]
 Focus:       SOTA literature research
-Agents:      research:scientist (Step 2a), foundry:solution-architect (plan mode P2)
+Agents:      foundry:web-explorer (Step 2a, if available), foundry:solution-architect (plan mode P2)
 Outcome:     EXPLORATORY | PROMISING | CONSENSUS
 Best method: [recommended approach / architecture]
 Papers:      [N papers analyzed]
@@ -224,7 +209,7 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 
 ## Team Mode — only when `--team` flag present
 
-> loads: modes/team.md
+> loads: modes/team.md  # also loads: modes/plan.md
 **Mode-file existence check** — verify before reading:
 
 ```bash
@@ -268,7 +253,7 @@ Call `AskUserQuestion` tool — do NOT write options as plain text first. Map op
 
 <notes>
 
-- Skill orchestrates — gathers context, delegates research to `research:scientist` and codebase mapping to `foundry:solution-architect` (plan mode). For direct hypothesis/experiment work, use `research:scientist` directly.
+- Skill orchestrates — owns broad SOTA literature search end-to-end via `foundry:web-explorer`, delegates codebase mapping to `foundry:solution-architect` (plan mode). For direct hypothesis/experiment work on a named paper, use `research:scientist` directly.
 - **Team Mode dependency**: `--team` requires `~/.claude/TEAM_PROTOCOL.md` to exist — each teammate spawn prompt includes `Read $HOME/.claude/TEAM_PROTOCOL.md and use AgentSpeak v2`; verify file present before launching team mode.
 - **Link integrity**: All URLs cited in research report must be fetched and verified before inclusion. Use WebFetch to confirm each URL exists and says what you claim.
 - Follow-up chains:

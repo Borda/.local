@@ -112,7 +112,7 @@ Unsynced change = incomplete.
 
 ## Versioning
 
-> **Commit gate**: any `plugins/<name>/` file in `git diff HEAD` → run pre-bump checklist before `git add`. Each plugin touched gets its own independent bump. Baseline = HEAD every time — post-compaction sessions have no memory of prior bumps; always re-read HEAD version, never trust session recall.
+> **Commit gate**: any `plugins/<name>/` **non-test** file in `git diff HEAD` → run pre-bump checklist before `git add`. If ALL changed files in a plugin are under `tests/` → no bump, skip checklist entirely. Each plugin touched gets its own independent bump. Baseline = HEAD every time — post-compaction sessions have no memory of prior bumps; always re-read HEAD version, never trust session recall.
 
 Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 
@@ -133,8 +133,9 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 
 **Example**: start `0.2.0`, session: wording fix + feature add → commit as `0.3.0` (not `0.2.1`).
 
-**Pre-bump checklist** — all 5 steps mandatory; skipping any step is a violation:
+**Pre-bump checklist** — all steps mandatory; skipping any step is a violation:
 
+0. **Test-only guard**: run `git diff HEAD --name-only -- plugins/<name>/` and check if every changed path is under `plugins/<name>/tests/`. If yes → **STOP; no bump needed** — test-only commits never touch the version.
 1. Read HEAD baseline: `git show HEAD:<plugin-path>/.claude-plugin/plugin.json | grep version`
 2. **Read on-disk version: `grep version <plugin-path>/.claude-plugin/plugin.json`** — if on-disk ≠ HEAD → session bump already applied → **STOP; do not proceed**
 3. Classify highest-magnitude change in session (`X` or `Y`)

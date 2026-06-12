@@ -446,22 +446,24 @@ Resolve `SELECTED_ITEMS`:
 - Q4 = "Apply ALL [req + suggest]" → all pending IDs; skip Call 2 when in two-call flow
 - Q4 = "Type something" / no bulk selected → checked IDs from Q1–Q3 only; for two-call flow, merge both calls
 
-**Commit mode** — after resolving `SELECTED_ITEMS` (non-empty), invoke `AskUserQuestion` as a separate call:
+**Commit mode** — after resolving `SELECTED_ITEMS` (non-empty), invoke `AskUserQuestion` as a separate call.
+
+**ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** LLMs tend to drop option (d) — do not omit it.
 
 ```text
 AskUserQuestion: "How should changes be committed?"
 Options:
   (a) Commit each item separately — one commit per item, staged+committed inline (default)
-  (b) Commit all at once — stage as you go, single commit after all items
-  (c) Stage only — no commits; stays staged on PR branch (⚠ cannot cleanly restore original branch after Step 11 — stash/pop manually)
-  (d) Commit by logical/topic group — ask for topic labels, then group related items into themed commits
+  (b) Commit by logical/topic group — ask for topic labels, then group related items into themed commits
+  (c) Commit all at once — stage as you go, single commit after all items
+  (d) Stage only — no commits; stays staged on PR branch (⚠ cannot cleanly restore original branch after Step 11 — stash/pop manually)
 ```
 
 Set `COMMIT_MODE`:
 - (a) → `each`
-- (b) → `all`
-- (c) → `stage`
-- (d) → `grouped`
+- (b) → `grouped`
+- (c) → `all`
+- (d) → `stage`
 
 ## Step 3e: Create tasks for selected items
 
@@ -487,6 +489,12 @@ Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`.
 
 *Skip only when `MODE = report` with no PR# (`$PR_NUMBER` unset — no remote branch to check out). In pr mode, runs unconditionally regardless of `SELECTED_ITEMS` — conflict resolution must happen even when 0 action items selected.*
 
+**`gh` availability check** — hard prereq; `gh pr checkout` has no fallback path:
+
+```bash
+command -v gh >/dev/null 2>&1 || { echo "! BLOCKED — gh CLI required; install: https://cli.github.com"; exit 1; }  # timeout: 3000
+```
+
 **Branch-safety pre-check** — must run BEFORE `gh pr checkout` so a wrong-branch commit is impossible (per `git-commit.md` Gate 2). Verify the PR's `headRefName` is not the repo's default branch — `gh pr checkout` of a same-repo PR whose HEAD = default branch would land us on default and any later commit (Step 8) would violate Gate 2:
 
 ```bash
@@ -500,9 +508,18 @@ if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     exit 1
 fi
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
-# Hard-exit on checkout failure — silent failure leaves git on the caller's branch while
-# $HEAD_REF is set from Step 3b, causing Step 8 commits to land on the wrong branch.
-gh pr checkout <PR#> || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
+# SHA-first checkout guard: if local HEAD already matches PR remote head, skip checkout entirely.
+# Avoids worktree conflict where gh pr checkout creates pr-N-slug alias instead of HEAD_REF
+# (git rejects checking out a branch active in another worktree).
+PR_HEAD_OID=$(gh pr view "<PR#>" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
+LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)  # timeout: 3000
+if [ -n "$PR_HEAD_OID" ] && [ "$LOCAL_SHA" = "$PR_HEAD_OID" ]; then
+    echo "→ Already at PR head ($LOCAL_SHA) — skipping gh pr checkout"
+else
+    # Hard-exit on checkout failure — silent failure leaves git on the caller's branch while
+    # $HEAD_REF is set from Step 3b, causing Step 8 commits to land on the wrong branch.
+    gh pr checkout <PR#> || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
+fi
 ```
 
 `gh pr checkout` auto-handles forks — adds contributor's remote, configures tracking. Verify checkout landed on expected branch — if not, abort before Step 8 can commit:
@@ -510,7 +527,8 @@ gh pr checkout <PR#> || { echo "⛔ gh pr checkout failed — aborting (network,
 ```bash
 git remote -v | grep '(fetch)' | head -10 # timeout: 3000
 git status                                # confirm we are on HEAD_REF  # timeout: 3000
-[ "$(git branch --show-current)" = "$HEAD_REF" ] || { echo "⛔ checkout did not land on $HEAD_REF (current: $(git branch --show-current)) — aborting before Step 8 can commit to wrong branch"; exit 1; }  # timeout: 3000
+CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)  # timeout: 3000
+[ "$CURRENT_BRANCH" = "$HEAD_REF" ] || { echo "⛔ checkout did not land on $HEAD_REF (current: $CURRENT_BRANCH) — aborting before Step 8 can commit to wrong branch"; exit 1; }  # timeout: 3000
 ```
 
 Determine `FORK_REMOTE` for push in Step 10:

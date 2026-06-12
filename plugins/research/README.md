@@ -1,6 +1,6 @@
 # 🔬 research — Claude Code Plugin
 
-ML research plugin: two specialist agents and eight slash-command skills for literature search, experiment design, methodology review, metric-driven improvement loops, and automated research sweeps — built on a profile-first, judge-gated pipeline that spends compute only on experiments worth running.
+ML research plugin: two specialist agents and nine slash-command skills for literature search, experiment design, methodology review, metric-driven improvement loops, automated research sweeps, and Kaggle competition notebook generation — built on a profile-first, judge-gated pipeline that spends compute only on experiments worth running.
 
 > Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, etc.) and is strongly recommended.
 
@@ -23,6 +23,7 @@ ______________________________________________________________________
   - [`/research:verify`](#researchverify--paper-vs-code-consistency-audit)
   - [`/research:fortify`](#researchfortify--ablation-study-runner)
   - [`/research:retro`](#researchretro--post-run-retrospective)
+  - [`/research:kaggle`](#researchkaggle--kaggle-competition-notebook)
 - [Agents reference](#agents-reference)
   - [`research:scientist`](#researchscientist)
   - [`research:data-steward`](#researchdata-steward)
@@ -100,7 +101,7 @@ claude plugin uninstall research
 
 </details>
 
-All skills are invoked with the `research:` prefix: `/research:topic`, `/research:plan`, `/research:judge`, `/research:run`, `/research:sweep`, `/research:verify`, `/research:fortify`, `/research:retro`.
+All skills are invoked with the `research:` prefix: `/research:topic`, `/research:plan`, `/research:judge`, `/research:run`, `/research:sweep`, `/research:verify`, `/research:fortify`, `/research:retro`, `/research:kaggle`.
 
 ______________________________________________________________________
 
@@ -137,7 +138,7 @@ ______________________________________________________________________
 
 ### `/research:topic` — SOTA literature search
 
-Searches the AI/ML literature for a topic, builds a comparison table of methods, and produces a recommendation with an implementation plan mapped to your codebase. Delegates literature search to `research:scientist` and codebase mapping to `foundry:solution-architect`.
+Searches the AI/ML literature for a topic, builds a comparison table of methods, and produces a recommendation with an implementation plan mapped to your codebase. Handles broad SOTA literature search end-to-end via `foundry:web-explorer`; delegates codebase mapping to `foundry:solution-architect`. For deep single-paper analysis with a named paper anchor, use `research:scientist` directly.
 
 **Invocation**:
 
@@ -497,6 +498,56 @@ Analyzes the experiment history after `/research:run` completes. Computes statis
 
 ______________________________________________________________________
 
+### `/research:kaggle` — Kaggle competition notebook
+
+Generates a Kaggle competition notebook as a Jupytext `# %%` Python script (compatible with VS Code Jupyter, JupyterLab, and `jupytext --to notebook`). Distills competition context from the Kaggle API or a URL, asks for missing facts via grounding protocol, then generates a fully structured notebook using `foundry:sw-engineer`.
+
+**Invocation**:
+
+```text
+/research:kaggle <competition-name>
+/research:kaggle <competition-name> <url-or-description>
+/research:kaggle <competition-name> --type classification|regression|segmentation|detection|tabular
+/research:kaggle <competition-name> --eda-only
+/research:kaggle <competition-name> --inference-only
+/research:kaggle <competition-name> --resume <existing.py>
+```
+
+**What it generates** (depends on mode):
+
+Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + DataModule, Model, Training, Inference, Submission.
+
+`--eda-only` (`<name>.py`): Header, Imports, EDA. For 3D volumetric data (`image-3d`) adds interactive `ipywidgets` slice viewer with 3 orthogonal planes + 3D wireframe + multi-class mask overlay.
+
+`--inference-only` (`<name>-inference.py`): Header, Imports, Load Checkpoint (PTL `load_from_checkpoint` / bare `torch.load` / custom constructor), Test DataLoader (no labels), Inference Loop (classification, detection+NMS, or 3D segmentation), Post-processing, Submission. Patterns grounded in past notebooks (`amia-x-ray`, `plant-pathology`, `surface-3d-segm`).
+
+**Style conventions** (auto-enforced):
+
+- All bash commands as `! cmd` — never `subprocess`, never `get_ipython().system()`
+- PyTorch Lightning (`pl`) + `torchmetrics` for all DNN training, even simple baselines
+- `timm.create_model(...)` for image classification; SMP for segmentation; XGBoost for tabular
+- Commented-out hyperparameter alternatives for every tunable value
+- `del` + `gc.collect()` + `time.sleep(9)` for GPU memory management
+
+**Grounding protocol**: all competition-specific facts (input modality, eval metric, submission format) must be sourced from a fetched URL, user answer, or past notebook. The skill asks via `AskUserQuestion` for any required facts it cannot ground — it never hallucinates competition details.
+
+**Requires**: `foundry` plugin (`foundry:sw-engineer`).
+
+**Output**: `.experiments/kaggle/<competition-name>.py`
+
+**Example**:
+
+```text
+/research:kaggle rsna-breast-cancer https://www.kaggle.com/competitions/rsna-breast-cancer-detection
+# Grounding: fetching competition page...
+# Problem type: binary classification (mammogram images)
+# Eval metric: pF1 (probabilistic F1)
+# Generating notebook...
+# Output: .experiments/kaggle/rsna-breast-cancer.py (574 lines)
+```
+
+______________________________________________________________________
+
 ## 🤖 Agents reference
 
 ### `research:scientist`
@@ -765,7 +816,7 @@ This plugin is part of the Borda-AI-Rig project. The skills and agents are in `p
 
 The skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) are the canonical source of truth — this README must stay in sync with them. Any change to a skill's behavior (flags, NOT-for scope, trigger conditions) requires an update here.
 
-Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.5.0`.
+Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.7.0`.
 
 **Mode-dispatch layout**: large conditional sections are externalised under `skills/<skill>/modes/*.md` and loaded on demand. Run's hypothesis pipeline, team, and report modes live under `skills/run/modes/`. The ML-concepts reference for `research:scientist` lives under `agents/scientist/ml-concepts.md` — loaded only when the task is ML-domain.
 

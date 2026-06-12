@@ -40,7 +40,7 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 
 **Task tracking**: create tasks for P-P0, P-P1, P-P2, P-P2b, P-P3 at start; add P-P4 only if `--team` detected in arguments.
 
-**Unsupported flag check** — strip `--team` from `$ARGUMENTS`, scan remaining tokens for any `--<token>`. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--team\`. Re-invoke with correct flags.` then stop.
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`.
 
 ### Step P-P0: Detect input type
 

@@ -105,6 +105,7 @@ Compliant example — this is the only valid form:
 - Applies globally — all skills, agents, model-generated questions without exception
 - When `AskUserQuestion` not in skill's `allowed-tools`, add it before asking any question
 - Max 4 questions per call; group related sub-questions into one option set rather than asking sequentially
+- **Recommended option placement**: place recommended option **second** in the options list, not first and not last. First slot = most natural/neutral default; second = recommended; last = skip/abort.
 
 ## Long Reply File Dump
 

@@ -122,6 +122,14 @@ process.stdin.on("end", async () => {
     const rel = path.relative(root, filePath);
     if (rel.startsWith("..") || path.isAbsolute(rel)) process.exit(0);
 
+    // Skip ephemeral handover dirs — agents write subagent-handover .md files into
+    // .temp/ at high volume during multi-agent workflows (e.g. /oss:review spawns
+    // 7+ agents writing .md output concurrently). Linting each via pre-commit
+    // serializes under the cross-session lock and can stall the orchestrator
+    // for minutes while it waits for Agent() to return. These files are never
+    // committed — short-circuit before lock acquisition.
+    if (rel.startsWith(".temp/") || rel.startsWith(".temp" + path.sep)) process.exit(0);
+
     // Skip if no pre-commit config in this project
     const configPath = path.join(root, ".pre-commit-config.yaml");
     if (!fs.existsSync(configPath)) process.exit(0);

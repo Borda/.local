@@ -32,7 +32,7 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 
 **Defaults**: `--threshold 0.001`, `--alpha 0.05`.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--compare\`, \`--threshold\`, \`--alpha\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--compare`, `--threshold`, `--alpha`.
 
 **Task tracking**: create tasks for T1–T7 at start — before any tool calls.
 
@@ -97,7 +97,8 @@ Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python wi
 ```bash
 ALPHA="${ALPHA:-0.05}"
 METRIC_DIRECTION=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/read_state_field.py" ".experiments/state/$RUN_ID/state.json" "config.metric.direction" --default "higher" 2>/dev/null || echo "higher")  # loads: read_state_field.py
-RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl ".experiments/state/$RUN_ID/experiments.jsonl" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
+RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")  # re-hydrate sanitized path from T1 (Check 41: fresh shell)
+RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl "$RETRO_JSONL" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
 RETRO_EXIT=$?
 [ "$RETRO_EXIT" -eq 2 ] && { echo "retro: Input error (exit 2) — run-id '$RUN_ID' missing, malformed, or has no baseline record; re-run /research:run to create baseline"; exit 1; }
 ```
@@ -153,6 +154,7 @@ Re-hydrate cross-Bash state at the start of every separate Bash invocation in T3
 RUN_DIR=$(cat "${TMPDIR:-/tmp}/retro-run-dir" 2>/dev/null)
 RUN_ID_ARG=$(cat "${TMPDIR:-/tmp}/retro-run-id" 2>/dev/null)
 RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved" 2>/dev/null)
+RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")  # sanitized path from T1
 # Guard: any of these empty means T1 didn't run — surface and exit rather than write to a bare /
 # T-C1: separate guards — `|| ... &&` has subtle precedence; split for unambiguous evaluation.
 # `exit 1` terminates the Bash subprocess only — if either variable is empty, the orchestrator MUST
@@ -205,7 +207,7 @@ Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt
 Act as a research retrospective analyst.
 
 Read:
-- experiments.jsonl at <path> (full iteration history)
+- experiments-clean.jsonl at <RETRO_JSONL path — the sanitized copy written by T1; fall back to experiments.jsonl if clean copy absent> (full iteration history)
 - diary.md at <path> (if exists — for qualitative context)
 - stats results at <RUN_DIR>/stats-results.json
 - dead iteration summary at <RUN_DIR>/dead-iters.json

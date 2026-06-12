@@ -50,7 +50,7 @@ ARGUMENTS="${ARGUMENTS/--skip-validation/}"  # strip flag from args
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespace
 ```
 
-**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-validation\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--skip-validation`.
 
 **Input resolution** (priority order):
 
@@ -435,7 +435,11 @@ Next: fix protocol, re-run /research:judge <path>      [NEEDS-REVISION or BLOCKE
 
 Calibratable: J1–J2 sub-steps only — synthetic result file with known verdict (APPROVED/NEEDS-REVISION/BLOCKED) and injected finding counts; score whether judge correctly identifies verdict and extracts counts. Full J3 validation execution loop excluded — requires live git state and executable metric commands.
 
-See `plugins/foundry/skills/calibrate/modes/skills.md` domain table entry for `/research:judge`.
+See the domain table entry for `/research:judge`. Path resolution:
+```bash
+_FOUNDRY_CALIBRATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/calibrate/modes 2>/dev/null | head -1); [ -z "$_FOUNDRY_CALIBRATE" ] && _FOUNDRY_CALIBRATE="plugins/foundry/skills/calibrate/modes"
+# See: $_FOUNDRY_CALIBRATE/skills.md
+```
 
 </calibration>
 

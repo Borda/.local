@@ -126,7 +126,8 @@ Read `${CLAUDE_SKILL_DIR}/modes/hypothesis-pipeline.md`
 
 **Per-iteration hypothesis selection** (when `--researcher`/`--architect` set, inside R5 loop): pop next from `RESEARCH_QUEUE`. Append to Phase 2 prompt: "Focus this iteration on testing this hypothesis: `<hypothesis text>`."
 
-**Per-iteration journal hook** (inside R5, after Phase 7): if `--journal` active, append entry to `<RUN_DIR>/journal.md` after EVERY iteration — regardless of outcome. Entry format: `protocol.md` (companion file, same skill dir). Journals record kept and reverted iterations so ideation agent learns failed approaches.
+**Per-iteration journal hook** (inside R5, after Phase 7): if `--journal` active, append entry to `<RUN_DIR>/journal.md` after EVERY iteration — regardless of outcome. Entry format: `protocol.md` (companion file, same skill dir).  # loads: protocol.md
+Journals record kept and reverted iterations so ideation agent learns failed approaches.
 
 **Per-iteration checkpoint write** (after Phase 7): if `--researcher`/`--architect` active, append one line to `<RUN_DIR>/checkpoint.json` per schema in `protocol.md` (companion file, same skill dir): `{iteration, hypothesis_id, metric_before, metric_after, status: "passed"|"rolled_back"}`.
 
@@ -154,7 +155,7 @@ After clarification extraction, remaining non-flag tokens (not starting `--`) ar
   If you meant to set a clarification hint, pass it as a quoted string: "/research:run program.md \"sort improvements\" --codex"
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--resume\`, \`--team\`, \`--compute\`, \`--colab\`, \`--codex\`, \`--researcher\`, \`--architect\`, \`--journal\`, \`--hypothesis\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`.
 
 **If argument is a `.md` file** — read and parse with these rules:
 
@@ -413,38 +414,12 @@ If Agent tool unavailable (nested subagent context), implement change inline, co
 
 #### Phase 2a — Sandbox validate (`sandbox_mode = "docker"` only)
 
-Skip entirely if `sandbox_mode = "local"`.
-
-If Phase 2 returned non-empty `"scripts"`: run each in Docker sandbox with read-only project mount. Per script (use `${SANDBOX_NETWORK}` initialized at R2 — Phase 5 uses identical pattern):
-
-```bash
-docker run --rm --network "${SANDBOX_NETWORK}" \
-    -v "$(pwd):/workspace:ro" \
-    --tmpfs /tmp:rw,size=256m \
-    -w /workspace \
-    python:3.11-slim \
-    python "/workspace/.experiments/state/${RUN_ID}/scripts/${script}"
-```
-
-Use Bash tool `timeout`: `timeout: $VERIFY_TIMEOUT_MS` (computed in R2 from `$VERIFY_TIMEOUT_SEC`). Not shell `timeout` command.
-
-If any script exits non-zero: append `status: sandbox-failed` to `ideation-<i>.md`, skip to Phase 8 with `status: sandbox-failed`. Do not proceed to 2b.
-
-If `"scripts"` empty or absent: 2a no-op — proceed to 2b.
+> loads: compute-docker.md
+> Read `${CLAUDE_SKILL_DIR}/modes/compute-docker.md` — full Phase 2a and 2b logic for docker sandbox. Skip entire file if `sandbox_mode = "local"`.
 
 #### Phase 2b — Apply change (`sandbox_mode = "docker"` only)
 
-Skip if `sandbox_mode = "local"` (Phase 2 already applied changes).
-
-Spawn same specialist agent (R3), `maxTurns: 10`:
-
-```text
-Read the proposed change in `.experiments/state/<run-id>/ideation-<i>.md`.
-Apply the proposed change to the source files.
-Use Write and Edit tools ONLY — no Bash execution on the codebase files.
-Scope files (read and modify only these): <scope_files>
-Return ONLY: {"files_modified":[...]}
-```
+Skip if `sandbox_mode = "local"` — handled in compute-docker.md above.
 
 #### Phase 2c — Codex co-pilot (`--codex` only)
 
@@ -479,7 +454,7 @@ If pre-commit hooks fail:
 
 #### Phase 5 — Verify metric
 
-> loads: phase5-metric.md
+> loads: phase5-metric.md  # also loads: codex-copilot.md, colab-setup.md, compute-docker.md, hypothesis-pipeline.md, report.md, resume.md, team.md
 > Read `${CLAUDE_SKILL_DIR}/modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
 
 #### Phase 6 — Run guard
