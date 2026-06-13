@@ -141,3 +141,18 @@ Claude training data has fixed cutoff — any library released or substantially 
 - No global mutable state — use dependency injection
 - `__all__` in `__init__.py` to define public API surface
 - Prefer composition over deep inheritance
+
+## Complexity Thresholds
+
+Enforce via ruff `C901` + `PLR` rules (see `foundry:linting-expert` for config). Hard limits per function:
+
+| Metric | Limit | ruff rule | Refactor signal |
+| --- | --- | --- | --- |
+| Cyclomatic complexity (McCabe) | ≤12 | `C901` | extract sub-functions, guard clauses |
+| Required arguments (no default) | ≤7 | style rule | primary rule — enforced in review; more than 7 required = introduce config dataclass |
+| All arguments (incl. kwargs w/ defaults) | ≤12 | `PLR0913` | blunt ruff gate — kwargs with defaults may exceed 7 freely; ≤12 catches extreme cases |
+| Branches (`if`/`elif`/`match`) | ≤12 | `PLR0912` | dispatch table, strategy pattern |
+| Statements | ≤50 | `PLR0915` | split responsibility |
+| Return points | ≤6 | `PLR0911` | consolidate early-return paths |
+
+When a function exceeds any limit: **refactor first**. Adding `# noqa: PLR...` is allowed only when refactoring is genuinely impossible (generated code, parser output, protocol-mandated signature) — always add an inline comment explaining why.

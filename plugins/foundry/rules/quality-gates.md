@@ -44,6 +44,20 @@ Before returning, self-review:
 3. Score rises only when **named, specific gap** addressed — generic phrases ("re-checked, looks fine", "reviewed for completeness") don't count; pass must name gap (e.g. "Added versioning section missing from initial draft")
 4. After 2 passes, report real score — never inflate; `foundry:calibrate` catches bias
 
+## Python Code Complexity (when writing or reviewing Python)
+
+Before delivering any Python function or class, verify all limits:
+
+- **Cyclomatic complexity ≤12** — more than 12 independent paths → extract sub-functions or introduce guard clauses
+- **Required arguments (no default) ≤7** — primary rule, enforced in review; more than 7 required params = introduce config dataclass; kwargs with defaults may exceed 7 freely; ruff `PLR0913` set to ≤12 as blunt total-args backstop
+- **Branches ≤12** — more than 12 `if`/`elif`/`match` arms → dispatch table or strategy pattern
+- **Statements ≤50** — more than 50 logical lines in one function → split responsibility
+- **Return points ≤6** — more than 6 `return` statements → consolidate early-return paths
+
+Violation → refactor before delivering. `# noqa: PLR...` / `# noqa: C901` permitted only when refactoring is genuinely impossible (generated code, protocol-mandated signature) — always pair with an inline comment explaining why.
+
+Applies to all Python written or reviewed by any agent. Run `ruff check --select C901,PLR` to verify.
+
 ## Pre-Handover Check
 
 Confidence < 0.9 → push back on the analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → also spawn `Agent(subagent_type="codex:codex-rescue")` naming the low-confidence area for adversarial review — incorporate findings before handover. After re-examination (and codex review if available): if confidence still < 0.9 → state the specific gap explicitly so user can decide to re-run.

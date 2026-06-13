@@ -380,9 +380,26 @@ git log "$RANGE" --no-merges --format="%aN <%aE>%n%(trailers:key=Co-authored-by,
 
 Deduplicate by email. Exclude bot accounts (e.g. `[bot]`, `noreply@`).
 
-For each contributor, inspect commits in range (`git log "$RANGE" --no-merges --author="<email>" --oneline`) and summarize in 3–6 words — area or feature. No PR numbers, no links.
+List all contributors — every commit counts, including docs and typo fixes.
 
-Format per contributor: `- **Name** — <brief what they did>` (e.g. `- **Alice** — added streaming API`, `- **Bob** — fixed CUDA memory leak`).
+For each contributor, inspect commits in range (`git log "$RANGE" --no-merges --author="<email>" --oneline`) and pick up to 3 most significant contributions to summarize. Rank by: new public API > major UX improvement > significant fix > internal change > docs/typo. No PR numbers, no issue links, no `(#N)` references.
+
+Resolve GitHub handle from PR author data collected in Gather changes (`author.login` field). Match on name or email. If no PR found for contributor, omit handle.
+
+For each resolved handle, fetch profile to check for LinkedIn URL:
+
+```bash
+# For each contributor handle <login>:
+gh api /users/<login> --jq '{blog: .blog, twitter: .twitter_username}' 2>/dev/null  # timeout: 6000
+```
+
+LinkedIn detected when `.blog` contains `linkedin.com`. If present, append as plain URL in parentheses.
+
+Format per contributor: `- **Name** (@github_handle, [LinkedIn](https://linkedin.com/in/handle)) — <brief what they did>`. Examples:
+- `- **Alice** (@alice, [LinkedIn](https://linkedin.com/in/alice)) — added streaming API`
+- `- **Bob** (@bob-dev) — fixed CUDA memory leak`
+
+Omit `@handle` when handle could not be resolved. Omit `, [LinkedIn](url)` when `.blog` is absent, empty, or not a LinkedIn URL.
 
 ## Identify highlights
 

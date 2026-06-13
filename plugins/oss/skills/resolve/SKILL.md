@@ -513,12 +513,30 @@ SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
 # (git rejects checking out a branch active in another worktree).
 PR_HEAD_OID=$(gh pr view "<PR#>" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
 LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)  # timeout: 3000
+# Diagnostic trace so reflog forensics can correlate skill state with branch outcome
+# (cf. investigate report 2026-06-13T11-00-00Z: pr195 alias created when state opaque)
+>&2 echo "→ Step 4 state: SAVED_BRANCH=$SAVED_BRANCH PR_HEAD_REF=$PR_HEAD_REF PR_HEAD_OID=${PR_HEAD_OID:-<empty>} LOCAL_SHA=${LOCAL_SHA:-<empty>}"
 if [ -n "$PR_HEAD_OID" ] && [ "$LOCAL_SHA" = "$PR_HEAD_OID" ]; then
     echo "→ Already at PR head ($LOCAL_SHA) — skipping gh pr checkout"
+    # SHA matches but caller may sit on a *different branch name* pointing at same OID
+    # (e.g. a prior `gh pr checkout` left them on `pr<N>` alias from a previous run).
+    # Force-align to PR_HEAD_REF so Step 8 commits + Step 10 push land on the PR branch.
+    CURRENT=$(git branch --show-current 2>/dev/null)
+    if [ -n "$PR_HEAD_REF" ] && [ "$CURRENT" != "$PR_HEAD_REF" ]; then
+        echo "→ Re-aligning local branch: $CURRENT → $PR_HEAD_REF (same SHA $LOCAL_SHA)"
+        git switch "$PR_HEAD_REF" 2>/dev/null \
+            || git switch -c "$PR_HEAD_REF" "$LOCAL_SHA" \
+            || { echo "⛔ Cannot switch to $PR_HEAD_REF — aborting (branch active in another worktree?)"; exit 1; }
+    fi
 else
     # Hard-exit on checkout failure — silent failure leaves git on the caller's branch while
     # $HEAD_REF is set from Step 3b, causing Step 8 commits to land on the wrong branch.
-    gh pr checkout <PR#> || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
+    # `--branch "$PR_HEAD_REF"` forces gh to use the PR's headRefName as the local branch
+    # name — without it, gh CLI v2.93+ falls back to a `pr<N>` alias when name collision
+    # is detected, causing Step 10 `git push HEAD:$HEAD_REF` to create an unrelated remote
+    # branch (root cause of CRITICAL bug in pyDeprecate run 2026-06-13T08:33Z).
+    gh pr checkout <PR#> --branch "$PR_HEAD_REF" \
+        || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
 fi
 ```
 
@@ -528,6 +546,13 @@ fi
 git remote -v | grep '(fetch)' | head -10 # timeout: 3000
 git status                                # confirm we are on HEAD_REF  # timeout: 3000
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)  # timeout: 3000
+# Same-repo rule: for non-fork PRs, local branch name MUST equal PR_HEAD_REF — no aliases ever.
+# gh CLI sometimes silently falls back to `pr<N>` when a same-name local branch exists;
+# `--branch "$PR_HEAD_REF"` in the checkout above prevents this, but assert here as hard gate.
+if [ "$IS_CROSS_REPO" = "false" ] && [ "$CURRENT_BRANCH" != "$PR_HEAD_REF" ]; then
+    echo "⛔ SAME-REPO RULE VIOLATION: on '$CURRENT_BRANCH' but PR headRefName='$PR_HEAD_REF' — branch alias (pr<N>) created instead of using original branch. Aborting to prevent push to wrong branch."
+    exit 1
+fi
 [ "$CURRENT_BRANCH" = "$HEAD_REF" ] || { echo "⛔ checkout did not land on $HEAD_REF (current: $CURRENT_BRANCH) — aborting before Step 8 can commit to wrong branch"; exit 1; }  # timeout: 3000
 ```
 
@@ -672,6 +697,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 
 - **Pre-flight git fetch** — Step 1 always runs `git fetch origin` (unconditional) so all remote tracking refs — including `origin/$BASE_REF` — are current before Step 5 merges. Then pulls current branch if upstream tracking ref exists and remote is ahead. `git pull` conflicts → exit with message to resolve manually — prevents `git merge --continue` with no in-progress merge
 - **Branch safety** — `gh pr checkout <PR#>` always lands on PR's HEAD, never `main`/`master`. Never push to default branch — if PR branch = default branch, abort and surface.
+- **Same-repo branch rule** — for non-fork PRs (`isCrossRepository=false`), local branch name MUST equal `headRefName` at all times. Never create a `pr<N>` alias or any other branch name substitute. Enforced by `--branch "$PR_HEAD_REF"` at checkout + hard assertion post-checkout. Rationale: `git push HEAD:$HEAD_REF` on a `pr<N>` alias creates a new remote branch instead of pushing to the PR head — silent data-loss class bug.
 - **OSS fork support** — `gh pr checkout <PR#>` works same for branches + forks; forks get contributor remote + tracking; plain `git push` targets fork branch automatically.
 - **Merge direction** — `origin/BASE_REF` INTO `HEAD_REF` (not reverse); PR branch = source of truth; maintainer still clicks Merge.
 - **Contribution motivation before code** — provides "whose intent wins" lens; PR body + linked issues reveal constraints invisible in git diff.

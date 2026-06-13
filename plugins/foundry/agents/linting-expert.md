@@ -53,11 +53,14 @@ select = [
   "PGH",  # pygrep-hooks (blanket type:ignore, deprecated typing)
   "LOG",  # logging (% formatting in logger calls → use lazy args)
   "TRY",  # exception handling anti-patterns (TRY003, TRY301, etc.)
+  "C901", # McCabe cyclomatic complexity gate
+  "PLR",  # pylint refactor: too-many-args, too-many-branches, too-many-statements, too-many-returns
 ]
 ignore = [
-  "E501",   # line length (handled by formatter)
-  "S101",   # use of assert (ok in tests)
-  "TRY003", # long messages in Exception — project-specific; enable when ready
+  "E501",    # line length (handled by formatter)
+  "S101",    # use of assert (ok in tests)
+  "TRY003",  # long messages in Exception — project-specific; enable when ready
+  "PLR2004", # magic-value comparison — too noisy on most codebases; enable per-project when ready
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -68,6 +71,15 @@ ignore = [
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12  # cyclomatic; flag functions with >12 independent paths
+
+[tool.ruff.lint.pylint]
+max-args = 12         # PLR0913 counts ALL params (incl. kwargs with defaults) — set high to avoid false positives on funcs with many optional kwargs; required-only ≤7 enforced in review
+max-branches = 12     # PLR0912
+max-statements = 50   # PLR0915
+max-returns = 6       # PLR0911
 ```
 
 ```bash
@@ -90,8 +102,9 @@ Rule enable progression:
 4. **Add carefully**: `S`, `T20` — security + print detection (needs per-file ignores for tests/scripts)
 5. **Add**: `PIE`, `RET`, `PERF`, `FLY`, `FURB` — idiom + performance improvements (mostly auto-fixable)
 6. **Add**: `TC`, `ISC`, `PGH`, `LOG`, `TRY` — import hygiene, implicit concat, logging style, exception anti-patterns
-7. **Consider**: `ANN`, `D` — annotation + docstring enforcement (high noise at first; good for mature codebases)
-8. **Domain-specific**: `NPY` (NumPy), `PD` (pandas), `DJ` (Django), `FAST` (FastAPI) — enable only when relevant
+7. **Add**: `C901`, `PLR` — complexity enforcement; configure `[tool.ruff.lint.mccabe]` + `[tool.ruff.lint.pylint]` thresholds; keep `PLR2004` in ignore (magic-value rule too noisy on most codebases)
+8. **Consider**: `ANN`, `D` — annotation + docstring enforcement (high noise at first; good for mature codebases)
+9. **Domain-specific**: `NPY` (NumPy), `PD` (pandas), `DJ` (Django), `FAST` (FastAPI) — enable only when relevant
 
 Additional notable rule sets ruff covers (no separate tool needed):
 - `A` — shadows built-in names (e.g. `list = ...`)
@@ -100,7 +113,7 @@ Additional notable rule sets ruff covers (no separate tool needed):
 - `EM` — error message string literals (avoid f-strings in `raise`)
 - `FBT` — boolean trap (positional bool params)
 - `G` — logging format (use lazy `%s` args, not f-strings in logger calls)
-- `PL` — PLC/PLE/PLR/PLW rule categories (naming, error, refactor, warning)
+- `PL` — PLC/PLE/PLR/PLW rule categories (naming, error, refactor, warning); key complexity rules: `PLR0911` too-many-returns, `PLR0912` too-many-branches, `PLR0913` too-many-arguments, `PLR0915` too-many-statements — configure limits via `[tool.ruff.lint.pylint]`
 - `SLOT` — missing `__slots__` on classes
 - `ERA` — commented-out code detection
 

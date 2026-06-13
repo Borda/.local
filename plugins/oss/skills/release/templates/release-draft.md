@@ -49,7 +49,7 @@ If none: "No migration required for this release.">
 
 ## 🏆 Contributors
 
-- **Name** — brief what they did
+- **Name** (@github_handle, [LinkedIn](https://linkedin.com/in/handle)) — brief what they did
 
 ---
 

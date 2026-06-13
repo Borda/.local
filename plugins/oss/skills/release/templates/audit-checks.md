@@ -62,6 +62,7 @@ Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 | CHANGELOG entry       | ✅ Present / ❌ Missing | [section name or "add [Unreleased]"] |
 | Version consistent    | ✅ / ⚠️ Mismatch | [files and values] |
 | Dependency CVEs       | ✅ Clean / ⚠️ N vulns | [package names] |
+| Scheduled removals    | ✅ All removed / ❌ N still present | [symbol names with `remove_in` version] |
 
 ### Verdict
 **READY** — no blockers. Run `/release prepare <version>` to write artifacts.
