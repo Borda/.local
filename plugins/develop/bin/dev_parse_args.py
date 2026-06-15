@@ -326,6 +326,17 @@ SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
         (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
         (_spec("str", "repo", "REPO_NAME", ""), "dev-upstream"),
     ],
+    "plan": [
+        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
+        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
+        (_spec("int", "max-depth", "MAX_DEPTH", "3"), None),
+    ],
+    "review": [
+        (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-review-challenge-enabled"),
+        (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-review-semble-enabled"),
+        (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-review-codemap-enabled"),
+    ],
 }
 
 
@@ -402,6 +413,8 @@ def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -
         (target_dir / _per_skill_filename(skill, spec)).write_text(value)
         if legacy is not None:
             (target_dir / legacy).write_text(value)
+    # Write CLEAN_ARGS (flags stripped) to a per-skill file so callers avoid eval
+    (target_dir / f"dev-{skill}-clean-args").write_text(_clean)
     return values
 
 

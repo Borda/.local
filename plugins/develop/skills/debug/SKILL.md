@@ -237,8 +237,7 @@ Present agent's analysis summary before proceeding.
 ```bash
 # Resolve FAILING_TEST_NODE before this block — e.g.:
 # FAILING_TEST_NODE=$(echo "$ARGUMENTS" | grep -oE 'tests?/[^[:space:]]+::test_[^[:space:]]+' | head -1)
-_FOUNDRY_BIN=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/bin 2>/dev/null | head -1)  # timeout: 5000
-[ -z "$_FOUNDRY_BIN" ] && _FOUNDRY_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin"
+_FOUNDRY_BIN=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry-bin 2>/dev/null || ls -td ~/.claude/plugins/cache/*/foundry/*/bin 2>/dev/null | head -1 || echo "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin")  # timeout: 5000
 if [ -z "$FAILING_TEST_NODE" ]; then
     echo "⚠ FAILING_TEST_NODE not resolved — cannot run polluter isolation; surface failing test node ID first"
 elif [ -f "$_FOUNDRY_BIN/find-polluter.py" ]; then
@@ -287,6 +286,8 @@ Evidence for: [signals that support this]
 Evidence against: [anything that contradicts or remains unexplained]
 Confidence: high / medium / low
 ```
+
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **debug** context from the Skill contexts table. Run before presenting hypothesis — any ungrounded premise in the hypothesis produces a fix that addresses the wrong mechanism.
 
 **Gate**: present hypothesis to user, wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
 

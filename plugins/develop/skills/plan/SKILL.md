@@ -19,7 +19,7 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 
 <workflow>
 
-<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
+<!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (resolved via dev_shared_resolve.py and explicitly Read in workflow) -->
 
 ## Agent Resolution
 
@@ -52,16 +52,13 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 PLAN_NS="${TMPDIR:-/tmp}/dev-plan-$$"
 mkdir -p "$PLAN_NS"
 echo "$PLAN_NS" > "${TMPDIR:-/tmp}/dev-plan-ns-current"  # downstream blocks recover namespace
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
-    "$ARGUMENTS" \
-    --neg-bool no-challenge CHALLENGE_ENABLED true \
-    --bool semble SEMBLE_ENABLED false \
-    --codemap CODEMAP_RAW auto \
-    --int max-depth MAX_DEPTH 3)"
-echo "$CHALLENGE_ENABLED" > "$PLAN_NS/challenge-enabled"
-echo "$CODEMAP_RAW"       > "$PLAN_NS/codemap-raw"
-echo "$SEMBLE_ENABLED"    > "$PLAN_NS/semble-enabled"
-echo "$MAX_DEPTH"         > "$PLAN_NS/max-depth"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" --skill plan --write-files "$ARGUMENTS"
+# Values written to ${TMPDIR:-/tmp}/dev-plan-<flag> (and legacy paths — see SKILL_SPECS["plan"])
+# Copy to namespaced paths for this invocation
+cp "${TMPDIR:-/tmp}/dev-challenge-enabled"  "$PLAN_NS/challenge-enabled" 2>/dev/null || echo "true"  > "$PLAN_NS/challenge-enabled"
+cp "${TMPDIR:-/tmp}/dev-codemap-raw"        "$PLAN_NS/codemap-raw"       2>/dev/null || echo "auto"  > "$PLAN_NS/codemap-raw"
+cp "${TMPDIR:-/tmp}/dev-semble-enabled"     "$PLAN_NS/semble-enabled"    2>/dev/null || echo "false" > "$PLAN_NS/semble-enabled"
+cp "${TMPDIR:-/tmp}/dev-plan-max-depth"     "$PLAN_NS/max-depth"         2>/dev/null || echo "3"     > "$PLAN_NS/max-depth"
 ```
 
 Downstream blocks recover namespace then read back, e.g. `PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null); CODEMAP_ENABLED=$(cat "$PLAN_NS/codemap-enabled" 2>/dev/null || echo false)`.

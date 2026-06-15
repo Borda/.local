@@ -17,7 +17,8 @@ if command -v scan-query >/dev/null 2>&1; then
   # Strip any chars outside safe project-name set before path interpolation.
   PROJ=$(echo "$PROJ" | tr -cd 'a-zA-Z0-9._-')
   [ -z "$PROJ" ] && PROJ="default"
-  INDEX=".cache/scan/${PROJ}.json"
+  _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+  INDEX="${_IDX}/${PROJ}.json"
   if [ -f "$INDEX" ]; then
     echo "true"
   elif [ "$MODE" = "strict" ]; then

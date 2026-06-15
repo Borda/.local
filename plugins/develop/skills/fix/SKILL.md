@@ -129,10 +129,10 @@ Compute run directory and create health sentinel:
 
 ```bash
 # timeout: 5000
-mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py" --sentinel fix-team-check)
-TS="${_run[0]}"
-FIX_TEAM_DIR="${_run[1]}"
-RUN_DIR="${_run[1]}"
+_run_out=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py" --sentinel fix-team-check)
+TS=$(echo "$_run_out" | head -1)
+RUN_DIR=$(echo "$_run_out" | tail -1)
+FIX_TEAM_DIR="$RUN_DIR"
 RUN_DIR_LITERAL="$RUN_DIR"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-fix-team-ts
 echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-fix-run-dir
@@ -220,6 +220,8 @@ If root cause not definitively established after analysis, surface assumptions b
 >
 > 1. [assumption about root cause]
 > 2. [assumption about affected scope] -> Correct me now or I'll proceed with these.
+
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **fix** context from the Skill contexts table.
 
 **Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
 

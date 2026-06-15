@@ -22,7 +22,7 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
   - Omitted: review current git diff (`git diff HEAD` — staged + unstaged vs HEAD)
   - **Scope**: Python source only. Non-Python file (YAML, JSON, shell script, etc.) → state out of scope, suggest appropriate tool. No findings.
   - `--no-challenge`: skip adversarial review (challenger runs by default)
-  - `--codemap`: enable structural context from codemap index (off by default)
+  - `--codemap`: strict mode — stop and report if codemap not installed (on by default when installed; use `--no-codemap` to opt out)
   - `--semble`: enable semble semantic search companion (off by default)
 
 **PR#/filename disambiguation gate** (execute BEFORE Step 1): tighten classification — valid PR# is positive integer with no extension and no existing file at that path. Filenames that look like numbers (e.g. `42.py`) must NOT trigger PR mode.
@@ -56,7 +56,7 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 <constants>
 
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
-CODEMAP_ENABLED=false   # auto-detect: true if codemap installed + index found; --codemap = strict; --no-codemap = always false
+CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
 SEMBLE_ENABLED=false    # set to true via --semble
 
 </constants>
@@ -94,14 +94,13 @@ After Step 1 completes (scope and `TARGET` known), create these tasks **before a
 Strip flags from `$ARGUMENTS` before using as path:
 
 ```bash
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
-    "$ARGUMENTS" \
-    --neg-bool no-challenge CHALLENGE_ENABLED true \
-    --bool semble SEMBLE_ENABLED false \
-    --codemap CODEMAP_RAW auto)"
-REVIEW_ARGS="$CLEAN_ARGS"
-echo "$CHALLENGE_ENABLED" > ${TMPDIR:-/tmp}/dev-review-challenge-enabled
-echo "$SEMBLE_ENABLED"    > ${TMPDIR:-/tmp}/dev-review-semble-enabled
+python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" --skill review --write-files "$ARGUMENTS"
+# Values written to: ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap} (per-skill) + legacy paths
+# CLEAN_ARGS (flags stripped) written to ${TMPDIR:-/tmp}/dev-review-clean-args
+REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")
+CHALLENGE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-enabled" 2>/dev/null || echo "true")
+SEMBLE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-semble-enabled" 2>/dev/null || echo "false")
+CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || echo "auto")
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -310,6 +309,15 @@ Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts with resol
 **Pre-expansion required**: `$REVIEW_CHECKLIST` must be substituted with literal resolved value before inserting into any Agent spawn prompt string — same as `$RUN_DIR_LITERAL`. Never pass bare variable name `$REVIEW_CHECKLIST` inside quoted Agent prompt; subshell won't expand it.
 
 **Visible-degradation rule** — `$REVIEW_CHECKLIST` empty → print `⚠ REVIEW_CHECKLIST is empty — review scope undefined` at the TOP of the review output (before Findings), and consolidator prompt (Step 5) **must** insert into the report header (YAML `---` block or first line before Findings): "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides gap from reviewers, makes severity drift invisible.
+
+**Finding evidence standard — applies to every agent, every finding:**
+
+- Every finding must cite specific `file:line` from the diff as primary evidence — "I know this typically causes issues" without a diff citation is not a valid finding
+- Training knowledge and memory are never sufficient evidence — read the actual code in the diff
+- Claims referencing external standards (OWASP, PEP, language spec, CVE) must cite the specific authoritative document — official spec, CVE entry, PEP text; a blog post or Stack Overflow answer referencing the standard is Tier 2 only
+- Tier 2 sources (blog, tutorial, forum, memory) require ≥3 genuinely independent sources OR experimental validation before the claim becomes a finding; independent means different authors, different primary research with distinct origins — N posts all citing the same original = 1 source
+- Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) that confirms the claim, treat as Tier 1 verified; if multiple Tier 2 sources share one origin, merge them into one; count distinct origins only
+- When only Tier 2 available, distinct-origin count < 3, and no experiment run: downgrade finding to LOW or drop it; never raise MEDIUM/HIGH/CRITICAL on Tier 2 alone
 
 Launch agents simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional). Every agent prompt must end with:
 

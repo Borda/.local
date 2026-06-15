@@ -250,7 +250,9 @@ Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply usin
 
 Present analysis summary before proceeding.
 
-## Step 1b: Source Verification (optional — when using external APIs or version-sensitive libraries)
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **feature** context from the Skill contexts table.
+
+### Source Verification (optional — when using external APIs or version-sensitive libraries)
 
 Skip if feature calls no external library APIs — no new framework features, no third-party SDK methods, no stdlib functions changed in recent Python version.
 

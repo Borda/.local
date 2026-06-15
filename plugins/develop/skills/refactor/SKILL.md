@@ -155,6 +155,8 @@ Spawn **foundry:sw-engineer** agent to analyze code and identify:
 - Dependencies and coupling between modules
 - **Complexity smell**: directory or cross-module scope — flag it; consider team mode
 
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **refactor** context from the Skill contexts table.
+
 **Goal classification gate**: after sw-engineer analysis completes, scan goal text for mixed signals — if goal contains both refactor keywords (rename, extract, restructure, decouple, consolidate) AND feature keywords (add, implement, new, support), invoke `AskUserQuestion`: "Goal mixes refactoring and feature work — split into two runs." · (a) Abort — run refactor first, then feature · (b) Continue as refactor-only — treat feature additions as out of scope.
 
 **Scope gate**: if target spans 3+ modules OR 5+ files OR goal mentions any public-API rename — flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
