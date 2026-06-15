@@ -1,6 +1,6 @@
 ---
 name: kaggle
-description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following jirka's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells. Writes output to .experiments/kaggle/<name>.py."
+description: "Generate a Kaggle competition notebook as a Jupytext `# %%` Python script following the user's established ML research style: PTL for DNN training, best-fit tool selection, EDA→Baseline→Train→Inference pipeline with per-stage lens cells. Writes output to .experiments/kaggle/<name>.py."
 argument-hint: "<competition-name> [<url-or-description>] [--type classification|regression|segmentation|detection|tabular] [--eda-only] [--inference-only] [--offline-setup] [--resume <existing.py>]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, WebSearch, AskUserQuestion, TaskCreate, TaskUpdate, TaskList
 disable-model-invocation: true
@@ -11,7 +11,7 @@ effort: high
 
 Generate a Kaggle competition notebook script in Jupytext `# %%` format.
 
-Follows jirka's ML research style distilled from past notebooks:
+Follows the user's ML research style distilled from past notebooks:
 - **PTL always for DNN training** (PyTorch Lightning + torchmetrics) — even simple baselines
 - **Tool agnostic** — pick best-fit library for the problem; use PTL when training loop needed
 - **Stages with lenses** — each major stage includes a quick sanity check cell (show one batch, print shapes, verify submission format)
@@ -266,6 +266,6 @@ On (c): re-enter Step 2 with user-specified changes.
 - **Frozen packages pattern**: Kaggle offline competition pattern — packages pre-downloaded as input dataset; `! pip install --no-index --find-links frozen_packages/` with fallback `|| pip install` for online runs
 - **Inference notebook pattern**: each training notebook saves checkpoints to `logs/`; a companion notebook loads from checkpoint for inference — the script includes both inline + load-from-ckpt cells so the same file works both ways
 - **Style guide regeneration**: if `.temp/kaggle-style-distill.md` missing at Step 1, the style rules embedded in Step 3's generator prompt are the authoritative source — no style guide file required
-- **Blog context**: author blogs at https://medium.com/@jborovec — competition notebooks are meant to be shared publicly as learning resources; clarity and educational value matter alongside score
+- **Sharing context**: competition notebooks are meant to be shared publicly as learning resources; clarity and educational value matter alongside score
 
 </notes>

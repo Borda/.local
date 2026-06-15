@@ -25,7 +25,7 @@ NOT for local file review or current git diff — use `/develop:review` (require
   - `--reply`: spawn oss:shepherd to draft contributor-facing PR comment. Path ending in `.md` → spawn oss:shepherd from that report, skip new review.
   - **Scope**: Python source only. Non-Python file → state out of scope, suggest tool, no findings.
   - **Local files**: use `/develop:review` (requires `develop` plugin) for local files or current git diff.
-  - `--codemap`: enable structural context from codemap index (off by default; requires codemap plugin installed)
+  - `--codemap`: strict mode — stop and report if codemap not installed (on by default when installed; use `--no-codemap` to opt out; requires codemap plugin installed)
   - `--semble`: enable semble semantic search companion (off by default; requires semble MCP server configured)
 - **--plan handoff not supported** — skill does not accept plan-mode output from `/develop:plan` (requires `develop` plugin).
 
@@ -34,7 +34,7 @@ NOT for local file review or current git diff — use `/develop:review` (require
 <constants>
 
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
-CODEMAP_ENABLED=false   # set to true via --codemap
+CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
 SEMBLE_ENABLED=false    # set to true via --semble
 <!-- Background agent health monitoring (CLAUDE.md §6) — applies to Step 3 parallel agent spawns -->
 MONITOR_INTERVAL=300   # 5 minutes between polls
@@ -95,28 +95,35 @@ Parse `$ARGUMENTS` flags (applied directly — no subprocess):
 | --- | --- | --- | --- |
 | `--reply` | `REPLY_MODE` | `true` | `false` |
 | `--no-challenge` | `CHALLENGE_ENABLED` | `false` | `true` |
-| `--codemap` | `CODEMAP_ENABLED` | `true` | `false` |
+| `--no-codemap` | `CODEMAP_FORCE_OFF` | `true` | `false` |
+| `--codemap` | `CODEMAP_STRICT` | `true` | `false` |
 | `--semble` | `SEMBLE_ENABLED` | `true` | `false` |
 
 `CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed, leading whitespace stripped, leading `#` stripped.
 
 ```bash
-# Preflight: fail early if requested tool not available
-if [ "$CODEMAP_ENABLED" = "true" ]; then
+# Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)  # timeout: 5000
+_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
+[ -z "$_PROJ" ] && _PROJ="default"
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if [ "$CODEMAP_FORCE_OFF" = "true" ]; then
+    CODEMAP_ENABLED=false
+elif command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${_PROJ}.json" ]; then
+    CODEMAP_ENABLED=true
+elif [ "$CODEMAP_STRICT" = "true" ]; then
     if ! command -v scan-query >/dev/null 2>&1; then
-        printf "! --codemap requested but codemap plugin not installed.\n  Install: claude plugin install codemap@borda-ai-rig\n"; exit 1
+        printf "! --codemap passed but codemap plugin not installed.\n  Install: claude plugin install codemap@borda-ai-rig\n"; exit 1
+    else
+        printf "! --codemap passed but no index found for project '%s'.\n  Build index: /codemap:scan-codebase\n" "$_PROJ"; exit 1
     fi
-    _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename)  # timeout: 3000
-    _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-    if [ ! -f "${_IDX}/${_PROJ}.json" ]; then
-        printf "! --codemap requested but no index found for project '%s'.\n  Build index: /codemap:scan-codebase\n" "$_PROJ"; exit 1
-    fi
+else
+    CODEMAP_ENABLED=false
 fi
 ```
 
 If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 DIRECT_PATH_MODE=false
@@ -324,6 +331,15 @@ Check Codex availability:
 ```bash
 claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=1 && echo "codex (openai-codex) available" || { CODEX_AVAILABLE=0; echo "⚠ codex (openai-codex) not found — skipping co-review"; } # timeout: 15000
 ```
+
+**Finding evidence standard — applies to every agent, every finding:**
+
+- Every finding must cite specific `file:line` from the diff as primary evidence — "I know this typically causes issues" without a diff citation is not a valid finding
+- Training knowledge and memory are never sufficient evidence — read the actual code in the diff
+- Claims referencing external standards (OWASP, PEP, language spec, CVE) must cite the specific authoritative document — official spec, CVE entry, PEP text; a blog post or Stack Overflow answer referencing the standard is Tier 2 only
+- Tier 2 sources (blog, tutorial, forum, memory) require ≥3 genuinely independent sources OR experimental validation before the claim becomes a finding; independent means different authors, different primary research with distinct origins — N posts all citing the same original = 1 source
+- Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) that confirms the claim, treat as Tier 1 verified; if multiple Tier 2 sources share one origin, merge them into one; count distinct origins only
+- When only Tier 2 available, distinct-origin count < 3, and no experiment run: downgrade finding to LOW or drop it; never raise MEDIUM/HIGH/CRITICAL on Tier 2 alone
 
 Every agent prompt must end with:
 

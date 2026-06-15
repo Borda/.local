@@ -1,6 +1,6 @@
 ---
 name: repo-warden
-description: "Scores an assigned group of vitality axes from a pre-fetched DATA_FILE using the vitality-scoring.md rubric; writes partial scores JSON for assembly by /oss:analyse (vitality mode). TRIGGER when: spawned 3× in parallel by /oss:analyse (vitality mode) to score axis groups A, B, or C. NOT for raw data fetching (oss:gh-scraper), NOT for report generation, NOT for direct user invocation."
+description: "Internal pipeline agent — scores an assigned group of vitality axes from a pre-fetched DATA_FILE using the vitality-scoring.md rubric; writes partial scores JSON for assembly by /oss:analyse (vitality mode). TRIGGER when: spawned 3× in parallel by /oss:analyse (vitality mode) to score axis groups A, B, or C. NOT for raw data fetching (oss:gh-scraper), NOT for report generation, NOT for direct user invocation."
 tools: Read, Write, Bash
 model: sonnet
 effort: medium

@@ -431,18 +431,6 @@ Next: fix protocol, re-run /research:judge <path>      [NEEDS-REVISION or BLOCKE
 
 </workflow>
 
-<calibration>
-
-Calibratable: J1–J2 sub-steps only — synthetic result file with known verdict (APPROVED/NEEDS-REVISION/BLOCKED) and injected finding counts; score whether judge correctly identifies verdict and extracts counts. Full J3 validation execution loop excluded — requires live git state and executable metric commands.
-
-See the domain table entry for `/research:judge`. Path resolution:
-```bash
-_FOUNDRY_CALIBRATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skills/calibrate/modes 2>/dev/null | head -1); [ -z "$_FOUNDRY_CALIBRATE" ] && _FOUNDRY_CALIBRATE="plugins/foundry/skills/calibrate/modes"
-# See: $_FOUNDRY_CALIBRATE/skills.md
-```
-
-</calibration>
-
 <notes>
 
 - Judge read-only — never modifies code, commits, or writes to `.experiments/state/`
@@ -451,5 +439,6 @@ _FOUNDRY_CALIBRATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/skill
 - Verdict deterministic (finding counts + methodology_rating); not inferred from prose
 - Re-run judge after editing `program.md` to confirm fixes
 - Judge run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (per `.claude/rules/artifact-lifecycle.md` TTL policy — no `result.jsonl` = cleanup skipped); remove manually (`rm -rf .experiments/judge-*/`)
+- **Calibration scope**: J1–J2 sub-steps only — synthetic result file with known verdict (APPROVED/NEEDS-REVISION/BLOCKED) and injected finding counts; score whether judge correctly identifies verdict and extracts counts. Full J3 validation execution loop excluded — requires live git state and executable metric commands. See `/foundry:calibrate` skills mode domain table for path resolution.
 
 </notes>

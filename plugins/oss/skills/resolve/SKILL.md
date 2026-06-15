@@ -2,6 +2,7 @@
 name: resolve
 description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for reply drafting to /oss:analyse findings (use /oss:analyse --reply). NOT for code diff review of PR changes (use /oss:review). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin)."
 argument-hint: "<PR number or URL> [report] | report | <review comment text>"
+when_to_use: "TRIGGER when: PR is ready to close and has open comments, conflicts, or review findings to address; user says 'close this PR', 'resolve comments on PR #N', or 'implement review findings'. SKIP: reply-drafting to /oss:analyse findings (use /oss:analyse --reply); local bug without a PR (use /develop:fix)."
 disable-model-invocation: true
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
@@ -32,6 +33,8 @@ Bare comment text → skip to Codex dispatch (Step 12).
   - `42 report` or `<URL> report` → **pr + report mode**: aggregate live GitHub comments + review report, deduplicated in one pass
   - Bare review comment text → **comment dispatch mode** (jumps to Step 12)
 - **`--no-challenge`**: optional — skip challenge gate per item; all selected items treated as `VALID`
+- **`--no-codemap`**: optional — disable codemap structural context (on by default when codemap installed + index present)
+- **`--codemap`**: optional — strict mode: stop and report if codemap not installed or index missing
 - **`--agent <name>`**: optional — use `<name>` agent for implementation instead of Codex; must be an implementation agent; bare name auto-prefixed with `foundry:` if no plugin prefix detected (e.g. `--agent sw-engineer` → `foundry:sw-engineer`; `--agent linting-expert` → `foundry:linting-expert`; `--agent doc-scribe` → `foundry:doc-scribe`); explicit prefix also accepted (`--agent foundry:sw-engineer`); see routing table in `action-item-dispatch.md`. **`--agent` also applies to `INTEL_AGENT` (Step 3b thread intelligence)** — explicit `--agent` overrides label/title routing for the thread-intelligence subagent as well, so a docs-focused PR routed via `--agent foundry:doc-scribe` uses doc-scribe for both classification and implementation.
 
 NOT-for additions (scope guards):
@@ -97,6 +100,27 @@ GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true"
 
 gh missing or not authenticated → script exits 1 (error printed above; eval skipped when exit code non-zero).
 
+```bash
+# Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)  # timeout: 5000
+_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
+[ -z "$_PROJ" ] && _PROJ="default"
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if [ "$CODEMAP_FORCE_OFF" = "true" ]; then
+    CODEMAP_ENABLED=false
+elif command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${_PROJ}.json" ]; then
+    CODEMAP_ENABLED=true
+elif [ "$CODEMAP_STRICT" = "true" ]; then
+    if ! command -v scan-query >/dev/null 2>&1; then
+        printf "! --codemap passed but codemap plugin not installed.\n  Install: claude plugin install codemap@borda-ai-rig\n"; exit 1
+    else
+        printf "! --codemap passed but no index found for project '%s'.\n  Build index: /codemap:scan-codebase\n" "$_PROJ"; exit 1
+    fi
+else
+    CODEMAP_ENABLED=false
+fi
+echo "$CODEMAP_ENABLED" > "${TMPDIR:-/tmp}/resolve-codemap-enabled"
+```
+
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
 2. Complex/multi-file → skip with: `⚠ codex not found — skipping item #<id>. Install: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`
@@ -129,6 +153,11 @@ Parse $ARGUMENTS:
 ```bash
 [ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" ] || { echo "Error: parse-resolve-args.py not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
+# Extract codemap flags before passing to parser (parse-resolve-args.py does not handle them)  # timeout: 3000
+CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_FORCE_OFF=true
+[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_STRICT=true
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--no-codemap//g; s/ --codemap / /g' | xargs)
 # Defence-in-depth: capture parser output to a temp file and validate that every
 # line is a plain VAR=value assignment (no shell metacharacters that could trigger
 # command substitution, pipelines, or backgrounding) before sourcing. parse-resolve-args.py
@@ -146,7 +175,7 @@ fi
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
 ```
 
-**Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`.
+**Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent, --codemap, --no-codemap}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`, `--codemap`, `--no-codemap`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode
 - `MODE="report"` → find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → stop with: "No review report found in .reports/review/ — run /review \<PR#> first, or provide a PR number"; extract PR# from header if present; no PR# in header → add branch safety check before Step 8 — `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — report mode without PR# must not operate on default branch; check out a feature branch first"; exit 1; }`
@@ -594,6 +623,19 @@ fi
 ```
 
 If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
+
+**Structural context (codemap — if `CODEMAP_ENABLED=true`)**: before reading action-item-dispatch.md, query blast radius of modules affected by selected items:
+
+```bash
+CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled" 2>/dev/null || echo false)  # timeout: 3000
+if [ "$CODEMAP_ENABLED" = "true" ]; then
+    _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+    _PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
+    scan-query rdeps --top 10 2>/dev/null || true  # timeout: 5000
+fi
+```
+
+If codemap output returned: prepend `## Structural Context (codemap)` block to each implementation agent prompt in action-item-dispatch.md — blast radius, top callers, coupling pairs.
 
 <!-- Step 8 defined in action-item-dispatch.md — see that file for phase/sub-step detail -->
 

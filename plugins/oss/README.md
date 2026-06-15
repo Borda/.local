@@ -355,15 +355,15 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 
 **Modes and flags:**
 
-| Mode / Flag   | What it produces                                                                            |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| `notes`       | Release notes (`PUBLIC-NOTES.md`); add flags for extra outputs                              |
-| `--changelog` | CHANGELOG.md entry (no shepherd review)                                                     |
-| `--summary`   | Internal summary saved to `.temp/`                                                          |
-| `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                    |
-| `prepare`     | Full pipeline: audit → all four artifacts + `demo.py` in `releases/<version>/`              |
-| `audit`       | Readiness checklist: tests green, changelog present, version bumped, no uncommitted changes |
-| `demo`        | Story-telling jupytext notebook (`demo.py`) highlighting most significant contributions     |
+| Mode / Flag   | What it produces                                                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `notes`       | Release notes (`PUBLIC-NOTES.md`); add flags for extra outputs                                                                            |
+| `--changelog` | CHANGELOG.md entry (no shepherd review)                                                                                                   |
+| `--summary`   | Internal summary saved to `.temp/`                                                                                                        |
+| `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                                                                  |
+| `prepare`     | Full pipeline: audit → all four artifacts + `demo.py` in `releases/<version>/`                                                            |
+| `audit`       | Readiness checklist: tests green, changelog present, version bumped, no uncommitted changes, doc proportionality for newly added features |
+| `demo`        | Story-telling jupytext notebook (`demo.py`) highlighting most significant contributions                                                   |
 
 **What each mode does:**
 
