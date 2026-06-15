@@ -215,9 +215,11 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
    MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer 2>/dev/null)"  # timeout: 5000
    [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
-   # Sets LAUNCH_AT + SENTINEL; use $SENTINEL in $MONITOR_INTERVAL-sec find -newer poll on ${TMPDIR:-/tmp} for manage-schema-*.md files.
+   # Persist SENTINEL and LAUNCH_AT across Bash() call boundaries
+   echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-sentinel"
+   echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-launch-at"
    ```
-   Every `$MONITOR_INTERVAL` seconds: `find "${TMPDIR:-/tmp}" -newer "$SENTINEL" -name "manage-schema-*.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
+   Every `$MONITOR_INTERVAL` seconds: re-read sentinel path with `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-web-explorer-sentinel" 2>/dev/null)`; then `find "${TMPDIR:-/tmp}" -newer "$SENTINEL" -name "manage-schema-*.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `effort`, `initialPrompt`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `isolation`, `color`), current model shorthands, new fields
    - Note new fields worth including. Adjust template to reflect current schema. If new field broadly useful for agent's role (e.g. `maxTurns` for long-running agents), include with sensible default and inline comment.
@@ -256,8 +258,10 @@ Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confi
 MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-agent 2>/dev/null)"  # timeout: 5000
 [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
+echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-agent-sentinel"
+echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-agent-launch-at"
 ```
-Poll per `<constants>` interval — same pattern as first instance above; adjust find path/name glob to match this agent's output files.
+Poll per `<constants>` interval — re-read: `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-sw-engineer-agent-sentinel" 2>/dev/null)`; adjust find path/name glob to match this agent's output files.
 
 **CRITICAL — worktree isolation copy**: `foundry:sw-engineer` runs with `isolation: worktree` — scaffolded file lands in a temporary worktree, not the main tree. After agent completes: (1) read the worktree path from the agent result (returned in `worktree` field or as part of the result message); (2) run: `cp <worktree-path>/.claude/agents/<name>.md .claude/agents/<name>.md` (substitute actual paths); (3) proceed with Steps 5–9 on the main-tree copy. Without this step, Steps 5–9 Globs find nothing.
 
@@ -277,8 +281,10 @@ Poll per `<constants>` interval — same pattern as first instance above; adjust
    MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
    eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer-skill 2>/dev/null)"  # timeout: 5000
    [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
+   echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-skill-sentinel"
+   echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-skill-launch-at"
    ```
-   Poll per `<constants>` interval — same pattern as first instance above; adjust find path/name glob to match this agent's output files.
+   Poll per `<constants>` interval — re-read: `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-web-explorer-skill-sentinel" 2>/dev/null)`; adjust find path/name glob to match this agent's output files.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
@@ -311,8 +317,10 @@ Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,
 MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-skill 2>/dev/null)"  # timeout: 5000
 [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
+echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-skill-sentinel"
+echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-skill-launch-at"
 ```
-Poll per `<constants>` interval — same pattern as first instance above; adjust find path/name glob to match this agent's output files.
+Poll per `<constants>` interval — re-read: `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-sw-engineer-skill-sentinel" 2>/dev/null)`; adjust find path/name glob to match this agent's output files.
 
 ### Mode: Update Agent (rename)
 

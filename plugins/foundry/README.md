@@ -21,6 +21,7 @@ ______________________________________________________________________
   - [`/foundry:manage`](#foundrymanage)
   - [`/foundry:brainstorm`](#foundrybrainstorm)
   - [`/foundry:investigate`](#foundryinvestigate)
+  - [`/foundry:profile`](#foundryprofile)
   - [`/foundry:distill`](#foundrydistill)
   - [`/foundry:session`](#foundrysession)
   - [`/foundry:create`](#foundrycreate)
@@ -332,6 +333,27 @@ Workflow: parse symptom -> gather signals in parallel (tool versions, PATH, rece
 Output always includes: confirmed root cause (or narrowed suspects), key evidence, what was ruled out, and a single recommended next action.
 
 **Auto-invokes when (MAYBE):** unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, behavior inconsistent with config; "not working but config looks right", "hook not triggering", "why isn't X running".
+
+______________________________________________________________________
+
+### `/foundry:profile`
+
+Bucket session clock time from existing `~/.claude/logs/{timings,invocations}.jsonl` into local-tool, agent-spawn, Skill, AskUserQuestion idle, and main-loop reasoning residual. Pure log read — no instrumentation, no LLM calls, no skill edits.
+
+```text
+/foundry:profile                          # last 24h, top 5 slowest calls
+/foundry:profile --since 7d               # last 7 days
+/foundry:profile --session-id 9c1bded7    # drill one session
+/foundry:profile --top-n 20               # 20 longest single calls
+```
+
+**What it covers**: per-session breakdown (local% / agent% / skill% / reasoning% / idle), per-skill rollup (runs, total, mean, median, p90), top-N longest single calls, headline split aggregated over the window.
+
+**Not for**: token or cost accounting (`model` field is null in current logs); per-line Python perf (use `foundry:perf-optimizer`); known failure diagnosis (use `/foundry:investigate`).
+
+Reads the JSONL logs the foundry `task-log.js` hook already writes — answers "where did wall clock go in `/oss:resolve`?" and similar questions. Background agents (`run_in_background=true`) whose `duration_ms` is the spawn-only false-zero are recovered by joining the matching `started→completed` pair in `invocations.jsonl`.
+
+**Auto-invokes when (MAYBE):** user asks where wall-clock time goes, why a skill is slow, what dominates session runtime; "where does time go", "why so slow", "profile last session", "clock breakdown", "session timing".
 
 ______________________________________________________________________
 

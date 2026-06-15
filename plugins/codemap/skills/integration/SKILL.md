@@ -4,7 +4,7 @@ description: "Manage codemap integration — 'check' audits installation health 
 argument-hint: "check | init [--approve]  # --approve: non-interactive; auto-applies High+Medium recs for files under $CLAUDE_PLUGIN_ROOT and installs post-commit hook"
 effort: medium
 when_to_use: "After first install (init) or when checking health of codemap integration across installed skills/agents."
-allowed-tools: Read, Write, Edit, Bash, Glob, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Skill, Agent, AskUserQuestion
 model: sonnet
 ---
 

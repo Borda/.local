@@ -14,6 +14,37 @@ Every claim, finding, URL, or stated fact — read source, run command, check fi
 
 **When evidence inaccessible** — state `unable to verify: [reason]` explicitly; never substitute training knowledge or inference for unread source.
 
+**Design premises — gate fires at design entry, not post-delivery**
+
+Every assumption, hypothesis, constraint claim, or stated fact used as a pillar for a design or implementation decision must be grounded in evidence read now. This gate fires when the premise first enters the design — not at delivery. A false premise caught before the first line is written costs nothing; caught after layers of implementation it may make the entire design infeasible.
+
+**Scope — any of:**
+- Technical constraints: "X cannot do Y", "not supported by", "requires workaround"
+- Feasibility assumptions: "this approach will work because", "X is fast/reliable enough"
+- Recalled facts from memory or training: "I know that X does Y", "typically Z", "this library usually"
+- Behavioral assumptions: "this function returns", "this API expects", "this version changed"
+
+**Rules:**
+- Memory and training knowledge are **never** evidence — not for constraints, not for behavior, not for API shape; read the source
+- Provenance question first: "Where is this documented?" — no answer = unverified = no design built on it
+- Layers of implementation bury false premises; the only reliable catch point is before any layer exists
+
+**Evidence authority — not all sources are equal**
+
+Tier 1 — Authoritative (sufficient alone): official documentation (versioned), source code read from disk, official release notes / changelogs, specification or RFC from governing body, test suite output from this session.
+
+Tier 2 — Weak (requires ≥3 independent sources OR experimental validation): blog posts, tutorials, Stack Overflow, forum posts, social media, third-party summaries, training knowledge. When only Tier 2 available: find ≥3 genuinely independent corroborating sources, OR run a minimal experiment that empirically confirms or refutes the premise. Document which path was taken.
+
+**Independence requirement**: sources are independent only when they derive from different authors and different primary research — not when they cite each other or all trace back to a common origin. N posts all referencing the same blog post = 1 source, not N. Count unique origin nodes, not surface-level citations.
+
+**Citation tracing — mandatory before counting sources**:
+
+1. For each Tier 2 source: follow its citations and references one level deep
+2. Map each source to its origin: `source → cites → origin`
+3. Singleton detection: if ≥2 sources share the same origin → merge them into one; count distinct origins only
+4. Tier upgrade: if tracing reveals a Tier 1 source (official doc, spec, changelog) that the Tier 2 source cited but wasn't found directly — read that Tier 1 source; if it confirms the claim, the premise is now Tier 1 verified (sufficient alone)
+5. If after tracing, distinct-origin count < 3 and no Tier 1 found → require experimental validation
+
 ## Confidence Block (required on all analysis tasks)
 
 Every analysis agent **must** end with:

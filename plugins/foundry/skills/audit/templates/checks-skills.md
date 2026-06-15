@@ -341,13 +341,13 @@ For each skill with one or more cross-plugin dispatches, read skill file and sea
 - Sentence containing cross-plugin agent name AND word from `{fallback, not installed, substitute, general-purpose, unavailable}` within 5 lines of each other
 - Conditional dispatch block: `if not installed` or `plugin list.*grep.*<plugin>` followed by alternative
 
-No fallback found → **[high] 28a**: `<plugin>/<skill>: dispatches <cross-plugin-agent> with no fallback for missing plugin`
+No fallback found → **[high] Check 28a**: `<plugin>/<skill>: dispatches <cross-plugin-agent> with no fallback for missing plugin`
 
 **Step 4 — Completeness check:**
 
 For each skill where fallback section exists: verify every cross-plugin agent dispatched by that skill is named within fallback block (bare name OR fully-qualified `plugin:name` form). Agent covered when name appears in fallback block.
 
-Partially covered → **[medium] 28b**: `<plugin>/<skill>: fallback section present but does not cover <agent>`
+Partially covered → **[medium] Check 28b**: `<plugin>/<skill>: fallback section present but does not cover <agent>`
 
 **Report only** — fixing requires adding Agent Resolution section with fallback substitutes for each cross-plugin dependency; pattern in `develop:plan` (Agent Resolution table with `foundry agent | Fallback | Model | Role description prefix`) is reference implementation.
 
@@ -843,7 +843,7 @@ Auto-fix: run `/distill lessons` or extract to `modes/` + replace inline block w
 
 Full-spectrum detection of duplicate or near-duplicate fenced code blocks across all .md files (SKILL.md, agents, rules, templates, modes) — any language (bash, python, sh, perl, ruby, js, etc.). Produces NxN pairwise similarity matrix to surface extraction candidates: 33a within-file (same block 3+ times — bin/ script or helper function candidate); 33b cross-file NxN (same block in 3+ .md files — shared bin/ script candidate).
 
-**33a — Within-file repetition**: delegate to Phase A foundry:curator (has full file context). Curator prompt must include:
+**Check 33a — Within-file repetition**: delegate to Phase A foundry:curator (has full file context). Curator prompt must include:
 
 > "Extract every fenced code block (any language marker — ` ```bash `, ` ```python `, ` ```sh `, ` ```perl `, ` ```ruby `, ` ```js `, etc.) from this file. For each pair of blocks, compute normalized similarity: strip comments → normalize variable names to `<VAR>` → normalize string literals to `<STR>` → compare structure. Report any pair with similarity ≥ 0.8 that appears 3+ times (within this file) as a 33a finding. For each candidate: block language, purpose, occurrence count, similarity score, what differs between instances, and suggested extraction (bash function / `bin/<name>.sh` / `bin/<name>.py`). Context saving estimate: (block_lines − 1) × occurrence_count. Skip: blocks marked `# audit-skip: resilience-replication` (first line of block) or prose annotation matching 'intentional resilience replication'."
 
@@ -970,12 +970,12 @@ done  # timeout: 5000
 **Severity**: high — background agents can silently time out with no user notification; lost work and false-progress indicators result.
 Fix: add CLAUDE.md §6 sentinel + poll protocol immediately after every `Agent(..., run_in_background=True)` spawn call.
 
-## Check 41 — Shell variable persistence across Bash calls
+## Check 43 — Shell variable persistence across Bash calls
 
 Variables assigned in one `\`\`\`bash` block are NOT available in later bash blocks — each Bash tool call runs in a fresh shell. Referencing a variable from a prior block silently expands to empty string, corrupting commands, paths, and conditional guards without any error.
 
 ```bash
-printf "=== Check 41: Shell variable persistence across Bash calls ===\n"
+printf "=== Check 43: Shell variable persistence across Bash calls ===\n"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_bash_persistence.py" --scan-dir .  # timeout: 15000
 ```
 
@@ -985,7 +985,7 @@ Fix: re-assign the variable at the top of every bash block that needs it, or com
 
 | Sub-check | Pattern | Severity | Auto-fix |
 | --- | --- | --- | --- |
-| 41 — cross-block ref | `$VAR` in block N where VAR assigned only in block M<N | critical | no — requires combining blocks or re-assigning |
+| 43 — cross-block ref | `$VAR` in block N where VAR assigned only in block M<N | critical | no — requires combining blocks or re-assigning |
 
 ## Check 42 — Unexpanded variables in agent spawn prompts
 

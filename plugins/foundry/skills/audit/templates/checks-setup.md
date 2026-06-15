@@ -389,7 +389,7 @@ Severity: invalid prefix entries = **high**; missing filterable commands = **med
 
 MEMORY.md has 200-line truncation limit. Three sub-checks:
 
-**11a — Duplicate with CLAUDE.md**: Read both MEMORY.md and CLAUDE.md. For each MEMORY.md section, check if same rule or directive exists verbatim or near-verbatim in CLAUDE.md. Flag duplicates as **low**.
+**Check 11a — Duplicate with CLAUDE.md**: Read both MEMORY.md and CLAUDE.md. For each MEMORY.md section, check if same rule or directive exists verbatim or near-verbatim in CLAUDE.md. Flag duplicates as **low**.
 
 **11b — Stale version pins**:
 
@@ -415,13 +415,13 @@ fi
 
 All three sub-checks produce only **low** findings — auto-fixed when user picks "Fix all" from follow-up gate. Fix: remove duplicate section, drop version pin, delete absorbed feedback file.
 
-## Check 30 — Config token overhead
+## Check 34 — Config token overhead
 
 Rules files in `.claude/rules/` load **entirely at session start**, regardless of relevance. Agents and skills are lazy-loaded (zero cost until invoked). Measures always-loaded byte count, flags oversized components.
 
 ```bash
 # timeout: 5000
-printf "--- Check 30: Config token overhead ---
+printf "--- Check 34: Config token overhead ---
 "
 
 PROJECT_CLAUDE=$(wc -c < CLAUDE.md 2>/dev/null || echo 0)
@@ -438,30 +438,30 @@ printf "  Global ~/.claude/:  %d bytes
 printf "  Total always-loaded: %d bytes (~%d tokens)
 " "$TOTAL" "$((TOTAL / 4))"
 
-# 30b — single oversized rules file
+# 34a — total overhead
+if [ "$TOTAL" -gt 102400 ]; then
+    printf "! FAIL Check 34a — total always-loaded config %d bytes (> 100 KB)
+" "$TOTAL"
+elif [ "$TOTAL" -gt 51200 ]; then
+    printf "⚠ WARN Check 34a — total always-loaded config %d bytes (> 50 KB)
+" "$TOTAL"
+else
+    printf "✓ OK Check 34 — config overhead %d bytes (~%d tokens)
+" "$TOTAL" "$((TOTAL / 4))"
+fi
+
+# 34b — single oversized rules file
 if [ -d .claude/rules ]; then
     find .claude/rules -name "*.md" | while read -r f; do
         sz=$(wc -c < "$f")
         if [ "$sz" -gt 10240 ]; then
-            printf "! FAIL Check 30b — rules file %s is %d bytes (> 10 KB)
+            printf "! FAIL Check 34b — rules file %s is %d bytes (> 10 KB)
 " "$f" "$sz"
         elif [ "$sz" -gt 5120 ]; then
-            printf "⚠ WARN Check 30b — rules file %s is %d bytes (> 5 KB)
+            printf "⚠ WARN Check 34b — rules file %s is %d bytes (> 5 KB)
 " "$f" "$sz"
         fi
     done
-fi
-
-# 30a — total overhead
-if [ "$TOTAL" -gt 102400 ]; then
-    printf "! FAIL Check 30a — total always-loaded config %d bytes (> 100 KB)
-" "$TOTAL"
-elif [ "$TOTAL" -gt 51200 ]; then
-    printf "⚠ WARN Check 30a — total always-loaded config %d bytes (> 50 KB)
-" "$TOTAL"
-else
-    printf "✓ OK Check 30 — config overhead %d bytes (~%d tokens)
-" "$TOTAL" "$((TOTAL / 4))"
 fi
 ```
 

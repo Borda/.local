@@ -164,8 +164,8 @@ If `APPROVE_ALL=true`: print `[--approve] auto-accepting: remove stale hooks blo
 
 Otherwise, use `AskUserQuestion`:
 
-- a) Remove stale `hooks` block now ★ recommended (backup in place from Step 2)
-- b) Skip — I'll handle manually
+(a) Remove stale `hooks` block now ★ recommended (backup in place from Step 2)
+(b) Skip — I'll handle manually
 
 On **(a)**: use jq to strip `hooks` key, write back with Write tool, continue. On **(b)**: warn "Double-firing risk: existing hooks block will fire alongside plugin-registered hooks." Continue.
 
@@ -334,9 +334,9 @@ These entries in ~/.claude/ would be replaced with symlinks to the foundry plugi
 
 Options:
 
-- a) Replace all ★ recommended
-- b) Skip all conflicts — keep existing files unchanged
-- c) Review one by one
+(a) Replace all ★ recommended
+(b) Skip all conflicts — keep existing files unchanged
+(c) Review one by one
 
 On **(b)**: set `SKIP_CONFLICTS_MODE=true`.
 On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=true`. **Cap**: if `${#LINK_CONFLICTS[@]} > 10`, emit warning "⚠ ${#LINK_CONFLICTS[@]} conflicts found — per-item review capped at 10; showing first 10. Run again for the rest." and process only the first 10. Iterate over each entry (up to cap); for each, invoke `AskUserQuestion` — "Replace `<entry>`? (a) Yes — replace · (b) Skip — keep existing". On (a): append the entry's identifier (basename for rules, `TEAM_PROTOCOL.md`, or `skill:<name>`) to `APPROVED_CONFLICT_ENTRIES`. On (b): leave it out. After the loop, persist: `printf '%s\n' "${APPROVED_CONFLICT_ENTRIES[@]}" > ${TMPDIR:-/tmp}/foundry-setup-approved-${CLAUDE_SESSION_ID:-$$}.txt`. Items not in `$LINK_CONFLICTS` (current, stale foundry, absent) bypass this gate — handled silently in Phase 4.

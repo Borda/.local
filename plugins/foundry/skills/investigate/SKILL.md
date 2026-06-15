@@ -155,7 +155,7 @@ echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"
 echo "CODEX_OUT=$CODEX_OUT"  # capture both stdout lines for spawn-prompt substitution below
 ```
 
-> **Step 2 must also append the resolved run path to `${TMPDIR:-/tmp}/investigate-run-path`** so this resolution succeeds. Add after the `mkdir -p` line in Step 2: `echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"`.
+> **Step 2 appends the resolved run path to `${TMPDIR:-/tmp}/investigate-run-path`** so this resolution succeeds — see `echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"` in Step 2.
 
 Re-check Codex availability at point of use (bash variables don't persist across tool calls) and **echo the result so the next prose decision can read it**:
 
@@ -173,7 +173,7 @@ echo "CODEX_AVAILABLE=$CODEX_AVAILABLE"  # capture this stdout line — bash var
 
 **Read `CODEX_AVAILABLE=…` from the bash stdout above** (NOT shell state). If the printed value was `true`: spawn Codex; else spawn `foundry:challenger`. The spawn prompts below instruct the subagent to Read the persisted symptom/signals/hypotheses files (written in Steps 2 and 3) — this is more reliable than inlining the values, which the LLM can paraphrase under context pressure.
 
-If Codex available — substitute concrete path strings for `<INVESTIGATE_RUN>` and `<CODEX_OUT>` before constructing the prompt:
+If Codex available (requires `codex` plugin) — substitute concrete path strings for `<INVESTIGATE_RUN>` and `<CODEX_OUT>` before constructing the prompt:
 
 ```text
 Agent(subagent_type="codex:codex-rescue", prompt="Adversarial review of hypothesis quality. Read these files for full context: <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only. Write full findings to <CODEX_OUT> using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")

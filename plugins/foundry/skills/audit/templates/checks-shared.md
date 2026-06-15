@@ -424,3 +424,34 @@ Exception: skip when attributes vary per item (non-uniform schema — prose corr
 | 41a — mixed list markers | low | no |
 | 41b — numbering register mismatch | medium | no |
 | 41c — nested prose where table fits | low | no |
+
+## Check 44 — Sub-check naming symmetry
+
+Sub-check letter suffixes must be contiguous starting at `a`. A file containing `Check Nb` or `Check Nc` without `Check Na` is an orphan — the `a` variant was never created or was removed, leaving a misleading gap. Same applies to any letter sequence gap (e.g., `a`, `b`, `d` missing `c`).
+
+```bash
+printf "=== Check 44: Sub-check naming symmetry ===\n"
+found=0
+for f in "${MD_FILES[@]}"; do  # timeout: 5000
+    [ -f "$f" ] || continue
+    # skip CLAUDE.md files — authoring-rules docs that cross-reference check numbers, not define sub-checks
+    [ "$(basename "$f")" = "CLAUDE.md" ] && continue
+    # grep -o extracts matches only (no filename prefix); sort -u dedupes per file
+    # -w: whole-word match on BSD grep (macOS); \b unsupported in ERE mode on macOS grep
+    while IFS= read -r entry; do
+        num=$(printf '%s' "$entry" | grep -oE '[0-9]+')
+        letter=$(printf '%s' "$entry" | grep -oE '[a-z]$')
+        if ! grep -qw "Check ${num}a" "$f"; then
+            printf "⚠ 44: %s — Check %s%s exists without Check %sa\n" "$f" "$num" "$letter" "$num"
+            found=1
+        fi
+    done < <(grep -oE 'Check [0-9]+[b-z]' "$f" 2>/dev/null | sort -u)
+done
+[ "$found" -eq 0 ] && printf "✓: Check 44 — sub-check naming symmetric across all files\n"
+```
+
+**Severity**: low — gap in sub-check labeling. No runtime impact; misleads readers into expecting a missing variant.
+
+| Sub-check | Pattern | Severity | Auto-fix |
+| --- | --- | --- | --- |
+| 44 — orphan letter suffix | `Check Nb` in file without `Check Na` | low | no — rename or add missing variant |

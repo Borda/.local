@@ -284,8 +284,8 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 <antipatterns_to_flag>
 
 - **Out-of-scope items to skip (not flag)**: syntactic issues (dead imports, unused variables, naming conventions, import ordering) — exclude silently rather than routing to "secondary observations"
-- **Scenario-opaque test name with no docstring**: test name does not communicate scenario (`test_function_1`, `test_process`, `test_case_2`) AND no scenario docstring — reviewer cannot determine intent without reading body; flag as `[medium]`; fix = rename to `test_<unit>_<condition>_<expected>` or add `"""Scenario: ..."""` docstring; applies to all new tests and any test flagged during review
-- **Scenario declared but not fully covered**: test name/docstring declares a scenario but parametrize cases or assertions omit documented variations, boundary values, or error paths — flag as `[medium]`; fix = extend parametrize list to cover all sub-cases declared in the scenario name or docstring
+- **Scenario-opaque test name with no docstring**: name gives no scenario clue AND no docstring — `[medium]`; rename to `test_<unit>_<condition>_<expected>` or add `"""Scenario: ..."""`
+- **Scenario declared but not fully covered**: name/docstring declares scenario but parametrize/assertions omit variations, boundary values, or error paths — `[medium]`; extend parametrize list
 - Tests with no assertions
 - Test names that describe implementation, not behavior (e.g. `test_function_1`)
 - No test for error/failure path
@@ -294,21 +294,21 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 - Mocking so heavily that test no longer verifies real behavior
 - ML tests without fixed random seed — flaky tests worse than no tests; flag as primary coverage gap any test calling `np.random`, `random`, or `torch` random APIs without preceding seed; note when multiple RNG sources (e.g., both `random` and `np.random`) require dual-seeding
 - Using `assert torch.equal(a, b)` instead of `torch.testing.assert_close` (float comparison needs tolerance)
-- **Testing implementation details instead of observable behavior**: asserting on private methods (e.g., `mock.assert_called_with('_execute_query', ...)`), checking call order or invocation count as primary assertion rather than verifying return value or system state — tests coupled to internals break on refactor even when behavior correct; flag and rewrite to assert on return values, side effects, or observable state changes
-- **Tests written against observed behavior instead of documented contract**: test expectation derived by running code and recording output, not from reading docs/docstring — silent bugs pass forever; flag and rewrite expectations from documented spec
-- **Mocking internals of system under test without good reason**: `unittest.mock.patch` on internal methods/attributes when not explicitly asked — prefer asserting on return values, side effects, or observable state changes; flag and suggest rewrite unless caller explicitly requested internal mocking
-- **Missing public symbol in test inventory**: public function or class (no leading underscore, not in `__all__` exclusions) with zero test coverage and no `# pragma: no cover` annotation — always primary finding regardless of simplicity
-- **N nearly-identical test functions that should be parametrized**: 3+ test functions with same structure differing only in input/expected values — flag as compression opportunity and collapse to single `@pytest.mark.parametrize` test; before/after LOC ratio is justification, not style preference
-- **New test written when existing could be expanded**: new test function added for a scenario already structurally similar to existing test — flag and replace with parametrize expansion of existing test; applies equally to new standalone test files when existing module test file could absorb the cases
+- **Testing implementation details**: asserting private methods or call order as primary — rewrite to assert return values, side effects, or observable state
+- **Tests against observed behavior not contract**: expectation derived by running code, not from docs/docstring — silent bugs pass; rewrite from documented spec
+- **Mocking internals without good reason**: `patch` on internal methods/attributes — prefer asserting on observable outcomes; rewrite unless caller explicitly requested internal mock
+- **Missing public symbol in inventory**: public function/class (no `_` prefix, not excluded from `__all__`) with zero coverage and no `# pragma: no cover` — always primary finding
+- **N nearly-identical test functions**: 3+ functions same structure differing only in input/expected — collapse to single `@pytest.mark.parametrize`
+- **New test when existing could expand**: scenario structurally similar to existing test — extend parametrize instead
 - **Dead-code detection out of scope**: unreachable functions, unused public API, missing `__all__` exports → use `foundry:linting-expert` or `foundry:solution-architect`; qa-specialist NOT-for excludes dead-code analysis
-- **`if`/`for`/`while` logic in test bodies**: control flow in test = doing too much — split into separate parametrized cases; exception: `if`/`else` inside parametrize value generation acceptable when it covers <30% of resulting test cases and enables significantly larger parametrize list
-- **Thread-safety assertion missing**: when class claims thread-safety via `threading.Lock`, `threading.RLock`, or similar, flag absence of concurrent-access test — minimum viable: N threads performing competing put/get or read/write; assert final state consistent. Primary if class explicitly described as thread-safe; secondary if implied.
-- **Inline skip in test body**: `if <condition>: pytest.skip(...)` or `pytest.skipif(...)` called inside test function body — use decorator form instead: `@pytest.mark.skipif(<condition>, reason="...")`. Decorator makes skip conditions visible at collection time, works with `--collect-only`. Exception: `pytest.skip()` inside body acceptable only when skip condition can't be evaluated at import time. Applies to all skip conditions.
-- **`try`/`except` in test body to suppress failures**: `try: <act>; <assert>; except: pass` or `except: pytest.skip(...)` — test always green regardless of behavior; flag as `[critical]`; fix = remove wrapper and fix the implementation bug causing the failure
-- **`try`/`finally` in test body for cleanup**: `try: <setup>; <act>; <assert>; finally: <teardown>` — manual teardown in test body is a sign that fixtures are not being used; flag as `[medium]`; fix = extract setup/teardown into a `pytest.fixture` with `yield` (function-scope by default; widen scope only when setup is expensive and state resets cleanly); inline `try`/`finally` acceptable only when the teardown is inherently part of the assertion logic, not pure resource cleanup
-- **`@pytest.mark.xfail` without `raises=` and issue reference**: open-ended `xfail` = permanent silent regression hole; require `raises=<ExceptionType>` + `reason="<url-to-tracked-issue>"` — flag either missing element
-- **Mock added to make a test pass, not to isolate external dependency**: mock introduced after test started failing (not as upfront isolation design) = covering implementation bug; flag and suggest removing mock to expose root cause
-- **`# doctest: +SKIP` in doctest body**: skipped doctest = dead documentation; use `+REQUIRES(module:X)` for optional deps, `__doctest_skip__ = [...]` for missing abstractions, `@pytest.mark.skipif(...)` for env conditions — `+SKIP` never acceptable
+- **`if`/`for`/`while` logic in test bodies**: control flow = doing too much — split into parametrized cases; `if`/`else` inside parametrize value generation OK when <30% of cases
+- **Thread-safety assertion missing**: class claims thread-safety (`Lock`, `RLock`) but no concurrent-access test — primary if explicitly described as thread-safe; secondary if implied
+- **Inline skip in test body**: `pytest.skip(...)` or `pytest.skipif(...)` called inside function body — use decorator `@pytest.mark.skipif(<cond>, reason="...")` instead; body-skip OK only when condition can't be evaluated at import time
+- **`try`/`except` suppressing test failure**: `except: pass` or `except: pytest.skip(...)` around act+assert — `[critical]`; remove wrapper and fix the bug
+- **`try`/`finally` for cleanup in test body**: extract to `pytest.fixture` with `yield`; inline OK only when teardown is assertion logic, not pure resource cleanup
+- **`@pytest.mark.xfail` without `raises=` and issue ref**: open-ended xfail = silent regression hole; require `raises=<ExceptionType>` + `reason="<issue-url>"`
+- **Mock to make test pass, not isolate dependency**: mock added after test started failing — covers bug; remove mock to expose root cause
+- **`# doctest: +SKIP`**: skipped doctest = dead docs; use `+REQUIRES(module:X)`, `__doctest_skip__`, or `@pytest.mark.skipif` instead
 
 </antipatterns_to_flag>
 

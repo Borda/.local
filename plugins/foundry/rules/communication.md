@@ -6,47 +6,31 @@ paths:
 
 ## Re: Anchor
 
-Start every reply with bold anchor summarising request, then response as blockquote.
+Start every reply with a horizontal-rule-bounded H1 anchor summarising the request, then response body.
 
 Example (actual template — copy structure, replace bracketed text):
 
 ```markdown
-**Re: [one-sentence summary of what was asked]**
+---
+# Re: [one-sentence summary of what was asked]
+---
 
-> [full response here]
+[full response here]
 ```
 
 Rules:
 
-- Bold line: neutral factual gist of what user asked — not full restatement, no labels
-- Response body in blockquote (`>`) — visually distinct from tool/hook output in terminal
-- Never use table or pipe-delimited format for anchor line — pipe chars pollute copy-paste
-- No exceptions to the anchor rule — a response beginning with any word other than `**Re:**` is non-compliant
-- **Never emit `> |`** — tables and fenced code blocks must never appear inside `>` lines; close `>` before any table or code fence, reopen after. `> | col |` renders as `▎ | col |` in terminal — pipe alignment destroyed.
-
-## Blockquote Exceptions — Tables and Code Blocks
-
-**Hard constraint**: tables and fenced code blocks must NEVER appear inside `>` lines.
-
-`> | col |` renders as `▎ | col |` in terminal — pipe alignment destroyed. Same for ` ``` ` inside `>` — loses copy-paste fidelity.
-
-Pattern: close `>` before table/code block, reopen after if prose continues. Never emit `> |` sequence.
-
-```markdown
-> Prose before table.
-
-| Col A | Col B |
-|-------|-------|
-| row   | row   |
-
-> Prose after table (optional).
-```
+- H1 line: neutral factual gist of what user asked — not full restatement, no labels
+- `---` above and below anchor — creates visual zone distinct from tool/hook output in terminal
+- Never use table or pipe-delimited format in anchor line — pipe chars pollute copy-paste
+- No exceptions to the anchor rule — a response not beginning with `---\n# Re:` is non-compliant
+- Tables, code blocks, and bold headers work normally in response body — no blockquote conflicts
 
 ## Reply Visibility
 
-Bold anchor + blockquote body creates a clear visual boundary from surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.
+`---` / `# Re:` / `---` zone creates a clear visual boundary from surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.
 
-**Exemption — machine-parsed responses**: omit Re: anchor and blockquote when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
+**Exemption — machine-parsed responses**: omit Re: anchor block when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
 
 ## Progress and Transparency
 
@@ -109,13 +93,13 @@ Compliant example — this is the only valid form:
 
 ## Long Reply File Dump
 
-**Trigger**: reply >1 sentence OR contains MD formatting (headers `#`, bullets `-`/`*`, fenced code ` ``` `, tables `|`).
+**Trigger**: reply >1 sentence OR contains MD formatting beyond the `# Re:` anchor (bullets `-`/`*`, fenced code ` ``` `, tables `|`, additional headers).
 
 **Rule**: write full reply to `.temp/reply-<slug>-<YYYY-MM-DD>.md`; print path as first output line: `→ .temp/reply-<slug>-<YYYY-MM-DD>.md`.
 - `<slug>` = 3–4 word kebab summary of reply subject
 - Verbatim — no extra wrapping, no ANSI codes
 
-**Exemptions**: machine-parsed responses; pure status/narration lines.
+**Exemptions**: machine-parsed responses; pure status/narration lines; `# Re:` anchor + single-sentence body with no other MD formatting.
 
 ## Output Routing
 

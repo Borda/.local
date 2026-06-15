@@ -92,32 +92,7 @@ ruff format .                     # format code
 
 ## Rule Selection Rationale
 
-Ruff bundles 50+ linting plugins — enable progressively on existing codebases; add one group, fix, move to next.
-
-Rule enable progression:
-
-1. **Start**: `E`, `F`, `W`, `I` — basic errors + imports (safe, no false positives)
-2. **Add**: `UP`, `B`, `C4`, `SIM` — modernization + common bugs (mostly auto-fixable)
-3. **Add**: `N`, `RUF`, `PT` — naming, ruff-native, pytest style (some opinion)
-4. **Add carefully**: `S`, `T20` — security + print detection (needs per-file ignores for tests/scripts)
-5. **Add**: `PIE`, `RET`, `PERF`, `FLY`, `FURB` — idiom + performance improvements (mostly auto-fixable)
-6. **Add**: `TC`, `ISC`, `PGH`, `LOG`, `TRY` — import hygiene, implicit concat, logging style, exception anti-patterns
-7. **Add**: `C901`, `PLR` — complexity enforcement; configure `[tool.ruff.lint.mccabe]` + `[tool.ruff.lint.pylint]` thresholds; keep `PLR2004` in ignore (magic-value rule too noisy on most codebases)
-8. **Consider**: `ANN`, `D` — annotation + docstring enforcement (high noise at first; good for mature codebases)
-9. **Domain-specific**: `NPY` (NumPy), `PD` (pandas), `DJ` (Django), `FAST` (FastAPI) — enable only when relevant
-
-Additional notable rule sets ruff covers (no separate tool needed):
-- `A` — shadows built-in names (e.g. `list = ...`)
-- `ARG` — unused function arguments
-- `DTZ` — timezone-aware datetime (use `tz=` in calls)
-- `EM` — error message string literals (avoid f-strings in `raise`)
-- `FBT` — boolean trap (positional bool params)
-- `G` — logging format (use lazy `%s` args, not f-strings in logger calls)
-- `PL` — PLC/PLE/PLR/PLW rule categories (naming, error, refactor, warning); key complexity rules: `PLR0911` too-many-returns, `PLR0912` too-many-branches, `PLR0913` too-many-arguments, `PLR0915` too-many-statements — configure limits via `[tool.ruff.lint.pylint]`
-- `SLOT` — missing `__slots__` on classes
-- `ERA` — commented-out code detection
-
-Don't enable all rules at once on existing codebase — add progressively, fix per category, move to next.
+Enable progressively on existing codebases — the config block above lists all selected rules with inline comments explaining each group. Progression: start with `E/F/W/I` (safe), add modernization + bugs (`UP/B/C4/SIM`), then quality (`S/T20/PT/PIE/RET/PERF/C901/PLR`). Domain-specific groups (`NPY`, `PD`, `DJ`, `FAST`) only when relevant. `ANN`/`D` (annotations, docstrings) high-noise — good for mature codebases only.
 
 </ruff_config>
 
