@@ -1,23 +1,23 @@
 ---
-Review — [target]
-Verdict:     [🟢 Approve / 🟡 Minor Suggestions / 🟠 Request Changes / 🔴 Block] — [one sentence]
-CI:          [local test suite: pass / fail / N/A]
-Risk:        [n]/5 [low / medium / high]
-Blockers:    [N] must-fix | [N] suggestions
-Recommendation:
-  1. [most important action]
-  2. [second action if needed]
-Summary:     [2–3 sentence overview of key findings]
-Critical:    [blocking items one per line, or "none"]
-Confidence:  [aggregate score] — [key gaps]
-Path:        → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
+develop-review:  [target — file / dir / working-tree diff]
+Date:         [YYYY-MM-DD]
+Change Type:  [fix | feat | refactor | perf | docs | ci | chore | test | mixed — from change intent, not file count or commit message]
+Scope:        [key changed files, comma-separated]
+Focus:        [SCOPE-LABEL — one-line description of what the change does]
+Agents:       [comma-separated agent names that ran]
+CI:           [local tests: pass (N/N) / fail / N/A]
+Outcome:      [APPROVE | NEEDS_WORK | REQUEST_CHANGES]
+Summary:      [1–2 sentence overview of key findings]
+Confidence:   [aggregate score] — [key gaps]
+Next steps:   [comma-separated actionable items — blockers first]
+Path:         → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
 ---
 
 ## Code Review: [target]
 
 ### [blocking] Critical (must fix before merge)
 - [bugs, security issues, data corruption risks]
-- Severity: CRITICAL / HIGH
+- Every finding carries explicit severity: `[cosmetic]` `[low]` `[medium]` `[high]` `[critical]`
 
 ### Architecture & Quality
 - [sw-engineer findings]
@@ -39,6 +39,10 @@ Path:        → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
 ### Static Analysis
 - [linting-expert findings — ruff violations, mypy errors, annotation gaps]
 
+### Cosmetic / Style
+(omit if none)
+- [cosmetic findings — pure style/whitespace/formatting, no behaviour change]
+
 ### API Design (if applicable)
 - [solution-architect findings — coupling, API surface, backward compat]
 - Public API changes: [intentional / accidental leak]
@@ -57,6 +61,5 @@ Path:        → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
 ### Review Confidence
 | Agent | Score | Label | Gaps |
 | --- | --- | --- | --- |
-<!-- Replace with actual agent scores for this review -->
 
 **Aggregate**: min 0.N / median 0.N

@@ -1,0 +1,51 @@
+<!-- oss:resolve Step 3a — executed inline: Read $_OSS_RESOLVE/modes/report-intelligence.md; execute -->
+<!-- fragment — no <workflow> wrapper; executed inline by SKILL.md orchestrator -->
+<!-- consumer: plugins/oss/skills/resolve/SKILL.md (Step 3a) -->
+
+## Step 3a: Report intelligence (report mode only)
+
+*Skip to Step 3b (PR intelligence) when in pr mode or pr + report mode.*
+
+<!-- Sources block template (used in 3a/3b/3c): fields GitHub and Report vary by mode -->
+
+When mode == **report**:
+
+Print Sources block before parsing findings:
+
+```markdown
+## Resolve — sources
+
+Mode   : report
+PR     : #<N>  (extracted from report header, or "n/a — working on current branch")
+GitHub : not fetched
+Report : Read <path to report file>
+
+Building action items…
+```
+
+<!-- loads: review-section-taxonomy.md -->
+Read `$_OSS_SHARED/review-section-taxonomy.md` — use **Grep pattern** row for header matching (contains-match; headers may carry `⚠ LOW CONFIDENCE — ` prefix), **Severity → Resolve Type** table for `type` assignment, **LOW Grouping Rule** for composite rows, and **Owner agent** column for `author` field. Skip sections where Grep key is `— skip`.
+
+- `author`: Owner agent column from taxonomy
+- `file`/`line`: extract from `file:line` notation; blank if absent or grouped composite
+- `full_comment_text`: full finding bullet (or concatenated bullets for composites)
+- All items get `[report]` prefix on `type` (e.g., `[report][req]`, `[report][suggest]`)
+
+PR# found in report header → set `$ARGUMENTS = <N>`, go to Step 4; skip Step 3b entirely. After checkout, set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs (report mode executes all findings; no user selection step); skip to Step 8.
+
+No PR# in header → skip Steps 3b and 4; work on current branch as-is. Before skipping, set fallback values for variables Step 8 reads: `HEAD_REF=$(git branch --show-current 2>/dev/null || echo "")` and `IS_FORK=false` (no cross-repo context). Set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs; skip to Step 8.
+
+**Report mode — Step 8 behavior**: `SELECTED_ITEMS` initialized above; Step 3d (user selection) is skipped; Step 8 proceeds with all report-derived items. If report produces zero action items: `SELECTED_ITEMS=[]` → Step 8 skipped, jump to Step 9.
+
+**`BASE_REF` derivation (no-PR path)** — when Step 3b is skipped (report mode without PR#, or comment-dispatch mode), Step 9's lint-qa gate still needs `BASE_REF` for `git merge-base HEAD "origin/$BASE_REF"`. Without this, `BASE_REF` expands empty → `origin/` is an invalid ref → linting sees no changes → workflow pushes silently with vacuous QA gate. Set it from the local default-branch symbolic-ref before Step 8, and guard the downstream `git merge-base` against shallow-clone empty output (CI checkouts frequently use `--depth=1` and `merge-base` returns nothing — linting again sees no changes):
+
+```bash
+BASE_REF=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")  # timeout: 3000
+# Pre-compute MERGE_BASE for Step 9 with shallow-clone fallback to the repo's root commit;
+# without this, `git merge-base HEAD origin/$BASE_REF` returns empty in shallow clones and
+# `git diff <empty>..HEAD` shows the entire branch history (or nothing at all).
+MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null)  # timeout: 3000
+if [ -z "$MERGE_BASE" ]; then
+    MERGE_BASE=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1)  # timeout: 3000 — root commit fallback
+fi
+```

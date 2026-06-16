@@ -25,6 +25,7 @@ docs/specs/
 
 # Agent auto-memory (machine-local, not source)
 .claude/agent-memory/
+plugins/*/.claude/
 
 # Local Claude overrides (not synced to ~/.claude/)
 *.local.md

@@ -29,7 +29,13 @@ Agent(subagent_type="foundry:qa-specialist", maxTurns=15, prompt="Review all fil
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_lint_fixes.py"  # timeout: 3000
 ```
 
-- Blocking issues from `foundry:qa-specialist` → fix (Codex or inline), re-run qa-specialist once to confirm; issues remain after one fix pass → **stop workflow — do not proceed to Step 10 (push)**; surface all remaining blocking issues in report; print: `⛔ QA gate blocked push — review findings above, fix errors, then re-run /resolve or push manually after fixing.`
+**Gate loop — QA gate** (max 3 iterations):
+
+1. Run truth-check — `foundry:qa-specialist` reports blocking issues
+2. Fix — apply fixes inline or via `IMPL_AGENT`
+3. Re-run `foundry:qa-specialist` — clean → proceed; still blocking → loop
+4. Blocked after 3 iterations → **stop workflow** — do not push; surface all remaining blocking issues; print:
+   `⛔ QA gate blocked push — review findings above, fix errors, then re-run /resolve or push manually after fixing.`
 - Warnings (non-blocking) → record in report; don't block push
 
 Revoke commit authorization (recompute sentinel path — main PR flow does not set `$SENTINEL`):

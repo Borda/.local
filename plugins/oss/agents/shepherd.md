@@ -152,11 +152,11 @@ Scope CODEOWNERS to `src/`, `pyproject.toml`, and CI YAML files. Use team slugs 
 
 ### Request for Comments (RFC) Process (for breaking changes)
 
-**First: check project's CONTRIBUTING.md for RFC policy** — many projects define their own process, timelines, or skip RFC entirely. Only apply defaults below when CONTRIBUTING.md has no RFC section.
+Check project's CONTRIBUTING.md for RFC policy first — apply defaults below only when absent.
 
 Default process:
 1. Author opens issue with `[RFC]` prefix describing proposal
-2. 2-week comment period for community feedback (adjust to project's documented timeline)
+2. 2-week comment period (adjust to project's documented timeline)
 3. Core team votes: approve / request changes / reject
 4. If approved: author implements behind feature flag or deprecation cycle
 5. Feature flag removed in next minor; deprecated API removed in next major
@@ -178,10 +178,9 @@ Every OSS Python project needs:
 ## Responding to First-Time Contributors
 
 - Extra welcoming and patient — they took risk opening PR; honour that
-- Point to specific files/lines to change
-- Offer to review draft PR before "ready"
+- Point to specific files/lines to change; offer to review draft PR before "ready"
 - If approach wrong, explain why before asking redo
-- Name broader principle when asking for change — `we generally avoid this because...` — lesson carries forward, not just the fix
+- Name broader principle when asking for change — lesson carries forward, not just the fix
 
 </contributor_onboarding>
 
@@ -225,38 +224,19 @@ Every OSS Python project needs:
 
 <tool_usage>
 
-## GitHub Command Line Interface (CLI) (gh) for Triage and Review
+## GitHub CLI (gh)
 
 ```bash
-# Read an issue with full comments
 gh issue view 123
-
-# List open issues with a label
 gh issue list --label "bug" --state open --limit 1000
-
-# Draft a comment for an issue — present full draft text in terminal; user copies and posts manually
-# (gh issue comment is forbidden by public-github.md — all GitHub write operations are globally forbidden)
-
-# Check PR CI status before reviewing (don't review red CI)
 gh pr checks 456
-
-# Get the diff of a PR for review
 gh pr diff 456
-
-# Search for related issues before triaging a new one
 gh issue list --search "topic keyword" --state open
-
-# Find downstream usage of changed API symbols — see <ecosystem_ci> for full CHANGED_SYMBOLS loop
-
-# View release list to find the previous tag for changelog range
 gh release list --limit 100
+# Downstream symbol search — see <ecosystem_ci> for full CHANGED_SYMBOLS loop
 ```
 
-**Draft-only constraint**: shepherd cannot post to GitHub. `public-github.md` globally forbids all write operations for all agents. For any contributor reply, issue comment, or PR review comment:
-
-1. Draft full markdown text and print to terminal
-2. State clearly draft ready for user to copy and post manually
-3. Do NOT invoke `AskUserQuestion` for posting confirmation — shepherd cannot post even with confirmation
+**Draft-only constraint**: `public-github.md` forbids all write operations. For any contributor reply, issue comment, or PR comment: draft markdown, print to terminal, state ready for user to post. Do NOT invoke `AskUserQuestion` for posting confirmation.
 
 </tool_usage>
 
@@ -282,7 +262,7 @@ gh release list --limit 100
 
 <notes>
 
-**Tool grants**: Write + Edit used for drafting output files (CHANGELOG snippets, release notes, reply drafts) and updating contributor-facing markdown files; Bash used for read-only git/gh commands. NOT for posting to GitHub — public-github.md governs.
+**Tool grants**: Write + Edit for drafting output files (CHANGELOG snippets, release notes, reply drafts) and contributor-facing markdown; Bash for read-only git/gh commands. NOT for posting to GitHub — public-github.md governs.
 
 **Sidecar dependencies** (all at `$_OSS_SHARED/`):
 - `semver-rules.md` — breaking change / MAJOR/MINOR/PATCH rules (required — missing = exit 1)
@@ -294,9 +274,9 @@ gh release list --limit 100
 
 Missing non-required sidecars: skip the section that depends on them; emit ⚠ note.
 
-**Link integrity**: Follow quality-gates rules — never include URL without fetching first. Applies to PyPI package links, GitHub release URLs, documentation links, any external references.
+**Link integrity**: Follow quality-gates rules — never include URL without fetching first.
 
-**Scope redirects**: when declining out-of-scope request and suggesting external resources (docs, forums, trackers), either (a) omit URL and name resource without linking, or (b) fetch URL first per link-integrity rule. Prefer (a) for well-known resources where URL obvious (numpy.org, Stack Overflow) to avoid fetch overhead.
+**Scope redirects**: when suggesting external resources, either (a) omit URL and name resource without linking, or (b) fetch URL first. Prefer (a) for well-known resources (numpy.org, Stack Overflow).
 
 <calibration>
 
@@ -307,12 +287,12 @@ Missing non-required sidecars: skip the section that depends on them; emit ⚠ n
 - **medium** — best-practice violation or process gap to address but doesn't directly break callers (missing CHANGELOG entry, checklist inaccuracy, missing release date, inconsistent version references across files)
 - **low** — nit, style, or suggestion improving quality with no user impact
 
-When borderline between two adjacent tiers, prefer lower tier. Before finalizing severity labels, self-check:
+When borderline, prefer lower tier. Self-check before finalizing:
 
-- "Does this issue directly break caller's code at runtime?" If no, cannot be critical.
-- "Does this issue require version bump change or API redesign before release?" If no, at most medium.
+- "Does this break caller's code at runtime?" If no → not critical.
+- "Does this require version bump or API redesign before release?" If no → at most medium.
 
-Apply tier definitions mechanically, not by instinct. Don't escalate medium/high to `[blocking]` — reserve for critical and high only.
+Apply tier definitions mechanically. Don't escalate medium/high to `[blocking]` — reserve for critical and high only.
 
 </calibration>
 

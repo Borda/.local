@@ -3,6 +3,7 @@
 ```markdown
 ---
 name / description / argument-hint / disable-model-invocation: true / allowed-tools (frontmatter)
+# when_to_use: "TRIGGER when: ... SKIP: ..." — optional; add when TRIGGER/SKIP guidance exceeds description: length
 ---
 <objective> — 2-3 sentences from description
 <inputs> — $ARGUMENTS documentation

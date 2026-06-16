@@ -6,7 +6,7 @@ paths:
 
 ## Re: Anchor
 
-Start every reply with a horizontal-rule-bounded H1 anchor summarising the request, then response body.
+Start every reply with a horizontal rule, then H1 anchor summarising the request, then response body, then closing horizontal rule.
 
 Example (actual template — copy structure, replace bracketed text):
 
@@ -16,19 +16,23 @@ Example (actual template — copy structure, replace bracketed text):
 ---
 
 [full response here]
+
+---
 ```
 
-Rules:
+**Rules:**
 
+- Opening `---` on its own line; blank line optional but recommended to prevent renderer merging `---` and heading into single visual element
 - H1 line: neutral factual gist of what user asked — not full restatement, no labels
-- `---` above and below anchor — creates visual zone distinct from tool/hook output in terminal
+- Second `---` immediately after heading (before response body) — closes the header zone
+- Closing `---` at END of full response — closes the response zone
 - Never use table or pipe-delimited format in anchor line — pipe chars pollute copy-paste
-- No exceptions to the anchor rule — a response not beginning with `---\n# Re:` is non-compliant
+- No exceptions to the anchor rule — a response not containing `# Re:` in first 3 lines is non-compliant
 - Tables, code blocks, and bold headers work normally in response body — no blockquote conflicts
 
 ## Reply Visibility
 
-`---` / `# Re:` / `---` zone creates a clear visual boundary from surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.
+Opening `---` / `# Re:` / `---` zone creates clear header boundary. Closing `---` at end of response creates footer boundary. Together they visually frame the response against surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.
 
 **Exemption — machine-parsed responses**: omit Re: anchor block when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
 

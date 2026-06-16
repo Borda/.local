@@ -1,15 +1,15 @@
 ---
-Review — [target]
-Verdict:     [🟢 Approve / 🟡 Minor Suggestions / 🟠 Request Changes / 🔴 Block] — [one sentence]
-CI:          [passing / failing / pending]
-Risk:        [n]/5 [low / medium / high]
-Blockers:    [N] must-fix | [N] suggestions
-Recommendation:
-  1. [most important action]
-  2. [second action if needed]
-Summary:     [2–3 sentence overview of key findings]
-Critical:    [blocking items one per line, or "none"]
+oss-review:  [PR #N title]
+Date:        [YYYY-MM-DD]
+PR Type:     [fix | feat | refactor | perf | docs | ci | chore | test | mixed — from change intent, not file count or PR title]
+Scope:       [key changed files, comma-separated]
+Focus:       [SCOPE-LABEL — one-line description of what the change does]
+Agents:      [comma-separated agent names that ran]
+CI:          [passing (N/N) / failing — check-name, check-name / pending]
+Outcome:     [APPROVE | NEEDS_WORK | REQUEST_CHANGES]
+Summary:     [1–2 sentence overview of key findings]
 Confidence:  [aggregate score] — [key gaps]
+Next steps:  [comma-separated actionable items — blockers first]
 Path:        → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
 ---
 
@@ -17,7 +17,7 @@ Path:        → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
 
 ### [blocking] Critical (must fix before merge)
 - [bugs, security issues, data corruption risks]
-- Severity: CRITICAL / HIGH
+- Every finding carries explicit severity: `[cosmetic]` `[low]` `[medium]` `[high]` `[critical]`
 
 ### Issue Root Cause Alignment
 (omit if no linked issues)
@@ -45,6 +45,10 @@ Path:        → .reports/review/<YYYY-MM-DDTHH-MM-SSZ>/review-report.md
 
 ### Static Analysis
 - [linting-expert findings — ruff violations, mypy errors, annotation gaps]
+
+### Cosmetic / Style
+(omit if none)
+- [cosmetic findings — pure style/whitespace/formatting, no behaviour change]
 
 ### API Design (if applicable)
 - [solution-architect findings — coupling, API surface, backward compat]

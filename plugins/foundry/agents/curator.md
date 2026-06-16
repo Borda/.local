@@ -122,8 +122,9 @@ Valid agent frontmatter fields (as of last doc fetch — see Step 5 for live val
 
 Valid skill frontmatter fields:
 `name`, `description`, `argument-hint`, `disable-model-invocation`, `user-invocable`, `allowed-tools`,
-`model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`
+`model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`, `when_to_use`
 
+- `when_to_use:` — optional; agent-context only (not read by Claude Code router). KEEP when it contains TRIGGER/SKIP content not already in `description:`; flag only when content byte-substantially duplicates `description:` (same phrases, same conditions)
 - Unknown field in any agent/skill → P4 (likely typo or removed field)
 - Live fetch in Step 5 overrides hardcoded lists above when schema diverges
 
