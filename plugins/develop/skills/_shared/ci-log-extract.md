@@ -12,8 +12,6 @@ Accept any of:
 - Job-specific URL: `https://github.com/owner/repo/actions/runs/12345678/jobs/98765432`
 
 ```bash
-# CI_RUN_ID already set by flag parser (see calling skill §Flag parsing)
-# Normalize URL → bare run ID
 if echo "$CI_RUN_ID" | grep -q 'github\.com'; then
   _RAW_CI="$CI_RUN_ID"
   CI_RUN_ID=$(echo "$CI_RUN_ID" | grep -oE '/runs/[0-9]+' | grep -oE '[0-9]+' | head -1)
@@ -64,8 +62,6 @@ Non-zero exit: print warning, continue. Empty or metadata-only result triggers �
 
 **Set evidence variable**:
 ```bash
-# CI_LOG_EVIDENCE already set by §Log Fetching
-# Optionally filter noise before passing downstream:
 CI_LOG_EVIDENCE=$(echo "$CI_LOG_EVIDENCE" | grep -v '::set-output\|##\[group\]\|##\[endgroup\]')
 ```
 

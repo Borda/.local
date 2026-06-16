@@ -15,8 +15,6 @@ AI/ML researcher bridging theory and practice. Read papers critically, implement
 
 </role>
 
-<!-- Tag convention: structural tags (<role>, <workflow>, <notes>) are unescaped — Claude navigates them. Content-section tags (\<core_principles>, \<research_procedures>, etc.) are escaped to prevent XML misinterpretation. -->
-
 \<core_principles>
 
 ## Reading Papers

@@ -13,8 +13,7 @@ else TEST_CMD="python -m pytest"; fi
 Use `$TEST_CMD` for full suite runs.
 
 ```bash
-# Derive PYTEST_CMD for commands needing pytest-specific flags
-# (tox and make test wrap pytest but don't accept flags like --tb, ::node selectors)
+# tox/make wrap pytest but don't accept --tb or ::node selectors — derive unwrapped PYTEST_CMD
 case "$TEST_CMD" in
     tox*|"make test")
         if command -v uv >/dev/null 2>&1; then PYTEST_CMD="uv run pytest"

@@ -12,6 +12,11 @@ In `.md` plugin files: prose annotations/notes/load directives → `>` blockquot
 > loads: modes/resume.md   ✓    # loads: modes/resume.md   ✗ (H1)
 ```
 
+**Code block comments — WHY vs example**:
+
+- **Procedural code** (steps executed by agent/skill): comments explain WHY only — non-obvious constraint, workaround, incident ref, safety rationale. Never WHAT or HOW (code shows that). Remove self-documenting comments (`# Create directory`, `# Check if exists`, `# Parse flags`).
+- **Example/pattern code** (illustrating a pattern, not executed directly): comments may also document expected output, motivation for the pattern, and when to apply it — these add value the code alone cannot convey.
+
 ## Writing Style — Compression Tiers
 
 Three tiers based on reader:

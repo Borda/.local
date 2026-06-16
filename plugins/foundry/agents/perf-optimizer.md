@@ -37,14 +37,11 @@ Never reach level 7 without ruling out levels 1-6.
 ## Python CPU Profiling
 
 ```bash
-# Quick overview (built-in)
 python -m cProfile -s cumtime script.py | head -30
 
-# Line-level detail (add @profile decorator first)
 uv tool install line-profiler  # or: pip install line_profiler
-kernprof -l -v script.py
+kernprof -l -v script.py  # add @profile decorator first
 
-# Memory profiling (line-level)
 uv tool install memory-profiler  # or: pip install memory_profiler
 python -m memory_profiler script.py
 ```
@@ -53,24 +50,19 @@ python -m memory_profiler script.py
 
 ```bash
 uv tool install py-spy  # or: pip install py-spy
-
-# Profile a running process (no code changes needed)
 py-spy top --pid <PID>
-
-# Generate a flame graph
 py-spy record -o profile.svg --pid <PID>
 py-spy record -o profile.svg -- python script.py
-
-# Useful for: long-running training loops, finding GIL contention
+# useful for: long-running training loops, GIL contention
 ```
 
 ## scalene (CPU + memory + GPU in one tool)
 
 ```bash
 uv tool install scalene  # or: pip install scalene
-scalene script.py       # full profiling
-scalene --cpu script.py # CPU only
-scalene --gpu script.py # include GPU
+scalene script.py
+scalene --cpu script.py
+scalene --gpu script.py
 scalene --html --outfile profile.html script.py
 ```
 
@@ -86,37 +78,28 @@ print(f"{result / 1000 * 1000:.3f} ms per call")
 # pytest-benchmark for regression detection:
 def test_speed(benchmark):
     result = benchmark(function_under_test, args)
-    # assert result == expected_value  # add your assertion
 ```
 
 ## I/O Profiling
 
 ```bash
-strace -c python script.py # system call tracing (Linux only)
-# Note: dtruss/dtrace are blocked by macOS SIP (kernel-level tracing); Instruments.app is available
-# (Time Profiler, Allocations, Metal System Trace work under SIP).
-# macOS alternative for syscall-level I/O: use `fs_usage -w -f filesystem -p <PID>` or Instruments
-# Time Profiler; py-spy + cProfile attribute CPU time but not syscall-level I/O.
-iostat -x 1 # file I/O stats
+strace -c python script.py  # Linux only; dtruss/dtrace blocked by macOS SIP
+# macOS: use fs_usage -w -f filesystem -p <PID> or Instruments Time Profiler
+iostat -x 1
 ```
 
 ## Python-Level Stand-ins for dtruss/dtrace/Instruments
 
-When system-level tracers are unavailable (macOS SIP, restricted environments), prefer Python-level tools:
+When system-level tracers unavailable (macOS SIP, restricted environments):
 
 ```bash
-# py-spy — see ## py-spy section above for install and usage; install via: uv tool install py-spy
-
-# cProfile — stdlib, deterministic profiler
+py-spy record -o profile.svg -- python script.py  # uv tool install py-spy
 python -m cProfile -o output.prof script.py
 python -c "import pstats; pstats.Stats('output.prof').sort_stats('cumulative').print_stats(30)"
-
-# memory_profiler — line-level memory profiling via @profile decorator
-uv tool install memory-profiler
-python -m memory_profiler script.py
+uv tool install memory-profiler && python -m memory_profiler script.py
 ```
 
-These three (`py-spy`, `cProfile`, `memory_profiler`) form the canonical replacement for dtruss/dtrace/Instruments on macOS; they also work cross-platform.
+`py-spy`, `cProfile`, `memory_profiler` form the canonical replacement for dtruss/dtrace/Instruments on macOS; also work cross-platform.
 
 </profiling_tools>
 
@@ -225,13 +208,10 @@ Grep: pattern="torch\.cuda\.amp\."                    glob="**/*.py"   # depreca
 If runnable, time workload and measure GPU utilization:
 
 ```bash
-# Wall-clock baseline
 time python -c "import <module>; <representative_workload>"
 
-# GPU utilization (is GPU actually busy?)
-# nvidia-smi: CUDA hosts only — skip on Apple MPS, ROCm, Intel Arc, CPU-only hosts
-# On non-CUDA hosts use platform profiler: py-spy + cProfile or Instruments (macOS/MPS — see `<profiling_tools>` §Profiling Command Lookup for SIP alternatives), rocprof (ROCm), VTune (Intel)
-# Background nvidia-smi: write PID to file since job control (kill %1) doesn't persist across Bash tool calls
+# nvidia-smi: CUDA only — skip on Apple MPS, ROCm, Intel Arc, CPU-only hosts
+# Background pid written to file — job control (kill %1) doesn't persist across Bash calls
 command -v nvidia-smi &>/dev/null && {
   TMPDIR="${TMPDIR:-$(python -c "import tempfile; print(tempfile.gettempdir())")}"
   trap "kill \$(cat \$TMPDIR/gpu_util.pid 2>/dev/null) 2>/dev/null" EXIT
@@ -264,9 +244,9 @@ for batch in dataloader:
 data_time = sum(data_times) / len(data_times)
 step_time = sum(step_times) / len(step_times)
 
-# If data_time / step_time > 0.3 → CPU-bound data loading is the bottleneck
-# Fix: num_workers > 0, pin_memory=True, persistent_workers=True
-# Only then consider: mixed precision → torch.compile → distributed
+# data_time / step_time > 0.3 → CPU-bound DataLoader is bottleneck
+# fix: num_workers > 0, pin_memory=True, persistent_workers=True
+# then: mixed precision → torch.compile → distributed
 ```
 
 **Low-severity issues**: after primary bottleneck, scan for secondary — see `<antipatterns_to_flag>`. Report below primary.

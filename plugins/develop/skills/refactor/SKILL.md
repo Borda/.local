@@ -120,7 +120,6 @@ Read target code, build mental model before touching anything.
 If `<target>` is directory: use Glob tool (pattern `**/*.py`, path `<target>`) to enumerate Python files.
 
 ```bash
-# Measure current state
 find <target> -name '*.py' -exec wc -l {} + 2>/dev/null | tail -1
 ```
 
@@ -129,18 +128,14 @@ find <target> -name '*.py' -exec wc -l {} + 2>/dev/null | tail -1
 **Multi-file / API-change scope — extended codemap scan** (only when `CODEMAP_ENABLED=true`): if target is directory, spans multiple files, or goal mentions renaming/restructuring public API (i.e., refactoring NOT limited to internals of single function or class with unchanged public interface):
 
 ```bash
-# Derive project name and affected modules
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")  # timeout: 3000
-# Affected modules from <target> path: strip src/ prefix, drop .py, slash→dot
 REFACTOR_FILES=$(find <target> -name '*.py' -type f 2>/dev/null)
 AFFECTED_MODULES=$(echo "$REFACTOR_FILES" | sed 's|^\./||;s|^src/||;s|\.py$||;s|/|.|g' | grep . || echo "")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ] && [ -n "$AFFECTED_MODULES" ]; then
-    # Reusability: who calls each affected module outside the refactoring scope
     while IFS= read -r mod; do
         scan-query rdeps "$mod" 2>/dev/null
     done <<< "$AFFECTED_MODULES"
-    # Tightest coupling pairs — determines refactor sequence and what must change together
     scan-query coupled --top 10
 fi
 ```
@@ -185,20 +180,17 @@ Use Glob tool (pattern `**/test_*.py` or `**/*_test.py`), then Grep tool (patter
 > (Use Glob tool — `pattern: **/test_*.py` — to discover test files; check `pyproject.toml` `[tool.pytest.ini_options] testpaths` for configured paths)
 
 ```bash
-# Check pytest available  # timeout: 600000
+# timeout: 600000
 $PYTEST_CMD --co -q 2>&1 | head -5
 
-# Check pytest-cov available
 SKIP_COV=0
 if $PYTEST_CMD --co -q --cov=. 2>&1 | grep -q "ModuleNotFoundError\|No module named.*cov"; then
     echo "⚠ coverage tool not found — coverage gate skipped"
     SKIP_COV=1
 fi
 
-# Collect tests for target module
 $PYTEST_CMD --co -q 2>&1 | grep -i "<module_name>" || echo "No tests found for <module_name>"
 
-# Run coverage (only if pytest-cov available)
 [ "${SKIP_COV}" -eq 0 ] && { $PYTEST_CMD --cov=<target_module> -q --cov-report=term-missing || true; }
 ```
 
@@ -279,12 +271,12 @@ Spawn with context:
 - Test naming: `test_<function>_characterization_<scenario>`
 
 ```bash
-# Run to confirm they pass against current code; capture exit in SAME block — $? resets across Bash() calls  # timeout: 600000
+# timeout: 600000
 $PYTEST_CMD <test_file> -v; GATE_EXIT=$?
 echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
 ```
 
-**Gate**: all characterization tests must pass before proceeding. Check exit code (reads value persisted above — `$?` in a fresh shell is unrelated to the prior pytest run):
+**Gate**: all characterization tests must pass before proceeding. Check exit code from persisted file (`$?` in a fresh shell is unrelated to the prior pytest run):
 
 ```bash
 GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-gate-exit 2>/dev/null || echo 1)
@@ -292,7 +284,6 @@ if [ "${GATE_EXIT}" -eq 5 ]; then
     echo "GATE FAIL: no tests collected (exit 5) — characterization test file missing or not detected by pytest; cannot proceed to Step 4 without a safety net"
 elif [ "$GATE_EXIT" -ne 0 ]; then
     echo "GATE FAIL: characterization test(s) failed (exit $GATE_EXIT) — fix the test, not the code"
-    # The test is wrong if it fails on unmodified code
 else
     echo "GATE OK: all characterization tests pass on unmodified code"
 fi
@@ -317,7 +308,6 @@ For each change:
 
 ```bash
 # timeout: 3000
-# Initialize once at Step 4 entry — overwrites any prior session's values
 echo "0"             > ${TMPDIR:-/tmp}/dev-inner-cycle
 echo "$(date +%s)"   > ${TMPDIR:-/tmp}/dev-start-time
 MAX_WALL_SECONDS=1800  # 30 min hard cap (5 outer × MAX_INNER_CYCLES inner worst case)
@@ -331,7 +321,7 @@ INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle 2>/dev/null || echo 0)
 START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time 2>/dev/null || echo $(date +%s))
 INNER_CYCLE=$((INNER_CYCLE+1))
 echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle
-MAX_INNER_CYCLES=5  # must match the constants block above — bash cannot reference constants block directly
+MAX_INNER_CYCLES=5  # must match constants block — bash cannot reference it directly
 if [ "$INNER_CYCLE" -gt $MAX_INNER_CYCLES ]; then
     echo "⚠ MAX_INNER_CYCLES ($MAX_INNER_CYCLES) reached — stopping refactor loop; report what succeeded, what broke, what remains"
 fi
@@ -387,9 +377,7 @@ Full review of refactored code. **Loop** — review -> targeted refactoring (ret
 
 ```bash
 # timeout: 3000
-if [ ! -d "$_FOUNDRY_SHARED" ] || [ ! -f "$_FOUNDRY_SHARED/quality-stack.md" ]; then
-    echo "⚠ foundry plugin not installed — quality stack skipped (install foundry for full refactor quality gate: Branch Safety Guard, Codex Pre-pass, Progressive Review Loop, Codex Mechanical Delegation)"
-fi
+[ ! -d "$_FOUNDRY_SHARED" ] || [ ! -f "$_FOUNDRY_SHARED/quality-stack.md" ] && echo "⚠ foundry plugin not installed — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review Loop, Codex Mechanical Delegation)"
 ```
 
 Read `$_FOUNDRY_SHARED/quality-stack.md` (if not found → skip quality stack entirely, note "foundry plugin absent — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review, Codex Mechanical Delegation)" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.

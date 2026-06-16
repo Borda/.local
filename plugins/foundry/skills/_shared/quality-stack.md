@@ -24,18 +24,15 @@ Run after all mode-specific steps complete.
 **Tool detection** — run once, reuse throughout:
 
 ```bash
-# Detect runner
 if command -v uv >/dev/null 2>&1; then RUNNER="uv run"
 else RUNNER="python -m"; fi
 
-# Verify ruff available
 SKIP_RUFF=0
 if ! $RUNNER ruff --version >/dev/null 2>&1; then
     echo "WARNING: ruff not available — skipping lint/format steps"
     SKIP_RUFF=1
 fi
 
-# Verify mypy available
 SKIP_MYPY=0
 if ! $RUNNER mypy --version >/dev/null 2>&1; then
     echo "WARNING: mypy not available — skipping type check step"
@@ -44,15 +41,12 @@ fi
 ```
 
 ```bash
-# Linting and formatting (skip if SKIP_RUFF=1)
 [ "${SKIP_RUFF:-0}" -ne 1 ] && $RUNNER ruff check <changed_files> --fix  # timeout: 30000
 [ "${SKIP_RUFF:-0}" -ne 1 ] && $RUNNER ruff format <changed_files>  # timeout: 30000
 
-# Type checking (skip if SKIP_MYPY=1)
 [ "${SKIP_MYPY:-0}" -ne 1 ] && { $RUNNER mypy <changed_files> --no-error-summary 2>&1 | head -30; MYPY_EXIT=${PIPESTATUS[0]}; }  # timeout: 30000
-# Note: MYPY_EXIT captures mypy's exit code (non-zero = type errors found)
+# MYPY_EXIT: non-zero = type errors found
 
-# Full test suite
 $RUNNER pytest <test_dir> -v --tb=short  # timeout: 600000
 SUITE_EXIT=$?
 
@@ -84,10 +78,8 @@ When `PASS_COUNT < RETRY_COUNT` and `PASS_COUNT > 0` (test is genuinely flaky):
 - On (a): apply marker + comment, then continue to doctests
 
 ```bash
-# Doctests (if applicable)
 $RUNNER pytest --doctest-modules <target_module> -v 2>&1 | tail -20  # timeout: 600000
-DOCTEST_EXIT=${PIPESTATUS[0]}
-# Note: DOCTEST_EXIT captures pytest exit code (non-zero = doctest failures)
+DOCTEST_EXIT=${PIPESTATUS[0]}  # non-zero = doctest failures
 ```
 
 Spawn **foundry:linting-expert** agent if mypy or ruff issues need non-trivial fixes.
@@ -96,8 +88,6 @@ Spawn **foundry:linting-expert** agent if mypy or ruff issues need non-trivial f
 
 ```bash
 if command -v scan-query >/dev/null 2>&1; then
-    # For each modified public function/class, check reverse dependencies
-    # Derive <module> from changed file path (strip src/ prefix, replace / with ., drop .py)
     scan-query rdeps <module> 2>/dev/null | head -20
     echo "^ review rdeps — changes here may affect callers"
 fi
@@ -133,7 +123,6 @@ Include `### Codex Pre-pass` section in final report:
 ## Progressive Review Loop
 
 ```bash
-# Check oss plugin availability — skip Progressive Review Loop if absent
 if ! claude plugin list 2>/dev/null | grep -q 'oss@'; then  # timeout: 15000
     echo "oss plugin not installed — Progressive Review Loop skipped; proceeding to Codex Mechanical Delegation"
     # Skip all 3 cycles

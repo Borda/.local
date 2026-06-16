@@ -50,7 +50,6 @@ Three-tier fallback (PATH → CLAUDE_PLUGIN_ROOT → newest cache install) handl
 SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py" 2>/dev/null || true)  # timeout: 5000
 if [ -n "$SQ" ] && [ -x "$SQ" ]; then
     printf "✓ scan-query: %s\n" "$SQ"
-    # Cross-block status persistence (fresh shell per Bash() call — vars don't survive)
     echo "ok" > "${TMPDIR:-/tmp}/codemap-c1-status"
 else
     printf "✗ scan-query: not found\n"
@@ -70,7 +69,6 @@ if [ "$C1_STATUS" = "failed" ]; then
     echo "C1 failed — skipping this step."
     exit 0
 fi
-# PROJ/INDEX resolution + existence check — also used in Step I1 (init mode, without --check-exists).
 # Stderr captured to tempfile so eval only sees KEY=value stdout (never mixed stderr).
 # Script always emits PROJ/INDEX on stdout regardless of exit code — no second invocation needed.
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists 2>/dev/null  # timeout: 5000
@@ -100,10 +98,7 @@ fi
 # timeout: 10000
 C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c1-status" 2>/dev/null || echo "ok")
 C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c2-status" 2>/dev/null || echo "ok")
-if [ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ]; then
-    echo "C1/C2 failed — skipping this step."
-    exit 0
-fi
+[ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ] && { echo "C1/C2 failed — skipping this step."; exit 0; }
 INDEX=$(cat "${TMPDIR:-/tmp}/codemap-index")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" "$INDEX"
 ```
@@ -117,10 +112,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" "$I
 ```bash
 C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c1-status" 2>/dev/null || echo "ok")
 C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c2-status" 2>/dev/null || echo "ok")
-if [ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ]; then
-    echo "C1/C2 failed — skipping this step."
-    exit 0
-fi
+[ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ] && { echo "C1/C2 failed — skipping this step."; exit 0; }
 INDEX=$(cat "${TMPDIR:-/tmp}/codemap-index")
 SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
 command -v jq >/dev/null 2>&1 || { printf "✗ jq not found — required for smoke test; install via brew install jq or apt-get install jq\n"; exit 1; }
@@ -139,8 +131,7 @@ fi
 ```bash
 # timeout: 20000
 command -v jq >/dev/null 2>&1 || { printf "⚠ jq not found — C5 injection audit requires jq; install via brew install jq or apt-get install jq\n"; }
-# Pass installed plugin cache root (not just $CLAUDE_PLUGIN_ROOT) so check_injection.py scans all installed plugins
-# including foundry:sw-engineer, foundry:qa-specialist, and other high-value targets
+# Pass cache root (not just $CLAUDE_PLUGIN_ROOT) so check_injection.py scans all installed plugins
 PLUGIN_CACHE=$(ls -td ~/.claude/plugins/cache/*/ 2>/dev/null | head -1 | xargs dirname 2>/dev/null || echo "$HOME/.claude/plugins/cache")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_PLUGIN_ROOT" --cache-root "$PLUGIN_CACHE"
 ```
@@ -157,8 +148,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 
 ```bash
 # timeout: 5000
-# PROJ/INDEX resolution — shared with Step C2 (check mode); both call resolve_index_env.py.
-# Stderr to tempfile so eval only sees KEY=value stdout.
+# Stderr to tempfile so eval only sees KEY=value stdout (shared pattern with C2).
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" 2>/dev/null  # timeout: 5000
 PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj" 2>/dev/null || echo "")
 INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index" 2>/dev/null || echo "")
@@ -259,15 +249,12 @@ Reply with letters (e.g. "a b"), "all" (all High+Medium), or "none".
 **Write-permission probe + rollback log** — before any mutation under `~/.claude/plugins/cache/` (or any `INSTALL_PATH` discovered via I2):
 
 ```bash
-# Probe write permission before mutating cache files
 # INSTALL_PATH must be set from I2 installPath discovery — do NOT fall back to broad $HOME/.claude/plugins/cache
 # If INSTALL_PATH empty (I2 discovery failed), abort rather than granting broad write permission
 [ -n "$INSTALL_PATH" ] || { echo "Error: INSTALL_PATH not set — I2 discovery may have failed; re-run init"; exit 1; }
 [ -w "$INSTALL_PATH" ] || { echo "Error: no write permission to $INSTALL_PATH"; exit 1; }
-# Rollback log — record every file edited for this run
 ROLLBACK_LOG="$(mktemp "${TMPDIR:-/tmp}/codemap-init-rollback-XXXXXX.log")"
 echo "[codemap init] rollback log: $ROLLBACK_LOG"
-# Append one entry per edit: "<timestamp>\t<file>\t<original-sha>"
 ```
 
 For each file edited, append `printf '%s\t%s\n' "$(date -u +%FT%TZ)" "$FILE" >> "$ROLLBACK_LOG"` before writing the edit.
@@ -282,7 +269,6 @@ Per selected file, determine insertion point and content:
 
 ```bash
 # Structural context (codemap — Python projects only, silent skip if absent)
-# TARGET_MODULE — derive from $ARGUMENTS (e.g. strip leading ./ and .py suffix from file path argument)
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then

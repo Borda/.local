@@ -72,22 +72,18 @@ Extract flags:
 **`--out` validation**: if `--out <path>` provided, validate path BEFORE any extraction or file write:
 
 ```bash
-# POSIX-compatible path-traversal check (avoids bash-specific [[ ]])
+# POSIX path-traversal check (avoids bash-specific [[ ]])
 case "$OUT" in
   *..*)
-    if [ -n "$OUT" ]; then
-      echo "sweep: invalid --out path (path traversal not allowed): $OUT" >&2
-      exit 2
-    fi
+    [ -n "$OUT" ] && { echo "sweep: invalid --out path (path traversal not allowed): $OUT" >&2; exit 2; }
     ;;
 esac
 
-# Verify resolved path stays within project root (defense in depth; macOS-compatible)
+# Verify path stays within project root (macOS-compatible)
 if [ -n "$OUT" ]; then
     _PROJ_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
     if ! python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/check_output_within_root.py" "$OUT" "$_PROJ_ROOT" 2>/dev/null; then  # timeout: 5000
-        echo "sweep: --out path escapes project root: $OUT" >&2
-        exit 2
+        echo "sweep: --out path escapes project root: $OUT" >&2; exit 2
     fi
 fi
 ```

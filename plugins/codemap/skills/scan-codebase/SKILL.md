@@ -38,7 +38,6 @@ source "$SCAN_STATE_FILE"
 
 ```bash
 # timeout: 360000
-# see also: integration/SKILL.md Step I1 (cdm-integration-B7) — parallel scan-index invocation
 PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null)
 [ -n "$PROJ_SLUG" ] || { printf "! codemap state missing — re-run from the beginning\n"; exit 1; }
 SCAN_BIN=$(cat "${TMPDIR:-/tmp}/codemap-scan-bin-${PROJ_SLUG}")
@@ -60,11 +59,8 @@ Scanner writes to `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR
 After scan, read index and report compact summary:
 
 ```bash
-# Only report if index exists — Step 1 may have failed (binary missing, Python unavailable)
-# Pass $ARGUMENTS via env var — never interpolate into script path or args.
-# SCAN_ARGS provides root-path context for stats script to resolve relative module paths.
-# CLAUDE_PLUGIN_ROOT is set automatically by Claude Code when plugin is active.
 # timeout: 15000
+# Only report if index exists — Step 1 may have failed
 PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null)
 [ -n "$PROJ_SLUG" ] || { printf "! codemap state missing — re-run /codemap:scan-codebase\n"; exit 1; }
 PROJ_NAME=$(cat "${TMPDIR:-/tmp}/codemap-proj-name-${PROJ_SLUG}" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")")

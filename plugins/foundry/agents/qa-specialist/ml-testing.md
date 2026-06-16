@@ -72,15 +72,12 @@ def make_dataloader(dataset: torch.utils.data.Dataset, seed: int, num_workers: i
 
 
 def test_dataloader_reproducibility():
-    # Explicitly seed before tensor construction — the autouse fixture seeds before
-    # the test body begins, but make the seed contract explicit at the construction
-    # site so this test does not rely on fixture-ordering for its dataset values.
+    # Seed explicitly here — don't rely on autouse fixture ordering for dataset values
     torch.manual_seed(42)
     ds = torch.utils.data.TensorDataset(torch.randn(16, 3, 224, 224))
     loader1 = make_dataloader(ds, seed=42)
     loader2 = make_dataloader(ds, seed=42)
-    # Use zip_longest so a divergent batch count (e.g. drop_last asymmetry) raises
-    # rather than silently truncating to the shorter iterable.
+    # zip_longest: divergent batch counts (e.g. drop_last asymmetry) raise rather than silently truncate
     from itertools import zip_longest
 
     sentinel = object()
@@ -105,7 +102,7 @@ def test_dataloader_no_nan():
 def test_evaluate_does_not_change_model_mode():
     """evaluate() must not leave model in train mode."""
     model = MyModel()
-    model.train()  # start in train mode explicitly
+    model.train()
     evaluate(model, loader, criterion)
     assert not model.training, (
         "evaluate() must call model.eval() and not restore train mode"

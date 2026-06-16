@@ -83,9 +83,9 @@ max-returns = 6       # PLR0911
 ```
 
 ```bash
-ruff check . --fix                # fix auto-fixable issues
-ruff check . --fix --unsafe-fixes # fix more (review carefully)
-ruff format .                     # format code
+ruff check . --fix
+ruff check . --fix --unsafe-fixes  # fix more (review carefully)
+ruff format .
 ```
 
 > **Python EOL note**: review `target-version` when Python minor versions reach EOL — update to drop support for EOL versions and bump `target-version` accordingly.
@@ -118,9 +118,8 @@ ignore_missing_imports = true
 ```
 
 ```bash
-# Run mypy on the source root: `mypy src/` if src-layout, else `mypy .` (or detect from pyproject.toml [tool.mypy] `files`/`packages`).
-mypy src/ --ignore-missing-imports   # use `mypy .` if no src/ directory
-mypy src/ --strict                   # use `mypy .` if no src/ directory
+mypy src/ --ignore-missing-imports  # use `mypy .` if no src/ directory
+mypy src/ --strict
 ```
 
 **Path detection rule** — before invoking `mypy`, verify the path exists:

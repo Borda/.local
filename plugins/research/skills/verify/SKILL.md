@@ -66,13 +66,11 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 3000
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "verify" ".experiments" 2>/dev/null)  # timeout: 5000
 mkdir -p .reports/research
 BASE="verify-$BRANCH-$DATE"; OUT=".reports/research/$BASE.md"; COUNT=2; while [ -f "$OUT" ]; do OUT=".reports/research/${BASE}-${COUNT}.md"; COUNT=$((COUNT+1)); done
-# Persist for V3/V4/V5 — each Bash call is a fresh shell, variables do not survive
-# Use BRANCH-DATE discriminator to prevent collisions between concurrent verify runs
-_VTAG="${BRANCH}-${DATE}-$$-$(date +%s)"  # PID + epoch suffix: distinguishes concurrent invocations on same branch/day (HIGH-2)
+# Persist for V3/V4/V5 (each Bash call = fresh shell). PID+epoch suffix distinguishes concurrent runs on same branch/day.
+_VTAG="${BRANCH}-${DATE}-$$-$(date +%s)"
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/verify-${_VTAG}-run-dir"
-echo "$OUT" > "${TMPDIR:-/tmp}/verify-${_VTAG}-out"
-# Write latest-tag pointer so rehydration blocks can find the right files
-echo "$_VTAG" > "${TMPDIR:-/tmp}/verify-latest-tag"
+echo "$OUT"     > "${TMPDIR:-/tmp}/verify-${_VTAG}-out"
+echo "$_VTAG"   > "${TMPDIR:-/tmp}/verify-latest-tag"  # pointer for rehydration blocks
 ```
 
 **State-rehydration block** (paste at the top of every separate Bash invocation in V3, V4, V5):
@@ -101,15 +99,12 @@ Apply `--dim` filter: if `--dim F,H` specified, only audit those dimensions. Def
 **`--dim` validation**: derive `$DIM` from the `--dim` flag (default `F,H,E,N,C` when flag absent), then validate each specified dimension token against the known set before proceeding. **Persist status to temp file** so V3 (separate Bash shell) can short-circuit when V2 failed (ADV-M25 — bash `exit 2` only terminates V2's shell, not the V3 invocation):
 
 ```bash
-DIM="${DIM:-F,H,E,N,C}"  # default when --dim flag not supplied
+DIM="${DIM:-F,H,E,N,C}"
 V2_STATUS="ok"
 for _DIM_VAL in $(echo "$DIM" | tr ',' ' '); do
   case "$_DIM_VAL" in
     F|H|E|N|C) ;;
-    *)
-      echo "verify: unknown dimension: '$_DIM_VAL' — valid: F,H,E,N,C" >&2
-      V2_STATUS="failed"
-      ;;
+    *) echo "verify: unknown dimension: '$_DIM_VAL' — valid: F,H,E,N,C" >&2; V2_STATUS="failed" ;;
   esac
 done
 _VTAG=$(cat "${TMPDIR:-/tmp}/verify-latest-tag" 2>/dev/null)

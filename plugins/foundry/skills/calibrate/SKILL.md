@@ -111,12 +111,9 @@ From `$ARGUMENTS`, determine:
 - **Strip flags first**: extract `--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local` before scope resolution; validate mutual exclusion (error and stop on conflict). Strip all flags from ARGUMENTS before scope token resolution:
   ```bash
   LOCAL_MODE=false; [[ "$ARGUMENTS" == *"--local"* ]] && LOCAL_MODE=true
-  ARGUMENTS="${ARGUMENTS//--fast/}"
-  ARGUMENTS="${ARGUMENTS//--full/}"
-  ARGUMENTS="${ARGUMENTS//--ab-test/}"
-  ARGUMENTS="${ARGUMENTS//--apply/}"
-  ARGUMENTS="${ARGUMENTS//--skip-gate/}"
-  ARGUMENTS="${ARGUMENTS//--local/}"
+  ARGUMENTS="${ARGUMENTS//--fast/}"; ARGUMENTS="${ARGUMENTS//--full/}"
+  ARGUMENTS="${ARGUMENTS//--ab-test/}"; ARGUMENTS="${ARGUMENTS//--apply/}"
+  ARGUMENTS="${ARGUMENTS//--skip-gate/}"; ARGUMENTS="${ARGUMENTS//--local/}"
   ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
   mkdir -p "${TMPDIR:-/tmp}/calibrate-state"
   echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/calibrate-state/local-mode"

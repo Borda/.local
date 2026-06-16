@@ -120,10 +120,9 @@ if [ -z "$JUDGE_VERDICT_FILE" ]; then
   echo "Ablation studies require an approved baseline. Run: /research:judge <program.md>"
   exit 1
 fi
-# Preserve multi-word verdicts (e.g. "NEEDS REVISION") — strip trailing whitespace only, not internal spaces
-JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//' | sed 's/[[:space:]]*$//')
+JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//' | sed 's/[[:space:]]*$//')  # strip trailing only; preserve internal spaces (e.g. "NEEDS REVISION")
 
-# Program cross-match: confirm verdict was issued for the current experiment's program, not a different one
+# Cross-match: confirm verdict was issued for the current experiment's program
 PROGRAM_FILE=$(grep -iE '^[*]*(Program(_file)?|Program file)[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
 # F-02 guard: empty PROGRAM_FILE means verdict lacks program metadata — cannot verify applicability
 if [ -z "$PROGRAM_FILE" ]; then
@@ -220,7 +219,7 @@ Pass `$F2_PROMPT` (fully expanded) as the `prompt=` argument to `Agent(...)`.
 
 ```bash
 # audit-skip: resilience-replication
-# Per-phase checkpoint required — F2 + F6 dispatch independent scientist agents that may both be in scope; separate variables prevent cross-phase masking.
+# Per-phase checkpoint: F2 + F6 dispatch independent scientist agents; separate vars prevent cross-phase masking.
 _HM_F2=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "fortify-f2" 2>/dev/null)  # timeout: 5000
 LAUNCH_AT_F2=$(echo "$_HM_F2" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_F2=$(echo "$_HM_F2" | grep '^SENTINEL=' | cut -d= -f2)
@@ -264,16 +263,15 @@ Run each variant **sequentially** — parallel worktrees would conflict.
 ```bash
 ORIG_DIR="$(pwd)"  # timeout: 3000
 WORKTREE_PATHS_FILE=$(mktemp -t fortify-XXXX) || { echo "! BLOCKED — mktemp failed (tmpfs full or permission denied); cannot create cleanup accumulator. Aborting."; exit 1; }  # timeout: 3000
-echo "$WORKTREE_PATHS_FILE" > "${TMPDIR:-/tmp}/fortify-paths-ptr"  # persist for trap block
+echo "$WORKTREE_PATHS_FILE" > "${TMPDIR:-/tmp}/fortify-paths-ptr"
 
-# F-04: validate best_commit resolves to a concrete SHA (not a branch name) — `git worktree add` with a branch tip
+# F-04: validate best_commit is a concrete SHA — `git worktree add` with a branch tip
 # would advance the branch and pollute shared history on subsequent `git revert`.
 if ! best_commit_sha=$(git rev-parse --verify "$best_commit^{commit}" 2>/dev/null); then
     echo "! BLOCKED — best_commit '$best_commit' does not resolve to a commit. Re-run source experiment or correct state.json."
     exit 1
 fi
-# Substitute resolved SHA for any branch-name input; downstream `git worktree add` now always sees a SHA → detached HEAD.
-best_commit="$best_commit_sha"
+best_commit="$best_commit_sha"  # downstream `git worktree add` always sees a SHA → detached HEAD
 ```
 
 **On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. The trap below makes interrupt cleanup automatic — never rely on prose-only cleanup discipline.
@@ -307,13 +305,11 @@ git worktree add "$WORKTREE_BASE/$VARIANT_NAME" "$best_commit"  # timeout: 15000
 **4a-trap. Register cleanup trap immediately after worktree creation** (guarantees removal on EXIT / INT / TERM, even on uncaught error):
 
 ```bash
-# Reload well-known path (Check 41: shell var lost between Bash calls)
+# Reload (Check 41: shell var lost between Bash calls)
 WORKTREE_PATHS_FILE=$(cat "${TMPDIR:-/tmp}/fortify-paths-ptr" 2>/dev/null)
 [ -z "$WORKTREE_PATHS_FILE" ] && WORKTREE_PATHS_FILE="${TMPDIR:-/tmp}/fortify-worktree-paths-fallback"
 WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/$VARIANT_NAME}"
-# Append path to accumulator file — file persists across Bash calls; array variables do not
-echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"
-# Trap reads full accumulator — covers all variants created so far, not just current
+echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"  # accumulator file persists across Bash calls; array vars do not
 trap 'while IFS= read -r _wt; do git worktree remove --force "$_wt" 2>/dev/null; done < "$WORKTREE_PATHS_FILE" 2>/dev/null; rm -f "$WORKTREE_PATHS_FILE"' EXIT INT TERM
 ```
 
@@ -336,10 +332,9 @@ For `no-<component>` variant: revert component's commits.
 **Bash call 1 — extract and sort revert_commits via jq + awk** (no python; jq-based JSONL filter avoids per-iteration approval prompt):
 
 ```bash
-# Extract revert_commits for current variant from variants.jsonl (VARIANT_NAME set in loop)
 REVERT_COMMITS_RAW=$(jq -r --arg vn "$VARIANT_NAME" 'select(.variant_name==$vn) | .revert_commits[]' "$FORTIFY_DIR/variants.jsonl" 2>/dev/null | tr '\n' ' ')  # timeout: 5000
 [ -z "$REVERT_COMMITS_RAW" ] && { echo "⚠ No revert_commits for $VARIANT_NAME — skipping"; echo '{"variant":"'$VARIANT_NAME'","status":"revert-missing"}' >> "$FORTIFY_DIR/results.jsonl"; continue; }
-# Sort newest-first for conflict-free revert (portable awk reverse — avoids tac not available on macOS)
+# Sort newest-first for conflict-free revert (portable awk reverse — tac not on macOS)
 REVERT_COMMITS_SORTED=$(echo "$REVERT_COMMITS_RAW" | tr ' ' '\n' | awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}' | tr '\n' ' ')
 ```
 
@@ -354,8 +349,7 @@ If revert produces merge conflicts: append `{"variant":"<name>","status":"revert
 **4d. Run metric_cmd in worktree:**
 
 ```bash
-# METRIC_CMD initialized in F1 from environment (METRIC_CMD env var) or default
-$METRIC_CMD  # timeout: 360000
+$METRIC_CMD  # timeout: 360000  (initialized in F1 from env or default)
 METRIC_EXIT=$?
 ```
 
@@ -364,8 +358,7 @@ Parse stdout for numeric metric value. If command fails or no numeric output: re
 **4e. Run guard_cmd in worktree:**
 
 ```bash
-# GUARD_CMD initialized in F1 from environment (GUARD_CMD env var) or default
-$GUARD_CMD  # timeout: 360000
+$GUARD_CMD  # timeout: 360000  (initialized in F1 from env or default)
 GUARD_EXIT=$?
 ```
 

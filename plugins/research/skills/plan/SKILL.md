@@ -53,9 +53,7 @@ First, extract first positional token (strip all `--<flag>` tokens from `$ARGUME
 **Quoting note**: `$ARGUMENTS` is a raw string (not shell-tokenized). User-supplied quotes (e.g. `plan "reduce training loss"`) appear as literal characters. Before token counting, strip surrounding matched quotes from `$ARGUMENTS` so quoted multi-word goals are correctly recognised as multi-token:
 
 ```bash
-# Strip surrounding matched single or double quotes; tr splits on literal spaces.
 _STRIPPED=$(echo "$ARGUMENTS" | sed -E 's/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/')  # timeout: 5000
-# Count tokens in stripped $ARGUMENTS (excluding flags). If >1, FILE_ARG is part of a goal string.
 NONFLAG_TOKEN_COUNT=$(echo "$_STRIPPED" | tr ' ' '\n' | grep -v '^--' | grep -v '^$' | wc -l | tr -d ' ')  # timeout: 5000
 ```
 
@@ -79,13 +77,12 @@ CPROFILE_OUT=$(mktemp -t research-plan-XXXX)  # timeout: 3000
 python -m cProfile -s cumtime "$FILE_ARG" > "$CPROFILE_OUT" 2>&1  # timeout: 600000
 PROFILE_EXIT=$?
 if [ $PROFILE_EXIT -ne 0 ]; then
-    echo "⚠ cProfile failed (exit $PROFILE_EXIT) — continuing without profile data."
-    echo "  Wizard will prompt for an optimization goal from the goal-string path instead of bottleneck selection."
+    echo "⚠ cProfile failed (exit $PROFILE_EXIT) — continuing without profile data. Wizard will prompt for goal string instead."
     PROFILE_AVAILABLE=false
 else
     PROFILE_AVAILABLE=true
     head -40 "$CPROFILE_OUT"  # timeout: 5000
-    time python "$FILE_ARG"  # timeout: 600000
+    time python "$FILE_ARG"   # timeout: 600000
 fi
 ```
 

@@ -149,7 +149,8 @@ fi
 **Non-Python impact check** (runs BEFORE early exit — ensures warning always emits when relevant): scan diff for high-impact non-Python changes; collect warnings for report header:
 
 ```bash
-NON_PY_WARNINGS=""  # timeout: 5000
+# timeout: 5000
+NON_PY_WARNINGS=""
 git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
 git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
 ```
@@ -159,12 +160,10 @@ If `$NON_PY_WARNINGS` non-empty: include in report header regardless of whether 
 Filter to Python files only. No Python files → exit early (DMI skill — prose "stop" not executable; bash exit is the only enforceable mechanism):
 
 ```bash
-# Check if diff contains any Python files — if not, exit early  # timeout: 5000
+# timeout: 5000
 if [ -n "$REVIEW_ARGS" ]; then
-    # Path mode: check target for .py files
     PYTHON_FILES=$(find "$REVIEW_ARGS" -name '*.py' -type f 2>/dev/null | head -1)
 else
-    # Diff mode
     PYTHON_FILES=$(git diff --name-only HEAD 2>/dev/null | grep '\.py$' | head -1)
 fi
 if [ -z "$PYTHON_FILES" ]; then
@@ -199,11 +198,8 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || P
 CODEMAP_CONTEXT=""
 CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-enabled 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ]; then
+    # src-layout assumed; files outside src/ (scripts/, tools/) may not be valid importable modules — scan-query returns empty, not error
     CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')  # timeout: 3000
-    # Note: this derivation assumes src-layout (files under src/). Files outside src/ (e.g.
-    # scripts/, tools/) produce module names that may not be valid importable modules.
-    # scan-query will return empty for these — not an error, just no structural context.
-    # flat-layout fallback: if src/-strip yields nothing, try without strip
     if [ -z "$CHANGED_MODS" ]; then
         CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|/[^/]*\.py$||' | sort -u | head -10)
     fi
@@ -249,7 +245,7 @@ If Codex available:
 
 ```bash
 CODEX_OUT="$RUN_DIR/codex.md"
-echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # persist: Bash() state lost between calls; Step 6 reads this back
+echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # persist for Step 6 — Bash() state lost between calls
 ```
 
 If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
@@ -279,7 +275,6 @@ Use `$RUN_DIR_LITERAL` in spawn prompts below — substitute expanded value befo
 Resolve develop:review checklist path (version-agnostic):
 
 ```bash
-# Guard: jq required for checklist path resolution
 if ! command -v jq >/dev/null 2>&1; then
     echo "⚠ jq not available — oss:review checklist path resolution skipped; Agent 1 will proceed without checklist"
     REVIEW_CHECKLIST=""

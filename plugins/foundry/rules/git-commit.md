@@ -63,7 +63,7 @@ Rules:
 Before writing commit, run three in parallel:
 
 - `git status` — identify staged new files (`A` prefix) and unstaged changes
-- `git diff HEAD` — **not** bare `git diff`; bare `git diff` shows only unstaged changes, misses staged new files; `git diff HEAD` captures staged and unstaged vs HEAD
+- `git diff HEAD` — **not** bare `git diff`; bare shows only unstaged, misses staged new files; `git diff HEAD` captures staged and unstaged vs HEAD
 - `git log --oneline -5` — reference repo's existing commit style
 
 **Truncated diff — mandatory follow-up**: when `git diff HEAD` output large and Bash tool saves to file (showing only 2 KB preview), read saved file completely before writing commit. Don't write from preview alone — most significant changes often past truncation point. Also run `git diff --stat HEAD` (always fits in context) for complete file-by-file change map; use stat output to identify which files changed most and whether any missed in preview. If saved diff file exceeds ~2000 lines, escalate to subagent summarization — see Large diff rule below.
@@ -151,11 +151,7 @@ Never skip trailers because skill template omits them.
 
 Default branch is repo-specific — do NOT hardcode `main` or `master`. Detect dynamically via `git symbolic-ref refs/remotes/origin/HEAD`, `gh repo view`, or `git remote show origin`.
 
-Before any `git commit`, check current branch:
-
-```bash
-CURRENT_BRANCH=$(git branch --show-current)
-```
+Before any `git commit`, check current branch: `git branch --show-current`
 
 Feature branch: `commit-guard.js` hook enforces authorization via sentinel files — never bypass it. Default branch: `AskUserQuestion` always required before commit.
 

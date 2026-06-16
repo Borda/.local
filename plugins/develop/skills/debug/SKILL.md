@@ -118,7 +118,6 @@ Health monitoring (CLAUDE.md §6): for each spawned agent, use a **per-agent sen
 
 ```bash
 # timeout: 5000
-# For each spawned agent (N=1,2,3 ...) create its own sentinel
 for N in 1 2 3; do
     touch "${TMPDIR:-/tmp}/debug-team-check-${N}"
 done
@@ -177,7 +176,7 @@ fi
 Run pytest with extracted path (empty `$TEST_PATH` → full suite):
 
 ```bash
-# Read the full traceback — never just the last line  # timeout: 600000
+# timeout: 600000
 $PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
 GATE_EXIT=${PIPESTATUS[0]}
 echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
@@ -189,7 +188,7 @@ fi
 ```
 
 ```bash
-# What changed recently near the failing code?  # timeout: 3000
+# timeout: 3000
 git log --oneline -20
 COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 LOOKBACK=$(( COMMIT_COUNT < 5 ? COMMIT_COUNT : 5 ))
@@ -207,7 +206,6 @@ SUSPECT_FILE="${TEST_PATH:-}"  # derive from TEST_PATH resolved above; empty -> 
 ```bash
 # Resolve TEST_PATH before this block — e.g.:
 # TEST_PATH=$(grep -rE '<symptom keyword>' tests/ --include='*.py' -l | head -1)
-# Empty TEST_PATH → full suite (acceptable for symptom-text mode)
 # timeout: 600000
 $PYTEST_CMD --tb=long ${TEST_PATH} -v 2>&1 | tail -60
 GATE_EXIT=${PIPESTATUS[0]}
@@ -235,7 +233,7 @@ Present agent's analysis summary before proceeding.
 **Flaky-test branch** — if symptom is intermittent (passes alone, fails in full suite): run binary-search isolation. `<failing-test-node-id>` is a **substitution token** — before executing this block, resolve the failing test node ID from `$ARGUMENTS` or from prior pytest output (captured in a shell variable, e.g. `FAILING_TEST_NODE=tests/foo.py::test_bar`), then substitute the literal node ID into the command. Do NOT execute with the literal `<failing-test-node-id>` string — bash would interpret `<` as a stdin redirect:
 
 ```bash
-# Resolve FAILING_TEST_NODE before this block — e.g.:
+# Resolve FAILING_TEST_NODE before this block (bash would interpret literal `<...>` as redirect):
 # FAILING_TEST_NODE=$(echo "$ARGUMENTS" | grep -oE 'tests?/[^[:space:]]+::test_[^[:space:]]+' | head -1)
 _FOUNDRY_BIN=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry-bin 2>/dev/null || ls -td ~/.claude/plugins/cache/*/foundry/*/bin 2>/dev/null | head -1 || echo "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin")  # timeout: 5000
 if [ -z "$FAILING_TEST_NODE" ]; then
@@ -298,7 +296,7 @@ If confidence low: propose targeted probe (minimal script, added log statement, 
 Root cause confirmed. Transition to fix mode with diagnosis as input — fix's Step 1 pre-answered.
 
 ```bash
-# Verify /develop:fix is available before writing handoff  # timeout: 5000
+# timeout: 5000
 if [ ! -f "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/fix/SKILL.md" ]; then
     echo "⚠ /develop:fix not found — partial install detected; diagnosis file will be written but handoff cannot be invoked automatically"
 fi

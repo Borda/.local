@@ -95,28 +95,23 @@ ARGUMENTS=" $ARGUMENTS "
 ARGUMENTS="${ARGUMENTS// --local / }"; ARGUMENTS="${ARGUMENTS// --adversarial / }"
 ARGUMENTS="${ARGUMENTS// --efficiency / }"; ARGUMENTS="${ARGUMENTS// --upgrade / }"
 ARGUMENTS="${ARGUMENTS// --skip-gate / }"; ARGUMENTS="${ARGUMENTS// --challenge / }"
-# Collapse multiple internal spaces from repeated stripping; trim leading/trailing
 ARGUMENTS=$(echo "$ARGUMENTS" | tr -s ' '); ARGUMENTS="${ARGUMENTS# }"; ARGUMENTS="${ARGUMENTS% }"
 
-# Mutual exclusion: --upgrade cannot be combined with --adversarial or --efficiency
 if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFFICIENCY_MODE" = "true" ]; }; then
     printf "! --upgrade is mutually exclusive with --adversarial and --efficiency\n"
     exit 1
 fi
 
-# Inline preflight helpers — canonical defs in _shared/preflight-helpers.md
-# Inlined here because Claude Code spawns fresh shell per Bash() call;
-# functions sourced in one block are unavailable in subsequent blocks.
+# Inlined from _shared/preflight-helpers.md — fresh shell per Bash() call; sourced functions unavailable in subsequent blocks
 preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
 preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
 
-# .claude/ directory must exist (not cached — filesystem state)
 if [ ! -d ".claude" ]; then
     printf "! BREAKING: .claude/ directory not found — nothing to audit\n"
     exit 1
 fi
 
-# jq availability — Check 4 depends on it
+# jq — Check 4 depends on it
 if preflight_ok jq; then
     JQ_AVAILABLE=true
 elif command -v jq &>/dev/null; then # timeout: 5000
@@ -127,14 +122,13 @@ else
     JQ_AVAILABLE=false
 fi
 
-# git availability — used in path portability check and baseline context
 if ! preflight_ok git && ! command -v git &>/dev/null; then # timeout: 5000
     printf "⚠ MISSING: git not found — path portability check may miss repo-root references\n"
 else
     preflight_ok git || preflight_pass git
 fi
 
-# node availability — Check 10 (RTK prefix parsing) and upgrade mode (hook syntax check) depend on it
+# node — Check 10 (RTK prefix parsing) and upgrade hook syntax check depend on it
 if preflight_ok node; then
     NODE_AVAILABLE=true
 elif command -v node &>/dev/null; then # timeout: 5000
@@ -170,11 +164,9 @@ Place these two lines at the top of every Bash block in Steps 2–11 that refere
 ## Step 1: Run pre-commit (if configured)
 
 ```bash
-# Inline preflight helpers — fresh shell loses prior defs
 preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
 preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
 
-# Check whether pre-commit is installed and a config exists
 if (preflight_ok pre-commit || { command -v pre-commit &>/dev/null && preflight_pass pre-commit; }) &&
 [ -f .pre-commit-config.yaml ]; then
     timeout 600 pre-commit run --all-files # timeout: 600000

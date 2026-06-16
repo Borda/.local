@@ -53,7 +53,7 @@ Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$
 **Language preflight gate**: after runner-detection.md, check project type:
 
 ```bash
-# Abort early on non-Python repos — toolchain assumes pytest  # timeout: 5000
+# timeout: 5000
 if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; then
     NON_PY=$(ls package.json Cargo.toml go.mod 2>/dev/null | head -1)
 fi
@@ -144,7 +144,7 @@ Spawn 2 teammates in parallel using Agent() tool:
 **IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in the prompt strings. `<TS_LITERAL>`, `<_DEV_SHARED_LITERAL>`, and `<ARGUMENTS_LITERAL>` in the prompt text below are placeholders — substitute the actual computed values before constructing the Agent call; the spawned agent cannot expand shell variables from its parent context:
 
 ```bash
-# Resolve variables to literals for spawn prompt embedding  # timeout: 5000
+# timeout: 5000
 _SPAWN_DEV_SHARED="$_DEV_SHARED"
 _SPAWN_TS="$TS"
 _SPAWN_ARGS="$ARGUMENTS"
@@ -174,7 +174,7 @@ Gather all available context about bug:
 > **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text (contains spaces, letters, or special chars), treat as symptom description.
 
 ```bash
-# If issue number: fetch the full issue with comments  # timeout: 6000
+# timeout: 6000
 REPO_NAME=$(cat ${TMPDIR:-/tmp}/dev-upstream 2>/dev/null || echo "")
 if [ -n "$REPO_NAME" ]; then
     python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" --repo "$REPO_NAME" 2>/dev/null
@@ -191,7 +191,7 @@ fi
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
 
 ```bash
-# If failing test: run it to capture the exact failure  # timeout: 600000
+# timeout: 600000
 $PYTEST_CMD --tb=long <test_path> -v 2>&1 >"${TMPDIR:-/tmp}/pytest-out.txt"; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 

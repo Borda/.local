@@ -59,7 +59,6 @@ MD_CELL_MARK:  "# %% [markdown]"
 ## Step 1: Parse arguments and gather context
 
 ```bash
-# Parse arguments
 ARGS="$ARGUMENTS"
 COMPETITION_NAME=$(echo "$ARGS" | awk '{print $1}')
 RESUME_FLAG=""
@@ -68,24 +67,21 @@ INFERENCE_ONLY=false
 OFFLINE_SETUP=false
 PROBLEM_TYPE=""
 
-# Extract flags
 [[ "$ARGS" == *"--eda-only"* ]]      && EDA_ONLY=true
 [[ "$ARGS" == *"--inference-only"* ]] && INFERENCE_ONLY=true
 [[ "$ARGS" == *"--offline-setup"* ]]  && OFFLINE_SETUP=true
 [[ "$ARGS" =~ --type[[:space:]]([a-z]+) ]] && PROBLEM_TYPE="${BASH_REMATCH[1]}"
 [[ "$ARGS" =~ --resume[[:space:]]([^[:space:]]+) ]] && RESUME_FLAG="${BASH_REMATCH[1]}"
 
-# Offline setup rules: inference always offline; EDA always online (overrides --offline-setup)
+# inference always offline; EDA always online (overrides --offline-setup)
 [ "$INFERENCE_ONLY" = "true" ] && OFFLINE_SETUP=true
 [ "$EDA_ONLY" = "true" ]       && OFFLINE_SETUP=false
 
 echo "Competition: $COMPETITION_NAME"
 echo "Type: ${PROBLEM_TYPE:-auto-detect}"
-echo "EDA only: $EDA_ONLY"
-echo "Inference only: $INFERENCE_ONLY"
-echo "Offline setup: $OFFLINE_SETUP"
+echo "EDA only: $EDA_ONLY | Inference only: $INFERENCE_ONLY | Offline setup: $OFFLINE_SETUP"
 
-# Persist for Step 4 re-derivation (bash state lost across Bash() calls)
+# Persist for Step 4 (bash state lost across Bash() calls)
 echo "$COMPETITION_NAME" > "${TMPDIR:-/tmp}/kaggle-competition-name"
 echo "$INFERENCE_ONLY"   > "${TMPDIR:-/tmp}/kaggle-inference-only"
 echo "$OFFLINE_SETUP"    > "${TMPDIR:-/tmp}/kaggle-offline-setup"
@@ -207,7 +203,7 @@ KAGGLE_CHECKPOINT="${TMPDIR:-/tmp}/kaggle-check-$(date +%s)"
 touch "$KAGGLE_CHECKPOINT"  # timeout: 3000
 ```
 
-Poll every 5 min after spawn:
+Poll every 5 min:
 
 ```bash
 NEW_FILES=$(find ".experiments/kaggle" -newer "$KAGGLE_CHECKPOINT" -type f 2>/dev/null | wc -l)  # timeout: 5000
@@ -225,20 +221,15 @@ After agent completes:
 3. Check all required sections present: `grep "^# %% \[markdown\]" <file>`
 
 ```bash
-# Re-derive OUTFILE (bash state lost between steps — recompute from flags persisted in Step 1)
+# Re-derive OUTFILE from flags persisted in Step 1 (bash state lost between steps)
 COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name" 2>/dev/null || echo "$COMPETITION_NAME")
 INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only" 2>/dev/null || echo "false")
 OUTPUT_SUFFIX=""; [ "$INFERENCE_ONLY" = "true" ] && OUTPUT_SUFFIX="-inference"
 OUTFILE=".experiments/kaggle/${COMPETITION_NAME}${OUTPUT_SUFFIX}.py"
-echo "=== Cell count ==="
-grep -c "^# %%" "$OUTFILE"  # timeout: 5000
-echo "=== Sections ==="
-grep "^# %% \[markdown\]" "$OUTFILE"  # timeout: 5000
-echo "=== File size ==="
-wc -l "$OUTFILE"  # timeout: 5000
+echo "=== Cell count ==="; grep -c "^# %%" "$OUTFILE"  # timeout: 5000
+echo "=== Sections ===";   grep "^# %% \[markdown\]" "$OUTFILE"  # timeout: 5000
+echo "=== File size ===";  wc -l "$OUTFILE"  # timeout: 5000
 ```
-
-> Persist `COMPETITION_NAME` and `INFERENCE_ONLY` to `/tmp/kaggle-*` files in Step 1 so Step 4 can re-derive `OUTFILE` without relying on shell-variable carry-over.
 
 Print to terminal:
 - Output path (`$OUTFILE`)

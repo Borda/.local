@@ -314,7 +314,7 @@ REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:l
 BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
 COMMIT_SENTINEL="${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
 touch "$COMMIT_SENTINEL"  # timeout: 3000
-# Note: trap not effective across Bash calls — each Bash invocation is a fresh shell; commit protection handled by commit-guard.js hook instead.
+# trap not effective across Bash calls — commit protection handled by commit-guard.js hook
 ```
 
 **Sentinel liveness**: touch `$COMMIT_SENTINEL` after each Phase 8 result write to extend monitoring window — do NOT rely solely on sentinel touched at loop start; slow iterations exceed 15-min TTL. Re-derive slug per SENTINEL_SLUG_FORMULA from `<constants>` (bash state lost between calls).
@@ -369,10 +369,9 @@ TaskUpdate R5 subject: `R5: Iteration N/max_iterations — running`
 Build context for ideation agent, write to file — do NOT accumulate inline in main context:
 
 ```bash
-# Collect signals
 git log --oneline -10 >.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 3000
 tail -10 .experiments/state/${RUN_ID}/experiments.jsonl >>.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 5000
-# Guard HEAD~5 — fresh repos have <5 commits; fall back to full HEAD diff when shallow
+# Fresh repos have <5 commits — fall back to full HEAD diff when shallow
 if [ "$(git rev-list HEAD --count 2>/dev/null)" -gt 5 ]; then
     git diff --stat HEAD~5 HEAD >>.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 3000
 else
@@ -434,10 +433,10 @@ Read `${CLAUDE_SKILL_DIR}/modes/codex-copilot.md` — contains full Phase 2c log
 Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentinel TTL set in R5 setup. Slug computation unavoidably re-run (bash state lost between tool calls); path pattern identical to R5 setup block above:
 
 ```bash
-# Refresh commit sentinel — bash state lost between calls; re-derive slug (same formula as R5 setup)
+# Refresh sentinel — bash state lost between calls; re-derive slug (same formula as R5 setup)
 REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
 BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
-touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # sentinel pattern: ${TMPDIR:-/tmp}/claude-commit-auth-<repo>-<branch>; timeout: 3000
+touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000
 ```
 
 Stage only modified files (never `git add -A`):
@@ -480,7 +479,7 @@ Record pass (exit 0) or fail (non-zero).
 DIFF_SUMMARY=$(git diff --stat HEAD~1..HEAD | tail -1)  # timeout: 3000
 INSERTIONS=$(echo "$DIFF_SUMMARY" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo 0)
 DELETIONS=$(echo "$DIFF_SUMMARY" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo 0)
-CHANGE_LINES=$((INSERTIONS + DELETIONS))
+CHANGE_LINES=$(( INSERTIONS + DELETIONS ))
 ```
 
 `git revert HEAD --no-edit` — never `git reset --hard` (preserves history, not in deny list).
@@ -488,10 +487,9 @@ CHANGE_LINES=$((INSERTIONS + DELETIONS))
 **Double-revert guard** (ADV-H19) — Phase 7 rework→revert can collide with a partial Phase 5 timeout revert or Phase 6 guard-fail revert performed in the same iteration. Always check before issuing the revert:
 
 ```bash
-# Inspect last 5 commits for a prior revert in this iteration (no Bash state across calls — re-derive)
 ALREADY_REVERTED=$(git log --oneline -5 2>/dev/null | grep -c "^[0-9a-f]\+ Revert " || echo 0)
 if [ "$ALREADY_REVERTED" -gt 0 ]; then
-    echo "Phase 7: prior revert detected (Phase 5/6 already reverted this iteration) — skipping double-revert to prevent state corruption."
+    echo "Phase 7: prior revert detected (Phase 5/6 already reverted this iteration) — skipping double-revert."
 else
     git revert HEAD --no-edit  # timeout: 15000
 fi
@@ -573,8 +571,7 @@ TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 **After campaign loop completes** (outside per-iteration loop):
 
 ```bash
-# Sentinel cleanup is best-effort — process-local trap unreachable; commit-guard.js hook owns lifecycle.
-rm -f "$COMMIT_SENTINEL"  # timeout: 3000
+rm -f "$COMMIT_SENTINEL"  # timeout: 3000  (best-effort; commit-guard.js owns lifecycle)
 ```
 
 ### Step R6: Results report

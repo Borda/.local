@@ -91,7 +91,6 @@ Maintain colors manually — add new agent colors here when creating agents; sta
 Extract operation, type, name, optional arguments from `$ARGUMENTS`.
 
 ```bash
-# Parse --skip-audit flag before other argument processing
 SKIP_AUDIT=false
 [[ "$ARGUMENTS" == *"--skip-audit"* ]] && SKIP_AUDIT=true
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/\(^\|[[:space:]]\)--skip-audit\([[:space:]]\|$\)/ /g' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
@@ -133,7 +132,6 @@ For `create`, check only relevant type's path.
 **Delete confirmation gate** — when `$MODE` is `delete`, immediately after type resolution invoke `AskUserQuestion`: "Delete `<name>` (`<type>`)? This cannot be undone. (a) Confirm · (b) Abort". On Abort: stop. On Confirm: proceed to Step 4.
 
 ```bash
-# Check permission existence (for add perm / remove perm)
 jq -e --arg rule '<rule>' '.permissions.allow | index($rule) != null' .claude/settings.json >/dev/null 2>&1  # timeout: 5000
 ```
 
@@ -152,7 +150,6 @@ jq -e --arg rule '<rule>' '.permissions.allow | index($rule) != null' .claude/se
 Assign `MODE` in shell before the edit-complexity classification below so the `[[ "$MODE" == "content-edit" ]]` guard fires correctly:
 
 ```bash
-# Set MODE from the operation parsed above. Example for an update invocation:
 # MODE="content-edit"   # or "rename" / "create" / "delete" / "add-perm" / "remove-perm"
 ```
 
@@ -333,7 +330,6 @@ Atomic rename — write new file before deleting old:
 3. Verify new file exists and is valid: `Read(file_path=".claude/agents/<new-name>.md", limit=5)`
 
 ```bash
-# 4. Delete old file only after new file is confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
 rm .claude/agents/<old-name>.md # timeout: 5000
 ```
 
@@ -354,21 +350,18 @@ Atomic rename — create new directory before removing old:
 3. Verify new file exists: `Read(file_path=".claude/skills/<new-name>/SKILL.md", limit=5)`
 
     ```bash
-    # 4. Remove old directory only after new is confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
     rm -r .claude/skills/<old-name>  # timeout: 5000
     ```
 
 ### Mode: Delete Agent
 
 ```bash
-# Confirmed by delete gate in Step 1 — safe to proceed
 rm .claude/agents/<name>.md # timeout: 5000
 ```
 
 ### Mode: Delete Skill
 
 ```bash
-# Confirmed by delete gate in Step 1 — safe to proceed
 rm -r .claude/skills/<name>  # timeout: 5000
 ```
 
@@ -495,14 +488,12 @@ Atomic update — write new file before deleting old:
 3. Verify new file exists: `Read(file_path=".claude/rules/<new-name>.md", limit=5)`
 
 ```bash
-# 4. Delete old file only after new file confirmed — user invoked rename explicitly; new file verified above; no additional confirmation required
 rm .claude/rules/<old-name>.md  # timeout: 5000
 ```
 
 ### Mode: Delete Rule
 
 ```bash
-# Confirmed by delete gate in Step 1 — safe to proceed
 rm .claude/rules/<name>.md # timeout: 5000
 ```
 
@@ -531,7 +522,7 @@ Return ONLY: {"status":"done","file":".claude/hooks/<name>.js","edits":N,"confid
 ### Mode: Delete Hook
 
 ```bash
-rm .claude/hooks/<name>.js # timeout: 5000
+rm .claude/hooks/<name>.js  # timeout: 5000
 ```
 
 After deleting the hook file, also remove its entry from `.claude/settings.json` so Claude Code does not invoke a missing script. Identify the hook's matcher pattern (the entry's `matcher` field, or `command` substring containing the deleted filename) and run jq to strip every block referencing it. Substitute `<name>` with the deleted hook's basename (no `.js` suffix):

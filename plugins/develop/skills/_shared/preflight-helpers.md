@@ -15,14 +15,12 @@ Run when `SEMBLE_ENABLED=true`. Codemap availability already validated by `codem
 Run when skill accepts `--plan <path>` flag. Sets `$PLAN_FILE`.
 
 ```bash
-# Extract --plan path from arguments — support both `--plan path` and `--plan=path`
 PLAN_FILE=""
 if [[ "$ARGUMENTS" =~ --plan[[:space:]]+([^[:space:]]+) ]]; then
   PLAN_FILE="${BASH_REMATCH[1]}"
 elif [[ "$ARGUMENTS" =~ --plan=([^[:space:]]+) ]]; then
   PLAN_FILE="${BASH_REMATCH[1]}"
 fi
-# Existence guard — fail fast if path supplied but missing
 if [ -n "$PLAN_FILE" ] && [ ! -f "$PLAN_FILE" ]; then
   echo "! BREAKING — plan file not found: $PLAN_FILE"
   echo "Fix: pass an existing plan path via --plan <path> or --plan=<path>"

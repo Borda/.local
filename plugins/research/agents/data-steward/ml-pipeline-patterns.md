@@ -11,15 +11,13 @@ Contains: split strategies for grouped/temporal data, class imbalance handling, 
 ## Patient-Level Split (medical imaging — CRITICAL)
 
 ```python
-# Medical datasets: multiple images per patient — MUST split by patient_id
 import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 
 patient_ids = metadata["patient_id"].values
-# random_state MUST be pinned and logged — omitting produces a different split per
-# run; the patient-overlap assertion below still passes (the split stays group-aware),
-# silently masking the non-reproducibility. Cross-run model comparisons require the
-# exact same seed.
+# random_state MUST be pinned — omitting produces a different split per run; the
+# patient-overlap assertion still passes (stays group-aware), silently masking
+# non-reproducibility. Cross-run comparisons require the exact same seed.
 gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
 train_idx, temp_idx = next(gss.split(metadata, groups=patient_ids))
 
@@ -69,9 +67,7 @@ from collections import Counter
 distribution = Counter(labels)
 majority = max(distribution.values())
 minority = min(distribution.values())
-ratio = majority / minority
-# > 10x: severe, needs explicit handling
-# 2-10x: moderate, monitor metrics per class
+ratio = majority / minority  # >10x severe; 2-10x moderate
 ```
 
 ## Handling Strategies (in order of preference)
@@ -88,15 +84,14 @@ ratio = majority / minority
 
 ## Recommended Configuration
 
-<!-- foundry:perf-optimizer: foundry plugin only. Skip throughput referral if absent. -->
 See `foundry:perf-optimizer` for throughput settings (`num_workers`, `pin_memory`, `prefetch_factor`, `persistent_workers`) — foundry plugin only; skip if absent. Core integrity settings:
 
 ```python
 DataLoader(
     dataset,
     batch_size=32,
-    drop_last=True,  # prevent variable-size last batch issues
-    collate_fn=None,  # specify if default collation doesn't work
+    drop_last=True,
+    collate_fn=None,
     worker_init_fn=...,  # set per-worker seed for reproducibility
 )
 ```

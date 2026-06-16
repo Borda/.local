@@ -73,8 +73,7 @@ Unsupported flag check — scan `$ARGUMENTS` for `--` tokens not in allowlist (`
 
 ```bash
 # timeout: 5000
-# resolve_index_env.py emits `PROJ='…' INDEX='…'` on stdout for eval — stderr to tempfile
-# so eval only sees KEY=VAL pairs. Shared pattern with integration/SKILL.md Step I1 / C2.
+# Stderr to tempfile so eval only sees KEY=VAL pairs (shared with integration/SKILL.md C2/I1).
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" 2>/dev/null  # timeout: 5000
 PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj" 2>/dev/null || echo "")
 INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index" 2>/dev/null || echo "")
@@ -193,7 +192,7 @@ For each caller entry (`called_by[i].caller` is already `module::function` forma
 Module-level import fix (whole-file scope, safe to apply once per file):
 
 ```bash
-# Use fully-qualified module path in from-import grep to avoid matching same-named symbols from unrelated modules
+# Use fully-qualified module path to avoid matching same-named symbols from unrelated modules
 grep -n "from ${OLD_MODULE_PATH} import .*\b${OLD_NAME}\b\|from .*\.${OLD_MODULE_PATH##*.} import .*\b${OLD_NAME}\b\|^import .*\b${OLD_NAME}\b" "<file>"  # timeout: 3000
 ```
 
@@ -212,17 +211,16 @@ Edit each match: replace `old_name`/`OldName` within the backtick-delimited role
 Call `gen_deprecation_wrapper.py` to produce the Python code string, then insert it immediately after the new definition block in the same file.
 
 ```bash
-# FIND_SYMBOL_JSON captured in Step 2 — extract type for auto mode
 SYMBOL_TYPE=$(echo "$FIND_SYMBOL_JSON" | jq -r '.matches[0].type // "function"')  # timeout: 3000
 
 if [ -n "$DEPRECATE_DECORATOR" ]; then
-    # Explicit mode — user supplied full decorator line via --deprecate="@deprecated(...)"
+    # User supplied full decorator line via --deprecate="@deprecated(...)"
     DEPRECATION_CODE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/gen_deprecation_wrapper.py" \
         --decorator "$DEPRECATE_DECORATOR" \
         --old-name "$OLD_NAME" \
         ${REMOVED_IN_VER:+--removed-in "$REMOVED_IN_VER"})  # timeout: 5000
 else
-    # Auto mode — derive decorator from symbol type + names + versions
+    # Derive decorator from symbol type + names + versions
     DEPRECATION_CODE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/gen_deprecation_wrapper.py" \
         --type "$SYMBOL_TYPE" \
         --old-name "$OLD_NAME" \
@@ -282,10 +280,8 @@ Edit each: `from mypackage.old_name import` → `from mypackage.new_name import`
 
 ```bash
 OLD_BASENAME="${OLD_MODULE_PATH##*.}"  # last component of dotted path
-# Restrict grep to __init__.py files within the same package directory to avoid false-positive
-# matches on same-named modules in unrelated packages (e.g. utils.py in multiple packages)
+# Restrict to same package dir to avoid false-positive matches on same-named modules elsewhere
 OLD_PKG_DIR=$(echo "${OLD_MODULE_PATH%.*}" | tr '.' '/')
-# Pattern covers: .old_name, ..old_name, ...old_name, .subpkg.old_name (all relative import depths)
 grep -rn "from \.*[^.]*\.${OLD_BASENAME} import\|from \.${OLD_BASENAME} import\|from \.${OLD_BASENAME} as " --include="__init__.py" "${OLD_PKG_DIR:-.}" 2>/dev/null  # timeout: 5000
 ```
 
@@ -294,8 +290,7 @@ Edit each match: `from .old_name import` → `from .new_name import`. Verify mat
 **5e — pyproject.toml / setup.cfg**:
 
 ```bash
-# Use OLD_MODULE_PATH (dotted full path) for pyproject.toml/setup.cfg to avoid false-positive matches
-# on OLD_BASENAME alone (e.g. "utils" matches unrelated config strings)
+# Use full dotted path (not OLD_BASENAME) to avoid false-positive matches on common names like "utils"
 grep -rn "${OLD_MODULE_PATH}" pyproject.toml setup.cfg 2>/dev/null  # timeout: 3000
 ```
 
@@ -312,8 +307,7 @@ Edit each `:mod:` reference to use new module path.
 ## Step 6: Re-scan + verify
 
 ```bash
-# --incremental: re-parses only files changed since last scan — sufficient for post-rename verification
-# scan-index with no extra args scans from git root (default behavior, same as /codemap:scan-codebase)
+# --incremental re-parses only changed files — sufficient post-rename
 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental --timeout 360 || { printf "! scan-index --incremental failed — run /codemap:scan-codebase for full rebuild\n"; }
 scan-query --timeout 20 find-symbol "$OLD_REF" --limit 0
 ```

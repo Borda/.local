@@ -147,7 +147,7 @@ If `~/.claude/settings.json` does not exist, create it using the Write tool with
 ```bash
 SETUP_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
 cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"  # timeout: 5000
-echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts"
+echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts"  # persist for restore in Step 8
 ```
 
 Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
@@ -410,7 +410,6 @@ done  # timeout: 10000
 ## Step 10: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
 
 ```bash
-# Backup existing CLAUDE.md before overwriting
 [ -f "$HOME/.claude/CLAUDE.md" ] && cp "$HOME/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md.bak"  # timeout: 5000
 cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"

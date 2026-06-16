@@ -8,14 +8,12 @@ Replace: `<SKILL>` = skill name (e.g. `calibrate`), `<RUN_DIR>` = run directory 
 ## §8 Implementation Template
 
 ```bash
-# §8-1: Launch sentinel — record time and create checkpoint
 LAUNCH_AT=$(date +%s)
 touch /tmp/<SKILL>-check-<ID>
 
 # Spawn background agent
 Agent(subagent_type="...", run_in_background=true, prompt="...", ...)
 
-# §8-2: Poll every 5 min — new files in run dir = alive; zero = stalled
 MONITOR_INTERVAL=300
 HARD_CUTOFF=900   # 15 min
 EXTENSION=300     # one extension allowed
@@ -24,20 +22,18 @@ while true; do
     sleep $MONITOR_INTERVAL
     elapsed=$(( $(date +%s) - LAUNCH_AT ))
     new_files=$(find <RUN_DIR> -newer /tmp/<SKILL>-check-<ID> -type f 2>/dev/null | wc -l)
-    touch /tmp/<SKILL>-check-<ID>   # advance checkpoint
+    touch /tmp/<SKILL>-check-<ID>
     if [ "$new_files" -gt 0 ]; then
         stall_count=0
-        [ "$elapsed" -ge "$HARD_CUTOFF" ] && break   # agent finished within hard cutoff
+        [ "$elapsed" -ge "$HARD_CUTOFF" ] && break
         continue
     fi
-    # No new files — potential stall
     stall_count=$(( stall_count + 1 ))
     if [ "$stall_count" -eq 1 ] && [ "$elapsed" -lt $(( HARD_CUTOFF + EXTENSION )) ]; then
-        # §8-4: One extension if tail output explains delay
+        # one extension if tail output explains delay
         tail_out=$(tail -20 <RUN_DIR>/output.md 2>/dev/null || echo "")
-        [ -n "$tail_out" ] && continue   # activity found — grant extension
+        [ -n "$tail_out" ] && continue
     fi
-    # §8-3: Hard cutoff reached or second unexplained stall
     printf "⏱ Agent <ID> timed out after %ds — reading partial results\n" "$elapsed"
     partial=$(tail -100 <RUN_DIR>/output.md 2>/dev/null || echo "")
     if [ -z "$partial" ]; then

@@ -44,14 +44,11 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 **Phase B — System-wide spawn pattern + duplication scan** (parallel with Phase A):
 
 ```bash
-# LOCAL_MODE-aware globs: SKILL/AGENT for frontmatter checks; SCAN_DIR for all .md (spawn/boilerplate/extraction)
-# canonical: LOCAL_MODE is set in audit/SKILL.md pre-flight; these glob vars are efficiency-mode-specific
+# LOCAL_MODE set in audit/SKILL.md pre-flight
 [ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
 [ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
 [ "$LOCAL_MODE" = "true" ] && _SCAN_DIR="plugins/" || _SCAN_DIR=".claude/"
 
-# Unbounded spawn patterns: Agent() inside for/while loop without BATCH_SIZE guard
-# Scope: all .md files — modes/ can also spawn agents
 echo "=== Unbounded spawn patterns ==="
 while IFS= read -r f; do
   [ -f "$f" ] || continue
@@ -62,14 +59,12 @@ while IFS= read -r f; do
   fi
 done < <(find "$_SCAN_DIR" -name "*.md" 2>/dev/null)
 
-# Dead model specs: model: declared + disable-model-invocation: true (SKILL.md only — modes/ have no frontmatter)
 echo "=== Dead model specs ==="
 for f in $_SKILL_GLOB; do
   [ -f "$f" ] || continue
   grep -q "^model:" "$f" && grep -q "disable-model-invocation: true" "$f" && echo "DEAD_SPEC: $f"
 done
 
-# Skills missing model declaration (SKILL.md only)
 echo "=== Missing model declarations ==="
 for f in $_SKILL_GLOB; do
   [ -f "$f" ] || continue
@@ -77,13 +72,11 @@ for f in $_SKILL_GLOB; do
   grep -q "^model:" "$f" || echo "NO_MODEL: $f"
 done
 
-# Agents missing model declaration
 for f in $_AGENT_GLOB; do
   [ -f "$f" ] || continue
   grep -q "^model:" "$f" || echo "NO_MODEL: $f"
 done
 
-# Boilerplate duplication counts — all .md files (modes/ and _shared/ contain these patterns too)
 echo "=== Boilerplate duplication ==="
 AGENT_RES=$(grep -rl "=\$(ls -td.*plugins/cache" "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 FLAG_CHECK=$(grep -rl "Unknown flag" "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
@@ -91,7 +84,6 @@ HEALTH_MON=$(grep -rl "MONITOR_INTERVAL=" "$_SCAN_DIR" --include="*.md" 2>/dev/n
 echo "agent-resolution boilerplate: $AGENT_RES files"
 echo "unsupported-flag-check boilerplate: $FLAG_CHECK files"
 echo "health-monitoring constants: $HEALTH_MON files"
-# Bin/ extraction candidates — all .md files including modes/, templates/, _shared/
 echo "=== Bin/ extraction candidates ==="
 MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' "$_SCAN_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 echo "mode-dispatch pattern: $MODE_DISPATCH files"

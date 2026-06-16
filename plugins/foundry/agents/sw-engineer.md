@@ -91,7 +91,7 @@ build-backend = "hatchling.build"
 [project]
 name = "mypackage"
 version = "1.2.3"
-requires-python = ">=3.10"    # 3.9 reached EOL Oct 2025; 3.10 adds match, | union, ParamSpec; Python 3.10 EOL planned October 2026 — update when dropping support
+requires-python = ">=3.10"  # 3.10 EOL Oct 2026 — update when dropping support
 dependencies = ["numpy>=2.0"]
 
 [project.optional-dependencies]
@@ -143,7 +143,6 @@ def render(item: Drawable, canvas: Canvas) -> None:
 ## Error Handling Patterns
 
 ```python
-# Custom exception hierarchy (one per domain, not per function)
 class MyPackageError(Exception):
     """Base exception for mypackage."""
 
@@ -156,7 +155,6 @@ class DataValidationError(MyPackageError):
     """Input data failed validation constraints."""
 
 
-# Fail fast with actionable messages
 def load_model(path: Path) -> Model:
     if not path.exists():
         raise FileNotFoundError(f"Model checkpoint not found: {path}")

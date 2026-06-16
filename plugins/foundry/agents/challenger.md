@@ -40,22 +40,22 @@ Attack target across 6 dimensions:
    - Instructions contain `--no-codex` → set `CODEX_ENABLED=false`; skip all codex steps
    - Otherwise: check settings opt-out then installed state via `check_codex.py` (local `.claude/settings.json` wins over global; if explicitly disabled → false; otherwise checks installed_plugins.json, cache dirs, PATH):
      ```bash
-     CODEX_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_codex.py" 2>/dev/null || echo 'false')  # timeout: 5000  # safe fallback: unavailable check script → assume disabled
+     CODEX_ENABLED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_codex.py" 2>/dev/null || echo 'false')  # timeout: 5000
      ```
    - Distinguish failure modes before treating as disabled — log specific reason:
      - CWD lookup mismatch (script path missing under `${CLAUDE_PLUGIN_ROOT}`): log `⚠ Codex check failed: check_codex.py not found at ${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/`
-     - `python` not on PATH (interpreter absent): log `⚠ Codex check failed: python interpreter not on PATH`
-     - Script ran but stderr suppressed (`2>/dev/null` swallowed real error): re-run without stderr suppression for one diagnostic read — `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_codex.py" 2>&1 | head -3` — log first 3 lines verbatim
+     - `python` not on PATH: log `⚠ Codex check failed: python interpreter not on PATH`
+     - Script ran but stderr suppressed: re-run without suppression for one diagnostic read — `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_codex.py" 2>&1 | head -3` — log first 3 lines verbatim
    - `CODEX_ENABLED=false` → skip Codex step with note matching the specific reason above (or "Codex disabled in settings.json" when check_codex.py returned false cleanly)
    - `CODEX_ENABLED=true` → find companion path:
      ```bash
      ls ~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs 2>/dev/null | sort -V | tail -1  # timeout: 5000
      ```
-   - Path empty → `CODEX_ENABLED=false`; note "codex enabled but companion not found"
+   - Path empty → `CODEX_ENABLED=false`; note "companion not found"
    - Store path as `COMPANION`
 
 2. **Launch Codex parallel track** (CODEX_ENABLED only)
-   - Run in background (`run_in_background: true`); `${TMPDIR:-/tmp}` write permitted exception (ephemeral cross-agent handoff, not project file):
+   - Run in background (`run_in_background: true`); `${TMPDIR:-/tmp}` write permitted exception (ephemeral cross-agent handoff):
      ```bash
      _CHAL_ID="$$-$(date +%s)"; node "$COMPANION" adversarial-review --wait --scope auto > ${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.txt 2>${TMPDIR:-/tmp}/codex-ar-challenger-${_CHAL_ID}.err  # timeout: 30000
      ```

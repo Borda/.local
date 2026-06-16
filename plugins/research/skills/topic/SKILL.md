@@ -32,7 +32,6 @@ NOT for deep single-paper analysis or experiment design — use `research:scient
 ## Agent Resolution
 
 ```bash
-# CLAUDE_PLUGIN_ROOT set by Claude Code to installed cache path; plugins/ fallback = source-tree only
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
@@ -66,15 +65,13 @@ Use `$ARGUMENTS_LOWER` for all flag/mode dispatch checks (`--team`, `--plan`, le
 **Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`.
 
 ```bash
-# timeout: 5000
-UNKNOWN_FLAGS=$(echo "$ARGUMENTS_LOWER" | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)
+UNKNOWN_FLAGS=$(echo "$ARGUMENTS_LOWER" | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)  # timeout: 5000
 ```
 
-**Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3 to avoid wasted SOTA search compute. Priority: `--team` wins over `plan` (invocation `plan --team` → Team Mode, topic string = "plan"):
+**Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3. Priority: `--team` wins over `plan` (`plan --team` → Team Mode, topic string = "plan"):
 
 ```bash
-# timeout: 5000
-FIRST_WORD=$(echo "$ARGUMENTS_LOWER" | awk '{print $1}')
+FIRST_WORD=$(echo "$ARGUMENTS_LOWER" | awk '{print $1}')  # timeout: 5000
 ```
 
 - If `$ARGUMENTS_LOWER` contains `--team` flag → skip Steps 2-3; jump directly to **Team Mode** section below.

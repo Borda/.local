@@ -42,7 +42,7 @@ Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$
 **Language preflight gate**: after runner-detection.md, check project type:
 
 ```bash
-# Abort early on non-Python repos — toolchain assumes pytest  # timeout: 5000
+# timeout: 5000
 if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; then
     NON_PY=$(ls package.json Cargo.toml go.mod 2>/dev/null | head -1)
 fi
@@ -86,7 +86,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
 ```bash
-# Parse --issue flag for issue-linked feature scaffolding  # timeout: 6000
+# timeout: 6000
 ISSUE_REF=""
 [[ "$ARGUMENTS" =~ --issue[[:space:]]+([^[:space:]]+) ]] && ISSUE_REF="${BASH_REMATCH[1]}"
 echo "$ISSUE_REF" > ${TMPDIR:-/tmp}/dev-issue-ref
@@ -148,7 +148,7 @@ echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts
 **IMPORTANT**: in spawn prompts below, substitute `$_SPAWN_TS` and `$_SPAWN_TEAM_DIR` with the actual computed values from the bash block above — literal resolved strings, not shell variable references. Bare `$TS`/`$TEAM_DIR` inside a quoted Agent prompt string will NOT be expanded; the spawned agent receives the literal dollar-sign text, causing path mismatches and health-monitoring false timeouts.
 
 ```bash
-# Resolve variables to literals for spawn prompt embedding (matches fix/refactor pattern)  # timeout: 5000
+# timeout: 5000
 _SPAWN_TS="$TS"
 _SPAWN_TEAM_DIR="$TEAM_DIR"
 ```
@@ -182,7 +182,7 @@ done
 **Wave 1 output gate** — verify sw-engineer wrote expected file before launching Wave 2:
 
 ```bash
-# Re-hydrate TS from persisted temp file (bash state lost between Bash() calls)  # timeout: 5000
+# timeout: 5000
 TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || echo "")
 [ -n "$TS" ] || { echo "! dev-feature-team-ts missing — cannot verify Wave 1 output; aborting team mode"; exit 1; }
 WAVE1_FILE=".temp/develop/$TS/feature-sw-engineer-$TS.md"
@@ -216,7 +216,6 @@ Gather full context before writing any code:
 > **Issue ID parsing rule**: Issue IDs must be prefixed with `#`; bare numbers ≥1000 are treated as issue IDs only if the `--issue` flag is present. Bare numbers <1000 without `#` prefix are treated as issue IDs unconditionally (legacy behavior). To avoid ambiguity when numeric goals appear, prefer descriptive text arguments or use `#<N>` prefix for issue references.
 
 ```bash
-# Strip leading '#' and trailing flags so both '123' and '#123 --repo ...' work
 _RAW="${ARGUMENTS#\#}"
 ISSUE_NUM=$(echo "$_RAW" | grep -oE '^[0-9]+' | head -1)
 ISSUE_NUM="${ISSUE_NUM:-$_RAW}"
@@ -332,7 +331,7 @@ Both forms must:
 **Gate**: demo must fail or error.
 
 ```bash
-# Step 1: collect-only — verify ≥1 doctest exists before running full gate  # timeout: 30000
+# timeout: 30000
 $PYTEST_CMD --collect-only --doctest-modules <module>.py -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}
 if [ "$COLLECT_EXIT" -eq 5 ]; then
     echo "⚠ GATE FAIL: no demo tests collected — demo file missing or doctest malformed"
@@ -346,8 +345,7 @@ echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit
 ```
 
 ```bash
-# Step 2: run full gate only when collection succeeded (COLLECT_EXIT=0)  # timeout: 600000
-# Re-hydrate from persisted temp files (bash state lost between Bash() calls)
+# timeout: 600000
 COLLECT_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-collect-exit 2>/dev/null || echo 1)
 GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-gate-exit 2>/dev/null || echo 1)
 # Doctest form:
@@ -386,7 +384,6 @@ If issue found: revise demo and re-run gate. Don't proceed to Step 3 with flawed
 Drive implementation by making tests pass, one cycle at a time:
 
 ```bash
-# Baseline: confirm existing suite is green before adding any new code
 python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/run_pytest_short.py" "$PYTEST_CMD" <target_test_dir>  # timeout: 600000
 GATE_EXIT=$?
 ```
@@ -512,7 +509,7 @@ Agent must Read each affected source file before writing docstrings — do not w
 **CHANGELOG update** (separate from doc-scribe): after doc-scribe completes, spawn **foundry:sw-engineer** to append one-line entry to `CHANGELOG.md` under `Unreleased` section. Context: feature name and one-line description of new capability.
 
 ```bash
-# Verify doctests pass after doc updates  # timeout: 600000
+# timeout: 600000
 $PYTEST_CMD --doctest-modules <target_module> -v 2>&1 | tail -20
 GATE_EXIT=${PIPESTATUS[0]}
 ```

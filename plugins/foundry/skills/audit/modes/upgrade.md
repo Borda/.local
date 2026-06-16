@@ -15,7 +15,6 @@ Triggered by `/audit --upgrade`. Read+executed by `/audit` when `--upgrade` flag
 Verify baseline structurally sound before applying anything:
 
 ```bash
-# Check for the most likely breaking issue — frontmatter conflicts — without running the full audit
 for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
     awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'context: fork' &&
     awk '/^---$/{c++} c<2' "$f" 2>/dev/null | grep -q 'disable-model-invocation: true' &&

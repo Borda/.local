@@ -18,23 +18,16 @@ with profile(
     with record_function("model_inference"):
         output = model(input_batch)
 
-# Print top operations
 print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=20))
-
-# Export for TensorBoard
 prof.export_chrome_trace("trace.json")
-# tensorboard --logdir=./log --bind_all
 ```
 
 ## GPU Utilization Monitoring
 
 ```bash
-# Real-time GPU stats
-nvidia-smi dmon -s u # utilization stream
-nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.free \
-    --format=csv -l 1 # CSV every second
+nvidia-smi dmon -s u
+nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.free --format=csv -l 1
 
-# nvitop — interactive GPU process monitor (better than nvidia-smi)
 uv tool install nvitop  # or: pip install nvitop
 nvitop
 ```
@@ -65,23 +58,20 @@ for batch in loader:
     with autocast("cuda", dtype=torch.float16):
         output = model(batch)
         loss = criterion(output, targets)
-
     scaler.scale(loss).backward()
     scaler.step(optimizer)
     scaler.update()
-
-# Memory reduction: ~50% for fp16; also faster on Tensor Core GPUs
-# Measure: torch.cuda.memory_allocated() / torch.cuda.max_memory_allocated()
+# fp16: ~50% memory reduction; faster on Tensor Core GPUs
+# measure: torch.cuda.memory_allocated() / torch.cuda.max_memory_allocated()
 ```
 
 ```python
-# bfloat16: remove GradScaler — bfloat16 has float32 exponent range, no underflow risk
-# (GradScaler is only needed for float16; using it with bfloat16 is wasteful and misleading)
+# bfloat16: no GradScaler needed — bfloat16 has float32 exponent range, no underflow risk
 with autocast("cuda", dtype=torch.bfloat16):
     output = model(batch)
     loss = criterion(output, targets)
-loss.backward()   # no scaler
-optimizer.step()  # no scaler
+loss.backward()
+optimizer.step()
 ```
 
 ## Distributed Training Profiling
@@ -99,13 +89,11 @@ See `research:data-steward` (requires `research` plugin) — contains mmap (`np.
 ## torch.compile
 
 ```python
-# PyTorch 2.0+: JIT compilation for significant speedup
+# PyTorch 2.0+
 model = torch.compile(model)  # default (inductor backend)
-model = torch.compile(model, mode="reduce-overhead")  # for small batches
-model = torch.compile(model, mode="max-autotune")  # max speed, slower compile
-
-# Variable batch sizes: torch.compile(model, dynamic=True) prevents per-shape recompilation.
-
-# When it helps: repeated forward passes, simple/regular ops, training loops
-# When it hurts: very dynamic shapes, lots of Python control flow, first inference
+model = torch.compile(model, mode="reduce-overhead")  # small batches
+model = torch.compile(model, mode="max-autotune")     # max speed, slower compile
+model = torch.compile(model, dynamic=True)            # prevents per-shape recompilation
+# helps: repeated forward passes, simple/regular ops, training loops
+# hurts: very dynamic shapes, heavy Python control flow, first inference (JIT cost)
 ```

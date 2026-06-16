@@ -39,12 +39,11 @@ _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py"
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 ```bash
-# Parse --eager flag; strip from ARGUMENTS before mode dispatch
 EAGER=false
 [[ "$ARGUMENTS" == *"--eager"* ]] && EAGER=true
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--eager//g' | xargs)  # timeout: 3000
-echo "EAGER=$EAGER"  # Read this stdout line to know EAGER value — shell vars don't persist across Bash calls
-echo "ARGUMENTS_STRIPPED=$ARGUMENTS"  # Read this stdout line for stripped ARGUMENTS value
+echo "EAGER=$EAGER"  # shell vars don't persist across Bash calls — read from stdout
+echo "ARGUMENTS_STRIPPED=$ARGUMENTS"
 ```
 
 > **Note**: `EAGER` and stripped `ARGUMENTS` are set by this Bash block, but shell variable state does **not** persist across separate Bash() tool calls. After this block runs, read its stdout (`EAGER=true/false`, `ARGUMENTS_STRIPPED=...`) and carry those values as model-context references for all subsequent mode dispatch and threshold decisions. Do not rely on `$EAGER` as a live shell variable in later steps — substitute the literal boolean value read from stdout.

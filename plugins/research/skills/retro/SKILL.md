@@ -64,24 +64,20 @@ If `--compare <run-id-2>` present: load second run identically from `.experiment
 **Assign `RUN_ID_ARG`** from `$ARGUMENTS` — first positional non-flag token, empty if absent (ADV-H17):
 
 ```bash
-# Strip known flags before extracting positional; only positional is treated as run-id
 _REMAINDER=$(echo "$ARGUMENTS" | sed -E 's/--compare[= ]+[^ ]+//g; s/--threshold[= ]+[^ ]+//g; s/--alpha[= ]+[^ ]+//g')
 RUN_ID_ARG=$(echo "$_REMAINDER" | awk '{for (i=1; i<=NF; i++) if ($i !~ /^--/) { print $i; exit }}')
 RUN_ID_ARG="${RUN_ID_ARG:-}"
-# Persist for T3 (separate Bash shell — variables lost between calls)
-echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id"
+echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id"  # persist for T3 (vars lost between Bash calls)
 ```
 
 **Pre-compute run directory** — also fix `$RUN_ID` (resolved from input resolution above) and persist `$RUN_DIR` for T3 (ADV-H18 + ADV-L16):
 
 ```bash
-# RUN_ID = run-id argument if provided, else dir name of latest completed run  <!-- loads: find_run_id.py -->
-RUN_ID="${RUN_ID_ARG:-$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" .experiments/state 2>/dev/null)}"
-# T-G2: fail-fast if RUN_ID resolution returned empty — find_run_id.py errors are suppressed by `2>/dev/null`,
-# so the empty case must be surfaced here to avoid `.experiments/state//experiments.jsonl` (double-slash path).
+RUN_ID="${RUN_ID_ARG:-$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" .experiments/state 2>/dev/null)}"  # loads: find_run_id.py
+# T-G2: find_run_id.py errors suppressed by 2>/dev/null; surface empty case to avoid double-slash path
 [ -z "$RUN_ID" ] && { echo "! Failed to resolve run ID — no completed run found or bin/find_run_id.py unavailable; check research plugin install."; exit 1; }
 BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
-echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved"  # persist resolved id for T3 / fallback paths
+echo "$RUN_ID" > "${TMPDIR:-/tmp}/retro-run-id-resolved"
 ```
 
 ```bash
@@ -154,11 +150,9 @@ Re-hydrate cross-Bash state at the start of every separate Bash invocation in T3
 RUN_DIR=$(cat "${TMPDIR:-/tmp}/retro-run-dir" 2>/dev/null)
 RUN_ID_ARG=$(cat "${TMPDIR:-/tmp}/retro-run-id" 2>/dev/null)
 RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved" 2>/dev/null)
-RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")  # sanitized path from T1
-# Guard: any of these empty means T1 didn't run — surface and exit rather than write to a bare /
-# T-C1: separate guards — `|| ... &&` has subtle precedence; split for unambiguous evaluation.
-# `exit 1` terminates the Bash subprocess only — if either variable is empty, the orchestrator MUST
-# treat this Bash call's non-zero exit as a hard stop and NOT proceed to T4. Surface the diagnostic.
+RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")
+# T-C1: separate guards — `|| ... &&` has subtle precedence. `exit 1` terminates the Bash
+# subprocess only — orchestrator must treat non-zero exit as hard stop, not proceed to T4.
 [ -z "$RUN_DIR" ] && { echo "retro T3: RUN_DIR missing — T1 must run first" >&2; exit 1; }
 [ -z "$RUN_ID" ]  && { echo "retro T3: RUN_ID missing — T1 must run first" >&2; exit 1; }
 ```

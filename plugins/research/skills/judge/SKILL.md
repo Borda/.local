@@ -46,7 +46,7 @@ Triggered by `judge` or `judge <file.md>`.
 ```bash
 SKIP_VALIDATION=false
 [[ "$ARGUMENTS" == *"--skip-validation"* ]] && SKIP_VALIDATION=true
-ARGUMENTS="${ARGUMENTS/--skip-validation/}"  # strip flag from args
+ARGUMENTS="${ARGUMENTS/--skip-validation/}"
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespace
 ```
 
