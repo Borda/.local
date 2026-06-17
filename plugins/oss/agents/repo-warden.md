@@ -130,15 +130,18 @@ Unavailable axes (all API calls failed):
 ⚪ axes: set `score: null` and `conf: 0.0` in partial file (assembler treats null as excluded from health score).
 
 Signal string formats (must match scorecard Key Signal column):
-- Axis 1: `"median issue ${median_issue_response_days}d, PR ${median_pr_response_days}d; ${pct_responded_7d_pct}% ≤7d"` (use `"N/A"` for `median_pr_response_days` when zero PRs in sample)
-- Axis 2: `"last commit ${days_since_last_commit}d, ${commits_30d} commits/30d"`
-- Axis 3: `"bus factor ${bus_factor}, retention ${retention_pct}%"`
-- Axis 4: `"stale ${stale_pct}%, close rate ${close_rate}, review cov ${review_coverage_pct}%"`
-- Axis 5: `"${ci_checkpoints_met}/5 checks, CI pass rate ${ci_pass_rate_pct}%"`
-- Axis 6: `"${doc_checkpoints_met}/9 checkpoints"`
-- Axis 7: `"${gov_checkpoints_met}/${max_applicable} files, active maint ${active_maintainers}/${listed_maintainers}"`
-- Axis 8: `"dep-config: ${dep_config_present}, alerts: ${dependabot_alert_summary}"`
-- Axis 9: `"pool drift: ${pool_drift_pct}%, TTM 30d: ${median_30d}d vs 90d: ${median_90d}d, P90 queue: ${p90_age_days}d, dep-bump: ${dep_ratio_pct}%"`
+
+| Axis | Format string |
+| --- | --- |
+| 1 | `"median issue ${median_issue_response_days}d, PR ${median_pr_response_days}d; ${pct_responded_7d_pct}% ≤7d"` — use `"N/A"` for `median_pr_response_days` when zero PRs in sample |
+| 2 | `"last commit ${days_since_last_commit}d, ${commits_30d} commits/30d"` |
+| 3 | `"bus factor ${bus_factor}, retention ${retention_pct}%"` |
+| 4 | `"stale ${stale_pct}%, close rate ${close_rate}, review cov ${review_coverage_pct}%"` |
+| 5 | `"${ci_checkpoints_met}/5 checks, CI pass rate ${ci_pass_rate_pct}%"` |
+| 6 | `"${doc_checkpoints_met}/9 checkpoints"` |
+| 7 | `"${gov_checkpoints_met}/${max_applicable} files, active maint ${active_maintainers}/${listed_maintainers}"` |
+| 8 | `"dep-config: ${dep_config_present}, alerts: ${dependabot_alert_summary}"` |
+| 9 | `"pool drift: ${pool_drift_pct}%, TTM 30d: ${median_30d}d vs 90d: ${median_90d}d, P90 queue: ${p90_age_days}d, dep-bump: ${dep_ratio_pct}%"` |
 
 ## Step 4 — Write Partial Scores
 

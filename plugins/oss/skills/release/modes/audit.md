@@ -17,7 +17,7 @@ Use **Delegation strategy** above — spawn gather subagent for `$RANGE`, run ga
 
 ### Phase A.5: Deprecation-removal check
 
-Verify all APIs scheduled for removal at `$TARGET` are actually absent from HEAD. Runs after gather, before readiness checks.
+Verify all APIs scheduled for removal at `$TARGET` absent from HEAD. Runs after gather, before readiness checks.
 
 **Step 1** — find all scheduled removals from two sources (run in parallel):
 
@@ -32,7 +32,7 @@ CHANGELOG_FILE=$(find "$REPO_ROOT" -maxdepth 2 -name "CHANGELOG.md" 2>/dev/null 
 
 **Step 2** — for each `remove_in="V.W"` found, compare with `$TARGET`:
 
-- Skip version comparison when `$TARGET` is empty or `"next"` — report as informational only
+- Skip version comparison when `$TARGET` empty or `"next"` — report informational only
 - OVERDUE = `remove_in ≤ $TARGET`:
 
 ```bash
@@ -48,7 +48,7 @@ print('OVERDUE' if rv <= tv else 'FUTURE')
 " "<remove_in_value>" "${TARGET:-0}"  # timeout: 5000
 ```
 
-**Step 3** — for each OVERDUE item, check if old symbol still present in HEAD. Read 3-line context around the `remove_in=` match to extract the deprecated function or class name (typically the decorated name 1–2 lines above), then:
+**Step 3** — for each OVERDUE item, check if old symbol still present in HEAD. Read 3-line context around `remove_in=` match to extract deprecated function or class name (typically decorated name 1–2 lines above), then:
 
 ```bash
 # Definition-level check only — not mention-level; comments and docstrings can reference removed names
@@ -75,7 +75,7 @@ Every finding needs explicit location, severity, action — matches structured o
 
 ### Output routing
 
-Write the full report to `.reports/release/$BRANCH-$DATE.md` (create dir with `mkdir -p .reports/release` if needed) — **not** `.temp/`. This overrides the quality-gates default `.temp/output-...` path. Print the verdict line and executive summary to terminal per quality-gates rules.
+Write full report to `.reports/release/$BRANCH-$DATE.md` (create dir with `mkdir -p .reports/release` if needed) — **not** `.temp/`. Overrides quality-gates default `.temp/output-...` path. Print verdict line and executive summary to terminal per quality-gates rules.
 
 ### Verdict line (mandatory final output)
 

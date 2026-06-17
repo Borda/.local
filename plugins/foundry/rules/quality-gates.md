@@ -146,7 +146,7 @@ Every report file created via output routing must begin with a YAML metadata blo
 
 ```yaml
 ---
-[Skill] — [subject]
+Title:      [Skill] — [subject]
 Date:       [YYYY-MM-DD]
 Scope:      [what was analyzed — file paths, topic, PR#, run-id, etc.]
 Focus:      [aspect examined — "quality audit" / "SOTA research" / "code review" / etc.]

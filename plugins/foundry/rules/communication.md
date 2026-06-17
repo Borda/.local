@@ -6,35 +6,35 @@ paths:
 
 ## Re: Anchor
 
-Start every reply with a horizontal rule, then H1 anchor summarising the request, then response body, then closing horizontal rule.
+Start every reply with a Unicode box header containing a one-line summary, then response body, then a closing `▓` footer line.
 
 Example (actual template — copy structure, replace bracketed text):
 
-```markdown
----
-# Re: [one-sentence summary of what was asked]
----
+```
+╔════════════════════════════════════════════════════════════╗
+║  Re: [one-sentence summary of what was asked]              ║
+╚════════════════════════════════════════════════════════════╝
 
 [full response here]
 
----
+▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
 ```
 
 **Rules:**
 
-- Opening `---` on its own line; blank line optional but recommended to prevent renderer merging `---` and heading into single visual element
-- H1 line: neutral factual gist of what user asked — not full restatement, no labels
-- Second `---` immediately after heading (before response body) — closes the header zone
-- Closing `---` at END of full response — closes the response zone
-- Never use table or pipe-delimited format in anchor line — pipe chars pollute copy-paste
-- No exceptions to the anchor rule — a response not containing `# Re:` in first 3 lines is non-compliant
-- Tables, code blocks, and bold headers work normally in response body — no blockquote conflicts
+- Box: 62 chars total — `╔` + 60 `═` + `╗`; bottom `╚` + 60 `═` + `╝`
+- Summary line: `║` + two spaces + summary text + spaces to pad inner width to 60 + `║`
+- Summary: neutral factual gist of what user asked — not full restatement, no labels
+- Footer: exactly 62 `▓` chars — matches box width, signals end of reply
+- Never use pipe chars in summary text — corrupts box borders
+- No exceptions — response not opening with `╔` is non-compliant
+- Tables, code blocks, bold headers work normally in body — no per-line prefix conflicts
 
 ## Reply Visibility
 
-Opening `---` / `# Re:` / `---` zone creates clear header boundary. Closing `---` at end of response creates footer boundary. Together they visually frame the response against surrounding tool call output and hook logs. No ANSI codes — Claude Code renders markdown, not escape sequences.
+Box `╔═╗`/`╚═╝` zone creates clear header boundary. `▓▓▓` footer creates clear end boundary. Together they visually frame the response against surrounding tool call output and hook logs. Unicode box-drawing only — no ANSI escape codes.
 
-**Exemption — machine-parsed responses**: omit Re: anchor block when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
+**Exemption — machine-parsed responses**: omit box header and footer when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
 
 ## Progress and Transparency
 
@@ -103,7 +103,7 @@ Compliant example — this is the only valid form:
 - `<slug>` = 3–4 word kebab summary of reply subject
 - Verbatim — no extra wrapping, no ANSI codes
 
-**Exemptions**: machine-parsed responses; pure status/narration lines; `# Re:` anchor + single-sentence body with no other MD formatting.
+**Exemptions**: machine-parsed responses; pure status/narration lines; box header + single-sentence body with no other MD formatting.
 
 ## Output Routing
 

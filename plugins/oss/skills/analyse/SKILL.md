@@ -8,6 +8,7 @@ argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report
 allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
 model: sonnet
+effort: high
 ---
 
 <objective>
@@ -31,7 +32,7 @@ NOT for implementing PR action items (use oss:resolve). NOT for **code-quality a
 
 <constants>
 
-<!-- Background agent health monitoring (CLAUDE.md §6) — applies to Step 7 shepherd spawn -->
+> Background agent health monitoring (CLAUDE.md §6) — applies to Step 7 shepherd spawn
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
@@ -271,7 +272,7 @@ FAST_PATH=$(cat "${TMPDIR:-/tmp}/analyse-fast-path" 2>/dev/null || echo "false")
 FAST_PATH_TENTATIVE=$(cat "${TMPDIR:-/tmp}/analyse-fast-path-tentative" 2>/dev/null || echo "false")
 REPORT_MTIME=$(cat "${TMPDIR:-/tmp}/analyse-report-mtime" 2>/dev/null || echo "0")
 # Validate TYPE read from cache before using it — corrupt cache guard
-[ "$TYPE" = "pr" ] || [ "$TYPE" = "issue" ] || [ "$TYPE" = "discussion" ] || { echo "! Error: corrupt cache — invalid type '\empty' for #$CLEAN_ARGS; delete .cache/gh/ to reset"; exit 1; }
+[ "$TYPE" = "pr" ] || [ "$TYPE" = "issue" ] || [ "$TYPE" = "discussion" ] || { echo "! Error: corrupt cache — invalid type \"$TYPE\" for #$CLEAN_ARGS; delete .cache/gh/ to reset"; exit 1; }
 # Cache hit + FAST_PATH_TENTATIVE: one lightweight API call to get updatedAt, then apply drift check
 # Drift check pattern (shared with Step 4): UPDATED_TS > REPORT_MTIME → DRIFT=true → full re-analysis
 if [ "$TYPE" = "discussion" ]; then
@@ -357,6 +358,8 @@ Read and execute the mode file from `${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/a
 | number (any type) | `modes/thread.md` |
 | `vitality` | `modes/vitality.md` |
 | `ecosystem` | `modes/ecosystem.md` |
+
+> loads: vitality-report.md (used by modes/vitality.md as REPORT_TPL)
 
 ## Step 6: Reply gate — STOP CHECK
 

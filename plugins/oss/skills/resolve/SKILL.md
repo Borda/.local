@@ -1,9 +1,10 @@
 ---
 name: resolve
-description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for reply drafting to /oss:analyse findings (use /oss:analyse --reply). NOT for code diff review of PR changes (use /oss:review). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin)."
+description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for reply drafting to /oss:analyse findings (use /oss:analyse --reply (requires `oss` plugin)). NOT for code diff review of PR changes (use /oss:review). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin)."
 argument-hint: "<PR number or URL> [report] | report | <review comment text>"
-when_to_use: "TRIGGER when: PR is ready to close and has open comments, conflicts, or review findings to address; user says 'close this PR', 'resolve comments on PR #N', or 'implement review findings'. SKIP: reply-drafting to /oss:analyse findings (use /oss:analyse --reply); local bug without a PR (use /develop:fix)."
+when_to_use: "TRIGGER when: PR is ready to close and has open comments, conflicts, or review findings to address; user says 'close this PR', 'resolve comments on PR #N', or 'implement review findings'. SKIP: reply-drafting to /oss:analyse findings (use /oss:analyse --reply (requires `oss` plugin)); local bug without a PR (use /develop:fix (requires `develop` plugin))."
 disable-model-invocation: true
+model: sonnet
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
 ---
@@ -65,7 +66,7 @@ CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §6 default 300s
 # loads: oss-shared-resolver.md
 # loads: review-section-taxonomy.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
-_OSS_RESOLVE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/resolve 2>/dev/null | head -1)  # timeout: 5000
+_OSS_RESOLVE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/resolve 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
 ```
 Read `$_OSS_SHARED/oss-shared-resolver.md` and execute its contents.
@@ -101,24 +102,14 @@ GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true"
 gh missing or not authenticated → script exits 1 (error printed above; eval skipped when exit code non-zero).
 
 ```bash
-# Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)  # timeout: 5000
-_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-')
-[ -z "$_PROJ" ] && _PROJ="default"
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if [ "$CODEMAP_FORCE_OFF" = "true" ]; then
-    CODEMAP_ENABLED=false
-elif command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${_PROJ}.json" ]; then
-    CODEMAP_ENABLED=true
-elif [ "$CODEMAP_STRICT" = "true" ]; then
-    if ! command -v scan-query >/dev/null 2>&1; then
-        printf "! --codemap passed but codemap plugin not installed.\n  Install: claude plugin install codemap@borda-ai-rig\n"; exit 1
-    else
-        printf "! --codemap passed but no index found for project '%s'.\n  Build index: /codemap:scan-codebase\n" "$_PROJ"; exit 1
-    fi
-else
-    CODEMAP_ENABLED=false
-fi
-echo "$CODEMAP_ENABLED" > "${TMPDIR:-/tmp}/resolve-codemap-enabled"
+# Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)
+# loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
+_DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/detect_codemap.py"
+[ "$CODEMAP_FORCE_OFF" = "true" ] && _DETECT_FLAGS="--force-off" || _DETECT_FLAGS=""
+[ "$CODEMAP_STRICT" = "true" ] && _DETECT_FLAGS="$_DETECT_FLAGS --strict"
+python "$_DETECT_CODEMAP" --prefix resolve $_DETECT_FLAGS 2>&1  # timeout: 5000
+[ $? -ne 0 ] && exit 1
+CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled" 2>/dev/null || echo "false")
 ```
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
@@ -240,59 +231,59 @@ Report merged: <N> findings from /review · <M> deduplicated against GitHub comm
 
 ! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text.
 
+Gather is complete here (3b/3c done). Mark the Step 2 gather task `completed` **before** the selection prompt — otherwise its `activeForm` ("Gathering action items for PR #<number>") keeps driving the spinner through the entire user-selection + commit-mode window, falsely implying gather is still running:
+
+```text
+TaskUpdate(task_id=<step2_task_id>, status="completed")
+```
+
 Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero pending → set `SELECTED_ITEMS` = all pending IDs, skip to Step 3e.
 
 Sort all pending items by severity descending (most impactful first). Constraint: max 3 items/question, max 4 questions/call — Q1–Q3 = item checkboxes, Q4 = bulk action. Note: `AskUserQuestion` always appends "Type something" outside the option list — 3 items + Type something = 4 visible per page; keep ≤3 items per group.
 
-**Q4 = bulk action only — hard rule**: Q4 is always the last question, single-select, fixed options — never varies by item count or path:
+**Q4 = bulk action — hard rule**: Q4 is always the last question, single-select, fixed options. Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
 
 ```text
-"Or choose a bulk action:"
-  (a) +all [req]           — checked items UNION all [req] items
-  (b) +all [suggest]       — checked items UNION all [suggest] items
-  (c) Apply ALL [req + suggest] — all pending items (ignore checkboxes)
-  (d) Skip all             — nothing; terminate after push
+"Q4 — Or choose a bulk action:"
+  (a) +All [req] — implement all required items
+  (b) +All [suggest] — implement all suggested items
+  (c) +ALL (req + suggest) — implement all pending items
+  (d) Skip all — skip all items, exit
 ```
 
-Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
+**Bulk-action resolution from Q4**:
+- (a) → `SELECTED_ITEMS` = all `[req]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
+- (b) → `SELECTED_ITEMS` = all `[suggest]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
+- (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; `COMMIT_MODE = all`; skip Call 2; skip commit mode question
+- (d) → stop; print `→ All items skipped.`; jump to Step 11
+- Q4 unanswered / "Type something" → use checked IDs from Q1–Q3; proceed to commit mode question; `COMMIT_MODE = each` (default)
 
-**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "Apply ALL [req + suggest]" in Call 1 → skip Call 2.
+**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "+ALL (req + suggest)" in Call 1 → skip Call 2.
 
-**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only.
+**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit mode question unless (c) or (d) selected.
 
-Resolve `SELECTED_ITEMS`:
-- Q4 = "Skip all" → `[]` → skip Step 8, jump to Step 9 (checkout + conflict resolution still run)
-- Q4 = "+all [req]" → checked IDs ∪ all `[req]` IDs
-- Q4 = "+all [suggest]" → checked IDs ∪ all `[suggest]` IDs
-- Q4 = "Apply ALL [req + suggest]" → all pending IDs; skip Call 2 when in two-call flow
-- Q4 = "Type something" / no bulk selected → checked IDs from Q1–Q3 only; for two-call flow, merge both calls
+**Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), or unanswered (skip when (c) or (d)):
 
-**Commit mode** — after resolving `SELECTED_ITEMS` (non-empty), invoke `AskUserQuestion` as a separate call.
+```text
+AskUserQuestion: "Commit mode for selected items:"
+  (a) Each item separately — one commit per action item (default)
+  (b) By topic group — ask for topic labels; group related items into themed commits
+  (c) All at once — single commit after all items
+  (d) Stage only — no commits; stay staged on PR branch (⚠ cannot cleanly restore to $SAVED_BRANCH after Step 11)
+```
 
 **ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** LLMs tend to drop option (d) — do not omit it.
-
-```text
-AskUserQuestion: "How should changes be committed?"
-Options:
-  (a) Commit each item separately — one commit per item, staged+committed inline (default)
-  (b) Commit by logical/topic group — ask for topic labels, then group related items into themed commits
-  (c) Commit all at once — stage as you go, single commit after all items
-  (d) Stage only — no commits; stays staged on PR branch (⚠ cannot cleanly restore original branch after Step 11 — stash/pop manually)
-```
 
 Set `COMMIT_MODE`:
 - (a) → `each`
 - (b) → `grouped`
 - (c) → `all`
 - (d) → `stage`
+- unanswered → `each` (default)
 
 ## Step 3e: Create tasks for selected items
 
-Mark Step 2 task `completed`:
-
-```text
-TaskUpdate(task_id=<step2_task_id>, status="completed")
-```
+> Step 2 gather task already marked `completed` at top of Step 3d.
 
 For each item in `SELECTED_ITEMS`, call `TaskCreate` **once per item** — one task per action item; scoped to selected items only, not all pending (avoids bloat when 20+ items exist but only a subset is selected):
 
@@ -555,26 +546,22 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **Same-repo branch rule** — for non-fork PRs (`isCrossRepository=false`), local branch name MUST equal `headRefName` at all times. Never create a `pr<N>` alias or any other branch name substitute. Enforced by `--branch "$PR_HEAD_REF"` at checkout + hard assertion post-checkout. Rationale: `git push HEAD:$HEAD_REF` on a `pr<N>` alias creates a new remote branch instead of pushing to the PR head — silent data-loss class bug.
 - **OSS fork support** — `gh pr checkout <PR#>` works same for branches + forks; forks get contributor remote + tracking; plain `git push` targets fork branch automatically.
 - **Merge direction** — `origin/BASE_REF` INTO `HEAD_REF` (not reverse); PR branch = source of truth; maintainer still clicks Merge.
-- **Contribution motivation before code** — provides "whose intent wins" lens; PR body + linked issues reveal constraints invisible in git diff.
-- **`[question]` items** — answer inline in resolve report only (never post to PR); reclassify before implementing; never silently implement unanswered question.
-- **Push verification** — confirm via `gh pr view --json commits` before reporting success; exit 0 from `git push` necessary but not sufficient (branch protection can silently reject).
-- **Merge-push sequencing** — `git merge` and `git push` not atomic; concurrent push to same branch between these steps causes non-fast-forward rejection. Fetch + pull and retry push step only — do not re-run full merge.
-- **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses (loses action-item commits); never `--rebase` (rewrites SHAs); default `--merge`.
-- **Escape hatch**: `git merge --abort` = undo all conflict state; `git push --force-with-lease` (never plain `--force`) only when user explicitly requests — if push rejected after local amend.
-- **Impl agent health**: IMPL_AGENT defaults to `codex:codex-rescue`; subject to CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout; partial results via `tail -100` on output file. `--agent foundry:sw-engineer` or other implementation agents: foreground only, no health monitoring needed.
-- **Effort calibration**: effort set per item — never `low`; minimum `medium`; typo/doc/formatting/rename-simple → `medium`; multi-file/architecture/new-feature → `xhigh`; default → `high`; effort prefix in agent prompt; `CHANGE_SCOPE` aggregated for Step 9 test targeting
-- **Two-phase challenge**: evidence phase checks code reality (problem exists?); suggestion phase checks fix quality (right approach?); evidence reject → item skipped; suggestion reject → self-resolved fix using challenger's `alternative` field; all outcomes recorded to `CHALLENGE_LOG` and surfaced in Step 11 report
-- **COMMIT_MODE**: set in Step 3d; `each` = commit after each item (default); `all` = single commit after loop; `stage` = no commits (⚠ branch restore in Step 11 leaves staged changes — warn user before attempting restore); `grouped` = stage all items first, then ask for topic labels, commit one commit per topic group — falls back to `each` when user skips label assignment
-- **`--agent <name>`**: agent name accepted with or without plugin prefix; bare name auto-prefixed with `foundry:` (e.g. `sw-engineer` → `foundry:sw-engineer`); must resolve to an installed implementation agent (NOT config-review agents such as `foundry:curator`); skip availability check — failure at dispatch time surfaces error naturally; omit Codex co-author trailer when IMPL_AGENT ≠ `codex:codex-rescue`
-- **Thread resolution via GraphQL** — `isResolved` lives on `PullRequestReviewThread` (GraphQL only); REST `/pulls/{PR}/comments` does not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId` values; GraphQL failure → `[]` fallback.
-- **Discussion vs inline comments** — `gh pr view --comments` = PR main-thread discussion (`location: discussion`; no GitHub "Resolve conversation" button); `gh api .../pulls/<N>/comments` = inline code-review threads (`location: inline`; resolvable). `isResolved` GraphQL field only applies to `location: inline` items. `location: discussion` items cannot be auto-closed — they remain `pending` in action items even after implementation; GitHub has no resolve mechanism for them. Surface this in Step 11 report (`Loc` column + status suffix) so maintainers do not look for a non-existent Resolve button. `[report]` items (`location: report`) follow same convention: implement-only, no GitHub close action.
-- **Commit attribution** — `[gh]` items: `[resolve #<id>] @<reviewer> (gh):`; `[report]` items: `[resolve #<id>] /review finding by <agent-name> (report: <report-path>):` — distinguishes automated findings in git history.
-- **Sources block**: print after all sources read, before action item table.
-- **Reference scenarios** (documentation only — not for `/calibrate`): (1) Mode selection: bare PR number → pr mode; `42 report` → pr + report mode; bare `report` → report mode; bare comment text → comment dispatch (Step 12). (2) Action item classification: LGTM/emoji → `[info]`; `nit:` suggestion → `[gh][suggest]`; resolved thread → `[done]`; "must fix before merge" from reviewer with write access → `[gh][req]`. (3) Challenge accuracy: evidence challenge on actually-present bug → VALID; already addressed in commit → REJECT; suggestion with better alternative available → REJECT with alternative.
-- **Step 7 delegation** — resolve owns orchestration + context; sw-engineer owns code-level resolution; resolve retains conflict report + `git merge --continue`.
+- **Contribution motivation before code** — "whose intent wins" lens; PR body + linked issues reveal constraints invisible in diff.
+- **`[question]` items** — answer inline in resolve report only; reclassify before implementing; never silently implement unanswered question.
+- **Push verification** — confirm via `gh pr view --json commits`; exit 0 from `git push` necessary but not sufficient (branch protection can silently reject).
+- **Merge-push sequencing + escape hatch** — not atomic; concurrent push → non-fast-forward rejection; retry push only (don't re-run full merge). `git merge --abort` = undo conflict state; `git push --force-with-lease` on explicit user request only.
+- **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses; never `--rebase` (rewrites SHAs); default `--merge`.
+- **Impl agent health + effort**: IMPL_AGENT defaults to `codex:codex-rescue` (CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout). Effort: never `low`; minimum `medium`; typo/doc → `medium`; multi-file/new-feature → `xhigh`; default `high`. `--agent foundry:*`: foreground only, no health monitoring.
+- **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
+- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Now set via Q4 in Step 3d item-selection call — no separate AskUserQuestion.
+- **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be implementation agent (not curator); omit Codex trailer when IMPL_AGENT ≠ `codex:codex-rescue`.
+- **Thread resolution via GraphQL** — `isResolved` on `PullRequestReviewThread` (GraphQL only); REST not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId`; GraphQL failure → `[]`.
+- **Discussion vs inline**: `gh pr view --comments` = discussion (`location: discussion`; no Resolve button); `gh api .../pulls/<N>/comments` = inline (`location: inline`; resolvable). `location: discussion` + `[report]` items: implement-only, no GitHub close action. Surface `Loc` column in Step 11 report.
+- **Commit attribution** — `[gh]`: `[resolve #<id>] @<reviewer> (gh):`; `[report]`: `[resolve #<id>] /review finding by <agent> (report: <path>):`.
+- **Reference scenarios**: Mode: bare PR# → pr; `42 report` → pr+report; `report` → report mode; bare comment → comment dispatch. Classification: LGTM/emoji → `[info]`; `nit:` → `[gh][suggest]`; resolved thread → `[done]`; "must fix" from write-access reviewer → `[gh][req]`. Challenge: present bug → VALID; already addressed → REJECT; better alternative → REJECT with alternative.
 - Follow-up chains:
-  - After push → never approve/comment on PR; maintainer reviews + clicks Merge.
-  - Unanswered `[question]` items → record in resolve report only; do NOT post to PR.
-  - After merge → linked issues close if PR body has `Closes #<issue#>`/`Fixes #<issue#>`; `CLOSING_ISSUES` found in Step 3b but body lacks keywords → surface gap in Resolve Report under `### Closing Keywords` note — do not edit PR body. Note: "PR body does not contain `Closes #<issue#>` — linked issue will not auto-close on merge. Add closing keyword manually via GitHub PR edit UI."
+  - After push → maintainer reviews + clicks Merge; never approve/comment on PR.
+  - Unanswered `[question]` → resolve report only; do NOT post to PR.
+  - After merge → `Closes #N`/`Fixes #N` in body auto-closes linked issues; absent keywords → surface gap under `### Closing Keywords` note; do not edit PR body.
 
 </notes>

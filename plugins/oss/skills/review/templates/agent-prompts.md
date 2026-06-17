@@ -1,0 +1,53 @@
+<!-- file: agent-prompts.md — consumers: plugins/oss/skills/review/SKILL.md (Step 2 agent launch) -->
+
+**Finding evidence standard — applies to every agent, every finding:** Every finding must cite `file:line` from the diff. Training knowledge never sufficient. External standard claims (OWASP, PEP, CVE) cite authoritative document. Tier 2 sources (blog, tutorial, forum) need ≥3 genuinely independent origins OR experimental validation; N posts citing same original = 1 source. Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) that confirms the claim, treat as Tier 1 verified (sufficient alone); if multiple Tier 2 sources share one origin, merge them into one; count distinct origins only. Distinct-origin count < 3 and no experiment → downgrade to LOW or drop; never raise MEDIUM/HIGH/CRITICAL on Tier 2 alone.
+
+Every agent prompt must end with:
+
+> "Write your FULL findings (all sections, Confidence block) to `<RUN_DIR>/<agent-slug>.md` using the Write tool — where `<agent-slug>` uses hyphen separator (no colon), e.g. `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`. Colons invalid in macOS filenames. Return to caller ONLY compact JSON envelope on final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2},\"file\":\"<RUN_DIR>/<agent-slug>.md\",\"confidence\":0.88}`"
+
+**Agent 1 — foundry:sw-engineer**: Review architecture, SOLID, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking vs suggestions.
+
+**Reuse audit**: Before accepting any new helper, utility, or class introduced in the diff, search for existing equivalents: `Grep` with semantic function-name patterns across `src/`; if `SEMBLE_ENABLED=true`, also call `mcp__semble__search(query="<function purpose>", repo=<git_root>, top_k=10)`. Near-duplicate found → flag as MEDIUM: "existing utility at `<path>` covers this — reuse or extend instead of reimplementing."
+
+**Error path analysis** (new/changed code): For each error-handling path introduced or modified, produce table:
+
+| Location | Exception/Error | Caught? | Action if caught | User-visible? |
+| --- | --- | --- | --- | --- |
+
+Flag rules:
+
+- Caught=No + User-visible=Silent → **HIGH** (unhandled error path)
+- Caught=Yes + Action=`pass` or bare `except` → **MEDIUM** (swallowed error)
+- Cap 15 rows. New/changed paths only.
+
+Read `<REVIEW_SKILL_DIR>/checklist.md` — apply CRITICAL/HIGH patterns as severity anchors. Respect suppressions.
+
+`ISSUE_NUMS` non-empty: read `<RUN_DIR>/issue-*.md`. Evaluate whether changes address root cause, not just symptom. PR addresses symptom only → `[blocking] HIGH — root cause misalignment`. PR description diverges from issue problem → `HIGH — PR/issue scope divergence`.
+
+**Agent 2 — foundry:qa-specialist**: Audit test coverage and run quick security/vulnerability scan. Find untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests.
+
+**Security scan (runs on every PR — not conditional)**: Check OWASP Top 10 — SQL injection, XSS, insecure deserialization, hardcoded secrets/tokens, missing input validation, path traversal. Run `pip-audit` if `requirements*.txt`, `pyproject.toml`, or any `*.lock` in diff. Surface dep CVEs as HIGH; secrets as CRITICAL.
+
+Also check explicitly: concurrent access to shared state; methods called in wrong order; resource cleanup on exception; boundary conditions for division/empty collections/zero-count inputs; type-coercion boundary inputs (`int()`, `float()`, `datetime` parsers — empty strings, None, very large values, float-string for int parser).
+
+**Consolidation rule**: One finding per test gap with concise scenario list. Format: "Missing tests for `parse_numeric()`: empty string, None, very large integers, float-string for int parser." ≤5 items.
+
+`ISSUE_NUMS` non-empty: read `<RUN_DIR>/issue-*.md`. Check tests cover linked issue reproduction scenario. Issue has minimal repro/trace not covered by tests → `HIGH — issue reproduction not tested`.
+
+**Agent 3 — foundry:perf-optimizer**: Find perf issues. Algorithmic complexity, Python loops that should be NumPy/torch ops, repeated computation, unnecessary I/O. ML code: DataLoader config, mixed precision. Prioritize by impact.
+
+**Agent 4 — foundry:doc-scribe**: Check doc completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run.
+
+- **Algorithmic accuracy check**: Functions computing math results — verify docstring claims match implementation. Output shape/length match? Standard name (e.g. "moving average") match behavior? Deviates from convention → MEDIUM (docstring must document deviation).
+- **Deprecation check**: Check stdlib deprecated usage in public API surface only (skip private functions/classes/modules starting with `_`). E.g., `datetime.utcnow()` deprecated since Python 3.12 (use `datetime.now(datetime.UTC)` on 3.11+ or `datetime.now(tz=timezone.utc)` for all versions), `os.path` vs `pathlib`. Flag deprecated usage as MEDIUM with replacement. Route to `foundry:linting-expert` if ruff/mypy can catch automatically — avoid duplicate findings.
+
+**Agent 5 — foundry:linting-expert**: Static analysis. Check ruff/mypy pass. Type annotation gaps on public APIs, suppressed violations without explanation, missing pre-commit hooks. Flag mismatched Python version.
+
+**Security scan ownership**: Agent 2 owns all security/vulnerability scanning — runs on every PR unconditionally. Agent 1 adds supplementary security scrutiny only when diff explicitly touches auth, input parsing, or serialization logic. No separate security agent spawn.
+
+**Agent 6 — foundry:solution-architect**: Spawns for FEATURE, MIXED, and REFACTOR scope. Public-API PRs (diff touches `__init__.py` exports, Protocols/ABCs, new public classes): evaluate API design, coupling, backward compat. **Backward-compat caveat for removals**: only flag a removed export as requiring a deprecation period if it was present in the latest published release (`git describe --tags --abbrev=0`). Exports added after the latest tag were never released — clean removal is acceptable. REFACTOR-scope PRs: evaluate module boundaries, coupling/cohesion, and whether restructuring introduces architectural debt.
+
+**Agent 7 — foundry:challenger (skip only if `CHALLENGE_ENABLED=false` — pass `--no-challenge` to opt out)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: output to `foundry--challenger.md`. Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
+
+**Agent 8 — oss:cicd-steward (CI/CD-only mode and docs+CI/CD mode)**: Review CI/CD config changes. Check: correctness (valid YAML/syntax, correct job ordering, trigger expressions), security (pinned SHA for third-party actions, no secret exposure in logs, `permissions:` scopes minimal), best practices (cache keys, matrix strategy, workflow topology), and breaking changes to existing CI behavior (removed jobs, changed required checks). Write findings to `<RUN_DIR>/oss--cicd-steward.md`.

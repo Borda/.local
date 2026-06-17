@@ -14,7 +14,7 @@
 - Use sub-agents liberally to keep main context clean
 - Prefer specialised agents over general-purpose; offload research and exploration
 - Run independent subtasks in parallel, not serially; one tack per sub-agent
-- **Context discipline**: share only task-relevant context in spawn prompts — no unrelated history, no out-of-scope details
+- **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path instead)
 - Complex problems → throw more compute via sub-agents
 - **File-based handoff**: 2+ analysis agents each write full output to file, return only compact JSON envelope — see `.claude/skills/_shared/file-handoff-protocol.md`
 

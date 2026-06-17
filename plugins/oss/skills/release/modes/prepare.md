@@ -6,6 +6,8 @@
 **Purpose**: Full release pipeline — audit first, generate all artifacts. Use when cutting release; use individual modes for drafting.
 
 ```bash
+# Reload REST from tmpdir (fresh shell loses vars; Mode Detection persists REST there)
+REST=$(cat "${TMPDIR:-/tmp}/release-rest" 2>/dev/null || echo "")
 VERSION="${REST%% *}"
 [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
