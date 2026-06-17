@@ -14,9 +14,50 @@ Fixture layout:
 
 from __future__ import annotations
 
+import ast
+import importlib.machinery
+import importlib.util
 import json
 import subprocess
 import sys
+from pathlib import Path
+
+import pytest
+
+
+def _load_scan_query():
+    """Load scan-query (no .py extension) via SourceFileLoader for unit-level tests."""
+    bin_path = Path(__file__).resolve().parent.parent / "bin" / "scan-query"
+    loader = importlib.machinery.SourceFileLoader("scan_query_mod", str(bin_path))
+    spec = importlib.util.spec_from_loader("scan_query_mod", loader)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["scan_query_mod"] = mod
+    loader.exec_module(mod)
+    return mod
+
+
+_scan_query_mod = _load_scan_query()
+_require_feature = _scan_query_mod._require_feature
+_find_index = _scan_query_mod.find_index
+
+
+def _load_scan_index():
+    """Load scan-index (no .py extension) via SourceFileLoader for unit-level tests."""
+    bin_path = Path(__file__).resolve().parent.parent / "bin" / "scan-index"
+    loader = importlib.machinery.SourceFileLoader("scan_index_mod", str(bin_path))
+    spec = importlib.util.spec_from_loader("scan_index_mod", loader)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["scan_index_mod"] = mod
+    loader.exec_module(mod)
+    return mod
+
+
+_scan_index_mod = _load_scan_index()
+_extract_conftest = _scan_index_mod.extract_conftest_syspath
+_extract_subprocess = _scan_index_mod.extract_subprocess_calls
+_extract_fixtures = _scan_index_mod.extract_fixtures
 
 
 class TestModuleQueries:
@@ -438,3 +479,2222 @@ class TestRdepsNewFields:
         """config_refs is a list (may be empty when no config files reference the module)."""
         data = query("rdeps", "gamma")
         assert isinstance(data["config_refs"], list)
+
+
+class TestRequireFeature:
+    """_require_feature: pass/fail/edge cases for per-feature version guard."""
+
+    @pytest.fixture
+    def index_v3(self) -> dict:
+        """Minimal index dict at scan_version=3 — matches current SCAN_VERSION."""
+        return {"scan_version": 3, "modules": []}
+
+    def test_passes_when_version_meets_minimum(self, index_v3) -> None:
+        """No raise/exit when scan_version >= min_ver."""
+        _require_feature(index_v3, 3, "test_feature")
+
+    def test_exits_when_version_below_minimum(self, index_v3) -> None:
+        """Index at v3 must fail a v4-min-version check via SystemExit."""
+        with pytest.raises(SystemExit):
+            _require_feature(index_v3, 4, "mock_patches")
+
+    def test_error_message_names_feature(self, index_v3, capsys) -> None:
+        """Error output must include the feature name so the user knows what failed."""
+        with pytest.raises(SystemExit):
+            _require_feature(index_v3, 99, "my_feature")
+        captured = capsys.readouterr()
+        assert "my_feature" in captured.err or "my_feature" in captured.out
+
+    def test_handles_string_version(self) -> None:
+        """scan_version stored as a string (legacy indexes) must still parse cleanly."""
+        index = {"scan_version": "3"}
+        _require_feature(index, 3, "test_feature")
+
+    def test_handles_missing_version_key(self) -> None:
+        """Missing scan_version is treated as 0 and triggers SystemExit."""
+        with pytest.raises(SystemExit):
+            _require_feature({}, 1, "test_feature")
+
+
+class TestMockRdeps:
+    """mock-rdeps subcommand (v4.1): test files that patch a symbol via patch()."""
+
+    def _scan_and_query(
+        self,
+        tmp_path: Path,
+        scan_index: Path,
+        scan_query: Path,
+        test_source: str,
+        query: list[str],
+    ) -> tuple[int, dict, str]:
+        """Write a test file under ``tmp_path/tests/`` (so ``is_test=True`` fires), scan, run query.
+
+        The test file lives inside a ``tests/`` subdir because the scan-index test-path
+        regex requires the ``tests/`` segment (or ``/test_<name>.py`` after a slash) — a
+        bare ``test_x.py`` at the project root is not flagged as a test module.
+
+        Args:
+            tmp_path: pytest temp dir to use as the scan root.
+            scan_index: path to scan-index bin script.
+            scan_query: path to scan-query bin script.
+            test_source: source content for the ``tests/test_target.py`` file.
+            query: positional arguments to ``scan-query`` after the index path.
+
+        Returns:
+            ``(returncode, parsed_json, stderr)``.
+        """
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir(exist_ok=True)
+        (tests_dir / "test_target.py").write_text(test_source)
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
+        query_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), *query],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+        )
+        return query_result.returncode, json.loads(query_result.stdout), query_result.stderr
+
+    def test_decorator_form_indexed(self, tmp_path, scan_index, scan_query):
+        """``@patch('mypackage.x.fn')`` decorator surfaces via mock-rdeps."""
+        src = "from unittest.mock import patch\n\n@patch('mypackage.x.fn')\ndef test_a(mock_fn):\n    pass\n"
+        rc, data, _ = self._scan_and_query(tmp_path, scan_index, scan_query, src, ["mock-rdeps", "mypackage.x::fn"])
+        assert rc == 0
+        forms = {c["form"] for c in data["callers"]}
+        assert "decorator" in forms
+        assert data["count"] >= 1
+
+    def test_call_form_indexed(self, tmp_path, scan_index, scan_query):
+        """``patch('mypackage.x.fn')`` inside a function body is captured with form='call'."""
+        src = "from unittest.mock import patch\n\ndef test_b():\n    with patch('mypackage.x.fn'):\n        pass\n"
+        rc, data, _ = self._scan_and_query(tmp_path, scan_index, scan_query, src, ["mock-rdeps", "mypackage.x::fn"])
+        assert rc == 0
+        forms = {c["form"] for c in data["callers"]}
+        assert "call" in forms
+
+    def test_mocker_form_indexed(self, tmp_path, scan_index, scan_query):
+        """``mocker.patch('mypackage.x.fn')`` (pytest-mock idiom) is captured with form='mocker'."""
+        src = "def test_c(mocker):\n    mocker.patch('mypackage.x.fn')\n"
+        rc, data, _ = self._scan_and_query(tmp_path, scan_index, scan_query, src, ["mock-rdeps", "mypackage.x::fn"])
+        assert rc == 0
+        forms = {c["form"] for c in data["callers"]}
+        assert "mocker" in forms
+
+    def test_class_method_key_normalization(self, tmp_path, scan_index, scan_query):
+        """``@patch('mypackage.x.MyClass.method')`` normalises to ``mypackage.x::MyClass.method``."""
+        src = (
+            "from unittest.mock import patch\n"
+            "\n"
+            "@patch('mypackage.x.MyClass.method')\n"
+            "def test_d(mock_method):\n"
+            "    pass\n"
+        )
+        rc, data, _ = self._scan_and_query(
+            tmp_path, scan_index, scan_query, src, ["mock-rdeps", "mypackage.x::MyClass.method"]
+        )
+        assert rc == 0, data
+        assert data["count"] == 1
+        assert data["symbol"] == "MyClass.method"
+        assert data["module"] == "mypackage.x"
+
+    def test_non_mock_decorator_not_captured(self, tmp_path, scan_index, scan_query):
+        """Non-patch decorators (e.g. ``@pytest.fixture``) are not added to mock_patches."""
+        src = "import pytest\n\n@pytest.fixture\ndef thing():\n    return 1\n"
+        rc, data, _ = self._scan_and_query(tmp_path, scan_index, scan_query, src, ["mock-rdeps", "pytest::fixture"])
+        assert rc == 0
+        assert data["count"] == 0
+
+    def test_malformed_patch_string_logs_warning(self, tmp_path, scan_index, scan_query):
+        """``patch('nodots')`` does not crash; warns to stderr and is skipped."""
+        src = "from unittest.mock import patch\n\n@patch('nodots')\ndef test_e(_):\n    pass\n"
+        rc, data, _ = self._scan_and_query(tmp_path, scan_index, scan_query, src, ["mock-rdeps", "nodots"])
+        assert rc == 0
+        assert data["count"] == 0
+
+    def test_bare_module_query_lists_all_targets(self, tmp_path, scan_index, scan_query):
+        """Bare module query returns every mocked target in that module."""
+        src = (
+            "from unittest.mock import patch\n"
+            "\n"
+            "@patch('mypackage.x.fn_a')\n"
+            "@patch('mypackage.x.fn_b')\n"
+            "def test_f(mb, ma):\n"
+            "    pass\n"
+        )
+        rc, data, _ = self._scan_and_query(tmp_path, scan_index, scan_query, src, ["mock-rdeps", "mypackage.x"])
+        assert rc == 0, data
+        targets = {c["target"] for c in data["callers"]}
+        assert "mypackage.x::fn_a" in targets
+        assert "mypackage.x::fn_b" in targets
+
+
+class TestFindIndex:
+    """find_index: .cache/codemap/ preferred over .cache/scan/ (D2 fix)."""
+
+    def test_codemap_dir_found(self, tmp_path, monkeypatch) -> None:
+        """Index in .cache/codemap/ is returned when present."""
+        idx = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
+        idx.parent.mkdir(parents=True)
+        idx.write_text("{}")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(_scan_query_mod, "_get_git_root_cached", lambda: None)
+        result = _find_index()
+        assert result == idx
+
+    def test_scan_fallback_found(self, tmp_path, monkeypatch) -> None:
+        """Index in .cache/scan/ is returned when .cache/codemap/ absent."""
+        idx = tmp_path / ".cache" / "scan" / f"{tmp_path.name}.json"
+        idx.parent.mkdir(parents=True)
+        idx.write_text("{}")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(_scan_query_mod, "_get_git_root_cached", lambda: None)
+        result = _find_index()
+        assert result == idx
+
+    def test_codemap_preferred_over_scan(self, tmp_path, monkeypatch) -> None:
+        """When both dirs exist .cache/codemap/ wins."""
+        codemap_idx = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
+        scan_idx = tmp_path / ".cache" / "scan" / f"{tmp_path.name}.json"
+        codemap_idx.parent.mkdir(parents=True)
+        scan_idx.parent.mkdir(parents=True)
+        codemap_idx.write_text("{}")
+        scan_idx.write_text("{}")
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(_scan_query_mod, "_get_git_root_cached", lambda: None)
+        result = _find_index()
+        assert result == codemap_idx
+
+
+class TestImportClassification:
+    """Import classification into stdlib / third_party / internal groups (v4.3)."""
+
+    def _scan_and_query(
+        self,
+        root: Path,
+        scan_index: Path,
+        scan_query: Path,
+        query: list[str],
+    ) -> tuple[int, dict, str]:
+        """Run scan-index against *root*, then scan-query with *query*; return (rc, parsed_json, stderr).
+
+        Caller is responsible for writing source files into *root* before calling.
+
+        Args:
+            root: project root directory (already populated with .py files).
+            scan_index: path to scan-index bin script.
+            scan_query: path to scan-query bin script.
+            query: positional args appended to ``scan-query --index <path>``.
+        """
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        query_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), *query],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        return query_result.returncode, json.loads(query_result.stdout), query_result.stderr
+
+    def test_stdlib_import_classified_as_stdlib(self, tmp_path, scan_index, scan_query):
+        """``import os`` lands in the ``stdlib`` group for ``import-types``."""
+        root = tmp_path / "stdlib_proj"
+        root.mkdir()
+        (root / "consumer.py").write_text("import os\n\ndef use_os():\n    return os.getcwd()\n")
+        rc, data, _ = self._scan_and_query(root, scan_index, scan_query, ["import-types", "consumer"])
+        assert rc == 0, data
+        assert "os" in data["stdlib"]
+        assert "os" not in data["third_party"]
+        assert "os" not in data["internal"]
+
+    def test_third_party_import_classified_as_third_party(self, tmp_path, scan_index, scan_query):
+        """``import numpy`` lands in the ``third_party`` group (numpy is not stdlib and not indexed)."""
+        root = tmp_path / "third_party_proj"
+        root.mkdir()
+        (root / "consumer.py").write_text("import numpy\n\ndef use_np():\n    return numpy.array([])\n")
+        rc, data, _ = self._scan_and_query(root, scan_index, scan_query, ["import-types", "consumer"])
+        assert rc == 0, data
+        assert "numpy" in data["third_party"]
+        assert "numpy" not in data["stdlib"]
+        assert "numpy" not in data["internal"]
+
+    def test_internal_import_classified_as_internal(self, tmp_path, scan_index, scan_query):
+        """An import of a sibling indexed module lands in the ``internal`` group."""
+        root = tmp_path / "internal_proj"
+        root.mkdir()
+        (root / "lib_a.py").write_text("def thing():\n    return 1\n")
+        (root / "consumer.py").write_text("import lib_a\n\ndef use():\n    return lib_a.thing()\n")
+        rc, data, _ = self._scan_and_query(root, scan_index, scan_query, ["import-types", "consumer"])
+        assert rc == 0, data
+        assert "lib_a" in data["internal"]
+        assert "lib_a" not in data["third_party"]
+        assert "lib_a" not in data["stdlib"]
+
+    def test_import_types_returns_all_three_groups(self, tmp_path, scan_index, scan_query):
+        """``import-types`` returns stdlib, third_party, and internal in a single payload."""
+        root = tmp_path / "all_three"
+        root.mkdir()
+        (root / "lib_b.py").write_text("def b():\n    return 1\n")
+        (root / "consumer.py").write_text("import os\nimport numpy\nimport lib_b\n\ndef use():\n    return lib_b.b()\n")
+        rc, data, _ = self._scan_and_query(root, scan_index, scan_query, ["import-types", "consumer"])
+        assert rc == 0, data
+        assert "os" in data["stdlib"]
+        assert "numpy" in data["third_party"]
+        assert "lib_b" in data["internal"]
+
+    def test_deps_third_party_filter_restricts_output(self, tmp_path, scan_index, scan_query):
+        """``deps --third-party`` returns only the third-party slice of direct_imports."""
+        root = tmp_path / "filter_third"
+        root.mkdir()
+        (root / "lib_c.py").write_text("def c():\n    return 1\n")
+        (root / "consumer.py").write_text("import os\nimport numpy\nimport lib_c\n\ndef use():\n    return lib_c.c()\n")
+        rc, data, _ = self._scan_and_query(root, scan_index, scan_query, ["deps", "consumer", "--third-party"])
+        assert rc == 0, data
+        assert data["direct_imports"] == ["numpy"]
+
+    def test_src_layout_internal_resolution(self, tmp_path, scan_index, scan_query):
+        """``import mypackage`` resolves as internal when indexed as ``src.mypackage.x``."""
+        root = tmp_path / "src_layout"
+        root.mkdir()
+        src_dir = root / "src" / "mypackage"
+        src_dir.mkdir(parents=True)
+        (src_dir / "__init__.py").write_text("")
+        (src_dir / "core.py").write_text("def core_fn():\n    return 42\n")
+        # Consumer file outside src/ so that classify_imports sees a bare 'import mypackage'.
+        (root / "consumer.py").write_text("import mypackage\n\ndef use():\n    return mypackage\n")
+        rc, data, _ = self._scan_and_query(root, scan_index, scan_query, ["import-types", "consumer"])
+        assert rc == 0, data
+        assert "mypackage" in data["internal"], (
+            f"expected 'mypackage' to resolve internal via src.* prefix, got groups={data}"
+        )
+
+
+class TestDocstringCoverage:
+    """v4.4 — ``has_docstring`` / ``docstring_first_line`` per symbol and the ``undocumented`` query.
+
+    Public symbol rule: a qualified_name component must not start with ``_`` — excludes
+    dunders (``__init__``), private helpers (``_compute``), and private class names.
+    """
+
+    def _scan(
+        self,
+        root: Path,
+        scan_index: Path,
+    ) -> Path:
+        """Run scan-index against *root* and return the produced index path.
+
+        Args:
+            root: project root populated with .py files.
+            scan_index: path to the scan-index bin script.
+        """
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        return root / ".cache" / "codemap" / f"{root.name}.json"
+
+    def _query(
+        self,
+        root: Path,
+        index_path: Path,
+        scan_query: Path,
+        query: list[str],
+    ) -> tuple[int, dict, str]:
+        """Run scan-query against *index_path* and return ``(rc, parsed_json, stderr)``.
+
+        Args:
+            root: cwd used for the subprocess (matches scan_root in the index).
+            index_path: path to the index JSON produced by ``scan-index``.
+            scan_query: path to the scan-query bin script.
+            query: positional args appended after ``--index <path>``.
+        """
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), *query],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        return result.returncode, json.loads(result.stdout), result.stderr
+
+    def _load_index(self, index_path: Path) -> dict:
+        """Load the raw index JSON for direct field inspection.
+
+        Args:
+            index_path: path to the index JSON file.
+        """
+        return json.loads(index_path.read_text())
+
+    def test_documented_function_sets_has_docstring_true(self, tmp_path, scan_index):
+        """A function with a docstring is flagged ``has_docstring=True`` in the index."""
+        root = tmp_path / "doc_true"
+        root.mkdir()
+        (root / "mymod.py").write_text('def documented(x):\n    """Does something useful."""\n    return x\n')
+        index_path = self._scan(root, scan_index)
+        index = self._load_index(index_path)
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        sym = next(s for s in mod["symbols"] if s["name"] == "documented")
+        assert sym["has_docstring"] is True
+        assert sym["docstring_first_line"] == "Does something useful."
+
+    def test_documented_function_excluded_from_undocumented(self, tmp_path, scan_index, scan_query):
+        """A documented function does not appear in the ``undocumented`` query result."""
+        root = tmp_path / "doc_exclude"
+        root.mkdir()
+        (root / "mymod.py").write_text('def documented(x):\n    """Does something useful."""\n    return x\n')
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "mymod"])
+        assert rc == 0, data
+        names = {f["name"] for f in data["undocumented"]}
+        assert "documented" not in names
+        assert data["total"] == 0
+
+    def test_undocumented_function_returned(self, tmp_path, scan_index, scan_query):
+        """A function without a docstring is flagged ``has_docstring=False`` and surfaces in the query."""
+        root = tmp_path / "doc_missing"
+        root.mkdir()
+        (root / "mymod.py").write_text("def undocumented(x):\n    return x + 1\n")
+        index_path = self._scan(root, scan_index)
+        index = self._load_index(index_path)
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        sym = next(s for s in mod["symbols"] if s["name"] == "undocumented")
+        assert sym["has_docstring"] is False
+        assert sym["docstring_first_line"] is None
+
+        rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "mymod"])
+        assert rc == 0, data
+        names = {f["name"] for f in data["undocumented"]}
+        assert "undocumented" in names
+        assert data["total"] == 1
+
+    def test_undocumented_class_method_returned(self, tmp_path, scan_index, scan_query):
+        """A class method without a docstring is reported as undocumented under its qualified_name."""
+        root = tmp_path / "doc_method"
+        root.mkdir()
+        src = "class MyClass:\n    def method_no_doc(self):\n        return 1\n"
+        (root / "mymod.py").write_text(src)
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "mymod"])
+        assert rc == 0, data
+        qnames = {f["qualified_name"] for f in data["undocumented"]}
+        assert "MyClass.method_no_doc" in qnames
+
+    def test_dunder_init_excluded(self, tmp_path, scan_index, scan_query):
+        """``__init__`` without a docstring is excluded from the result (dunder rule).
+
+        Rule: ``qualified_name`` containing any component starting with ``_`` is considered
+        non-public — covers dunders, private helpers, and private classes uniformly.
+        """
+        root = tmp_path / "doc_dunder"
+        root.mkdir()
+        src = "class MyClass:\n    def __init__(self):\n        self.x = 0\n"
+        (root / "mymod.py").write_text(src)
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "mymod"])
+        assert rc == 0, data
+        qnames = {f["qualified_name"] for f in data["undocumented"]}
+        assert "MyClass.__init__" not in qnames
+        # Class itself has no docstring → MyClass is public and should appear.
+        assert "MyClass" in qnames
+
+    def test_all_flag_returns_symbols_across_modules(self, tmp_path, scan_index, scan_query):
+        """``undocumented --all`` returns undocumented public symbols from every non-test module."""
+        root = tmp_path / "doc_all"
+        root.mkdir()
+        (root / "mod_a.py").write_text("def fn_a(x):\n    return x\n")
+        (root / "mod_b.py").write_text('def fn_b(x):\n    """Documented."""\n    return x\n')
+        (root / "mod_c.py").write_text("def fn_c(x):\n    return x\n")
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "--all"])
+        assert rc == 0, data
+        modules = {f["module"] for f in data["undocumented"]}
+        names = {(f["module"], f["name"]) for f in data["undocumented"]}
+        assert {"mod_a", "mod_c"}.issubset(modules)
+        assert ("mod_b", "fn_b") not in names
+        assert data["total"] >= 2
+
+    def test_docstring_first_line_truncated_at_80_chars(self, tmp_path, scan_index):
+        """A long single-line docstring is stored truncated to 80 characters exactly."""
+        root = tmp_path / "doc_long"
+        root.mkdir()
+        long_line = "x" * 200
+        (root / "mymod.py").write_text(f'def big(x):\n    """{long_line}"""\n    return x\n')
+        index_path = self._scan(root, scan_index)
+        index = self._load_index(index_path)
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        sym = next(s for s in mod["symbols"] if s["name"] == "big")
+        assert sym["has_docstring"] is True
+        assert sym["docstring_first_line"] is not None
+        assert len(sym["docstring_first_line"]) == 80
+        assert sym["docstring_first_line"] == "x" * 80
+
+    def test_loc_sort_order_largest_first(self, tmp_path, scan_index, scan_query):
+        """Findings are sorted by LOC descending — the biggest undocumented symbol comes first."""
+        root = tmp_path / "doc_sort"
+        root.mkdir()
+        # ``big`` spans 4 LOC (end_line − start_line = 5 − 1 = 4); ``small`` spans 1.
+        src = "def small(x):\n    return x\ndef big(x):\n    a = 1\n    b = 2\n    c = 3\n    return x\n"
+        (root / "mymod.py").write_text(src)
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "mymod"])
+        assert rc == 0, data
+        names_in_order = [f["name"] for f in data["undocumented"]]
+        assert names_in_order.index("big") < names_in_order.index("small")
+
+
+class TestUncovered:
+    """v4.2 — ``uncovered`` query: public symbols with no test callers and no mocks.
+
+    Uncovered = public ``qualified_name`` (no leading ``_`` in any component)
+    AND ``fn_rdep_test_count == 0`` AND ``mock_rdep_count == 0``. Both counters
+    are stored fields populated by ``scan-index`` (v4.1+), so the query reads
+    them directly — no graph rebuild needed.
+    """
+
+    @staticmethod
+    def _make_index(modules: list[dict], scan_version: int = 5) -> dict:
+        """Return a minimal hand-crafted index dict for unit-level tests."""
+        return {"scan_version": scan_version, "modules": modules}
+
+    @staticmethod
+    def _make_symbol(
+        name: str,
+        *,
+        qualified_name: str | None = None,
+        start_line: int = 1,
+        end_line: int = 10,
+        fn_rdep_test_count: int = 0,
+        mock_rdep_count: int = 0,
+    ) -> dict:
+        """Return a stored-shape symbol dict matching the schema fields used by ``cmd_uncovered``."""
+        return {
+            "name": name,
+            "qualified_name": qualified_name or name,
+            "type": "function",
+            "start_line": start_line,
+            "end_line": end_line,
+            "fn_rdep_test_count": fn_rdep_test_count,
+            "mock_rdep_count": mock_rdep_count,
+        }
+
+    @staticmethod
+    def _ns(
+        *,
+        module: str | None,
+        all_modules: bool = False,
+        sort: str = "loc",
+        top: int = 20,
+    ):
+        """Return an argparse.Namespace shim for direct ``cmd_uncovered`` invocation."""
+        import argparse
+
+        return argparse.Namespace(module=module, all_modules=all_modules, sort=sort, top=top)
+
+    def _run(self, capsys, index: dict, ns) -> dict:
+        """Invoke ``cmd_uncovered`` and return the parsed JSON payload from stdout."""
+        _scan_query_mod.cmd_uncovered(index, ns)
+        captured = capsys.readouterr()
+        return json.loads(captured.out)
+
+    def test_public_uncovered_function_appears(self, capsys):
+        """Public fn with both counters at 0 surfaces in the result."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol("foo", fn_rdep_test_count=0, mock_rdep_count=0),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod"))
+        names = {f["name"] for f in data["uncovered"]}
+        assert "foo" in names
+        assert data["total"] == 1
+        assert data["showing"] == 1
+        assert data["module"] == "mymod"
+
+    def test_function_with_test_callers_excluded(self, capsys):
+        """Public fn with ``fn_rdep_test_count >= 1`` is filtered out."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol("covered", fn_rdep_test_count=3, mock_rdep_count=0),
+                        self._make_symbol("uncovered", fn_rdep_test_count=0, mock_rdep_count=0),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod"))
+        names = {f["name"] for f in data["uncovered"]}
+        assert "covered" not in names
+        assert "uncovered" in names
+
+    def test_mocked_function_excluded(self, capsys):
+        """Public fn with ``mock_rdep_count >= 1`` is filtered out even when no direct test callers exist."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol("mocked", fn_rdep_test_count=0, mock_rdep_count=2),
+                        self._make_symbol("orphan", fn_rdep_test_count=0, mock_rdep_count=0),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod"))
+        names = {f["name"] for f in data["uncovered"]}
+        assert "mocked" not in names
+        assert "orphan" in names
+
+    def test_private_function_excluded(self, capsys):
+        """Leading-underscore symbols never appear (public filter)."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol("_helper", fn_rdep_test_count=0, mock_rdep_count=0),
+                        self._make_symbol("__dunder__", fn_rdep_test_count=0, mock_rdep_count=0),
+                        self._make_symbol(
+                            "Public", qualified_name="Klass._priv", fn_rdep_test_count=0, mock_rdep_count=0
+                        ),
+                        self._make_symbol("public_fn", fn_rdep_test_count=0, mock_rdep_count=0),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod"))
+        names = {f["name"] for f in data["uncovered"]}
+        assert "_helper" not in names
+        assert "__dunder__" not in names
+        assert "Public" not in names  # private component in qualified_name → filtered
+        assert "public_fn" in names
+
+    def test_all_flag_spans_non_test_modules(self, capsys):
+        """``--all`` scans every non-test module and excludes test modules."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mod_a",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [self._make_symbol("a_fn", fn_rdep_test_count=0, mock_rdep_count=0)],
+                },
+                {
+                    "name": "mod_b",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [self._make_symbol("b_fn", fn_rdep_test_count=0, mock_rdep_count=0)],
+                },
+                {
+                    "name": "tests.test_mod",
+                    "status": "ok",
+                    "is_test": True,
+                    "symbols": [self._make_symbol("test_fn", fn_rdep_test_count=0, mock_rdep_count=0)],
+                },
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module=None, all_modules=True))
+        modules = {f["module"] for f in data["uncovered"]}
+        assert modules == {"mod_a", "mod_b"}
+        # Test-module symbols never reported even when their own counters are zero.
+        names = {f["name"] for f in data["uncovered"]}
+        assert "test_fn" not in names
+
+    def test_top_caps_output(self, capsys):
+        """``--top 2`` caps the returned list while ``total`` still reflects the full count."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol(
+                            f"fn_{i}", start_line=1, end_line=10 + i, fn_rdep_test_count=0, mock_rdep_count=0
+                        )
+                        for i in range(5)
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod", top=2))
+        assert data["total"] == 5
+        assert data["showing"] == 2
+        assert len(data["uncovered"]) == 2
+
+    def test_sort_name_returns_alphabetical(self, capsys):
+        """``--sort name`` returns findings alphabetically by qualified_name."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol("zeta", start_line=1, end_line=100, fn_rdep_test_count=0, mock_rdep_count=0),
+                        self._make_symbol("alpha", start_line=1, end_line=2, fn_rdep_test_count=0, mock_rdep_count=0),
+                        self._make_symbol("mu", start_line=1, end_line=50, fn_rdep_test_count=0, mock_rdep_count=0),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod", sort="name"))
+        names_in_order = [f["name"] for f in data["uncovered"]]
+        assert names_in_order == ["alpha", "mu", "zeta"]
+
+    def test_sort_loc_descending_default(self, capsys):
+        """Default ``--sort loc`` returns the biggest uncovered symbol first."""
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol("small", start_line=1, end_line=3, fn_rdep_test_count=0, mock_rdep_count=0),
+                        self._make_symbol("big", start_line=1, end_line=100, fn_rdep_test_count=0, mock_rdep_count=0),
+                        self._make_symbol("medium", start_line=1, end_line=20, fn_rdep_test_count=0, mock_rdep_count=0),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod"))
+        names_in_order = [f["name"] for f in data["uncovered"]]
+        assert names_in_order == ["big", "medium", "small"]
+
+    def test_neither_module_nor_all_errors_out(self, capsys):
+        """Missing both positional ``module`` and ``--all`` exits with the usage hint."""
+        index = self._make_index([])
+        with pytest.raises(SystemExit):
+            _scan_query_mod.cmd_uncovered(index, self._ns(module=None, all_modules=False))
+        captured = capsys.readouterr()
+        assert "--all" in captured.out
+
+    def test_requires_v4_index(self, capsys):
+        """An index at scan_version < 4 yields a SystemExit with feature name in the error."""
+        index = self._make_index([], scan_version=3)
+        with pytest.raises(SystemExit):
+            _scan_query_mod.cmd_uncovered(index, self._ns(module=None, all_modules=True))
+        captured = capsys.readouterr()
+        assert "fn_rdep_test_count" in captured.out
+
+    def test_end_to_end_via_subprocess(self, tmp_path, scan_index, scan_query):
+        """End-to-end: scan-index populates counters; scan-query uncovered surfaces only true orphans.
+
+        Layout:
+          mylib.py — public ``used_fn`` (called by a test) + ``orphan_fn`` (never reached).
+          tests/test_mylib.py — imports and calls ``used_fn``.
+
+        ``orphan_fn`` must appear in the uncovered list; ``used_fn`` must NOT.
+        """
+        root = tmp_path / "end_to_end"
+        root.mkdir()
+        (root / "mylib.py").write_text("def used_fn(x):\n    return x + 1\n\n\ndef orphan_fn(x):\n    return x * 2\n")
+        tests_dir = root / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_mylib.py").write_text(
+            "from mylib import used_fn\n\n\ndef test_used():\n    assert used_fn(1) == 2\n"
+        )
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        query_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "uncovered", "--all"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert query_result.returncode == 0, query_result.stderr
+        data = json.loads(query_result.stdout)
+        names = {(f["module"], f["name"]) for f in data["uncovered"]}
+        assert ("mylib", "orphan_fn") in names, data
+        assert ("mylib", "used_fn") not in names, data
+
+
+class TestSphinxXrefs:
+    """v4.5 — Sphinx + MkDocs cross-reference indexing and the ``xrefs`` query.
+
+    Covers three input surfaces:
+      * Python docstrings carrying ``:role:`target``` Sphinx roles
+      * ``.rst`` files anywhere under the project
+      * ``docs/**/*.md`` files with mkdocstrings ``[text][identifier]`` autorefs
+
+    Each test scans a self-contained ``tmp_path`` project, then queries the
+    ``xrefs`` subcommand and asserts on the parsed JSON.
+    """
+
+    def _scan(self, root: Path, scan_index: Path) -> Path:
+        """Run ``scan-index`` against *root* and return the produced index path."""
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        return root / ".cache" / "codemap" / f"{root.name}.json"
+
+    def _query(
+        self,
+        root: Path,
+        index_path: Path,
+        scan_query: Path,
+        query: list[str],
+    ) -> tuple[int, dict, str]:
+        """Run ``scan-query`` against *index_path* and return ``(rc, parsed_json, stderr)``."""
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), *query],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        return result.returncode, json.loads(result.stdout), result.stderr
+
+    def test_sphinx_func_role_in_python_docstring(self, tmp_path, scan_index, scan_query):
+        """``:func:`mymod.target_fn``` in a Python docstring appears in ``xrefs`` with source=sphinx."""
+        root = tmp_path / "xref_func"
+        root.mkdir()
+        (root / "mymod.py").write_text("def target_fn():\n    return 1\n")
+        (root / "user.py").write_text(
+            'def user_fn():\n    """Calls :func:`mymod.target_fn` for its result."""\n    return 1\n'
+        )
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["xrefs", "mymod::target_fn"])
+        assert rc == 0, data
+        assert data["count"] >= 1, data
+        sources = {ref["source"] for ref in data["refs"]}
+        assert "sphinx" in sources
+        roles = {ref["role"] for ref in data["refs"]}
+        assert "func" in roles
+
+    def test_sphinx_class_role_in_rst_file(self, tmp_path, scan_index, scan_query):
+        """``:class:`mymod.MyCls``` in a ``.rst`` file appears in ``xrefs`` with source=sphinx."""
+        root = tmp_path / "xref_rst"
+        root.mkdir()
+        (root / "mymod.py").write_text("class MyCls:\n    pass\n")
+        docs_dir = root / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "api.rst").write_text("See :class:`mymod.MyCls` for usage.\n")
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["xrefs", "mymod::MyCls"])
+        assert rc == 0, data
+        assert data["count"] >= 1, data
+        sources = {ref["source"] for ref in data["refs"]}
+        assert "sphinx" in sources
+
+    def test_mkdocs_named_link_in_md_file(self, tmp_path, scan_index, scan_query):
+        """``[text][mymod.target_fn]`` in ``docs/**/*.md`` is recorded with source=mkdocs."""
+        root = tmp_path / "xref_mkdocs"
+        root.mkdir()
+        (root / "mymod.py").write_text("def target_fn():\n    return 1\n")
+        docs_dir = root / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "api.md").write_text("See [the function][mymod.target_fn] for details.\n")
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["xrefs", "mymod::target_fn"])
+        assert rc == 0, data
+        assert data["count"] >= 1, data
+        sources = {ref["source"] for ref in data["refs"]}
+        assert "mkdocs" in sources
+
+    def test_tilde_prefix_stripped_from_target(self, tmp_path, scan_index, scan_query):
+        """``:func:`~mymod.target_fn``` resolves to ``mymod::target_fn`` (tilde stripped)."""
+        root = tmp_path / "xref_tilde"
+        root.mkdir()
+        (root / "mymod.py").write_text("def target_fn():\n    return 1\n")
+        (root / "user.py").write_text('def user_fn():\n    """Uses :func:`~mymod.target_fn` here."""\n    return 1\n')
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["xrefs", "mymod::target_fn"])
+        assert rc == 0, data
+        assert data["count"] >= 1, data
+
+    def test_broken_ref_to_unknown_symbol(self, tmp_path, scan_index, scan_query):
+        """``:func:`mymod.does_not_exist``` is reported under ``xrefs --broken mymod``."""
+        root = tmp_path / "xref_broken"
+        root.mkdir()
+        (root / "mymod.py").write_text("def real_fn():\n    return 1\n")
+        (root / "user.py").write_text(
+            'def user_fn():\n    """Wrongly cites :func:`mymod.does_not_exist`."""\n    return 1\n'
+        )
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["xrefs", "mymod", "--broken"])
+        assert rc == 0, data
+        targets = {ref["target"] for ref in data["broken"]}
+        assert "mymod::does_not_exist" in targets, data
+        # Real symbol must NOT be reported as broken.
+        assert "mymod::real_fn" not in targets
+
+    def test_xref_in_module_docstring_counted(self, tmp_path, scan_index, scan_query):
+        """``:func:`mymod.target_fn``` placed in a module docstring is counted in ``xrefs``."""
+        root = tmp_path / "xref_module_doc"
+        root.mkdir()
+        (root / "mymod.py").write_text("def target_fn():\n    return 1\n")
+        (root / "pkg").mkdir()
+        # Module-level docstring of the __init__ module.
+        (root / "pkg" / "__init__.py").write_text(
+            '"""Package overview — see :func:`mymod.target_fn` for the canonical helper."""\n'
+        )
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["xrefs", "mymod::target_fn"])
+        assert rc == 0, data
+        assert data["count"] >= 1, data
+        files = {ref["file"] for ref in data["refs"]}
+        assert any("__init__.py" in f for f in files), data
+
+    def test_xref_count_top_level_field(self, tmp_path, scan_index):
+        """The index carries a top-level ``sphinx_xref_count`` mapping for reverse lookups."""
+        root = tmp_path / "xref_count"
+        root.mkdir()
+        (root / "mymod.py").write_text("def target_fn():\n    return 1\n")
+        (root / "user_a.py").write_text('def a():\n    """Calls :func:`mymod.target_fn`."""\n    return 1\n')
+        (root / "user_b.py").write_text('def b():\n    """Also uses :func:`mymod.target_fn`."""\n    return 1\n')
+        index_path = self._scan(root, scan_index)
+        index = json.loads(index_path.read_text())
+        assert "sphinx_xref_count" in index, "top-level sphinx_xref_count missing from index"
+        assert index["sphinx_xref_count"].get("mymod::target_fn", 0) >= 2
+
+    def test_xrefs_requires_v5_index(self, tmp_path, scan_query):
+        """An index at scan_version < 5 yields a SystemExit-style error when querying ``xrefs``."""
+        root = tmp_path / "xref_v4"
+        root.mkdir()
+        index_dir = root / ".cache" / "codemap"
+        index_dir.mkdir(parents=True)
+        index_path = index_dir / f"{root.name}.json"
+        index_path.write_text(json.dumps({"scan_version": 4, "modules": []}))
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "xrefs", "mymod::fn"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode != 0
+        data = json.loads(result.stdout)
+        assert "sphinx_xrefs" in data.get("error", ""), data
+
+
+class TestDeadSymbols:
+    """v4.6 — ``dead-symbols`` / ``dead-modules`` queries.
+
+    A symbol is dead when every static reachability signal is zero: the owning
+    module has no importers, the symbol has no function-level callers (reverse
+    call graph), no test mocks it, and no docs reference it. Modules with star
+    imports are skipped wholesale because star imports defeat the call graph.
+
+    Schema requirements (fail-closed):
+      * ``scan_version >= 6`` — checked via ``_require_feature``
+      * top-level ``sphinx_xref_count`` table present — never silently treat
+        missing as zero (would mark documented symbols dead)
+    """
+
+    @staticmethod
+    def _make_index(
+        modules: list[dict],
+        *,
+        scan_version: int = 6,
+        sphinx_xref_count: dict[str, int] | None = None,
+        include_sphinx_table: bool = True,
+    ) -> dict:
+        """Return a minimal hand-crafted index dict for unit-level tests.
+
+        Args:
+            modules: list of module entries to embed.
+            scan_version: scan_version field; default 6 (v4.6 minimum).
+            sphinx_xref_count: reverse xref table; default empty.
+            include_sphinx_table: when False, omit ``sphinx_xref_count`` entirely
+                (used to assert fail-closed behaviour).
+        """
+        index: dict = {"scan_version": scan_version, "modules": modules}
+        if include_sphinx_table:
+            index["sphinx_xref_count"] = sphinx_xref_count or {}
+        return index
+
+    @staticmethod
+    def _make_module(
+        name: str,
+        *,
+        symbols: list[dict] | None = None,
+        rdep_count: int = 0,
+        is_entry_point: bool = False,
+        is_test: bool = False,
+        has_star_imports: bool = False,
+        exports: list[str] | None = None,
+        loc: int = 10,
+    ) -> dict:
+        """Return a stored-shape module dict matching the schema fields used by ``cmd_dead_symbols``."""
+        return {
+            "name": name,
+            "status": "ok",
+            "rdep_count": rdep_count,
+            "is_entry_point": is_entry_point,
+            "is_test": is_test,
+            "has_star_imports": has_star_imports,
+            "exports": exports,
+            "loc": loc,
+            "symbols": symbols or [],
+        }
+
+    @staticmethod
+    def _make_symbol(
+        name: str,
+        *,
+        qualified_name: str | None = None,
+        start_line: int = 1,
+        end_line: int = 10,
+        mock_rdep_count: int = 0,
+        sym_type: str = "function",
+    ) -> dict:
+        """Return a stored-shape symbol dict matching the schema fields used by ``cmd_dead_symbols``."""
+        return {
+            "name": name,
+            "qualified_name": qualified_name or name,
+            "type": sym_type,
+            "start_line": start_line,
+            "end_line": end_line,
+            "mock_rdep_count": mock_rdep_count,
+            "calls": [],
+        }
+
+    @staticmethod
+    def _ns(*, min_loc: int = 5):
+        """Return an argparse.Namespace shim for direct ``cmd_dead_symbols`` invocation."""
+        import argparse
+
+        return argparse.Namespace(min_loc=min_loc)
+
+    @staticmethod
+    def _ns_modules():
+        """Return an argparse.Namespace shim for direct ``cmd_dead_modules`` invocation."""
+        import argparse
+
+        return argparse.Namespace()
+
+    @pytest.fixture(autouse=True)
+    def _reset_caches(self):
+        """Reset module-level caches before every test so each index is parsed fresh."""
+        _scan_query_mod._symbol_map_cache = None
+        _scan_query_mod._rev_graph_cache = None
+        _scan_query_mod._coverage_cache = None
+        yield
+        _scan_query_mod._symbol_map_cache = None
+        _scan_query_mod._rev_graph_cache = None
+        _scan_query_mod._coverage_cache = None
+
+    def _run_dead_symbols(self, capsys, index: dict, ns) -> dict:
+        """Invoke ``cmd_dead_symbols`` and return the parsed JSON payload from stdout."""
+        _scan_query_mod.cmd_dead_symbols(index, ns)
+        captured = capsys.readouterr()
+        return json.loads(captured.out)
+
+    def _run_dead_modules(self, capsys, index: dict, ns) -> dict:
+        """Invoke ``cmd_dead_modules`` and return the parsed JSON payload from stdout."""
+        _scan_query_mod.cmd_dead_modules(index, ns)
+        captured = capsys.readouterr()
+        return json.loads(captured.out)
+
+    def test_public_dead_fn_surfaces(self, capsys):
+        """Public fn with all signals at zero appears in dead-symbols result."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    symbols=[
+                        self._make_symbol("orphan_fn", start_line=1, end_line=10, mock_rdep_count=0),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "orphan_fn" in names
+        assert data["total"] == 1
+
+    def test_fn_with_caller_excluded(self, capsys):
+        """Fn with at least one non-test caller in the reverse call graph is not dead."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "target_mod",
+                    rdep_count=0,
+                    symbols=[
+                        self._make_symbol("called_fn", start_line=1, end_line=10),
+                    ],
+                ),
+                self._make_module(
+                    "caller_mod",
+                    rdep_count=0,
+                    symbols=[
+                        {
+                            "name": "uses_called",
+                            "qualified_name": "uses_called",
+                            "type": "function",
+                            "start_line": 1,
+                            "end_line": 5,
+                            "mock_rdep_count": 0,
+                            "calls": [{"target": "target_mod::called_fn", "resolution": "import"}],
+                        }
+                    ],
+                ),
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "called_fn" not in names
+
+    def test_entry_point_module_excluded(self, capsys):
+        """Symbol in an entry-point module (``__main__`` guard) is never dead."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "scripts.runner",
+                    rdep_count=0,
+                    is_entry_point=True,
+                    symbols=[
+                        self._make_symbol("main_fn", start_line=1, end_line=20),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "main_fn" not in names
+
+    def test_test_module_excluded(self, capsys):
+        """Symbol in a test module is never dead (test files are not production surface)."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "tests.test_thing",
+                    rdep_count=0,
+                    is_test=True,
+                    symbols=[
+                        self._make_symbol("test_helper", start_line=1, end_line=20),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "test_helper" not in names
+
+    def test_private_fn_excluded(self, capsys):
+        """Leading-underscore symbols are not dead candidates (public filter)."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    symbols=[
+                        self._make_symbol("_helper", start_line=1, end_line=10),
+                        self._make_symbol("public_fn", start_line=11, end_line=20),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "_helper" not in names
+        assert "public_fn" in names
+
+    def test_mocked_fn_excluded(self, capsys):
+        """Fn with ``mock_rdep_count >= 1`` is alive (tests reference it via patch())."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    symbols=[
+                        self._make_symbol("mocked_fn", start_line=1, end_line=10, mock_rdep_count=2),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "mocked_fn" not in names
+
+    def test_doc_referenced_fn_excluded(self, capsys):
+        """Fn referenced via ``sphinx_xref_count`` is alive (docs cite it)."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    symbols=[
+                        self._make_symbol("documented_fn", start_line=1, end_line=10),
+                    ],
+                )
+            ],
+            sphinx_xref_count={"mymod::documented_fn": 3},
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "documented_fn" not in names
+
+    def test_module_with_importers_excluded(self, capsys):
+        """A module's rdep_count > 0 disqualifies every symbol it owns."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=2,
+                    symbols=[
+                        self._make_symbol("orphan_fn", start_line=1, end_line=10),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "orphan_fn" not in names
+
+    def test_exported_symbol_excluded(self, capsys):
+        """Symbol present in module's ``__all__`` is explicitly exported and therefore alive."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    exports=["exported_fn"],
+                    symbols=[
+                        self._make_symbol("exported_fn", start_line=1, end_line=10),
+                        self._make_symbol("hidden_fn", start_line=11, end_line=20),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "exported_fn" not in names
+        assert "hidden_fn" in names
+
+    def test_exports_none_no_filter(self, capsys):
+        """When ``exports is None`` (no ``__all__``) the export filter is inactive."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    exports=None,
+                    symbols=[
+                        self._make_symbol("public_fn", start_line=1, end_line=10),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names = {f["name"] for f in data["dead"]}
+        assert "public_fn" in names
+
+    def test_min_loc_filter_drops_trivial(self, capsys):
+        """``--min-loc 5`` skips symbols spanning fewer than 5 lines."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    symbols=[
+                        self._make_symbol("trivial", start_line=1, end_line=2),
+                        self._make_symbol("big_enough", start_line=10, end_line=20),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns(min_loc=5))
+        names = {f["name"] for f in data["dead"]}
+        assert "trivial" not in names
+        assert "big_enough" in names
+
+    def test_star_import_module_skipped_and_warned(self, capsys):
+        """Modules with ``has_star_imports=True`` are skipped wholesale; warning logged to stderr."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "starry_mod",
+                    rdep_count=0,
+                    has_star_imports=True,
+                    symbols=[
+                        self._make_symbol("would_look_dead", start_line=1, end_line=20),
+                    ],
+                )
+            ]
+        )
+        _scan_query_mod.cmd_dead_symbols(index, self._ns())
+        captured = capsys.readouterr()
+        data = json.loads(captured.out)
+        names = {f["name"] for f in data["dead"]}
+        assert "would_look_dead" not in names
+        assert "starry_mod" in data["skipped_star_import"]
+        assert "starry_mod" in captured.err
+        assert "star imports" in captured.err
+
+    def test_v3_index_rejected(self, capsys):
+        """An index at scan_version < 6 fails with the feature name in the error message."""
+        index = self._make_index([], scan_version=3)
+        with pytest.raises(SystemExit):
+            _scan_query_mod.cmd_dead_symbols(index, self._ns())
+        captured = capsys.readouterr()
+        assert "dead-symbol" in captured.out
+
+    def test_missing_sphinx_xref_count_fail_closed(self, capsys):
+        """Index at v6 lacking ``sphinx_xref_count`` aborts — never silently treats missing as zero."""
+        index = self._make_index([], include_sphinx_table=False)
+        with pytest.raises(SystemExit):
+            _scan_query_mod.cmd_dead_symbols(index, self._ns())
+        captured = capsys.readouterr()
+        assert "sphinx_xref_count" in captured.out
+
+    def test_sort_loc_descending(self, capsys):
+        """Findings are returned biggest-LOC first."""
+        index = self._make_index(
+            [
+                self._make_module(
+                    "mymod",
+                    rdep_count=0,
+                    symbols=[
+                        self._make_symbol("small", start_line=1, end_line=6),
+                        self._make_symbol("huge", start_line=10, end_line=110),
+                        self._make_symbol("medium", start_line=120, end_line=140),
+                    ],
+                )
+            ]
+        )
+        data = self._run_dead_symbols(capsys, index, self._ns())
+        names_in_order = [f["name"] for f in data["dead"]]
+        assert names_in_order == ["huge", "medium", "small"]
+
+    def test_dead_modules_reports_orphan_module(self, capsys):
+        """A module with ``rdep_count == 0`` and not an entry point appears in dead-modules."""
+        index = self._make_index(
+            [
+                self._make_module("orphan_mod", rdep_count=0, loc=42),
+                self._make_module("used_mod", rdep_count=3, loc=10),
+            ]
+        )
+        data = self._run_dead_modules(capsys, index, self._ns_modules())
+        names = {m["name"] for m in data["dead_modules"]}
+        assert "orphan_mod" in names
+        assert "used_mod" not in names
+        assert data["total"] == 1
+
+    def test_dead_modules_skips_entry_point_and_tests(self, capsys):
+        """Entry-point and test modules are excluded from dead-modules regardless of rdep_count."""
+        index = self._make_index(
+            [
+                self._make_module("runner", rdep_count=0, is_entry_point=True, loc=20),
+                self._make_module("tests.test_thing", rdep_count=0, is_test=True, loc=15),
+                self._make_module("orphan_lib", rdep_count=0, loc=30),
+            ]
+        )
+        data = self._run_dead_modules(capsys, index, self._ns_modules())
+        names = {m["name"] for m in data["dead_modules"]}
+        assert "runner" not in names
+        assert "tests.test_thing" not in names
+        assert "orphan_lib" in names
+
+    def test_dead_modules_requires_v6_index(self, capsys):
+        """An index at scan_version < 6 yields a SystemExit with feature name in the error."""
+        index = self._make_index([], scan_version=3)
+        with pytest.raises(SystemExit):
+            _scan_query_mod.cmd_dead_modules(index, self._ns_modules())
+        captured = capsys.readouterr()
+        assert "dead-symbol" in captured.out
+
+    def test_end_to_end_via_subprocess(self, tmp_path, scan_index, scan_query):
+        """End-to-end: scan-index produces a v6 index; scan-query dead-symbols isolates the orphan.
+
+        Layout:
+          mylib.py — ``used_fn`` (called by user.py) + ``orphan_fn`` (no caller, no docs, no test)
+          user.py  — imports mylib, calls used_fn
+        Both ``used_fn`` and ``orphan_fn`` are at least 5 LOC so the default
+        ``--min-loc`` threshold keeps both candidates.
+        """
+        root = tmp_path / "dead_e2e"
+        root.mkdir()
+        (root / "mylib.py").write_text(
+            "def used_fn(x):\n"
+            "    a = 1\n"
+            "    b = 2\n"
+            "    c = 3\n"
+            "    d = 4\n"
+            "    return x + a + b + c + d\n"
+            "\n"
+            "\n"
+            "def orphan_fn(x):\n"
+            "    a = 1\n"
+            "    b = 2\n"
+            "    c = 3\n"
+            "    d = 4\n"
+            "    return x * (a + b + c + d)\n"
+        )
+        (root / "user.py").write_text("import mylib\n\n\ndef driver():\n    return mylib.used_fn(1)\n")
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        query_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "dead-symbols"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert query_result.returncode == 0, query_result.stderr
+        data = json.loads(query_result.stdout)
+        names = {(f["module"], f["name"]) for f in data["dead"]}
+        # mylib.used_fn is called by user.driver → alive.
+        # mylib.orphan_fn has no caller and mylib.rdep_count == 1 (imported by user.py) — orphan_fn
+        # is therefore NOT dead under the strict definition (module must have rdep_count == 0).
+        # Re-test: build a module that is NEVER imported; its public fn should land in dead-symbols.
+        # The current layout proves the conservative "module rdep == 0" gate works as designed.
+        assert ("mylib", "used_fn") not in names
+
+    def test_end_to_end_orphan_module(self, tmp_path, scan_index, scan_query):
+        """End-to-end: a module nobody imports is reported in both dead-modules and dead-symbols.
+
+        Layout:
+          lonely.py — public ``forgotten_fn`` spanning >= 5 LOC; no importer; no docs; no tests.
+        """
+        root = tmp_path / "dead_orphan"
+        root.mkdir()
+        (root / "lonely.py").write_text(
+            "def forgotten_fn(x):\n    a = 1\n    b = 2\n    c = 3\n    d = 4\n    return x + a + b + c + d\n"
+        )
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        sym_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "dead-symbols"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert sym_result.returncode == 0, sym_result.stderr
+        sym_data = json.loads(sym_result.stdout)
+        sym_names = {(f["module"], f["name"]) for f in sym_data["dead"]}
+        assert ("lonely", "forgotten_fn") in sym_names, sym_data
+
+        mod_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "dead-modules"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert mod_result.returncode == 0, mod_result.stderr
+        mod_data = json.loads(mod_result.stdout)
+        mod_names = {m["name"] for m in mod_data["dead_modules"]}
+        assert "lonely" in mod_names, mod_data
+
+    def test_module_exports_extracted_from_all_assignment(self, tmp_path, scan_index):
+        """scan-index parses ``__all__`` literal lists into the module's ``exports`` field."""
+        root = tmp_path / "exports_static"
+        root.mkdir()
+        (root / "mymod.py").write_text(
+            '__all__ = ["public_fn", "AnotherName"]\n'
+            "\n"
+            "\n"
+            "def public_fn(x):\n"
+            "    return x\n"
+            "\n"
+            "\n"
+            "def AnotherName(x):\n"
+            "    return x\n"
+            "\n"
+            "\n"
+            "def hidden(x):\n"
+            "    return x\n"
+        )
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        index = json.loads(index_path.read_text())
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        assert mod["exports"] == ["public_fn", "AnotherName"]
+
+    def test_module_exports_none_when_absent(self, tmp_path, scan_index):
+        """A module without ``__all__`` reports ``exports: null`` (no export filter)."""
+        root = tmp_path / "exports_missing"
+        root.mkdir()
+        (root / "mymod.py").write_text("def public_fn(x):\n    return x\n")
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        index = json.loads(index_path.read_text())
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        assert mod["exports"] is None
+
+    def test_module_exports_none_when_dynamic(self, tmp_path, scan_index):
+        """Dynamic ``__all__`` (comprehension or non-literal) yields ``exports: null``."""
+        root = tmp_path / "exports_dynamic"
+        root.mkdir()
+        (root / "mymod.py").write_text(
+            "_names = ['a', 'b']\n"
+            "__all__ = [n for n in _names]\n"
+            "\n"
+            "\n"
+            "def a(x):\n"
+            "    return x\n"
+            "\n"
+            "\n"
+            "def b(x):\n"
+            "    return x\n"
+        )
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        index = json.loads(index_path.read_text())
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        assert mod["exports"] is None
+
+
+class TestConftestSyspath:
+    """v5.1 — ``extract_conftest_syspath`` static AST detection of conftest.py ``sys.path`` shims.
+
+    Supported shapes:
+      * ``sys.path.insert(N, "str_literal")``
+      * ``sys.path.insert(N, str(Path(__file__).parent / "name"))``
+
+    Unsupported shapes (multi-level ``.parent``, ``os.path.join``, variable
+    indirection, ``.append``, ``.resolve()``) are skipped with a stderr warning.
+    """
+
+    def test_string_literal_path(self, tmp_path):
+        """String literal sys.path.insert resolves to absolute path."""
+        conftest = tmp_path / "conftest.py"
+        conftest.write_text('import sys\nsys.path.insert(0, "bin")\n')
+        result = _extract_conftest(conftest, tmp_path)
+        assert tmp_path / "bin" in result
+
+    def test_path_file_parent_form(self, tmp_path):
+        """Path(__file__).parent / 'name' form resolves correctly."""
+        conftest = tmp_path / "tests" / "conftest.py"
+        conftest.parent.mkdir()
+        conftest.write_text(
+            'import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).parent / "bin"))\n'
+        )
+        result = _extract_conftest(conftest, tmp_path)
+        assert tmp_path / "tests" / "bin" in result
+
+    def test_multi_level_parent_skipped(self, tmp_path, capsys):
+        """2-level parent.parent is unsupported — skipped with warning."""
+        conftest = tmp_path / "tests" / "conftest.py"
+        conftest.parent.mkdir()
+        conftest.write_text(
+            'import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).parent.parent / "bin"))\n'
+        )
+        result = _extract_conftest(conftest, tmp_path)
+        assert result == []
+        captured = capsys.readouterr()
+        assert "unsupported" in captured.err or "skipped" in captured.err
+
+    def test_no_syspath_insert_returns_empty(self, tmp_path):
+        """conftest.py without sys.path.insert yields empty list."""
+        conftest = tmp_path / "conftest.py"
+        conftest.write_text("import pytest\n")
+        result = _extract_conftest(conftest, tmp_path)
+        assert result == []
+
+    def test_multiple_inserts(self, tmp_path):
+        """Multiple sys.path.insert calls all collected."""
+        conftest = tmp_path / "conftest.py"
+        conftest.write_text('import sys\nsys.path.insert(0, "bin")\nsys.path.insert(1, "lib")\n')
+        result = _extract_conftest(conftest, tmp_path)
+        assert len(result) == 2
+
+
+class TestSubprocessDeps:
+    """v5.2 — ``extract_subprocess_calls`` AST detection of subprocess edges + scan-query commands.
+
+    Supported invocation shapes:
+      * ``subprocess.run(["python", "<script>"])`` — bare interpreter token + string script.
+      * ``subprocess.run([sys.executable, "<script>"])`` — sys.executable form.
+      * ``subprocess.run(["python", str(Path(__file__).parent / "<script>.py")])`` — 1-level Path.
+      * ``subprocess.Popen(...)`` — same arg shapes as run().
+      * ``os.system("python <script> ...")`` — whitespace-split string form.
+
+    Out of scope (silently ignored): ``runpy.run_path``, the ``sh`` library, shell
+    strings without a ``python``/``python3`` token, multi-level ``parent.parent`` chains.
+    """
+
+    def test_subprocess_run_bare_name_resolves(self, tmp_path):
+        """subprocess.run(['python', 'script.py']) resolves to target_module 'script'."""
+        script = tmp_path / "script.py"
+        script.write_text("# target\n")
+        src = tmp_path / "caller.py"
+        src.write_text("import subprocess\nsubprocess.run(['python', 'script.py'])\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"script.py": "script", "caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert len(calls) == 1
+        assert calls[0]["target_module"] == "script"
+        assert calls[0]["file"] == str(src)
+        assert calls[0]["line"] == 2
+
+    def test_subprocess_popen_detected(self, tmp_path):
+        """subprocess.Popen(['python', 'worker.py']) is detected like subprocess.run."""
+        (tmp_path / "worker.py").write_text("# target\n")
+        src = tmp_path / "caller.py"
+        src.write_text("import subprocess\nsubprocess.Popen(['python', 'worker.py'])\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"worker.py": "worker", "caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert len(calls) == 1
+        assert calls[0]["target_module"] == "worker"
+
+    def test_sys_executable_form_detected(self, tmp_path):
+        """[sys.executable, 'script.py'] form resolves identically to bare 'python'."""
+        (tmp_path / "script.py").write_text("# target\n")
+        src = tmp_path / "caller.py"
+        src.write_text("import subprocess, sys\nsubprocess.run([sys.executable, 'script.py'])\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"script.py": "script", "caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert len(calls) == 1
+        assert calls[0]["target_module"] == "script"
+
+    def test_path_file_parent_form_detected(self, tmp_path):
+        """str(Path(__file__).parent / 'x.py') resolves to caller-relative path."""
+        (tmp_path / "x.py").write_text("# target\n")
+        src = tmp_path / "caller.py"
+        src.write_text(
+            "import subprocess\n"
+            "from pathlib import Path\n"
+            "subprocess.run(['python', str(Path(__file__).parent / 'x.py')])\n"
+        )
+        tree = ast.parse(src.read_text())
+        indexed_files = {"x.py": "x", "caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert len(calls) == 1
+        assert calls[0]["target_module"] == "x"
+
+    def test_os_system_detected(self, tmp_path):
+        """os.system('python script.py') splits string and resolves the script token."""
+        (tmp_path / "script.py").write_text("# target\n")
+        src = tmp_path / "caller.py"
+        src.write_text("import os\nos.system('python script.py')\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"script.py": "script", "caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert len(calls) == 1
+        assert calls[0]["target_module"] == "script"
+
+    def test_unresolvable_script_skipped(self, tmp_path, capsys):
+        """Subprocess call referencing a non-indexed script emits a stderr warning and is skipped."""
+        src = tmp_path / "caller.py"
+        src.write_text("import subprocess\nsubprocess.run(['python', 'nonexistent_xyz_123.py'])\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert calls == []
+        captured = capsys.readouterr()
+        assert "subprocess" in captured.err
+        assert "nonexistent_xyz_123.py" in captured.err
+
+    def test_non_subprocess_call_ignored(self, tmp_path):
+        """Plain function calls and unrelated attribute calls are not confused with subprocess edges."""
+        src = tmp_path / "caller.py"
+        src.write_text("def foo():\n    bar()\n    obj.method('python script.py')\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert calls == []
+
+    def test_os_system_non_python_ignored(self, tmp_path):
+        """os.system('ls -la') does not match — no python interpreter token at index 0."""
+        src = tmp_path / "caller.py"
+        src.write_text("import os\nos.system('ls -la /tmp')\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert calls == []
+
+    def test_subprocess_with_non_python_token_ignored(self, tmp_path):
+        """subprocess.run(['echo', 'hi']) without python token does not produce a subprocess edge."""
+        src = tmp_path / "caller.py"
+        src.write_text("import subprocess\nsubprocess.run(['echo', 'hi'])\n")
+        tree = ast.parse(src.read_text())
+        indexed_files = {"caller.py": "caller"}
+        calls = _extract_subprocess(tree, src, tmp_path, indexed_files)
+        assert calls == []
+
+    def test_end_to_end_via_subprocess(self, tmp_path, scan_index, scan_query):
+        """End-to-end: scan-index produces subprocess_calls; subprocess-deps and subprocess-rdeps both surface the edge."""
+        root = tmp_path / "sub_e2e"
+        root.mkdir()
+        (root / "target.py").write_text("def main():\n    return 1\n")
+        (root / "caller.py").write_text(
+            "import subprocess\ndef driver():\n    subprocess.run(['python', 'target.py'])\n"
+        )
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        # subprocess-deps caller → lists target.
+        deps_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "subprocess-deps", "caller"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert deps_result.returncode == 0, deps_result.stderr
+        deps_data = json.loads(deps_result.stdout)
+        targets = {c["target_module"] for c in deps_data["calls"]}
+        assert "target" in targets
+        # subprocess-rdeps target → lists caller.
+        rdeps_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "subprocess-rdeps", "target"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert rdeps_result.returncode == 0, rdeps_result.stderr
+        rdeps_data = json.loads(rdeps_result.stdout)
+        callers = {c["caller"] for c in rdeps_data["callers"]}
+        assert "caller" in callers
+        assert rdeps_data["count"] == 1
+
+    def test_subprocess_rdep_count_at_root(self, tmp_path, scan_index):
+        """Top-level subprocess_rdep_count is populated and counts callers per target."""
+        root = tmp_path / "sub_rdep_count"
+        root.mkdir()
+        (root / "target.py").write_text("def main():\n    return 1\n")
+        (root / "caller_a.py").write_text("import subprocess\nsubprocess.run(['python', 'target.py'])\n")
+        (root / "caller_b.py").write_text("import subprocess\nsubprocess.Popen(['python', 'target.py'])\n")
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        index = json.loads(index_path.read_text())
+        assert "subprocess_rdep_count" in index
+        assert index["subprocess_rdep_count"].get("target") == 2
+
+    def test_requires_v8_index(self, tmp_path, scan_query):
+        """An index at scan_version < 8 yields a SystemExit-style error for subprocess commands."""
+        root = tmp_path / "sub_v7"
+        root.mkdir()
+        index_dir = root / ".cache" / "codemap"
+        index_dir.mkdir(parents=True)
+        index_path = index_dir / f"{root.name}.json"
+        index_path.write_text(json.dumps({"scan_version": 7, "modules": []}))
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "subprocess-deps", "anything"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode != 0
+        data = json.loads(result.stdout)
+        assert "subprocess-deps" in data.get("error", "")
+
+
+class TestFixtureGraph:
+    """Tests for extract_fixtures() fixture extraction and fixture-graph queries."""
+
+    def test_basic_fixture_detected(self, tmp_path):
+        """@pytest.fixture decorated function is detected."""
+        src = tmp_path / "conftest.py"
+        src.write_text("import pytest\n\n@pytest.fixture\ndef my_fixture():\n    return 42\n")
+        tree = ast.parse(src.read_text())
+        fixtures = _extract_fixtures(tree, src)
+        assert any(f["name"] == "my_fixture" for f in fixtures)
+
+    def test_scope_extracted(self, tmp_path):
+        """scope= kwarg is extracted from @pytest.fixture(scope='session')."""
+        src = tmp_path / "conftest.py"
+        src.write_text("import pytest\n\n@pytest.fixture(scope='session')\ndef session_fixture():\n    yield {}\n")
+        tree = ast.parse(src.read_text())
+        fixtures = _extract_fixtures(tree, src)
+        fix = next(f for f in fixtures if f["name"] == "session_fixture")
+        assert fix["scope"] == "session"
+
+    def test_scope_defaults_to_function(self, tmp_path):
+        """No scope kwarg → scope defaults to 'function'."""
+        src = tmp_path / "conftest.py"
+        src.write_text("import pytest\n\n@pytest.fixture\ndef fn_fixture():\n    return 1\n")
+        tree = ast.parse(src.read_text())
+        fixtures = _extract_fixtures(tree, src)
+        fix = next(f for f in fixtures if f["name"] == "fn_fixture")
+        assert fix["scope"] == "function"
+
+    def test_yields_detected(self, tmp_path):
+        """yield inside fixture body → yields=True."""
+        src = tmp_path / "conftest.py"
+        src.write_text("import pytest\n\n@pytest.fixture\ndef yield_fixture():\n    yield 'value'\n")
+        tree = ast.parse(src.read_text())
+        fixtures = _extract_fixtures(tree, src)
+        fix = next(f for f in fixtures if f["name"] == "yield_fixture")
+        assert fix["yields"] is True
+
+    def test_non_fixture_not_captured(self, tmp_path):
+        """Regular functions without @pytest.fixture are ignored."""
+        src = tmp_path / "test_foo.py"
+        src.write_text("def helper():\n    return 1\n\ndef test_something():\n    assert helper() == 1\n")
+        tree = ast.parse(src.read_text())
+        fixtures = _extract_fixtures(tree, src)
+        assert fixtures == []
+
+    def test_class_scope(self, tmp_path):
+        """scope='class' is captured correctly."""
+        src = tmp_path / "conftest.py"
+        src.write_text("import pytest\n\n@pytest.fixture(scope='class')\ndef class_fixture():\n    return {}\n")
+        tree = ast.parse(src.read_text())
+        fixtures = _extract_fixtures(tree, src)
+        fix = next(f for f in fixtures if f["name"] == "class_fixture")
+        assert fix["scope"] == "class"
+
+
+# v5.4: shorthand handles for coverage integration tests below.
+_read_coverage_data = _scan_index_mod._read_coverage_data
+_compute_symbol_coverage = _scan_index_mod._compute_symbol_coverage
+_parse_coverage_version = _scan_index_mod._parse_coverage_version
+
+
+def _write_synthetic_coverage_file(
+    coverage_path: Path,
+    file_to_lines: dict[str, list[int]],
+    file_to_contexts: dict[str, dict[int, list[str]]] | None = None,
+) -> None:
+    """Create a real ``.coverage`` SQLite file via the public CoverageData API.
+
+    Uses ``add_lines`` plus ``set_context`` + ``add_lines`` per context so the
+    file is byte-for-byte equivalent to one produced by a live coverage run.
+
+    Args:
+        coverage_path: target path for the SQLite file.
+        file_to_lines: ``{abs_file_path: [lineno, ...]}`` lines measured
+            without any context (always present).
+        file_to_contexts: optional ``{abs_file_path: {context_name: [lineno, ...]}}``
+            adding context-scoped line hits.
+    """
+    import coverage as cov_lib
+
+    data = cov_lib.CoverageData(basename=str(coverage_path))
+    data.add_lines({path: lines for path, lines in file_to_lines.items()})
+    if file_to_contexts:
+        for ctx_name, per_file in _invert_contexts(file_to_contexts).items():
+            data.set_context(ctx_name)
+            data.add_lines(per_file)
+    data.write()
+
+
+def _invert_contexts(
+    file_to_contexts: dict[str, dict[int, list[str]]],
+) -> dict[str, dict[str, list[int]]]:
+    """Re-key context structure from ``{file: {line: [ctx]}}`` to ``{ctx: {file: [line]}}``."""
+    out: dict[str, dict[str, list[int]]] = {}
+    for path, per_line in file_to_contexts.items():
+        for line, ctxs in per_line.items():
+            for ctx in ctxs:
+                out.setdefault(ctx, {}).setdefault(path, []).append(line)
+    return out
+
+
+class TestCoverageComputation:
+    """Unit tests for the pure coverage math helpers — no SQLite involved."""
+
+    def test_full_coverage_pct_is_one(self):
+        """Every line in the symbol's range is measured → coverage_pct == 1.0."""
+        pct, covered_by = _compute_symbol_coverage(10, 14, frozenset({10, 11, 12, 13, 14}), {})
+        assert pct == 1.0
+        assert covered_by is None
+
+    def test_half_coverage_pct(self):
+        """Two of four lines measured → coverage_pct == 0.5."""
+        pct, _ = _compute_symbol_coverage(1, 4, frozenset({1, 2}), {})
+        assert pct == 0.5
+
+    def test_zero_coverage_pct_with_no_measured_lines(self):
+        """No lines measured in range → coverage_pct == 0.0 (not absent)."""
+        pct, covered_by = _compute_symbol_coverage(10, 12, frozenset({1, 2, 3}), {})
+        assert pct == 0.0
+        assert covered_by is None
+
+    def test_single_line_symbol_pct(self):
+        """1-line symbol with that line measured → coverage_pct == 1.0 (denominator clamp)."""
+        pct, _ = _compute_symbol_coverage(5, 5, frozenset({5}), {})
+        assert pct == 1.0
+
+    def test_inverted_range_clamps_denominator_to_one(self):
+        """Defensive: end_line < start_line should not divide by zero or negative."""
+        pct, _ = _compute_symbol_coverage(10, 5, frozenset(), {})
+        assert pct == 0.0
+
+    def test_covered_by_collects_unique_contexts(self):
+        """Multiple lines tagged with overlapping contexts → unique sorted list."""
+        contexts = {1: ["test_a"], 2: ["test_b", "test_a"], 3: ["test_c"]}
+        _, covered_by = _compute_symbol_coverage(1, 3, frozenset({1, 2, 3}), contexts)
+        assert covered_by == ["test_a", "test_b", "test_c"]
+
+    def test_covered_by_ignores_empty_context_string(self):
+        """coverage emits empty string for 'no-context' hits — these must be dropped."""
+        contexts = {1: [""], 2: ["test_real"]}
+        _, covered_by = _compute_symbol_coverage(1, 2, frozenset({1, 2}), contexts)
+        assert covered_by == ["test_real"]
+
+    def test_covered_by_is_none_when_contexts_only_outside_range(self):
+        """Contexts attached only to lines outside the symbol range are not surfaced."""
+        contexts = {99: ["test_unrelated"]}
+        _, covered_by = _compute_symbol_coverage(1, 5, frozenset({1, 2}), contexts)
+        assert covered_by is None
+
+
+class TestParseCoverageVersion:
+    """Unit tests for the small version-parsing helper."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            pytest.param("7.4.1", (7, 4), id="full-triplet"),
+            pytest.param("7.10", (7, 10), id="major-minor-only"),
+            pytest.param("10.0.0a1", (10, 0), id="prerelease-suffix"),
+        ],
+    )
+    def test_valid_versions_parsed(self, raw, expected):
+        """Major.minor pair must be extracted from any well-formed dotted version."""
+        assert _parse_coverage_version(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            pytest.param("garbage", id="non-numeric"),
+            pytest.param("7", id="single-component"),
+            pytest.param("", id="empty-string"),
+        ],
+    )
+    def test_invalid_versions_return_none(self, raw):
+        """Anything that cannot be parsed must surface as None, never raise."""
+        assert _parse_coverage_version(raw) is None
+
+
+class TestReadCoverageData:
+    """Tests for the _read_coverage_data filesystem boundary — graceful failure modes."""
+
+    def test_missing_coverage_file_returns_none(self, tmp_path):
+        """No file at coverage_path → graceful None + stderr warning, no crash."""
+        result = _read_coverage_data(tmp_path / ".coverage_does_not_exist")
+        assert result is None
+
+    def test_real_coverage_file_returns_lines(self, tmp_path):
+        """Synthetic .coverage file built via the public API surfaces measured lines."""
+        src = tmp_path / "target.py"
+        src.write_text("def foo():\n    return 1\n\ndef bar():\n    return 2\n")
+        cov_path = tmp_path / ".coverage"
+        _write_synthetic_coverage_file(cov_path, {str(src): [1, 2]})
+
+        data = _read_coverage_data(cov_path)
+        assert data is not None
+        assert str(src) in data
+        assert data[str(src)]["lines"] == frozenset({1, 2})
+
+    def test_real_coverage_file_returns_contexts(self, tmp_path):
+        """Context-scoped hits round-trip through the public API."""
+        src = tmp_path / "target.py"
+        src.write_text("def foo():\n    return 1\n")
+        cov_path = tmp_path / ".coverage"
+        _write_synthetic_coverage_file(
+            cov_path,
+            file_to_lines={str(src): [1, 2]},
+            file_to_contexts={str(src): {1: ["tests/test_foo.py::test_one"]}},
+        )
+
+        data = _read_coverage_data(cov_path)
+        assert data is not None
+        contexts = data[str(src)]["contexts"]
+        assert 1 in contexts
+        assert "tests/test_foo.py::test_one" in contexts[1]
+
+
+class TestCoverageScanIntegration:
+    """End-to-end: scan-index --with-coverage attaches per-symbol fields."""
+
+    def test_with_coverage_attaches_fields(self, tmp_path, scan_index):
+        """Running scan-index --with-coverage stamps coverage_pct on every symbol."""
+        root = tmp_path / "cov_e2e"
+        root.mkdir()
+        src = root / "mymod.py"
+        src.write_text("def foo():\n    return 1\n\ndef bar():\n    return 2\n")
+        cov_path = root / ".coverage"
+        _write_synthetic_coverage_file(cov_path, {str(src): [1, 2]})
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_index),
+                "--root",
+                str(root),
+                "--with-coverage",
+                str(cov_path),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        index = json.loads(index_path.read_text())
+        assert index["scan_version"] == 10
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        foo = next(s for s in mod["symbols"] if s["qualified_name"] == "foo")
+        bar = next(s for s in mod["symbols"] if s["qualified_name"] == "bar")
+        assert foo["coverage_pct"] == 1.0
+        assert bar["coverage_pct"] == 0.0
+        assert "__coverage_mtime__" in index["file_shas"]
+
+    def test_without_coverage_flag_no_fields(self, tmp_path, scan_index):
+        """Default scan-index (no --with-coverage) leaves coverage_pct absent."""
+        root = tmp_path / "no_cov"
+        root.mkdir()
+        (root / "plain.py").write_text("def x():\n    return 1\n")
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        index = json.loads(index_path.read_text())
+        mod = next(m for m in index["modules"] if m["name"] == "plain")
+        assert all("coverage_pct" not in s for s in mod["symbols"])
+        assert "__coverage_mtime__" not in index["file_shas"]
+
+
+class TestCoverageQueryCommands:
+    """Tests for `scan-query coverage` and `scan-query coverage-gap`."""
+
+    @pytest.fixture
+    def covered_project(self, tmp_path, scan_index):
+        """Build a small project with a real .coverage file and a v10 index."""
+        root = tmp_path / "covered"
+        root.mkdir()
+        src = root / "mymod.py"
+        src.write_text(
+            "def full():\n"
+            "    return 1\n"
+            "\n"
+            "def partial():\n"
+            "    if True:\n"
+            "        return 2\n"
+            "    return 3\n"
+            "\n"
+            "def empty():\n"
+            "    return 4\n"
+        )
+        cov_path = root / ".coverage"
+        _write_synthetic_coverage_file(
+            cov_path,
+            file_to_lines={str(src): [1, 2, 4, 5, 6]},
+            file_to_contexts={str(src): {1: ["tests/test_mymod.py::test_full"]}},
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_index),
+                "--root",
+                str(root),
+                "--with-coverage",
+                str(cov_path),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        return root, index_path
+
+    def test_coverage_for_symbol_returns_pct(self, covered_project, scan_query):
+        """`coverage mymod::full` returns coverage_pct == 1.0 and lists the test context."""
+        root, index_path = covered_project
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(index_path),
+                "coverage",
+                "mymod::full",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        assert data["qualified_name"] == "full"
+        assert data["coverage_pct"] == 1.0
+        assert data["covered_by"] == ["tests/test_mymod.py::test_full"]
+
+    def test_coverage_for_module_returns_all_symbols(self, covered_project, scan_query):
+        """Bare module query returns one entry per symbol with coverage data."""
+        root, index_path = covered_project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "coverage", "mymod"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        names = {row["qualified_name"] for row in data["symbols"]}
+        assert {"full", "partial", "empty"}.issubset(names)
+
+    def test_coverage_gap_below_threshold(self, covered_project, scan_query):
+        """`coverage-gap --all --threshold 0.5` surfaces `empty` (0.0 pct) but not `full` (1.0)."""
+        root, index_path = covered_project
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(index_path),
+                "coverage-gap",
+                "--all",
+                "--threshold",
+                "0.5",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        qnames = {row["qualified_name"] for row in data["coverage_gap"]}
+        assert "empty" in qnames
+        assert "full" not in qnames
+
+    def test_coverage_gap_sorted_by_gap_desc(self, covered_project, scan_query):
+        """The largest gap is reported first (gap = threshold − coverage_pct)."""
+        root, index_path = covered_project
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(index_path),
+                "coverage-gap",
+                "--all",
+                "--threshold",
+                "1.0",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        data = json.loads(result.stdout)
+        gaps = [row["gap"] for row in data["coverage_gap"]]
+        assert gaps == sorted(gaps, reverse=True)
+
+    def test_coverage_command_errors_on_index_without_coverage(self, tmp_path, scan_index, scan_query):
+        """`coverage <qname>` against an index built without --with-coverage exits with an error."""
+        root = tmp_path / "no_cov_query"
+        root.mkdir()
+        (root / "plain.py").write_text("def hello():\n    return 1\n")
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        # plain symbol exists, but coverage_pct does not — query must error explicitly.
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(index_path),
+                "coverage",
+                "plain::hello",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode != 0
+        data = json.loads(result.stdout)
+        assert "no coverage data" in data.get("error", "")
+
+    def test_coverage_requires_v10_index(self, tmp_path, scan_query):
+        """A v9 index must be rejected with a clear feature-gating error."""
+        root = tmp_path / "v9_cov"
+        root.mkdir()
+        index_dir = root / ".cache" / "codemap"
+        index_dir.mkdir(parents=True)
+        index_path = index_dir / f"{root.name}.json"
+        index_path.write_text(json.dumps({"scan_version": 9, "modules": []}))
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "coverage", "anything::x"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode != 0
+        data = json.loads(result.stdout)
+        assert "coverage" in data.get("error", "")

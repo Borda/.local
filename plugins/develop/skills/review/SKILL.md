@@ -187,35 +187,58 @@ Skip optional agents by classification:
 - REFACTOR → skip Agent 6 (solution-architect)
 - FEATURE/MIXED → spawn all agents
 
-### Structural context (codemap — only if `CODEMAP_ENABLED=true`)
+### Structural context + review pre-flight (codemap — only if `CODEMAP_ENABLED=true`)
 
-**Skip entire section if `CODEMAP_ENABLED=false`.**
+**Skip entire section if `CODEMAP_ENABLED=false`** — sets `codemap_available=false` for downstream agent prompts; agents fall back to file reads.
 
-Extended scan for changed modules:
+Extended scan for changed modules — runs the v4 pre-flight queries per module, persists structured output to `$RUN_DIR/codemap-context.md`, and sets `codemap_available` flag for Step 3 agent spawns:
 
 ```bash
+codemap_available=false
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-CODEMAP_CONTEXT=""
 CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-enabled 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ]; then
+    codemap_available=true
     # src-layout assumed; files outside src/ (scripts/, tools/) may not be valid importable modules — scan-query returns empty, not error
     CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')  # timeout: 3000
     if [ -z "$CHANGED_MODS" ]; then
         CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|/[^/]*\.py$||' | sort -u | head -10)
     fi
-    for mod in $CHANGED_MODS; do
-        OUT=$(scan-query rdeps "$mod" 2>/dev/null)  # timeout: 5000
-        [ -n "$OUT" ] && CODEMAP_CONTEXT="${CODEMAP_CONTEXT}${OUT}"$'\n'
-    done
+    # RUN_DIR not yet created (happens in Step 2); stage to TMPDIR; orchestrator copies into $RUN_DIR/codemap-context.md after mkdir.
+    CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md"
+    {
+        echo "## Structural Context (codemap)"
+        echo
+        echo "### Global blast-radius baseline"
+        scan-query --timeout 5 central --top 5 2>/dev/null
+        echo
+        for mod in $CHANGED_MODS; do
+            echo "### Module: $mod"
+            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → high/moderate/low risk tier
+            scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # caller impact (v3)
+            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock test coverage (v4.1)
+            scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)
+            scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5)
+            scan-query --timeout 5 undocumented "$mod" 2>/dev/null  # doc coverage (v4.4)
+            echo
+        done
+    } > "$CODEMAP_CONTEXT_STAGE"
 fi
+echo "$codemap_available" > "${TMPDIR:-/tmp}/dev-review-codemap-available"
 ```
 
-Codemap returns results → prepend `## Structural Context (codemap)` block to **Agent 1 (foundry:sw-engineer)** spawn prompt. Include:
+Codemap context propagation in Step 3:
 
-- Each changed module's `imported_by` — label **high risk** (>20), **moderate** (5–20), **low** (\<5)
-- `central --top 5` for project-wide blast-radius reference
+- `codemap_available=true` → copy `$CODEMAP_CONTEXT_STAGE` to `$RUN_DIR/codemap-context.md` once `$RUN_DIR` exists (Step 2). Every dimension-agent spawn prompt (Agents 1–6) must include a literal block:
+  ```text
+  ## Structural Context (codemap, codemap_available=true)
+  <content of $RUN_DIR/codemap-context.md>
 
-Agent 1 uses this to prioritize: high `imported_by` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
+  Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast`, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
+  ```
+- `codemap_available=false` → omit the block; agents proceed with current file-read behaviour.
+
+Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by` count — **high risk** (>20), **moderate** (5–20), **low** (<5). Agent 1 uses this to prioritize: high `imported_by` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
 
 **Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt:
 
@@ -239,6 +262,15 @@ Check availability:
 
 ```bash
 claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "codex (openai-codex) available" || echo "⚠ codex (openai-codex) not found — skipping co-review"  # timeout: 15000
+```
+
+Materialize codemap context into the run directory (`$RUN_DIR` now exists):
+
+```bash
+codemap_available=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-available" 2>/dev/null || echo "false")
+if [ "$codemap_available" = "true" ] && [ -f "${TMPDIR:-/tmp}/dev-review-codemap-context.md" ]; then
+    cp "${TMPDIR:-/tmp}/dev-review-codemap-context.md" "$RUN_DIR/codemap-context.md"
+fi
 ```
 
 If Codex available:
@@ -318,7 +350,9 @@ Launch agents simultaneously with Agent tool (security augmentation folded into 
 
 > "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR_LITERAL/<agent-name>.md` using the Write tool — where `<agent-name>` is e.g. `sw-engineer`, `qa-specialist`, `perf-optimizer`, `doc-scribe`, `linting-expert`, `solution-architect`. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2,\"low\":0},\"file\":\"$RUN_DIR_LITERAL/<agent-name>.md\",\"confidence\":0.88}`"
 
-**Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions.
+**Codemap context preamble (substituted by orchestrator)**: rehydrate `codemap_available=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-available 2>/dev/null || echo false)`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with the `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per the propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) is unchanged.
+
+**Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions. `codemap_available=true`: read `fn-blast` first — skip caller-walk Reads on listed callers; verify only when needed for a specific finding.
 
 **Error path analysis** (new/changed code in diff): For each error-handling path introduced or modified, produce table:
 
@@ -333,7 +367,7 @@ Flag rules:
 
 Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIGH patterns as severity anchors. Respect suppressions list.
 
-**Agent 2 — foundry:qa-specialist**: Audit test coverage. Identify untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. Explicitly check for missing tests in these patterns (GT-level findings, not afterthoughts):
+**Agent 2 — foundry:qa-specialist**: Audit test coverage. Identify untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. `codemap_available=true`: read `uncovered` + `mock-rdeps` sections from the codemap context block first — symbols listed in `uncovered` lack any test rdep; symbols listed in `mock-rdeps` are tested via mock (not falsely "untested"). Skip manual grep/Read of `tests/` for symbols codemap already classifies; fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding. Explicitly check for missing tests in these patterns (GT-level findings, not afterthoughts):
 
 - Concurrent access to shared state (locks or shared variables present)
 - Error paths: calling methods in wrong order (e.g., `log()` before `start()`)
@@ -345,7 +379,7 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Agent 3 — foundry:perf-optimizer**: Analyze performance issues. Algorithmic complexity, Python loops that should be NumPy/torch ops, repeated computation, unnecessary I/O. ML code: check DataLoader config, mixed precision. Prioritize by impact.
 
-**Agent 4 — foundry:doc-scribe**: Check documentation completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run.
+**Agent 4 — foundry:doc-scribe**: Check documentation completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run. `codemap_available=true`: read `undocumented` + `xrefs --broken` sections from the codemap context block first — `undocumented` enumerates symbols missing docstrings; `xrefs --broken` enumerates stale Sphinx refs. Skip docstring-scan Reads on listed symbols; fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
 
 - **Algorithmic accuracy check**: Functions computing mathematical results (moving averages, statistics, transforms, distances) — verify docstring behavioral claims match implementation. Deviation from conventional definition → MEDIUM; docstring must document deviation, not state standard definition. **Deprecation check**: Check deprecated stdlib usage in public API surface only — skip private functions, classes, constants, and modules starting with `_`. E.g., `datetime.utcnow()` deprecated in 3.12, `os.path` vs `pathlib`. Flag deprecated stdlib as MEDIUM with replacement.
 

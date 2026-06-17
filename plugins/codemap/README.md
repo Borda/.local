@@ -6,7 +6,7 @@ codemap builds a structural index of your Python project — import graph, blast
 
 You do not use codemap by querying it directly. You use it by wiring it in and letting other skills pick it up.
 
-**Python first.** The scanner uses `ast.parse` to index `.py` files. Non-Python files are not scanned. Support for TypeScript, Go, and Rust is planned.
+**Python first.** The scanner uses `ast.parse` to index `.py` files. `.rst` and `docs/**/*.md` files are also scanned for Sphinx/MkDocs cross-references and included in cache-invalidation hashing — doc-only edits trigger incremental re-scans. Non-Python symbol indexing (TypeScript, Go, Rust) is planned.
 
 ______________________________________________________________________
 
@@ -324,9 +324,9 @@ ______________________________________________________________________
 
 **Trigger**: `/codemap:query-code <subcommand> [args]`
 
-**Auto-invokes when:** user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "blast radius of". Requires codemap index to exist (skill self-checks and no-ops gracefully if absent).
+**Auto-invokes when:** user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "blast radius of". No prior index needed — a Step 0 pre-flight builds one automatically when it is missing and incremental-refreshes it when it already exists, before querying.
 
-Queries the index. Every query checks staleness automatically — if Python files were committed after the index was built, you'll see a warning on stderr and a suggestion to re-scan. Results are still returned so the agent can decide whether to proceed or refresh first.
+Queries the index. Step 0 keeps it fresh (full build via `/codemap:scan-codebase` if missing, `scan-index --incremental` if present), so queries run against a current index. If Python files change mid-task a stale warning may still appear on stderr; results are still returned so the agent can refresh and retry.
 
 #### Module-level queries
 
@@ -492,7 +492,7 @@ Two cases are outside static analysis and cannot be renamed automatically:
 2. Parses each file with `ast.parse` to extract import statements and symbol definitions (classes, functions, methods with line ranges).
 3. Resolves call edges per function: cross-module calls tagged as `import`, same-file calls as `local`, `self.method()` patterns as `self`, star-import calls as `star`.
 4. Computes graph metrics for each module: `rdep_count` (how many project modules import this one), `dep_count` (how many modules this one imports), `rcall_count` (how many functions across the project call any function in this module).
-5. Stores per-file git blob SHAs (`file_shas`) so incremental rebuilds can identify exactly which files changed.
+5. Stores per-file git blob SHAs (`file_shas`) for `.py`, `.rst`, and `docs/**/*.md` files so incremental rebuilds can identify exactly which files changed.
 6. Writes everything to `.cache/codemap/<project>.json` as a single JSON file.
 
 Files that cannot be parsed (syntax errors, encoding issues) are marked `degraded` with a reason. The scan never aborts — a file that fails parsing is noted and skipped.
@@ -593,7 +593,7 @@ ______________________________________________________________________
 
 ### "index not found" or empty results
 
-The index has not been built for this project yet. Run:
+`/codemap:query-code` now builds the index automatically on first use, so you should rarely see this. If it appears, the auto-build (Step 0) failed — confirm the project has `.py` files and `python3` is on PATH, then build manually:
 
 ```text
 /codemap:scan-codebase

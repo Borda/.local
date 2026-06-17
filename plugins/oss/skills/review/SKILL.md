@@ -205,22 +205,53 @@ Skip optional agents by classification:
 - CHORE scope → spawn Agents 1, 4, 5, 7 (challenger, if `CHALLENGE_ENABLED=true`), Codex (if available); skip Agents 2, 3, 6
   - **CHORE + dependency files exception**: diff includes `requirements*.txt`, `pyproject.toml`, `package*.json`, `Pipfile`, `poetry.lock`, `setup.cfg`, `*.lock` → keep Agent 2 (qa-specialist) for OWASP/CVE checks. Detect via `CHORE_DEPS` flag above. CHORE + non-deps → skip qa-specialist.
 
-### Structural context (codemap — only if `CODEMAP_ENABLED=true`)
+### Structural context + review pre-flight (codemap — only if `CODEMAP_ENABLED=true`)
 
-**Skip entire section if `CODEMAP_ENABLED=false`.**
+**Skip entire section if `CODEMAP_ENABLED=false`** — sets `codemap_available=false` for downstream agent prompts; agents fall back to file reads.
 
 ```bash
+codemap_available=false
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    # Reuse $CHANGED_FILES cached from the gh pr diff call above — no redundant fetch
+# $RUN_DIR not yet created at Step 1 (happens in Step 2); stage to TMPDIR, Step 2 copies into $RUN_DIR/codemap-context.md.
+CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/oss-review-codemap-context-${CLEAN_ARGS}.md"
+if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    codemap_available=true
     CHANGED_MODS=$(echo "$CHANGED_FILES" | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')
-    scan-query central --top 5 2>/dev/null  # timeout: 5000
-    for mod in $CHANGED_MODS; do scan-query rdeps "$mod" 2>/dev/null; done  # timeout: 5000
+    {
+        echo "## Structural Context (codemap)"
+        echo
+        echo "### Global blast-radius baseline"
+        scan-query --timeout 5 central --top 5 2>/dev/null
+        echo
+        for mod in $CHANGED_MODS; do
+            echo "### Module: $mod"
+            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → high/moderate/low risk tier
+            scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # caller impact (v3)
+            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock test coverage (v4.1)
+            scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)
+            scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5)
+            scan-query --timeout 5 undocumented "$mod" 2>/dev/null  # doc coverage (v4.4)
+            echo
+        done
+    } > "$CODEMAP_CONTEXT_STAGE"
 fi
+echo "$codemap_available"      > "${TMPDIR:-/tmp}/oss-review-codemap-available-${CLEAN_ARGS}"
+echo "$CODEMAP_CONTEXT_STAGE"  > "${TMPDIR:-/tmp}/oss-review-codemap-context-stage-${CLEAN_ARGS}"
 ```
 
-Codemap returns results: prepend `## Structural Context (codemap)` to Agent 1 spawn prompt with each changed module's `imported_by` count (high risk >20, moderate 5–20, low <5) and `central --top 5` for blast-radius reference.
+`codemap_available=true`: Step 2 copies `$CODEMAP_CONTEXT_STAGE` to `$RUN_DIR/codemap-context.md` after `$RUN_DIR` is created. Every dimension-agent spawn prompt in Step 2 must then include a literal block (substituted from `$RUN_DIR/codemap-context.md`):
+
+```text
+## Structural Context (codemap, codemap_available=true)
+<content of $RUN_DIR/codemap-context.md>
+
+Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast`, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
+```
+
+`codemap_available=false`: omit the block; agents proceed with current file-read behaviour.
+
+Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by` count — **high risk** (>20), **moderate** (5–20), **low** (<5) — for blast-radius reference.
 
 **Semble companion** (only if `SEMBLE_ENABLED=true`): include in Agent 1 spawn prompt: "If `mcp__semble__search` available and any codemap result non-exhaustive or codemap absent: call `mcp__semble__search(query='<module> import', repo=<git_root>, top_k=20)` per module; stop when two consecutive queries return no new importers; merge with codemap; skip if all results exhaustive."
 
@@ -266,6 +297,17 @@ claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE
 
 <!-- loads: agent-prompts.md -->
 Read `$REVIEW_SKILL_DIR/templates/agent-prompts.md`. Substitute `<RUN_DIR>` → `$RUN_DIR`, `<REVIEW_SKILL_DIR>` → `$REVIEW_SKILL_DIR` before using content in spawn prompts. All placeholders (`<RUN_DIR>`, `<REVIEW_SKILL_DIR>`) must be expanded to literal values — agents receive text, not shell variables.
+
+**Codemap context propagation**: rehydrate `codemap_available` from Step 1 persist file, copy staged context into `$RUN_DIR/codemap-context.md`, substitute into every dimension-agent spawn prompt per the rules in the Structural-context block above. Block omitted when `codemap_available=false`.
+
+```bash
+_PR_TAG=$(cat "${TMPDIR:-/tmp}/oss-review-pr-tag" 2>/dev/null || echo "$CLEAN_ARGS")
+codemap_available=$(cat "${TMPDIR:-/tmp}/oss-review-codemap-available-${_PR_TAG}" 2>/dev/null || echo "false")
+CODEMAP_CONTEXT_STAGE=$(cat "${TMPDIR:-/tmp}/oss-review-codemap-context-stage-${_PR_TAG}" 2>/dev/null || echo "")
+if [ "$codemap_available" = "true" ] && [ -n "$CODEMAP_CONTEXT_STAGE" ] && [ -f "$CODEMAP_CONTEXT_STAGE" ]; then
+    cp "$CODEMAP_CONTEXT_STAGE" "$RUN_DIR/codemap-context.md"
+fi
+```
 
 **Health monitoring** (CLAUDE.md §6): Create checkpoint BEFORE spawning agents:
 

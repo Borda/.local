@@ -4,6 +4,8 @@
 
 Thresholds: agents > 300 lines (~4 k tokens) · skill SKILL.md > 600 lines (~8 k tokens) · rules > 200 lines (~2.5 k tokens).
 
+> **`bin/` scripts are exempt** — executables run via subprocess, never loaded into LLM context; size irrelevant to token budget. Check 12 applies to `.md` config files only.
+
 > **Line count = human-readable proxy; token count = true measure.** Thresholds guide human review — not actual context budget. Short sentences + short lines preferred: easier to read AND cheaper per logical unit. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines not a fix.
 
 ```bash

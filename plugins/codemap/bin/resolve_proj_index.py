@@ -78,7 +78,12 @@ def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
     base = git_root or work_dir
     proj = base.name
     custom_dir = os.environ.get("CODEMAP_INDEX_DIR")
-    index_dir = Path(custom_dir) if custom_dir else base / ".cache" / "codemap"
+    if custom_dir:
+        # expanduser + resolve: canonicalize path, eliminate symlink traversal.
+        # No root whitelist — CODEMAP_INDEX_DIR is explicit user config (trusted).
+        index_dir = Path(custom_dir).expanduser().resolve()
+    else:
+        index_dir = base / ".cache" / "codemap"
     index = index_dir / f"{proj}.json"
     return proj, index
 

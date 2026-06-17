@@ -145,6 +145,15 @@ def run_smoke(
         Projected dict from :func:`project_smoke_result` (always well-formed,
         with an ``error`` key on failure).
     """
+    # Defense-in-depth: validate index_path exists locally before forwarding to subprocess
+    # (child process validates too, but this catches obvious errors cheaply)
+    if not Path(index_path).is_file():
+        return {
+            "ok": False,
+            "stale": False,
+            "age_hours": None,
+            "error": f"index file not found: {index_path}",
+        }
     try:
         completed = subprocess.run(
             [

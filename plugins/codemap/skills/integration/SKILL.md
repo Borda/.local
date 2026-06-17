@@ -4,7 +4,7 @@ description: "Manage codemap integration — 'check' audits installation health 
 argument-hint: "check | init [--approve]  # --approve: non-interactive; auto-applies High+Medium recs for files under $CLAUDE_PLUGIN_ROOT and installs post-commit hook"
 effort: medium
 when_to_use: "After first install (init) or when checking health of codemap integration across installed skills/agents."
-allowed-tools: Read, Write, Edit, Bash, Glob, Skill, Agent, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Glob, Skill, AskUserQuestion
 model: sonnet
 ---
 
@@ -47,14 +47,15 @@ Parse `$ARGUMENTS` (case-insensitive):
 Three-tier fallback (PATH → CLAUDE_PLUGIN_ROOT → newest cache install) handled by `bin/locate_scan_query.py`.
 
 ```bash
-SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py" 2>/dev/null || true)  # timeout: 5000
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py")  # timeout: 5000
 if [ -n "$SQ" ] && [ -x "$SQ" ]; then
     printf "✓ scan-query: %s\n" "$SQ"
-    echo "ok" > "${TMPDIR:-/tmp}/codemap-c1-status"
+    echo "ok" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status"
 else
     printf "✗ scan-query: not found\n"
     printf "  → Install: claude plugin install codemap@borda-ai-rig\n"
-    echo "failed" > "${TMPDIR:-/tmp}/codemap-c1-status"
+    echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status"
     exit 1
 fi
 ```
@@ -63,19 +64,23 @@ fi
 
 ```bash
 # timeout: 5000
-# Skip if C1 failed — fresh shell loses C1's exit status, so check sentinel file
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c1-status" 2>/dev/null || echo "ok")
+# Skip if C1 failed — fresh shell loses C1's exit status, so check project-scoped sentinel file
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
 if [ "$C1_STATUS" = "failed" ]; then
     echo "C1 failed — skipping this step."
+    echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status"
     exit 0
 fi
 # Stderr captured to tempfile so eval only sees KEY=value stdout (never mixed stderr).
 # Script always emits PROJ/INDEX on stdout regardless of exit code — no second invocation needed.
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists 2>/dev/null  # timeout: 5000
+# --output-prefix scopes tmpfiles per-project to avoid concurrent collision across projects.
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
+    --check-exists --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
 _resolve_rc=$?
-PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj" 2>/dev/null || echo "")
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index" 2>/dev/null || echo "")
-echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-index"
+PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
+echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index"
 if [ "$_resolve_rc" -eq 0 ]; then
     printf "  project: %s\n  index:   %s\n" "$PROJ" "$INDEX"
     printf "✓ index: exists\n"
@@ -87,7 +92,7 @@ else
     else
         printf "✗ resolve_index_env.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"
     fi
-    echo "failed" > "${TMPDIR:-/tmp}/codemap-c2-status"
+    echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status"
     exit 1
 fi
 ```
@@ -96,10 +101,11 @@ fi
 
 ```bash
 # timeout: 10000
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c1-status" 2>/dev/null || echo "ok")
-C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c2-status" 2>/dev/null || echo "ok")
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
+C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status" 2>/dev/null || echo "ok")
 [ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ] && { echo "C1/C2 failed — skipping this step."; exit 0; }
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-index")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" "$INDEX"
 ```
 
@@ -107,15 +113,17 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" "$I
 
 ### C4 — Smoke test and mtime-staleness check
 
-`smoke_test_index.py` validates that the index file is loadable JSON and reports mtime age vs `--max-age-hours` (default 24).
+`check_index_smoke.py` validates that the index file is loadable JSON and reports mtime age vs `--max-age-hours` (default 24).
 
 ```bash
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c1-status" 2>/dev/null || echo "ok")
-C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-c2-status" 2>/dev/null || echo "ok")
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
+C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status" 2>/dev/null || echo "ok")
 [ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ] && { echo "C1/C2 failed — skipping this step."; exit 0; }
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-index")
-SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index")
 command -v jq >/dev/null 2>&1 || { printf "✗ jq not found — required for smoke test; install via brew install jq or apt-get install jq\n"; exit 1; }
+SMOKE_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" --index-path "$INDEX")  # timeout: 10000
+[ -n "$SMOKE_JSON" ] || { printf "⚠ check_index_smoke.py returned no output\n" >&2; exit 1; }
 _TSV=$(printf '%s' "$SMOKE_JSON" | jq -r '[.ok, .stale, .age_hours, (.error // "unknown")] | @tsv')
 OK=$(echo "$_TSV" | cut -f1); STALE=$(echo "$_TSV" | cut -f2); AGE=$(echo "$_TSV" | cut -f3); ERR=$(echo "$_TSV" | cut -f4)
 if [ "$OK" != "true" ]; then
@@ -130,6 +138,8 @@ fi
 
 ```bash
 # timeout: 20000
+# C5 jq check is soft-fail (warn, no exit 1) — injection audit degrades gracefully without jq;
+# contrast with C4 which hard-fails on missing jq (C4 cannot parse smoke result without it)
 command -v jq >/dev/null 2>&1 || { printf "⚠ jq not found — C5 injection audit requires jq; install via brew install jq or apt-get install jq\n"; }
 # Pass cache root (not just $CLAUDE_PLUGIN_ROOT) so check_injection.py scans all installed plugins
 PLUGIN_CACHE=$(ls -td ~/.claude/plugins/cache/*/ 2>/dev/null | head -1 | xargs dirname 2>/dev/null || echo "$HOME/.claude/plugins/cache")
@@ -149,27 +159,29 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 ```bash
 # timeout: 5000
 # Stderr to tempfile so eval only sees KEY=value stdout (shared pattern with C2).
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" 2>/dev/null  # timeout: 5000
-PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj" 2>/dev/null || echo "")
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index" 2>/dev/null || echo "")
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
+    --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
+PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj" 2>/dev/null || echo "")
+INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
 [ -n "$PROJ" ] || { printf "✗ resolve_index_env.py failed — check that python is on PATH and CLAUDE_PLUGIN_ROOT is set\n"; exit 1; }
-echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-init-index"
+echo "$INDEX" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-init-index"
 ```
 
 Index exists: report and proceed. Index missing:
 
-If `--approve` active and index missing: auto-select option (a) — skip `AskUserQuestion`, proceed directly to build. Print `[--approve] building index for: $PROJ`. **Note**: auto-build runs `scan-index` from the current directory; monorepo subdirectory scans (requiring `--root`) are not supported under `--approve` — use interactive `init` to pass `--root` explicitly.
+If `--approve` active and index missing: auto-select option (b) — skip `AskUserQuestion`, proceed directly to build. Print `[--approve] building index for: $PROJ`. **Note**: auto-build delegates to `codemap:scan-codebase` via `Skill()` dispatch, which runs scan-index from the project git root; monorepo subdirectory scans (requiring `--root`) are not supported under `--approve` — use interactive `init` to pass `--root` explicitly.
 
 Use `AskUserQuestion`:
 
 ```text
 No codemap index found for project: $PROJ
 
-a) Build now ★ — scans all .py files via ast.parse (Python only), <60s on most projects
-b) Skip — I'll run /codemap:scan-codebase later (recommendations will be generic, no module-count weighting)
+a) Skip — I'll run /codemap:scan-codebase later (recommendations will be generic, no module-count weighting)
+b) Build now ★ — scans all .py files via ast.parse (Python only), <60s on most projects
 ```
 
-If **a** (or auto-approved): verify binary exists first, then run scanner:
+If **b** (or auto-approved): verify binary exists first, then run scanner:
 
 ```text
 # Delegate to codemap:scan-codebase skill — runs scan-index with correct timeout handling,
@@ -191,13 +203,20 @@ Read `~/.claude/plugins/installed_plugins.json` (Claude Code internal plugin reg
 
 Per file: extract from frontmatter: `name`, `description`, `allowed-tools` (skills) or `description` body (agents). Extract first sentence of `<objective>` section.
 
-For each plugin discovered, set `CACHE` to its resolved `installPath` value. Flag files with injection block:
+For each plugin discovered, set `CACHE` to its resolved `installPath` value. Write CACHE to `${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-install-path` for use in I5. Flag files with injection block:
 
 ```bash
 # timeout: 10000
 # $CACHE = installPath value resolved per plugin in discovery loop above
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+echo "$CACHE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-install-path"
+# Check SKILL.md files for codemap injection marker
 find "$CACHE" -name "SKILL.md" -exec grep -l "command -v scan-query" {} \; 2>/dev/null
+# Check agent .md files separately (agents use AGENT_INJECTION_MARKER = "Structural context (codemap")
+find "$CACHE" -name "*.md" -path "*/agents/*" -exec grep -l "Structural context (codemap" {} \; 2>/dev/null
 ```
+
+For agent files, also extract intent from `<role>` block (not `<objective>`) when scoring in I3.
 
 Build two lists: `ALREADY_INJECTED` and `CANDIDATES`.
 
@@ -210,10 +229,10 @@ Classify each candidate by value tier. For skill files: use `<objective>` text a
 | **High** | `allowed-tools` includes `Edit` or `Write`; `<objective>` mentions spawning `foundry:sw-engineer` (requires `foundry` plugin) or `foundry:qa-specialist` (requires `foundry` plugin); performs code changes | "Strongly recommend — agent starts with blast-radius context" |
 | **Medium** | analysis or planning skills; spawns read-only agents; multi-file review without edits | "Moderate value — centrality context speeds structural decisions" |
 | **Low** | documentation, release, communication; no code traversal | "Low value — structural context unlikely to help" |
-| **Check/Warn** | release-orchestration skills (e.g. `oss:release`) — canonical injection sites per `check_injection.py`; surface as CHECK not SKIP | "Check — injection expected per check_injection.py rubric" |
+| **Check/Warn** | release-orchestration skills (e.g. `oss:release` (requires `oss` plugin)) — canonical injection sites per `check_injection.py`; surface as CHECK not SKIP | "Check — injection expected per check_injection.py rubric" |
 | **Skip** | config-only, single-file, non-Python purpose (e.g. shell, YAML, JS) | "Skip — not applicable for Python import graphs" |
 
-If index built and `total_modules < 20`: downgrade all tiers one level (small project = less value).
+If index built and `total_modules` value is available and `total_modules < 20`: downgrade all tiers one level (small project = less value). Skip downgrade when index was not built (skip-build path) or when `total_modules` is absent/zero (empty Python project).
 
 ### I4 — Present recommendations and ask user
 
@@ -224,13 +243,13 @@ Codemap injection candidates for: $PROJ
 
   Status  Skill/Agent          Tier    Notes
   ──────────────────────────────────────────────────────────────────
-  a)      develop:refactor     MEDIUM  restructures code; reads module deps for target
-  b)      oss:cicd-steward     MEDIUM  diagnoses failures; reads code structure for context
-  —       foundry:doc-scribe   LOW     writes docstrings; skip
-  ⚠check  oss:release          CHECK   expected injection site per check_injection.py — check manually
+  a)      develop:refactor     MEDIUM  restructures code; reads module deps for target  (requires develop plugin)
+  b)      oss:cicd-steward     MEDIUM  diagnoses failures; reads code structure for context  (requires oss plugin)
+  —       foundry:doc-scribe   LOW     writes docstrings; skip  (requires foundry plugin)
+  ⚠check  oss:release          CHECK   expected injection site per check_injection.py — check manually  (requires oss plugin)
 ```
 
-CHECK-tier items shown with `⚠check` prefix are informational only — not selectable via letter; verify injection status manually using `/codemap:integration check`.
+CHECK-tier items shown with `⚠check` prefix are informational only — not selectable via letter. They are NOT included when user replies "all". Verify injection status manually using `/codemap:integration check`.
 
 Call `AskUserQuestion` tool with:
 
@@ -246,15 +265,26 @@ Reply with letters (e.g. "a b"), "all" (all High+Medium), or "none".
 
 **⚠ --approve scope guard**: when running in `--approve` mode, restrict auto-injection to files under `$CLAUDE_PLUGIN_ROOT` only — skip files from other plugins in `~/.claude/plugins/cache/` that appear in the candidate list. Files from other plugins require explicit interactive confirmation; `--approve` is scoped to the current project's plugin only. In interactive mode, present all candidates but highlight cache-path files with ⚠ to remind user they affect all projects.
 
-**Write-permission probe + rollback log** — before any mutation under `~/.claude/plugins/cache/` (or any `INSTALL_PATH` discovered via I2):
+**Write-permission probe + rollback log** — once before the file loop, then per-file INSTALL_PATH is derived from the target file's own path (walk-up until a dir with `agents/` or `skills/` child is found) — avoids the I2 last-plugin-wins overwrite where a single shared tmpfile held only the last-discovered plugin's install path:
 
 ```bash
-# INSTALL_PATH must be set from I2 installPath discovery — do NOT fall back to broad $HOME/.claude/plugins/cache
-# If INSTALL_PATH empty (I2 discovery failed), abort rather than granting broad write permission
-[ -n "$INSTALL_PATH" ] || { echo "Error: INSTALL_PATH not set — I2 discovery may have failed; re-run init"; exit 1; }
-[ -w "$INSTALL_PATH" ] || { echo "Error: no write permission to $INSTALL_PATH"; exit 1; }
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 ROLLBACK_LOG="$(mktemp "${TMPDIR:-/tmp}/codemap-init-rollback-XXXXXX.log")"
 echo "[codemap init] rollback log: $ROLLBACK_LOG"
+```
+
+Per target file, before editing:
+
+```bash
+# Derive install path from the actual target file — not from a shared I2 tmpfile
+TARGET_FILE="<path to the file being injected>"
+INSTALL_PATH="$(dirname "$TARGET_FILE")"
+while [ "$INSTALL_PATH" != "/" ] && [ "$INSTALL_PATH" != "$HOME" ]; do
+    { [ -d "${INSTALL_PATH}/agents" ] || [ -d "${INSTALL_PATH}/skills" ]; } && break
+    INSTALL_PATH=$(dirname "$INSTALL_PATH")
+done
+[ "$INSTALL_PATH" = "/" ] && { echo "Error: could not find plugin root for $TARGET_FILE"; exit 1; }
+[ -w "$INSTALL_PATH" ] || { echo "Error: no write permission to $INSTALL_PATH — re-run with appropriate permissions"; exit 1; }
 ```
 
 For each file edited, append `printf '%s\t%s\n' "$(date -u +%FT%TZ)" "$FILE" >> "$ROLLBACK_LOG"` before writing the edit.
@@ -269,8 +299,9 @@ Per selected file, determine insertion point and content:
 
 ```bash
 # Structural context (codemap — Python projects only, silent skip if absent)
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+_GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+PROJ=$(basename "$_GIT_ROOT")
+_IDX="${CODEMAP_INDEX_DIR:-${_GIT_ROOT}/.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     scan-query --timeout 5 central --top 3
 fi
@@ -299,26 +330,34 @@ Report each edit: `✓ injected: <plugin>/<skill-or-agent> at line N`
 
 ### I5a — Offer git post-commit hook
 
-If `--approve` active: auto-select (a) Install, skip `AskUserQuestion`, proceed directly to I5b.
+First, verify this is a git repo before offering hook installation:
+
+```bash
+git rev-parse --is-inside-work-tree 2>/dev/null || { printf "⚠ not a git repository — skipping post-commit hook installation\n"; }
+```
+
+If not a git repo: skip I5a/I5b entirely, proceed to I6.
+
+If `--approve` active: auto-select (b) Install, skip `AskUserQuestion`, proceed directly to I5b.
 
 Otherwise use `AskUserQuestion`:
 
 ```text
 Install post-commit git hook for automatic incremental rebuild?
 
-a) Install ★ — runs scan-index --incremental in background after every commit; index stays current with zero developer action
-b) Skip — I'll run /codemap:scan-codebase or /codemap:scan-codebase --incremental manually
+a) Skip — I'll run /codemap:scan-codebase or /codemap:scan-codebase --incremental manually
+b) Install ★ — runs scan-index --incremental in background after every commit; index stays current with zero developer action
 ```
 
 <!-- branch outcomes: a → proceed to I5b (write hook file); b → skip I5b, proceed to I6 (summary) -->
 
 ### I5b — Write hook file
 
-If arriving from I5a with user's **a** selection (or auto-approved via `--approve` at I5a): skip further confirmation — I5a answer is sufficient. Proceed directly to hook write. On **b** (Skip): report `✓ post-commit hook skipped` and proceed to I6.
+If arriving from I5a with user's **b** selection (or auto-approved via `--approve` at I5a): skip further confirmation — I5a answer is sufficient. Proceed directly to hook write. On **a** (Skip): report `✓ post-commit hook skipped` and proceed to I6.
 
 Then write `.git/hooks/post-commit`. Idempotent — check for `# codemap: incremental` marker before writing.
 
-> **Path-baking note**: the hook bakes `CLAUDE_PLUGIN_ROOT` at install time. After a codemap version upgrade (`claude plugin install codemap@borda-ai-rig`), the baked path becomes stale — the hook falls back to `command -v scan-index` in that case. Re-run `/codemap:integration init` after upgrading codemap to refresh the hook path.
+> **Path-baking note**: the hook bakes `CLAUDE_PLUGIN_ROOT` at install time. After a codemap version upgrade (`claude plugin install codemap@borda-ai-rig`), the baked path becomes stale — the hook falls back to `command -v scan-index` in that case. Re-run `/codemap:integration init` (interactive) to refresh the hook path; the idempotency marker is checked before writing so a second init safely overwrites the stale hook.
 
 ```bash
 # timeout: 5000
@@ -343,7 +382,7 @@ Already integrated (no change):
 
 Skipped:
   • foundry:doc-scribe — LOW value
-  • oss:release — CHECK (canonical injection site per check_injection.py)
+  • oss:release — CHECK (canonical injection site per check_injection.py)  (requires oss plugin)
 
 Post-commit hook: installed / skipped
 

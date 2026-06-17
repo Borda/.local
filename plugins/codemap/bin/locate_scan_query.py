@@ -90,9 +90,17 @@ def locate_scan_query() -> Path:
 
     # Tier 3 — cache glob, newest semver
     cache_base = Path.home() / ".claude" / "plugins" / "cache"
-    candidates = [p for p in cache_base.glob("*/codemap/*/bin/scan-query") if _find_executable(p)]
+    raw_candidates = [p for p in cache_base.glob("*/codemap/*/bin/scan-query") if _find_executable(p)]
     if sys.platform == "win32":
-        candidates += [p for p in cache_base.glob("*/codemap/*/bin/scan-query.exe") if _find_executable(p)]
+        raw_candidates += [p for p in cache_base.glob("*/codemap/*/bin/scan-query.exe") if _find_executable(p)]
+    # Path-containment guard — resolved path must stay inside cache_base (defends against symlink escape)
+    candidates = []
+    for p in raw_candidates:
+        try:
+            p.resolve().relative_to(cache_base.resolve())
+            candidates.append(p)
+        except ValueError:
+            pass  # skip candidates that escape cache_base via symlinks
     if candidates:
         return max(candidates, key=_version_key)
 

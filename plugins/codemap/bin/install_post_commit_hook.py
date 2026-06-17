@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 HOOK_MARKER = "# codemap: incremental"
-_VALID_PLUGIN_ROOT_RE = re.compile(r"^[a-zA-Z0-9_./-]+$")
+_VALID_PLUGIN_ROOT_RE = re.compile(r"[a-zA-Z0-9_./-]+")
 
 
 def _make_hook_body(plugin_root: str | None) -> str:
@@ -54,7 +54,7 @@ def _make_hook_body(plugin_root: str | None) -> str:
         >>> "command -v scan-index" in body_abs  # fallback still present
         True
     """
-    if plugin_root and not _VALID_PLUGIN_ROOT_RE.match(str(plugin_root)):
+    if plugin_root and not _VALID_PLUGIN_ROOT_RE.fullmatch(str(plugin_root)):
         raise ValueError(f"plugin_root contains disallowed characters (only a-zA-Z0-9_./- allowed): {plugin_root}")
     # PID-qualified log path — avoids symlink attacks on the predictable shared /tmp/codemap-hook.log
     # (CWE-377). ${TMPDIR:-/tmp} honours user-specific TMPDIR when set; $$ disambiguates per shell.

@@ -247,7 +247,7 @@ Sort all pending items by severity descending (most impactful first). Constraint
 "Q4 — Or choose a bulk action:"
   (a) +All [req] — implement all required items
   (b) +All [suggest] — implement all suggested items
-  (c) +ALL (req + suggest) — implement all pending items
+  (c) ALL (req + suggest) — implement all pending items
   (d) Skip all — skip all items, exit
 ```
 
@@ -258,7 +258,7 @@ Sort all pending items by severity descending (most impactful first). Constraint
 - (d) → stop; print `→ All items skipped.`; jump to Step 11
 - Q4 unanswered / "Type something" → use checked IDs from Q1–Q3; proceed to commit mode question; `COMMIT_MODE = each` (default)
 
-**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "+ALL (req + suggest)" in Call 1 → skip Call 2.
+**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "ALL (req + suggest)" in Call 1 → skip Call 2.
 
 **≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit mode question unless (c) or (d) selected.
 

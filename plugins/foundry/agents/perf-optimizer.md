@@ -185,6 +185,29 @@ Rank by impact (highest first). Separate statically-confirmed from profiling-req
 
 </output_format>
 
+<codemap_context>
+
+Codemap pre-flight for structural perf analysis — run alongside step 1a+1b (see workflow):
+
+```bash
+PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    # fixture scope map — identify session vs function scope; expensive function-scoped = upgrade candidate
+    [ -n "$TARGET_TEST_FILE" ] && scan-query fixture-graph "$TARGET_TEST_FILE" 2>/dev/null
+    # fixture blast radius — check test count before recommending scope change
+    [ -n "$TARGET_FIXTURE" ] && scan-query fixture-rdeps "$TARGET_FIXTURE" 2>/dev/null
+    # caller blast radius — before changing a hot function's signature or behavior
+    [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    # subprocess call chains — CLI script I/O topology
+    [ -n "$TARGET_MODULE" ] && scan-query subprocess-deps "$TARGET_MODULE" 2>/dev/null
+fi
+```
+
+> `fixture-graph` output shows `scope` per fixture. Fixtures with `scope: "function"` that hold expensive objects (model weights, DB connections) and appear in many test files → scope upgrade candidates; add as "Additional best practice (not a defect)". Always run `fixture-rdeps` first — high usage + function scope + mutable state = isolation risk; flag mutation risk explicitly when rdep count > 20. `fn-blast` gives caller count before recommending signature changes; high blast radius = higher-severity change.
+
+</codemap_context>
+
 <workflow>
 
 01. **Parallel static scan + baseline measurement** (start both simultaneously)
@@ -221,7 +244,11 @@ command -v nvidia-smi &>/dev/null && {
 }
 ```
 
-Steps 1a and 1b are independent — run same turn. Together cost same wall time as either alone.
+### 1c. Codemap fixture pre-flight (parallel with 1a+1b — see `<codemap_context>`)
+
+Run `fixture-graph <test_file>` when input includes test files. Fixtures with `scope: "function"` + expensive setup (model load, DB migration) = scope upgrade candidates. Cross-check `fixture-rdeps` count: scope change breaks isolation when tests mutate shared state — flag as risk when count > 20.
+
+Steps 1a, 1b, and 1c are independent — run same turn. Together cost same wall time as any one alone.
 
 02. **Identify single biggest bottleneck**
 

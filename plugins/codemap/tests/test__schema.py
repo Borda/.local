@@ -91,6 +91,63 @@ class TestScanVersion:
         """Version must be a positive number (≥1)."""
         assert SCAN_VERSION >= 1
 
+    def test_value_is_ten(self) -> None:
+        """v5.4 bumps SCAN_VERSION to 10 (was 9 after v5.3) for coverage_pct / covered_by per symbol."""
+        assert SCAN_VERSION == 10
+
+
+class TestPerFeatureVersionConstants:
+    """Per-feature min-version constants: type, positivity, ordering."""
+
+    def test_all_are_int(self) -> None:
+        """Each per-feature min-version constant must be a plain int."""
+        for name in (
+            "MOCK_PATCHES_MIN_VER",
+            "UNCOVERED_MIN_VER",
+            "IMPORT_GROUPS_MIN_VER",
+            "DOCSTRING_MIN_VER",
+            "SPHINX_XREFS_MIN_VER",
+            "DEAD_SYMBOL_MIN_VER",
+            "MODULE_ALIASES_MIN_VER",
+            "SUBPROCESS_CALLS_MIN_VER",
+            "FIXTURE_GRAPH_MIN_VER",
+            "COVERAGE_MIN_VER",
+        ):
+            assert isinstance(getattr(_schema, name), int), f"{name} must be int"
+
+    def test_all_positive(self) -> None:
+        """Each per-feature min-version constant must be ≥1."""
+        for name in (
+            "MOCK_PATCHES_MIN_VER",
+            "UNCOVERED_MIN_VER",
+            "IMPORT_GROUPS_MIN_VER",
+            "DOCSTRING_MIN_VER",
+            "SPHINX_XREFS_MIN_VER",
+            "DEAD_SYMBOL_MIN_VER",
+            "MODULE_ALIASES_MIN_VER",
+            "SUBPROCESS_CALLS_MIN_VER",
+            "FIXTURE_GRAPH_MIN_VER",
+            "COVERAGE_MIN_VER",
+        ):
+            assert getattr(_schema, name) > 0, f"{name} must be positive"
+
+    def test_sphinx_before_dead_symbol(self) -> None:
+        """dead-symbol depends on sphinx_xref_count — its min version must be higher."""
+        from _schema import DEAD_SYMBOL_MIN_VER, SPHINX_XREFS_MIN_VER
+
+        assert SPHINX_XREFS_MIN_VER < DEAD_SYMBOL_MIN_VER
+
+    def test_v4_constants_equal(self) -> None:
+        """v4.1–v4.4 all require the same index version."""
+        from _schema import (
+            DOCSTRING_MIN_VER,
+            IMPORT_GROUPS_MIN_VER,
+            MOCK_PATCHES_MIN_VER,
+            UNCOVERED_MIN_VER,
+        )
+
+        assert MOCK_PATCHES_MIN_VER == UNCOVERED_MIN_VER == IMPORT_GROUPS_MIN_VER == DOCSTRING_MIN_VER
+
 
 def test_doctests_pass() -> None:
     """Doctest examples in _schema must not regress."""

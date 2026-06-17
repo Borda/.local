@@ -6,7 +6,9 @@ Every agent prompt must end with:
 
 > "Write your FULL findings (all sections, Confidence block) to `<RUN_DIR>/<agent-slug>.md` using the Write tool — where `<agent-slug>` uses hyphen separator (no colon), e.g. `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`. Colons invalid in macOS filenames. Return to caller ONLY compact JSON envelope on final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2},\"file\":\"<RUN_DIR>/<agent-slug>.md\",\"confidence\":0.88}`"
 
-**Agent 1 — foundry:sw-engineer**: Review architecture, SOLID, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking vs suggestions.
+**Codemap context preamble (substituted by orchestrator)**: when `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with the `## Structural Context (codemap, codemap_available=true)` block from `<RUN_DIR>/codemap-context.md`. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) is unchanged.
+
+**Agent 1 — foundry:sw-engineer**: Review architecture, SOLID, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking vs suggestions. `codemap_available=true`: read `fn-blast` first — skip caller-walk Reads on listed callers; verify only when needed for a specific finding.
 
 **Reuse audit**: Before accepting any new helper, utility, or class introduced in the diff, search for existing equivalents: `Grep` with semantic function-name patterns across `src/`; if `SEMBLE_ENABLED=true`, also call `mcp__semble__search(query="<function purpose>", repo=<git_root>, top_k=10)`. Near-duplicate found → flag as MEDIUM: "existing utility at `<path>` covers this — reuse or extend instead of reimplementing."
 
@@ -25,7 +27,7 @@ Read `<REVIEW_SKILL_DIR>/checklist.md` — apply CRITICAL/HIGH patterns as sever
 
 `ISSUE_NUMS` non-empty: read `<RUN_DIR>/issue-*.md`. Evaluate whether changes address root cause, not just symptom. PR addresses symptom only → `[blocking] HIGH — root cause misalignment`. PR description diverges from issue problem → `HIGH — PR/issue scope divergence`.
 
-**Agent 2 — foundry:qa-specialist**: Audit test coverage and run quick security/vulnerability scan. Find untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests.
+**Agent 2 — foundry:qa-specialist**: Audit test coverage and run quick security/vulnerability scan. Find untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. `codemap_available=true`: read `uncovered` + `mock-rdeps` sections first — symbols listed in `uncovered` lack any test rdep; symbols listed in `mock-rdeps` are tested via mock (not falsely "untested"). Skip manual grep/Read of `tests/` for symbols codemap already classifies; fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
 
 **Security scan (runs on every PR — not conditional)**: Check OWASP Top 10 — SQL injection, XSS, insecure deserialization, hardcoded secrets/tokens, missing input validation, path traversal. Run `pip-audit` if `requirements*.txt`, `pyproject.toml`, or any `*.lock` in diff. Surface dep CVEs as HIGH; secrets as CRITICAL.
 
@@ -37,7 +39,7 @@ Also check explicitly: concurrent access to shared state; methods called in wron
 
 **Agent 3 — foundry:perf-optimizer**: Find perf issues. Algorithmic complexity, Python loops that should be NumPy/torch ops, repeated computation, unnecessary I/O. ML code: DataLoader config, mixed precision. Prioritize by impact.
 
-**Agent 4 — foundry:doc-scribe**: Check doc completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run.
+**Agent 4 — foundry:doc-scribe**: Check doc completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run. `codemap_available=true`: read `undocumented` + `xrefs --broken` sections first — `undocumented` enumerates symbols missing docstrings; `xrefs --broken` enumerates stale Sphinx refs. Skip docstring-scan Reads on listed symbols; fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
 
 - **Algorithmic accuracy check**: Functions computing math results — verify docstring claims match implementation. Output shape/length match? Standard name (e.g. "moving average") match behavior? Deviates from convention → MEDIUM (docstring must document deviation).
 - **Deprecation check**: Check stdlib deprecated usage in public API surface only (skip private functions/classes/modules starting with `_`). E.g., `datetime.utcnow()` deprecated since Python 3.12 (use `datetime.now(datetime.UTC)` on 3.11+ or `datetime.now(tz=timezone.utc)` for all versions), `os.path` vs `pathlib`. Flag deprecated usage as MEDIUM with replacement. Route to `foundry:linting-expert` if ruff/mypy can catch automatically — avoid duplicate findings.

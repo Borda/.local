@@ -2,10 +2,10 @@
 name: scan-codebase
 description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics)."
 when_to_use: |
-  TRIGGER when: user asks to build, refresh, or rebuild the codemap index; user mentions stale index, missing symbols, or first-time setup of codemap; phrases: "build codemap", "scan codebase", "refresh structural index", "rebuild import graph".
-  SKIP: non-Python project (no `.py` files at root); user wants to query an existing index (use `/codemap:query-code`); user wants to rename a symbol (use `/codemap:rename-refs`, which scans incrementally on its own).
+  TRIGGER when: user asks to build, refresh, or rebuild the codemap index; user mentions stale index, missing symbols, or re-indexing after significant project changes; phrases: "build codemap", "scan codebase", "refresh structural index", "rebuild import graph".
+  SKIP: non-Python project (no `.py` files anywhere in the project tree — src/ layout projects have .py files in subdirectories); user wants to query an existing index (use `/codemap:query-code`); user wants to rename a symbol (use `/codemap:rename-refs` — rename-refs requires an existing index; run scan-codebase first if index is missing).
 argument-hint: "[--root <path>] [--incremental]"
-allowed-tools: Bash, Write, AskUserQuestion
+allowed-tools: Bash, Write
 disable-model-invocation: true
 effort: low
 ---
@@ -28,12 +28,12 @@ NOT for querying existing index (use `/codemap:query-code`); NOT for integration
 
 Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `--incremental` if provided. Construct args conditionally — never pass literal placeholder strings:
 
-**Unsupported flag check** — scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop. Run this check BEFORE invoking `parse_scan_args.py`.
+**Unsupported flag check** — scan `$ARGUMENTS` for `--` prefixed tokens other than `--root` and `--incremental`. If any remain: print `! Unknown flag(s): \`--<token>\`. Supported: \`--root\`, \`--incremental\`.` then exit 1 — do not invoke AskUserQuestion (disable-model-invocation:true makes AskUserQuestion structurally unreachable). Run this check BEFORE invoking `parse_scan_args.py`.
 
 ```bash
 SCAN_STATE_FILE=$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/setup_scan_env.sh" --arguments "$ARGUMENTS" 2>/dev/null)  # timeout: 10000
 [ -z "$SCAN_STATE_FILE" ] && { echo "! setup_scan_env.sh failed"; exit 1; }
-source "$SCAN_STATE_FILE"
+# vars written to tmpfiles by setup_scan_env.sh; read via $(cat ...) in next block
 ```
 
 ```bash
@@ -66,7 +66,9 @@ PROJ_SLUG=$(cat "${TMPDIR:-/tmp}/codemap-proj-slug" 2>/dev/null)
 PROJ_NAME=$(cat "${TMPDIR:-/tmp}/codemap-proj-name-${PROJ_SLUG}" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if [ -f "${_IDX}/${PROJ_NAME}.json" ]; then
-    SCAN_ARGS="$ARGUMENTS" python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-stats.py"
+    # Read scan args from tmpfile written by setup_scan_env.sh — $ARGUMENTS not available across Bash() calls
+    SCAN_ARGS=$(cat "${TMPDIR:-/tmp}/codemap-scan-args-${PROJ_SLUG}" 2>/dev/null || echo "")
+    SCAN_ARGS="$SCAN_ARGS" python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-stats.py"
     # Check if --incremental was requested but fell back to full scan (sentinel set in Step 1)
     if [ -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}" ]; then
         echo "[codemap] Note: --incremental had no prior index — full scan ran instead"

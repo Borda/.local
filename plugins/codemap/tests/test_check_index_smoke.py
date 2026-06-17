@@ -41,10 +41,12 @@ def _completed(stdout: str, returncode: int = 0) -> subprocess.CompletedProcess[
 
 @pytest.fixture
 def fake_smoke(monkeypatch: pytest.MonkeyPatch):
-    """Patch ``subprocess.run`` inside ``check_index_smoke`` with a stub.
+    """Patch ``subprocess.run`` and ``Path.is_file`` inside ``check_index_smoke``.
 
     Yields a setter that tests use to declare the raw stdout the upstream
     ``smoke_test_index.py`` should appear to emit on the next call.
+    ``Path.is_file`` is stubbed to ``True`` so the defense-in-depth file-
+    existence guard does not fire before the mocked subprocess call.
     """
     state: dict[str, Any] = {"stdout": ""}
 
@@ -52,6 +54,7 @@ def fake_smoke(monkeypatch: pytest.MonkeyPatch):
         return _completed(state["stdout"])
 
     monkeypatch.setattr(check_index_smoke.subprocess, "run", fake_run)
+    monkeypatch.setattr(check_index_smoke.Path, "is_file", lambda self: True)
 
     def _set(stdout: str) -> None:
         state["stdout"] = stdout
@@ -244,6 +247,7 @@ class TestRunSmokeOSError:
             raise OSError("exec failed")
 
         monkeypatch.setattr(check_index_smoke.subprocess, "run", boom)
+        monkeypatch.setattr(check_index_smoke.Path, "is_file", lambda self: True)
         rc = main(["--index-path", "/tmp/idx.json"])
         assert rc == 1
 

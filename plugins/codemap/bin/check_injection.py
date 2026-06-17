@@ -305,6 +305,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Validate --cache-root stays within $HOME to prevent unbounded rglob from /
+    if args.cache_root:
+        try:
+            resolved_cache_root = Path(args.cache_root).expanduser().resolve()
+            resolved_cache_root.relative_to(Path.home())
+        except ValueError:
+            sys.stderr.write(f"! --cache-root {args.cache_root!r} is outside $HOME — refusing to scan\n")
+            sys.exit(1)
+
     result = run_audit(args.plugin_root or None, cache_root_override=args.cache_root or None)
     sys.stdout.write("\n".join(result.lines) + "\n")
     return result.exit_code

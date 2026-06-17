@@ -2,19 +2,24 @@
 """resolve_index_env.py — resolve codemap PROJ + INDEX and write to temp files.
 
 Calls ``bin/resolve_proj_index.py``, reads PROJ (line 1) and INDEX (line 2),
-and writes each to ``${TMPDIR:-/tmp}/codemap-resolve-{proj,index}`` for the
+and writes each to ``${TMPDIR:-/tmp}/${prefix}-resolve-{proj,index}`` for the
 caller to read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
 
 Usage:
-    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py"
-    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-resolve-proj")
-    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-resolve-index")
+    _CM_PROJ=$(git rev-parse --show-toplevel | xargs basename)
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \\
+        --output-prefix "codemap-${_CM_PROJ}"
+    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj")
+    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index")
 
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists
     # exit 1 when INDEX file missing; temp files still written for diagnostics
+    # (uses default prefix "codemap" — unqualified; prefer --output-prefix for concurrent safety)
 
 Flags:
-    --check-exists   verify INDEX file exists; exit 1 with stderr message if missing.
+    --check-exists       verify INDEX file exists; exit 1 with stderr message if missing.
+    --output-prefix STR  prefix for temp file names (default: "codemap").
+                         Use "codemap-${_CM_PROJ}" to scope per-project and avoid concurrent collisions.
 
 Exit codes:
     0 — success (PROJ + INDEX written to temp files)
@@ -100,11 +105,19 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Verify INDEX file exists; exit 1 with stderr message if missing.",
     )
+    parser.add_argument(
+        "--output-prefix",
+        default="codemap",
+        help=(
+            "Prefix for temp file names (default: 'codemap'). "
+            "Use 'codemap-<proj>' to scope per-project and avoid concurrent collisions."
+        ),
+    )
     return parser
 
 
-def _write_temp_vars(proj: str, index: str) -> None:
-    """Write PROJ and INDEX to ``${TMPDIR:-/tmp}/codemap-resolve-{proj,index}`` temp files.
+def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
+    """Write PROJ and INDEX to ``${TMPDIR:-/tmp}/${prefix}-resolve-{proj,index}`` temp files.
 
     Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
     Temp files are always written (even on resolver failure) so downstream ``cat``
@@ -113,10 +126,12 @@ def _write_temp_vars(proj: str, index: str) -> None:
     Args:
         proj: Project name string (may be empty on resolver failure).
         index: Index file path string (may be empty on resolver failure).
+        prefix: Temp file name prefix (default: ``"codemap"``). Pass
+            ``"codemap-<proj>"`` to scope per-project and avoid concurrent collisions.
     """
     tmpdir = os.environ.get("TMPDIR", "/tmp")
     for key, val in (("proj", proj), ("index", index)):
-        Path(tmpdir, f"codemap-resolve-{key}").write_text(val, encoding="utf-8")
+        Path(tmpdir, f"{prefix}-resolve-{key}").write_text(val, encoding="utf-8")
 
 
 def _run_resolver(plugin_root: str) -> str:
@@ -174,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     proj, index = parse_resolver_output(stdout)
 
     # Always write to temp files before any failure exit — callers read with cat.
-    _write_temp_vars(proj, index)
+    _write_temp_vars(proj, index, prefix=args.output_prefix)
 
     if not proj or not index:
         sys.stderr.write(f"{_SCRIPT_NAME}: resolve_proj_index.py produced no output (PROJ/INDEX empty)\n")

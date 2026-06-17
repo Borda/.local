@@ -18,6 +18,35 @@ Commands (function-level — requires v3 index with call graph):
   fn-central [--top N]    Most-called functions globally
   fn-blast <qname>        Transitive reverse-call blast radius
 
+Commands (mock graph — requires v4.1+ index):
+  mock-rdeps <query>      Test files that mock a symbol via patch()
+
+Commands (subprocess graph — requires v5.2+ index):
+  subprocess-deps <module>   Modules spawned by <module> as a subprocess
+  subprocess-rdeps <module>  Modules that spawn <module> as a subprocess
+
+Commands (pytest fixture graph — requires v5.3+ index):
+  fixture-rdeps <name>       Test files that use a fixture
+  fixture-graph <test-file>  Full fixture dependency tree for a test file
+
+Commands (docstring coverage — requires v4.4+ index):
+  undocumented [module]   Public symbols missing a docstring (use --all to scan everything)
+
+Commands (test coverage — requires v4.2+ index):
+  uncovered [module]      Public symbols with no test callers and no mocks (--all for everything)
+
+Commands (line coverage — requires v5.4+ index built with --with-coverage):
+  coverage <qname>           Coverage % and test node IDs for a specific symbol
+  coverage-gap [module]      Symbols below threshold, sorted by gap desc (use --all to scan everything)
+
+Commands (Sphinx / MkDocs xrefs — requires v4.5+ index):
+  xrefs <qname>           List doc cross-references targeting a symbol
+  xrefs <module> --broken Find xrefs whose target is not a known symbol
+
+Commands (dead-symbol detection — requires v4.6+ index):
+  dead-symbols [--min-loc N]  Public symbols with no callers anywhere
+  dead-modules                Modules with no external importers
+
 All output is JSON. Staleness is checked on every invocation — warns to
 stderr if Python files were committed after the index was built.
 
@@ -50,7 +79,26 @@ from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _schema import SCAN_VERSION, VALID_CALL_RESOLUTIONS, Symbol
+from _schema import (
+    COVERAGE_MIN_VER,
+    DEAD_SYMBOL_MIN_VER,
+    DOCSTRING_MIN_VER,
+    FIXTURE_GRAPH_MIN_VER,
+    IMPORT_GROUPS_MIN_VER,
+    MOCK_PATCHES_MIN_VER,
+    MODULE_ALIASES_MIN_VER,
+    SCAN_VERSION,
+    SPHINX_XREFS_MIN_VER,
+    SUBPROCESS_CALLS_MIN_VER,
+    UNCOVERED_MIN_VER,
+    VALID_CALL_RESOLUTIONS,
+    Symbol,
+)
+
+# v5.1: MODULE_ALIASES_MIN_VER is imported for downstream feature gating; no
+# command consumes it directly today — module_aliases is applied internally by
+# scan-index at import resolution time. Touch reference to avoid F401 churn.
+_ = MODULE_ALIASES_MIN_VER
 
 
 def _has_call_graph(index: dict) -> bool:
@@ -116,36 +164,70 @@ def _git_root() -> Path | None:
 def find_index() -> Path:
     """Locate the codemap index using a multi-strategy search.
 
-    1. Git root — <git-root>/.cache/scan/<name>.json (standard case)
+    1. Git root — checks .cache/codemap/ then .cache/scan/ (backward compat)
     2. Walk up from CWD — finds index in ZIP exports and non-git repos
     3. Fallback — CWD convention; produces a clear error if missing
     """
     # Strategy 1: git root owns the index
     git_root = _get_git_root_cached()
     if git_root:
-        candidate = git_root / ".cache" / "scan" / f"{git_root.name}.json"
-        if candidate.exists():
-            return candidate
+        for cache_dir in ("codemap", "scan"):
+            candidate = git_root / ".cache" / cache_dir / f"{git_root.name}.json"
+            if candidate.exists():
+                cache_base = git_root / ".cache" / cache_dir
+                try:
+                    candidate.resolve().relative_to(cache_base.resolve())
+                except ValueError:
+                    print(
+                        f"⚠ codemap: skipped {candidate} — resolves outside expected cache dir",
+                        file=sys.stderr,
+                    )
+                    continue
+                return candidate
 
     # Strategy 2: walk up from CWD — handles ZIP archives without .git
     for parent in [Path.cwd(), *Path.cwd().parents]:
-        scan_dir = parent / ".cache" / "scan"
-        if scan_dir.is_dir():
+        for cache_dir in ("codemap", "scan"):
+            scan_dir = parent / ".cache" / cache_dir
+            if not scan_dir.is_dir():
+                continue
             preferred = scan_dir / f"{parent.name}.json"
             if preferred.exists():
+                # Path-containment guard — resolved path must stay inside scan_dir
+                try:
+                    preferred.resolve().relative_to(scan_dir.resolve())
+                except ValueError:
+                    print(
+                        f"⚠ codemap: skipped {preferred} — resolves outside expected cache dir",
+                        file=sys.stderr,
+                    )
+                    continue
                 return preferred
             candidates = sorted(scan_dir.glob("*.json"))
             if candidates:
-                if len(candidates) > 1 or candidates[0].stem != parent.name:
+                # Path-containment guard — filter candidates that escape scan_dir via symlinks
+                safe_candidates = []
+                for c in candidates:
+                    try:
+                        c.resolve().relative_to(scan_dir.resolve())
+                        safe_candidates.append(c)
+                    except ValueError:
+                        print(
+                            f"⚠ codemap: skipped {c} — resolves outside expected cache dir",
+                            file=sys.stderr,
+                        )
+                if not safe_candidates:
+                    continue
+                if len(safe_candidates) > 1 or safe_candidates[0].stem != parent.name:
                     print(
-                        f"⚠ codemap: loaded {candidates[0].name} via fallback; expected {parent.name}.json",
+                        f"⚠ codemap: loaded {safe_candidates[0].name} via fallback; expected {parent.name}.json",
                         file=sys.stderr,
                     )
-                return candidates[0]
+                return safe_candidates[0]
 
     # Strategy 3: fallback (will surface a clear "Index not found" error)
     root = git_root or Path.cwd()
-    return root / ".cache" / "scan" / f"{root.name}.json"
+    return root / ".cache" / "codemap" / f"{root.name}.json"
 
 
 _MAX_INDEX_SIZE_BYTES = 512 * 1024 * 1024  # 512 MB — guard against bloated/malicious index causing OOM
@@ -374,6 +456,23 @@ def _require_call_graph(index: dict) -> None:
         _exit_error("Index is v2 — call graph not available. Re-run /codemap:scan-codebase to upgrade.")
 
 
+def _require_feature(index: dict, min_ver: int, feature: str) -> None:
+    """Exit with a clear error if the index predates *feature*.
+
+    Args:
+        index: parsed codemap index dict.
+        min_ver: minimum scan_version the feature requires.
+        feature: human-readable feature name shown in the error message.
+    """
+    raw = index.get("scan_version", 0)
+    try:
+        version = int(raw)
+    except (TypeError, ValueError):
+        version = 0
+    if version < min_ver:
+        _exit_error(f"'{feature}' requires index version {min_ver} (current: {version}). Re-run scan-index to rebuild.")
+
+
 def _current_git_sha() -> str | None:
     """Return current HEAD SHA, or None if git is unavailable."""
     try:
@@ -467,22 +566,79 @@ def _coverage(index: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def cmd_deps(index: dict, module: str) -> None:
-    """Print direct imports of a module as JSON.
+def cmd_deps(
+    index: dict,
+    module: str,
+    stdlib_only: bool = False,
+    third_party_only: bool = False,
+    internal_only: bool = False,
+) -> None:
+    """Print direct imports of a module as JSON, optionally filtered by import group.
+
+    When any of *stdlib_only*, *third_party_only*, *internal_only* is True the
+    returned ``direct_imports`` list is restricted to the selected group(s) using
+    the per-module ``import_groups`` field (requires v4.3+ index). When no
+    filter flag is set, all imports are returned and no feature check fires
+    (backward-compatible with v4.0–v4.2 indexes).
 
     Args:
         index: parsed codemap index dict.
         module: dotted module name to look up.
+        stdlib_only: if True, restrict result to imports classified as stdlib.
+        third_party_only: if True, restrict result to imports classified as third-party.
+        internal_only: if True, restrict result to imports classified as internal.
     """
     modules = build_module_map(index)
     entry = modules.get(module)
     if entry is None:
         _exit_error(f"Module '{module}' not in index.")
+    direct = entry.get("direct_imports", [])
+    if stdlib_only or third_party_only or internal_only:
+        _require_feature(index, IMPORT_GROUPS_MIN_VER, "import_groups")
+        groups = entry.get("import_groups", {"stdlib": [], "third_party": [], "internal": []})
+        selected: set[str] = set()
+        if stdlib_only:
+            selected.update(groups.get("stdlib", []))
+        if third_party_only:
+            selected.update(groups.get("third_party", []))
+        if internal_only:
+            selected.update(groups.get("internal", []))
+        # Preserve original order from direct_imports while restricting to the selected set.
+        direct = [imp for imp in direct if imp in selected]
     print(
         json.dumps(
             {
                 "module": module,
-                "direct_imports": entry.get("direct_imports", []),
+                "direct_imports": direct,
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+def cmd_import_types(index: dict, module: str) -> None:
+    """Print all three import groups (stdlib, third_party, internal) for a module.
+
+    Requires v4.3+ index (``import_groups`` field). Each group preserves the
+    original import strings as recorded by scan-index — no normalisation.
+
+    Args:
+        index: parsed codemap index dict (must be v4.3+ with import_groups).
+        module: dotted module name to look up.
+    """
+    _require_feature(index, IMPORT_GROUPS_MIN_VER, "import_groups")
+    modules = build_module_map(index)
+    entry = modules.get(module)
+    if entry is None:
+        _exit_error(f"Module '{module}' not in index.")
+    groups = entry.get("import_groups", {"stdlib": [], "third_party": [], "internal": []})
+    print(
+        json.dumps(
+            {
+                "module": module,
+                "stdlib": groups.get("stdlib", []),
+                "third_party": groups.get("third_party", []),
+                "internal": groups.get("internal", []),
                 "index": _coverage(index),
             }
         )
@@ -982,6 +1138,1053 @@ def cmd_fn_blast(index: dict, qname: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Mock reverse-dependency command (v4.1)
+# ---------------------------------------------------------------------------
+
+
+def cmd_mock_rdeps(index: dict, query: str) -> None:
+    """Print test files that mock *query* via ``patch``/``mocker.patch``.
+
+    Two modes:
+      * ``module::symbol`` — return callers for that one symbol
+      * bare ``module`` — return every mocked symbol in the module with its callers
+
+    Args:
+        index: parsed codemap index dict (must be v4.1+ with mock_patches).
+        query: either ``module::symbol`` or bare ``module`` dotted name.
+
+    Examples:
+        ``mypackage.core::MyClass.method`` — caller list for that symbol only.
+        ``mypackage.core`` — every mocked symbol in ``mypackage.core``.
+    """
+    _require_feature(index, MOCK_PATCHES_MIN_VER, "mock_patches")
+    by_symbol: dict[str, list[dict]] = {}
+    for m in index.get("modules", []):
+        if not m.get("is_test"):
+            continue
+        for entry in m.get("mock_patches", []) or []:
+            target = entry.get("target")
+            if not target:
+                continue
+            by_symbol.setdefault(target, []).append(
+                {
+                    "file": entry.get("file", ""),
+                    "line": entry.get("line", 0),
+                    "form": entry.get("form", ""),
+                }
+            )
+
+    if "::" in query:
+        module, symbol = query.split("::", 1)
+        callers = sorted(by_symbol.get(query, []), key=lambda c: (c["file"], c["line"]))
+        print(
+            json.dumps(
+                {
+                    "module": module,
+                    "symbol": symbol,
+                    "callers": callers,
+                    "count": len(callers),
+                    "index": _coverage(index),
+                }
+            )
+        )
+        return
+
+    prefix = f"{query}::"
+    callers: list[dict] = []
+    for target, hits in by_symbol.items():
+        if not target.startswith(prefix):
+            continue
+        for hit in hits:
+            callers.append(
+                {
+                    "target": target,
+                    "file": hit["file"],
+                    "line": hit["line"],
+                    "form": hit["form"],
+                }
+            )
+    callers.sort(key=lambda c: (c["target"], c["file"], c["line"]))
+    print(
+        json.dumps(
+            {
+                "module": query,
+                "callers": callers,
+                "count": len(callers),
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Subprocess call-edge commands (v5.2)
+# ---------------------------------------------------------------------------
+
+
+def _require_subprocess_rdep_count(index: dict) -> dict:
+    """Exit with a clear error when the index lacks the v5.2 ``subprocess_rdep_count`` table.
+
+    Fail-closed: a missing ``subprocess_rdep_count`` must never be silently
+    treated as "no subprocess callers" — that would hide real edges. The caller
+    is required to rebuild the index against v5.2+ first.
+
+    Args:
+        index: parsed codemap index dict.
+    """
+    if "subprocess_rdep_count" not in index:
+        _exit_error("subprocess_rdep_count absent — rebuild with scan-index v5.2+")
+    return index["subprocess_rdep_count"]
+
+
+def cmd_subprocess_deps(index: dict, module: str) -> None:
+    """Print every subprocess call made by *module* (forward edges).
+
+    Lists ``{target_module, file, line}`` entries recorded by ``scan-index``
+    for ``subprocess.run``, ``subprocess.Popen``, and ``os.system`` invocations
+    that resolve to an indexed module.
+
+    Args:
+        index: parsed codemap index dict (must be v5.2+ with subprocess_calls).
+        module: dotted module name whose forward subprocess edges are queried.
+    """
+    _require_feature(index, SUBPROCESS_CALLS_MIN_VER, "subprocess-deps")
+    modules = build_module_map(index)
+    entry = modules.get(module)
+    if entry is None:
+        _exit_error(f"Module '{module}' not in index.")
+    calls = entry.get("subprocess_calls", []) or []
+    print(
+        json.dumps(
+            {
+                "module": module,
+                "calls": calls,
+                "count": len(calls),
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+def cmd_subprocess_rdeps(index: dict, module: str) -> None:
+    """Print every module that spawns *module* as a subprocess (reverse edges).
+
+    Walks every indexed module's ``subprocess_calls`` list and collects entries
+    whose ``target_module`` equals *module*. Fail-closed via
+    :func:`_require_subprocess_rdep_count` — a missing reverse table aborts
+    rather than silently reporting zero callers.
+
+    Args:
+        index: parsed codemap index dict (must be v5.2+ with subprocess_rdep_count).
+        module: dotted module name whose reverse subprocess edges are queried.
+    """
+    _require_feature(index, SUBPROCESS_CALLS_MIN_VER, "subprocess-rdeps")
+    _require_subprocess_rdep_count(index)
+    callers: list[dict] = []
+    for m in index.get("modules", []):
+        for call in m.get("subprocess_calls", []) or []:
+            if call.get("target_module") == module:
+                callers.append(
+                    {
+                        "caller": m.get("name", ""),
+                        "file": call.get("file", ""),
+                        "line": call.get("line", 0),
+                    }
+                )
+    callers.sort(key=lambda c: (c["caller"], c["file"], c["line"]))
+    print(
+        json.dumps(
+            {
+                "module": module,
+                "callers": callers,
+                "count": len(callers),
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pytest fixture graph commands (v5.3)
+# ---------------------------------------------------------------------------
+
+
+def _collect_fixture_definitions(index: dict) -> dict[str, dict]:
+    """Build a global ``fixture_name -> {scope, defined_in, depends_on}`` lookup.
+
+    Aggregates fixture definitions from every module's ``fixture_exports`` block.
+    Each fixture's own parameter list (``params`` field, populated by
+    :func:`extract_fixtures`) becomes its ``depends_on`` set — the fixture's
+    own argument names are the fixtures it requests.
+
+    Deeper-conftest-wins semantics are approximated by depth-sorting the conftest
+    list (deeper paths overwrite shallower ones). Test-file fixtures override
+    conftest fixtures of the same name.
+
+    Args:
+        index: parsed codemap index dict.
+
+    Returns:
+        Mapping ``fixture_name -> {"scope", "defined_in", "depends_on"}``.
+    """
+
+    def _depth(path: str) -> int:
+        parts = Path(path).parts
+        return max(len(parts) - 1, 0)
+
+    conftests: list[dict] = []
+    test_files: list[dict] = []
+    for m in index.get("modules", []):
+        if m.get("status") != "ok":
+            continue
+        path = m.get("path", "")
+        basename = Path(path).name
+        if basename == "conftest.py":
+            conftests.append(m)
+        elif m.get("is_test"):
+            test_files.append(m)
+    conftests.sort(key=lambda m: _depth(m.get("path", "")))
+
+    aggregated: dict[str, dict] = {}
+    for m in (*conftests, *test_files):
+        for fix in m.get("fixture_exports", []) or []:
+            aggregated[fix["name"]] = {
+                "scope": fix.get("scope", "function"),
+                "defined_in": m.get("name", ""),
+                "depends_on": list(fix.get("params", []) or []),
+            }
+    return aggregated
+
+
+def cmd_fixture_rdeps(index: dict, fixture_name: str) -> None:
+    """Print test files that use *fixture_name* anywhere in their test functions.
+
+    Walks every test module's ``fixture_uses`` list and collects modules whose
+    test functions take *fixture_name* as a parameter. Results include the
+    fixture's resolved scope and defining module when known.
+
+    Args:
+        index: parsed codemap index dict (must be v5.3+ with ``fixture_uses``).
+        fixture_name: name of the fixture whose reverse-dependencies are queried.
+    """
+    _require_feature(index, FIXTURE_GRAPH_MIN_VER, "fixture-rdeps")
+    test_files: list[dict] = []
+    for m in index.get("modules", []):
+        if m.get("status") != "ok" or not m.get("is_test"):
+            continue
+        for fix in m.get("fixture_uses", []) or []:
+            if fix.get("name") != fixture_name:
+                continue
+            test_files.append(
+                {
+                    "module": m.get("name", ""),
+                    "path": m.get("path", ""),
+                    "scope": fix.get("scope"),
+                    "defined_in": fix.get("defined_in"),
+                }
+            )
+            break
+    test_files.sort(key=lambda e: (e["module"], e["path"]))
+    print(
+        json.dumps(
+            {
+                "fixture": fixture_name,
+                "count": len(test_files),
+                "test_files": test_files,
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+_FIXTURE_GRAPH_MAX_DEPTH = 10
+
+
+def _build_fixture_subtree(
+    fixture_name: str,
+    fixture_defs: dict[str, dict],
+    visited: set[str],
+    depth: int,
+) -> dict:
+    """Recursively expand the dependency tree of *fixture_name*, bounded by depth and cycle guard.
+
+    Returns a node dict with ``name``, ``scope``, ``defined_in``, and ``depends_on``
+    (a list of further node dicts). Cycle detection: a fixture already in
+    *visited* is emitted with empty ``depends_on`` and a ``cycle: True`` marker.
+    Depth cap: at :data:`_FIXTURE_GRAPH_MAX_DEPTH` recursion stops and the node
+    is marked ``truncated: True``.
+
+    Args:
+        fixture_name: fixture to expand at this level.
+        fixture_defs: global fixture lookup from :func:`_collect_fixture_definitions`.
+        visited: names of fixtures already expanded on the current path (mutated).
+        depth: current recursion depth.
+    """
+    info = fixture_defs.get(fixture_name)
+    if info is None:
+        return {
+            "name": fixture_name,
+            "scope": None,
+            "defined_in": None,
+            "depends_on": [],
+        }
+    node: dict = {
+        "name": fixture_name,
+        "scope": info.get("scope"),
+        "defined_in": info.get("defined_in"),
+    }
+    if fixture_name in visited:
+        node["depends_on"] = []
+        node["cycle"] = True
+        return node
+    if depth >= _FIXTURE_GRAPH_MAX_DEPTH:
+        node["depends_on"] = []
+        node["truncated"] = True
+        return node
+    visited.add(fixture_name)
+    children: list[dict] = []
+    for dep in info.get("depends_on", []) or []:
+        children.append(_build_fixture_subtree(dep, fixture_defs, visited, depth + 1))
+    visited.remove(fixture_name)
+    node["depends_on"] = children
+    return node
+
+
+def _find_test_module(index: dict, query: str) -> dict | None:
+    """Locate a test module by dotted name or file-path suffix.
+
+    Resolution order: exact ``name`` match, exact ``path`` match, then path
+    suffix match. Only modules with ``status == "ok"`` and ``is_test == True``
+    are considered.
+
+    Args:
+        index: parsed codemap index dict.
+        query: dotted module name (``tests.foo``) or path (``tests/foo.py``).
+    """
+    for m in index.get("modules", []):
+        if m.get("status") != "ok" or not m.get("is_test"):
+            continue
+        if m.get("name") == query or m.get("path") == query:
+            return m
+    for m in index.get("modules", []):
+        if m.get("status") != "ok" or not m.get("is_test"):
+            continue
+        path = m.get("path", "")
+        if path.endswith(query):
+            return m
+    return None
+
+
+def cmd_fixture_graph(index: dict, test_file: str) -> None:
+    """Print the full fixture dependency tree for *test_file*.
+
+    Resolves *test_file* via :func:`_find_test_module`, then expands each
+    fixture the test module uses into a recursive ``depends_on`` tree using
+    :func:`_build_fixture_subtree`. Depth is capped at
+    :data:`_FIXTURE_GRAPH_MAX_DEPTH` and cycles are surfaced via a
+    ``cycle: True`` marker rather than raising.
+
+    Args:
+        index: parsed codemap index dict (must be v5.3+ with ``fixture_uses``).
+        test_file: dotted module name or path identifying the test module.
+    """
+    _require_feature(index, FIXTURE_GRAPH_MIN_VER, "fixture-graph")
+    module_entry = _find_test_module(index, test_file)
+    if module_entry is None:
+        _exit_error(f"Test module '{test_file}' not found in index.")
+    fixture_defs = _collect_fixture_definitions(index)
+    roots: list[dict] = []
+    for fix in module_entry.get("fixture_uses", []) or []:
+        visited: set[str] = set()
+        roots.append(_build_fixture_subtree(fix["name"], fixture_defs, visited, 0))
+    print(
+        json.dumps(
+            {
+                "test_file": module_entry.get("name", ""),
+                "path": module_entry.get("path", ""),
+                "fixtures": roots,
+                "count": len(roots),
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Docstring coverage command (v4.4)
+# ---------------------------------------------------------------------------
+
+
+def _is_public_symbol(name: str) -> bool:
+    """Return True when *name* is a public identifier (no leading underscore).
+
+    Dunder names like ``__init__`` start with an underscore and are excluded —
+    this matches the simplest rule consistent with "no leading ``_``" filtering.
+
+    Examples:
+        >>> _is_public_symbol("foo")
+        True
+        >>> _is_public_symbol("_helper")
+        False
+        >>> _is_public_symbol("__init__")
+        False
+        >>> _is_public_symbol("MyClass.method")
+        True
+        >>> _is_public_symbol("MyClass._priv")
+        False
+    """
+    if not name:
+        return False
+    for part in name.split("."):
+        if not part or part.startswith("_"):
+            return False
+    return True
+
+
+def _symbol_loc(sym: dict) -> int:
+    """Return the (end_line − start_line) span of a symbol; 0 when either is missing.
+
+    Examples:
+        >>> _symbol_loc({"start_line": 10, "end_line": 25})
+        15
+        >>> _symbol_loc({"start_line": 5})
+        0
+        >>> _symbol_loc({})
+        0
+    """
+    start = sym.get("start_line")
+    end = sym.get("end_line")
+    if not isinstance(start, int) or not isinstance(end, int):
+        return 0
+    return end - start
+
+
+def cmd_undocumented(index: dict, module: str | None, all_modules: bool) -> None:
+    """List public symbols missing a docstring, sorted by LOC descending.
+
+    Public symbol = no component of ``qualified_name`` starts with ``_`` —
+    excludes dunders (``__init__``), private helpers (``_compute``), and private
+    class names (``_Cache``). Test modules (``is_test=True``) are always skipped.
+
+    Args:
+        index: parsed codemap index dict (must be v4.4+ with ``has_docstring``).
+        module: when set, restrict scan to this dotted module name only.
+        all_modules: when True, scan every non-test module in the index.
+
+    Examples:
+        See ``tests/test_scan_query.py::TestDocstringCoverage`` for end-to-end coverage.
+    """
+    _require_feature(index, DOCSTRING_MIN_VER, "has_docstring")
+    modules = index.get("modules", [])
+    if module is not None:
+        modules = [m for m in modules if m.get("name") == module]
+    else:
+        modules = [m for m in modules if not m.get("is_test")]
+    # all_modules is the default and a no-op flag; preserved for explicit CLI clarity.
+    _ = all_modules
+
+    findings: list[dict] = []
+    for m in modules:
+        if m.get("status") == "degraded":
+            continue
+        mod_name = m.get("name", "")
+        for sym in m.get("symbols", []):
+            if sym.get("has_docstring", False):
+                continue
+            if not _is_public_symbol(sym.get("qualified_name", "")):
+                continue
+            findings.append(
+                {
+                    "name": sym.get("name", ""),
+                    "qualified_name": sym.get("qualified_name", ""),
+                    "module": mod_name,
+                    "type": sym.get("type", ""),
+                    "loc": _symbol_loc(sym),
+                    "start_line": sym.get("start_line", 0),
+                    "end_line": sym.get("end_line", 0),
+                    "docstring_first_line": sym.get("docstring_first_line"),
+                }
+            )
+
+    findings.sort(key=lambda f: (-f["loc"], f["module"], f["qualified_name"]))
+    payload: dict = {
+        "undocumented": findings,
+        "total": len(findings),
+        "index": _coverage(index),
+    }
+    if module is not None:
+        payload["module"] = module
+    print(json.dumps(payload))
+
+
+# ---------------------------------------------------------------------------
+# Test-coverage command (v4.2)
+# ---------------------------------------------------------------------------
+
+
+def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
+    """Print public symbols with no test coverage, sorted and capped to ``--top``.
+
+    A symbol is uncovered when ALL of the following hold:
+      * ``qualified_name`` is public per :func:`_is_public_symbol` (no leading
+        ``_`` in any dotted component — excludes dunders, private helpers,
+        private classes).
+      * ``fn_rdep_test_count == 0`` — no caller in a test module reaches it.
+      * ``mock_rdep_count == 0`` — no test mocks it via ``patch()``.
+
+    Only non-test modules are scanned. ``fn_rdep_test_count`` and
+    ``mock_rdep_count`` are stored fields (v4.1+); the query reads them
+    directly without rebuilding the call graph.
+
+    Args:
+        index: parsed codemap index dict (must be v4.2+ with ``fn_rdep_test_count``).
+        args: parsed argparse namespace exposing ``module`` (str | None),
+            ``all_modules`` (bool), ``sort`` (``"loc" | "name" | "module"``),
+            and ``top`` (int).
+
+    Examples:
+        See ``tests/test_scan_query.py::TestUncovered`` for end-to-end coverage.
+    """
+    _require_feature(index, UNCOVERED_MIN_VER, "fn_rdep_test_count")
+    module: str | None = args.module
+    all_modules: bool = args.all_modules
+    if module is None and not all_modules:
+        _exit_error("Pass a module name or --all to scan every non-test module.")
+    # all_modules is the default and a no-op flag; preserved for explicit CLI clarity.
+    _ = all_modules
+
+    modules = index.get("modules", [])
+    if module is not None:
+        modules = [m for m in modules if m.get("name") == module]
+    else:
+        modules = [m for m in modules if not m.get("is_test")]
+
+    findings: list[dict] = []
+    for m in modules:
+        if m.get("status") == "degraded":
+            continue
+        if m.get("is_test", False):
+            continue
+        mod_name = m.get("name", "")
+        for sym in m.get("symbols", []):
+            qname = sym.get("qualified_name", "")
+            if not _is_public_symbol(qname):
+                continue
+            if sym.get("fn_rdep_test_count", 0) != 0:
+                continue
+            if sym.get("mock_rdep_count", 0) != 0:
+                continue
+            findings.append(
+                {
+                    "name": sym.get("name", ""),
+                    "module": mod_name,
+                    "qualified_name": qname,
+                    "loc": _symbol_loc(sym),
+                    "fn_rdep_test_count": sym.get("fn_rdep_test_count", 0),
+                    "mock_rdep_count": sym.get("mock_rdep_count", 0),
+                }
+            )
+
+    sort_key = args.sort
+    if sort_key == "name":
+        findings.sort(key=lambda f: (f["qualified_name"], f["module"]))
+    elif sort_key == "module":
+        findings.sort(key=lambda f: (f["module"], f["qualified_name"]))
+    else:  # "loc" — default
+        findings.sort(key=lambda f: (-f["loc"], f["module"], f["qualified_name"]))
+
+    total = len(findings)
+    top_n = max(0, int(args.top))
+    showing = min(total, top_n)
+    findings = findings[:top_n]
+
+    payload: dict = {
+        "uncovered": findings,
+        "total": total,
+        "showing": showing,
+        "index": _coverage(index),
+    }
+    if module is not None:
+        payload["module"] = module
+    print(json.dumps(payload))
+
+
+# ---------------------------------------------------------------------------
+# Line-coverage commands (v5.4)
+# ---------------------------------------------------------------------------
+
+
+def _split_coverage_qname(qname: str) -> tuple[str, str | None]:
+    """Split a ``module::symbol`` query into ``(module, symbol)``; bare module → ``(module, None)``.
+
+    Examples:
+        >>> _split_coverage_qname("pkg.mod::func")
+        ('pkg.mod', 'func')
+        >>> _split_coverage_qname("pkg.mod")
+        ('pkg.mod', None)
+        >>> _split_coverage_qname("pkg.mod::Cls.method")
+        ('pkg.mod', 'Cls.method')
+    """
+    if "::" in qname:
+        module, symbol = qname.split("::", 1)
+        return module, symbol
+    return qname, None
+
+
+def _find_module(index: dict, module_name: str) -> dict | None:
+    """Return the module entry whose ``name`` matches *module_name*, or ``None``."""
+    for m in index.get("modules", []):
+        if m.get("name") == module_name:
+            return m
+    return None
+
+
+def cmd_coverage(index: dict, qname: str) -> None:
+    """Show ``coverage_pct`` and ``covered_by`` for a specific symbol or whole module.
+
+    Accepts two query shapes:
+
+      * ``module::symbol`` — return one symbol's coverage fields, or an explicit
+        error JSON when the symbol is not present in the index or its coverage
+        fields were not populated (index built without ``--with-coverage``).
+      * ``module`` — return the per-symbol coverage map for every symbol in the
+        module that has coverage data attached.
+
+    Args:
+        index: parsed codemap index dict (must be v5.4+).
+        qname: ``module::symbol`` query string, or a bare ``module`` name.
+    """
+    _require_feature(index, COVERAGE_MIN_VER, "coverage")
+    module_name, symbol_name = _split_coverage_qname(qname)
+    module = _find_module(index, module_name)
+    if module is None:
+        _exit_error(f"Module '{module_name}' not in index.")
+    if symbol_name is None:
+        rows: list[dict] = []
+        for sym in module.get("symbols", []):
+            if "coverage_pct" not in sym:
+                continue
+            rows.append(
+                {
+                    "qualified_name": sym.get("qualified_name", ""),
+                    "type": sym.get("type", ""),
+                    "coverage_pct": sym.get("coverage_pct"),
+                    "covered_by": sym.get("covered_by"),
+                    "start_line": sym.get("start_line", 0),
+                    "end_line": sym.get("end_line", 0),
+                }
+            )
+        print(
+            json.dumps(
+                {
+                    "module": module_name,
+                    "symbols": rows,
+                    "total": len(rows),
+                    "index": _coverage(index),
+                }
+            )
+        )
+        return
+
+    for sym in module.get("symbols", []):
+        if sym.get("qualified_name") != symbol_name:
+            continue
+        if "coverage_pct" not in sym:
+            _exit_error(
+                f"Symbol '{module_name}::{symbol_name}' has no coverage data — "
+                "rebuild the index with `scan-index --with-coverage <path>`."
+            )
+        print(
+            json.dumps(
+                {
+                    "module": module_name,
+                    "qualified_name": symbol_name,
+                    "type": sym.get("type", ""),
+                    "coverage_pct": sym.get("coverage_pct"),
+                    "covered_by": sym.get("covered_by"),
+                    "start_line": sym.get("start_line", 0),
+                    "end_line": sym.get("end_line", 0),
+                    "index": _coverage(index),
+                }
+            )
+        )
+        return
+    _exit_error(f"Symbol '{module_name}::{symbol_name}' not found in module.")
+
+
+def cmd_coverage_gap(
+    index: dict,
+    module: str | None,
+    all_modules: bool,
+    threshold: float,
+) -> None:
+    """List public symbols whose ``coverage_pct`` is strictly below *threshold*.
+
+    Findings are sorted by ``gap = threshold - coverage_pct`` descending so the
+    largest-coverage holes appear first. Only ``status == "ok"`` modules are
+    scanned; test modules are skipped (matching ``cmd_uncovered``). Symbols
+    without ``coverage_pct`` (module not covered, or index built without
+    ``--with-coverage``) are silently ignored — they belong to ``cmd_uncovered``.
+
+    Args:
+        index: parsed codemap index dict (must be v5.4+).
+        module: when set, restrict scan to this dotted module name only.
+        all_modules: when True, scan every non-test module in the index.
+        threshold: lower bound on acceptable coverage (default 0.8 set in argparse).
+    """
+    _require_feature(index, COVERAGE_MIN_VER, "coverage-gap")
+    if module is None and not all_modules:
+        _exit_error("Pass a module name or --all to scan every non-test module.")
+    _ = all_modules  # all_modules is the default and a no-op flag; preserved for explicit CLI clarity.
+
+    modules = index.get("modules", [])
+    if module is not None:
+        modules = [m for m in modules if m.get("name") == module]
+    else:
+        modules = [m for m in modules if not m.get("is_test")]
+
+    findings: list[dict] = []
+    for m in modules:
+        if m.get("status") == "degraded":
+            continue
+        if m.get("is_test", False):
+            continue
+        mod_name = m.get("name", "")
+        for sym in m.get("symbols", []):
+            qname = sym.get("qualified_name", "")
+            if not _is_public_symbol(qname):
+                continue
+            pct = sym.get("coverage_pct")
+            if pct is None:
+                continue
+            if pct >= threshold:
+                continue
+            findings.append(
+                {
+                    "module": mod_name,
+                    "qualified_name": qname,
+                    "type": sym.get("type", ""),
+                    "coverage_pct": pct,
+                    "gap": round(threshold - pct, 4),
+                    "start_line": sym.get("start_line", 0),
+                    "end_line": sym.get("end_line", 0),
+                }
+            )
+
+    findings.sort(key=lambda f: (-f["gap"], f["module"], f["qualified_name"]))
+    payload: dict = {
+        "coverage_gap": findings,
+        "total": len(findings),
+        "threshold": threshold,
+        "index": _coverage(index),
+    }
+    if module is not None:
+        payload["module"] = module
+    print(json.dumps(payload))
+
+
+# ---------------------------------------------------------------------------
+# Sphinx / MkDocs xrefs command (v4.5)
+# ---------------------------------------------------------------------------
+
+
+def _iter_all_xrefs(index: dict):
+    """Yield every xref entry in the index — module docstrings and doc files combined.
+
+    Args:
+        index: parsed codemap index dict (v4.5+).
+
+    Yields:
+        Individual xref dicts as recorded by ``scan-index``.
+    """
+    for m in index.get("modules", []):
+        if m.get("status") == "degraded":
+            continue
+        for entry in m.get("sphinx_xrefs", []) or []:
+            yield entry
+    for entry in index.get("doc_xrefs", []) or []:
+        yield entry
+
+
+# Roles whose targets resolve to ``module::name`` symbol keys (must match
+# scan-index ``_SPHINX_RESOLVABLE_ROLES`` minus ``mod``/``attr``/``data``).
+# ``mod`` stores bare module names; ``attr``/``data`` are best-effort and may
+# legitimately point at non-symbol identifiers (instance attributes, runtime
+# globals) — excluding them from the broken check avoids false positives.
+_SYMBOL_ROLES: frozenset[str] = frozenset({"func", "class", "meth", "exc", "mkdocs"})
+
+
+def cmd_xrefs(index: dict, query: str, broken: bool) -> None:
+    """List doc cross-references targeting *query*, or surface broken refs.
+
+    Two modes (selected by *broken*):
+      * **Default** — every recorded xref whose ``target`` equals *query*. The
+        returned list pools module-docstring refs and ``.rst``/``.md`` doc refs.
+      * **``--broken``** — *query* names a module; every xref whose target's
+        module prefix matches *query* and whose target is not present in the
+        symbol index is reported. ``attr``/``data``/``mod`` refs are skipped
+        because they may legitimately point at non-symbol identifiers.
+
+    Args:
+        index: parsed codemap index dict (must be v4.5+ with ``sphinx_xrefs``).
+        query: symbol qname (default mode) or module name (``--broken`` mode).
+        broken: when True, switch to broken-ref discovery mode.
+    """
+    _require_feature(index, SPHINX_XREFS_MIN_VER, "sphinx_xrefs")
+
+    if not broken:
+        refs: list[dict] = []
+        for entry in _iter_all_xrefs(index):
+            if entry.get("target") == query:
+                refs.append(
+                    {
+                        "role": entry.get("role", ""),
+                        "file": entry.get("file", ""),
+                        "line": entry.get("line", 0),
+                        "source": entry.get("source", ""),
+                    }
+                )
+        refs.sort(key=lambda r: (r["file"], r["line"], r["role"]))
+        print(
+            json.dumps(
+                {
+                    "target": query,
+                    "refs": refs,
+                    "count": len(refs),
+                    "index": _coverage(index),
+                }
+            )
+        )
+        return
+
+    # --broken mode: scan refs whose target module matches *query* (or all if query == "").
+    sym_map = _get_symbol_map(index)
+    module_prefix = f"{query}::" if query else ""
+    broken_refs: list[dict] = []
+    seen: set[tuple[str, str, int, str]] = set()  # (target, file, line, role) — collapse module/doc duplicates
+    for entry in _iter_all_xrefs(index):
+        target = entry.get("target", "")
+        role = entry.get("role", "")
+        if role not in _SYMBOL_ROLES:
+            continue
+        if module_prefix and not target.startswith(module_prefix):
+            continue
+        if target in sym_map:
+            continue
+        sig = (target, entry.get("file", ""), entry.get("line", 0), role)
+        if sig in seen:
+            continue
+        seen.add(sig)
+        broken_refs.append(
+            {
+                "target": target,
+                "role": role,
+                "file": entry.get("file", ""),
+                "line": entry.get("line", 0),
+                "source": entry.get("source", ""),
+            }
+        )
+    broken_refs.sort(key=lambda r: (r["target"], r["file"], r["line"]))
+    print(
+        json.dumps(
+            {
+                "module": query,
+                "broken": broken_refs,
+                "count": len(broken_refs),
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dead-symbol / dead-module commands (v4.6)
+# ---------------------------------------------------------------------------
+
+
+def _require_sphinx_xref_count(index: dict) -> None:
+    """Exit with a clear error when the index lacks the v4.5 ``sphinx_xref_count`` table.
+
+    Fail-closed: a missing ``sphinx_xref_count`` must never be silently treated
+    as "no doc references" — that would mark documented symbols as dead. The
+    caller is required to rebuild the index against v4.5+ first.
+
+    Args:
+        index: parsed codemap index dict.
+    """
+    if "sphinx_xref_count" not in index:
+        _exit_error("v4.5 sphinx index required — rebuild with scan-index after v4.5 ships (sphinx_xref_count missing)")
+
+
+def _fn_rdep_count(qname: str, rev_graph: dict[str, list[str]]) -> int:
+    """Return the number of distinct function-level callers of *qname*.
+
+    Args:
+        qname: fully-qualified symbol key ``module::symbol``.
+        rev_graph: reverse call graph from :func:`build_reverse_call_graph`.
+
+    Examples:
+        >>> _fn_rdep_count("m::f", {"m::f": ["m::a", "m::b"]})
+        2
+        >>> _fn_rdep_count("m::missing", {})
+        0
+    """
+    return len(rev_graph.get(qname, []))
+
+
+def cmd_dead_symbols(index: dict, args: argparse.Namespace) -> None:
+    """Print public symbols with zero callers anywhere in the project.
+
+    A symbol qualifies as "dead" when **every** signal is zero:
+
+      * ``rdep_count == 0`` on the owning module — no static importer
+      * ``fn_rdep_count == 0`` — no function-level caller (reverse call graph)
+      * ``mock_rdep_count == 0`` — not mocked by any test
+      * ``sphinx_xref_count[qname] == 0`` — not referenced in any docstring,
+        ``.rst``, or mkdocstrings file
+      * ``qualified_name`` is public (no ``_`` prefix on any component)
+      * Owning module is **not** an entry-point (``if __name__ == "__main__"``)
+      * Owning module is **not** a test file
+      * Symbol name is **not** in the module's ``__all__`` list when present
+
+    Modules with ``has_star_imports=True`` are skipped entirely — star imports
+    prevent reliable call-graph tracing; a warning per skipped module is logged
+    to stderr.
+
+    The ``sphinx_xref_count`` table is required (fail-closed): a missing key
+    aborts the command rather than silently treating documented symbols as dead.
+
+    Output is sorted by LOC descending — biggest dead symbol first.
+
+    Args:
+        index: parsed codemap index dict (must be v4.6+).
+        args: parsed argparse namespace exposing ``min_loc`` (int, default 5).
+    """
+    _require_feature(index, DEAD_SYMBOL_MIN_VER, "dead-symbol")
+    _require_sphinx_xref_count(index)
+    min_loc: int = int(args.min_loc)
+    sphinx_counts: dict[str, int] = index.get("sphinx_xref_count", {})
+    rev_graph = _get_rev_graph(index)
+
+    findings: list[dict] = []
+    skipped_star: list[str] = []
+
+    for m in index.get("modules", []):
+        if m.get("status") == "degraded":
+            continue
+        if m.get("is_test", False):
+            continue
+        if m.get("is_entry_point", False):
+            continue
+        if m.get("has_star_imports", False):
+            mod_name = m.get("name", "")
+            skipped_star.append(mod_name)
+            print(
+                f"⚠ dead-symbol skipped {mod_name} — star imports prevent reliable call graph",
+                file=sys.stderr,
+            )
+            continue
+        if m.get("rdep_count", 0) != 0:
+            continue
+        mod_name = m.get("name", "")
+        exports: list[str] | None = m.get("exports")
+        for sym in m.get("symbols", []):
+            qname = sym.get("qualified_name", "")
+            if not _is_public_symbol(qname):
+                continue
+            if exports is not None and sym.get("name", "") in exports:
+                continue
+            loc = _symbol_loc(sym)
+            if loc < min_loc:
+                continue
+            full_qname = f"{mod_name}::{qname}"
+            fn_rdeps = _fn_rdep_count(full_qname, rev_graph)
+            if fn_rdeps != 0:
+                continue
+            if sym.get("mock_rdep_count", 0) != 0:
+                continue
+            if sphinx_counts.get(full_qname, 0) != 0:
+                continue
+            findings.append(
+                {
+                    "name": sym.get("name", ""),
+                    "module": mod_name,
+                    "qualified_name": qname,
+                    "loc": loc,
+                    "rdep_count": m.get("rdep_count", 0),
+                    "fn_rdep_count": fn_rdeps,
+                }
+            )
+
+    findings.sort(key=lambda f: (-f["loc"], f["module"], f["qualified_name"]))
+    print(
+        json.dumps(
+            {
+                "dead": findings,
+                "total": len(findings),
+                "skipped_star_import": skipped_star,
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+def cmd_dead_modules(index: dict, args: argparse.Namespace) -> None:
+    """Print modules with zero external importers (likely dead modules).
+
+    A module qualifies as dead when:
+
+      * ``rdep_count == 0`` — no other module imports it statically
+      * ``is_entry_point == False`` — not a runnable ``__main__`` script
+      * ``is_test == False`` — not a test file
+
+    Dynamic importers (``dynamic_imported_by``) and config-file references
+    (``config_refs``) are deliberately ignored: a module reachable only via
+    dynamic dispatch is, by this definition, structurally dead from the static
+    call graph's point of view. Callers needing dynamic awareness should use
+    ``rdeps <module>`` to inspect the full reverse-import surface.
+
+    Output is sorted by LOC descending — biggest dead module first.
+
+    Args:
+        index: parsed codemap index dict (must be v4.6+).
+        args: parsed argparse namespace (no flags consumed today, reserved
+            for future filtering options).
+    """
+    _require_feature(index, DEAD_SYMBOL_MIN_VER, "dead-symbol")
+    _ = args  # placeholder — kept for future filtering knobs (e.g. --min-loc)
+
+    findings: list[dict] = []
+    for m in index.get("modules", []):
+        if m.get("status") == "degraded":
+            continue
+        if m.get("is_test", False):
+            continue
+        if m.get("is_entry_point", False):
+            continue
+        if m.get("rdep_count", 0) != 0:
+            continue
+        findings.append(
+            {
+                "name": m.get("name", ""),
+                "rdep_count": m.get("rdep_count", 0),
+                "loc": m.get("loc", 0),
+            }
+        )
+
+    findings.sort(key=lambda f: (-f["loc"], f["name"]))
+    print(
+        json.dumps(
+            {
+                "dead_modules": findings,
+                "total": len(findings),
+                "index": _coverage(index),
+            }
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -996,6 +2199,24 @@ def main() -> None:
 
     p_deps = sub.add_parser("deps", help="What does a module import?")
     p_deps.add_argument("module")
+    p_deps.add_argument(
+        "--stdlib",
+        action="store_true",
+        default=False,
+        help="Restrict to stdlib imports only (requires v4.3+ index).",
+    )
+    p_deps.add_argument(
+        "--third-party",
+        action="store_true",
+        default=False,
+        help="Restrict to third-party imports only (requires v4.3+ index).",
+    )
+    p_deps.add_argument(
+        "--internal",
+        action="store_true",
+        default=False,
+        help="Restrict to internal (project-owned) imports only (requires v4.3+ index).",
+    )
 
     p_rdeps = sub.add_parser("rdeps", help="What imports a module?")
     p_rdeps.add_argument("module")
@@ -1061,6 +2282,163 @@ def main() -> None:
     p_fn_blast = sub.add_parser("fn-blast", help="Transitive reverse-call blast radius (requires v3 index)")
     p_fn_blast.add_argument("qname", help="Full qname: module::symbol")
 
+    p_mock_rdeps = sub.add_parser(
+        "mock-rdeps",
+        help="Test files that mock a symbol via patch() (requires v4.1+ index)",
+    )
+    p_mock_rdeps.add_argument(
+        "query",
+        help="Full qname (module::symbol) for one symbol, or bare module for all mocked symbols in that module",
+    )
+
+    p_sub_deps = sub.add_parser(
+        "subprocess-deps",
+        help="What does this module spawn as a subprocess? (requires v5.2+ index)",
+    )
+    p_sub_deps.add_argument("module", help="Dotted module name whose subprocess calls are listed.")
+
+    p_sub_rdeps = sub.add_parser(
+        "subprocess-rdeps",
+        help="What modules spawn this module as a subprocess? (requires v5.2+ index)",
+    )
+    p_sub_rdeps.add_argument("module", help="Dotted module name whose subprocess callers are listed.")
+
+    p_fix_rdeps = sub.add_parser(
+        "fixture-rdeps",
+        help="Test files that use a pytest fixture (requires v5.3+ index).",
+    )
+    p_fix_rdeps.add_argument("fixture_name", help="Fixture name whose reverse-dependencies are queried.")
+
+    p_fix_graph = sub.add_parser(
+        "fixture-graph",
+        help="Full pytest fixture dependency tree for a test file (requires v5.3+ index).",
+    )
+    p_fix_graph.add_argument(
+        "test_file",
+        help="Dotted test-module name (tests.foo) or path (tests/foo.py).",
+    )
+
+    p_import_types = sub.add_parser(
+        "import-types",
+        help="Return stdlib/third_party/internal import groups for a module (requires v4.3+ index).",
+    )
+    p_import_types.add_argument("module", help="Dotted module name, e.g. 'mypackage.auth'")
+
+    p_undoc = sub.add_parser(
+        "undocumented",
+        help="List public symbols missing a docstring, sorted by LOC desc (requires v4.4+ index).",
+    )
+    p_undoc.add_argument(
+        "module",
+        nargs="?",
+        default=None,
+        help="Dotted module name to scan (omit and pass --all to scan every non-test module).",
+    )
+    p_undoc.add_argument(
+        "--all",
+        dest="all_modules",
+        action="store_true",
+        default=False,
+        help="Scan all non-test modules in the index.",
+    )
+
+    p_uncov = sub.add_parser(
+        "uncovered",
+        help="Public symbols with no test callers and no mocks (requires v4.2+ index).",
+    )
+    p_uncov.add_argument(
+        "module",
+        nargs="?",
+        default=None,
+        help="Dotted module name to scan (omit and pass --all to scan every non-test module).",
+    )
+    p_uncov.add_argument(
+        "--all",
+        dest="all_modules",
+        action="store_true",
+        default=False,
+        help="Scan all non-test modules in the index.",
+    )
+    p_uncov.add_argument(
+        "--sort",
+        choices=("loc", "name", "module"),
+        default="loc",
+        help="Sort order: loc (default — biggest first), name (alphabetical), module (group by module).",
+    )
+    p_uncov.add_argument(
+        "--top",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Cap output to top N results (default 20).",
+    )
+
+    p_coverage = sub.add_parser(
+        "coverage",
+        help="Show coverage_pct and covered_by for a symbol or whole module (requires v5.4+ index).",
+    )
+    p_coverage.add_argument(
+        "qname",
+        help="Full qname (module::symbol) for one symbol, or bare module for every symbol in the module.",
+    )
+
+    p_cov_gap = sub.add_parser(
+        "coverage-gap",
+        help="Public symbols with coverage_pct below --threshold, sorted by gap desc (requires v5.4+ index).",
+    )
+    p_cov_gap.add_argument(
+        "module",
+        nargs="?",
+        default=None,
+        help="Dotted module name to scan (omit and pass --all to scan every non-test module).",
+    )
+    p_cov_gap.add_argument(
+        "--all",
+        dest="all_modules",
+        action="store_true",
+        default=False,
+        help="Scan all non-test modules in the index.",
+    )
+    p_cov_gap.add_argument(
+        "--threshold",
+        type=float,
+        default=0.8,
+        metavar="P",
+        help="Coverage fraction (0.0–1.0) below which a symbol is reported (default 0.8).",
+    )
+
+    p_xrefs = sub.add_parser(
+        "xrefs",
+        help="List doc cross-references for a symbol, or find broken refs (requires v4.5+ index).",
+    )
+    p_xrefs.add_argument(
+        "query",
+        help="Symbol qname (default mode) or module name (with --broken).",
+    )
+    p_xrefs.add_argument(
+        "--broken",
+        action="store_true",
+        default=False,
+        help="Find xrefs whose resolved target is not a known symbol in the index.",
+    )
+
+    p_dead_syms = sub.add_parser(
+        "dead-symbols",
+        help="Public symbols with zero callers anywhere (requires v4.6+ index).",
+    )
+    p_dead_syms.add_argument(
+        "--min-loc",
+        type=int,
+        default=5,
+        metavar="N",
+        help="Skip symbols spanning fewer than N lines (default 5 — drops trivial properties).",
+    )
+
+    sub.add_parser(
+        "dead-modules",
+        help="Modules with zero external importers (requires v4.6+ index).",
+    )
+
     parser.add_argument("--index", metavar="PATH", help="Explicit path to the index JSON (auto-discovered if omitted).")
     parser.add_argument(
         "--root",
@@ -1114,7 +2492,13 @@ def main() -> None:
     project_root = _resolve_project_root(args.root, index)
 
     if args.command == "deps":
-        cmd_deps(index, args.module)
+        cmd_deps(
+            index,
+            args.module,
+            stdlib_only=args.stdlib,
+            third_party_only=args.third_party,
+            internal_only=args.internal,
+        )
     elif args.command == "rdeps":
         cmd_rdeps(index, args.module, exclude_tests=args.exclude_tests)
     elif args.command == "central":
@@ -1146,6 +2530,32 @@ def main() -> None:
         cmd_fn_central(index, args.top, exclude_tests=args.exclude_tests)
     elif args.command == "fn-blast":
         cmd_fn_blast(index, args.qname)
+    elif args.command == "mock-rdeps":
+        cmd_mock_rdeps(index, args.query)
+    elif args.command == "subprocess-deps":
+        cmd_subprocess_deps(index, args.module)
+    elif args.command == "subprocess-rdeps":
+        cmd_subprocess_rdeps(index, args.module)
+    elif args.command == "fixture-rdeps":
+        cmd_fixture_rdeps(index, args.fixture_name)
+    elif args.command == "fixture-graph":
+        cmd_fixture_graph(index, args.test_file)
+    elif args.command == "import-types":
+        cmd_import_types(index, args.module)
+    elif args.command == "undocumented":
+        cmd_undocumented(index, args.module, all_modules=args.all_modules)
+    elif args.command == "uncovered":
+        cmd_uncovered(index, args)
+    elif args.command == "coverage":
+        cmd_coverage(index, args.qname)
+    elif args.command == "coverage-gap":
+        cmd_coverage_gap(index, args.module, all_modules=args.all_modules, threshold=args.threshold)
+    elif args.command == "xrefs":
+        cmd_xrefs(index, args.query, broken=args.broken)
+    elif args.command == "dead-symbols":
+        cmd_dead_symbols(index, args)
+    elif args.command == "dead-modules":
+        cmd_dead_modules(index, args)
 
 
 if __name__ == "__main__":
