@@ -40,6 +40,7 @@ CANONICAL_INJECTION_SITES: tuple[str, ...] = (
 )
 
 SKILL_INJECTION_MARKER = "command -v scan-query"
+SKILL_INJECTION_MARKER_ALT = "codemap: integrated"  # skills using shared-include pattern (develop, oss:review)
 AGENT_INJECTION_MARKER = "Structural context (codemap"
 DEFAULT_CACHE_GLOB = "borda-ai-rig/codemap/*"
 MAX_AUDIT_FILE_SIZE = 1_000_000  # 1 MB — skip oversized files in marker scan (SEC-M8: DoS guard)
@@ -206,7 +207,10 @@ def build_audit_lines(cache: Path) -> list[str]:
     """
     lines: list[str] = ["", f"--- Skill injection audit (cache: {cache}) ---"]
 
-    skill_files = find_files_with_marker(cache, "SKILL.md", SKILL_INJECTION_MARKER)
+    skill_files = sorted(
+        set(find_files_with_marker(cache, "SKILL.md", SKILL_INJECTION_MARKER))
+        | set(find_files_with_marker(cache, "SKILL.md", SKILL_INJECTION_MARKER_ALT))
+    )
     cache_prefix = f"{cache.as_posix()}/"
     relative = [p.as_posix().removeprefix(cache_prefix) for p in skill_files]
 

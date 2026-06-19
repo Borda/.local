@@ -17,6 +17,7 @@ Commands (function-level — requires v3 index with call graph):
   fn-rdeps <qname>        What calls a function?
   fn-central [--top N]    Most-called functions globally
   fn-blast <qname>        Transitive reverse-call blast radius
+  test-impact <qname>     Tests affected by changing a function or module
 
 Commands (mock graph — requires v4.1+ index):
   mock-rdeps <query>      Test files that mock a symbol via patch()
@@ -436,6 +437,25 @@ def _get_rev_graph(index: dict, exclude_tests: bool = False) -> dict:
     return _rev_graph_cache
 
 
+_rev_import_graph_cache: dict | None = None
+
+
+def _build_rev_import_graph_raw(index: dict) -> dict[str, list[str]]:
+    """Reverse import map: module -> [modules that directly import it]."""
+    rev: dict[str, list[str]] = {}
+    for m in index.get("modules", []):
+        for dep in m.get("direct_imports", []):
+            rev.setdefault(dep, []).append(m["name"])
+    return rev
+
+
+def _get_rev_import_graph(index: dict) -> dict[str, list[str]]:
+    global _rev_import_graph_cache
+    if _rev_import_graph_cache is None:
+        _rev_import_graph_cache = _build_rev_import_graph_raw(index)
+    return _rev_import_graph_cache
+
+
 def _exit_error(message: str) -> None:
     """Print a JSON error object to stdout and exit with code 1.
 
@@ -561,6 +581,16 @@ def _coverage(index: dict) -> dict:
     return _coverage_cache
 
 
+def _cmd_coverage(index: dict, **extra: object) -> dict:
+    """Merge base index coverage with per-command method metadata.
+
+    Args:
+        index: parsed codemap index dict.
+        **extra: per-command fields (method, not_covered, hint, scope, etc.).
+    """
+    return {**_coverage(index), **extra}
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -610,7 +640,9 @@ def cmd_deps(
             {
                 "module": module,
                 "direct_imports": direct,
-                "index": _coverage(index),
+                "index": _cmd_coverage(
+                    index, method="import-graph", not_covered=["importlib.import_module", "__import__", "lazy-loading"]
+                ),
             }
         )
     )
@@ -639,7 +671,9 @@ def cmd_import_types(index: dict, module: str) -> None:
                 "stdlib": groups.get("stdlib", []),
                 "third_party": groups.get("third_party", []),
                 "internal": groups.get("internal", []),
-                "index": _coverage(index),
+                "index": _cmd_coverage(
+                    index, method="import-graph", not_covered=["importlib.import_module", "__import__", "lazy-loading"]
+                ),
             }
         )
     )
@@ -672,7 +706,9 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False) -> None:
                 "imported_by": result,
                 "dynamic_imported_by": dynamic,
                 "config_refs": config,
-                "index": _coverage(index),
+                "index": _cmd_coverage(
+                    index, method="import-graph", not_covered=["importlib.import_module", "__import__", "lazy-loading"]
+                ),
             }
         )
     )
@@ -695,7 +731,12 @@ def cmd_central(index: dict, top: int, exclude_tests: bool = False) -> None:
                 "central": [
                     {"name": m["name"], "rdep_count": m.get("rdep_count", 0), "path": m.get("path", "")} for m in ranked
                 ],
-                "index": _coverage(index),
+                "index": _cmd_coverage(
+                    index,
+                    method="import-graph",
+                    scope="import-centrality",
+                    not_covered=["importlib.import_module", "__import__", "lazy-loading"],
+                ),
             }
         )
     )
@@ -730,7 +771,12 @@ def cmd_coupled(index: dict, top: int, exclude_tests: bool = False) -> None:
                     }
                     for m in ranked
                 ],
-                "index": _coverage(index),
+                "index": _cmd_coverage(
+                    index,
+                    method="import-graph",
+                    scope="coupling-score",
+                    not_covered=["importlib.import_module", "__import__", "lazy-loading"],
+                ),
             }
         )
     )
@@ -756,7 +802,20 @@ def cmd_path(index: dict, frm: str, to: str) -> None:
         path = queue.popleft()
         node = path[-1]
         if node == to:
-            print(json.dumps({"from": frm, "to": to, "path": path, "index": _coverage(index)}))
+            print(
+                json.dumps(
+                    {
+                        "from": frm,
+                        "to": to,
+                        "path": path,
+                        "index": _cmd_coverage(
+                            index,
+                            method="import-graph",
+                            not_covered=["importlib.import_module", "__import__", "lazy-loading"],
+                        ),
+                    }
+                )
+            )
             return
         for neighbour in modules.get(node, {}).get("direct_imports", []):
             if neighbour not in visited and neighbour in modules:
@@ -764,7 +823,17 @@ def cmd_path(index: dict, frm: str, to: str) -> None:
                 queue.append(path + [neighbour])
 
     print(
-        json.dumps({"from": frm, "to": to, "path": None, "error": "No import path found.", "index": _coverage(index)})
+        json.dumps(
+            {
+                "from": frm,
+                "to": to,
+                "path": None,
+                "error": "No import path found.",
+                "index": _cmd_coverage(
+                    index, method="import-graph", not_covered=["importlib.import_module", "__import__", "lazy-loading"]
+                ),
+            }
+        )
     )
 
 
@@ -836,7 +905,9 @@ def cmd_symbol(
     if not matches:
         _exit_error(f"Symbol '{name}' not found. Try /codemap:query-code find-symbol <pattern> to search.")
 
-    if limit > 0:
+    total_matches = len(matches)
+    truncated = limit > 0 and total_matches > limit
+    if truncated:
         matches = matches[:limit]
 
     # Group by file path to read each file at most once
@@ -907,7 +978,21 @@ def cmd_symbol(
                     "imports": import_block,
                 }
             )
-    print(json.dumps({"symbols": results, "count": len(results), "index": _coverage(index)}))
+    any_stale = any(r["stale"] for r in results)
+    confidence = "exact" if not truncated and not any_stale else "partial"
+    coverage = _cmd_coverage(index, method="index-lookup", confidence=confidence)
+    if truncated:
+        coverage["truncated"] = True
+        coverage["total_available"] = total_matches
+    print(
+        json.dumps(
+            {
+                "symbols": results,
+                "count": len(results),
+                "index": coverage,
+            }
+        )
+    )
 
 
 def cmd_symbols(index: dict, module: str) -> None:
@@ -938,7 +1023,7 @@ def cmd_symbols(index: dict, module: str) -> None:
                     for s in syms
                 ],
                 "count": len(syms),
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="index-lookup", confidence="exact"),
             }
         )
     )
@@ -995,9 +1080,25 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
                         "end_line": sym["end_line"],
                     }
                 )
-    if limit > 0:
+    total_matches = len(results)
+    truncated = limit > 0 and total_matches > limit
+    if truncated:
         results = results[:limit]
-    print(json.dumps({"pattern": pattern, "matches": results, "count": len(results), "index": _coverage(index)}))
+    confidence = "exact" if not truncated else "partial"
+    coverage = _cmd_coverage(index, method="index-lookup", confidence=confidence)
+    if truncated:
+        coverage["truncated"] = True
+        coverage["total_available"] = total_matches
+    print(
+        json.dumps(
+            {
+                "pattern": pattern,
+                "matches": results,
+                "count": len(results),
+                "index": coverage,
+            }
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1022,7 +1123,18 @@ def cmd_fn_deps(index: dict, qname: str) -> None:
         for edge in sym.get("calls", [])
         if edge.get("resolution") in VALID_CALL_RESOLUTIONS
     ]
-    print(json.dumps({"qname": qname, "calls": calls, "count": len(calls), "index": _coverage(index)}))
+    print(
+        json.dumps(
+            {
+                "qname": qname,
+                "calls": calls,
+                "count": len(calls),
+                "index": _cmd_coverage(
+                    index, method="static-ast", not_covered=["dynamic-dispatch", "runtime-injection"]
+                ),
+            }
+        )
+    )
 
 
 def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
@@ -1038,7 +1150,7 @@ def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
         _exit_error(f"Symbol '{qname}' not found. Use 'find-symbol <pattern>' to search.")
     rev_graph = _get_rev_graph(index)
     callers = []
-    for caller_qname in sorted(rev_graph.get(qname, [])):
+    for caller_qname in sorted(set(rev_graph.get(qname, []))):
         entry = sym_map.get(caller_qname)
         m_entry = entry[0] if entry else {}
         callers.append(
@@ -1050,7 +1162,22 @@ def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
         )
     if exclude_tests:
         callers = [c for c in callers if not sym_map.get(c["caller"], ({}, {}))[0].get("is_test")]
-    print(json.dumps({"qname": qname, "called_by": callers, "count": len(callers), "index": _coverage(index)}))
+    fn_name = qname.split("::")[-1] if "::" in qname else qname
+    print(
+        json.dumps(
+            {
+                "qname": qname,
+                "called_by": callers,
+                "count": len(callers),
+                "index": _cmd_coverage(
+                    index,
+                    method="static-ast",
+                    not_covered=["dynamic-dispatch", "hook-callbacks", "string-dispatch"],
+                    hint=f'grep -rn "{fn_name}" to find hook-registered callers not in static AST',
+                ),
+            }
+        )
+    )
 
 
 def cmd_fn_central(index: dict, top: int, exclude_tests: bool = False) -> None:
@@ -1087,7 +1214,11 @@ def cmd_fn_central(index: dict, top: int, exclude_tests: bool = False) -> None:
                 "path": m_entry.get("path", ""),
             }
         )
-    print(json.dumps({"fn_central": result, "index": _coverage(index)}))
+    print(
+        json.dumps(
+            {"fn_central": result, "index": _cmd_coverage(index, method="static-ast", scope="call-graph-centrality")}
+        )
+    )
 
 
 def cmd_fn_blast(index: dict, qname: str) -> None:
@@ -1131,7 +1262,130 @@ def cmd_fn_blast(index: dict, qname: str) -> None:
                 "qname": qname,
                 "blast_radius": result,
                 "total_callers": len(result),
-                "index": _coverage(index),
+                "index": _cmd_coverage(
+                    index,
+                    method="static-ast",
+                    scope="transitive-call-graph",
+                    not_covered=["dynamic-dispatch", "hook-callbacks", "string-dispatch"],
+                ),
+            }
+        )
+    )
+
+
+def cmd_test_impact(index: dict, qname: str, include_mocks: bool = True) -> None:
+    """Which tests are affected by changing *qname*?
+
+    Two input modes:
+
+    * ``module::symbol`` — BFS over static reverse call graph; filters to
+      test modules.  Also collects ``mock_patches`` for the symbol.
+    * bare ``module`` — BFS over static reverse import graph; filters to
+      test modules.  Also collects ``mock_patches`` for every symbol in the
+      module.
+
+    Args:
+        index: parsed codemap index dict.
+        qname: ``module::symbol`` for function-level impact, or bare dotted
+            module name for module-level impact.
+        include_mocks: when True (default) add test files that mock *qname*
+            even if they have no call/import path to it.
+
+    Examples:
+        ``mypackage.trainer::Trainer.fit`` — tests calling fit (directly or
+        transitively) plus tests that mock Trainer.fit.
+        ``mypackage.utils`` — tests that import utils through any chain.
+    """
+    module_map = build_module_map(index)
+
+    test_files_via_call: set[str] = set()
+    test_mods_via_call: set[str] = set()
+    test_files_via_mock: set[str] = set()
+    test_mods_via_mock: set[str] = set()
+
+    if "::" in qname:
+        # Function-level: BFS over reverse call graph
+        _require_call_graph(index)
+        sym_map = _get_symbol_map(index)
+        if qname not in sym_map:
+            _exit_error(f"Symbol '{qname}' not found. Use 'find-symbol <pattern>' to search.")
+        rev_graph = _get_rev_graph(index)
+        visited: set[str] = {qname}
+        queue: deque[str] = deque([qname])
+        while queue:
+            node = queue.popleft()
+            for caller in rev_graph.get(node, []):
+                if caller not in visited:
+                    visited.add(caller)
+                    entry = sym_map.get(caller)
+                    if entry:
+                        m_entry = entry[0]
+                        if m_entry.get("is_test"):
+                            if p := m_entry.get("path", ""):
+                                test_files_via_call.add(p)
+                            if n := m_entry.get("name", ""):
+                                test_mods_via_call.add(n)
+                    queue.append(caller)
+    else:
+        # Module-level: BFS over reverse import graph
+        if qname not in module_map:
+            _exit_error(f"Module '{qname}' not found in index.")
+        rev_imports = _get_rev_import_graph(index)
+        visited_mod: set[str] = {qname}
+        queue_mod: deque[str] = deque([qname])
+        while queue_mod:
+            node = queue_mod.popleft()
+            for importer in rev_imports.get(node, []):
+                if importer not in visited_mod:
+                    visited_mod.add(importer)
+                    m_entry = module_map.get(importer, {})
+                    if m_entry.get("is_test"):
+                        if p := m_entry.get("path", ""):
+                            test_files_via_call.add(p)
+                        if n := m_entry.get("name", ""):
+                            test_mods_via_call.add(n)
+                    queue_mod.append(importer)
+
+    # Mock patches — tests that mock qname even without call/import path
+    if include_mocks:
+        mock_prefix = f"{qname}::" if "::" not in qname else None
+        for m in index.get("modules", []):
+            if not m.get("is_test"):
+                continue
+            for patch in m.get("mock_patches", []) or []:
+                target = patch.get("target", "")
+                if not target:
+                    continue
+                hit = target == qname or (mock_prefix and target.startswith(mock_prefix))
+                if hit:
+                    p = patch.get("file", m.get("path", ""))
+                    if p:
+                        test_files_via_mock.add(p)
+                    if n := m.get("name", ""):
+                        test_mods_via_mock.add(n)
+
+    all_files = sorted(test_files_via_call | test_files_via_mock)
+    all_mods = sorted(test_mods_via_call | test_mods_via_mock)
+    pytest_cmd = ("pytest " + " ".join(all_files)) if all_files else ""
+    method = "static-ast" if "::" in qname else "import-graph"
+    short_name = qname.split("::")[-1] if "::" in qname else qname.split(".")[-1]
+    print(
+        json.dumps(
+            {
+                "qname": qname,
+                "test_files": all_files,
+                "test_modules": all_mods,
+                "via_call": len(test_files_via_call),
+                "via_mock": len(test_files_via_mock),
+                "total": len(all_files),
+                "pytest_cmd": pytest_cmd,
+                "index": _cmd_coverage(
+                    index,
+                    method=method,
+                    scope="test-impact",
+                    not_covered=["dynamic-dispatch", "hook-callbacks", "string-dispatch"],
+                    hint=f'grep -rn "{short_name}" tests/ to find hook-based test deps not in static graph',
+                ),
             }
         )
     )
@@ -1184,7 +1438,7 @@ def cmd_mock_rdeps(index: dict, query: str) -> None:
                     "symbol": symbol,
                     "callers": callers,
                     "count": len(callers),
-                    "index": _coverage(index),
+                    "index": _cmd_coverage(index, method="ast-flags", scope="mock-patch-strings"),
                 }
             )
         )
@@ -1211,7 +1465,7 @@ def cmd_mock_rdeps(index: dict, query: str) -> None:
                 "module": query,
                 "callers": callers,
                 "count": len(callers),
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="ast-flags", scope="mock-patch-strings"),
             }
         )
     )
@@ -1260,7 +1514,7 @@ def cmd_subprocess_deps(index: dict, module: str) -> None:
                 "module": module,
                 "calls": calls,
                 "count": len(calls),
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="ast-flags", scope="subprocess-call-strings"),
             }
         )
     )
@@ -1298,7 +1552,7 @@ def cmd_subprocess_rdeps(index: dict, module: str) -> None:
                 "module": module,
                 "callers": callers,
                 "count": len(callers),
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="ast-flags", scope="subprocess-call-strings"),
             }
         )
     )
@@ -1391,7 +1645,7 @@ def cmd_fixture_rdeps(index: dict, fixture_name: str) -> None:
                 "fixture": fixture_name,
                 "count": len(test_files),
                 "test_files": test_files,
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="ast-flags", scope="pytest-fixture-deps"),
             }
         )
     )
@@ -1504,7 +1758,7 @@ def cmd_fixture_graph(index: dict, test_file: str) -> None:
                 "path": module_entry.get("path", ""),
                 "fixtures": roots,
                 "count": len(roots),
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="ast-flags", scope="pytest-fixture-deps"),
             }
         )
     )
@@ -1610,7 +1864,9 @@ def cmd_undocumented(index: dict, module: str | None, all_modules: bool) -> None
     payload: dict = {
         "undocumented": findings,
         "total": len(findings),
-        "index": _coverage(index),
+        "index": _cmd_coverage(
+            index, method="ast-flags", scope="public-api-only", excludes=["private", "dunder", "test-modules"]
+        ),
     }
     if module is not None:
         payload["module"] = module
@@ -1702,7 +1958,7 @@ def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
         "uncovered": findings,
         "total": total,
         "showing": showing,
-        "index": _coverage(index),
+        "index": _cmd_coverage(index, method="ast-flags", scope="public-api-only", excludes=["private", "dunder"]),
     }
     if module is not None:
         payload["module"] = module
@@ -1780,7 +2036,7 @@ def cmd_coverage(index: dict, qname: str) -> None:
                     "module": module_name,
                     "symbols": rows,
                     "total": len(rows),
-                    "index": _coverage(index),
+                    "index": _cmd_coverage(index, method="ast-flags", scope="line-coverage"),
                 }
             )
         )
@@ -1804,7 +2060,7 @@ def cmd_coverage(index: dict, qname: str) -> None:
                     "covered_by": sym.get("covered_by"),
                     "start_line": sym.get("start_line", 0),
                     "end_line": sym.get("end_line", 0),
-                    "index": _coverage(index),
+                    "index": _cmd_coverage(index, method="ast-flags", scope="line-coverage"),
                 }
             )
         )
@@ -1876,7 +2132,7 @@ def cmd_coverage_gap(
         "coverage_gap": findings,
         "total": len(findings),
         "threshold": threshold,
-        "index": _coverage(index),
+        "index": _cmd_coverage(index, method="ast-flags", scope="line-coverage-gap"),
     }
     if module is not None:
         payload["module"] = module
@@ -1951,7 +2207,7 @@ def cmd_xrefs(index: dict, query: str, broken: bool) -> None:
                     "target": query,
                     "refs": refs,
                     "count": len(refs),
-                    "index": _coverage(index),
+                    "index": _cmd_coverage(index, method="ast-flags", scope="sphinx-xrefs"),
                 }
             )
         )
@@ -1991,7 +2247,7 @@ def cmd_xrefs(index: dict, query: str, broken: bool) -> None:
                 "module": query,
                 "broken": broken_refs,
                 "count": len(broken_refs),
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="ast-flags", scope="sphinx-xrefs"),
             }
         )
     )
@@ -2123,7 +2379,7 @@ def cmd_dead_symbols(index: dict, args: argparse.Namespace) -> None:
                 "dead": findings,
                 "total": len(findings),
                 "skipped_star_import": skipped_star,
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="static-ast", scope="dead-symbols"),
             }
         )
     )
@@ -2178,7 +2434,7 @@ def cmd_dead_modules(index: dict, args: argparse.Namespace) -> None:
             {
                 "dead_modules": findings,
                 "total": len(findings),
-                "index": _coverage(index),
+                "index": _cmd_coverage(index, method="import-graph", scope="dead-modules"),
             }
         )
     )
@@ -2281,6 +2537,22 @@ def main() -> None:
 
     p_fn_blast = sub.add_parser("fn-blast", help="Transitive reverse-call blast radius (requires v3 index)")
     p_fn_blast.add_argument("qname", help="Full qname: module::symbol")
+
+    p_test_impact = sub.add_parser(
+        "test-impact",
+        help="Which tests are affected by changing a function or module? (requires v3+ index)",
+    )
+    p_test_impact.add_argument(
+        "qname",
+        help="module::symbol for function-level impact, or bare module name for module-level impact.",
+    )
+    p_test_impact.add_argument(
+        "--no-mocks",
+        dest="include_mocks",
+        action="store_false",
+        default=True,
+        help="Exclude tests that only mock qname (no call/import path) from results.",
+    )
 
     p_mock_rdeps = sub.add_parser(
         "mock-rdeps",
@@ -2530,6 +2802,8 @@ def main() -> None:
         cmd_fn_central(index, args.top, exclude_tests=args.exclude_tests)
     elif args.command == "fn-blast":
         cmd_fn_blast(index, args.qname)
+    elif args.command == "test-impact":
+        cmd_test_impact(index, args.qname, include_mocks=args.include_mocks)
     elif args.command == "mock-rdeps":
         cmd_mock_rdeps(index, args.query)
     elif args.command == "subprocess-deps":

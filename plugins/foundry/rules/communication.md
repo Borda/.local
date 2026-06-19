@@ -27,7 +27,7 @@ Example (actual template — copy structure, replace bracketed text):
 - Summary: neutral factual gist of what user asked — not full restatement, no labels
 - Footer: exactly 62 `▓` chars — matches box width, signals end of reply
 - Never use pipe chars in summary text — corrupts box borders
-- No exceptions — response not opening with `╔` is non-compliant
+- No exceptions except the two Exemption blocks below (machine-parsed replies · quality-gates `---` report headers) — any other response not opening with `╔` is non-compliant
 - Tables, code blocks, bold headers work normally in body — no per-line prefix conflicts
 
 ## Reply Visibility
@@ -35,6 +35,8 @@ Example (actual template — copy structure, replace bracketed text):
 Box `╔═╗`/`╚═╝` zone creates clear header boundary. `▓▓▓` footer creates clear end boundary. Together they visually frame the response against surrounding tool call output and hook logs. Unicode box-drawing only — no ANSI escape codes.
 
 **Exemption — machine-parsed responses**: omit box header and footer when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
+
+**Exemption — quality-gates report headers**: when the reply leads with a quality-gates `---` metadata block (a skill's Output Routing report header — the YAML between `---` delimiters printed verbatim from the report file, e.g. `/oss:review`, `/oss:resolve`, `/foundry:audit`, `/foundry:calibrate`), omit the `╔═╗` box header — that `---` block IS the reply header and the box would shadow it. Print the `---` block as the first line of the reply; keep the `▓` footer. Never emit both a box header and a `---` metadata block in the same reply.
 
 ## Progress and Transparency
 

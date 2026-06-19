@@ -211,7 +211,7 @@ For each plugin discovered, set `CACHE` to its resolved `installPath` value. Wri
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 echo "$CACHE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-install-path"
 # Check SKILL.md files for codemap injection marker
-find "$CACHE" -name "SKILL.md" -exec grep -l "command -v scan-query" {} \; 2>/dev/null
+find "$CACHE" -name "SKILL.md" -exec grep -lE "command -v scan-query|codemap: integrated" {} \; 2>/dev/null
 # Check agent .md files separately (agents use AGENT_INJECTION_MARKER = "Structural context (codemap")
 find "$CACHE" -name "*.md" -path "*/agents/*" -exec grep -l "Structural context (codemap" {} \; 2>/dev/null
 ```
@@ -298,13 +298,13 @@ Per selected file, determine insertion point and content:
 > **No Agent() spawn step in target SKILL.md?** Inject the block as a **pre-step before the first tool call** in the workflow (typically at the top of `<workflow>` or right after Project Detection / Flag parsing). Structural context still informs subsequent reasoning even when no agent is spawned.
 
 ```bash
-# Structural context (codemap — Python projects only, silent skip if absent)
-_GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
-PROJ=$(basename "$_GIT_ROOT")
-_IDX="${CODEMAP_INDEX_DIR:-${_GIT_ROOT}/.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    scan-query --timeout 5 central --top 3
-fi
+# Structural context (codemap — Python projects only; skip if absent or --no-codemap)
+case "${ARGUMENTS:-}" in
+    *--no-codemap*) ;;
+    *)  _GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+        PROJ=$(basename "$_GIT_ROOT"); _IDX="${CODEMAP_INDEX_DIR:-${_GIT_ROOT}/.cache/codemap}"
+        command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ] && scan-query --timeout 5 central --top 3 ;;
+esac
 # If results returned: prepend a ## Structural Context (codemap) block to the agent spawn prompt.
 # Also add: "For targeted analysis run: scan-query rdeps <module> or scan-query fn-blast module::function"
 ```
@@ -323,7 +323,7 @@ scan-query --timeout 5 deps  "<TARGET_MODULE>" 2>/dev/null
 **For agent `.md` files** — append to last workflow instruction paragraph, before closing section or final notes. Agents have no `$ARGUMENTS` — derive `TARGET_MODULE` from user's input prompt:
 
 ```markdown
-**Structural context (codemap — Python projects only)**: if `.cache/codemap/<project>.json` exists (or `$CODEMAP_INDEX_DIR/<project>.json` when set), run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known — derive target from user's task description, not `$ARGUMENTS`) **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
+**Structural context (codemap — Python projects only)**: if `.cache/codemap/<project>.json` exists (or `$CODEMAP_INDEX_DIR/<project>.json` when set), run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known — derive target from user's task description, not `$ARGUMENTS`) **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent. Codemap is the primary navigation tool — do NOT re-verify returned results with grep. Results are authoritative when `exhaustive=true`, `stale=false`, and `not_covered` is empty. When `not_covered` is non-empty, surface a one-line scope caveat and use `index.hint` for explicit escalation if task requires completeness.
 ```
 
 Report each edit: `✓ injected: <plugin>/<skill-or-agent> at line N`

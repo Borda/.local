@@ -140,6 +140,8 @@ Estimate file size: `$(( $(wc -c < file) / 4 ))` tokens. Over budget → drop LO
 
 ## Report File Format
 
+**Universal terminal-print rule**: when a skill or agent writes a report file whose first non-whitespace line is `---` (a YAML metadata block), that block MUST be printed verbatim in terminal as the **first content of the reply** — before the report path line, before the executive summary, before anything else. Optionally followed by: `→ <path>`, executive summary, skill-specific details. Applies to ALL skills and agents producing such reports — no per-skill duplication of this rule needed (per-skill wording may be kept for emphasis). The `---` block IS the reply header; omit the `╔═╗` Re:Anchor box when leading with it (see `communication.md` exemption).
+
 Every report file created via output routing must begin with a YAML metadata block between `---` delimiter lines. This block is the canonical meta summary — printed verbatim to terminal before the executive summary, machine-parseable by downstream skills.
 
 **Required minimum fields** (all reports):

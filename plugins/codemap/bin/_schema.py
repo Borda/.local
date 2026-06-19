@@ -15,7 +15,8 @@ from typing import TypedDict
 SCAN_VERSION: int = 10
 
 # Per-feature minimum index versions.
-# Each v4/v5 command checks its own constant via _require_feature() in scan-query.
+# v4 and v5 were design epochs shipped together in one release (SCAN_VERSION 4–10).
+# Each feature checks its own constant via _require_feature() in scan-query.
 MOCK_PATCHES_MIN_VER: int = 4  # v4.1 — mock_patches, mock_rdep_count, fn_rdep_test_count
 UNCOVERED_MIN_VER: int = 4  # v4.2 — fn_rdep_test_count per symbol
 IMPORT_GROUPS_MIN_VER: int = 4  # v4.3 — import_groups

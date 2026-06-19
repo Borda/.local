@@ -102,6 +102,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     CODEMAP_ENABLED=false
 fi
 echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
+# codemap: integrated-via-shared
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -369,7 +370,16 @@ Make minimal change to fix root cause:
    # timeout: 600000
    $PYTEST_CMD --tb=short <test_file>::<test_name> -v
    ```
-3. Run full test suite for affected module:
+3. Run affected tests (prefer targeted over full suite):
+
+   **Test impact (codemap)** — derive the minimal test set before running anything:
+   ```bash
+   scan-query test-impact "<changed_module::function or bare module>" 2>/dev/null
+   ```
+   - Result non-empty `pytest_cmd` → use it instead of full `<test_dir>` run; surface `not_covered` caveat if present
+   - Result empty or `scan-query` absent → fall back to full directory below
+
+   **Full suite fallback** (only when impact query returns empty or is unavailable):
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <test_dir> -v

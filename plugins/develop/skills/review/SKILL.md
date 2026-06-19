@@ -114,6 +114,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     CODEMAP_ENABLED=false
 fi
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-review-codemap-enabled
+# codemap: integrated-via-shared
 ```
 
 If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. DMI skill — stop enforced via bash exit when semble not configured:
@@ -432,7 +433,7 @@ Pass `$_REVIEW_TEMPLATE` (pre-expanded literal) into consolidator spawn prompt: 
 
 After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CONFIDENCE** to that agent's findings section, state gap explicitly. Never silently drop uncertain findings.
 
-Print terminal block: read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–15, up to and including closing `---`), append `→ saved to $REPORT_DIR/review-report.md`, print to terminal. Report file already contains block — no separate prepend needed.
+Print terminal block (universal rule — quality-gates.md §Report File Format): read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–15, up to and including closing `---`) and print verbatim as FIRST content of reply. Append `→ saved to $REPORT_DIR/review-report.md`. Report file already contains block — no separate prepend needed. Omit `╔═╗` Re:Anchor box.
 
 ## Step 6: Delegate implementation follow-up (optional)
 

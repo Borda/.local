@@ -150,6 +150,7 @@ See **Prompt-Scope Gate** above for scope-filtering rules.
 - Missing migration guide for breaking changes
 - Type info only in docstring, not annotation (use both — annotation for tooling, docstring for description)
 - Docstrings describing intended/idealized behavior rather than actual — read implementation first
+- **Unverified claims**: any factual statement about behavior, return values, exceptions, or constraints written without reading source or confirming via tests — every claim must be verified against codebase or experimentally proved; memory, inference, and training knowledge are not evidence; stating behavior from assumption produces incorrect docs
 - `Raises` entry for code that never raises (or omitting one it does raise) — cross-check `raise` statements and `pytest.raises` call sites before writing Raises section
 - Functions with no explicit `raise` but implicit shape/type contracts — document constraints in `Raises` (if downstream exception user-visible) or `Notes`
 - Documenting only happy path in Examples while omitting edge-case behavior (e.g. empty input, None, out-of-range)

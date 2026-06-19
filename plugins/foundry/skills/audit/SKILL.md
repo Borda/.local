@@ -574,6 +574,8 @@ Write findings to `<RUN_DIR>/crossfile-revalidation-pass<N>.md` where N is curre
 <!-- loads: report-template.md -->
 Read `$AUDIT_TPL/report-template.md` and emit the complete audit report following its template and instructions.
 
+**Terminal output** — per quality-gates.md universal rule: read the `---` header block from the top of the report file (all fields from opening `---` up to and including closing `---`) and print verbatim as the FIRST content of the reply. Then print `→ <report path>`. Then executive summary. Omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers).
+
 **Completion marker** — on successful completion, write `$RUN_DIR/result.jsonl` with one JSONL line summarising the run (severity totals, scope, pass count). On any abort/error path before completion, leave `result.jsonl` absent — the TTL cleanup hook (artifact-lifecycle.md) intentionally skips run directories without `result.jsonl`, preserving incomplete runs for post-mortem debugging. To force cleanup of a known-bad incomplete run, write `{"status":"incomplete","reason":"<one-line>"}` to `result.jsonl` so TTL can age it out.
 
 ## Mode: upgrade

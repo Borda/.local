@@ -15,10 +15,15 @@ test -f "$MERGE_HEAD_FILE" && echo "MERGING" || echo "clean"
 
 **Case B — not MERGING**:
 
-Merge `BASE_REF` into PR branch (BASE → HEAD_REF, not reverse):
+Pull latest state for both branches before merging:
 
 ```bash
+# 1. Update source branch (PR / HEAD_REF) — ff-only; non-ff = contributor force-pushed, use local
+git pull "${FORK_REMOTE:-origin}" "$HEAD_REF" --ff-only 2>/dev/null \
+    || echo "⚠ PR branch not fast-forwardable — proceeding with local state"  # timeout: 6000
+# 2. Update target branch (BASE_REF) from origin
 git fetch origin "$BASE_REF" || { echo "⛔ fetch origin/$BASE_REF failed — cannot guarantee base is current; check network/auth and retry"; exit 1; }  # timeout: 6000
+# 3. Attempt merge — no-commit so we can inspect conflicts before finalizing
 git merge "origin/$BASE_REF" --no-commit --no-ff # timeout: 6000
 ```
 
@@ -56,7 +61,7 @@ Store returned task ID alongside each file path as `conflict_task_id`. Print con
 No conflicts → complete merge, skip to Step 8:
 
 ```bash
-git merge --continue --no-edit
+git commit --no-edit # timeout: 6000
 ```
 
 Report clean merge, skip Steps 6–7, continue Step 8.
@@ -140,10 +145,23 @@ Return ONLY a compact JSON envelope — no prose, no explanation:
 
 Parse JSON from sw-engineer. Check `resolved == staged` — mismatch = file resolved but not staged → surface before proceeding.
 
-Complete merge:
+Verify no conflict markers remain and all resolved files staged:
 
 ```bash
-git merge --continue --no-edit # timeout: 3000
+# Unmerged files still outstanding?
+STILL_CONFLICTED=$(git diff --name-only --diff-filter=U 2>/dev/null)
+[ -z "$STILL_CONFLICTED" ] || { echo "⛔ Unmerged files remain — resolve before continuing: $STILL_CONFLICTED"; exit 1; }  # timeout: 3000
+# Residual <<<<<<< / >>>>>>> markers in staged content? (--cached = index, not worktree)
+git diff --cached --check 2>&1 | grep -qE 'conflict marker' && { echo "⛔ Conflict markers still present in staged files — re-inspect and re-stage"; exit 1; } || true  # timeout: 3000
+# Stage only the files that were conflicted — avoid pulling in unrelated tracked changes
+RESOLVED_FILES=$(git diff --cached --name-only 2>/dev/null)
+[ -n "$RESOLVED_FILES" ] || { echo "⛔ No staged files found — sw-engineer may not have staged resolutions"; exit 1; }
+```
+
+Complete merge (editor-safe, produces proper 2-parent merge commit):
+
+```bash
+git commit --no-edit # timeout: 6000
 ```
 
 Print conflict report:

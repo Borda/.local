@@ -826,6 +826,24 @@ Skip calibration for: trivial edits, renames, deletes, rule operations, perm ope
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
+**Challenger review gate** — after emitting the summary report and Confidence block, invoke `AskUserQuestion` to offer adversarial review of the just-completed changes. Skip this gate entirely when: `MODE` is `delete`, `add-perm`, or `remove-perm`; OR `EDIT_TRIVIAL=true`; OR `MODE` is `rename` (structural change only, no content to challenge). Gate is mandatory for: `create` (agent, skill, rule), non-trivial `content-edit` (agent, skill, rule).
+
+```text
+AskUserQuestion: "Run foundry:challenger to adversarially review the changes just made?"
+  (a) Skip — done  [default]
+  (b) Challenge — spawn foundry:challenger on modified file(s)
+```
+
+On **(b)**: spawn `foundry:challenger` inline (foreground, not background):
+
+```text
+Agent(subagent_type="foundry:challenger", prompt="Adversarially review the changes just made to <list modified file paths>. Challenge: correctness of design decisions, completeness, potential regressions, and whether the stated goal was achieved. Read-only. Write full findings to .temp/manage-challenger-<YYYY-MM-DD>.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\".temp/manage-challenger-<YYYY-MM-DD>.md\",\"findings\":N,\"confidence\":0.N}")
+```
+
+Print challenger's `findings` count and confidence; note any HIGH findings that warrant a follow-up `/manage update` pass. On **(a)**: print `→ Done.` and stop.
+
+**Cycle guard**: this challenger dispatch is from the orchestrator (manage skill itself), not from a sub-agent — cycle detection in `<notes>` does not apply here. Do NOT spawn challenger from inside foundry:curator or foundry:sw-engineer sub-agents spawned by manage.
+
 </workflow>
 
 <notes>

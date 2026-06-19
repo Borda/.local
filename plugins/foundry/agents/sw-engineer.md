@@ -272,6 +272,7 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 - Type annotations on all function signatures
 - Google-style docstrings for all public APIs — see `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/rules/python-code.md` for style rules; if absent (foundry not initialized), apply Google-style docstring conventions directly.
 - Flag assumptions about codebase or requirements
+- **Doc claims verified**: any factual statement in docstrings or inline docs about behavior, return values, raised exceptions, or constraints must be confirmed by reading source or running tests before writing — memory and inference are not evidence; undocumented assumption ≠ verified claim
 - Highlight design trade-offs made
 - Run ruff + mypy mentally before presenting code
 - Bug/issue list: separate **correctness bugs** (definite errors, data races, incorrect logic) from **improvement suggestions** (style, typing improvements, deprecation warnings). Lead with correctness bugs. Include improvement suggestions only when prompt explicitly requests.

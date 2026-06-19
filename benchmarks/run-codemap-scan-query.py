@@ -65,27 +65,56 @@ agent spawn prompt?
   I_refactor  develop:refactor    per-task queries + rdeps/deps  all present,
                                   (5 tasks)                      rdeps+deps valid
 
+Suite S — Symbol lookup: validates that scan-query symbol returns correct source locations.
+Reads ground truth from benchmarks/tasks-bench.json (S-01..S-05).
+
+  Code       Name                     What it measures                    Pass threshold
+  --------   -----------------------  ----------------------------------  ---------------
+  S_S-01..   symbol-<task-id>         start_line within ±3 of gt         found + start_ok
+  S2         symbol-all-pass-rate     all symbol tasks pass               100%
+
+Suite H — Health: validates undocumented / uncovered counts match tasks-bench.json ground truth.
+Reads ground truth from benchmarks/tasks-bench.json (Q-01..Q-05).
+
+  Code         Name                         What it measures                    Pass threshold
+  -----------  ---------------------------  ----------------------------------  ---------------
+  H_Q-01...    health-<task-id>-undoc/uncov total from scan-query == gt.count  exact match
+  H1           health-undocumented          all undocumented tasks match        100%
+  H2           health-uncovered             all uncovered tasks match           100%
+
+Suite X — Xrefs broken: validates xrefs --broken count + target set match ground truth.
+Reads ground truth from benchmarks/tasks-bench.json (Q-04).
+
+  Code     Name                   What it measures                    Pass threshold
+  -------  ---------------------  ----------------------------------  ---------------
+  X_Q-04   xrefs-broken-Q-04      count + target set == ground truth  exact match
+  X1       xrefs-broken-all       all xrefs_broken tasks match        100%
+
+Index path resolution order (updated): .cache/codemap/ checked before .cache/scan/ to match
+the default output location of scan-index --root.
+
 ## Requirements
 
-  - Python 3.8+, stdlib only (no pip installs needed)
+  - Python 3.8+, stdlib only (no pip installs needed for C/A/L/I/X suites; pandas+rich for reporting)
   - A local clone of pytorch-lightning:
       git clone https://github.com/Lightning-AI/pytorch-lightning
   - A pre-built codemap index for that clone:
-      python3 plugins/codemap/bin/scan-index --root ./pytorch-lightning
-    (creates pytorch-lightning/.cache/scan/pytorch-lightning.json)
+      python3 plugins/codemap/bin/scan-index --root ./pytorch-lightning-master
+    (creates pytorch-lightning-master/.cache/codemap/pytorch-lightning-master.json)
   - scan-query on PATH OR the plugin present at plugins/codemap/bin/scan-query
     (the script finds it automatically; no manual PATH config needed)
   - git available on PATH (used by scan-query's staleness check)
+  - benchmarks/tasks-bench.json present for suites S, H, X (auto-skipped if absent)
 
 ## Quick start
 
-    # Full benchmark with markdown report (all suites always run)
+    # Full benchmark with markdown report (all suites C/A/L/I/S/H/X always run)
     python benchmarks/run-codemap-scan-query.py \\
-        --repo-path ./pytorch-lightning \\
+        --repo-path ./pytorch-lightning-master \\
         --report
 
     # Verify task modules exist in the index before running
-    python benchmarks/run-codemap-scan-query.py --verify-tasks --repo-path ./pytorch-lightning
+    python benchmarks/run-codemap-scan-query.py --verify-tasks --repo-path ./pytorch-lightning-master
 
     # Use a pre-built index at a non-default path
     python benchmarks/run-codemap-scan-query.py \\
@@ -261,10 +290,16 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
-from rich.console import Console
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
-console = Console()
+try:
+    from rich.console import Console
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+
+    _console: Console | None = Console()
+    _IS_RICH_AVAILABLE = True
+except ImportError:
+    _console = None
+    _IS_RICH_AVAILABLE = False
 
 # ---- TYPES ----
 
@@ -359,6 +394,7 @@ class ValidationResult:
 # ---- CONFIG ----
 
 TASKS_FILE = Path(__file__).parent / "tasks-code.json"
+OSS_TASKS_FILE = Path(__file__).parent / "tasks-bench.json"
 
 THRESHOLDS = {
     # Coverage gap suite (C): structural completeness of cold grep vs codemap
@@ -378,6 +414,15 @@ THRESHOLDS = {
     "L2": {"median_ms_max": 100},
     "L3": {"amortized_ms_max": 500},
     "L4": {"speedup_min": 2.0},
+    # Symbol suite (S): symbol command returns correct line range
+    "S1": {"symbol_found": True, "start_line_ok": True},
+    "S2": {"symbol_found": True},
+    "S3": {"symbol_found": True, "count_min": 1},
+    # Health suite (H): undocumented / uncovered counts match tasks-bench.json ground truth
+    "H1": {"count_match": True},  # undocumented tasks
+    "H2": {"count_match": True},  # uncovered tasks
+    # Xrefs suite (X): xrefs --broken count matches tasks-bench.json ground truth
+    "X1": {"count_match": True},
 }
 
 
@@ -389,6 +434,24 @@ def load_tasks(skill_filter: str | None = None) -> list[Task]:
     if skill_filter:
         tasks = [t for t in tasks if t.skill == skill_filter]
     return tasks
+
+
+def load_oss_tasks(type_filter: str | None = None) -> list[dict]:
+    """Load OSS benchmark tasks from tasks-bench.json, optionally filtered by type.
+
+    Args:
+        type_filter: When given, return only tasks with ``type == type_filter``.
+
+    Returns:
+        List of raw task dicts (structure as defined in tasks-bench.json).
+    """
+    if not OSS_TASKS_FILE.exists():
+        return []
+    with OSS_TASKS_FILE.open() as f:
+        raw: list[dict] = json.load(f)
+    if type_filter:
+        raw = [t for t in raw if t.get("type") == type_filter]
+    return raw
 
 
 # ---- HELPERS ----
@@ -956,7 +1019,10 @@ def emit(obj: ScenarioResult | dict) -> None:
 
 
 def log(msg: str) -> None:
-    console.print(msg)
+    if _IS_RICH_AVAILABLE and _console is not None:
+        _console.print(msg)
+    else:
+        print(msg, file=sys.stderr)
 
 
 # ---- SUITE: CALLS ----
@@ -1509,18 +1575,351 @@ def resolve_repo_path(arg: str | None) -> Path | None:
 def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
     if arg:
         return Path(arg)
-    scan_dir = repo_path / ".cache" / "scan"
-    candidates = [
-        scan_dir / (repo_path.name + ".json"),
-        scan_dir / (repo_path.name.replace("-master", "") + ".json"),
-        scan_dir / (repo_path.name.replace("-main", "") + ".json"),
+    stems = [repo_path.name, repo_path.name.replace("-master", ""), repo_path.name.replace("-main", "")]
+    # Check both canonical locations: new (.cache/codemap/) then legacy (.cache/scan/)
+    for cache_subdir in (".cache/codemap", ".cache/scan"):
+        d = repo_path / cache_subdir
+        for stem in stems:
+            p = d / f"{stem}.json"
+            if p.exists():
+                return p
+        if d.exists():
+            jsons = sorted(d.glob("*.json"))
+            if jsons:
+                return jsons[0]
+    bare = repo_path.name.replace("-master", "").replace("-main", "")
+    return repo_path / ".cache" / "codemap" / f"{bare}.json"
+
+
+# ---- SUITE S — SYMBOL LOOKUP ----
+
+
+def run_suite_symbol(
+    scan_query_bin: Path,
+    index_path: Path,
+    repo_path: Path,
+) -> list[ScenarioResult]:
+    """Suite S: validate that scan-query symbol returns correct start/end lines.
+
+    Runs the ``symbol`` command for each S-task in tasks-bench.json and compares
+    ``start_line`` / ``end_line`` against ground truth (±3 lines tolerance for
+    disambiguating decorator vs def line).
+
+    Args:
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap index.
+        repo_path: Root of the pytorch-lightning repository.
+
+    Returns:
+        List of ScenarioResult — one per S-task, plus an aggregate S2 (all-pass rate).
+    """
+    tasks = load_oss_tasks(type_filter="symbol_extraction")
+    if not tasks:
+        log("[suite-S] tasks-bench.json not found or no symbol_extraction tasks — skipping")
+        return []
+
+    results: list[ScenarioResult] = []
+    passed_count = 0
+
+    for task in tasks:
+        task_id = task["id"]
+        gt = task.get("ground_truth", {})
+        qname = gt.get("qualified_name", "")
+        module = gt.get("module", "")
+        expected_start = gt.get("start_line", 0)
+        expected_end = gt.get("end_line", 0)
+
+        data = run_scan_query(scan_query_bin, ["symbol", qname], index_path, repo_path)
+        if data is None:
+            results.append(
+                ScenarioResult(
+                    scenario=f"S_{task_id}",
+                    name=f"symbol-{task_id}",
+                    suite="symbol",
+                    passed=False,
+                    result={"error": "scan-query returned None"},
+                    threshold=THRESHOLDS["S1"],
+                    notes=f"qname={qname}",
+                )
+            )
+            continue
+
+        symbols = data.get("symbols", [])
+        match = next(
+            (s for s in symbols if s.get("qualified_name") == qname and s.get("module") == module),
+            None,
+        ) or next((s for s in symbols if s.get("qualified_name") == qname), None)
+
+        symbol_found = match is not None
+        start_ok = symbol_found and abs(match.get("start_line", 0) - expected_start) <= 3
+        end_ok = symbol_found and abs(match.get("end_line", 0) - expected_end) <= 3
+        passed = symbol_found and start_ok
+
+        if passed:
+            passed_count += 1
+
+        results.append(
+            ScenarioResult(
+                scenario=f"S_{task_id}",
+                name=f"symbol-{task_id}",
+                suite="symbol",
+                passed=passed,
+                result={
+                    "symbol_found": symbol_found,
+                    "start_line_ok": start_ok,
+                    "end_line_ok": end_ok,
+                    "got_start": match.get("start_line") if match else None,
+                    "got_end": match.get("end_line") if match else None,
+                    "expected_start": expected_start,
+                    "expected_end": expected_end,
+                    "count_returned": len(symbols),
+                },
+                threshold=THRESHOLDS["S1"],
+                notes=f"qname={qname} module={module}",
+            )
+        )
+
+    # Aggregate: S2 = all symbol tasks passed
+    total = len(tasks)
+    all_pass_rate = passed_count / total if total else 0.0
+    results.append(
+        ScenarioResult(
+            scenario="S2",
+            name="symbol-all-pass-rate",
+            suite="symbol",
+            passed=passed_count == total,
+            result={"passed": passed_count, "total": total, "pass_rate": round(all_pass_rate, 3)},
+            threshold=THRESHOLDS["S2"],
+            notes=f"{passed_count}/{total} symbol tasks passed",
+        )
+    )
+    return results
+
+
+# ---- SUITE H — HEALTH (undocumented / uncovered) ----
+
+
+def run_suite_health(
+    scan_query_bin: Path,
+    index_path: Path,
+    repo_path: Path,
+) -> list[ScenarioResult]:
+    """Suite H: validate undocumented and uncovered counts match tasks-bench.json ground truth.
+
+    Runs each code_quality task that uses ``undocumented`` or ``uncovered`` commands and checks
+    whether the returned ``total`` matches the ground truth count (exact match).
+
+    Args:
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap index.
+        repo_path: Root of the pytorch-lightning repository.
+
+    Returns:
+        List of ScenarioResult — one per relevant Q-task plus H1/H2 aggregates.
+    """
+    tasks = load_oss_tasks(type_filter="code_quality")
+    if not tasks:
+        log("[suite-H] tasks-bench.json not found or no code_quality tasks — skipping")
+        return []
+
+    results: list[ScenarioResult] = []
+    undoc_tasks_passed = undoc_tasks_total = 0
+    uncov_tasks_passed = uncov_tasks_total = 0
+
+    for task in tasks:
+        task_id = task["id"]
+        gt = task.get("ground_truth", {})
+        check = gt.get("check", "")
+        expected_queries = task.get("expected_queries", [])
+
+        for q in expected_queries:
+            cmd = q.get("cmd", "")
+            if cmd not in ("undocumented", "uncovered"):
+                continue
+
+            args = [cmd] + q.get("args", [])
+            data = run_scan_query(scan_query_bin, args, index_path, repo_path)
+
+            if cmd == "undocumented":
+                expected_count = gt.get("undocumented_count", gt.get("count", 0))
+                suite_key = "H1"
+                undoc_tasks_total += 1
+            else:
+                expected_count = gt.get("uncovered_count", gt.get("count", 0))
+                suite_key = "H2"
+                uncov_tasks_total += 1
+
+            if data is None:
+                passed = False
+                got_count = None
+            else:
+                got_count = data.get("total", None)
+                passed = got_count == expected_count
+
+            if passed:
+                if cmd == "undocumented":
+                    undoc_tasks_passed += 1
+                else:
+                    uncov_tasks_passed += 1
+
+            results.append(
+                ScenarioResult(
+                    scenario=f"H_{task_id}_{cmd}",
+                    name=f"health-{task_id}-{cmd}",
+                    suite="health",
+                    passed=passed,
+                    result={
+                        "count_match": passed,
+                        "expected": expected_count,
+                        "got": got_count,
+                        "check": check,
+                    },
+                    threshold=THRESHOLDS[suite_key],
+                    notes=f"task={task_id} cmd={cmd} args={q.get('args', [])}",
+                )
+            )
+
+    # Aggregates
+    if undoc_tasks_total:
+        results.append(
+            ScenarioResult(
+                scenario="H1",
+                name="health-undocumented",
+                suite="health",
+                passed=undoc_tasks_passed == undoc_tasks_total,
+                result={
+                    "count_match": undoc_tasks_passed == undoc_tasks_total,
+                    "passed": undoc_tasks_passed,
+                    "total": undoc_tasks_total,
+                },
+                threshold=THRESHOLDS["H1"],
+                notes=f"{undoc_tasks_passed}/{undoc_tasks_total} undocumented tasks matched",
+            )
+        )
+    if uncov_tasks_total:
+        results.append(
+            ScenarioResult(
+                scenario="H2",
+                name="health-uncovered",
+                suite="health",
+                passed=uncov_tasks_passed == uncov_tasks_total,
+                result={
+                    "count_match": uncov_tasks_passed == uncov_tasks_total,
+                    "passed": uncov_tasks_passed,
+                    "total": uncov_tasks_total,
+                },
+                threshold=THRESHOLDS["H2"],
+                notes=f"{uncov_tasks_passed}/{uncov_tasks_total} uncovered tasks matched",
+            )
+        )
+    return results
+
+
+# ---- SUITE X — XREFS BROKEN ----
+
+
+def run_suite_xrefs(
+    scan_query_bin: Path,
+    index_path: Path,
+    repo_path: Path,
+) -> list[ScenarioResult]:
+    """Suite X: validate xrefs --broken output against tasks-bench.json ground truth.
+
+    Runs ``xrefs --broken`` for each OSS task with ``check == "xrefs_broken"`` and
+    confirms both the broken count and the set of broken target/line pairs.
+
+    Args:
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap index.
+        repo_path: Root of the pytorch-lightning repository.
+
+    Returns:
+        List of ScenarioResult — one per xrefs_broken task plus X1 aggregate.
+    """
+    tasks = [
+        t
+        for t in load_oss_tasks(type_filter="code_quality")
+        if t.get("ground_truth", {}).get("check") == "xrefs_broken"
     ]
-    for p in candidates:
-        if p.exists():
-            return p
-    if scan_dir.exists() and (jsons := sorted(scan_dir.glob("*.json"))):
-        return jsons[0]
-    return scan_dir / (repo_path.name.replace("-master", "").replace("-main", "") + ".json")
+    if not tasks:
+        log("[suite-X] no xrefs_broken tasks in tasks-bench.json — skipping")
+        return []
+
+    results: list[ScenarioResult] = []
+    x_passed = x_total = 0
+
+    for task in tasks:
+        task_id = task["id"]
+        gt = task.get("ground_truth", {})
+        expected_count = gt.get("broken_count", 0)
+        expected_targets = {(t["target"], t["line"]) for t in gt.get("broken_targets", [])}
+        expected_queries = task.get("expected_queries", [])
+
+        q = next((q for q in expected_queries if q.get("cmd") == "xrefs"), None)
+        if q is None:
+            continue
+
+        args = ["xrefs"] + q.get("args", [])
+        data = run_scan_query(scan_query_bin, args, index_path, repo_path)
+        x_total += 1
+
+        if data is None:
+            results.append(
+                ScenarioResult(
+                    scenario=f"X_{task_id}",
+                    name=f"xrefs-broken-{task_id}",
+                    suite="xrefs",
+                    passed=False,
+                    result={"error": "scan-query returned None", "count_match": False},
+                    threshold=THRESHOLDS["X1"],
+                    notes=f"task={task_id}",
+                )
+            )
+            continue
+
+        broken = data.get("broken", [])
+        got_count = data.get("count", len(broken))
+        got_targets = {(b.get("target", ""), b.get("line", 0)) for b in broken}
+
+        count_match = got_count == expected_count
+        targets_match = got_targets == expected_targets
+        passed = count_match and targets_match
+
+        if passed:
+            x_passed += 1
+
+        results.append(
+            ScenarioResult(
+                scenario=f"X_{task_id}",
+                name=f"xrefs-broken-{task_id}",
+                suite="xrefs",
+                passed=passed,
+                result={
+                    "count_match": count_match,
+                    "targets_match": targets_match,
+                    "expected_count": expected_count,
+                    "got_count": got_count,
+                    "missing_targets": sorted(expected_targets - got_targets),
+                    "extra_targets": sorted(got_targets - expected_targets),
+                },
+                threshold=THRESHOLDS["X1"],
+                notes=f"task={task_id} args={q.get('args', [])}",
+            )
+        )
+
+    if x_total:
+        results.append(
+            ScenarioResult(
+                scenario="X1",
+                name="xrefs-broken-all",
+                suite="xrefs",
+                passed=x_passed == x_total,
+                result={"count_match": x_passed == x_total, "passed": x_passed, "total": x_total},
+                threshold=THRESHOLDS["X1"],
+                notes=f"{x_passed}/{x_total} xrefs_broken tasks matched",
+            )
+        )
+    return results
 
 
 def main() -> None:
@@ -1590,20 +1989,34 @@ def main() -> None:
             "I — Injection",
             lambda: run_measure_injection(plugin_root or Path.cwd(), repo_path, scan_query_bin, index_path),
         ),
+        ("S — Symbol lookup", lambda: run_suite_symbol(scan_query_bin, index_path, repo_path)),
+        ("H — Health (doc/cov)", lambda: run_suite_health(scan_query_bin, index_path, repo_path)),
+        ("X — Xrefs broken", lambda: run_suite_xrefs(scan_query_bin, index_path, repo_path)),
     ]
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TaskProgressColumn(),
-        console=console,
-    ) as progress:
-        bar = progress.add_task("Benchmark", total=len(suites))
-        for label, run_fn in suites:
-            progress.update(bar, description=label)
-            all_results.extend(run_fn())
-            progress.advance(bar)
+    if _IS_RICH_AVAILABLE and _console is not None:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=_console,
+        ) as progress:
+            bar = progress.add_task("Benchmark", total=len(suites))
+            for label, run_fn in suites:
+                progress.update(bar, description=label)
+                all_results.extend(run_fn())
+                progress.advance(bar)
+    else:
+        try:
+            from tqdm import tqdm
+
+            _tqdm_iter = tqdm(suites, desc="Benchmark", unit="suite", file=sys.stderr)
+            for _label, run_fn in _tqdm_iter:
+                all_results.extend(run_fn())
+        except ImportError:
+            for _label, run_fn in suites:
+                all_results.extend(run_fn())
 
     # Write report if requested
     report_path_str: str | None = None

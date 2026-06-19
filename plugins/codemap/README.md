@@ -78,11 +78,41 @@ That output is prepended to the agent spawn prompt as structural context. The ag
 - **tokens** — total tool result tokens consumed
 - **calls** — total tool calls made
 
-codemap more than halves tool calls vs plain while lifting both recall metrics above 95%. Semble, when available, reduces calls further and slightly boosts erec at a modest rrec trade-off.
+codemap more than halves tool calls vs plain while lifting both recall metrics above 95%.
+
+**Real-codebase benchmark** — 28 developer tasks × 2 arms (plain vs codemap), sonnet model. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header (name, namespace, default path) so the harness can be pointed at any Python codebase by swapping the paired task file. Results below are on pytorch-lightning-master (646 modules, 5 task types). Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
+
+**Token efficiency** (codemap input tokens / plain input tokens per task — lower = better for codemap):
+
+| Statistic | Value                                                                                                            |
+| --------- | ---------------------------------------------------------------------------------------------------------------- |
+| Median    | **0.17×** (83% reduction)                                                                                        |
+| Mean      | 0.28×                                                                                                            |
+| Min       | 0.06× (FN-03)                                                                                                    |
+| Max       | 1.41× (RV-04 — fixed: stale-index escape triggered 8 scan-query calls; system prompt now caps review tasks at 1) |
+
+**Accuracy** (scored tasks only; excludes extraction_failed and incomplete):
+
+| Arm     | Score     | Correct/Scored | extraction_failed | incomplete                    |
+| ------- | --------- | -------------- | ----------------- | ----------------------------- |
+| plain   | **78.3%** | 18/23          | 4 (Q-01,02,03,05) | 1 (RV-03, DNF at 2.2M tokens) |
+| codemap | **80.8%** | 21/26          | 2 (Q-01, Q-03)    | 0                             |
+
+**By series** (excl. extraction_failed / incomplete):
+
+| Series                 | plain | codemap | Notes                                                                           |
+| ---------------------- | ----- | ------- | ------------------------------------------------------------------------------- |
+| S — symbol extraction  | 5/5   | 5/5     | Both arms perfect                                                               |
+| FN — call graph        | 5/5   | 4/5     | FN-02 codemap: 1 scan-query call insufficient for 37-caller set                 |
+| D — blast radius       | 8/8   | 8/8     | Both arms perfect; codemap primary benefit is 6–18× token reduction             |
+| RV — review assistance | 0/4   | 2/5     | RV-03 plain DNF; RV-04 codemap reported 24 (unique) vs 30 (count field) — fixed |
+| Q — code quality       | 0/1   | 2/3     | Evaluator gaps reduce scoreable tasks; token efficiency valid                   |
+
+> **FN-series is the starkest signal**: plain arm burns 1–1.6M tokens and returns zero callers on 3 of 5 call-graph tasks. codemap resolves the full caller set in a single query at 6–18% of the token cost. The plain arm cannot scale to large call graphs within budget; codemap can.
+
+> **Static AST limitations**: scan-query does not resolve dynamic dispatch, hook callbacks, `importlib.import_module`, lazy-loading patterns, or string-based dispatch. Calls through these mechanisms are not counted. Semble, when available, reduces calls further and slightly boosts erec at a modest rrec trade-off.
 
 When the semble MCP server is available, agents also get `mcp__semble__search` as an optional semantic search tool — useful when the codemap index is non-exhaustive.
-
-Zero codemap timeouts. Plain-arm agents hit the 300-second hard timeout on several tasks.
 
 > **⚠ Integration quality matters — poor wiring can make things worse.**
 >
@@ -415,6 +445,31 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 
 ______________________________________________________________________
 
+<a id="test-impact"></a>
+
+### test-impact
+
+**Trigger**: `/codemap:test-impact <module::symbol | module> [--no-mocks]`
+
+**Auto-invokes when:** user asks which tests are affected by a change, wants to skip unrelated tests, or asks about selective test runs; phrases: "which tests cover this", "what tests to rerun", "test impact of", "run only affected tests".
+
+Identifies the minimal set of tests to rerun after changing a function or module using static analysis — no test execution required.
+
+**Two modes:**
+
+- `module::symbol` — BFS over reverse call graph; finds every test calling the changed function directly or transitively. Also includes tests that mock the symbol via `patch()`.
+- `module` — BFS over reverse import graph; finds every test importing the module through any chain. Also includes tests that mock any symbol in the module.
+
+```text
+/codemap:test-impact myproject.auth::validate_token
+/codemap:test-impact myproject.utils
+/codemap:test-impact myproject.auth::validate_token --no-mocks
+```
+
+Output includes `test_files`, `via_call`/`via_mock` breakdown, and a ready-to-run `pytest_cmd`. **Limitation**: static-AST only — dynamic dispatch and hook-callback callers not covered; `not_covered` field signals this, `hint` provides grep fallback.
+
+______________________________________________________________________
+
 <a id="rename-refs"></a>
 
 <details>
@@ -502,6 +557,25 @@ Files that cannot be parsed (syntax errors, encoding issues) are marked `degrade
 `scan-query` is a companion Python 3 script that loads the index and answers structural questions. It checks staleness on every call by comparing current git blob SHAs against the stored `file_shas`. If files have changed, it warns to stderr and returns results anyway.
 
 All output is JSON. This makes it easy to pipe directly into agent spawn prompts, shell scripts, or further analysis.
+
+Every command embeds an `index` object in its output — the coverage block — so consumers know exactly how reliable the result is:
+
+| Field             | Type      | Meaning                                                                                |
+| ----------------- | --------- | -------------------------------------------------------------------------------------- |
+| `method`          | string    | How the result was produced: `index-lookup`, `static-ast`, `import-graph`, `ast-flags` |
+| `confidence`      | string    | `"exact"` when result is complete; `"partial"` when truncated or any symbol is stale   |
+| `truncated`       | bool      | Present and `true` when `--limit` cut the result; absent otherwise                     |
+| `total_available` | int       | Total matches before truncation (only present when `truncated: true`)                  |
+| `not_covered`     | list[str] | Call patterns the static analysis cannot see (dynamic dispatch, hook callbacks, etc.)  |
+| `hint`            | string    | Suggested grep/fallback for residual-risk verification when `not_covered` is non-empty |
+| `scope`           | string    | Sub-graph or index slice the command operated on                                       |
+| `total_modules`   | int       | Modules in the index at query time                                                     |
+| `total_symbols`   | int       | Symbols across all modules                                                             |
+| `degraded`        | int       | Modules skipped due to parse errors                                                    |
+| `exhaustive`      | bool      | `true` when every module parsed successfully                                           |
+| `stale`           | bool      | `true` when the index predates a recent file change                                    |
+
+When `not_covered` is non-empty, agents log the gap to `.cache/codemap/gaps.jsonl` and surface a caveat. When `confidence="exact"`, no grep re-verification is needed.
 
 ### The index file
 

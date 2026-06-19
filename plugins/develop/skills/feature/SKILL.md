@@ -116,6 +116,7 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW") || exit 1
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
+# codemap: integrated-via-shared
 ```
 
 **Semble preflight** — if `SEMBLE_ENABLED=true`:
@@ -418,7 +419,16 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
    - Reuse or extend existing code identified in Step 1 — prefer subclassing or composing over parallel reimplementation
    - Match project's existing patterns (naming, error handling, type annotations)
 5. **Run demo/test — confirm it passes**
-6. **Run full suite** to catch regressions:
+6. **Run affected tests** (prefer targeted over full suite):
+
+   **Test impact (codemap)** — identify minimal test set first:
+   ```bash
+   scan-query test-impact "<changed_module>" 2>/dev/null
+   ```
+   - Non-empty `pytest_cmd` → run those tests first; surface `not_covered` caveat if present
+   - Empty or `scan-query` absent → fall back to full suite below
+
+   **Full suite fallback**:
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <target_test_dir> -v

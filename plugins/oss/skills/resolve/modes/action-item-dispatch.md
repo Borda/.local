@@ -212,10 +212,14 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" \
 
 No code changed → record agent's reason; do NOT create empty commit. Record per-item: `committed <SHA>` or `staged` or `skipped — <reason>`.
 
-Mark item's task completed:
+Mark item's task per COMMIT_MODE — do NOT fire `completed` here for `all`/`grouped` (commit hasn't happened yet; a post-loop commit failure would leave false-completed tasks):
 
 ```text
-TaskUpdate(task_id=<item.task_id>, status="completed")
+# each → completed now (committed in this loop iteration)
+# stage → completed now (staged is the terminal intent for this mode; task list has no "staged" state)
+# all / grouped → leave in_progress; post-loop commit block flips to completed after commit succeeds
+if COMMIT_MODE == "each" or COMMIT_MODE == "stage":
+    TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
 
 **After loop — `COMMIT_MODE=grouped` only**: collect topic labels, group items, commit each group.
@@ -259,6 +263,13 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" \
 
 Commit subject format: `<topic>: <combined summary of items in group>` (≤72 chars total; truncate combined summary with `…` if needed). One commit per unique topic. Print `→ Committed group "<topic>" — items <ids>` after each commit.
 
+After each successful group commit, flip the tasks for that group to completed:
+
+```text
+for each item_id in GROUP_IDS:
+    TaskUpdate(task_id=<SELECTED_ITEMS[item_id].task_id>, status="completed")
+```
+
 **After loop — `COMMIT_MODE=all` only**: derive counters from `CHALLENGE_LOG`, create single commit:
 
 ```bash
@@ -271,3 +282,10 @@ for _entry in "${CHALLENGE_LOG[@]}"; do
     esac
 done
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_all_items.py" "$PR_NUMBER" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
+
+After the commit succeeds, flip all staged items to completed (deferred from per-item loop body where commit had not yet happened):
+
+```text
+for each item in SELECTED_ITEMS where status != "skipped":
+    TaskUpdate(task_id=<item.task_id>, status="completed")
+```

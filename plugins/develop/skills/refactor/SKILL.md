@@ -107,6 +107,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     CODEMAP_ENABLED=false
 fi
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled
+# codemap: integrated-via-shared
 ```
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
@@ -296,7 +297,12 @@ If `GATE_EXIT -ne 0` (including exit 5): characterization tests are missing or w
 For each change:
 
 1. One focused change (single responsibility per edit)
-2. Run test suite:
+2. Run affected tests (prefer targeted over full characterization suite):
+   ```bash
+   scan-query test-impact "<changed_module>" 2>/dev/null
+   ```
+   - Non-empty `pytest_cmd` → run those tests; surface `not_covered` caveat if present; fall back to full suite if all tests pass but feel incomplete
+   - Empty or unavailable → full suite:
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <test_files> -v

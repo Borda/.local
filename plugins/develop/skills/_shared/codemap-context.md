@@ -9,12 +9,30 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || P
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     scan-index --incremental 2>/dev/null || true   # refresh SHA-changed files only; never full-build mid-task
-    scan-query --timeout 5 central --top 5 2>/dev/null
-    [ -n "$TARGET_FN" ] && scan-query --timeout 5 fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
-    [ -n "$TARGET_MODULE" ] && scan-query --timeout 5 uncovered --top 20 "$TARGET_MODULE" 2>/dev/null
-    [ -n "$TARGET_FN" ] && scan-query --timeout 5 mock-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
-    [ -n "$TARGET_MODULE" ] && scan-query --timeout 5 undocumented "$TARGET_MODULE" 2>/dev/null
-    [ -n "$TARGET_FN" ] && scan-query --timeout 5 symbol --with-imports "$TARGET_FN" 2>/dev/null
+    _CM_N=0 _CM_H=0 _CM_STALE=0 _CM_NONEXH=0
+    _cq() {
+        local out; _CM_N=$((_CM_N+1))
+        out=$(scan-query --timeout 5 "$@" 2>/dev/null)
+        case "$out" in
+            *'"error"'*|'') ;;
+            *) _CM_H=$((_CM_H+1)); printf '%s\n' "$out"
+               case "$out" in *'"stale":true'*|*'"stale": true'*) _CM_STALE=1;; esac
+               case "$out" in *'"exhaustive":false'*|*'"exhaustive": false'*) _CM_NONEXH=1;; esac ;;
+        esac
+    }
+    _cq central --top 5
+    [ -n "$TARGET_FN" ]     && _cq fn-blast "${TARGET_MODULE}::${TARGET_FN}"
+    [ -n "$TARGET_MODULE" ] && _cq uncovered --top 20 "$TARGET_MODULE"
+    [ -n "$TARGET_FN" ]     && _cq mock-rdeps "${TARGET_MODULE}::${TARGET_FN}"
+    [ -n "$TARGET_MODULE" ] && _cq undocumented "$TARGET_MODULE"
+    [ -n "$TARGET_FN" ]     && _cq symbol --with-imports "$TARGET_FN"
+    _IDX_MTIME=$(date -r "${_IDX}/${PROJ}.json" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "?")
+    if [ "$_CM_STALE" -eq 1 ]; then _CM_COMPL="stale"
+    elif [ "$_CM_NONEXH" -eq 1 ]; then _CM_COMPL="partial"
+    elif [ "$_CM_H" -eq 0 ]; then _CM_COMPL="unknown"
+    else _CM_COMPL="exhaustive"
+    fi
+    echo "codemap_evidence: queries_run=${_CM_N} hits=${_CM_H} completeness=${_CM_COMPL} index_mtime=${_IDX_MTIME}"
 fi
 ```
 
@@ -26,7 +44,24 @@ fi
 > - `undocumented` — docstring gaps (doc-scribe)
 > - `symbol --with-imports` — contract reading without re-reading the file (all agents)
 
-Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `scan-query` not found or index missing: proceed silently — no mention to user.
+Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap_evidence:` line at end of block reports retrieval reliability — agents may skip re-querying only when `completeness=exhaustive`. `scan-query` not found or index missing: proceed silently — no mention to user.
+
+**Coverage metadata in output** — each `scan-query` result includes an `index` block with per-command coverage fields:
+- `index.method` — analysis technique used (`static-ast`, `import-graph`, `index-lookup`, `ast-flags`)
+- `index.not_covered` — what the method structurally misses (list); when non-empty, surface as a scope caveat in the response; do NOT run grep to fill the gap — gaps are structurally unresolvable by static analysis
+- `index.hint` — actionable alternative if user needs deeper coverage (e.g. grep pattern for hook-registered callers)
+- `index.confidence: "exact"` — result is authoritative; omit verification caveats
+
+**Codemap = primary codebase navigation tool.** Do NOT grep/bash to re-verify what codemap already returned. When `not_covered` non-empty: (1) include one-line caveat in response — "Note: callers via [not_covered items] not included — structurally invisible to static AST"; (2) log gap:
+```bash
+mkdir -p .cache/codemap
+printf '{"ts":"%s","cmd":"%s","target":"%s","not_covered":%s,"hint":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "<subcommand>" "<target>" '<not_covered_json>' "<hint_or_empty>" \
+    >> .cache/codemap/gaps.jsonl 2>/dev/null || true
+```
+(3) Continue achieving goal — do NOT abandon task because of structural gap.
+
+When `method=index-lookup` + `confidence=exact`: result authoritative, skip verification caveats.
 
 ## Extended scan — multi-file / API changes
 

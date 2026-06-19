@@ -193,6 +193,41 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 | `fn-blast` | `blast_radius` array | `depth module::function` (if depth key present), sorted by depth then name; if `depth` key absent (older index format) → render `module::function` without depth prefix, note "depth unavailable — re-run /codemap:scan-codebase to upgrade index" |
 | stale check | `index.stale` (boolean) | if true → index changed since Step 0; re-run `scan-index --incremental` and retry |
 
+**Coverage metadata** — every result includes `index.method` and optional `index.not_covered`, `index.hint`, `index.confidence`, `index.scope`. Use to scope your response accurately:
+
+| `index.method` | What it means |
+| --- | --- |
+| `index-lookup` | Direct index access — exact, complete for the indexed set. `confidence: "exact"` confirms no grep verification needed. |
+| `static-ast` | AST-derived call graph — misses dynamic dispatch, runtime injection, string-based callbacks. Check `not_covered` for specifics. |
+| `import-graph` | Static import edges — misses `importlib.import_module`, `__import__`, lazy-loading. |
+| `ast-flags` | Stored flags (docstring, test-rdep, coverage) — scope limited to `public-api-only` when present. |
+
+**Codemap is the primary codebase navigation tool.** Do NOT fall through to grep/bash to re-verify what codemap already returned. Authoritative (no re-verify) when: `exhaustive=true`, `stale=false`, `not_covered` empty. When `not_covered` non-empty and task requires completeness (find ALL callers, full blast-radius before a breaking edit): the codemap result is correct-for-what-it-found but not complete — run the `index.hint` grep as an explicit escalation, label it as "residual-risk verification", surface to user.
+
+**When `index.not_covered` is non-empty**: (1) append scope caveat to response — e.g. "Note: callers via dynamic dispatch, hook callbacks, or string dispatch are not included in this list."; (2) append gap record to `.cache/codemap/gaps.jsonl` so the coverage gap is collected for index improvements:
+```bash
+mkdir -p .cache/codemap
+printf '{"ts":"%s","cmd":"%s","target":"%s","not_covered":%s,"hint":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "<subcommand>" "<target>" '<not_covered_json>' "<hint_or_empty>" \
+    >> .cache/codemap/gaps.jsonl 2>/dev/null || true
+```
+(3) Continue to achieve goal — do NOT abandon the task because of a structural gap.
+
+**When `index.hint` is present**: include it as a suggestion if the user needs to find the missing callers: "To find hook-registered callers: `grep -rn "fn_name"` ..."
+
+**When `index.confidence == "exact"`**: result is authoritative — skip verification caveats.
+
+**When `index.confidence == "partial"` and `index.truncated == true`**: result was cut by `--limit`. Surface: "Showing N of `index.total_available` matches — rerun with `--limit 0` for complete list." Do not treat truncated output as complete.
+
+**When codemap cannot answer at all** (error or empty, not a coverage gap): log the uncovered query type:
+```bash
+mkdir -p .cache/codemap
+printf '{"ts":"%s","type":"uncovered-query","query":"%s","reason":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "<query>" "<reason>" \
+    >> .cache/codemap/gaps.jsonl 2>/dev/null || true
+```
+Then use the best available alternative (Read, grep) and note in your response what codemap couldn't cover.
+
 `{"error": "..."}`: surface error. A residual `Index not found` here means Step 0's auto-build failed — report the build failure plainly (do not just suggest a manual rebuild). Other errors (unknown module, bad regex) surface as-is.
 
 **Partial JSON handling**: if output is truncated (does not parse as complete JSON object — e.g., ends mid-value or missing closing `}`), log `⚠ partial JSON response — results may be incomplete`. Attempt recovery using `jq` with `--stream` mode if available; do not fall back to line-matching (structural keys like `imported_by`, `stale` would surface as false module names). Surface whatever was recovered; do not silently discard partial results. If recovery produces zero items, report `⚠ could not recover partial results — re-run the query` and stop.
@@ -200,18 +235,40 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 **Output routing** — if result count ≥ 5 items: write full rendered output to `.temp/output-codemap-query-<branch>-<YYYY-MM-DD>.md` via Write tool. Output file must begin with YAML header block:
 ```yaml
 ---
-codemap:query-code — <subcommand> <module-or-qname>
+Title:      codemap-query-code — <subcommand> <module-or-qname>
 Date:       <YYYY-MM-DD>
 Scope:      <project name>
 Focus:      structural index query
 Agents:     codemap:query-code
-Outcome:    <N results returned | exhaustive: true/false>
-Confidence: 0.N — <key gap if any>
+Outcome:    <N results returned | exhaustive -> true/false>
+Completeness: <exhaustive|partial|stale|unknown>
 Next steps: /codemap:query-code <follow-up subcommand> or /codemap:rename-refs if renaming
 Path:       → .temp/output-codemap-query-<branch>-<YYYY-MM-DD>.md
 ---
 ```
 Then print terminal summary (YAML header + path + top-5 items). Skip file write for ≤ 4 items — terminal only. Applies to: `rdeps`, `deps`, `central`, `coupled`, `fn-rdeps`, `fn-central`, `fn-deps`, `fn-blast`, `list`. For `fn-blast` on widely-called functions (>10 entries), always route to file — print file path and top-5 entries only to terminal to avoid burying the follow-up gate.
+
+**Evidence block** — append to every response body (terminal or file), after rendered results:
+
+```yaml
+## Evidence
+query: scan-query <subcommand> "<target>"      # one line per query; list all calls this task
+method: <index-lookup|static-ast|import-graph|ast-flags>   # from index.method
+completeness: <exhaustive|partial|stale|unknown>
+result_count: <N>
+not_covered: <list from index.not_covered, or omit if empty>
+limitations: degraded=<N> star_skips=<N> tests_excluded=<true|false>
+```
+
+`completeness` derived from `result.index` fields — not model-counted:
+- `exhaustive` — `index.exhaustive=true` AND `!stale` AND `degraded=0` (safe to skip re-query)
+- `partial` — `index.exhaustive=false` OR `degraded>0` (caller truncation or parse failures)
+- `stale` — `index.stale=true` (index predates recent file changes)
+- `unknown` — `index` field absent (old index format)
+
+`limitations:` from `result.index`: `degraded` (unparsed modules), `star_import_modules` count (star-import skips), `tests_excluded=true` when `--exclude-tests` used. Omit line when all values are 0/false.
+
+`Completeness:` in YAML header = same value. Agents may skip re-querying only when `completeness: exhaustive`.
 
 **Follow-up gate** (after output routing): invoke `AskUserQuestion` — (a) Run another query (specify subcommand), (b) Done. Skip when invoked from inside another skill's pipeline.
 

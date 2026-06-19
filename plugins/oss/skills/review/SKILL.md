@@ -102,6 +102,7 @@ _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/detect_codemap.py"
 python "$_DETECT_CODEMAP" --prefix review $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && exit 1
 CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/review-codemap-enabled" 2>/dev/null || echo "false")
+# codemap: integrated-via-shared
 ```
 
 If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
@@ -431,7 +432,9 @@ Do NOT read agent finding files inline — floods main context (~16–32K tokens
 
 After parsing confidence: agent < 0.7 → prepend **⚠ LOW CONFIDENCE** to findings section, state gap explicitly. Never drop uncertain findings.
 
-Print terminal block: read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–12, up to and including closing `---`), append `→ saved to $REPORT_DIR/review-report.md`, print to terminal.
+Print terminal block: read the `---` header from top of `$REPORT_DIR/review-report.md` (all fields from opening `---` up to and including closing `---` — `oss-review:`, `Date:`, `PR Type:`, `Scope:`, `Focus:`, `Agents:`, `CI:`, `Outcome:`, `Summary:`, `Confidence:`, `Next steps:`, `Path:`), append `→ saved to $REPORT_DIR/review-report.md`, print to terminal.
+
+**This `---` block IS the reply header — hard rule** (universal: quality-gates.md §Report File Format): print it verbatim as the FIRST line of the reply. Do NOT wrap the reply in a `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers — the box would shadow the YAML). Never emit both a box header and this `---` block. Print all 12 fields from the file verbatim — do NOT substitute the `·`-separated one-line fallback; that fallback is permitted ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails (file absent/unreadable). If the read fails, state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading.
 
 ## Step 6: Delegate implementation follow-up (optional)
 
