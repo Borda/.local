@@ -80,45 +80,90 @@ That output is prepended to the agent spawn prompt as structural context. The ag
 
 codemap more than halves tool calls vs plain while lifting both recall metrics above 95%.
 
-**Real-codebase benchmark** — 28 developer tasks × 2 arms (plain vs codemap), sonnet model. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header (name, namespace, default path) so the harness can be pointed at any Python codebase by swapping the paired task file. Results below are on pytorch-lightning-master (646 modules, 5 task types). Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
+**Real-codebase benchmark** — 28 developer tasks × 2 arms (plain vs codemap) × 3 model tiers. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header (name, namespace, default path) so the harness can be pointed at any Python codebase by swapping the paired task file. Results below are on pytorch-lightning-master (646 modules, 5 task types). Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
 
-**Token efficiency** (codemap input tokens / plain input tokens per task — lower = better for codemap):
+### Three-model comparison
 
-| Statistic | Value                                                                                                            |
-| --------- | ---------------------------------------------------------------------------------------------------------------- |
-| Median    | **0.17×** (83% reduction)                                                                                        |
-| Mean      | 0.28×                                                                                                            |
-| Min       | 0.06× (FN-03)                                                                                                    |
-| Max       | 1.41× (RV-04 — fixed: stale-index escape triggered 8 scan-query calls; system prompt now caps review tasks at 1) |
+June 21 2026 — 28 tasks × 2 arms × 3 models, pytorch-lightning-master, name-recall evaluator for all FN tasks.
 
-**Accuracy** (scored tasks only; excludes extraction_failed and incomplete):
+| Model      | Plain accuracy | Codemap accuracy | Accuracy lift | Safety-grade plain→codemap | Token ratio (median) | Token ratio range |
+| ---------- | -------------- | ---------------- | ------------- | -------------------------- | -------------------- | ----------------- |
+| Haiku 4.5  | 70.8% (17/24)  | 82.1% (23/28)    | **+11 pp**    | 7/13 → **13/13**           | **0.21×**            | 0.04–1.82×        |
+| Sonnet 4.6 | 80.8% (21/26)  | 81.5% (22/27)    | **+1 pp**     | 12/13 → 11/12              | **0.14×**            | 0.03–0.61×        |
+| Opus 4.6   | 73.1% (19/26)  | 89.3% (25/28)    | **+16 pp**    | 10/13 → **13/13**          | **0.32×**            | 0.03–1.17×        |
 
-| Arm     | Score     | Correct/Scored | extraction_failed | incomplete                    |
-| ------- | --------- | -------------- | ----------------- | ----------------------------- |
-| plain   | **78.3%** | 18/23          | 4 (Q-01,02,03,05) | 1 (RV-03, DNF at 2.2M tokens) |
-| codemap | **80.8%** | 21/26          | 2 (Q-01, Q-03)    | 0                             |
+Safety-grade = fraction of FN + D tasks (those with explicit name-recall) where recall ≥ 0.90. Token savings are model-independent; accuracy lift is model-dependent.
 
-**By series** (excl. extraction_failed / incomplete):
+#### Model-specific notes
 
-| Series                 | plain | codemap | Notes                                                                           |
-| ---------------------- | ----- | ------- | ------------------------------------------------------------------------------- |
-| S — symbol extraction  | 5/5   | 5/5     | Both arms perfect                                                               |
-| FN — call graph        | 5/5   | 4/5     | FN-02 codemap: 1 scan-query call insufficient for 37-caller set                 |
-| D — blast radius       | 8/8   | 8/8     | Both arms perfect; codemap primary benefit is 6–18× token reduction             |
-| RV — review assistance | 0/4   | 2/5     | RV-03 plain DNF; RV-04 codemap reported 24 (unique) vs 30 (count field) — fixed |
-| Q — code quality       | 0/1   | 2/3     | Evaluator gaps reduce scoreable tasks; token efficiency valid                   |
+**Haiku 4.5** — largest correctness gap. Safety-grade 7/13 → 13/13: every FN and D task reaches recall ≥ 0.90 with codemap. FN-04 plain=0.000 (complete failure, 28 turns burned) → codemap=1.000. FN-02 plain=0.108 → codemap=1.000. D-series: 8/8 both arms; codemap saves 53–96% tokens. Q-series: codemap 4/5 vs plain 1/3 scoreable. Not-covered gaps: `__import__`, `importlib.import_module`, lazy-loading.
 
-> **FN-series is the starkest signal**: plain arm burns 1–1.6M tokens and returns zero callers on 3 of 5 call-graph tasks. codemap resolves the full caller set in a single query at 6–18% of the token cost. The plain arm cannot scale to large call graphs within budget; codemap can.
+**Sonnet 4.6** — flattest accuracy delta (+1 pp); token savings are the primary benefit (median 0.14×, 86% reduction). D-series: 8/8 both arms; codemap saves 39–97% tokens. ⚠ FN-series regression on codemap arm: FN-02 codemap recall=0.081 (plain=1.000), FN-03 codemap extraction_failed (plain=1.000). Safety-grade slight regression (12/13 → 11/12). Investigate before deploying codemap for sonnet on `fn_call_graph` tasks.
 
-> **Static AST limitations**: scan-query does not resolve dynamic dispatch, hook callbacks, `importlib.import_module`, lazy-loading patterns, or string-based dispatch. Calls through these mechanisms are not counted. Semble, when available, reduces calls further and slightly boosts erec at a modest rrec trade-off.
+**Opus 4.6** — largest accuracy lift (+16 pp). FN-series is the swing: plain 3/5 (FN-01=0.808, FN-02=0.108) → codemap 5/5 (all 1.000). D-series: 8/8 both arms; codemap saves 49–97% tokens. Q-series: codemap 5/5 vs plain 1/3 scoreable. Safety-grade 10/13 → 13/13. RV-03/04 count-based over-count persists on both arms.
 
-When the semble MCP server is available, agents also get `mcp__semble__search` as an optional semantic search tool — useful when the codemap index is non-exhaustive.
+**Token efficiency** (codemap / plain input tokens):
+
+| Statistic | Haiku 4.5                 | Sonnet 4.6                | Opus 4.6                  |
+| --------- | ------------------------- | ------------------------- | ------------------------- |
+| Median    | **0.21×** (79% reduction) | **0.14×** (86% reduction) | **0.32×** (68% reduction) |
+| Min       | 0.04× (FN-02)             | 0.03× (D-01)              | 0.03× (D-01)              |
+| Max       | 1.82× (D-08)              | 0.61× (D-06)              | 1.17× (D-07)              |
+
+**By series** (opus canonical — name-recall evaluator throughout):
+
+| Series                 | plain | codemap | Notes                                                                 |
+| ---------------------- | ----- | ------- | --------------------------------------------------------------------- |
+| S — symbol extraction  | 5/5   | 5/5     | Both arms perfect; codemap saves 37–63% tokens                        |
+| FN — call graph        | 3/5   | 5/5     | Plain misses FN-01 (0.808) and FN-02 (0.108); codemap perfect         |
+| D — blast radius       | 8/8   | 8/8     | Both arms perfect; codemap saves 49–97% tokens                        |
+| RV — review assistance | 2/5   | 3/5     | RV-03/04 over-count both arms; RV-05 codemap lift (0.80 → 1.00)       |
+| Q — code quality       | 1/3†  | 5/5     | †Q-05 ext-fail, Q-04 plain incomplete; codemap scores all 5 correctly |
+
+> **FN-series is the starkest signal for haiku and opus**: plain arm burns 0.85M–4.0M tokens and fails 2–3 of 5 call-graph tasks; codemap resolves the full caller set in a single query at 4–16% of the token cost. Sonnet inverts this — strong reasoning compensates for lack of structural index on FN, but codemap execution failure on two tasks pulls safety-grade below plain.
+
+> **Static AST limitations**: scan-query does not resolve dynamic dispatch, hook callbacks, `importlib.import_module`, lazy-loading patterns, or string-based dispatch. Calls through these mechanisms are not counted. Semble, when available, reduces tool calls further and slightly boosts erec at a modest rrec trade-off. When the semble MCP server is available, agents also get `mcp__semble__search` as an optional semantic search tool — useful when the codemap index is non-exhaustive.
 
 > **⚠ Integration quality matters — poor wiring can make things worse.**
 >
 > codemap injects a rich dependency graph into every agent prompt. On weaker models or tasks with large blast-radius graphs, this extra context can overwhelm the model and cause it to fall back to grep-heavy loops — performing *worse* than plain arm. The benchmark labels this failure mode `degenerate_grep_loop`.
 >
 > Good integration requires three things: (1) **skill-first protocol** — the agent calls `/codemap:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap queries per task; (3) **hard stop on `exhaustive: true`** — when the index says the list is complete, write the answer immediately, no more tool calls. Skipping any of these — especially ignoring the exhaustive flag — is the primary cause of regressions that flip the codemap benefit into a liability. Use `/codemap:integration init` to wire integration correctly rather than injecting context manually.
+
+______________________________________________________________________
+
+## Integration with develop and oss plugins
+
+codemap is not a standalone tool — its primary value is the structural context it feeds into the `/develop` and `/oss` skills that do real code work. This section documents exactly what is wired today, what each integration delivers based on benchmark data, and where the current implementation has known gaps.
+
+### What is wired today
+
+| Skill               | Integration type             | What codemap provides                                                                                                                                                                                                   |
+| ------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/develop:review`   | Active — per changed module  | rdeps, fn-blast, mock-rdeps, uncovered, xrefs, undocumented — results injected into every dimension-agent prompt with "trust codemap, skip redundant Grep/Read"                                                         |
+| `/oss:review`       | Active — per changed module  | Same per-module query set as develop:review; codemap context piped to each reviewer agent                                                                                                                               |
+| `/develop:refactor` | Active — per affected module | rdeps + coupled callers; flags callers OUTSIDE refactoring scope as silent-contract-break risk                                                                                                                          |
+| `/develop:fix`      | Passive — context only       | Loads codemap-context.md but never sets TARGET_FN/TARGET_MODULE — only `central --top 5` fires (globally hot modules, not bug-specific). fn-blast caller query is currently dead code in this path. *(Fix in progress)* |
+| `/develop:feature`  | Passive — context only       | Same limitation as fix: TARGET vars never set, blast-radius query never fires. *(Fix in progress)*                                                                                                                      |
+
+### Expected benefits per skill (based on benchmark data — haiku/sonnet, 28-task suite)
+
+| Skill task type             | Token savings (codemap vs plain) | Accuracy lift                                                                                 |
+| --------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| Review (per-module impact)  | 80–90% fewer tokens              | Maintains accuracy while eliminating redundant grep walks                                     |
+| Blast radius / caller count | 6–17× fewer tokens               | +40 pp (haiku: 50% → 90%) — codemap returns exact caller list in 1 call vs 150+ grep/read ops |
+| Symbol location             | 20–75% fewer tokens              | No accuracy change — both find it, codemap finds it faster                                    |
+| Refactor impact             | 80–90% fewer tokens              | Systematic caller coverage — plain arm misses 15–54% of callers on large functions            |
+
+### Graceful degradation
+
+All skills auto-degrade when the codemap index or `scan-query` binary is absent. Active mode (`--codemap`) aborts cleanly; auto mode (default) proceeds without codemap. **Important**: current degradation is silent — if the index is missing, skills proceed at full token cost with no warning. A self-healing auto-build is in progress.
+
+### Known gaps (challenger audit 2026-06-20)
+
+- **`fn-rdeps` not used**: The benchmark-proven subcommand for caller accuracy (`fn-rdeps`) is invoked in zero develop/oss skill workflows. Skills use `fn-blast` (transitive) instead. Fix/feature paths now being updated to add `fn-rdeps` (direct callers) as the first query.
+- **`/develop:fix` and `/develop:feature` blast-radius is dead code**: TARGET_FN/TARGET_MODULE never set → only `central --top 5` runs → no per-bug caller impact. Wiring in progress.
+- **check_injection.py blind spot**: Integration health check detects marker comment presence, not query liveness — cannot catch the TARGET-unset defect.
 
 ______________________________________________________________________
 
@@ -273,6 +318,13 @@ Pass `--approve` to apply all High and Medium recommendations non-interactively:
 
 ```text
 /codemap:integration init --approve
+```
+
+`--approve` delegates injection to `bin/inject_codemap.py`, which scores each skill candidate for Python/codemap relevance (0–4), injects the context block before `## Step 1`, backs up before writing, and rolls back on failure. Run it directly for scripted or CI use:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/inject_codemap.py" \
+    --plugin-root <path> [--apply] [--dry-run] [--verbose]
 ```
 
 #### Manual injection

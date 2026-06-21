@@ -54,7 +54,7 @@ if [ ! -x "$SCAN_BIN" ]; then
 fi
 
 # Run parse_scan_args.py — yields `--root <quoted>` and/or `--incremental` tokens.
-if ! SCAN_ARGS_RAW="$(python "$PARSE_BIN" "$ARGUMENTS")"; then
+if ! SCAN_ARGS_RAW="$(python3 "$PARSE_BIN" "$ARGUMENTS")"; then
     printf "! parse_scan_args.py failed — check Python availability and plugin installation\n" >&2
     exit 2
 fi
@@ -66,19 +66,13 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")"
 REPO_SLUG="$(basename "$REPO_ROOT" | tr -cd '[:alnum:]-')"
 PROJ_SLUG="${HOSTNAME_SLUG}-${REPO_SLUG}"
 
-# PROJ_NAME — when --root provided, basename(--root); else basename(git-root|PWD).
-# Mirrors scan-index's own project-name derivation so the cache lookup stays consistent.
-if [[ " $ARGUMENTS " == *" --root "* ]]; then
-    # Same extraction strategy as parse_scan_args.py but bash-only — no PCRE dependency.
-    # Strip everything up to the literal `--root ` marker, then take the first whitespace
-    # delimited token. Strip surrounding single/double quotes if present.
-    ROOT_TAIL="${ARGUMENTS#*--root }"
-    ROOT_ARG="${ROOT_TAIL%%[[:space:]]*}"
-    ROOT_ARG="${ROOT_ARG#\'}"; ROOT_ARG="${ROOT_ARG%\'}"
-    ROOT_ARG="${ROOT_ARG#\"}"; ROOT_ARG="${ROOT_ARG%\"}"
-    PROJ_NAME="$(basename "$ROOT_ARG")"
-else
+# PROJ_NAME — delegate to parse_scan_args.py --print-root so quoted/spaced paths are
+# handled correctly. Falls back to git-root basename when --root is absent.
+ROOT_DIR="$(python3 "$PARSE_BIN" "$ARGUMENTS" --print-root 2>/dev/null || echo ".")"
+if [ "$ROOT_DIR" = "." ]; then
     PROJ_NAME="$(basename "$REPO_ROOT")"
+else
+    PROJ_NAME="$(basename "$ROOT_DIR")"
 fi
 
 TMPDIR_DIR="${TMPDIR:-/tmp}"
@@ -90,6 +84,7 @@ printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug-$$"
 printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}-$$"
 printf '%s' "$SCAN_ARGS_RAW"  > "${TMPDIR_DIR}/codemap-scan-args-${PROJ_SLUG}-$$"
 printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}-$$"
+
 # Keep non-PID versions as fallback for callers that predate this change
 printf '%s' "$PROJ_SLUG"      > "${TMPDIR_DIR}/codemap-proj-slug"
 printf '%s' "$SCAN_BIN"       > "${TMPDIR_DIR}/codemap-scan-bin-${PROJ_SLUG}"

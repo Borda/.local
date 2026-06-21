@@ -149,84 +149,111 @@ class TestFormatShellAssignments:
 
 
 # ---------------------------------------------------------------------------
-# main() — CLI entry point: writes to temp files (not stdout)
+# main() — CLI entry point: writes to pid-qualified temp files, prints paths
 # ---------------------------------------------------------------------------
 
 
+def _read_outputs(capsys: pytest.CaptureFixture[str]) -> tuple[str, str]:
+    """Read the two pid-qualified temp files whose paths main() printed to stdout.
+
+    Args:
+        capsys: pytest stdout/stderr capture fixture.
+
+    Returns:
+        Tuple ``(flag_text, decorator_text)`` — the contents of the flag and
+        decorator files respectively.
+    """
+    flag_line, dec_line = capsys.readouterr().out.splitlines()
+    return Path(flag_line).read_text(), Path(dec_line).read_text()
+
+
 class TestMain:
-    """``main()`` writes raw values to ``${TMPDIR}/codemap-deprecate-{flag,decorator}``.
+    """``main()`` writes raw values to pid-qualified temp files and prints their paths.
 
     The ``--arguments=`` form (equals sign, no space) is required so that values
-    starting with ``--`` survive argparse's flag-detection.
+    starting with ``--`` survive argparse's flag-detection. Filenames carry a
+    ``-<pid>`` suffix (SEC-M7), so tests read the printed paths rather than fixed names.
     """
 
-    def test_main_with_bare_deprecate(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_with_bare_deprecate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Bare --deprecate → flag=true, decorator=empty."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--deprecate"])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "true"
-        assert (tmp_path / "codemap-deprecate-decorator").read_text() == ""
+        assert _read_outputs(capsys) == ("true", "")
 
-    def test_main_with_deprecate_value(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_with_deprecate_value(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """--deprecate=<value> → flag=true, decorator=raw value (no shell quoting)."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--deprecate=@mydecorator"])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "true"
-        assert (tmp_path / "codemap-deprecate-decorator").read_text() == "@mydecorator"
+        assert _read_outputs(capsys) == ("true", "@mydecorator")
 
-    def test_main_with_no_deprecate(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_with_no_deprecate(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """--no-deprecate → flag=false, decorator=empty."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--no-deprecate"])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "false"
-        assert (tmp_path / "codemap-deprecate-decorator").read_text() == ""
+        assert _read_outputs(capsys) == ("false", "")
 
-    def test_main_with_absent_flag(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_with_absent_flag(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """No --deprecate flag → flag=false, decorator=empty."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--dry-run --since 1.0"])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "false"
-        assert (tmp_path / "codemap-deprecate-decorator").read_text() == ""
+        assert _read_outputs(capsys) == ("false", "")
 
-    def test_main_with_empty_arguments(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_with_empty_arguments(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Empty arguments → flag=false, decorator=empty."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments="])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "false"
+        assert _read_outputs(capsys) == ("false", "")
 
-    def test_main_with_no_argv(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_with_no_argv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Default empty string when --arguments omitted → flag=false."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main([])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "false"
+        assert _read_outputs(capsys) == ("false", "")
 
-    def test_main_decorator_written_raw_not_shell_quoted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_decorator_written_raw_not_shell_quoted(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Decorator with parens/spaces is written raw — no shlex.quote wrapping."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments=--deprecate='@deprecated(target=bar, in=\"1.0\")'"])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "true"
-        # Raw value — no surrounding quotes, no shlex escaping
-        decorator = (tmp_path / "codemap-deprecate-decorator").read_text()
+        flag, decorator = _read_outputs(capsys)
+        assert flag == "true"
         assert "@deprecated(target=bar" in decorator
 
-    def test_main_with_space_separated_arguments_value(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_main_with_space_separated_arguments_value(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         """Space-separated form works for payloads not starting with ``--``."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--arguments", "symbol mypkg::old mypkg::new"])
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "false"
+        assert _read_outputs(capsys) == ("false", "")
 
     def test_main_uses_sys_argv_when_none(
         self,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         """main() reads sys.argv when argv=None."""
         monkeypatch.setenv("TMPDIR", str(tmp_path))
@@ -237,8 +264,7 @@ class TestMain:
         )
         rc = main()
         assert rc == 0
-        assert (tmp_path / "codemap-deprecate-flag").read_text() == "true"
-        assert (tmp_path / "codemap-deprecate-decorator").read_text() == "@fromargv"
+        assert _read_outputs(capsys) == ("true", "@fromargv")
 
 
 # ---------------------------------------------------------------------------

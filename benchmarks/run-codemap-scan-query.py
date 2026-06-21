@@ -66,28 +66,28 @@ agent spawn prompt?
                                   (5 tasks)                      rdeps+deps valid
 
 Suite S — Symbol lookup: validates that scan-query symbol returns correct source locations.
-Reads ground truth from benchmarks/tasks-bench.json (S-01..S-05).
+Reads ground truth from benchmarks/tasks-bench.json (SE-01..SE-05).
 
   Code       Name                     What it measures                    Pass threshold
   --------   -----------------------  ----------------------------------  ---------------
-  S_S-01..   symbol-<task-id>         start_line within ±3 of gt         found + start_ok
+  S_SE-01..   symbol-<task-id>         start_line within ±3 of gt         found + start_ok
   S2         symbol-all-pass-rate     all symbol tasks pass               100%
 
 Suite H — Health: validates undocumented / uncovered counts match tasks-bench.json ground truth.
-Reads ground truth from benchmarks/tasks-bench.json (Q-01..Q-05).
+Reads ground truth from benchmarks/tasks-bench.json (CQ-01..CQ-05).
 
   Code         Name                         What it measures                    Pass threshold
   -----------  ---------------------------  ----------------------------------  ---------------
-  H_Q-01...    health-<task-id>-undoc/uncov total from scan-query == gt.count  exact match
+  H_CQ-01...    health-<task-id>-undoc/uncov total from scan-query == gt.count  exact match
   H1           health-undocumented          all undocumented tasks match        100%
   H2           health-uncovered             all uncovered tasks match           100%
 
 Suite X — Xrefs broken: validates xrefs --broken count + target set match ground truth.
-Reads ground truth from benchmarks/tasks-bench.json (Q-04).
+Reads ground truth from benchmarks/tasks-bench.json (CQ-04).
 
   Code     Name                   What it measures                    Pass threshold
   -------  ---------------------  ----------------------------------  ---------------
-  X_Q-04   xrefs-broken-Q-04      count + target set == ground truth  exact match
+  X_CQ-04   xrefs-broken-CQ-04      count + target set == ground truth  exact match
   X1       xrefs-broken-all       all xrefs_broken tasks match        100%
 
 Index path resolution order (updated): .cache/codemap/ checked before .cache/scan/ to match

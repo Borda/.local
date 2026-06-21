@@ -36,68 +36,8 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import keyword
-import re
 import sys
 import textwrap
-
-
-# ---------------------------------------------------------------------------
-# Input validation
-# ---------------------------------------------------------------------------
-
-
-def _validate_identifier(name: str, field: str) -> None:
-    """Raise ValueError if *name* is not a safe Python identifier.
-
-    Args:
-        name: value to validate.
-        field: parameter name (for error messages).
-
-    Raises:
-        ValueError: when *name* is not a valid Python identifier, is a keyword,
-            or is empty.
-
-    Examples:
-        >>> _validate_identifier("my_func", "old_name")  # no exception
-        >>> _validate_identifier("", "old_name")
-        Traceback (most recent call last):
-            ...
-        ValueError: Invalid Python identifier for old_name: ''
-        >>> _validate_identifier("class", "old_name")
-        Traceback (most recent call last):
-            ...
-        ValueError: Invalid Python identifier for old_name: 'class'
-    """
-    if not name or not name.isidentifier() or keyword.iskeyword(name):
-        raise ValueError(f"Invalid Python identifier for {field}: {name!r}")
-
-
-def _validate_version(ver: str, field: str) -> None:
-    """Raise ValueError if *ver* is not a safe version string.
-
-    Accepts ``"?"`` (unknown placeholder) and ``X.Y[.Z]`` numeric forms.
-
-    Args:
-        ver: version string to validate.
-        field: parameter name (for error messages).
-
-    Raises:
-        ValueError: when *ver* is not ``"?"`` and does not match numeric version pattern.
-
-    Examples:
-        >>> _validate_version("?", "since")  # no exception
-        >>> _validate_version("1.2", "since")  # no exception
-        >>> _validate_version("1.2.3", "since")  # no exception
-        >>> _validate_version("bad-version", "since")
-        Traceback (most recent call last):
-            ...
-        ValueError: Invalid version string for since: 'bad-version'
-    """
-    if ver == "?":
-        return
-    if not re.fullmatch(r"\d+(\.\d+)+", ver):
-        raise ValueError(f"Invalid version string for {field}: {ver!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -143,10 +83,6 @@ def gen_function_wrapper(old_name: str, new_name: str, since: str, removed_in: s
     Returns:
         Python source string ready to insert after the new definition.
 
-    Raises:
-        ValueError: if *old_name* or *new_name* are not valid Python identifiers,
-            or if *since*/*removed_in* are not valid version strings.
-
     Examples:
         >>> code = gen_function_wrapper("old_fn", "new_fn", "1.0", "2.0")
         >>> "deprecated" in code and "old_fn" in code and "new_fn" in code
@@ -154,10 +90,6 @@ def gen_function_wrapper(old_name: str, new_name: str, since: str, removed_in: s
         >>> "remove_in" in code and "warnings" not in code
         True
     """
-    _validate_identifier(old_name, "old_name")
-    _validate_identifier(new_name, "new_name")
-    _validate_version(since, "since")
-    _validate_version(removed_in, "removed_in")
     decorator = f'@deprecated(target={new_name}, deprecated_in="{since}", remove_in="{removed_in}")'
     return gen_wrapper_from_decorator(decorator, old_name, removed_in)
 
@@ -174,10 +106,6 @@ def gen_class_wrapper(old_name: str, new_name: str, since: str, removed_in: str)
     Returns:
         Python source string ready to insert after the new definition.
 
-    Raises:
-        ValueError: if *old_name* or *new_name* are not valid Python identifiers,
-            or if *since*/*removed_in* are not valid version strings.
-
     Examples:
         >>> code = gen_class_wrapper("OldCls", "NewCls", "1.0", "2.0")
         >>> "deprecated_class" in code and "OldCls" in code and "NewCls" in code
@@ -185,10 +113,6 @@ def gen_class_wrapper(old_name: str, new_name: str, since: str, removed_in: str)
         >>> "warnings" not in code
         True
     """
-    _validate_identifier(old_name, "old_name")
-    _validate_identifier(new_name, "new_name")
-    _validate_version(since, "since")
-    _validate_version(removed_in, "removed_in")
     decorator = f'@deprecated_class(target={new_name}, deprecated_in="{since}", remove_in="{removed_in}")'
     return gen_wrapper_from_decorator(decorator, old_name, removed_in)
 
@@ -209,7 +133,8 @@ def gen_wrapper_from_decorator(decorator: str, old_name: str, removed_in: str = 
 
     Raises:
         ValueError: if *decorator* contains neither ``deprecated`` nor
-            ``deprecated_class``, or if *old_name* is not a valid Python identifier.
+            ``deprecated_class``, or if *decorator* contains a newline
+            (code injection, SEC-L1).
 
     Examples:
         >>> code = gen_wrapper_from_decorator(
@@ -226,8 +151,15 @@ def gen_wrapper_from_decorator(decorator: str, old_name: str, removed_in: str = 
         True
         >>> "class Foo: ..." in code
         True
+        >>> gen_wrapper_from_decorator("@deprecated(target=bar)\\nimport os", "foo")
+        Traceback (most recent call last):
+            ...
+        ValueError: --decorator must not contain newlines
     """
-    _validate_identifier(old_name, "old_name")
+    # SEC-L1: the decorator is embedded verbatim in generated Python source; an
+    # embedded newline would inject arbitrary additional code lines.
+    if "\n" in decorator or "\r" in decorator:
+        raise ValueError("--decorator must not contain newlines")
     import_line = _import_for_decorator(decorator)
     stub = f"class {old_name}: ..." if "deprecated_class" in decorator else f"def {old_name}(*args, **kwargs): ..."
     return textwrap.dedent(f"""\

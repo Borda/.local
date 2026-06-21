@@ -32,6 +32,22 @@ parse_resolver_output = _mod.parse_resolver_output
 main = _mod.main
 
 
+def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str:
+    """Read a PID-qualified resolve temp file by globbing for the single match.
+
+    Args:
+        tmp_path: Directory where temp files are written.
+        key: File key — ``"proj"`` or ``"index"``.
+        prefix: File name prefix (default ``"codemap"``).
+
+    Returns:
+        Contents of the matched temp file.
+    """
+    matches = list(tmp_path.glob(f"{prefix}-resolve-{key}-*"))
+    assert len(matches) == 1, f"Expected exactly one {key} temp file, got: {matches}"
+    return matches[0].read_text()
+
+
 def _make_resolver_mock(
     proj: str,
     index_path: str,
@@ -123,8 +139,8 @@ class TestMainHappyPath:
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main([])
         assert rc == 0
-        assert (tmp_path / "codemap-resolve-proj").read_text() == "demo-proj"
-        assert (tmp_path / "codemap-resolve-index").read_text() == "/tmp/demo.json"
+        assert _read_resolve_file(tmp_path, "proj") == "demo-proj"
+        assert _read_resolve_file(tmp_path, "index") == "/tmp/demo.json"
 
     def test_happy_path_tricky_values(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Values with spaces and special chars are written raw (no shell quoting)."""
@@ -134,8 +150,8 @@ class TestMainHappyPath:
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main([])
         assert rc == 0
-        assert (tmp_path / "codemap-resolve-proj").read_text() == tricky_proj
-        assert (tmp_path / "codemap-resolve-index").read_text() == tricky_index
+        assert _read_resolve_file(tmp_path, "proj") == tricky_proj
+        assert _read_resolve_file(tmp_path, "index") == tricky_index
 
 
 class TestCheckExists:
@@ -149,8 +165,8 @@ class TestCheckExists:
         monkeypatch.setenv("TMPDIR", str(tmp_path))
         rc = main(["--check-exists"])
         assert rc == 0
-        assert (tmp_path / "codemap-resolve-proj").read_text() == "with-index"
-        assert (tmp_path / "codemap-resolve-index").read_text() == str(index)
+        assert _read_resolve_file(tmp_path, "proj") == "with-index"
+        assert _read_resolve_file(tmp_path, "index") == str(index)
 
     def test_missing_index_exits_1_but_writes_temp_files(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -163,8 +179,8 @@ class TestCheckExists:
         captured = capsys.readouterr()
         assert rc == 1
         # Temp files still written — PROJ and INDEX path available for diagnostics.
-        assert (tmp_path / "codemap-resolve-proj").read_text() == "no-idx"
-        assert (tmp_path / "codemap-resolve-index").read_text() == str(missing)
+        assert _read_resolve_file(tmp_path, "proj") == "no-idx"
+        assert _read_resolve_file(tmp_path, "index") == str(missing)
         assert "INDEX file not found" in captured.err
         assert str(missing) in captured.err
 
@@ -181,8 +197,8 @@ class TestResolverFailure:
         rc = main([])
         captured = capsys.readouterr()
         assert rc == 1
-        assert (tmp_path / "codemap-resolve-proj").read_text() == ""
-        assert (tmp_path / "codemap-resolve-index").read_text() == ""
+        assert _read_resolve_file(tmp_path, "proj") == ""
+        assert _read_resolve_file(tmp_path, "index") == ""
         assert "produced no output" in captured.err
 
     def test_check_exists_with_empty_resolver_exits_1(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

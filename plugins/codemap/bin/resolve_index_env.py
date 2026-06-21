@@ -2,43 +2,172 @@
 """resolve_index_env.py — resolve codemap PROJ + INDEX and write to temp files.
 
 Calls ``bin/resolve_proj_index.py``, reads PROJ (line 1) and INDEX (line 2),
-and writes each to ``${TMPDIR:-/tmp}/${prefix}-resolve-{proj,index}`` for the
+and writes each to ``<tmpdir>/${prefix}-resolve-{proj,index}-${PID}`` for the
 caller to read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
+
+``CLAUDE_PLUGIN_ROOT`` is validated before use (must be an absolute path inside the
+plugin cache subtree or ending in ``plugins/codemap``) to prevent arbitrary subprocess
+execution. ``TMPDIR`` is only honoured when absolute and owned by the current user; the
+PID suffix isolates concurrent invocations.
 
 Usage:
     _CM_PROJ=$(git rev-parse --show-toplevel | xargs basename)
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \\
         --output-prefix "codemap-${_CM_PROJ}"
-    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj")
-    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index")
+    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-$$")
+    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-$$")
 
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists
     # exit 1 when INDEX file missing; temp files still written for diagnostics
-    # (uses default prefix "codemap" — unqualified; prefer --output-prefix for concurrent safety)
+    # (uses default prefix "codemap"; prefer --output-prefix for concurrent safety)
 
 Flags:
     --check-exists       verify INDEX file exists; exit 1 with stderr message if missing.
-    --output-prefix STR  prefix for temp file names (default: "codemap").
-                         Use "codemap-${_CM_PROJ}" to scope per-project and avoid concurrent collisions.
+    --output-prefix STR  prefix for temp file names (default: "codemap"); must match
+                         [a-zA-Z0-9_-]+ (no path separators). Use "codemap-${_CM_PROJ}"
+                         to scope per-project and avoid concurrent collisions.
 
 Exit codes:
     0 — success (PROJ + INDEX written to temp files)
     1 — resolver produced no output, or (with ``--check-exists``) INDEX file missing
         (temp files still written so caller can read PROJ for diagnostics)
     2 — unknown flag
+    3 — unsafe CLAUDE_PLUGIN_ROOT or --output-prefix (validation failure)
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
 _SCRIPT_NAME = "resolve_index_env"
+
+# CLAUDE_PLUGIN_ROOT must be an absolute path either inside the plugin cache subtree
+# (~/.claude/plugins/cache/.../codemap...) or ending in plugins/codemap — anything else is
+# attacker-controllable and would let _run_resolver() exec arbitrary Python (SEC-H1).
+_VALID_PLUGIN_ROOT_RE = re.compile(r".*/(?:\.claude/plugins/cache/.+/codemap(?:/[^/]+)*|plugins/codemap)/?$")
+# --output-prefix must be a single bare token — no path separators or dots — blocking
+# traversal out of TMPDIR (SEC-M8 / CWE-22).
+_VALID_OUTPUT_PREFIX_RE = re.compile(r"[a-zA-Z0-9_-]+")
+
+
+def _validate_plugin_root(plugin_root: str) -> str:
+    """Validate ``CLAUDE_PLUGIN_ROOT`` before it is used to build a subprocess path.
+
+    An attacker-controlled ``CLAUDE_PLUGIN_ROOT`` would otherwise let
+    :func:`_run_resolver` execute an arbitrary ``resolve_proj_index.py`` (SEC-H1). The
+    value must be a non-empty absolute path within the plugin cache subtree or ending in
+    ``plugins/codemap``.
+
+    Args:
+        plugin_root: Raw value read from ``$CLAUDE_PLUGIN_ROOT``.
+
+    Returns:
+        The validated ``plugin_root`` unchanged.
+
+    Raises:
+        ValueError: if ``plugin_root`` is empty, relative, or does not match the safe pattern.
+
+    Examples:
+        >>> _validate_plugin_root("/Users/x/.claude/plugins/cache/borda/codemap/0.1.0")
+        '/Users/x/.claude/plugins/cache/borda/codemap/0.1.0'
+        >>> _validate_plugin_root("/opt/repo/plugins/codemap")
+        '/opt/repo/plugins/codemap'
+        >>> _validate_plugin_root("plugins/codemap")
+        Traceback (most recent call last):
+        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: 'plugins/codemap'
+        >>> _validate_plugin_root("/tmp/evil")
+        Traceback (most recent call last):
+        ValueError: CLAUDE_PLUGIN_ROOT is not a safe path: '/tmp/evil'
+    """
+    if not plugin_root or not os.path.isabs(plugin_root) or not _VALID_PLUGIN_ROOT_RE.fullmatch(plugin_root):
+        raise ValueError(f"CLAUDE_PLUGIN_ROOT is not a safe path: {plugin_root!r}")
+    return plugin_root
+
+
+def _resolve_plugin_root() -> str:
+    """Read and validate ``CLAUDE_PLUGIN_ROOT``, falling back to the in-tree default.
+
+    The unset/empty default ``plugins/codemap`` is only valid when running from the source
+    tree where the path is relative-trusted; any explicitly set value must pass
+    :func:`_validate_plugin_root`.
+
+    Returns:
+        A validated, safe plugin-root path string.
+
+    Raises:
+        ValueError: if ``CLAUDE_PLUGIN_ROOT`` is set to an unsafe value.
+
+    Examples:
+        >>> import os
+        >>> _ = os.environ.pop("CLAUDE_PLUGIN_ROOT", None)
+        >>> _resolve_plugin_root()
+        'plugins/codemap'
+    """
+    raw = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if raw is None or raw == "":
+        return "plugins/codemap"
+    return _validate_plugin_root(raw)
+
+
+def _resolve_tmpdir() -> str:
+    """Return a safe temp directory: ``TMPDIR`` only when absolute and owned by this user.
+
+    An untrusted ``TMPDIR`` is a write-anywhere primitive (SEC-M8); a directory owned by
+    another user can be a symlink-swap target. When ``TMPDIR`` fails either check, fall back
+    to :func:`tempfile.gettempdir`.
+
+    Returns:
+        Absolute path to a temp directory safe for this process to write into.
+
+    Examples:
+        >>> import os, tempfile
+        >>> _ = os.environ.pop("TMPDIR", None)
+        >>> _resolve_tmpdir() == tempfile.gettempdir()
+        True
+    """
+    tmpdir = os.environ.get("TMPDIR")
+    if tmpdir and os.path.isabs(tmpdir):
+        try:
+            if Path(tmpdir).stat().st_uid == os.getuid():
+                return tmpdir
+        except OSError:
+            pass
+    return tempfile.gettempdir()
+
+
+def _validate_output_prefix(prefix: str) -> str:
+    """Validate the ``--output-prefix`` value against path traversal.
+
+    A prefix containing ``/`` or ``..`` would escape ``TMPDIR`` (SEC-M8 / CWE-22); only a
+    bare ``[a-zA-Z0-9_-]+`` token is accepted.
+
+    Args:
+        prefix: Raw ``--output-prefix`` argument.
+
+    Returns:
+        The validated prefix unchanged.
+
+    Raises:
+        ValueError: if ``prefix`` is empty or contains anything outside ``[a-zA-Z0-9_-]``.
+
+    Examples:
+        >>> _validate_output_prefix("codemap-myproj")
+        'codemap-myproj'
+        >>> _validate_output_prefix("../escape")
+        Traceback (most recent call last):
+        ValueError: --output-prefix must match [a-zA-Z0-9_-]+ (no path separators): '../escape'
+    """
+    if not _VALID_OUTPUT_PREFIX_RE.fullmatch(prefix):
+        raise ValueError(f"--output-prefix must match [a-zA-Z0-9_-]+ (no path separators): {prefix!r}")
+    return prefix
 
 
 def parse_resolver_output(stdout: str) -> tuple[str, str]:
@@ -109,36 +238,39 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output-prefix",
         default="codemap",
         help=(
-            "Prefix for temp file names (default: 'codemap'). "
-            "Use 'codemap-<proj>' to scope per-project and avoid concurrent collisions."
+            "Prefix for temp file names (default: 'codemap'); must match [a-zA-Z0-9_-]+ (no path "
+            "separators). Use 'codemap-<proj>' to scope per-project and avoid concurrent collisions."
         ),
     )
     return parser
 
 
 def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
-    """Write PROJ and INDEX to ``${TMPDIR:-/tmp}/${prefix}-resolve-{proj,index}`` temp files.
+    """Write PROJ and INDEX to ``<tmpdir>/${prefix}-resolve-{proj,index}-${PID}`` temp files.
 
     Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
     Temp files are always written (even on resolver failure) so downstream ``cat``
     calls can supply their own ``|| echo ""`` fallback without extra conditionals.
+    The temp directory is resolved via :func:`_resolve_tmpdir` (owner-checked ``TMPDIR``)
+    and the process PID is appended to isolate concurrent invocations (CWE-377).
 
     Args:
         proj: Project name string (may be empty on resolver failure).
         index: Index file path string (may be empty on resolver failure).
-        prefix: Temp file name prefix (default: ``"codemap"``). Pass
+        prefix: Validated temp file name prefix (default: ``"codemap"``). Pass
             ``"codemap-<proj>"`` to scope per-project and avoid concurrent collisions.
     """
-    tmpdir = os.environ.get("TMPDIR", "/tmp")
+    tmpdir = _resolve_tmpdir()
+    pid = os.getpid()
     for key, val in (("proj", proj), ("index", index)):
-        Path(tmpdir, f"{prefix}-resolve-{key}").write_text(val, encoding="utf-8")
+        Path(tmpdir, f"{prefix}-resolve-{key}-{pid}").write_text(val, encoding="utf-8")
 
 
 def _run_resolver(plugin_root: str) -> str:
     """Invoke ``resolve_proj_index.py`` via subprocess and return its stdout.
 
     Args:
-        plugin_root: Plugin root directory (typically ``$CLAUDE_PLUGIN_ROOT``).
+        plugin_root: Validated plugin root directory (see :func:`_validate_plugin_root`).
 
     Returns:
         Captured stdout text. Empty string on subprocess failure.
@@ -169,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
         argv: Argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        Exit code — 0 success, 1 resolver/check failure, 2 unknown flag.
+        Exit code — 0 success, 1 resolver/check failure, 2 unknown flag, 3 unsafe input.
     """
     parser = _build_parser()
     try:
@@ -184,12 +316,19 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return int(exc.code) if exc.code is not None else 0
 
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "plugins/codemap")
+    # Validate untrusted inputs at the boundary before any path is built or executed.
+    try:
+        plugin_root = _resolve_plugin_root()
+        prefix = _validate_output_prefix(args.output_prefix)
+    except ValueError as exc:
+        sys.stderr.write(f"{_SCRIPT_NAME}: {exc}\n")
+        return 3
+
     stdout = _run_resolver(plugin_root)
     proj, index = parse_resolver_output(stdout)
 
     # Always write to temp files before any failure exit — callers read with cat.
-    _write_temp_vars(proj, index, prefix=args.output_prefix)
+    _write_temp_vars(proj, index, prefix=prefix)
 
     if not proj or not index:
         sys.stderr.write(f"{_SCRIPT_NAME}: resolve_proj_index.py produced no output (PROJ/INDEX empty)\n")

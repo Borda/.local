@@ -178,15 +178,25 @@ Two arms run the same tasks:
 
 ### Task series
 
-28 tasks in `tasks-bench.json`, five series (D-series expanded to 8 tasks):
+28 tasks in `tasks-bench.json`, five series (BR-series expanded to 8 tasks):
 
-| Series | Type                   | Tasks        | What the agent must find                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------ | ---------------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S      | `symbol_extraction`    | S-01..S-05   | Source file line range for a named symbol                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| FN     | `fn_call_graph`        | FN-01..FN-05 | Unique caller count for a function (static call graph)                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| RV     | `review_assistance`    | RV-01..RV-05 | Doc-gap counts, rdep counts, coverage gaps for code review                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Q      | `code_quality`         | Q-01..Q-05   | Coupling, broken xrefs, combined doc+coverage health                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| D      | `develop_blast_radius` | D-01..D-08   | Caller recall >=70% before modifying a function; developer workflow framing; calibratable via `/foundry:calibrate`. **n=8** — report accuracy as fractions (e.g. 6/8). D-06..D-08 GT = fn-rdeps AST callers; grep cross-check confirmed no false positives (grep missed same-file callers so was not used as subtractive filter). Developer-narrative prompts nudge full enumeration; reasoning sentences are not scored. Codemap arm uses `scan-query` via Bash PATH (not Skill tool). |
+| Series | Type                   | Tasks        | What the agent must find                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------ | ---------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SE     | `symbol_extraction`    | SE-01..SE-05 | Source file line range for a named symbol                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| FN     | `fn_call_graph`        | FN-01..FN-05 | Unique caller count for a function (static call graph)                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| RV     | `review_assistance`    | RV-01..RV-05 | Doc-gap counts, rdep counts, coverage gaps for code review                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| CQ     | `code_quality`         | CQ-01..CQ-05 | Coupling, broken xrefs, combined doc+coverage health                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| BR     | `develop_blast_radius` | BR-01..BR-08 | Caller recall >=70% before modifying a function; developer workflow framing; calibratable via `/foundry:calibrate`. **n=8** — report accuracy as fractions (e.g. 6/8). BR-06..BR-08 GT = fn-rdeps AST callers; grep cross-check confirmed no false positives (grep missed same-file callers so was not used as subtractive filter). Developer-narrative prompts nudge full enumeration; reasoning sentences are not scored. Codemap arm uses `scan-query` via Bash PATH (not Skill tool). |
+
+**SE — Symbol extraction.** Asks the agent to locate where a named symbol is defined and report its start line — the foundation of every "go-to-definition" and "find references" workflow in real development. Plain agents must grep the repo and read candidate files to confirm the match, which burns tokens and still fails when symbol names are ambiguous across modules or appear in strings. A codemap index stores each symbol's qualified name and source range directly, so a single `scan-query symbols` lookup returns the canonical location without reading any source file.
+
+**FN — Function call graph.** Asks the agent to enumerate every unique function that calls a given target — the "who calls me?" question developers ask before refactoring an interface, adding a parameter, or deprecating a function. Plain agents rely on grep-based discovery, which counts raw string occurrences including imports and comments, and silently misses aliased imports and same-file callers. The codemap AST-derived call graph resolves qualified names structurally, producing an exact count unaffected by lexical ambiguity.
+
+**RV — Review assistance.** Asks the agent to answer quantitative code-review questions — how many symbols lack docstrings, how many modules import a given module, how many public symbols have no test coverage — the metrics a reviewer needs to assess whether a change degrades coverage or widens blast radius. Plain agents must read entire module source files and cross-reference test files, a process that scales poorly and produces inconsistent counts due to varying output formats. The `scan-query` subcommands (`undocumented`, `rdeps`, `uncovered`) answer each question with a single structured JSON response containing an exact `count` and the full qualified-name list.
+
+**CQ — Code quality.** Asks the agent to surface structural health metrics used at release gates — the most-coupled module, symbols with broken cross-references in docstrings, combined documentation and coverage deficits. Plain agents must invoke independent file reads for each metric and often miss cases requiring whole-graph reasoning such as transitive coupling. The codemap index exposes `coupled`, `xrefs-broken`, `undocumented`, and `uncovered` subcommands that query pre-built structural graphs and return ranked, quantified results in one call.
+
+**BR — Develop blast radius.** Asks the agent to enumerate all direct callers of a function *before* making a change — the most operationally critical series, since missing callers of a function being refactored ships silent breakage. Plain agents miss aliased callers, same-file callers unreachable by grep, and callers whose import path differs from the module name, requiring dozens of file reads to validate each hit. The codemap `fn-rdeps` subcommand returns the AST-derived caller list directly, reaching high recall without reading a single source file. Recall ≥ 0.70 is a _partial coverage threshold_ — a passing score can still miss up to 30% of direct callers. Do not interpret pass as a production-safety guarantee; for safety-critical refactors, require near-exhaustive enumeration or explicitly bound missed-caller count.
 
 ### Quick start
 
@@ -210,7 +220,7 @@ python benchmarks/run-codemap-bench.py \
 # 5. Spot-check one task
 python benchmarks/run-codemap-bench.py \
     --repo-path ./<repo-dir> \
-    --tasks S-01 --arm plain --model haiku
+    --tasks SE-01 --arm plain --model haiku
 ```
 
 <details>
@@ -220,7 +230,7 @@ python benchmarks/run-codemap-bench.py \
 | ----------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `--repo-path PATH`            | auto          | Path to repo clone (default: `repo.default_path` from `tasks-bench.json`)                                         |
 | `--index-path PATH`           | auto          | Override index; checks `.cache/codemap/` then `.cache/scan/`                                                      |
-| `--tasks S-01 FN-02 …`        | all           | Run specific task IDs                                                                                             |
+| `--tasks SE-01 FN-02 …`       | all           | Run specific task IDs                                                                                             |
 | `--task-type TYPE`            | all           | Filter by type: `symbol_extraction`, `fn_call_graph`, `review_assistance`, `code_quality`, `develop_blast_radius` |
 | `--arm plain\|codemap\|all`   | `all`         | Run one arm or both                                                                                               |
 | `--model haiku\|sonnet\|opus` | `haiku`       | Model tier                                                                                                        |
@@ -235,8 +245,8 @@ python benchmarks/run-codemap-bench.py \
 Per-run line printed during execution:
 
 ```
-  ✓+ S-01    codemap tok= 45230 got=      146 exp=      146
-  ✓- S-01    plain   tok= 89410 got=     None exp=      146
+  ✓+ SE-01    codemap tok= 45230 got=      146 exp=      146
+  ✓- SE-01    plain   tok= 89410 got=     None exp=      146
 ```
 
 `✓` = subprocess success · `✗` = failure · `+` = quality correct · `-` = quality wrong · `!` = incomplete (budget exhausted) · `c` = contaminated (plain arm accessed codemap) · `?` = not evaluated.
@@ -247,7 +257,7 @@ Summary table printed after all runs:
 Token ratio (codemap/plain):
   median = 0.37  mean = 1.05
   plain accuracy = 62.5%  (5/8 scored)
-  plain incomplete = 1 (budget exhausted — not scored: D-04)
+  plain incomplete = 1 (budget exhausted — not scored: BR-04)
   codemap accuracy = 87.5%  (7/8 scored)
 ```
 
@@ -264,7 +274,7 @@ Results written to `results/bench-<model>-<YYYYMMDD-HHMMSS>.jsonl`.
 python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir>
 
 # Validate single task
-python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --task S-01
+python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --task SE-01
 
 # Refresh ground truth from live index (overwrites tasks-bench.json)
 python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --update --verbose
@@ -284,9 +294,9 @@ Seven suites always run together:
 | **A** Accuracy  | A1 A2 A3                   | Precision / recall / F1 on rdeps queries against grep ground truth                  |
 | **L** Latency   | L1 L2 L3 L4                | Wall-clock time for `central`, `rdeps`, index build, vs cold grep baseline          |
 | **I** Injection | I_fix I_feature I_refactor | Verifies that develop/oss skills inject `has_rdeps` + `has_deps` fields             |
-| **S** Symbol    | S_S-01..S-05 S2            | `symbol` command returns correct start/end lines (ground truth: `tasks-bench.json`) |
-| **H** Health    | H_Q-\* H1 H2               | `undocumented`/`uncovered` totals match `tasks-bench.json` ground truth             |
-| **X** Xrefs     | X_Q-04 X1                  | `xrefs --broken` count + target set match `tasks-bench.json` ground truth           |
+| **S** Symbol    | S_SE-01..SE-05 S2          | `symbol` command returns correct start/end lines (ground truth: `tasks-bench.json`) |
+| **H** Health    | H_CQ-\* H1 H2              | `undocumented`/`uncovered` totals match `tasks-bench.json` ground truth             |
+| **X** Xrefs     | X_CQ-04 X1                 | `xrefs --broken` count + target set match `tasks-bench.json` ground truth           |
 
 Suites S, H, X auto-skip (no error) when `tasks-bench.json` is absent.
 
@@ -347,6 +357,45 @@ Index resolution checks `.cache/codemap/<name>.json` first, then `.cache/scan/<n
 
 ______________________________________________________________________
 
+## Benchmark methodology
+
+### Task series
+
+The benchmark covers 28 tasks across 5 series:
+
+| Series           | Type                       | What it measures                                     | Evaluator                                 |
+| ---------------- | -------------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| **S** (5 tasks)  | Symbol extraction          | Find file + line range of a function/class           | Line-tolerance (±5 lines)                 |
+| **FN** (5 tasks) | Call graph count           | How many unique functions call target X              | Name-recall ≥ 0.70 against GT caller list |
+| **D** (8 tasks)  | Blast radius (caller list) | Which specific functions call target X               | Recall ≥ 0.70 against GT caller list      |
+| **RV** (5 tasks) | Review assistance          | Caller count for a function in a code review context | Integer extraction with ±10% tolerance    |
+| **Q** (5 tasks)  | Code quality               | Undocumented / uncovered / unhealthy module metrics  | Recall ≥ 0.70 against GT metric           |
+
+### Two arms
+
+Every task runs twice:
+
+- **plain**: grep, read, bash only — no structural index, no `scan-query`
+- **codemap**: same tools + `scan-query` structural index (fn-rdeps, symbol, rdeps, undocumented, uncovered, find-symbol)
+
+Scoring is independent per arm. Token ratio = `codemap_input_tokens / plain_input_tokens` (< 1.0 = codemap cheaper).
+
+### Ground truth establishment
+
+- **Symbol tasks (S)**: GT from reading source directly (file path + AST line range).
+- **Call-graph tasks (FN, D)**: GT from running `scan-query fn-rdeps "<module::function>" --exclude-tests` on the indexed repo, then deduplicating caller qnames (`set()` dedup — multiple call-sites to same function counted once). `unique_caller_count` = len after dedup.
+- **Review-assist (RV)**: Same `fn-rdeps` output but framed as a code-review question.
+- **Quality tasks (Q)**: GT from running `scan-query undocumented` / `scan-query uncovered` directly against the repo.
+- **Circularity note (FN / D / RV / Q)**: GT for these series is derived from `scan-query` output. The codemap arm is instructed to trust `scan-query` as authoritative. Results for these series measure index-assisted agreement, not independent correctness against an external oracle. S-series GT is source-file derived and is not circular.
+
+### Known limitations
+
+- **RV recall > 1.0**: Scores above 1.0 (marked `^` in per-run log) indicate model over-counts, not evaluator error. RV-03/04 over-count systematically across all models on both arms — root cause: `fn-rdeps` count field = call-site edge count, not unique callers; a model that copies the tool count lands above GT while a model that counts distinct caller names lands on GT.
+- **extraction_failed (NaN in summary table)**: Evaluator regex cannot extract the target metric from model output for some tasks. In June 21 runs: plain arm failed on S-04, Q-05 (haiku); RV-02, Q-02 (sonnet). Codemap arm failed on FN-03 (sonnet only). Extraction failures are excluded from the accuracy denominator. Count-based tasks (S / Q / count-branch RV) show `NaN` in the summary table's recall columns; per-task recall is visible in the per-run log line (`recall=…`).
+- **RV-02 both arms low**: GT has 64 callers — too many for a single LLM response to enumerate exhaustively. Haiku plain 15.6% / codemap 28.1%; sonnet and opus similar. Task may be ill-suited for recall-based scoring at this scale.
+- **Sonnet FN regression**: FN-02 codemap recall=0.081 (plain=1.000) and FN-03 codemap extraction_failed (plain=1.000) on June 21 sonnet run. Cause not yet diagnosed. Plain arm brute-forces these tasks successfully. Investigate before using codemap for sonnet on `fn_call_graph` tasks.
+- **Partial filesystem isolation**: `Write`, `Edit`, and `NotebookEdit` are blocked on both arms. Runs where either arm reads benchmark answer files (`tasks-bench`, `benchmarks/results`, `/benchmarks/`) are flagged `answer_file_read` and excluded from scoring — visible in the summary line and JSONL `error` field. Agents can still read arbitrary paths outside the target repo (alternate checkouts, `~/.claude`, etc.); for cleanest runs use a disposable checkout and verify the JSONL tool-use log shows no stray reads.
+
 ## Results
 
 `results/` holds all past run outputs:
@@ -358,37 +407,110 @@ ______________________________________________________________________
 | `bench-<model>-<YYYYMMDD-HHMMSS>.jsonl` | Real-codebase benchmark JSONL results |
 | `code-YYYY-MM-DD[-N].md`                | Query benchmark markdown report       |
 
-### Latest: real-codebase benchmark — sonnet, 2026-06-19
+### Multi-model results: real-codebase benchmark
 
-`results/bench-sonnet-20260619-223507.jsonl` — 28 tasks × 2 arms, pytorch-lightning-master.
+Results — June 21 2026 runs — 28 tasks × 2 arms × 3 models, pytorch-lightning-master. All three use the current `_evaluate_develop_br` evaluator for FN tasks (name-recall ≥ 0.70).
+
+| Model      | Plain accuracy | Codemap accuracy | Accuracy lift | Safety-grade plain | Safety-grade codemap | Token ratio (median) | Token ratio range |
+| ---------- | -------------- | ---------------- | ------------- | ------------------ | -------------------- | -------------------- | ----------------- |
+| Haiku 4.5  | 70.8% (17/24)  | 82.1% (23/28)    | **+11 pp**    | 7/13               | **13/13**            | **0.21×**            | 0.04–1.82×        |
+| Sonnet 4.6 | 80.8% (21/26)  | 81.5% (22/27)    | **+1 pp**     | 12/13              | 11/12                | **0.14×**            | 0.03–0.61×        |
+| Opus 4.6   | 73.1% (19/26)  | 89.3% (25/28)    | **+16 pp**    | 10/13              | **13/13**            | **0.32×**            | 0.03–1.17×        |
+
+Safety-grade = fraction of tasks with explicit recall (FN + D series) where recall ≥ 0.90. Token ratio = codemap / plain input tokens. Token savings are model-independent (median 0.14–0.32×). Accuracy lift is model-dependent.
+
+#### Haiku 4.5 — `results/bench-haiku-20260621-214854.jsonl`
+
+28 tasks × 2 arms, pytorch-lightning-master.
 
 **Token efficiency** (codemap/plain ratio):
 
-| Statistic | Value                                |
-| --------- | ------------------------------------ |
-| Median    | **0.17×** (83% reduction)            |
-| Mean      | 0.28×                                |
-| Min       | 0.06× (FN-03)                        |
-| Max       | 1.41× (RV-04 — codemap over-queried) |
+| Statistic | Value                     |
+| --------- | ------------------------- |
+| Median    | **0.21×** (79% reduction) |
+| Min       | 0.04× (FN-02)             |
+| Max       | 1.82× (D-08)              |
 
-**Accuracy** (scored tasks only; excludes extraction_failed and incomplete):
+**Accuracy** (scored tasks only):
 
-| Arm     | Score     | Correct/Scored | extraction_failed | incomplete                 |
-| ------- | --------- | -------------- | ----------------- | -------------------------- |
-| plain   | **78.3%** | 18/23          | 4 (Q-01,02,03,05) | 1 (RV-03, error_max_turns) |
-| codemap | **80.8%** | 21/26          | 2 (Q-01,Q-03)     | 0                          |
+| Arm     | Score     | Correct/Scored | extraction_failed | incomplete      |
+| ------- | --------- | -------------- | ----------------- | --------------- |
+| plain   | **70.8%** | 17/24          | 2 (S-04, Q-05)    | 2 (RV-03, Q-03) |
+| codemap | **82.1%** | 23/28          | 0                 | 0               |
 
 By series (excl. extraction_failed / incomplete):
 
-| Series           | plain | codemap | Notes                                                         |
-| ---------------- | ----- | ------- | ------------------------------------------------------------- |
-| S (symbol)       | 5/5   | 5/5     | Both arms perfect                                             |
-| FN (call graph)  | 5/5   | 4/5     | FN-02 codemap: 1 scan-query insufficient for 37-caller set    |
-| D (blast radius) | 8/8   | 8/8     | Both arms perfect; primary benefit is token efficiency        |
-| RV (review)      | 0/4   | 2/5     | RV-03 plain DNF at 2.2M; RV-04 both arms miss 1 of 5 issues   |
-| Q (code quality) | 0/1   | 2/3     | Evaluator gaps reduce scoreable tasks; token efficiency valid |
+| Series           | plain | codemap | Notes                                                           |
+| ---------------- | ----- | ------- | --------------------------------------------------------------- |
+| S (symbol)       | 4/4\* | 5/5     | \*S-04 ext-fail plain; codemap passes all 5                     |
+| FN (call graph)  | 4/5   | 5/5     | FN-04 plain=0.000, FN-02 plain=0.108; codemap perfect on all 5  |
+| D (blast radius) | 8/8   | 8/8     | Both arms perfect; codemap saves 53–96% tokens                  |
+| RV (review)      | 1/3†  | 2/5     | †RV-03 plain incomplete; haiku RV-04 codemap regression (0.458) |
+| Q (code quality) | 1/3†  | 4/5     | †Q-03 incomplete, Q-05 ext-fail; Q-02 fails both arms           |
 
-codemap not-covered gaps (static AST only): `__import__`, dynamic dispatch, hook callbacks, `importlib.import_module`, lazy loading, string dispatch.
+**Safety-grade**: plain 7/13 → codemap 13/13 — haiku is the model most dependent on codemap for correctness. FN-04 plain=0.000 → codemap=1.000. Not-covered gaps: `__import__`, `importlib.import_module`, lazy-loading.
+
+#### Sonnet 4.6 — `results/bench-sonnet-20260621-223352.jsonl`
+
+28 tasks × 2 arms, pytorch-lightning-master.
+
+**Token efficiency** (codemap/plain ratio):
+
+| Statistic | Value                     |
+| --------- | ------------------------- |
+| Median    | **0.14×** (86% reduction) |
+| Min       | 0.03× (D-01)              |
+| Max       | 0.61× (D-06)              |
+
+**Accuracy** (scored tasks only):
+
+| Arm     | Score     | Correct/Scored | extraction_failed | incomplete |
+| ------- | --------- | -------------- | ----------------- | ---------- |
+| plain   | **80.8%** | 21/26          | 2 (RV-02, Q-02)   | 0          |
+| codemap | **81.5%** | 22/27          | 1 (FN-03)         | 0          |
+
+By series (excl. extraction_failed / incomplete):
+
+| Series           | plain | codemap | Notes                                                                |
+| ---------------- | ----- | ------- | -------------------------------------------------------------------- |
+| S (symbol)       | 5/5   | 4/5     | S-05 codemap over-counts (recall=^1.380)                             |
+| FN (call graph)  | 5/5   | 3/4†    | **⚠ Regression**: FN-02 plain=1.000 → codemap=0.081; †FN-03 ext-fail |
+| D (blast radius) | 8/8   | 8/8     | Both arms perfect; codemap saves 39–97% tokens                       |
+| RV (review)      | 2/4†  | 4/5     | †RV-02 ext-fail; count-based RV-03/04 struggle both arms             |
+| Q (code quality) | 3/4†  | 3/5     | †Q-02 ext-fail; Q-02 codemap over-counts; Q-01/03/04/05 codemap pass |
+
+**Safety-grade**: plain 12/13 → codemap 11/12 (slight regression). Token savings are the primary codemap benefit at this model tier. ⚠ FN-series regression on codemap arm: FN-02 recall=0.081, FN-03 extraction_failed — both tasks plain arm succeeds at 1.000.
+
+#### Opus 4.6 — `results/bench-opus-20260621-212141.jsonl`
+
+28 tasks × 2 arms, pytorch-lightning-master.
+
+**Token efficiency** (codemap/plain ratio):
+
+| Statistic | Value                     |
+| --------- | ------------------------- |
+| Median    | **0.32×** (68% reduction) |
+| Min       | 0.03× (D-01)              |
+| Max       | 1.17× (D-07)              |
+
+**Accuracy** (scored tasks only):
+
+| Arm     | Score     | Correct/Scored | extraction_failed | incomplete |
+| ------- | --------- | -------------- | ----------------- | ---------- |
+| plain   | **73.1%** | 19/26          | 1 (Q-05)          | 1 (Q-04)   |
+| codemap | **89.3%** | 25/28          | 0                 | 0          |
+
+By series (excl. extraction_failed / incomplete):
+
+| Series           | plain | codemap | Notes                                                                 |
+| ---------------- | ----- | ------- | --------------------------------------------------------------------- |
+| S (symbol)       | 5/5   | 5/5     | Both arms perfect; codemap saves 37–63% tokens                        |
+| FN (call graph)  | 3/5   | 5/5     | FN-01 plain=0.808, FN-02 plain=0.108 — codemap perfect on all 5       |
+| D (blast radius) | 8/8   | 8/8     | Both arms perfect; codemap saves 49–97% tokens                        |
+| RV (review)      | 2/5   | 3/5     | RV-03/04 count-based over-count (both arms); RV-05 codemap lift       |
+| Q (code quality) | 1/3†  | 5/5     | †Q-05 ext-fail, Q-04 plain incomplete; codemap scores all 5 correctly |
+
+**Safety-grade**: plain 10/13 → codemap 13/13. Codemap drives +16 pp accuracy lift, primarily from FN-series (plain 3/5 → codemap 5/5). RV-03/04 count-based over-count persists on both arms.
 
 ### Previous: agentic benchmark — 2026-04-29
 

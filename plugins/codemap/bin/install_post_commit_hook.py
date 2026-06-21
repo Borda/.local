@@ -25,7 +25,8 @@ import sys
 from pathlib import Path
 
 HOOK_MARKER = "# codemap: incremental"
-_VALID_PLUGIN_ROOT_RE = re.compile(r"[a-zA-Z0-9_./-]+")
+MAX_HOOK_SIZE = 1_048_576  # 1 MB — refuse to read oversized hook files into memory (SEC-L4: DoS guard)
+_VALID_PLUGIN_ROOT_RE = re.compile(r"^[a-zA-Z0-9_./-]+$")
 
 
 def _make_hook_body(plugin_root: str | None) -> str:
@@ -54,7 +55,7 @@ def _make_hook_body(plugin_root: str | None) -> str:
         >>> "command -v scan-index" in body_abs  # fallback still present
         True
     """
-    if plugin_root and not _VALID_PLUGIN_ROOT_RE.fullmatch(str(plugin_root)):
+    if plugin_root and not _VALID_PLUGIN_ROOT_RE.match(str(plugin_root)):
         raise ValueError(f"plugin_root contains disallowed characters (only a-zA-Z0-9_./- allowed): {plugin_root}")
     # PID-qualified log path — avoids symlink attacks on the predictable shared /tmp/codemap-hook.log
     # (CWE-377). ${TMPDIR:-/tmp} honours user-specific TMPDIR when set; $$ disambiguates per shell.
@@ -171,11 +172,17 @@ def resolve_hooks_dir(cwd: Path | None = None, timeout: int = 5) -> Path:
 def hook_already_installed(hook_file: Path) -> bool:
     """Return ``True`` if ``hook_file`` exists and contains the codemap marker.
 
+    A legitimate hook is a few hundred bytes; a multi-gigabyte file is never a
+    real hook, so reading it entirely into memory (SEC-L4 DoS) is refused — an
+    oversized file is treated as "not installed" so the caller appends rather than
+    loads it.
+
     Args:
         hook_file: path to the post-commit hook.
 
     Returns:
-        Whether the marker line is present (exact substring match).
+        Whether the marker line is present (exact substring match). ``False`` when
+        the file is missing, unreadable, or larger than ``MAX_HOOK_SIZE``.
 
     Examples:
         >>> import tempfile, os
@@ -192,6 +199,8 @@ def hook_already_installed(hook_file: Path) -> bool:
     if not hook_file.is_file():
         return False
     try:
+        if hook_file.stat().st_size > MAX_HOOK_SIZE:
+            return False
         return HOOK_MARKER in hook_file.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False

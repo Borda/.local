@@ -2,6 +2,9 @@
 name: plan
 description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/."
 argument-hint: "<goal> [--no-challenge] [--codemap] [--no-codemap] [--semble] [--max-depth <N>]"
+when_to_use: |
+  TRIGGER when: user wants to understand scope and risks before implementation; phrases: "plan this", "scope out X", "what would it take to Y", "analyse before we start".
+  SKIP: user already knows what to build and wants code immediately (use `/develop:feature` or `/develop:fix` directly); `.claude/` config planning (use `/foundry:manage`).
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -34,14 +37,6 @@ Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback tabl
 **Checkpoint**: plan is single-pass — `.plans/active/<slug>` file existence = implicit resume signal. No `.developments/` checkpoint needed; if interrupted, re-run `/develop:plan` to regenerate (no code changes made).
 
 Read `$_DEV_SHARED/task-hygiene.md`.
-
-## Anti-Rationalizations
-
-| Temptation | Reality |
-| --- | --- |
-| "The plan is obvious — no need for agent feasibility review" | Feasibility review catches domain-specific blockers (missing test infrastructure, incompatible library constraints, API changes) that seem obvious in hindsight. |
-| "Codex design review is optional for small tasks" | Small tasks regularly reveal large hidden dependencies. Codex catches architectural anti-patterns before they are baked into an implementation plan. |
-| "I can scope this during implementation — no need to plan first" | Scope discovered during implementation inflates PRs and obscures intent. Plan mode exists to prevent exactly this. |
 
 ## Flag parsing
 
@@ -327,3 +322,17 @@ End plan document with:
 ```
 
 </workflow>
+
+<notes>
+
+<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
+
+## Anti-Rationalizations
+
+| Temptation | Reality |
+| --- | --- |
+| "The plan is obvious — no need for agent feasibility review" | Feasibility review catches domain-specific blockers (missing test infrastructure, incompatible library constraints, API changes) that seem obvious in hindsight. |
+| "Codex design review is optional for small tasks" | Small tasks regularly reveal large hidden dependencies. Codex catches architectural anti-patterns before they are baked into an implementation plan. |
+| "I can scope this during implementation — no need to plan first" | Scope discovered during implementation inflates PRs and obscures intent. Plan mode exists to prevent exactly this. |
+
+</notes>

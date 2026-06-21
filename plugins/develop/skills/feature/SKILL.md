@@ -2,6 +2,9 @@
 name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop."
 argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
+when_to_use: |
+  TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: "add X", "implement Y", "build Z feature", "create a new module for".
+  SKIP: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`).
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -161,13 +164,12 @@ Spawn teammates in **two serialized waves** — qa-specialist and doc-scribe can
 - **Wave 1 — foundry:sw-engineer alone**: spawn Teammate 1 (sw-engineer) and wait for `Status: complete`.
 - **Wave 2 — foundry:qa-specialist + foundry:doc-scribe in parallel**: after Wave 1 returns, spawn Teammates 2 and 3 together. Both receive the actual implementation file path from Wave 1's output as input context (resolved via `.temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md`).
 
-Spawn prompts below (Wave 1 first, then Wave 2):
+<!-- loads: team-spawn-prompts.md -->
+Spawn prompts: read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/team-spawn-prompts.md` for full prompt text per teammate. Summary below:
 
-**Teammate 1 — foundry:sw-engineer (model=opus)**: implements the feature (Steps 2-3: demo test, TDD loop). Prompt: "You are a foundry:sw-engineer teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: implement the feature (Steps 2-3: demo test, TDD loop). Scope constraint: only edit files in the source package directory and non-test Python files. Common layouts: `src/<module>/`, `<module>/`, or root-level `.py` files — use whichever exists; check for `src/` first, fall back to project root layout. Do NOT edit files under `tests/`. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
-
-**Teammate 2 — foundry:qa-specialist (model=sonnet)**: audits test coverage, adds edge-case and regression tests in parallel + security checks for auth/payment/data scope (TDD demo/red-green tests stay with sw-engineer per qa-specialist NOT-for). Prompt: "You are a foundry:qa-specialist teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: audit test coverage and add edge-case, boundary, and regression tests around the SW implementation; include security checks for any auth/payment/data-handling code. Do NOT write the primary TDD demo/red-green tests — those stay with sw-engineer (Teammate 1) as part of the TDD loop. Scope constraint: only create or edit files under `tests/`. Do NOT edit source files under `src/` or the target module. Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$_SPAWN_TS/feature-qa-specialist-$_SPAWN_TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
-
-**Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepares documentation structure in parallel (Step 5 prep — docstrings and README only; CHANGELOG handled by lead via foundry:sw-engineer after synthesis). Prompt: "You are a foundry:doc-scribe teammate implementing: [feature description]. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2 for inter-agent messages. Your task: prepare documentation structure in parallel (Step 5 prep — docstrings and README only; do NOT write to CHANGELOG.md — that is handled separately). Compact Instructions: preserve file paths, doc locations, API signatures. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal your completion in your final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to .temp/develop/$_SPAWN_TS/feature-doc-scribe-$_SPAWN_TS.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"summary\":\"<one-line>\",\"findings\":N,\"confidence\":0.N}."
+- **Teammate 1 — foundry:sw-engineer (model=opus)**: implement feature (Steps 2-3: demo test, TDD loop); edit source only, not `tests/`; write to `.temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md`; return compact JSON.
+- **Teammate 2 — foundry:qa-specialist (model=sonnet)**: add edge-case/regression/security tests; edit `tests/` only, not source; write to `.temp/develop/$_SPAWN_TS/feature-qa-specialist-$_SPAWN_TS.md`; return compact JSON.
+- **Teammate 3 — foundry:doc-scribe (model=sonnet)**: prepare docstrings and README only (no CHANGELOG); write to `.temp/develop/$_SPAWN_TS/feature-doc-scribe-$_SPAWN_TS.md`; return compact JSON.
 
 **Path verification**: after team spawns, verify agents received correct paths — check expected output files exist. Re-read `$TS` from temp file (bash state lost between Bash() calls — spawn block persisted it):
 
@@ -231,6 +233,36 @@ fi
 ```
 
 If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/*.py`) to search related code. Path hint: use `src/` if that directory exists, otherwise search from project root (`.`).
+
+**Codemap target derivation** — when the feature extends an existing module or modifies an existing function, pre-set `TARGET_MODULE`/`TARGET_FN` so `codemap-context.md` runs caller-impact queries (`rdeps` module importers, `fn-rdeps` function callers) before implementation, surfacing who breaks if the existing surface changes. The goal may name the extension point as `module.path` or `module.path::function`:
+
+```bash
+# timeout: 5000
+if [[ "$ARGUMENTS" == *"::"* ]]; then
+    _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
+    TARGET_MODULE="${_QNAME%%::*}"
+    TARGET_FN="${_QNAME##*::}"           # bare function name — codemap-context.md builds module::fn itself
+elif [[ "$ARGUMENTS" =~ ([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+) ]]; then
+    TARGET_MODULE="${BASH_REMATCH[1]}"     # extending an existing dotted module
+    TARGET_FN=""
+else
+    TARGET_MODULE=""                       # net-new surface — only central baseline runs
+    TARGET_FN=""
+fi
+export TARGET_MODULE TARGET_FN
+```
+
+> Pure net-new feature (no existing module/function named) → both empty → only the `central` baseline runs, which is correct: nothing to compute caller impact against yet.
+
+**Module-importer impact** — when `CODEMAP_ENABLED=true` and `TARGET_MODULE` is set, run `rdeps` for the modules that import the extension target, so the implementation accounts for downstream importers before changing the surface:
+
+```bash
+# timeout: 6000
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled 2>/dev/null || echo false)
+if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v scan-query >/dev/null 2>&1; then
+    scan-query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests 2>/dev/null || true
+fi
+```
 
 **If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`** (codemap normalized by `bin/codemap-resolve`; semble verified by `preflight-helpers.md` §Semble preflight): read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
@@ -331,9 +363,13 @@ Both forms must:
 
 **Gate**: demo must fail or error.
 
+`<module>` is a **substitution token** — resolve the actual module file path (e.g. `src/mypackage/feature.py`) into a shell variable `$MODULE_PATH` before executing these blocks. Do NOT execute with the literal `<module>.py` string — bash would interpret `<` as a stdin redirect from a file named `module>.py`.
+
 ```bash
+# Resolve MODULE_PATH before this block — e.g.:
+# MODULE_PATH=$(find src/ -name '*.py' | head -1)
 # timeout: 30000
-$PYTEST_CMD --collect-only --doctest-modules <module>.py -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}
+$PYTEST_CMD --collect-only --doctest-modules $MODULE_PATH -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}
 if [ "$COLLECT_EXIT" -eq 5 ]; then
     echo "⚠ GATE FAIL: no demo tests collected — demo file missing or doctest malformed"
     GATE_EXIT=1  # collection failed — skip full run, treat as gate failure
@@ -349,9 +385,9 @@ echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit
 # timeout: 600000
 COLLECT_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-collect-exit 2>/dev/null || echo 1)
 GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-gate-exit 2>/dev/null || echo 1)
-# Doctest form:
+# Doctest form (MODULE_PATH resolved before the collect block above):
 if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
-    $PYTEST_CMD --doctest-modules <module>.py -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
+    $PYTEST_CMD --doctest-modules $MODULE_PATH -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
     if [ "${GATE_EXIT:-0}" -eq 0 ]; then
         echo "⚠ GATE FAIL: demo passed (exit 0) — feature may already exist; revisit Step 1"
     else
@@ -481,24 +517,7 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 
 **After 3 cycles**: if substantive issues remain, stop — surface to user before proceeding to Step 5.
 
-When stopping with unresolved issues, use this report variant instead of standard Final Report:
-
-```markdown
-## Feature Report: <feature name> [INCOMPLETE]
-
-### Status
-Implementation incomplete — stopped after 3 review cycles.
-
-### Remaining Issues
-- [list each unresolved substantive gap]
-
-### What Works
-- [completed parts, passing tests]
-
-### Recommended Next Steps
-1. [most actionable next step to unblock]
-2. [second step]
-```
+When stopping with unresolved issues, use the **Incomplete Report Variant** from `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/report-templates.md`.
 
 ## Step 5: Documentation
 
@@ -530,42 +549,8 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 
 ## Final Report
 
-```markdown
-## Feature Report: <feature name>
-
-### Purpose
-[1-2 sentence description of what was built and why]
-
-### Codebase Analysis
-- Reused: [list of existing utilities/patterns leveraged]
-- Modified: [files changed and why]
-- New files: [list]
-
-### Demo Use-Case
-- Location: <file>::<test or doctest>
-- API: [the function/class signature exposed]
-
-### TDD Cycle
-- Tests written: N
-- Tests passing: N/N
-- Regressions introduced: 0
-
-### Quality
-- Lint: clean / N issues fixed
-- Types: clean / N issues fixed
-- Doctests: passing
-- Review: pass / N issues fixed (N cycles)
-
-### Follow-up
-- [any deferred items, known limitations, or suggested next steps]
-
-## Confidence
-**Score**: 0.N — [high ≥0.9 | moderate 0.85–0.9 | low <0.85 ⚠]
-**Gaps**:
-- [e.g., review cycle incomplete, edge cases not fully explored]
-
-**Refinements**: N passes.
-```
+<!-- loads: report-templates.md -->
+Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/report-templates.md` §Standard Final Report and use as output structure.
 
 <!-- Team spawn logic: see ## Team Mode Branch above -->
 

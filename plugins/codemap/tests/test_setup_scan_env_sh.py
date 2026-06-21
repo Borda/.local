@@ -51,16 +51,14 @@ def sh(
 
 @pytest.fixture()
 def fake_repo(tmp_path: Path) -> Path:
-    """Initialise a throwaway git repo so the script's ``git rev-parse`` succeeds.
+    """Return a throwaway directory acting as a fake repo root.
+
+    setup_scan_env.sh uses ``git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD"``
+    so it falls back to $PWD when git is unavailable — no real git repo needed.
 
     Returns:
-        Path to the newly-initialised repo root.
+        Directory path used as the working directory for script invocations.
     """
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    # Configure identity so any future commits would succeed — not strictly needed
-    # for rev-parse but keeps the repo well-formed.
-    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
     return tmp_path
 
 
@@ -262,6 +260,6 @@ class TestIncrementalSentinel:
 
 
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32" or shutil.which("git") is None or shutil.which("python") is None,
+    sys.platform == "win32" or shutil.which("python3") is None,
     reason="setup_scan_env.sh uses POSIX-only tools (hostname -s, tr) — not supported on Windows",
 )

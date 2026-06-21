@@ -81,26 +81,25 @@ def locate_scan_query() -> Path:
         return Path(found)
 
     # Tier 2 — CLAUDE_PLUGIN_ROOT (canonicalized: defence-in-depth against symlink/relative-path tricks, SEC-L6)
+    # SEC-M6: only trust an absolute env value; reject empty or relative paths (skip the tier entirely).
     plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", "")
-    if plugin_root:
+    if plugin_root and Path(plugin_root).is_absolute():
         plugin_root_path = Path(plugin_root).resolve()
         result = _find_executable(plugin_root_path / "bin" / "scan-query")
+        # SEC-M5: containment guard — the resolved candidate must stay inside plugin_root; a planted
+        # symlink at bin/scan-query that escapes the plugin root is rejected, falling through to Tier 3.
         if result:
-            return result
+            try:
+                if result.resolve().is_relative_to(plugin_root_path):
+                    return result
+            except OSError:
+                pass  # unresolvable candidate (broken symlink, permission error) — skip to Tier 3
 
     # Tier 3 — cache glob, newest semver
     cache_base = Path.home() / ".claude" / "plugins" / "cache"
-    raw_candidates = [p for p in cache_base.glob("*/codemap/*/bin/scan-query") if _find_executable(p)]
+    candidates = [p for p in cache_base.glob("*/codemap/*/bin/scan-query") if _find_executable(p)]
     if sys.platform == "win32":
-        raw_candidates += [p for p in cache_base.glob("*/codemap/*/bin/scan-query.exe") if _find_executable(p)]
-    # Path-containment guard — resolved path must stay inside cache_base (defends against symlink escape)
-    candidates = []
-    for p in raw_candidates:
-        try:
-            p.resolve().relative_to(cache_base.resolve())
-            candidates.append(p)
-        except ValueError:
-            pass  # skip candidates that escape cache_base via symlinks
+        candidates += [p for p in cache_base.glob("*/codemap/*/bin/scan-query.exe") if _find_executable(p)]
     if candidates:
         return max(candidates, key=_version_key)
 

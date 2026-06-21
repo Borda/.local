@@ -19,39 +19,82 @@ from pathlib import Path
 
 STALE_THRESHOLD_DAYS = 7
 MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M9: DoS guard)
+MAX_SCANNED_AT_LEN = 80  # cap untrusted scanned_at length before embedding in output (SEC-L2)
 
 
-def _validate_index_path(raw: str) -> Path | None:
+def _is_user_owned(p: Path) -> bool:
+    """Return True when ``p`` is owned by the current effective user.
+
+    Used to gate world-writable temporary directories: a file under ``/tmp``
+    is only trusted when its owner matches the running user (SEC-M4), which
+    blocks an attacker pre-creating an index file another user will scan.
+
+    Args:
+        p: Path to inspect (file or directory).
+
+    Returns:
+        ``True`` when ``p.stat().st_uid`` equals the current UID, else ``False``
+        (including when the path cannot be stat-ed).
+    """
+    try:
+        return p.stat().st_uid == os.getuid()
+    except OSError:
+        return False
+
+
+def _is_test_mode() -> bool:
+    """Return True when the environment opts into permissive temp-dir validation.
+
+    Production runs reject world-writable temp directories outright; tests
+    (pytest ``tmp_path``, sandboxed CI) set ``CODEMAP_TEST_MODE=1`` to allow
+    indices under ``tempfile.gettempdir()`` regardless of ownership.
+
+    Returns:
+        ``True`` when ``CODEMAP_TEST_MODE`` is ``"1"``, else ``False``.
+    """
+    return os.environ.get("CODEMAP_TEST_MODE") == "1"
+
+
+def _validate_index_path(raw: str, is_test_mode: bool | None = None) -> Path | None:
     """Resolve and validate that ``raw`` stays within a safe base directory.
 
     Permitted base directories (any one is sufficient):
       * The current working directory (treated as the repository root)
       * ``~/.claude`` (where codemap indices typically live)
-      * The OS temporary directory (``tempfile.gettempdir()``) — needed for
-        pytest's ``tmp_path`` fixture and other sandboxed test runs.
+      * The OS temporary directory (``tempfile.gettempdir()``) — only honored in
+        test mode, or in production when the candidate is owned by the current
+        user. ``/tmp`` is world-writable, so an unowned index there is rejected
+        (SEC-M4).
 
     Args:
         raw: User-supplied path from argv.
+        is_test_mode: Override for test-mode detection; defaults to
+            :func:`_is_test_mode` (reads ``CODEMAP_TEST_MODE``).
 
     Returns:
         Resolved ``Path`` if validation succeeds; ``None`` if the path is empty,
-        does not point at a file, or resolves outside every allowed base.
+        does not point at a file, resolves outside every allowed base, or sits in
+        a world-writable temp dir it does not own (outside test mode).
     """
     if not raw:
         return None
+    test_mode = _is_test_mode() if is_test_mode is None else is_test_mode
     candidate = Path(raw).expanduser().resolve()
     if not candidate.is_file():
         return None
+    temp_root = Path(tempfile.gettempdir()).resolve()
     allowed_roots = [
         Path.cwd().resolve(),
         (Path(os.path.expanduser("~")) / ".claude").resolve(),
-        Path(tempfile.gettempdir()).resolve(),
+        temp_root,
     ]
     for root in allowed_roots:
         try:
             candidate.relative_to(root)
         except ValueError:
             continue
+        if root == temp_root and not test_mode and not _is_user_owned(candidate):
+            return None
         return candidate
     return None
 
@@ -130,13 +173,14 @@ def format_status(scanned_at: str | None, scan_time: datetime | None, now: datet
         >>> format_status("2025-12-31T00:00:00Z", stale, ref).startswith("⚠ freshness:")
         True
     """
+    scanned_at_safe = str(scanned_at)[:MAX_SCANNED_AT_LEN] if scanned_at else scanned_at
     if scan_time is None:
-        if not scanned_at:
+        if not scanned_at_safe:
             return "⚠ freshness: scanned_at missing — index may be corrupted\n  → Re-run /codemap:scan-codebase\n"
-        return f"⚠ freshness: could not parse scanned_at timestamp ({scanned_at}) — run /codemap:scan-codebase\n"
+        return f"⚠ freshness: could not parse scanned_at timestamp ({scanned_at_safe}) — run /codemap:scan-codebase\n"
 
     days = age_days(scan_time, now)
-    scan_date = (scanned_at or "")[:10]
+    scan_date = (scanned_at_safe or "")[:10]
     if days > STALE_THRESHOLD_DAYS:
         return f"⚠ freshness: {days} day(s) ago ({scan_date})\n  → Run /codemap:scan-codebase to refresh\n"
     return f"✓ freshness: {days} day(s) ago ({scan_date})\n"

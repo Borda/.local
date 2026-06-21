@@ -26,7 +26,7 @@
         "qualified_name": "Timer.on_train_start",
         "start_line": 146
       },
-      "id": "S-01",
+      "id": "SE-01",
       "primary_module": "lightning.pytorch.callbacks.timer",
       "prompt": "You are reviewing the `Timer` callback in `lightning.pytorch.callbacks.timer`. Extract the full source of `Timer.on_train_start` including its module imports \u2014 you need to understand exactly what it does before writing a test for it. Report the file path, start line, and end line.",
       "symbol_name": "Timer.on_train_start",
@@ -49,7 +49,7 @@
         "qualified_name": "_LRFinder.__init__",
         "start_line": 80
       },
-      "id": "S-02",
+      "id": "SE-02",
       "primary_module": "lightning.pytorch.tuner.lr_finder",
       "prompt": "Before modifying the LR finder internals, extract the complete `_LRFinder.__init__` method from `lightning.pytorch.tuner.lr_finder` including imports. Report the file path, start line, and end line of the method.",
       "symbol_name": "_LRFinder.__init__",
@@ -72,7 +72,7 @@
         "qualified_name": "Trainer._run_stage",
         "start_line": 1116
       },
-      "id": "S-03",
+      "id": "SE-03",
       "primary_module": "lightning.pytorch.trainer.trainer",
       "prompt": "You need to understand what `Trainer._run_stage` does in `lightning.pytorch.trainer.trainer` before modifying it. Extract its full source including module imports. Report the file path, start line, and end line.",
       "symbol_name": "Trainer._run_stage",
@@ -95,7 +95,7 @@
         "qualified_name": "LightningModule.log",
         "start_line": 386
       },
-      "id": "S-04",
+      "id": "SE-04",
       "primary_module": "lightning.pytorch.core.module",
       "prompt": "Before adding a new metric parameter to `LightningModule.log`, extract its full source and imports from `lightning.pytorch.core.module`. This is a large method \u2014 report the file path, start line, and end line.",
       "symbol_name": "LightningModule.log",
@@ -124,7 +124,7 @@
         "qualified_name": "TensorBoardLogger.save",
         "start_line": 213
       },
-      "id": "S-05",
+      "id": "SE-05",
       "primary_module": "lightning.pytorch.loggers.tensorboard",
       "prompt": "Extract `TensorBoardLogger.save` from the pytorch (not fabric) loggers \u2014 specifically from `lightning.pytorch.loggers.tensorboard`. The name 'save' is ambiguous; make sure you retrieve the method from the correct module. Report the file path, start line, and end line.",
       "symbol_name": "TensorBoardLogger.save",
@@ -541,7 +541,7 @@
           "LightningModule.strict_loading"
         ]
       },
-      "id": "Q-01",
+      "id": "CQ-01",
       "primary_module": "lightning.pytorch.core.module",
       "prompt": "Run a documentation gate on `lightning.pytorch.core.module` before the v2.4.0 release. List all public symbols that currently lack docstrings. Report both the total count and the qualified names.",
       "type": "code_quality"
@@ -584,7 +584,7 @@
           "ModelSummary.total_flops"
         ]
       },
-      "id": "Q-02",
+      "id": "CQ-02",
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
       "prompt": "Run a test coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. Identify all public symbols not covered by tests and report the total count.",
       "type": "code_quality"
@@ -606,7 +606,7 @@
         "top_internal_dep_count": 38,
         "top_module": "lightning.pytorch.trainer.trainer"
       },
-      "id": "Q-03",
+      "id": "CQ-03",
       "primary_module": null,
       "prompt": "Identify the top 5 most coupled (highest total dependency count) modules in the codebase. For each module, report its name and its total dependency count (dep_count).",
       "type": "code_quality"
@@ -636,7 +636,7 @@
         ],
         "check": "xrefs_broken"
       },
-      "id": "Q-04",
+      "id": "CQ-04",
       "primary_module": "lightning.pytorch.trainer.trainer",
       "prompt": "A recent refactor of `lightning.pytorch.trainer.trainer` may have left broken cross-references in the Sphinx docstrings. Find and report all broken sphinx cross-references in that module. Report the target symbol names and line numbers.",
       "type": "code_quality"
@@ -676,7 +676,7 @@
           "TensorBoardLogger.finalize"
         ]
       },
-      "id": "Q-05",
+      "id": "CQ-05",
       "primary_module": "lightning.pytorch.loggers.tensorboard",
       "prompt": "Generate a health snapshot for `lightning.pytorch.loggers.tensorboard` for the release notes. Report: (1) how many public symbols lack docstrings and (2) how many public symbols are not covered by tests.",
       "type": "code_quality"
@@ -726,7 +726,7 @@
         "raw_caller_count": 26,
         "unique_caller_count": 26
       },
-      "id": "D-01",
+      "id": "BR-01",
       "primary_fn": "lightning.pytorch.utilities.model_helpers::is_overridden",
       "primary_module": "lightning.pytorch.utilities.model_helpers",
       "prompt": "You are about to change how `is_overridden` detects method overrides in `lightning.pytorch.utilities.model_helpers`. Before writing any code, perform a blast-radius assessment: list every production function that statically calls `is_overridden`. Report callers as `module::function` qualified names and exclude test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
@@ -788,7 +788,7 @@
         "raw_caller_count": 37,
         "unique_caller_count": 37
       },
-      "id": "D-02",
+      "id": "BR-02",
       "primary_fn": "lightning.pytorch.trainer.call::_call_lightning_module_hook",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "You plan to refactor `_call_lightning_module_hook` in `lightning.pytorch.trainer.call` to add structured error handling. Before making any changes, identify all production callers to assess how widespread the impact will be. List callers as `module::function` qualified names, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
@@ -837,7 +837,7 @@
         "raw_caller_count": 24,
         "unique_caller_count": 24
       },
-      "id": "D-03",
+      "id": "BR-03",
       "primary_fn": "lightning.pytorch.trainer.call::_call_callback_hooks",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "A PR proposes changing the hook dispatch order in `_call_callback_hooks` in `lightning.pytorch.trainer.call`. Before reviewing or merging, enumerate all production callers to gauge risk. Report each caller as `module::function`, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
@@ -874,7 +874,7 @@
         "raw_caller_count": 12,
         "unique_caller_count": 12
       },
-      "id": "D-04",
+      "id": "BR-04",
       "primary_fn": "lightning.pytorch.trainer.call::_call_strategy_hook",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "You need to add a new parameter to `_call_strategy_hook` in `lightning.pytorch.trainer.call`. First assess the blast radius: list every production caller that will need updating. Format as `module::function`, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
@@ -908,7 +908,7 @@
         "raw_caller_count": 9,
         "unique_caller_count": 9
       },
-      "id": "D-05",
+      "id": "BR-05",
       "primary_fn": "lightning.pytorch.utilities.signature_utils::is_param_in_hook_signature",
       "primary_module": "lightning.pytorch.utilities.signature_utils",
       "prompt": "You are modifying `is_param_in_hook_signature` in `lightning.pytorch.utilities.signature_utils` to change its return type. Before proceeding, list all production callers to understand scope. Report callers as `module::function`, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
@@ -956,7 +956,7 @@
         "raw_caller_count": 22,
         "unique_caller_count": 22
       },
-      "id": "D-06",
+      "id": "BR-06",
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
       "primary_module": "lightning.fabric.utilities.cloud_io",
       "prompt": "You are about to change the filesystem abstraction in `get_filesystem` in `lightning.fabric.utilities.cloud_io` \u2014 for example, to add a new storage backend or change its return type. Before making any changes, enumerate all production callers to assess blast radius. For each caller, state in one sentence what aspect of the change affects it. Format callers as `module::function`. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
@@ -1000,7 +1000,7 @@
         "raw_caller_count": 18,
         "unique_caller_count": 18
       },
-      "id": "D-07",
+      "id": "BR-07",
       "primary_fn": "lightning.fabric.utilities.distributed::_distributed_is_initialized",
       "primary_module": "lightning.fabric.utilities.distributed",
       "prompt": "You plan to change `_distributed_is_initialized` in `lightning.fabric.utilities.distributed` to use a different internal check (e.g. switching the backend detection method). Before making any changes, enumerate all production callers to assess how widespread the impact is. For each caller, briefly state how the change in check logic would affect that call site. Format callers as `module::function`. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
@@ -1033,7 +1033,7 @@
         "raw_caller_count": 7,
         "unique_caller_count": 7
       },
-      "id": "D-08",
+      "id": "BR-08",
       "primary_fn": "lightning.fabric.utilities.seed::reset_seed",
       "primary_module": "lightning.fabric.utilities.seed",
       "prompt": "You are modifying `reset_seed` in `lightning.fabric.utilities.seed` to change how seeds are reset after distributed setup. Before making any changes, enumerate all production callers to understand the blast radius. For each caller, state in one sentence how a change in seed-reset behaviour would affect that call site. Format callers as `module::function`. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",

@@ -9,7 +9,7 @@ Usage:
     python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir>
 
     # Validate a single task
-    python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --task S-01
+    python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --task SE-01
 
     # Refresh ground truth from live scan-query output
     python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --update
@@ -22,7 +22,9 @@ Requirements:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -157,6 +159,95 @@ def _validate_symbol(task: dict, sq: Path, index: Path, repo: Path) -> tuple[boo
     return (not problems), live_gt, "; ".join(problems)
 
 
+class _CallFinder(ast.NodeVisitor):
+    """AST visitor that records the enclosing scope of each matching call site.
+
+    Args:
+        simple_name: Simple call name to match (e.g. ``"method"``).
+        rel_module: Dotted module path of the file being walked (e.g. ``"pkg.mod"``).
+        callers: Mutable set to accumulate ``"<module>::<scope>"`` caller strings.
+    """
+
+    def __init__(self, simple_name: str, rel_module: str, callers: set[str]) -> None:
+        self._simple_name = simple_name
+        self._rel_module = rel_module
+        self._callers = callers
+        self._scope_stack: list[str] = []
+
+    def _scope(self) -> str:
+        return ".".join(self._scope_stack) if self._scope_stack else "<module>"
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._scope_stack.append(node.name)
+        self.generic_visit(node)
+        self._scope_stack.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._scope_stack.append(node.name)
+        self.generic_visit(node)
+        self._scope_stack.pop()
+
+    def visit_Call(self, node: ast.Call) -> None:
+        matched = (isinstance(node.func, ast.Name) and node.func.id == self._simple_name) or (
+            isinstance(node.func, ast.Attribute) and node.func.attr == self._simple_name
+        )
+        if matched and self._scope_stack:
+            self._callers.add(f"{self._rel_module}::{self._scope()}")
+        self.generic_visit(node)
+
+
+def _callers_via_ast(primary_fn: str, repo) -> tuple[set[str], str | None]:
+    """Walk repo Python AST to find callers of ``primary_fn`` independent of scan-query.
+
+    Args:
+        primary_fn: Qualified name like ``"mod::Class.method"`` or ``"mod::func"``.
+        repo: Repository root directory.
+
+    Returns:
+        (caller_set, error_reason) — caller_set contains ``"<module>::<scope>"`` strings
+        for each enclosing function/method that contains a call matching the target's simple
+        name. error_reason is None on success, a short message on failure.
+
+    Notes:
+        Approximate oracle: matches by simple name of target, so over-approximates when
+        same-named functions exist in unrelated classes, and under-approximates for
+        aliased calls. Use to detect *divergence* from scan-query, not as standalone GT.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "m.py").write_text("def caller():\n    target()\n")
+        ...     callers, err = _callers_via_ast("m::target", repo)
+        >>> sorted(callers), err
+        (['m::caller'], None)
+    """
+    tail = primary_fn.split("::")[-1]
+    simple_name = tail.split(".")[-1]
+
+    callers: set[str] = set()
+    error: str | None = None
+
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
+        for fname in files:
+            if not fname.endswith(".py"):
+                continue
+            fpath = Path(root) / fname
+            try:
+                source = fpath.read_text(encoding="utf-8", errors="ignore")
+                tree = ast.parse(source, filename=str(fpath))
+            except SyntaxError:
+                continue
+            rel = str(fpath.relative_to(repo)).replace(os.sep, "/").replace(".py", "").replace("/", ".")
+            _CallFinder(simple_name, rel, callers).visit(tree)
+
+    return callers, error
+
+
 def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
     """Validate fn_call_graph task ground truth.
 
@@ -186,12 +277,21 @@ def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
     callers = sorted(set(e["caller"] for e in called_by))
     unique_count = len(callers)
 
+    # Independent AST oracle — over-approximates but catches scan-query blind spots
+    ast_callers, _ast_err = _callers_via_ast(primary_fn, repo)
+
     live_gt: dict[str, Any] = {
         "fn_callers": callers,
         "unique_caller_count": unique_count,
         "raw_caller_count": raw_count,
         "exclude_tests": gt.get("exclude_tests", False),
         "note": gt.get("note", "static edges only (import/local/self-resolved); dynamic dispatch excluded by design"),
+        "fn_callers_ast": sorted(ast_callers),
+        "ast_divergence": {
+            "ast_only": sorted(ast_callers - set(callers)),
+            "sq_only": sorted(set(callers) - ast_callers),
+            "ast_caller_count": len(ast_callers),
+        },
     }
 
     problems: list[str] = []
@@ -487,7 +587,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--repo-path", type=str, default=None, help="Path to the target repository clone")
     parser.add_argument("--index-path", type=str, default=None, help="Path to pre-built index JSON")
-    parser.add_argument("--task", type=str, default=None, help="Validate only this task ID (e.g. S-01)")
+    parser.add_argument("--task", type=str, default=None, help="Validate only this task ID (e.g. SE-01)")
     parser.add_argument("--update", action="store_true", help="Write refreshed ground truth back to tasks-bench.json")
     parser.add_argument("--verbose", "-v", action="store_true", help="Print live ground truth on failure")
     return parser.parse_args()

@@ -7,13 +7,21 @@ import sys
 from pathlib import Path
 
 MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M10: DoS guard)
+MAX_SCAN_ARGS = 4096  # chars — cap SCAN_ARGS before shlex.split to bound parsing cost (SEC-L8: DoS guard)
 
 
 def _resolve_root(scan_args: str, timeout: int = 15) -> str:
     """Return project root: --root arg → git toplevel → cwd.
 
     --root is validated against CWD to block directory traversal via SCAN_ARGS.
+
+    Raises:
+        ValueError: if ``scan_args`` exceeds ``MAX_SCAN_ARGS`` characters — a
+            pathologically large value would make ``shlex.split`` expensive
+            (SEC-L8). Raised before the suppress block so it is not swallowed.
     """
+    if len(scan_args) > MAX_SCAN_ARGS:
+        raise ValueError(f"SCAN_ARGS too large ({len(scan_args)} chars); max {MAX_SCAN_ARGS}")
     with contextlib.suppress(Exception):
         args = shlex.split(scan_args) if scan_args else []
         i = args.index("--root")

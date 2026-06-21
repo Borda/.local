@@ -1,12 +1,9 @@
 ---
 name: query-code
 description: |
-  Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, and function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
-  TRIGGER when: user asks about module relationships, dependency graph, callers/callees, or blast radius; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of".
-  SKIP: user wants to rename a symbol (use /codemap:rename-refs); simple grep would suffice; non-Python repo. (A missing or stale index is built/refreshed automatically — see Step 0; no manual /codemap:scan-codebase first.)
-when_to_use: |
+  Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast), and listing central modules.
   TRIGGER when: user asks about module relationships, dependency graph, callers/callees, blast radius, or central/coupled modules; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of", "list central modules".
-  SKIP: user wants to rename a symbol (use `/codemap:rename-refs`); simple grep would suffice; non-Python repository. (Missing/stale index auto-handled in Step 0 — no manual build needed.)
+  SKIP: user wants to rename a symbol (use /codemap:rename-refs); this skill handles call-graph queries only (no rename) — for rename + caller analysis use /codemap:rename-refs; simple grep would suffice; non-Python repo. (A missing or stale index is built/refreshed automatically — see Step 0; no manual /codemap:scan-codebase first.)
 argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] [--with-imports] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>] [--exhaustive]>"
 allowed-tools: Bash, Read, Write, Skill, AskUserQuestion
 model: haiku
@@ -47,7 +44,16 @@ NOT for: explicit/large or monorepo (`--root`) rebuilds (use `/codemap:scan-code
 
 Run this pre-flight **once per task**, before the first query. Skip entirely if Step 0 already ran earlier this turn.
 
-Resolve the index path (same helper `/codemap:integration` uses):
+First, parse `$ARGUMENTS` for an explicit `--index` override:
+
+```bash
+# timeout: 5000
+INDEX_OVERRIDE=$(echo "$ARGUMENTS" | sed -n 's/.*--index \([^ ]*\).*/\1/p')
+```
+
+If `INDEX_OVERRIDE` is non-empty, skip default-index resolution — set `INDEX="$INDEX_OVERRIDE"` and proceed directly to the `present` branch logic below with that path.
+
+Otherwise, resolve the default index path (same helper `/codemap:integration` uses):
 
 ```bash
 # timeout: 5000
@@ -61,16 +67,19 @@ else
     STATE="unresolved"
 fi
 echo "$STATE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-state"
-echo "INDEX_STATE=$STATE"
 ```
 
-Read `INDEX_STATE` from stdout OR from `$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-state")` in subsequent steps, then branch:
+Read `INDEX_STATE` from `$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-state")` in subsequent steps, then branch:
 
 - **`missing`** — build before querying. The index is created only by `scan-index`; call the builder skill (explicit `Skill()` works despite its `disable-model-invocation`):
   ```text
   Skill(skill="codemap:scan-codebase")
   ```
-  If the build fails or the repo is non-Python, surface scan-codebase's own message and stop — do not fall through to grep.
+  After the skill returns, verify the index now exists:
+  ```bash
+  # timeout: 5000
+  [ -f "$INDEX" ] || { echo "⚠ Index build failed — stopping. Re-run /codemap:scan-codebase to investigate."; exit 1; }
+  ```
 
 - **`present`** — refresh only SHA-changed files (cheap; re-parses just what changed since last scan):
   ```bash
@@ -98,11 +107,13 @@ Read `INDEX_STATE` from stdout OR from `$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PRO
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--top\`, \`--exclude-tests\`, \`--limit\`, \`--index\`, \`--exhaustive\`; \`--with-imports\` applies to \`symbol\` subcommand only.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
-**Symbol staleness contract**: every `symbol` result includes `"stale": bool`. When `stale: true`:
+**Symbol staleness contract**: every `symbol` result includes `"stale": bool`. When `stale: true` AND `source` empty:
 - Do NOT use `source` — it may be wrong (function moved since last scan)
 - `stale_reason` explains why: `"file deleted"`, `"line range past EOF"`, `"symbol name not in slice header"`
 - Fall back: `Read(<result["path"]>)` — path is still valid even when content is stale
 - Fix: run `scan-index --incremental` then retry
+
+When `source` is empty and `stale: false` (broken index, not stale): render `[source not available — re-run /codemap:scan-codebase]` — do not attempt Read fallback.
 
 **Symbol vs Read — access pattern decision:**
 
@@ -159,7 +170,7 @@ Replace subcommand and arguments per task:
 
 Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authenticate`), or case-insensitive substring fallback. Function qnames use `module::function` format (e.g. `mypackage.auth::validate_token`). Step 0 keeps the index current; if a stale warning still appears, files changed mid-task — re-run `scan-index --incremental` and retry.
 
-`find-symbol` pattern is a **Python regex** applied against the full qualified name — `auth` matches any symbol containing "auth" as a substring; `^Auth.*Handler$` matches only symbols starting with "Auth" and ending with "Handler". For exact match use anchors: `^MyClass.method$`. Bare substring (no anchors) = broad match — prefer anchored patterns for precision.
+`find-symbol` pattern is a **Python regex** applied against the full qualified name — `auth` matches any symbol containing "auth" as a substring; `^Auth.*Handler$` matches only symbols starting with "Auth" and ending with "Handler". For exact match use anchors: `^MyClass\.method$` (escape `.` to `\.` for a literal dot — unescaped `.` matches any character, e.g. `^MyClass.method$` would also match `MyClassXmethod`). Bare substring (no anchors) = broad match — prefer anchored patterns for precision. **Pattern is a Python regex** — use `auth.*` not `auth*` for prefix search; `auth*` means zero-or-more `h` characters.
 
 ## Budget and stop rules
 
@@ -167,8 +178,11 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 - Default: max **3** calls per task. Stop after 3 even if not exhaustive — report what found.
 - Exhaustive mode: when user explicitly requests exhaustive traversal, budget extends to **6** calls. Best declared before first call so budget applies from the start — if declared mid-task, apply remaining budget up to 6 total from that point.
 - `path` or `fn-blast` with `--exhaustive` flag: budget extends to **6** calls (same as exhaustive mode). These subcommands traverse the graph internally; `--exhaustive` is the explicit signal to allow deeper exploration.
+- **Budget counts `scan-query` subcommand invocations only** — Step 0 resolve calls and `scan-index --incremental` calls do not count toward the budget.
 
-**exhaustive: true — STOP ALL TOOL CALLS:** When `rdeps`, `deps`, or `fn-rdeps` result has `result["index"]["exhaustive"] == true`, list is complete and authoritative for the **unfiltered** index. Check the `index.exhaustive` field specifically (not any top-level field). Note: if `--exclude-tests` used, exhaustive reflects unfiltered coverage — filtered results may omit callers; state caveat if relevant. Write answer immediately. Do NOT call codemap again. Do NOT run grep, bash, or Glob passes to verify or extend. **Caveat**: when result count equals the default limit (20) and `--limit 0` was not passed, the list may be truncated even if `exhaustive: true` — re-run with `--limit 0` to confirm. In the response, explicitly note: "Result is complete and authoritative for the unfiltered index." If `--exclude-tests` was used, add: "Note: filtered results may omit some callers — unfiltered list is complete."
+**Truncation check (prerequisite of STOP rule)**: when result count equals the default limit (20) and `--limit 0` was not passed, the list may be truncated even if `exhaustive: true` — re-run once with `--limit 0` to confirm count. THEN write answer.
+
+**exhaustive: true — STOP ALL TOOL CALLS:** When `rdeps`, `deps`, or `fn-rdeps` result has `result["index"]["exhaustive"] == true` (and truncation check above is satisfied), list is complete and authoritative for the **unfiltered** index. Check the `index.exhaustive` field specifically (not any top-level field). Note: if `--exclude-tests` used, exhaustive reflects unfiltered coverage — filtered results may omit callers; state caveat if relevant. Write answer immediately. Do NOT call codemap again. Do NOT run grep, bash, or Glob passes to verify or extend. In the response, explicitly note: "Result is complete and authoritative for the unfiltered index." If `--exclude-tests` was used, add: "Note: filtered results may omit some callers — unfiltered list is complete."
 
 **Non-exhaustive result — convergence rule**: after budget calls still non-exhaustive, stop and report what found. Do NOT switch to grep/bash — index covers what it covers.
 
@@ -184,13 +198,13 @@ Symbol names accept: bare name (`authenticate`), qualified name (`MyClass.authen
 | `central` | `central` array | `name — N importers (high blast radius)`, one per line |
 | `coupled` | `coupled` array | `name — N imports (high coupling)`, one per line |
 | `path` | `path` array (or `null`) | chain `A → B → C → D`; if `null` → "No import path found." (`--exclude-tests` not supported on `path`) |
-| `symbol` | `symbols[].source` | fenced code block; caption = module + line range; if `source` is empty string → render `[source not available — re-run /codemap:scan-codebase]` instead of empty block |
+| `symbol` | `symbols[].source` | fenced code block; caption = module + line range; if `source` is empty string AND `stale: true` → use `Read(path)` fallback (see staleness contract in Step 1); if `source` is empty AND `stale: false` → render `[source not available — re-run /codemap:scan-codebase]` |
 | `symbols` | `symbols` array | `type name (lines start–end)`, one per line |
 | `find-symbol` | `matches` array | `module:qualified_name (type)`, one per line |
 | `list` | `modules` array | `module (path)`, one per line |
 | `fn-deps` / `fn-rdeps` | `calls` / `called_by` | `module::function (resolution)`, one per line |
 | `fn-central` | `fn_central` array | `count module::function`, one per line |
-| `fn-blast` | `blast_radius` array | `depth module::function` (if depth key present), sorted by depth then name; if `depth` key absent (older index format) → render `module::function` without depth prefix, note "depth unavailable — re-run /codemap:scan-codebase to upgrade index" |
+| `fn-blast` | `blast_radius` array | `depth module::function` (if depth key present), sorted by depth then name; if `depth` key absent (older index format) → print `⚠ depth data unavailable — caller hop-count cannot be determined` before the result list, then render `module::function` without depth prefix; note "re-run /codemap:scan-codebase to upgrade index" |
 | stale check | `index.stale` (boolean) | if true → index changed since Step 0; re-run `scan-index --incremental` and retry |
 
 **Coverage metadata** — every result includes `index.method` and optional `index.not_covered`, `index.hint`, `index.confidence`, `index.scope`. Use to scope your response accurately:
@@ -246,7 +260,7 @@ Next steps: /codemap:query-code <follow-up subcommand> or /codemap:rename-refs i
 Path:       → .temp/output-codemap-query-<branch>-<YYYY-MM-DD>.md
 ---
 ```
-Then print terminal summary (YAML header + path + top-5 items). Skip file write for ≤ 4 items — terminal only. Applies to: `rdeps`, `deps`, `central`, `coupled`, `fn-rdeps`, `fn-central`, `fn-deps`, `fn-blast`, `list`. For `fn-blast` on widely-called functions (>10 entries), always route to file — print file path and top-5 entries only to terminal to avoid burying the follow-up gate.
+Then print terminal summary (YAML header + path + top-5 items). Skip file write for ≤ 4 items — terminal only. Applies to: `rdeps`, `deps`, `central`, `coupled`, `fn-rdeps`, `fn-central`, `fn-deps`, `fn-blast`, `list`. For `fn-blast` with ≥ 5 entries, always route to file — print file path and top-5 callers only to terminal to avoid burying the follow-up gate.
 
 **Evidence block** — append to every response body (terminal or file), after rendered results:
 

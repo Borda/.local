@@ -38,6 +38,26 @@ DEFAULT_MAX_AGE_HOURS = 24
 MAX_INDEX_SIZE = 50_000_000  # 50 MB — refuse to load oversized index files (SEC-M9: DoS guard)
 
 
+def _is_user_owned(path: Path) -> bool:
+    """Return ``True`` iff ``path`` is owned by the current real user.
+
+    Used to gate world-writable temp directories (SEC-L7): on a multi-user system
+    ``/tmp`` is shared, so another user could plant a file there. Requiring the
+    file's owner to match the caller blocks that vector.
+
+    Args:
+        path: file path to inspect.
+
+    Returns:
+        ``True`` when ``path.stat().st_uid`` equals the current uid; ``False`` on
+        any stat error.
+    """
+    try:
+        return path.stat().st_uid == os.getuid()
+    except OSError:
+        return False
+
+
 def _validate_index_path(raw: str) -> Path | None:
     """Resolve and validate that ``raw`` stays within a safe base directory.
 
@@ -47,28 +67,38 @@ def _validate_index_path(raw: str) -> Path | None:
       * The OS temporary directory (``tempfile.gettempdir()``) — needed for
         pytest's ``tmp_path`` fixture and other sandboxed test runs.
 
+    Paths resolving under the shared temp directory (``tempfile.gettempdir()`` or
+    ``/tmp``) are additionally required to be owned by the current user (SEC-L7),
+    since those directories are world-writable on multi-user systems.
+
     Args:
         raw: User-supplied path from argv.
 
     Returns:
         Resolved ``Path`` if validation succeeds; ``None`` if the path is empty,
-        does not point at a file, or resolves outside every allowed base.
+        does not point at a file, resolves outside every allowed base, or lives in
+        a shared temp directory but is not owned by the current user.
     """
     if not raw:
         return None
     candidate = Path(raw).expanduser().resolve()
     if not candidate.is_file():
         return None
+    tempdir = Path(tempfile.gettempdir()).resolve()
+    ownership_gated_roots = {tempdir, Path("/tmp").resolve()}
     allowed_roots = [
         Path.cwd().resolve(),
         (Path(os.path.expanduser("~")) / ".claude").resolve(),
-        Path(tempfile.gettempdir()).resolve(),
+        tempdir,
     ]
     for root in allowed_roots:
         try:
             candidate.relative_to(root)
         except ValueError:
             continue
+        # SEC-L7: shared temp dirs are world-writable — require current-user ownership.
+        if root in ownership_gated_roots and not _is_user_owned(candidate):
+            return None
         return candidate
     return None
 

@@ -91,8 +91,32 @@ def project_smoke_result(raw: str) -> dict[str, Any]:
     }
     error_val = data.get("error")
     if error_val is not None:
-        out["error"] = error_val
+        out["error"] = _sanitize_error(error_val)
     return out
+
+
+def _sanitize_error(raw_error: Any) -> str:
+    """Sanitize an upstream error string before forwarding it into emitted JSON.
+
+    Caps the message at 256 characters and strips non-printable / non-ASCII
+    characters (SEC-L3: the ``error`` field originates from a child process and
+    must not be forwarded verbatim into terminal-facing output).
+
+    Args:
+        raw_error: Arbitrary error value from ``smoke_test_index.py``.
+
+    Returns:
+        A bounded, ASCII-only string safe to embed in JSON output.
+
+    Examples:
+        >>> _sanitize_error("boom")
+        'boom'
+        >>> len(_sanitize_error("x" * 500))
+        256
+        >>> _sanitize_error("a\\u00e9b")
+        'a?b'
+    """
+    return str(raw_error)[:256].encode("ascii", errors="replace").decode("ascii")
 
 
 def derive_exit_code(projected: dict[str, Any]) -> int:
@@ -115,14 +139,85 @@ def derive_exit_code(projected: dict[str, Any]) -> int:
     return 0 if projected.get("ok") is True and projected.get("stale") is False else 1
 
 
+def _expected_script_roots(plugin_root: Path) -> tuple[Path, ...]:
+    """Return the directory roots the resolved smoke script must stay within.
+
+    The script may legitimately live under ``~/.claude`` (installed plugin
+    cache) or under the in-repo ``plugins/codemap`` plugin root resolved from
+    ``$CLAUDE_PLUGIN_ROOT`` (local development). Any resolved script path
+    outside both roots is treated as untrusted (SEC-M1: CWE-22).
+
+    Args:
+        plugin_root: The plugin root the script was resolved against.
+
+    Returns:
+        Tuple of resolved base directories considered safe.
+    """
+    return (
+        (Path(os.path.expanduser("~")) / ".claude").resolve(),
+        plugin_root.resolve(),
+    )
+
+
 def _resolve_smoke_script() -> Path:
-    """Return path to the upstream ``smoke_test_index.py`` script.
+    """Return validated path to the upstream ``smoke_test_index.py`` script.
 
     Honors ``$CLAUDE_PLUGIN_ROOT`` (set by Claude Code at runtime) and falls
     back to the in-repo ``plugins/codemap`` layout for local development.
+
+    The resolved script is validated before it can be forwarded to
+    ``subprocess.run`` (SEC-M1): the path must exist as a regular file and must
+    resolve within ``~/.claude`` or the plugin root. When ``$CLAUDE_PLUGIN_ROOT``
+    is set it must be a non-empty, absolute path.
+
+    Returns:
+        The validated, resolved ``Path`` to ``smoke_test_index.py``.
+
+    Raises:
+        ValueError: If ``$CLAUDE_PLUGIN_ROOT`` is set but empty or non-absolute,
+            or if the resolved script lies outside the expected roots.
+        FileNotFoundError: If the resolved script is not an existing file.
     """
-    plugin_root = os.environ.get("CLAUDE_PLUGIN_ROOT", DEFAULT_PLUGIN_ROOT)
-    return Path(plugin_root) / "bin" / "smoke_test_index.py"
+    env_root = os.environ.get("CLAUDE_PLUGIN_ROOT")
+    if env_root is not None:
+        if not env_root.strip():
+            raise ValueError("CLAUDE_PLUGIN_ROOT is set but empty")
+        if not Path(env_root).is_absolute():
+            raise ValueError(f"CLAUDE_PLUGIN_ROOT must be an absolute path: {env_root!r}")
+        plugin_root = Path(env_root)
+    else:
+        plugin_root = Path(DEFAULT_PLUGIN_ROOT)
+
+    smoke_script = (plugin_root / "bin" / "smoke_test_index.py").resolve()
+    if not smoke_script.is_file():
+        raise FileNotFoundError(f"smoke_test_index.py not found at expected location: {smoke_script}")
+    if not any(_is_within(smoke_script, root) for root in _expected_script_roots(plugin_root)):
+        raise ValueError(f"resolved smoke script escapes expected roots: {smoke_script}")
+    return smoke_script
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    """Return True when ``path`` resolves inside ``root``.
+
+    Args:
+        path: Already-resolved candidate path.
+        root: Already-resolved base directory.
+
+    Returns:
+        ``True`` if ``path`` is ``root`` or a descendant, else ``False``.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> _is_within(Path("/a/b/c"), Path("/a/b"))
+        True
+        >>> _is_within(Path("/a/x"), Path("/a/b"))
+        False
+    """
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def run_smoke(
@@ -145,15 +240,6 @@ def run_smoke(
         Projected dict from :func:`project_smoke_result` (always well-formed,
         with an ``error`` key on failure).
     """
-    # Defense-in-depth: validate index_path exists locally before forwarding to subprocess
-    # (child process validates too, but this catches obvious errors cheaply)
-    if not Path(index_path).is_file():
-        return {
-            "ok": False,
-            "stale": False,
-            "age_hours": None,
-            "error": f"index file not found: {index_path}",
-        }
     try:
         completed = subprocess.run(
             [
@@ -203,7 +289,19 @@ def main(argv: list[str] | None = None) -> int:
     # argparse exits with code 2 on bad/missing args — matches legacy bash contract.
     args = parser.parse_args(argv)
 
-    projected = run_smoke(_resolve_smoke_script(), args.index_path, args.max_age_hours)
+    try:
+        smoke_script = _resolve_smoke_script()
+    except (ValueError, FileNotFoundError) as exc:
+        projected: dict[str, Any] = {
+            "ok": False,
+            "stale": False,
+            "age_hours": None,
+            "error": _sanitize_error(f"could not resolve smoke_test_index.py: {exc}"),
+        }
+        sys.stdout.write(json.dumps(projected, separators=(",", ":")) + "\n")
+        return derive_exit_code(projected)
+
+    projected = run_smoke(smoke_script, args.index_path, args.max_age_hours)
     sys.stdout.write(json.dumps(projected, separators=(",", ":")) + "\n")
     return derive_exit_code(projected)
 

@@ -26,6 +26,11 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    subprocess.run(["git", "--version"], capture_output=True, timeout=5).returncode != 0,
+    reason="requires functional git (XCode CLI tools or equivalent)",
+)
+
 
 SENTINEL_PATH = Path("/tmp/claude-commit-auth-myrepo-main")
 

@@ -30,7 +30,7 @@ Secondary:
 
   # Single task, codemap arm only
   python benchmarks/run-codemap-bench.py --repo-path ./<repo-dir> \\
-      --tasks S-01 --arm codemap --model haiku
+      --tasks SE-01 --arm codemap --model haiku
 
 ## Requirements
 
@@ -45,6 +45,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import statistics
 import subprocess
 import sys
@@ -56,6 +57,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pandas as pd
+
+_USE_COLOR = sys.stdout.isatty()
+_GREEN = "\033[32m" if _USE_COLOR else ""
+_RED = "\033[31m" if _USE_COLOR else ""
+_BLUE = "\033[34m" if _USE_COLOR else ""
+_RESET = "\033[0m" if _USE_COLOR else ""
 
 try:
     from rich.console import Console as _Console
@@ -87,8 +94,12 @@ _CMD = ["claude", "-p", "--verbose", "--output-format", "stream-json"]
 
 _ARM_DISALLOWED: dict[str, list[str]] = {
     # plain: also block scan-query via Bash so the control arm can't use the index
-    "plain": ["--disallowed-tools", "Skill,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*)"],
-    "codemap": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
+    # Write/Edit/NotebookEdit blocked on both arms to prevent filesystem contamination during runs
+    "plain": [
+        "--disallowed-tools",
+        "Skill,Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*)",
+    ],
+    "codemap": ["--disallowed-tools", "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related"],
 }
 _ARM_ALLOWED: dict[str, list[str]] = {
     "codemap": ["--allowedTools", "Bash(scan-query:*),Bash(python3:*)"],
@@ -119,6 +130,14 @@ class BenchQuality:
         metric_got: Value extracted from model output; None when extraction failed.
         recall: Fraction of expected callers found (develop_blast_radius only).
         caller_count_gt: Ground-truth unique caller count (develop_blast_radius only).
+        evaluator_used: Name of the evaluator function that produced this score
+            (diagnostic; None when no evaluator ran).
+        extracted_metric: Raw value pulled from output_text before comparison — an
+            integer count, a matches/recall numerator, or a found-name list depending
+            on the evaluator (diagnostic; distinct from the final ``correct`` score).
+        scoring_detail: Diagnostic breakdown of the comparison the evaluator computed:
+            keys ``metric_expected``, ``metric_got``, ``threshold``, ``method``. Lets a
+            failed run be diagnosed without re-reading output_text.
     """
 
     scored: bool = False
@@ -128,6 +147,10 @@ class BenchQuality:
     recall: float | None = None
     caller_count_gt: int | None = None
     extraction_failed: bool = False
+    evaluator_used: str | None = None
+    evaluator_version: str | None = None
+    extracted_metric: Any = None
+    scoring_detail: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -136,7 +159,7 @@ class BenchRun:
 
     Attributes:
         arm: "plain" or "codemap".
-        task_id: Task ID from tasks-bench.json (e.g. "S-01").
+        task_id: Task ID from tasks-bench.json (e.g. "SE-01").
         task_type: Task type string (e.g. "symbol_extraction").
         model: Short model tier name.
         success: True when the claude subprocess returned a successful result.
@@ -170,6 +193,7 @@ class BenchRun:
     bash_calls: int = 0
     read_calls: int = 0
     scan_query_calls: int = 0
+    scan_query_subcommands: dict[str, int] = field(default_factory=dict)
     turn_count: int = 0
     incomplete: bool = False  # budget exhausted before final answer; excluded from accuracy
     codemap_methods: list[str] = field(default_factory=list)
@@ -228,9 +252,16 @@ For fn_call_graph tasks:
   Use: fn-rdeps "<qualified_name>" --exclude-tests
   Report all callers as a list of qualified names; state the unique caller count.
 
-For review_assistance tasks (PR review, blast radius, caller counts):
-  Run ONE scan-query call — fn-rdeps for caller counts, rdeps for import counts.
-  Read the `count` field from the JSON response — report it exactly; do not deduplicate.
+For review_assistance tasks (PR review, blast radius, coverage metrics):
+  Select the subcommand based on the task question:
+  - Callers of a function    → fn-rdeps "<module>::<function>" --exclude-tests
+    Note: the `count` field counts call-site EDGES, not unique callers. To report
+    unique callers, count distinct `caller` values in the `called_by` list yourself.
+  - Modules importing module → rdeps "<module>"
+  - Symbols lacking docstrings → undocumented "<module>" [--all]
+  - Symbols lacking test coverage → uncovered "<module>" [--top N]
+  Run ONE scan-query call. For caller-count questions: count distinct names in
+  `called_by` — do NOT use the `count` field directly. List all qualified names.
   STOP after one call.
 
 Be concise and precise. State the exact values you found (counts, line numbers, module names)."""
@@ -319,9 +350,81 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
     return env
 
 
+# Subcommands recognised by scan-query (mirrors the _CODEMAP_SYSTEM_TEMPLATE help block).
+_SCAN_QUERY_SUBCOMMANDS: frozenset[str] = frozenset(
+    {
+        "symbol",
+        "find-symbol",
+        "symbols",
+        "fn-rdeps",
+        "rdeps",
+        "undocumented",
+        "uncovered",
+        "coupled",
+        "xrefs",
+    }
+)
+
+
+def _parse_scan_query_subcommand(command: str) -> Optional[str]:
+    """Extract the scan-query subcommand from a Bash command line.
+
+    The first non-flag token following ``scan-query`` (after skipping the
+    ``--index <path>`` option and any other leading ``--flag``/``--flag value``
+    pairs) is the subcommand. Returns None when the command is not a scan-query
+    invocation or no recognised subcommand is present.
+
+    Args:
+        command: Raw Bash command string (as recorded in tool_log / tool input).
+
+    Returns:
+        The subcommand name (e.g. ``"fn-rdeps"``), or None.
+
+    Examples:
+        >>> _parse_scan_query_subcommand("scan-query --index /x.json fn-rdeps a.b --exclude-tests")
+        'fn-rdeps'
+        >>> _parse_scan_query_subcommand("scan-query symbol Trainer")
+        'symbol'
+        >>> _parse_scan_query_subcommand("grep -r foo .") is None
+        True
+    """
+    if "scan-query" not in command:
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+    # Locate the scan-query token (may be a path like .../bin/scan-query).
+    start = None
+    for i, tok in enumerate(tokens):
+        if tok == "scan-query" or tok.endswith("/scan-query"):
+            start = i + 1
+            break
+    if start is None:
+        return None
+    i = start
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.startswith("-"):
+            # Skip a flag; if its value is a separate token (not another flag), skip it too.
+            if "=" not in tok and i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
+                i += 2
+            else:
+                i += 1
+            continue
+        return tok if tok in _SCAN_QUERY_SUBCOMMANDS else None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Quality evaluators — extract key metric from model output text
 # ---------------------------------------------------------------------------
+
+_EVAL_VER_NAME_RECALL = "v2"  # _evaluate_develop_br
+_EVAL_VER_COUNT_TOL = "v1"  # _evaluate_fn
+_EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
+_EVAL_VER_REVIEW = "v2"  # _evaluate_rv — recall-only for symbol-bearing tasks
+_EVAL_VER_OSS = "v1"  # _evaluate_oss
 
 
 def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
@@ -339,6 +442,7 @@ def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
         42
         >>> _extract_int("nothing here", [r"(\\d+) caller"])
     """
+    text = re.sub(r"\*+", "", text)  # strip bold markers before matching
     for pat in patterns:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
@@ -389,6 +493,26 @@ def _int_close(got: Optional[int], expected: int, tolerance: float = 0.10) -> bo
     if got is None:
         return False
     return abs(got - expected) / max(expected, 1) <= tolerance
+
+
+def _count_tol_detail(expected: Any, got: Any, **extra: Any) -> dict[str, Any]:
+    """Build a count-tolerance scoring_detail dict (threshold fixed at 10%).
+
+    Args:
+        expected: Ground-truth count.
+        got: Extracted count.
+        **extra: Optional additional keys merged into the dict.
+
+    Returns:
+        Dict with metric_expected, metric_got, threshold, method, plus any extras.
+
+    Examples:
+        >>> _count_tol_detail(10, 9)
+        {'metric_expected': 10, 'metric_got': 9, 'threshold': 0.1, 'method': 'count_tolerance'}
+        >>> _count_tol_detail(10, 9, check="coupled")
+        {'metric_expected': 10, 'metric_got': 9, 'threshold': 0.1, 'method': 'count_tolerance', 'check': 'coupled'}
+    """
+    return {"metric_expected": expected, "metric_got": got, "threshold": 0.10, "method": "count_tolerance", **extra}
 
 
 def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
@@ -447,6 +571,15 @@ def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
         metric_expected=expected_start,
         metric_got=got_start,
         extraction_failed=got_start is None,
+        evaluator_used="_evaluate_symbol",
+        evaluator_version=_EVAL_VER_SYMBOL,
+        extracted_metric=got_start,
+        scoring_detail={
+            "metric_expected": expected_start,
+            "metric_got": got_start,
+            "threshold": 5,
+            "method": "line_tolerance",
+        },
     )
 
 
@@ -491,7 +624,15 @@ def _evaluate_fn(task: dict, output_text: str) -> BenchQuality:
 
     correct = _int_close(got, expected, tolerance=0.10)
     return BenchQuality(
-        scored=True, correct=correct, metric_expected=expected, metric_got=got, extraction_failed=got is None
+        scored=True,
+        correct=correct,
+        metric_expected=expected,
+        metric_got=got,
+        extraction_failed=got is None,
+        evaluator_used="_evaluate_fn",
+        evaluator_version=_EVAL_VER_COUNT_TOL,
+        extracted_metric=got,
+        scoring_detail=_count_tol_detail(expected, got),
     )
 
 
@@ -519,6 +660,9 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
         r"(\d+)\s+(?:function|symbol|method|class)",
         r"(\d+)\s+(?:production\s+)?call\s*site",
         r"(\d+)\s+(?:production\s+)?calls?\b",
+        r"(\d+)\s+(?:total\s+)?(?:unique\s+)?importers?",  # "61 total importers", "56 importers"
+        r"(\d+)\s+(?:unique\s+)?modules?\s+(?:import|depend)",  # "N modules import"
+        r"(\d+)\s+total\s+importer",
         r"total[:\s]+(\d+)",
         r"count[:\s]+(\d+)",
         r"found\s+(\d+)",
@@ -536,18 +680,30 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
             break
 
     if syms:
-        # Symbol-bearing tasks (RV-01, RV-05): compute symbol recall + validate count.
+        # Symbol-bearing tasks (RV-01, RV-05): recall is the primary gate.
+        # Count check removed: non-anchored regex grabs stray numbers from verbose
+        # codemap output, causing false fails when recall is perfect.
         found = sum(1 for s in syms if re.search(r"\b" + re.escape(s.split(".")[-1]) + r"\b", output_text))
         recall_val = found / max(len(syms), 1)
         got_count = _extract_int(output_text, _count_patterns) if expected_count is not None else None
-        count_ok = got_count is None or _int_close(got_count, expected_count, tolerance=0.10)
-        correct = recall_val >= 0.70 and count_ok
+        correct = recall_val >= 0.70
         return BenchQuality(
             scored=True,
             correct=correct,
             metric_expected=len(syms),
             metric_got=found,
             recall=round(recall_val, 3),
+            evaluator_used="_evaluate_rv",
+            evaluator_version=_EVAL_VER_REVIEW,
+            extracted_metric={"symbols_found": found, "count_got": got_count},
+            scoring_detail={
+                "metric_expected": len(syms),
+                "metric_got": found,
+                "threshold": 0.70,
+                "method": "recall",
+                "count_expected": expected_count,
+                "count_got": got_count,
+            },
         )
 
     # No symbol list — count extraction from sq0.
@@ -563,6 +719,10 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
         metric_expected=expected_count,
         metric_got=got_count,
         extraction_failed=got_count is None,
+        evaluator_used="_evaluate_rv",
+        evaluator_version=_EVAL_VER_REVIEW,
+        extracted_metric=got_count,
+        scoring_detail=_count_tol_detail(expected_count, got_count),
     )
 
 
@@ -589,11 +749,20 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
                 r"dep_count[:\s=]+(\d+)",
                 r"(\d+)\s+dep(?:endenc|t)",
                 r"(\d+)\s+total\s+dep(?:endenc|t)",
+                r"\|\s*1\s*\|[^\n]*\|\s*(\d+)\s*\|",  # rank-1 row in dep_count markdown table
             ],
         )
         correct = _int_close(got, expected, tolerance=0.10)
         return BenchQuality(
-            scored=True, correct=correct, metric_expected=expected, metric_got=got, extraction_failed=got is None
+            scored=True,
+            correct=correct,
+            metric_expected=expected,
+            metric_got=got,
+            extraction_failed=got is None,
+            evaluator_used="_evaluate_oss",
+            evaluator_version=_EVAL_VER_OSS,
+            extracted_metric=got,
+            scoring_detail=_count_tol_detail(expected, got, check=check),
         )
 
     if check == "xrefs_broken":
@@ -612,7 +781,21 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
             got = _extract_int(output_text, [r"(\d+)\s+broken", r"broken[:\s]+(\d+)", r"(\d+)\s+xref"])
         correct = got == expected
         return BenchQuality(
-            scored=True, correct=correct, metric_expected=expected, metric_got=got, extraction_failed=got is None
+            scored=True,
+            correct=correct,
+            metric_expected=expected,
+            metric_got=got,
+            extraction_failed=got is None,
+            evaluator_used="_evaluate_oss",
+            evaluator_version=_EVAL_VER_OSS,
+            extracted_metric=got,
+            scoring_detail={
+                "metric_expected": expected,
+                "metric_got": got,
+                "threshold": 0,
+                "method": "exact_match",
+                "check": check,
+            },
         )
 
     if check in ("undocumented", "combined_health"):
@@ -622,24 +805,47 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
             [
                 r"(\d+)\s+undocumented",
                 r"undocumented[:\s]+(\d+)",
-                r"undocumented[^:]*:\s*(\d+)",
+                r"undocumented[^:\n]*[:\s—–]+(\d+)",  # "Undocumented public symbols — 3" (no-newline stops greedy bleed)
+                r"(\d+)\s+(?:public\s+)?symbols?\s+lack",  # "3 public symbols lack docstrings"
                 r"without\s+docstring.*?(\d+)",
             ],
         )
         correct = _int_close(got, expected, tolerance=0.10)
         return BenchQuality(
-            scored=True, correct=correct, metric_expected=expected, metric_got=got, extraction_failed=got is None
+            scored=True,
+            correct=correct,
+            metric_expected=expected,
+            metric_got=got,
+            extraction_failed=got is None,
+            evaluator_used="_evaluate_oss",
+            evaluator_version=_EVAL_VER_OSS,
+            extracted_metric=got,
+            scoring_detail=_count_tol_detail(expected, got, check=check),
         )
 
     if check == "uncovered":
         expected = gt.get("uncovered_count", 0)
         got = _extract_int(
             output_text,
-            [r"(\d+)\s+uncovered", r"uncovered[:\s]+(\d+)", r"without\s+test.*?(\d+)"],
+            [
+                r"(\d+)\s+uncovered",
+                r"(\d+)\s+(?:public\s+)?symbols?\s+uncovered",  # "20 public symbols uncovered"
+                r"uncovered[:\s]+(\d+)",
+                r"uncovered\s+public\s+symbols?[:\s—–]+(\d+)",  # "Uncovered public symbols: 25"
+                r"without\s+test.*?(\d+)",
+            ],
         )
         correct = _int_close(got, expected, tolerance=0.10)
         return BenchQuality(
-            scored=True, correct=correct, metric_expected=expected, metric_got=got, extraction_failed=got is None
+            scored=True,
+            correct=correct,
+            metric_expected=expected,
+            metric_got=got,
+            extraction_failed=got is None,
+            evaluator_used="_evaluate_oss",
+            evaluator_version=_EVAL_VER_OSS,
+            extracted_metric=got,
+            scoring_detail=_count_tol_detail(expected, got, check=check),
         )
 
     return BenchQuality(scored=False)
@@ -815,12 +1021,22 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
         recall=round(recall, 3),
         caller_count_gt=gt["unique_caller_count"],
         extraction_failed=len(found_qualnames) == 0,
+        evaluator_used="_evaluate_develop_br",
+        evaluator_version=_EVAL_VER_NAME_RECALL,
+        extracted_metric=sorted(found_qualnames),
+        scoring_detail={
+            "metric_expected": len(expected_set),
+            "metric_got": true_positives,
+            "threshold": 0.70,
+            "method": "recall",
+            "safety_grade": recall >= 0.90,
+        },
     )
 
 
 _EVALUATORS = {
     "symbol_extraction": _evaluate_symbol,
-    "fn_call_graph": _evaluate_fn,
+    "fn_call_graph": _evaluate_develop_br,  # name-recall: _evaluate_fn count-tolerance grabs prose totals, not caller enumeration
     "review_assistance": _evaluate_rv,
     "code_quality": _evaluate_oss,
     "develop_blast_radius": _evaluate_develop_br,
@@ -917,13 +1133,19 @@ class BenchRunner:
             evaluator = _EVALUATORS.get(task["type"])
             if evaluator is not None:
                 result.quality = evaluator(task, result.output_text)
-            # Plain arm contamination guard: detect codemap binary access that bypassed
-            # the disallow list (e.g. invoked via python3 path instead of bare scan-query).
-            if arm == "plain":
-                _CODEMAP_MARKERS = ("scan-query", "codemap/bin")
-                if any(marker in entry for entry in result.tool_log for marker in _CODEMAP_MARKERS):
-                    result.error = "contaminated"
-                    result.quality = BenchQuality(scored=False)
+            # Contamination guards:
+            #  - plain arm: detect codemap binary access that bypassed the disallow list
+            #    (e.g. invoked via python3 path instead of bare scan-query).
+            #  - either arm: detect reads of ground-truth answer files (tasks-bench.json,
+            #    benchmark results) which would let the agent copy the expected answer.
+            _CODEMAP_MARKERS = ("scan-query", "codemap/bin")
+            _ANSWER_MARKERS = ("tasks-bench", "benchmarks/results", "/benchmarks/")
+            if arm == "plain" and any(marker in entry for entry in result.tool_log for marker in _CODEMAP_MARKERS):
+                result.error = "contaminated"
+                result.quality = BenchQuality(scored=False)
+            elif any(marker in entry for entry in result.tool_log for marker in _ANSWER_MARKERS):
+                result.error = "answer_file_read"
+                result.quality = BenchQuality(scored=False)
 
         return result
 
@@ -1069,6 +1291,9 @@ class BenchRunner:
                         cmd = inp.get("command", "")
                         if "scan-query" in cmd or "codemap/bin" in cmd:
                             result.scan_query_calls += 1
+                            sub = _parse_scan_query_subcommand(cmd)
+                            if sub is not None:
+                                result.scan_query_subcommands[sub] = result.scan_query_subcommands.get(sub, 0) + 1
                         result.tool_log.append(f"Bash: {cmd[:80]}")
                     elif name == "Read":
                         result.read_calls += 1
@@ -1111,6 +1336,49 @@ class BenchRunner:
 # ---------------------------------------------------------------------------
 
 
+def _effective_recall(run: Optional[BenchRun]) -> Optional[float]:
+    """Recall value for summary — mirrors per-run log fallback logic.
+
+    Returns recall directly when set; falls back to metric_got/metric_expected
+    for evaluators that don't populate the recall field (symbol_extraction,
+    code_quality, count-based review_assistance).
+
+    Args:
+        run: A completed benchmark run, or None.
+
+    Returns:
+        Recall as a float, or None when not computable.
+    """
+    if run is None or not run.quality.scored:
+        return None
+    if run.quality.extraction_failed:
+        return None
+    if run.quality.recall is not None:
+        return run.quality.recall
+    if run.quality.metric_got is not None and run.quality.metric_expected:
+        return run.quality.metric_got / run.quality.metric_expected
+    return None
+
+
+def _safe_ratio(num: Optional[float], den: Optional[float]) -> float:
+    """Divide num by den; return NaN when den is zero or None.
+
+    Args:
+        num: Numerator (int or float, or None).
+        den: Denominator (int or float, or None).
+
+    Returns:
+        num / den, or float('nan') when division is undefined.
+
+    Examples:
+        >>> _safe_ratio(10, 4)
+        2.5
+        >>> import math; math.isnan(_safe_ratio(10, 0))
+        True
+    """
+    return num / den if den else float("nan")
+
+
 @dataclass
 class TaskRatioRow:
     """One row in the per-task token-ratio summary table."""
@@ -1124,6 +1392,9 @@ class TaskRatioRow:
     codemap_recall: float | None
     plain_correct: bool | None
     codemap_correct: bool | None
+    plain_elapsed_s: float | None
+    codemap_elapsed_s: float | None
+    time_ratio: float | None
 
 
 def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
@@ -1145,10 +1416,13 @@ def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
         codemap = arms.get("codemap")
         plain_tok = plain.input_tokens if plain else 0
         codemap_tok = codemap.input_tokens if codemap else 0
-        ratio = codemap_tok / plain_tok if plain_tok > 0 else float("nan")
+        ratio = _safe_ratio(codemap_tok, plain_tok)
         plain_ok = plain.quality.correct if plain and plain.quality.scored else None
         codemap_ok = codemap.quality.correct if codemap and codemap.quality.scored else None
         task_type = (plain or codemap).task_type if (plain or codemap) else ""
+        plain_elapsed = plain.elapsed_s if plain else None
+        codemap_elapsed = codemap.elapsed_s if codemap else None
+        time_ratio = _safe_ratio(codemap_elapsed, plain_elapsed)
         rows.append(
             TaskRatioRow(
                 task_id=task_id,
@@ -1156,10 +1430,13 @@ def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
                 plain_tok=plain_tok,
                 codemap_tok=codemap_tok,
                 ratio=ratio,
-                plain_recall=plain.quality.recall if plain and plain.quality.scored else None,
-                codemap_recall=codemap.quality.recall if codemap and codemap.quality.scored else None,
+                plain_recall=_effective_recall(plain),
+                codemap_recall=_effective_recall(codemap),
                 plain_correct=plain_ok,
                 codemap_correct=codemap_ok,
+                plain_elapsed_s=plain_elapsed,
+                codemap_elapsed_s=codemap_elapsed,
+                time_ratio=time_ratio,
             )
         )
     return pd.DataFrame([asdict(r) for r in rows])
@@ -1180,15 +1457,63 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
     print(f"\n{'=' * 64}")
     print(f"  Codemap benchmark — model={model}")
     print(f"{'=' * 64}")
-    cols = ["task_id", "task_type", "plain_tok", "codemap_tok", "ratio", "plain_recall", "codemap_recall"]
-    print(df[cols].to_string(index=False, float_format=lambda x: f"{x:.2f}" if pd.notna(x) else "n/a"))
+
+    # Build display table manually to support colored Δrecall column.
+    hdr = f"{'task_id':<9}  {'plain_tok':>9}  {'cm_tok':>9}  {'tok×':>5}  {'plain_t':>7}  {'cm_t':>7}  {'t×':>5}  {'Δrecall':>9}"
+    print(hdr)
+    print("-" * len(hdr))
+    for _, row in df.iterrows():
+        tid = str(row["task_id"])
+        ptok = f"{int(row['plain_tok']):>9,}" if pd.notna(row["plain_tok"]) else f"{'n/a':>9}"
+        ctok = f"{int(row['codemap_tok']):>9,}" if pd.notna(row["codemap_tok"]) else f"{'n/a':>9}"
+        tratio = f"{row['ratio']:>5.2f}" if pd.notna(row["ratio"]) else f"{'n/a':>5}"
+        pt = f"{row['plain_elapsed_s'] / 60:>6.1f}m" if pd.notna(row["plain_elapsed_s"]) else f"{'n/a':>7}"
+        ct = f"{row['codemap_elapsed_s'] / 60:>6.1f}m" if pd.notna(row["codemap_elapsed_s"]) else f"{'n/a':>7}"
+        trm = f"{row['time_ratio']:>5.2f}" if pd.notna(row.get("time_ratio", float("nan"))) else f"{'n/a':>5}"
+        pr = row["plain_recall"]
+        cr = row["codemap_recall"]
+        if pd.notna(pr) and pd.notna(cr):
+            delta = cr - pr
+            if abs(delta) < 0.01:
+                sym = f"{_BLUE}~{delta:.2f}{_RESET}"
+                vis = f"~{delta:.2f}"
+            elif delta > 0:
+                sym = f"{_GREEN}+{delta:.2f}{_RESET}"
+                vis = f"+{delta:.2f}"
+            else:
+                sym = f"{_RED}{delta:.2f}{_RESET}"
+                vis = f"{delta:.2f}"
+            pad = 7 - len(vis)
+            recall_col = " " * max(pad, 0) + sym
+        elif pd.notna(cr):
+            recall_col = f"{'cm:' + f'{cr:.2f}':>9}"
+        elif pd.notna(pr):
+            recall_col = f"{'pl:' + f'{pr:.2f}':>9}"
+        else:
+            recall_col = f"{'n/a':>9}"
+        print(f"{tid:<9}  {ptok}  {ctok}  {tratio}  {pt}  {ct}  {trm}  {recall_col}")
 
     valid = df.dropna(subset=["ratio"])
     if not valid.empty:
         ratios = valid["ratio"].tolist()
-        print("\nToken ratio (codemap/plain):")
-        print(f"  median = {statistics.median(ratios):.2f}  mean = {statistics.mean(ratios):.2f}")
-        print(f"  min = {min(ratios):.2f}  max = {max(ratios):.2f}")
+        print(
+            f"\nToken ratio (codemap/plain):  median={statistics.median(ratios):.2f}  mean={statistics.mean(ratios):.2f}  [{min(ratios):.2f}–{max(ratios):.2f}]"
+        )
+
+    valid_t = df.dropna(subset=["time_ratio"])
+    if not valid_t.empty:
+        time_ratios = valid_t["time_ratio"].tolist()
+        plain_times = valid_t["plain_elapsed_s"].tolist()
+        codemap_times = valid_t["codemap_elapsed_s"].tolist()
+        print(
+            f"Time ratio   (codemap/plain):  median={statistics.median(time_ratios):.2f}  mean={statistics.mean(time_ratios):.2f}  [{min(time_ratios):.2f}–{max(time_ratios):.2f}]"
+        )
+        print(
+            f"  plain   median={statistics.median(plain_times) / 60:.1f}m  mean={statistics.mean(plain_times) / 60:.1f}m"
+        )
+        print(
+            f"  codemap median={statistics.median(codemap_times) / 60:.1f}m  mean={statistics.mean(codemap_times) / 60:.1f}m"
+        )
 
     for arm in ("plain", "codemap"):
         arm_runs = [r for r in runs if r.arm == arm and r.quality.scored and not r.quality.extraction_failed]
@@ -1212,6 +1537,19 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
             print(
                 f"  {arm} contaminated = {len(contaminated_runs)} (codemap accessed in plain arm — not scored: {ids})"
             )
+        answer_read_runs = [r for r in runs if r.arm == arm and r.error == "answer_file_read"]
+        if answer_read_runs:
+            ids = ", ".join(r.task_id for r in answer_read_runs)
+            print(f"  {arm} answer_file_read = {len(answer_read_runs)} (GT file accessed — not scored: {ids})")
+        _SAFETY_GRADE_TYPES = {"develop_blast_radius", "fn_call_graph"}
+        safety_runs = [
+            r
+            for r in arm_runs
+            if r.task_type in _SAFETY_GRADE_TYPES and r.quality.scoring_detail.get("safety_grade") is not None
+        ]
+        if safety_runs:
+            n_safe = sum(1 for r in safety_runs if r.quality.scoring_detail.get("safety_grade"))
+            print(f"  {arm} safety-grade (recall>=0.90) = {n_safe}/{len(safety_runs)}")
         if arm == "codemap":
             all_nc = sorted({nc for r in runs if r.arm == "codemap" for nc in r.codemap_not_covered})
             if all_nc:
@@ -1256,7 +1594,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Codemap benchmark — agentic runner.")
     parser.add_argument("--repo-path", type=str, default=None, help="Path to the target repository clone")
     parser.add_argument("--index-path", type=str, default=None, help="Path to codemap index JSON")
-    parser.add_argument("--tasks", nargs="+", default=None, help="Task IDs to run (e.g. S-01 FN-02)")
+    parser.add_argument("--tasks", nargs="+", default=None, help="Task IDs to run (e.g. SE-01 FN-02)")
     parser.add_argument(
         "--task-type",
         choices=["symbol_extraction", "fn_call_graph", "review_assistance", "code_quality", "develop_blast_radius"],
@@ -1360,6 +1698,14 @@ def main() -> None:
     print(f"Codemap benchmark: {len(tasks)} tasks × {len(arms_to_run)} arm(s) × model={model_short}")
     print(f"  index: {index_path}")
     print(f"  repo:  {repo_path}")
+    print()
+    print("Task series legend:")
+    print("  SE  symbol_extraction     — locate symbol definition (file + line)")
+    print("  FN  fn_call_graph         — unique callers of a function (static graph)")
+    print("  RV  review_assistance     — doc-gap / rdep / coverage counts for review")
+    print("  CQ  code_quality          — coupling, broken xrefs, doc+coverage health")
+    print("  BR  develop_blast_radius  — enumerate direct callers before a change (recall ≥ 0.70)")
+    print()
 
     runs: list[BenchRun] = []
     combos = [(task, arm) for task in tasks for arm in arms_to_run]
@@ -1381,16 +1727,15 @@ def main() -> None:
         )
         tok = run.input_tokens
         tok_str = f"{tok / 1_000_000:.1f}M" if tok >= 1_000_000 else f"{tok // 1000:3d}k"
-        if run.quality.scored and run.quality.extraction_failed:
+        _eff = _effective_recall(run)
+        if not run.quality.scored:
             q_str = "?"
-        elif run.quality.scored and run.quality.recall is not None:
-            q_str = f"{run.quality.recall:.3f}"
-        elif run.quality.scored and run.quality.metric_got is not None and run.quality.metric_expected:
-            q_str = f"{run.quality.metric_got / run.quality.metric_expected:.3f}"
-        elif run.quality.scored:
-            q_str = "n/a"
+        elif run.quality.extraction_failed:
+            q_str = "?"
+        elif _eff is not None:
+            q_str = f"^{_eff:.3f}" if _eff > 1.0 else f"{_eff:.3f}"
         else:
-            q_str = "?"
+            q_str = "n/a"
         if run.skill_counts:
             _sk_parts = ",".join(f"{k}:{v:2d}" for k, v in sorted(run.skill_counts.items()))
             _sk_str = f"Sk={_sk_parts}"
@@ -1400,7 +1745,7 @@ def main() -> None:
             f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} {_sk_str} SQ={run.scan_query_calls:2d}"
         )
         log_fn(
-            f"  {status}{correct} {task['id']}\t{arm}\ttok={tok_str}\trecall={q_str}\ttotal={run.quality.metric_expected!s:>4}\t{tool_summary}"
+            f"  {status}{correct} {task['id']}\t{arm}\ttok={tok_str}\tt={run.elapsed_s / 60:.1f}m\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
         )
         return run
 
@@ -1417,7 +1762,7 @@ def main() -> None:
             progress.update(
                 sub_id,
                 completed=run.turn_count,
-                description=f"  {elapsed:.0f}s calls={calls} {tool_live}",
+                description=f"  {elapsed / 60:.1f}m calls={calls} {tool_live}",
             )
 
         return _update
@@ -1454,13 +1799,13 @@ def main() -> None:
 
             _bar = _tqdm(combos, desc="running", unit="run", file=sys.stderr)
             for task, arm in _bar:
-                _bar.set_postfix(task=task["id"], arm=arm, t="0s", calls=0)
+                _bar.set_postfix(task=task["id"], arm=arm, time="0s", calls=0)
 
                 def _make_tqdm_update(bar: Any, task_id: str, arm_name: str) -> Any:
                     def _update(elapsed: float, run: BenchRun) -> None:
                         calls = run.grep_calls + run.bash_calls + run.skill_calls
                         last = run.tool_log[-1][:30] if run.tool_log else "…"
-                        bar.set_postfix(task=task_id, arm=arm_name, t=f"{elapsed:.0f}s", calls=calls, last=last)
+                        bar.set_postfix(task=task_id, arm=arm_name, time=f"{elapsed / 60:.1f}m", calls=calls, last=last)
 
                     return _update
 

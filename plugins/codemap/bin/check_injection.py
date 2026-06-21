@@ -40,7 +40,6 @@ CANONICAL_INJECTION_SITES: tuple[str, ...] = (
 )
 
 SKILL_INJECTION_MARKER = "command -v scan-query"
-SKILL_INJECTION_MARKER_ALT = "codemap: integrated"  # skills using shared-include pattern (develop, oss:review)
 AGENT_INJECTION_MARKER = "Structural context (codemap"
 DEFAULT_CACHE_GLOB = "borda-ai-rig/codemap/*"
 MAX_AUDIT_FILE_SIZE = 1_000_000  # 1 MB — skip oversized files in marker scan (SEC-M8: DoS guard)
@@ -207,10 +206,7 @@ def build_audit_lines(cache: Path) -> list[str]:
     """
     lines: list[str] = ["", f"--- Skill injection audit (cache: {cache}) ---"]
 
-    skill_files = sorted(
-        set(find_files_with_marker(cache, "SKILL.md", SKILL_INJECTION_MARKER))
-        | set(find_files_with_marker(cache, "SKILL.md", SKILL_INJECTION_MARKER_ALT))
-    )
+    skill_files = find_files_with_marker(cache, "SKILL.md", SKILL_INJECTION_MARKER)
     cache_prefix = f"{cache.as_posix()}/"
     relative = [p.as_posix().removeprefix(cache_prefix) for p in skill_files]
 
@@ -250,11 +246,18 @@ def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = Non
         plugin_root_arg: caller-supplied plugin root (may be empty).
         cache_root_override: when provided, scan this directory directly as the cache root
             instead of deriving it from ``plugin_root_arg``. Useful for non-standard
-            cache locations (e.g. a custom plugin registry). Path traversal guard: resolved
-            path must be an existing directory.
+            cache locations (e.g. a custom plugin registry). Traversal guards enforced
+            here (not only in ``main``) so direct API callers cannot bypass them: the
+            resolved path must be an existing directory, must reside within ``$HOME``
+            (SEC-M2: blocks unbounded ``rglob`` from ``/``), and must pass
+            :func:`_is_plausible_plugin_dir` (SEC-M3).
 
     Returns:
         ``AuditResult`` capturing exit code and output lines.
+
+    Raises:
+        ValueError: If ``cache_root_override`` resolves outside ``$HOME`` or is not
+            a plausible plugin directory.
     """
     if cache_root_override:
         cache = Path(cache_root_override).expanduser().resolve()
@@ -263,6 +266,13 @@ def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = Non
                 exit_code=1,
                 lines=(f"✗ --cache-root path not found or not a directory: {cache}",),
             )
+        home = Path(os.environ.get("HOME") or os.path.expanduser("~")).resolve()
+        try:
+            cache.relative_to(home)
+        except ValueError as exc:
+            raise ValueError(f"cache_root_override {cache} is outside $HOME — refusing to scan") from exc
+        if not _is_plausible_plugin_dir(cache):
+            raise ValueError(f"cache_root_override {cache} is not a plausible plugin directory — refusing to scan")
         return AuditResult(exit_code=0, lines=tuple(build_audit_lines(cache)))
 
     plugin_root = resolve_plugin_root(plugin_root_arg)
@@ -309,16 +319,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # Validate --cache-root stays within $HOME to prevent unbounded rglob from /
-    if args.cache_root:
-        try:
-            resolved_cache_root = Path(args.cache_root).expanduser().resolve()
-            resolved_cache_root.relative_to(Path.home())
-        except ValueError:
-            sys.stderr.write(f"! --cache-root {args.cache_root!r} is outside $HOME — refusing to scan\n")
-            sys.exit(1)
-
-    result = run_audit(args.plugin_root or None, cache_root_override=args.cache_root or None)
+    try:
+        result = run_audit(args.plugin_root or None, cache_root_override=args.cache_root or None)
+    except ValueError as exc:
+        sys.stderr.write(f"! {exc}\n")
+        return 1
     sys.stdout.write("\n".join(result.lines) + "\n")
     return result.exit_code
 

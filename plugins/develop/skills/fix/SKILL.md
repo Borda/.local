@@ -2,6 +2,9 @@
 name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop."
 argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+when_to_use: |
+  TRIGGER when: user reports a bug, regression, or unexpected behaviour in Python code with a traceback, failing test, or issue number; phrases: "fix this bug", "repair X", "broken since Y", "test failing".
+  SKIP: CI-only failures without local traceback (use `/develop:debug` first); new features (use `/develop:feature`); `.claude/` config issues (use `/foundry:audit`); non-Python projects.
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -12,7 +15,7 @@ disable-model-invocation: true
 Reproduce-first bug resolution. Capture bug in failing regression test, apply minimal fix, verify via quality stack and review loop.
 
 NOT for:
-- CI-only failures with no local traceback — use `/develop:debug` first (requires `codex` plugin for CI log analysis)
+- CI-only failures with no local traceback — use `/develop:debug` first (`--ci-run <run-id>` for GitHub Actions logs)
 - production incidents without any CI run or traceback (use `/foundry:investigate` (requires foundry plugin))
 - `.claude/` config issues (use `/foundry:audit` (requires foundry plugin))
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
@@ -33,16 +36,6 @@ _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
-
-## Anti-Rationalizations
-
-| Temptation | Reality |
-| --- | --- |
-| "I already know root cause from symptom" | Assumptions without verification fix wrong bug. Read code path first. |
-| "Regression test can wait — add after fix" | Fix without failing test = unverifiable. Test proves bug existed. |
-| "Clean up nearby code while here" | Scope creep produces side effects, obscures fix. Touch only root cause. |
-| "Targeted test passes — sufficient" | Targeted test shows bug fixed; full suite shows nothing else broke. Both required. |
-| "Fix obvious — Step 1 analysis overkill" | Obvious causes often symptoms. Analysis reveals actual root cause and blast radius. |
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -196,6 +189,21 @@ If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, 
 $PYTEST_CMD --tb=long <test_path> -v 2>&1 >"${TMPDIR:-/tmp}/pytest-out.txt"; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 
+**Codemap target derivation** — set `TARGET_MODULE`/`TARGET_FN` before loading `codemap-context.md` so its caller-impact queries (`fn-rdeps`, `fn-blast`) fire instead of only the `central` baseline. The user may pass an explicit suspect as `module.path::function`:
+
+```bash
+# timeout: 5000
+if [[ "$ARGUMENTS" == *"::"* ]]; then
+    _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
+    TARGET_MODULE="${_QNAME%%::*}"
+    TARGET_FN="${_QNAME##*::}"           # bare function name — codemap-context.md builds module::fn itself
+else
+    TARGET_MODULE=""
+    TARGET_FN=""                         # suspect unknown until Step 1 — auto-derive below
+fi
+export TARGET_MODULE TARGET_FN
+```
+
 **If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
@@ -207,6 +215,25 @@ Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 - Minimal code surface needing change — exact files and functions
 - Related code possibly affected by fix — blast radius
 - Recent commits touching this path (from git log output, if provided)
+
+**Direct-caller impact** — when `CODEMAP_ENABLED=true` and `TARGET_FN` was NOT supplied via `$ARGUMENTS`, derive the suspect qualified name from the sw-engineer Step 1 finding (the module/function it named as the minimal code surface), then run `fn-rdeps` for direct callers benchmarked far cheaper than a plain caller walk (94k vs 1M+ tokens, +40pp accuracy). The shared `codemap-context.md` already ran when `TARGET_FN` was pre-set from args; this block covers the auto-derive case:
+
+```bash
+# timeout: 6000
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled 2>/dev/null || echo false)
+if [ "$CODEMAP_ENABLED" = "true" ] && [ -z "$TARGET_FN" ] && command -v scan-query >/dev/null 2>&1; then
+    DERIVED_FN=$(grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' "$DEV_DIR/checkpoint.md" 2>/dev/null | head -1)
+    if [ -n "$DERIVED_FN" ]; then
+        TARGET_FN="$DERIVED_FN"
+        TARGET_MODULE="${DERIVED_FN%%::*}"
+        export TARGET_FN TARGET_MODULE
+        scan-query --timeout 5 fn-rdeps "$TARGET_FN" --exclude-tests 2>/dev/null \
+            | tee "$DEV_DIR/fn-rdeps-output.txt" || true
+    fi
+fi
+```
+
+> The derived qualified name comes from whatever Step 1 recorded in `$DEV_DIR/checkpoint.md` (write the suspect there as `module::function` when you append `step: 1 — completed`). No suspect in `module::function` form recorded → skip silently; the `central` baseline already ran.
 
 **Cannot-reproduce gate**: if sw-engineer was unable to identify root cause, traceback, or any failing test, invoke `AskUserQuestion` — do NOT proceed to Step 2 with no reproduction path:
 - question: "Cannot confirm root cause from available information. How to proceed?"
@@ -470,3 +497,19 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 <!-- Team branching logic is inline above at ## Team Mode Branch — executed immediately when TEAM_MODE=true, before Step 1. When to use: root cause unclear after initial triage, OR bug spans 3+ modules AND user accepted "Proceed anyway" at scope gate. Set via --team flag. -->
 
 </workflow>
+
+<notes>
+
+<!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
+
+## Anti-Rationalizations
+
+| Temptation | Reality |
+| --- | --- |
+| "I already know root cause from symptom" | Assumptions without verification fix wrong bug. Read code path first. |
+| "Regression test can wait — add after fix" | Fix without failing test = unverifiable. Test proves bug existed. |
+| "Clean up nearby code while here" | Scope creep produces side effects, obscures fix. Touch only root cause. |
+| "Targeted test passes — sufficient" | Targeted test shows bug fixed; full suite shows nothing else broke. Both required. |
+| "Fix obvious — Step 1 analysis overkill" | Obvious causes often symptoms. Analysis reveals actual root cause and blast radius. |
+
+</notes>

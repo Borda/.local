@@ -16,22 +16,6 @@ import install_post_commit_hook as iph
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _init_repo(tmp_path: Path) -> Path:
-    """Initialise a git repo under ``tmp_path`` and return the worktree path."""
-    subprocess.run(
-        ["git", "init", "--quiet"],
-        cwd=str(tmp_path),
-        check=True,
-        capture_output=True,
-    )
-    return tmp_path
-
-
-# ---------------------------------------------------------------------------
 # hook_already_installed
 # ---------------------------------------------------------------------------
 
@@ -151,21 +135,23 @@ class TestResolveHooksDir:
     """Cover the ``core.hooksPath`` override and the git-absent fallback."""
 
     def test_default_when_no_override(self, tmp_path: Path):
-        """Plain repo (no ``core.hooksPath`` configured) → ``.git/hooks``."""
-        _init_repo(tmp_path)
+        """No configured core.hooksPath or working git → fallback to .git/hooks."""
+        # resolve_hooks_dir uses check=False; git failure → returncode != 0 → fallback.
         assert iph.resolve_hooks_dir(cwd=tmp_path) == Path(".git/hooks")
 
-    def test_honours_core_hookspath_override(self, tmp_path: Path):
+    def test_honours_core_hookspath_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """``git config core.hooksPath`` value is returned verbatim."""
-        _init_repo(tmp_path)
         custom = tmp_path / "custom-hooks"
         custom.mkdir()
-        subprocess.run(
-            ["git", "config", "core.hooksPath", str(custom)],
-            cwd=str(tmp_path),
-            check=True,
-            capture_output=True,
-        )
+
+        def fake_run(cmd, **kwargs):
+            if "config" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(custom) + "\n", "")
+            if "rev-parse" in cmd:
+                return subprocess.CompletedProcess(cmd, 0, str(tmp_path) + "\n", "")
+            return subprocess.CompletedProcess(cmd, 1, "", "")
+
+        monkeypatch.setattr(iph.subprocess, "run", fake_run)
         assert iph.resolve_hooks_dir(cwd=tmp_path) == custom
 
     def test_falls_back_when_git_unavailable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -237,7 +223,7 @@ class TestInstallHookWithPluginRoot:
 
 
 class TestMain:
-    """End-to-end CLI behaviour via ``main(argv)`` inside a real git repo."""
+    """End-to-end CLI behaviour via ``main(argv)`` — no real git repo required."""
 
     def test_main_creates_hook_in_fresh_repo(
         self,
@@ -246,7 +232,7 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
     ):
         """First run in a fresh repo creates ``.git/hooks/post-commit``."""
-        repo = _init_repo(tmp_path)
+        repo = tmp_path
         monkeypatch.chdir(repo)
         rc = iph.main([])
         out = capsys.readouterr().out
@@ -263,7 +249,7 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
     ):
         """``--plugin-root`` bakes absolute scan-index path into created hook."""
-        repo = _init_repo(tmp_path)
+        repo = tmp_path
         monkeypatch.chdir(repo)
         rc = iph.main(["--plugin-root", "/baked/root"])
         capsys.readouterr()
@@ -279,7 +265,7 @@ class TestMain:
         capsys: pytest.CaptureFixture[str],
     ):
         """Re-running on an already-installed hook reports already installed without modifying."""
-        repo = _init_repo(tmp_path)
+        repo = tmp_path
         monkeypatch.chdir(repo)
         assert iph.main([]) == 0
         capsys.readouterr()  # discard first-run output

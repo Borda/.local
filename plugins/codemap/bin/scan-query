@@ -219,12 +219,21 @@ def find_index() -> Path:
                         )
                 if not safe_candidates:
                     continue
-                if len(safe_candidates) > 1 or safe_candidates[0].stem != parent.name:
+                # Schema-validate glob candidates before trusting one (SEC-M10): an
+                # arbitrary .json in the cache dir must not be loaded unvalidated.
+                valid = [c for c in safe_candidates if _is_valid_index_file(c)]
+                if safe_candidates and not valid:
+                    _exit_error(
+                        f"No valid codemap index in {scan_dir} — "
+                        f"{len(safe_candidates)} .json file(s) present but none match the index schema. "
+                        "Re-run /codemap:scan-codebase to rebuild."
+                    )
+                if len(valid) > 1 or valid[0].stem != parent.name:
                     print(
-                        f"⚠ codemap: loaded {safe_candidates[0].name} via fallback; expected {parent.name}.json",
+                        f"⚠ codemap: loaded {valid[0].name} via fallback; expected {parent.name}.json",
                         file=sys.stderr,
                     )
-                return safe_candidates[0]
+                return valid[0]
 
     # Strategy 3: fallback (will surface a clear "Index not found" error)
     root = git_root or Path.cwd()
@@ -232,6 +241,37 @@ def find_index() -> Path:
 
 
 _MAX_INDEX_SIZE_BYTES = 512 * 1024 * 1024  # 512 MB — guard against bloated/malicious index causing OOM
+
+
+def _is_valid_index_file(path: Path) -> bool:
+    """Return True if *path* parses as JSON with a minimal codemap index schema.
+
+    Validates the two structural invariants every index must satisfy before it is
+    trusted: an integer ``scan_version`` and a list ``modules`` field. Used to
+    reject crafted or unrelated ``*.json`` files picked up by the strategy-2 glob
+    fallback (SEC-M10), which would otherwise be handed to ``load_index`` blindly.
+
+    Size is bounded by ``_MAX_INDEX_SIZE_BYTES`` before parsing to avoid memory
+    exhaustion via ``json.load`` on an oversized candidate. Any read/parse error
+    is treated as "not a valid index" — the caller moves on to the next candidate.
+
+    Args:
+        path: filesystem path to a candidate JSON file.
+    """
+    try:
+        if path.stat().st_size > _MAX_INDEX_SIZE_BYTES:
+            return False
+        with path.open() as f:
+            index = json.load(f)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(index, dict):
+        return False
+    if not isinstance(index.get("scan_version"), int):
+        return False
+    if not isinstance(index.get("modules"), list):
+        return False
+    return True
 
 
 def load_index(path: Path) -> dict:
@@ -315,6 +355,7 @@ def check_staleness(scanned_at: str) -> bool:
             ],
             capture_output=True,
             text=True,
+            timeout=_GIT_TIMEOUT_S,
         )
         if result.returncode != 0:
             return False
@@ -963,6 +1004,11 @@ def cmd_symbol(
                 name_pattern = re.compile(rf"\b(?:def|async\s+def|class)\s+{re.escape(sym['name'])}\s*[:(]")
                 if not name_pattern.search(first_nonblank):
                     stale, stale_reason = True, "symbol name not in slice header"
+            # When stale, the line slice may point at a different function (file shrank
+            # since indexing) — never emit misleading source (SEC-M12). Blank it so agents
+            # fall back to Read(path); stale_reason is preserved for diagnostics.
+            if stale:
+                source = ""
             results.append(
                 {
                     "name": sym["name"],
@@ -1040,6 +1086,33 @@ _DANGEROUS_PATTERN = re.compile(
     re.VERBOSE,
 )
 
+# Alternation-based catastrophic backtracking that _DANGEROUS_PATTERN misses (SEC-L6):
+# any single-level alternation group followed by an outer quantifier — e.g.
+# (a|aa)+, (a*|b*)+, (foo|foo)*. Overlapping or quantified branches under an outer
+# +/*/{ are the classic exponential-backtracking shape. [^()] keeps this to a flat
+# (non-nested) group so the match stays anchored to one alternation.
+_ALT_REDOS_RE = re.compile(r"\([^()]*\|[^()]*\)[+*{]")
+
+
+def _is_dangerous_regex(pattern: str) -> bool:
+    """Return True if *pattern* exhibits a known catastrophic-backtracking shape.
+
+    Combines the adjacent/nested-quantifier heuristic (:data:`_DANGEROUS_PATTERN`)
+    with alternation-based ReDoS detection (:data:`_ALT_REDOS_RE`). Conservative
+    by design — a false positive only rejects a query, never executes a hang.
+
+    Examples:
+        >>> _is_dangerous_regex("(a+)+")
+        True
+        >>> _is_dangerous_regex("(a|aa)+")
+        True
+        >>> _is_dangerous_regex("(a*|b*)+")
+        True
+        >>> _is_dangerous_regex("^Auth.*Handler$")
+        False
+    """
+    return bool(_DANGEROUS_PATTERN.search(pattern) or _ALT_REDOS_RE.search(pattern))
+
 
 def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: bool = False) -> None:
     """Regex search across all symbol qualified_names in the index.
@@ -1049,8 +1122,9 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
         pattern: Python regex pattern matched against each symbol's qualified name.
         limit: max results to return (0 = unlimited).
     """
-    # ReDoS guard — nested quantifiers (e.g. `(a+)+`, `(.*){2,}`) can cause catastrophic backtracking.
-    if _DANGEROUS_PATTERN.search(pattern):
+    # ReDoS guard — nested/adjacent and alternation quantifiers (e.g. `(a+)+`, `(.*){2,}`,
+    # `(a|aa)+`) can cause catastrophic backtracking.
+    if _is_dangerous_regex(pattern):
         print(
             f"find-symbol: pattern '{pattern}' may cause ReDoS — use a simpler pattern",
             file=sys.stderr,

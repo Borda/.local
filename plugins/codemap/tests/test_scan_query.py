@@ -1190,6 +1190,62 @@ class TestUncovered:
         names_in_order = [f["name"] for f in data["uncovered"]]
         assert names_in_order == ["big", "medium", "small"]
 
+    def test_sort_loc_uses_start_line_span(self, capsys):
+        """LOC sort ranks by ``end_line - start_line``, not by ``end_line`` alone.
+
+        ``highline`` ends at line 200 but spans only 5 lines; ``bigspan`` ends at
+        100 but spans 99 lines.  Correct span-based sort puts ``bigspan`` first.
+        A broken implementation that uses ``end_line`` alone would put ``highline``
+        first, so this test acts as a regression guard for that failure mode.
+        """
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        self._make_symbol(
+                            "highline", start_line=196, end_line=200, fn_rdep_test_count=0, mock_rdep_count=0
+                        ),
+                        self._make_symbol(
+                            "bigspan", start_line=1, end_line=100, fn_rdep_test_count=0, mock_rdep_count=0
+                        ),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod"))
+        names_in_order = [f["name"] for f in data["uncovered"]]
+        assert names_in_order == ["bigspan", "highline"]
+
+    def test_sort_loc_missing_start_line_ranks_last(self, capsys):
+        """Symbol without ``start_line`` gets loc=0 and sorts below symbols with a proper span."""
+        sym_no_start = {
+            "name": "no_start",
+            "qualified_name": "no_start",
+            "type": "function",
+            "end_line": 999,
+            "fn_rdep_test_count": 0,
+            "mock_rdep_count": 0,
+        }
+        index = self._make_index(
+            [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        sym_no_start,
+                        self._make_symbol("normal", start_line=1, end_line=50, fn_rdep_test_count=0, mock_rdep_count=0),
+                    ],
+                }
+            ]
+        )
+        data = self._run(capsys, index, self._ns(module="mymod"))
+        names_in_order = [f["name"] for f in data["uncovered"]]
+        assert names_in_order[-1] == "no_start"
+
     def test_neither_module_nor_all_errors_out(self, capsys):
         """Missing both positional ``module`` and ``--all`` exits with the usage hint."""
         index = self._make_index([])

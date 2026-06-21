@@ -21,7 +21,8 @@ if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
         esac
     }
     _cq central --top 5
-    [ -n "$TARGET_FN" ]     && _cq fn-blast "${TARGET_MODULE}::${TARGET_FN}"
+    [ -n "$TARGET_FN" ]     && _cq fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests  # direct callers — benchmarked 94k vs 1M+ tokens, +40pp accuracy
+    [ -n "$TARGET_FN" ]     && _cq fn-blast "${TARGET_MODULE}::${TARGET_FN}"  # transitive callers — depth > 1
     [ -n "$TARGET_MODULE" ] && _cq uncovered --top 20 "$TARGET_MODULE"
     [ -n "$TARGET_FN" ]     && _cq mock-rdeps "${TARGET_MODULE}::${TARGET_FN}"
     [ -n "$TARGET_MODULE" ] && _cq undocumented "$TARGET_MODULE"
@@ -38,7 +39,8 @@ fi
 
 > Query map (per agent dimension):
 > - `central --top 5` — global blast-radius baseline (sw-engineer, architect)
-> - `fn-blast` — caller impact before editing (sw-engineer)
+> - `fn-rdeps --exclude-tests` — direct callers; benchmarked (94k vs 1M+ tokens, +40pp accuracy); run first (sw-engineer)
+> - `fn-blast` — transitive caller impact when depth > 1 needed (sw-engineer)
 > - `uncovered --top 20` — test gaps (qa-specialist)
 > - `mock-rdeps` — test mock coverage; prevents false "untested" on mocked symbols (qa-specialist)
 > - `undocumented` — docstring gaps (doc-scribe)
