@@ -47,6 +47,25 @@ def _resolve(cmd: str) -> str:
     return p
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    """Return True when *path* resolves within *root* (SEC-M1: path traversal guard).
+
+    Examples:
+        >>> from pathlib import Path
+        >>> _is_within(Path("/a/b/c"), Path("/a/b"))
+        True
+        >>> _is_within(Path("/a/x"), Path("/a/b"))
+        False
+        >>> _is_within(Path("/a/b"), Path("/a/b"))
+        True
+    """
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
 def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
     """Return ``(proj_name, index_path)`` derived from the git root or CWD.
 
@@ -79,8 +98,6 @@ def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
     proj = base.name
     custom_dir = os.environ.get("CODEMAP_INDEX_DIR")
     if custom_dir:
-        # expanduser + resolve: canonicalize path, eliminate symlink traversal.
-        # No root whitelist — CODEMAP_INDEX_DIR is explicit user config (trusted).
         index_dir = Path(custom_dir).expanduser().resolve()
     else:
         index_dir = base / ".cache" / "codemap"
@@ -95,13 +112,18 @@ def main(argv: list[str] | None = None) -> int:
         argv: Argument list (defaults to sys.argv[1:]).
 
     Returns:
-        0 on success, 1 when ``--check`` is passed and the index is missing.
+        0 on success, 1 when ``--check`` is passed and the index is missing,
+        or 1 when ``CODEMAP_INDEX_DIR`` resolves outside allowed cache roots.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     args = argv if argv is not None else sys.argv[1:]
     check = "--check" in args
 
-    proj, index = compute_proj_index()
+    try:
+        proj, index = compute_proj_index()
+    except ValueError as exc:
+        sys.stdout.write(f"! {exc}\n")
+        return 1
     sys.stdout.write(f"{proj}\n{index}\n")
 
     if not check:

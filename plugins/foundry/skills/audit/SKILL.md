@@ -439,11 +439,11 @@ Classify each finding from `summary.jsonl` before spawning fix agents to avoid s
 
 **Parallel-safe** (ALL four must hold — apply after same-file coalescing in criterion 4):
 1. Fix writes only to the file that contains the finding
-2. Finding category is in `PARALLEL_SAFE_CATEGORIES`: `{hardcoded-path, missing-confidence-block, typo, heading-hierarchy, duplicate-lines, broken-bash-fence, stale-version-ref, missing-frontmatter-field}` — any category not in this list defaults to sequential
+2. Finding category is in `PARALLEL_SAFE_CATEGORIES`: `{hardcoded-path, missing-confidence-block, typo, heading-hierarchy, duplicate-lines, broken-bash-fence, stale-version-ref, missing-frontmatter-field, verbose-bash-block}` — any category not in this list defaults to sequential
 3. No other finding in this batch writes to a file this fix reads from
 4. **Coalesce first**: group all same-file findings into a single agent prompt before applying criteria 1–3; the coalesced group is classified as one unit (prevents multiple agents racing on the same file)
 
-Parallel-safe examples: typos, hardcoded `/Users/` paths (replacement is `~/`), missing `## Confidence` block (template known), broken bash fence, heading hierarchy jump, duplicated lines within one file.
+Parallel-safe examples: typos, hardcoded `/Users/` paths (replacement is `~/`), missing `## Confidence` block (template known), broken bash fence, heading hierarchy jump, duplicated lines within one file, verbose-bash-block (compress multi-line `if/fi` to `&&`/`||` one-liners, join sequential assignments, remove WHAT/HOW comments — see curator.md §Code Block Authoring step 7).
 
 **Sequential (cross-file dependent)**: any finding where the fix must read another file to determine correct replacement, OR where another concurrent fix writes to a file this fix reads from.
 

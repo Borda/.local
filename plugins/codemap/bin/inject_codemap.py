@@ -183,18 +183,47 @@ def discover_candidates(plugin_root: Path) -> list[Path]:
     return sorted(p for p in skills_dir.glob("*/SKILL.md") if p.is_file())
 
 
-def _apply_injection(path: Path, content: str, candidate: Candidate) -> None:
+def _check_path_within_root(path: Path, allowed_root: Path) -> bool:
+    """Return True when ``path`` resolves inside ``allowed_root`` (SEC-M1: CWE-22).
+
+    Args:
+        path: Candidate path to validate (will be resolved).
+        allowed_root: Allowed root directory (already resolved).
+
+    Returns:
+        True if ``path`` resolves to ``allowed_root`` or a descendant; False otherwise.
+
+    Examples:
+        >>> _check_path_within_root(Path("/a/b/c.bak"), Path("/a/b"))
+        True
+        >>> _check_path_within_root(Path("/a/x/c.bak"), Path("/a/b"))
+        False
+    """
+    try:
+        path.resolve().relative_to(allowed_root)
+        return True
+    except ValueError:
+        return False
+
+
+def _apply_injection(path: Path, content: str, candidate: Candidate, allowed_root: Path) -> None:
     """Inject the block into ``path`` in place, with backup and rollback, recording outcome on ``candidate``.
 
-    Creates ``<path>.bak`` before writing. On write failure, restores from the backup and records the
-    error message on ``candidate``; the backup is removed only after a successful write.
+    Creates ``<path>.bak`` before writing. The backup path is validated against ``allowed_root`` before
+    creation (SEC-M1: CWE-22 — path traversal guard). On write failure, restores from the backup and
+    records the error message on ``candidate``; the backup is removed only after a successful write.
 
     Args:
         path: SKILL.md file to modify.
         content: already-read original file content.
         candidate: candidate record to update with ``backed_up``/``injected``/``error``.
+        allowed_root: Resolved plugin root; backup path must stay within this root.
     """
     backup = path.with_suffix(path.suffix + ".bak")
+    # SEC-M1: verify the .bak path does not escape the plugin root via symlinks or traversal
+    if not _check_path_within_root(backup, allowed_root):
+        candidate.error = f"backup path escapes plugin root (path traversal guard): {backup}"
+        return
     try:
         shutil.copy2(path, backup)
         candidate.backed_up = True
@@ -225,12 +254,13 @@ def _restore_backup(backup: Path, path: Path, candidate: Candidate) -> None:
         candidate.error = f"{candidate.error}; restore failed: {restore_exc}"
 
 
-def evaluate_candidate(path: Path, apply: bool) -> Candidate:
+def evaluate_candidate(path: Path, apply: bool, allowed_root: Path) -> Candidate:
     """Score a single SKILL.md candidate and, in apply mode, inject when the score is High.
 
     Args:
         path: SKILL.md file to evaluate.
         apply: when True, write the injection block for inject-action candidates.
+        allowed_root: Resolved plugin root; passed to :func:`_apply_injection` for path traversal guard.
 
     Returns:
         A populated :class:`Candidate` record.
@@ -243,7 +273,7 @@ def evaluate_candidate(path: Path, apply: bool) -> Candidate:
     score = _score_content(content)
     candidate = Candidate(path=rel, score=score, action=_action_for_score(score))
     if apply and candidate.action == "inject":
-        _apply_injection(path, content, candidate)
+        _apply_injection(path, content, candidate, allowed_root=allowed_root)
     return candidate
 
 
@@ -257,7 +287,8 @@ def build_report(plugin_root: Path, apply: bool) -> dict[str, object]:
     Returns:
         Dict with ``mode``, ``candidates`` (list of dicts), and a ``summary`` count breakdown.
     """
-    candidates = [evaluate_candidate(p, apply) for p in discover_candidates(plugin_root)]
+    allowed_root = plugin_root.resolve()
+    candidates = [evaluate_candidate(p, apply, allowed_root=allowed_root) for p in discover_candidates(plugin_root)]
     summary = {
         "high": sum(c.action == "inject" for c in candidates),
         "medium": sum(c.action == "manual" for c in candidates),

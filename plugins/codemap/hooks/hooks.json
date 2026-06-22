@@ -1,0 +1,16 @@
+{
+  "description": "codemap plugin hooks: skill invocation telemetry for /codemap:debrief-coding",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-skill-start.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Skill"
+      }
+    ]
+  }
+}

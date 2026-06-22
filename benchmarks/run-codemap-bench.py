@@ -347,6 +347,7 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
         env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")
     env["CODEMAP_INDEX"] = str(index_path)
     env["CODEMAP_ENABLED"] = "true"
+    env["CODEMAP_LOGGING"] = "false"
     return env
 
 
@@ -1742,7 +1743,7 @@ def main() -> None:
         else:
             _sk_str = "Sk= 0"
         tool_summary = (
-            f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} {_sk_str} SQ={run.scan_query_calls:2d}"
+            f"B={run.bash_calls:2d} G={run.grep_calls:2d} R={run.read_calls:2d} SQ={run.scan_query_calls:2d} {_sk_str}"
         )
         log_fn(
             f"  {status}{correct} {task['id']}\t{arm}\ttok={tok_str}\tt={run.elapsed_s / 60:.1f}m\trecall={q_str}\ttotal={run.quality.metric_expected if run.quality.metric_expected is not None else '?':>4}\t{tool_summary}"
@@ -1757,7 +1758,7 @@ def main() -> None:
         def _update(elapsed: float, run: BenchRun) -> None:
             calls = run.grep_calls + run.bash_calls + run.skill_calls
             sk = run.skill_calls
-            tool_live = f"B={run.bash_calls} G={run.grep_calls} R={run.read_calls} Sk={sk} SQ={run.scan_query_calls}"
+            tool_live = f"B={run.bash_calls} G={run.grep_calls} R={run.read_calls} SQ={run.scan_query_calls} Sk={sk}"
             progress.update(outer_id, description=f"{task_id} {arm_name}")
             progress.update(
                 sub_id,

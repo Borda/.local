@@ -29,6 +29,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -264,6 +265,41 @@ def run_smoke(
     return project_smoke_result(completed.stdout)
 
 
+def _validate_index_path(index_path: str) -> tuple[bool, str]:
+    """Validate that ``index_path`` resolves within allowed roots (SEC-M1: CWE-22).
+
+    Allowed roots are the user home directory and the current working directory.
+    An index path resolving outside both (e.g. ``/etc/passwd``) is rejected before
+    it can be forwarded to the smoke-test subprocess.
+
+    Args:
+        index_path: The raw ``--index-path`` string from the caller.
+
+    Returns:
+        ``(True, "")`` when the path is within an allowed root; ``(False, reason)`` otherwise.
+
+    Examples:
+        >>> ok, _ = _validate_index_path(os.path.join(os.path.expanduser("~"), "foo.json"))
+        >>> ok
+        True
+        >>> ok, reason = _validate_index_path("/etc/passwd")
+        >>> ok
+        False
+        >>> "outside allowed roots" in reason
+        True
+    """
+    resolved = Path(os.path.abspath(index_path)).resolve()
+    allowed_roots = [
+        Path(os.path.expanduser("~")).resolve(),
+        Path.cwd().resolve(),
+        Path(tempfile.gettempdir()).resolve(),  # pytest / CI temp dirs
+        Path("/tmp").resolve(),  # macOS: /tmp → /private/tmp
+    ]
+    if any(_is_within(resolved, root) for root in allowed_roots):
+        return True, ""
+    return False, f"--index-path resolves outside allowed roots (home dir, cwd, tmp): {resolved}"
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns the derived exit code.
 
@@ -289,10 +325,22 @@ def main(argv: list[str] | None = None) -> int:
     # argparse exits with code 2 on bad/missing args — matches legacy bash contract.
     args = parser.parse_args(argv)
 
+    # SEC-M1: validate --index-path before forwarding to subprocess (CWE-22 guard)
+    path_ok, path_err = _validate_index_path(args.index_path)
+    if not path_ok:
+        projected: dict[str, Any] = {
+            "ok": False,
+            "stale": False,
+            "age_hours": None,
+            "error": _sanitize_error(path_err),
+        }
+        sys.stdout.write(json.dumps(projected, separators=(",", ":")) + "\n")
+        return 1
+
     try:
         smoke_script = _resolve_smoke_script()
     except (ValueError, FileNotFoundError) as exc:
-        projected: dict[str, Any] = {
+        projected = {
             "ok": False,
             "stale": False,
             "age_hours": None,

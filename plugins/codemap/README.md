@@ -23,6 +23,7 @@ ______________________________________________________________________
   - [scan-codebase](#scan-codebase)
   - [query-code](#query-code)
   - [rename-refs](#rename-refs)
+  - [debrief-coding](#debrief-coding)
 - [How it works](#how-it-works)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
@@ -279,9 +280,9 @@ ______________________________________________________________________
 
 ### integration
 
-**Trigger**: `/codemap:integration check | init [--approve]`
+**Trigger**: `/codemap:integration check | init [--approve] | demo [--repo <path|url>] [--public] [--anonymize] [--keep-clone] [--output <path>]`
 
-Two modes. Run `init` once to wire codemap into your existing skills and agents. Run `check` anytime to verify the setup is healthy.
+Three modes. Run `init` once to wire codemap into your existing skills and agents. Run `check` anytime to verify the setup is healthy. Run `demo` to validate end-to-end that codemap is plugged in correctly and yields expected gains.
 
 #### check mode
 
@@ -354,6 +355,44 @@ For agent `.md` files, add this instruction before the closing section:
 run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known)
 **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
 ```
+
+#### demo mode
+
+End-to-end validation for a repo. Runs plumbing check, builds index if missing, executes sample tasks to populate telemetry logs, runs a plain-vs-codemap A/B to prove expected gains, and produces a final report with a link to the debrief output.
+
+**Flags** (all optional):
+
+| Flag                 | Effect                                                                   |
+| -------------------- | ------------------------------------------------------------------------ |
+| `--repo <path\|url>` | Target repo — local path or git URL; URL triggers clone gate             |
+| `--public`           | Force clone gate even if current repo has `.py` files                    |
+| `--anonymize`        | Forward `--anonymize` to `debrief-coding` in the final report            |
+| `--keep-clone`       | Skip cleanup prompt after demo on a cloned repo                          |
+| `--output <path>`    | Override report output path (default: `.reports/codemap/demo-<date>.md`) |
+
+```text
+# Validate current repo
+/codemap:integration demo
+
+# Validate with a fresh public-repo clone (gate fires first)
+/codemap:integration demo --public
+
+# Run demo on a specific repo path
+/codemap:integration demo --repo /path/to/myproject
+
+# Produce an anonymized shareable report
+/codemap:integration demo --anonymize
+```
+
+**A/B caveat**: Arms are prompt-gated (not hard tool deny-list). Tool-call counts serve as cost proxy. Recall is scored against ground truth for the `psf/requests` pinned task set; other repos use cross-arm agreement as a recall proxy.
+
+**Scenarios covered:**
+
+1. Fresh repo, no index — demo builds it (D3) and reports module count.
+2. Stale index — D2 flags stale age; D3 refreshes.
+3. Skills never invoked (Sk=0) — D7 flags this and explains the diagnostic artifact.
+4. Public-repo demo — D1a clone gate fires before any clone; D9 offers cleanup.
+5. Anonymized report — `--anonymize` forwarded to `debrief-coding`; output safe to share.
 
 ### scan-codebase
 
@@ -588,6 +627,60 @@ Two cases are outside static analysis and cannot be renamed automatically:
 ```
 
 </details>
+
+______________________________________________________________________
+
+<a id="debrief-coding"></a>
+
+### debrief-coding
+
+**Trigger**: `/codemap:debrief-coding`
+
+Reads `.cache/codemap/logs/` JSONL telemetry produced by the scan-query wrapper and the PreToolUse hook, and writes a diagnostic usage report. Useful for debugging query patterns, investigating errors, understanding which skills drive the most queries, and preparing a shareable anonymized summary for feedback.
+
+#### Flags
+
+| Flag                   | Effect                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `--since <YYYY-MM-DD>` | Filter to records on or after this date (default: all records)                                                       |
+| `--session <id>`       | Filter to a single session UUID                                                                                      |
+| `--anonymize`          | Replace qualified names (module paths, symbol names) with stable pseudonyms before reading — output is safe to share |
+| `--output <path>`      | Write report to this path (default: `.reports/codemap/debrief-<date>.md`)                                            |
+
+#### What is logged
+
+All logs are local to `.cache/codemap/logs/` and never leave your machine.
+
+| File           | Layer | When written                                         |
+| -------------- | ----- | ---------------------------------------------------- |
+| `cli.jsonl`    | cli   | Every `scan-query` invocation via the wrapper binary |
+| `skills.jsonl` | skill | Every `/codemap:*` skill start (via PreToolUse hook) |
+
+CLI records include: subcommand, full argv, result summary (count, method, exhaustive flag, not_covered list, error), timing_ms, stderr tail if any, exit code if non-zero.
+
+Skill records include: skill name, session UUID, intent (first 300 chars of the args string).
+
+Logs rotate automatically at 10 MB (3 rotations). Disable logging entirely with `CODEMAP_LOGGING=false` — useful in benchmark scripts.
+
+#### Anonymization
+
+`--anonymize` runs `bin/anonymize.py` on both log files before reading. Qualified names (strings containing `.` or `::`) are replaced with stable `sym_<hash>` pseudonyms using a project-local salt stored at `.cache/codemap/logs/.salt`. The salt must stay local — never share it alongside anonymized output. Without the salt, pseudonyms are not reversible.
+
+#### Examples
+
+```text
+# Basic report of all collected telemetry
+/codemap:debrief-coding
+
+# Last week only
+/codemap:debrief-coding --since 2026-06-15
+
+# Single session trace (correlate a skill run with its scan-query calls)
+/codemap:debrief-coding --session 3f2e1a90-...
+
+# Anonymized report safe to share
+/codemap:debrief-coding --anonymize --output /tmp/codemap-report.md
+```
 
 ## ⚙️ How it works
 

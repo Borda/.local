@@ -18,13 +18,17 @@ Output (--print-root):
 
 Exit codes:
     0  always (never fails on input).
+    1  --nul-output path validation failed (SEC-M1).
 """
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import sys
+import tempfile
+from pathlib import Path
 
 # --root <value> where value is one of:
 #   - single-quoted: '...'  (no embedded single quotes)
@@ -108,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         argv: Optional argv override for testing. Defaults to ``sys.argv[1:]``.
 
     Returns:
-        Exit code (always 0).
+        Exit code (0 on success, 1 when --nul-output path validation fails).
 
     Examples:
         >>> import os, tempfile
@@ -153,6 +157,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if nul_output is not None:
+        # SEC-M1: validate write target is within TMPDIR to prevent arbitrary write via --nul-output.
+        _nul_resolved = Path(nul_output).resolve()
+        _tmpdir = Path(os.environ.get("TMPDIR") or tempfile.gettempdir()).resolve()
+        try:
+            _nul_resolved.relative_to(_tmpdir)
+        except ValueError:
+            print(f"! --nul-output path outside TMPDIR ({_tmpdir}): {nul_output}", file=sys.stderr)
+            return 1
         with open(nul_output, "wb") as fh:
             for token in tokens:
                 fh.write(token.encode() + b"\x00")

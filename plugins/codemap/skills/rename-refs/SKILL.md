@@ -3,7 +3,7 @@ name: rename-refs
 description: |
   Atomic rename of Python symbols (functions, classes, methods) or modules using the structural index. Finds all static callers, import sites, __all__ re-exports, and Sphinx docstring cross-refs (:func:, :class:, :meth:, :mod:, :attr:). Optional: keep old name as deprecated alias via pydeprecate (--deprecate) or hard-delete when zero callers (--remove-if-no-callers).
   TRIGGER when: user asks to rename a Python function, class, method, or module; phrases: "rename X to Y", "rename function", "rename class", "rename module", "move module X to Y", "update all references to X".
-  SKIP: non-Python project; codemap index not built (run /codemap:scan-codebase first); renaming a local variable (not a symbol definition or module path); user explicitly wants grep-only rename without index verification; user performing rename via IDE/LSP and only wants advisory coverage (use --dry-run); splitting one symbol into multiple (this skill handles 1:1 renames only); renaming a package directory (has __init__.py) — use git mv on the directory directly.
+  SKIP: non-Python project; codemap index not built (run /codemap:scan-codebase first); renaming a local variable (not a symbol definition or module path); user explicitly wants grep-only rename without index verification; user performing rename via IDE/LSP and only wants to preview coverage (invoke this skill with --dry-run to get the advisory list without applying edits); splitting one symbol into multiple (this skill handles 1:1 renames only); renaming a package directory (has __init__.py) — use git mv on the directory directly.
 argument-hint: "symbol <old_qname> <new_qname> [--dry-run] [--deprecate[=\"@deprecated(...)\"|\"@deprecated_class(...)\"]] [--since <ver>] [--removed-in <ver>] [--remove-if-no-callers] | module <old_module_path> <new_module_path> [--dry-run]"
 allowed-tools: Bash, Read, Edit, Write, AskUserQuestion
 model: sonnet
@@ -34,7 +34,7 @@ Rename Python symbol or module atomically. Coverage:
 - `getattr(obj, "old_name")` — string not statically bound to symbol; Step 6 emits grep advisory
 - Cross-repo callers — out of scope by definition; use `--deprecate` + semver bump for public APIs
 
-NOT for: building index (`/codemap:scan-codebase`); querying without rename intent (`/codemap:query-code`); non-Python files; renaming symbols in abstract base classes or Protocol definitions where subclass overrides exist — subclass method overrides are not tracked by static import analysis; review `fn-rdeps` output manually and rename overrides explicitly.
+NOT for: building index (`/codemap:scan-codebase`); querying without rename intent (`/codemap:query-code`); non-Python files; renaming symbols in abstract base classes or Protocol definitions where subclass overrides exist — subclass method overrides are not tracked by static import analysis; review `fn-rdeps` output manually and rename overrides explicitly. **Note**: this skill does not support `--index <path>` for alternate index selection — blast-radius and rename queries always use the default project index. For monorepos requiring a specific root, run `/codemap:scan-codebase --root <pkg>` first to build the correct index, then rename.
 
 </objective>
 
@@ -68,10 +68,7 @@ case "$SUBCOMMAND" in
 esac
 
 # Conflicting flags guard — --deprecate + --remove-if-no-callers are incompatible
-if echo "$ARGUMENTS" | grep -q -- '--deprecate' && [ "$REMOVE_IF_ZERO" = "true" ]; then
-    printf "⚠ conflicting flags: --deprecate creates alias, --remove-if-no-callers deletes target; these are incompatible\n" >&2
-    exit 1
-fi
+echo "$ARGUMENTS" | grep -q -- '--deprecate' && [ "$REMOVE_IF_ZERO" = "true" ] && { printf "⚠ conflicting flags: --deprecate creates alias, --remove-if-no-callers deletes target; these are incompatible\n" >&2; exit 1; }
 
 # Write to project-qualified tmpfiles
 printf '%s' "$SUBCOMMAND"     > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-SUBCOMMAND"
@@ -91,12 +88,14 @@ printf '%s' "$NEW_NAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-NEW_NAME"
 
 Parse `--deprecate` — may be bare flag or carry a decorator value:
 ```bash
-PARSE_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_deprecate_args.py" --arguments="$ARGUMENTS" 2>/dev/null)  # timeout: 5000
+# timeout: 5000
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+PARSE_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_deprecate_args.py" --arguments="$ARGUMENTS" 2>"${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-parse-deprecate-err") || { _PARSE_RC=$?; printf "! parse_deprecate_args.py failed (exit %d): %s\n" "$_PARSE_RC" "$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-parse-deprecate-err" 2>/dev/null)" >&2; exit 1; }
 FLAG_FILE=$(printf '%s\n' "$PARSE_OUT" | sed -n 1p)   # pid-qualified path printed by the script (SEC-M7)
 DEC_FILE=$(printf '%s\n' "$PARSE_OUT" | sed -n 2p)
+[ -n "$FLAG_FILE" ] || { printf "! parse_deprecate_args.py returned no paths\n" >&2; exit 1; }
 DEPRECATE=$(cat "$FLAG_FILE" 2>/dev/null || echo "false")
 DEPRECATE_DECORATOR=$(cat "$DEC_FILE" 2>/dev/null || echo "")
-_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 printf '%s' "$DEPRECATE"           > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-DEPRECATE"
 printf '%s' "$DEPRECATE_DECORATOR" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-DEPRECATE_DECORATOR"
 ```
@@ -154,7 +153,6 @@ Construct full qname: `<module>::<qualified_name>` (e.g. `mypackage.auth::valida
 # timeout: 25000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py" 2>/dev/null || echo "scan-query")
-# Extract module and qualified_name from find-symbol result to build fn-rdeps argument
 FIND_SYMBOL_JSON=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-find-symbol-json" 2>/dev/null || echo "{}")
 SYM_MODULE=$(echo "$FIND_SYMBOL_JSON" | jq -r '.matches[0].module // ""' 2>/dev/null || echo "")
 SYM_QNAME=$(echo "$FIND_SYMBOL_JSON" | jq -r '.matches[0].qualified_name // ""' 2>/dev/null || echo "")
@@ -189,9 +187,7 @@ printf '%s' "$RDEP_COUNT"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rdep-count"
 printf '%s' "$EXHAUSTIVE"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-EXHAUSTIVE"
 # Safety: module subcommand does not support --remove-if-no-callers unless explicitly passed AND exhaustive
 REMOVE_IF_ZERO_ARG=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVE_IF_ZERO" 2>/dev/null || echo "false")
-if [ "$REMOVE_IF_ZERO_ARG" = "true" ] && [ "$EXHAUSTIVE" != "true" ]; then
-    printf '%s' "false" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVE_IF_ZERO"
-fi
+[ "$REMOVE_IF_ZERO_ARG" = "true" ] && [ "$EXHAUSTIVE" != "true" ] && printf '%s' "false" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVE_IF_ZERO"
 ```
 
 Returns `{imported_by:[...], index:{exhaustive,...}}`. Extract `RDEP_COUNT` and `EXHAUSTIVE`.
@@ -222,7 +218,25 @@ Deprecation wrapper: <OLD_REF> kept as @deprecated alias → <NEW_REF>
 ⚠ Index non-exhaustive — some callers may not appear above
 ```
 
-**Budget gate**: if caller count > 50 → write full caller list to `.temp/output-rename-refs-blast-<branch>-<YYYY-MM-DD>.md`, print path + summary count to terminal, then print `⚠ >50 callers — capping edit pass at first 50. Callers 51–N are listed as manual advisories in Step 7.` Proceed with first 50 only. Print the file path before the AskUserQuestion gate so user can review the full list. **Note**: Step 7 summary will show residual old-name hits for callers 51–N as "skipped callers" — these are expected, not missed dynamic references.
+**Budget gate**: if caller count > 50 → derive BRANCH first:
+```bash
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
+```
+Write full caller list to `.temp/output-rename-refs-blast-${BRANCH}-<YYYY-MM-DD>.md`. File must begin with YAML header:
+```yaml
+---
+Title:      rename-refs blast-radius — <OLD_REF>
+Date:       <YYYY-MM-DD>
+Scope:      <project name>
+Focus:      caller enumeration (capped at 50 for edit pass)
+Agents:     codemap:rename-refs
+Outcome:    <N callers found; exhaustive: true/false>
+Confidence: <exhaustive|partial>
+Next steps: apply edits for callers 1–50; callers 51–N in this file require manual edit
+Path:       → .temp/output-rename-refs-blast-<branch>-<YYYY-MM-DD>.md
+---
+```
+Print path + summary count to terminal, then print `⚠ >50 callers — capping edit pass at first 50. Callers 51–N listed in blast file as manual advisories.` Proceed with first 50 only. **Note**: Step 7 summary will show residual old-name hits for callers 51–N as "skipped callers" — these are expected, not missed dynamic references.
 
 **`--remove-if-no-callers` guards** — evaluated BEFORE any rename edits:
 
@@ -236,14 +250,28 @@ EXHAUSTIVE=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-EXHAUSTIVE" 2>/dev/
 
 - `REMOVE_IF_ZERO=true` AND `RDEP_COUNT > 0` → print `! --remove-if-no-callers: N callers found. Remove all callers first or omit flag.` and stop the **entire rename operation**.
 - `REMOVE_IF_ZERO=true` AND `EXHAUSTIVE=false` → print `! --remove-if-no-callers requires exhaustive=true. Run /codemap:scan-codebase to ensure full coverage.` and stop the **entire rename operation**.
-- `REMOVE_IF_ZERO=true` AND `RDEP_COUNT == 0` AND `EXHAUSTIVE=true` → invoke `AskUserQuestion` — (a) Delete `$OLD_REF` — no callers confirmed, remove definition · (b) Abort — keep file. On Abort: stop. On Delete: **delete the OLD definition directly without rename**; skip Steps 4a–4d; print `ℹ Symbol had no callers — removed $OLD_REF without rename` and go to Step 6.
+- `REMOVE_IF_ZERO=true` AND `RDEP_COUNT == 0` AND `EXHAUSTIVE=true` → invoke `AskUserQuestion` — (a) Delete `$OLD_REF` — no callers confirmed, remove definition · (b) Abort — keep file. On Abort: stop. On Delete: use find-symbol to locate the definition line range, then use `Read` to confirm the block bounds, then `Edit` to remove the definition block (from the `def`/`class` line through the final line of the function body, including any immediately preceding `@decorator` lines). Skip Steps 4a–4d. Print `ℹ Symbol had no callers — removed $OLD_REF without rename` and go to Step 6.
 - Otherwise (`REMOVE_IF_ZERO=false`): proceed with normal rename flow.
 
 **`--dry-run`**: derive branch first, then write report:
 ```bash
-BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')
+BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')  # timeout: 3000
 ```
-Write report to `.temp/output-rename-refs-dry-${BRANCH}-<YYYY-MM-DD>.md` via Write, print path, then invoke `AskUserQuestion` — (a) Apply for real (re-invoke without --dry-run) · (b) Done. Stop.
+Write report to `.temp/output-rename-refs-dry-${BRANCH}-<YYYY-MM-DD>.md` via Write. Report must begin with YAML header:
+```yaml
+---
+Title:      rename-refs dry-run — <OLD_REF> → <NEW_REF>
+Date:       <YYYY-MM-DD>
+Scope:      <project name>
+Focus:      dry-run: sites that would be changed
+Agents:     codemap:rename-refs
+Outcome:    DRY_RUN — no edits applied; <N callers, M import sites, K docstring refs>
+Confidence: <exhaustive|partial>
+Next steps: re-invoke without --dry-run to apply; or abort
+Path:       → .temp/output-rename-refs-dry-<branch>-<YYYY-MM-DD>.md
+---
+```
+Print path, then invoke `AskUserQuestion` — (a) Apply for real (re-invoke without --dry-run) · (b) Done. Stop.
 
 Otherwise, invoke `AskUserQuestion` — (a) Apply edits · (b) Abort. On Abort: stop.
 
@@ -256,6 +284,12 @@ Read `path` from find-symbol result. Edit the definition line at `start_line`:
 - `def old_name(` → `def new_name(`
 - `class OldName(` / `class OldName:` → `class NewName(` / `class NewName:`
 - Method: match `def old_method(self` pattern within the class body
+- **`@property` descriptors**: when the symbol is a property, `find-symbol` returns only the getter. After renaming the getter, grep the same class body for `@old_name.setter` and `@old_name.deleter` decorators — rename them to `@new_name.setter` / `@new_name.deleter` to avoid a broken descriptor (`@old_name.setter` after getter renamed to `new_name` would raise `AttributeError` at class definition time):
+  ```bash
+  _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
+  OLD_NAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_NAME")
+  grep -n "@${OLD_NAME}\.setter\|@${OLD_NAME}\.deleter" "<path>"  # timeout: 3000
+  ```
 - **`@typing.overload` stubs**: after renaming the implementation, grep the same file AND any sibling `.pyi` stub file for `@overload` decorated stubs with `def old_name(` — `find-symbol` returns the implementation only, not overload stubs or stub files. Rename all overload stubs to `new_name` to keep signatures consistent:
   ```bash
   _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
@@ -270,8 +304,7 @@ Read `path` from find-symbol result. Edit the definition line at `start_line`:
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 OLD_NAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_NAME")
 FIND_SYMBOL_JSON=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-find-symbol-json" 2>/dev/null || echo "{}")
-# Scope grep to the owning package tree (derived from OLD_FILE_PATH) to avoid false positives
-# on same-named symbols in unrelated packages
+# scope to pkg tree — avoid same-named symbol false positives
 OLD_FILE_PATH=$(echo "$FIND_SYMBOL_JSON" | jq -r '.matches[0].path // "."' 2>/dev/null || echo ".")
 PKG_DIR=$(dirname "$OLD_FILE_PATH")
 printf '%s' "$PKG_DIR" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-pkg-dir"
@@ -303,7 +336,12 @@ grep -qxF "$TARGET_FILE" "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-processed-import-f
 Only apply import-line edits when `SKIP_IMPORT=false`.
 
 For each caller entry (`called_by[i].caller` is already `module::function` format — pass directly to scan-query):
-1. `"$SQ" symbol "<caller_qname>"` — timeout: 10000 — result shape: `{symbols:[{path, start_line, end_line, qualified_name, ...}]}`
+1. Re-resolve SQ before each caller block (shell var does not persist across Bash() calls):
+   ```bash
+   # timeout: 5000
+   SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py" 2>/dev/null || echo "scan-query")
+   ```
+   Then: `"$SQ" symbol "<caller_qname>"` — timeout: 10000 — result shape: `{symbols:[{path, start_line, end_line, qualified_name, ...}]}`
    - 0 matches → log `⚠ symbol not found for caller <caller_qname> — skipping caller` and continue to next entry
    - Filter `symbols[]` by `qualified_name` matching the expected caller name (exact match preferred); if no exact match, use first entry
    - Use the matched entry's `path`, `start_line`, `end_line` for step 2
@@ -319,14 +357,16 @@ Module-level import fix (whole-file scope, safe to apply once per file):
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 OLD_NAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_NAME")
 OLD_MODULE_PATH=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH" 2>/dev/null || echo "")
-# SYMBOL subcommand: OLD_MODULE_PATH tmpfile may be absent — derive from OLD_REF (part before ::)
+# SYMBOL subcommand: derive OLD_MODULE_PATH from OLD_REF; keep dotted form — grep matches Python import syntax, not fs paths
 if [ -z "$OLD_MODULE_PATH" ]; then
     OLD_REF=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_REF" 2>/dev/null || echo "")
-    OLD_MODULE_PATH=$(echo "$OLD_REF" | sed 's/::.*//' | tr '.' '/')
+    OLD_MODULE_PATH=$(echo "$OLD_REF" | sed 's/::.*//')
     printf '%s' "$OLD_MODULE_PATH" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH"
 fi
-# Use fully-qualified module path to avoid matching same-named symbols from unrelated modules
-grep -n "from ${OLD_MODULE_PATH} import .*\b${OLD_NAME}\b\|from .*\.${OLD_MODULE_PATH##*/} import .*\b${OLD_NAME}\b\|^import .*\b${OLD_NAME}\b" "<file>"
+# escape dots — must match literally, not any-char
+_OLD_MODULE_GREP=$(printf '%s' "$OLD_MODULE_PATH" | sed 's/\./\\./g')
+_OLD_BASENAME_GREP=$(printf '%s' "${OLD_MODULE_PATH##*.}" | sed 's/\./\\./g')
+grep -n "from ${_OLD_MODULE_GREP} import .*\b${OLD_NAME}\b\|from .*\\.${_OLD_BASENAME_GREP} import .*\b${OLD_NAME}\b\|^import .*\b${OLD_NAME}\b" "<file>"
 ```
 
 Edit each matched import line. Verify the `from <module>` clause references the expected module path before editing — skip imports of `OLD_NAME` from unrelated modules. The `processed-import-files` tmpfile is already updated by the dedup block above.
@@ -361,13 +401,11 @@ DEPRECATE_DECORATOR=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-DEPRECATE_
 SINCE_VER=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-SINCE_VER" 2>/dev/null || echo "")
 REMOVED_IN_VER=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVED_IN_VER" 2>/dev/null || echo "")
 if [ -n "$DEPRECATE_DECORATOR" ]; then
-    # User supplied full decorator line via --deprecate="@deprecated(...)"
     DEPRECATION_CODE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/gen_deprecation_wrapper.py" \
         --decorator "$DEPRECATE_DECORATOR" \
         --old-name "$OLD_NAME" \
         ${REMOVED_IN_VER:+--removed-in "$REMOVED_IN_VER"}) || { echo "! gen_deprecation_wrapper failed — check symbol type and names"; exit 1; }
 else
-    # Derive decorator from symbol type + names + versions
     DEPRECATION_CODE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/gen_deprecation_wrapper.py" \
         --type "$SYMBOL_TYPE" \
         --old-name "$OLD_NAME" \
@@ -393,10 +431,9 @@ The zero-caller + exhaustive path is handled entirely in Step 3 — when `REMOVE
 ```bash
 # timeout: 3000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-# Verify git repo before attempting git status / git mv
 git rev-parse --is-inside-work-tree 2>/dev/null || { printf "⚠ not a git repo — cannot use git mv; rename file manually\n" >&2; exit 1; }
 OLD_MODULE_PATH=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH")
-# Prefer index-stored path when available (avoids dotted-path conversion errors on src/ layouts)
+# prefer index path — avoids dotted-path conversion errors on src/ layouts
 SMOKE_INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
 INDEX_PATH=""
 if [ -n "$SMOKE_INDEX" ] && command -v jq >/dev/null 2>&1; then
@@ -408,15 +445,13 @@ else
     # dotted-path conversion: may be wrong for src/ layouts or custom --root scans — verify path before git mv
     old_file_path=$(echo "$OLD_MODULE_PATH" | tr '.' '/').py
 fi
-# Package directory guard (MED-15): if .py path absent but __init__.py exists, it's a package dir
-if [ ! -f "$old_file_path" ] && [ -f "$(echo "$OLD_MODULE_PATH" | tr '.' '/')/__init__.py" ]; then
+if [ ! -f "$old_file_path" ] && [ -f "$(echo "$OLD_MODULE_PATH" | tr '.' '/')/__init__.py" ]; then  # MED-15: package dir
     printf "! %s is a package directory — use 'git mv %s %s' directly\n" \
         "$OLD_MODULE_PATH" \
         "$(echo "$OLD_MODULE_PATH" | tr '.' '/')" \
         "$(echo "$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-NEW_REF")" | tr '.' '/')" >&2
     exit 1
 fi
-# File existence guard
 [ -f "$old_file_path" ] || { printf "! File not found: %s\n" "$old_file_path" >&2; exit 1; }
 printf '%s' "$old_file_path" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-old-file-path"
 git status --porcelain "$old_file_path"
@@ -431,7 +466,18 @@ If output is empty (clean tracked file): proceed.
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 old_file_path=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-old-file-path")
 NEW_MODULE_PATH=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-NEW_REF")
-new_file_path=$(echo "$NEW_MODULE_PATH" | tr '.' '/').py
+# Derive new file path using the same strategy as old_file_path: prefer index-stored path to avoid
+# src/-layout mismatches (tr '.' '/' produces wrong path for src/mypackage/old_name.py).
+SMOKE_INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
+new_file_path=""
+if [ -n "$SMOKE_INDEX" ] && command -v jq >/dev/null 2>&1; then
+    new_file_path=$(jq -r --arg m "$NEW_MODULE_PATH" '.modules[$m].path // ""' "$SMOKE_INDEX" 2>/dev/null || echo "")
+fi
+if [ -z "$new_file_path" ]; then
+    # Fallback: dotted-to-path conversion. For src/ layouts, old_file_path gives the correct prefix pattern.
+    _OLD_PREFIX=$(dirname "$old_file_path" | sed "s/$(echo "${OLD_MODULE_PATH%.*}" | tr '.' '\/')$//")
+    new_file_path="${_OLD_PREFIX}$(echo "$NEW_MODULE_PATH" | tr '.' '/').py"
+fi
 git mv "$old_file_path" "$new_file_path"
 ```
 
@@ -441,7 +487,9 @@ git mv "$old_file_path" "$new_file_path"
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 OLD_MODULE_PATH=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH")
-grep -rn "^import ${OLD_MODULE_PATH}\b\|^import ${OLD_MODULE_PATH} as " --include="*.py" .
+# Escape dots so mypackage.old_name matches literally, not any-char.old_name
+_OLD_MODULE_GREP=$(printf '%s' "$OLD_MODULE_PATH" | sed 's/\./\\./g')
+grep -rn "^import ${_OLD_MODULE_GREP}\b\|^import ${_OLD_MODULE_GREP} as " --include="*.py" .
 ```
 
 Edit each: `import mypackage.old_name` → `import mypackage.new_name`.
@@ -452,7 +500,9 @@ Edit each: `import mypackage.old_name` → `import mypackage.new_name`.
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 OLD_MODULE_PATH=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-OLD_MODULE_PATH")
-grep -rn "^from ${OLD_MODULE_PATH} import\|^from ${OLD_MODULE_PATH} as " --include="*.py" .
+# Escape dots so mypackage.old_name matches literally, not any-char.old_name
+_OLD_MODULE_GREP=$(printf '%s' "$OLD_MODULE_PATH" | sed 's/\./\\./g')
+grep -rn "^from ${_OLD_MODULE_GREP} import\|^from ${_OLD_MODULE_GREP} as " --include="*.py" .
 ```
 
 Edit each: `from mypackage.old_name import` → `from mypackage.new_name import`.
@@ -543,7 +593,7 @@ Advisory — check manually (outside static analysis coverage):
   [if cross-repo public API and DEPRECATE not used]
   - External consumers: update CHANGELOG; use --deprecate alias until next major release
   [if caller count was capped at 50]
-  - Skipped callers (51–N): edit these manually — listed in .temp/output-rename-refs-blast-* file
+  - Skipped callers (51–N): edit these manually — listed in .temp/output-rename-refs-blast-* file (see blast-radius report from Step 3)
   [if residual hits from Step 6 re-scan]
   - Residual index hits (likely dynamic/string refs):
       <file>:<line>

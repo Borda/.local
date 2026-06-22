@@ -1,5 +1,5 @@
 ---
-oss-review:  [PR #N title]
+Title:       oss-review — [PR #N title]
 Date:        [YYYY-MM-DD]
 PR Type:     [fix | feat | refactor | perf | docs | ci | chore | test | mixed — from change intent, not file count or PR title]
 Scope:       [key changed files, comma-separated]

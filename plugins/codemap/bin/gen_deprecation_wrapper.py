@@ -133,8 +133,8 @@ def gen_wrapper_from_decorator(decorator: str, old_name: str, removed_in: str = 
 
     Raises:
         ValueError: if *decorator* contains neither ``deprecated`` nor
-            ``deprecated_class``, or if *decorator* contains a newline
-            (code injection, SEC-L1).
+            ``deprecated_class``, or if *decorator* contains any control
+            character (code injection, SEC-L1).
 
     Examples:
         >>> code = gen_wrapper_from_decorator(
@@ -154,12 +154,12 @@ def gen_wrapper_from_decorator(decorator: str, old_name: str, removed_in: str = 
         >>> gen_wrapper_from_decorator("@deprecated(target=bar)\\nimport os", "foo")
         Traceback (most recent call last):
             ...
-        ValueError: --decorator must not contain newlines
+        ValueError: --decorator must not contain newlines or control characters
     """
-    # SEC-L1: the decorator is embedded verbatim in generated Python source; an
-    # embedded newline would inject arbitrary additional code lines.
-    if "\n" in decorator or "\r" in decorator:
-        raise ValueError("--decorator must not contain newlines")
+    # SEC-L1: the decorator is embedded verbatim in generated Python source; any
+    # control character (newline, null byte, escape, etc.) would inject code.
+    if any(ord(c) < 32 for c in decorator):
+        raise ValueError("--decorator must not contain newlines or control characters")
     import_line = _import_for_decorator(decorator)
     stub = f"class {old_name}: ..." if "deprecated_class" in decorator else f"def {old_name}(*args, **kwargs): ..."
     return textwrap.dedent(f"""\

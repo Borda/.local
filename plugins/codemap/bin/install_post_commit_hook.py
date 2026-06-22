@@ -26,7 +26,7 @@ from pathlib import Path
 
 HOOK_MARKER = "# codemap: incremental"
 MAX_HOOK_SIZE = 1_048_576  # 1 MB — refuse to read oversized hook files into memory (SEC-L4: DoS guard)
-_VALID_PLUGIN_ROOT_RE = re.compile(r"^[a-zA-Z0-9_./-]+$")
+_VALID_PLUGIN_ROOT_RE = re.compile(r"^[a-zA-Z0-9_./-]{1,1024}$")
 
 
 def _make_hook_body(plugin_root: str | None) -> str:

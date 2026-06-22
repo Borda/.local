@@ -76,6 +76,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from collections import deque
 from pathlib import Path
 
@@ -100,6 +101,77 @@ from _schema import (
 # command consumes it directly today — module_aliases is applied internally by
 # scan-index at import resolution time. Touch reference to avoid F401 churn.
 _ = MODULE_ALIASES_MIN_VER
+
+
+# ---------------------------------------------------------------------------
+# Telemetry — cli.jsonl logging
+# ---------------------------------------------------------------------------
+
+_T0: float = time.time()
+_CMD: str = ""
+_LOG_ENABLED: bool = os.environ.get("CODEMAP_LOGGING", "true").lower() != "false"
+_LOG_DIR: Path = Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))
+_LOG_MAX_BYTES: int = 10 * 1024 * 1024
+_builtin_print = print  # saved before print( → _print( sweep below
+
+
+def _log_rotate(path: Path) -> None:
+    for i in range(2, 0, -1):
+        src = path.parent / f"{path.name}.{i}"
+        dst = path.parent / f"{path.name}.{i + 1}"
+        if src.exists():
+            src.rename(dst)
+    if path.exists():
+        path.rename(path.parent / f"{path.name}.1")
+
+
+def _log_session() -> str:
+    try:
+        git_root = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        ).strip()
+        proj = Path(git_root).name
+    except Exception:
+        proj = Path.cwd().name
+    sid_file = Path(os.environ.get("TMPDIR", "/tmp")) / f"codemap-{proj}-session"
+    try:
+        return sid_file.read_text().strip()
+    except Exception:
+        return ""
+
+
+def _print(*args: object, **kwargs: object) -> None:
+    """Forward to built-in print; for stdout output also append a JSONL record to cli.jsonl."""
+    _builtin_print(*args, **kwargs)
+    if kwargs.get("file") or not _LOG_ENABLED:
+        return
+    try:
+        raw = str(args[0]) if args else ""
+        result: dict = {}
+        try:
+            result = json.loads(raw)
+        except Exception:  # noqa: BLE001
+            pass
+        log_path = _LOG_DIR / "cli.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        if log_path.exists() and log_path.stat().st_size > _LOG_MAX_BYTES:
+            _log_rotate(log_path)
+        record = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "layer": "cli",
+            "cmd": _CMD,
+            "session": _log_session(),
+            "argv": sys.argv[1:],
+            "timing_ms": max(0, int((time.time() - _T0) * 1000)),
+            "result": result,
+        }
+        with log_path.open("a") as fh:
+            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _has_call_graph(index: dict) -> bool:
@@ -179,7 +251,7 @@ def find_index() -> Path:
                 try:
                     candidate.resolve().relative_to(cache_base.resolve())
                 except ValueError:
-                    print(
+                    _print(
                         f"⚠ codemap: skipped {candidate} — resolves outside expected cache dir",
                         file=sys.stderr,
                     )
@@ -198,7 +270,7 @@ def find_index() -> Path:
                 try:
                     preferred.resolve().relative_to(scan_dir.resolve())
                 except ValueError:
-                    print(
+                    _print(
                         f"⚠ codemap: skipped {preferred} — resolves outside expected cache dir",
                         file=sys.stderr,
                     )
@@ -213,7 +285,7 @@ def find_index() -> Path:
                         c.resolve().relative_to(scan_dir.resolve())
                         safe_candidates.append(c)
                     except ValueError:
-                        print(
+                        _print(
                             f"⚠ codemap: skipped {c} — resolves outside expected cache dir",
                             file=sys.stderr,
                         )
@@ -229,7 +301,7 @@ def find_index() -> Path:
                         "Re-run /codemap:scan-codebase to rebuild."
                     )
                 if len(valid) > 1 or valid[0].stem != parent.name:
-                    print(
+                    _print(
                         f"⚠ codemap: loaded {valid[0].name} via fallback; expected {parent.name}.json",
                         file=sys.stderr,
                     )
@@ -381,7 +453,7 @@ def warn_if_stale(index: dict) -> None:
             stale_files = changed + added + deleted
             if stale_files:
                 n = len(stale_files)
-                print(
+                _print(
                     f"⚠ codemap index stale — {n} file(s) changed since last scan."
                     " Run /codemap:scan-codebase --incremental to update.",
                     file=sys.stderr,
@@ -390,7 +462,7 @@ def warn_if_stale(index: dict) -> None:
     # v2 index fallback: timestamp-based check
     scanned_at = index.get("scanned_at", "")
     if scanned_at and check_staleness(scanned_at):
-        print(
+        _print(
             "⚠ codemap index may be stale — Python files changed since last scan. Re-run /codemap:scan-codebase.",
             file=sys.stderr,
         )
@@ -503,7 +575,7 @@ def _exit_error(message: str) -> None:
     Args:
         message: human-readable error description.
     """
-    print(json.dumps({"error": message}))
+    _print(json.dumps({"error": message}))
     sys.exit(1)
 
 
@@ -676,7 +748,7 @@ def cmd_deps(
             selected.update(groups.get("internal", []))
         # Preserve original order from direct_imports while restricting to the selected set.
         direct = [imp for imp in direct if imp in selected]
-    print(
+    _print(
         json.dumps(
             {
                 "module": module,
@@ -705,7 +777,7 @@ def cmd_import_types(index: dict, module: str) -> None:
     if entry is None:
         _exit_error(f"Module '{module}' not in index.")
     groups = entry.get("import_groups", {"stdlib": [], "third_party": [], "internal": []})
-    print(
+    _print(
         json.dumps(
             {
                 "module": module,
@@ -740,7 +812,7 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False) -> None:
     entry = module_map.get(module, {})
     dynamic = entry.get("dynamic_imported_by", [])
     config = entry.get("config_refs", [])
-    print(
+    _print(
         json.dumps(
             {
                 "module": module,
@@ -766,7 +838,7 @@ def cmd_central(index: dict, top: int, exclude_tests: bool = False) -> None:
     if exclude_tests:
         candidates = [m for m in candidates if not m.get("is_test")]
     ranked = sorted(candidates, key=lambda m: m.get("rdep_count", 0), reverse=True)[:top]
-    print(
+    _print(
         json.dumps(
             {
                 "central": [
@@ -800,7 +872,7 @@ def cmd_coupled(index: dict, top: int, exclude_tests: bool = False) -> None:
         m["name"]: sum(1 for i in m.get("direct_imports", []) if i in all_module_names) for m in candidates
     }
     ranked = sorted(candidates, key=lambda m: internal_counts.get(m["name"], 0), reverse=True)[:top]
-    print(
+    _print(
         json.dumps(
             {
                 "coupled": [
@@ -843,7 +915,7 @@ def cmd_path(index: dict, frm: str, to: str) -> None:
         path = queue.popleft()
         node = path[-1]
         if node == to:
-            print(
+            _print(
                 json.dumps(
                     {
                         "from": frm,
@@ -863,7 +935,7 @@ def cmd_path(index: dict, frm: str, to: str) -> None:
                 visited.add(neighbour)
                 queue.append(path + [neighbour])
 
-    print(
+    _print(
         json.dumps(
             {
                 "from": frm,
@@ -888,7 +960,7 @@ def cmd_list(index: dict) -> None:
         {"name": m["name"], "path": m.get("path", ""), "status": m.get("status", "ok")}
         for m in index.get("modules", [])
     ]
-    print(json.dumps({"modules": modules}))
+    _print(json.dumps({"modules": modules}))
 
 
 def _resolve_project_root(explicit_root: Path | None, index: dict) -> Path:
@@ -1030,7 +1102,7 @@ def cmd_symbol(
     if truncated:
         coverage["truncated"] = True
         coverage["total_available"] = total_matches
-    print(
+    _print(
         json.dumps(
             {
                 "symbols": results,
@@ -1053,7 +1125,7 @@ def cmd_symbols(index: dict, module: str) -> None:
     if entry is None:
         _exit_error(f"Module '{module}' not in index.")
     syms: list[Symbol] = entry.get("symbols", [])
-    print(
+    _print(
         json.dumps(
             {
                 "module": module,
@@ -1125,7 +1197,7 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
     # ReDoS guard — nested/adjacent and alternation quantifiers (e.g. `(a+)+`, `(.*){2,}`,
     # `(a|aa)+`) can cause catastrophic backtracking.
     if _is_dangerous_regex(pattern):
-        print(
+        _print(
             f"find-symbol: pattern '{pattern}' may cause ReDoS — use a simpler pattern",
             file=sys.stderr,
         )
@@ -1163,7 +1235,7 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
     if truncated:
         coverage["truncated"] = True
         coverage["total_available"] = total_matches
-    print(
+    _print(
         json.dumps(
             {
                 "pattern": pattern,
@@ -1197,7 +1269,7 @@ def cmd_fn_deps(index: dict, qname: str) -> None:
         for edge in sym.get("calls", [])
         if edge.get("resolution") in VALID_CALL_RESOLUTIONS
     ]
-    print(
+    _print(
         json.dumps(
             {
                 "qname": qname,
@@ -1237,7 +1309,7 @@ def cmd_fn_rdeps(index: dict, qname: str, exclude_tests: bool = False) -> None:
     if exclude_tests:
         callers = [c for c in callers if not sym_map.get(c["caller"], ({}, {}))[0].get("is_test")]
     fn_name = qname.split("::")[-1] if "::" in qname else qname
-    print(
+    _print(
         json.dumps(
             {
                 "qname": qname,
@@ -1288,7 +1360,7 @@ def cmd_fn_central(index: dict, top: int, exclude_tests: bool = False) -> None:
                 "path": m_entry.get("path", ""),
             }
         )
-    print(
+    _print(
         json.dumps(
             {"fn_central": result, "index": _cmd_coverage(index, method="static-ast", scope="call-graph-centrality")}
         )
@@ -1330,7 +1402,7 @@ def cmd_fn_blast(index: dict, qname: str) -> None:
                 queue.append((caller, depth + 1))
 
     result.sort(key=lambda x: (x["depth"], x["caller"]))
-    print(
+    _print(
         json.dumps(
             {
                 "qname": qname,
@@ -1443,7 +1515,7 @@ def cmd_test_impact(index: dict, qname: str, include_mocks: bool = True) -> None
     pytest_cmd = ("pytest " + " ".join(all_files)) if all_files else ""
     method = "static-ast" if "::" in qname else "import-graph"
     short_name = qname.split("::")[-1] if "::" in qname else qname.split(".")[-1]
-    print(
+    _print(
         json.dumps(
             {
                 "qname": qname,
@@ -1505,7 +1577,7 @@ def cmd_mock_rdeps(index: dict, query: str) -> None:
     if "::" in query:
         module, symbol = query.split("::", 1)
         callers = sorted(by_symbol.get(query, []), key=lambda c: (c["file"], c["line"]))
-        print(
+        _print(
             json.dumps(
                 {
                     "module": module,
@@ -1533,7 +1605,7 @@ def cmd_mock_rdeps(index: dict, query: str) -> None:
                 }
             )
     callers.sort(key=lambda c: (c["target"], c["file"], c["line"]))
-    print(
+    _print(
         json.dumps(
             {
                 "module": query,
@@ -1582,7 +1654,7 @@ def cmd_subprocess_deps(index: dict, module: str) -> None:
     if entry is None:
         _exit_error(f"Module '{module}' not in index.")
     calls = entry.get("subprocess_calls", []) or []
-    print(
+    _print(
         json.dumps(
             {
                 "module": module,
@@ -1620,7 +1692,7 @@ def cmd_subprocess_rdeps(index: dict, module: str) -> None:
                     }
                 )
     callers.sort(key=lambda c: (c["caller"], c["file"], c["line"]))
-    print(
+    _print(
         json.dumps(
             {
                 "module": module,
@@ -1713,7 +1785,7 @@ def cmd_fixture_rdeps(index: dict, fixture_name: str) -> None:
             )
             break
     test_files.sort(key=lambda e: (e["module"], e["path"]))
-    print(
+    _print(
         json.dumps(
             {
                 "fixture": fixture_name,
@@ -1825,7 +1897,7 @@ def cmd_fixture_graph(index: dict, test_file: str) -> None:
     for fix in module_entry.get("fixture_uses", []) or []:
         visited: set[str] = set()
         roots.append(_build_fixture_subtree(fix["name"], fixture_defs, visited, 0))
-    print(
+    _print(
         json.dumps(
             {
                 "test_file": module_entry.get("name", ""),
@@ -1944,7 +2016,7 @@ def cmd_undocumented(index: dict, module: str | None, all_modules: bool) -> None
     }
     if module is not None:
         payload["module"] = module
-    print(json.dumps(payload))
+    _print(json.dumps(payload))
 
 
 # ---------------------------------------------------------------------------
@@ -2036,7 +2108,7 @@ def cmd_uncovered(index: dict, args: argparse.Namespace) -> None:
     }
     if module is not None:
         payload["module"] = module
-    print(json.dumps(payload))
+    _print(json.dumps(payload))
 
 
 # ---------------------------------------------------------------------------
@@ -2104,7 +2176,7 @@ def cmd_coverage(index: dict, qname: str) -> None:
                     "end_line": sym.get("end_line", 0),
                 }
             )
-        print(
+        _print(
             json.dumps(
                 {
                     "module": module_name,
@@ -2124,7 +2196,7 @@ def cmd_coverage(index: dict, qname: str) -> None:
                 f"Symbol '{module_name}::{symbol_name}' has no coverage data — "
                 "rebuild the index with `scan-index --with-coverage <path>`."
             )
-        print(
+        _print(
             json.dumps(
                 {
                     "module": module_name,
@@ -2210,7 +2282,7 @@ def cmd_coverage_gap(
     }
     if module is not None:
         payload["module"] = module
-    print(json.dumps(payload))
+    _print(json.dumps(payload))
 
 
 # ---------------------------------------------------------------------------
@@ -2275,7 +2347,7 @@ def cmd_xrefs(index: dict, query: str, broken: bool) -> None:
                     }
                 )
         refs.sort(key=lambda r: (r["file"], r["line"], r["role"]))
-        print(
+        _print(
             json.dumps(
                 {
                     "target": query,
@@ -2315,7 +2387,7 @@ def cmd_xrefs(index: dict, query: str, broken: bool) -> None:
             }
         )
     broken_refs.sort(key=lambda r: (r["target"], r["file"], r["line"]))
-    print(
+    _print(
         json.dumps(
             {
                 "module": query,
@@ -2409,7 +2481,7 @@ def cmd_dead_symbols(index: dict, args: argparse.Namespace) -> None:
         if m.get("has_star_imports", False):
             mod_name = m.get("name", "")
             skipped_star.append(mod_name)
-            print(
+            _print(
                 f"⚠ dead-symbol skipped {mod_name} — star imports prevent reliable call graph",
                 file=sys.stderr,
             )
@@ -2447,7 +2519,7 @@ def cmd_dead_symbols(index: dict, args: argparse.Namespace) -> None:
             )
 
     findings.sort(key=lambda f: (-f["loc"], f["module"], f["qualified_name"]))
-    print(
+    _print(
         json.dumps(
             {
                 "dead": findings,
@@ -2503,7 +2575,7 @@ def cmd_dead_modules(index: dict, args: argparse.Namespace) -> None:
         )
 
     findings.sort(key=lambda f: (-f["loc"], f["name"]))
-    print(
+    _print(
         json.dumps(
             {
                 "dead_modules": findings,
@@ -2802,11 +2874,13 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    global _CMD  # noqa: PLW0603
+    _CMD = args.command
 
     if args.timeout > 0 and hasattr(signal, "SIGALRM"):
 
         def _timeout_handler(signum: int, frame: object) -> None:  # noqa: ARG001
-            print(f"scan-query: timed out after {args.timeout}s", file=sys.stderr)
+            _print(f"scan-query: timed out after {args.timeout}s", file=sys.stderr)
             sys.exit(2)
 
         signal.signal(signal.SIGALRM, _timeout_handler)
@@ -2828,7 +2902,7 @@ def main() -> None:
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             git_root = cwd
         if not (resolved.is_relative_to(cwd) or resolved.is_relative_to(git_root)):
-            print(f"scan-query: --index path outside project root: {resolved}", file=sys.stderr)
+            _print(f"scan-query: --index path outside project root: {resolved}", file=sys.stderr)
             sys.exit(2)
         index_path = resolved
     else:

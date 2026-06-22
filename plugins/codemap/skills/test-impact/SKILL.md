@@ -1,9 +1,9 @@
 ---
 name: test-impact
-description: |
-  Identify which tests need rerunning after a code change — traces static call graph (function-level) or import graph (module-level) to find affected test files, then emits a ready-to-run pytest command.
+description: "Identify which tests need rerunning after a code change — traces static call graph (function-level) or import graph (module-level) to find affected test files, then emits a ready-to-run pytest command."
+when_to_use: |
   TRIGGER when: user asks which tests are affected by a change; phrases: "which tests are affected", "what tests cover this", "test impact of", "what tests to rerun".
-  SKIP: user wants full test suite run; non-Python project; simple grep of test names would suffice.
+  SKIP: user wants full test suite run; non-Python project; target is a leaf utility where ≤3 test files contain the symbol name (`grep -rn "<symbol>" tests/ | wc -l ≤ 3`) — direct grep is faster.
 argument-hint: "<module::symbol | module> [--no-mocks]"
 allowed-tools: Bash, Read, Write, Skill, AskUserQuestion
 model: haiku
@@ -21,6 +21,8 @@ Two input modes:
 
 `not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers — same blind spot as `fn-blast`. Surface caveat and log gap.
 
+NOT for: finding all callers of a function (use `/codemap:query-code fn-blast <module::symbol>`); querying module deps or blast radius (use `/codemap:query-code`); running or executing tests (tests are not executed here — only identified).
+
 </objective>
 
 <inputs>
@@ -28,7 +30,7 @@ Two input modes:
 - **$ARGUMENTS**: `<qname> [--no-mocks]`
   - `qname` — `module::symbol` (function-level) or bare dotted module (module-level)
   - `--no-mocks` — exclude mock-only test files (no call/import path)
-  - Omitted → `AskUserQuestion`: "Which function or module changed? (e.g. `mypackage.utils::parse_config` or `mypackage.utils`)"
+  - Omitted → AskUserQuestion in Step 1
 
 </inputs>
 
@@ -43,15 +45,10 @@ _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 INDEX="${_IDX}/${_CM_PROJ}.json"
 
 SQ=$(python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py" 2>/dev/null)
-if [ -z "$SQ" ]; then
-    echo "scan-query not found — install codemap plugin first"
-    exit 1
-fi
+[ -z "$SQ" ] && { echo "scan-query not found — install codemap plugin first"; exit 1; }
 echo "$SQ" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq"
 
-if [ ! -f "$INDEX" ]; then
-    echo "No index found — will build via codemap:scan-codebase"
-fi
+[ ! -f "$INDEX" ] && echo "No index found — will build via codemap:scan-codebase"
 ```
 
 If `$INDEX` not found → `Skill(skill="codemap:scan-codebase")` then continue.
@@ -61,27 +58,43 @@ If index already exists:
 ```bash
 # timeout: 30000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
-"${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental 2>/dev/null || true
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+# Forward CODEMAP_INDEX_DIR so scan-index writes to the same location as INDEX var above
+CODEMAP_INDEX_DIR="${_IDX}" "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental || printf "⚠ scan-index --incremental failed — index may be stale; continuing\n"
+```
+
+After Skill() or incremental refresh, re-verify index still present:
+```bash
+# timeout: 5000
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+INDEX="${_IDX}/${_CM_PROJ}.json"
+[ -f "$INDEX" ] || { printf "! Index not found after refresh at %s — check CODEMAP_INDEX_DIR or re-run /codemap:scan-codebase\n" "$INDEX"; exit 1; }
 ```
 
 ## Step 1 — Parse arguments
 
 Extract `QNAME` and `NO_MOCKS` flag from `$ARGUMENTS`.
 
-If `$ARGUMENTS` empty → `AskUserQuestion`: "Which function or module changed?" Options: (a) Enter `module::symbol` for function-level · (b) Enter bare module name for module-level · (c) Cancel — exit without running test-impact analysis.
-
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 ARGS="${ARGUMENTS:-}"
 QNAME=$(echo "$ARGS" | awk '{print $1}')
-MOCKS_FLAG=""
-if echo "$ARGS" | grep -q -- "--no-mocks"; then
-    MOCKS_FLAG="--no-mocks"
-fi
+MOCKS_FLAG=$(echo "$ARGS" | grep -q -- "--no-mocks" && echo "--no-mocks" || echo "")
 echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname"
 echo "$MOCKS_FLAG" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks"
 ```
+
+If `$ARGUMENTS` empty → `AskUserQuestion`: "Which function or module changed?" Options: (a) Enter `module::symbol` for function-level · (b) Enter bare module name for module-level · (c) Cancel — exit without running test-impact analysis. After the user answers, set `QNAME` from the answer and write it to the tmpfile before proceeding to Step 2:
+```bash
+# timeout: 5000
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
+QNAME="<answer from AskUserQuestion>"
+echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname"
+```
+
+**Multi-symbol guard**: `$ARGUMENTS` may contain multiple space-separated tokens (e.g. `mypackage.auth::validate mypackage.auth::parse`). `awk '{print $1}'` silently truncates to the first. If `$ARGUMENTS` contains more than one token after stripping `--no-mocks`, print `⚠ test-impact accepts one symbol at a time — using first token only: $QNAME. Run separately for each remaining symbol.`
 
 ## Step 2 — Run test-impact query
 
@@ -91,30 +104,25 @@ _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/nul
 QNAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname" 2>/dev/null)
 MOCKS_FLAG=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks" 2>/dev/null)
 SQ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq" 2>/dev/null)
-"$SQ" test-impact "$QNAME" $MOCKS_FLAG 2>/dev/null
+RESULT=$("$SQ" test-impact "$QNAME" $MOCKS_FLAG 2>/dev/null)
+NOT_COVERED=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('index',{}).get('not_covered',[])))" 2>/dev/null || echo "[]")
+HINT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('index',{}).get('hint',''))" 2>/dev/null || echo "")
+TOTAL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('test_files',[])))" 2>/dev/null || echo "0")
+PYTEST_CMD=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pytest_cmd',''))" 2>/dev/null || echo "")
+echo "$NOT_COVERED" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered"
+echo "$HINT"        > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint"
+echo "$TOTAL"       > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-total"
+echo "$PYTEST_CMD"  > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-pytest-cmd"
 ```
 
-Parse JSON output:
+Parse JSON output from `$RESULT`:
 - `test_files` — list of test file paths
 - `pytest_cmd` — ready-to-run command
 - `via_call` / `via_mock` — breakdown of how tests were found
 - `index.not_covered` — surface as caveat if non-empty
 - `index.hint` — include as suggestion
 
-Write parsed values to tmpfiles:
-
-```bash
-# timeout: 5000
-_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
-QNAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname" 2>/dev/null)
-MOCKS_FLAG=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-mocks" 2>/dev/null)
-SQ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq" 2>/dev/null)
-RESULT=$("$SQ" test-impact "$QNAME" $MOCKS_FLAG 2>/dev/null)
-NOT_COVERED=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d.get('index',{}).get('not_covered',[])))" 2>/dev/null || echo "[]")
-HINT=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('index',{}).get('hint',''))" 2>/dev/null || echo "")
-echo "$NOT_COVERED" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered"
-echo "$HINT" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint"
-```
+**haiku JSON parse guard**: `scan-query` JSON output may be prefixed or suffixed with log/warning lines when running under haiku model. Always extract JSON via `python3 -c "import sys,json; ..."` piping stdin — never assume raw output is valid JSON. If parsing fails (ValueError/JSONDecodeError), print `! scan-query returned non-JSON output — try /codemap:scan-codebase to rebuild index` and exit 1.
 
 ## Step 3 — Gap logging
 
@@ -123,13 +131,22 @@ When `index.not_covered` non-empty:
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
-QNAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname" 2>/dev/null)
-NOT_COVERED=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered" 2>/dev/null || echo "[]")
-HINT=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint" 2>/dev/null || echo "")
+export _QNAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname" 2>/dev/null || echo "")
+export _NOT_COVERED=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered" 2>/dev/null || echo "[]")
+export _HINT=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint" 2>/dev/null || echo "")
 mkdir -p .cache/codemap
-printf '{"ts":"%s","cmd":"test-impact","target":"%s","not_covered":%s,"hint":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$QNAME" "$NOT_COVERED" "$HINT" \
-    >> .cache/codemap/gaps.jsonl 2>/dev/null || true
+python3 -c "
+import json, os
+rec = {
+    'ts': __import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'cmd': 'test-impact',
+    'target': os.environ.get('_QNAME', ''),
+    'not_covered': json.loads(os.environ.get('_NOT_COVERED', '[]')),
+    'hint': os.environ.get('_HINT', ''),
+}
+with open('.cache/codemap/gaps.jsonl', 'a') as f:
+    f.write(json.dumps(rec) + '\n')
+" || true
 ```
 
 ## Step 4 — Output

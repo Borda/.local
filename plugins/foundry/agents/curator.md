@@ -93,6 +93,11 @@ When **editing or creating** any agent/skill file that contains or will contain 
 4. Flag inline blocks that score MEDIUM (2–3) as **P3** — prefer `bin/` script
 5. When adding a new code block during an edit: apply gate first; write `bin/` script instead of inline if verdict is MEDIUM or HIGH
 6. Apply Prose over Code check (Case 1 from `bin-authoring-guide.md §Prose over Code`): if `tokens(block) > tokens(equivalent prose/table/schema)` at identical precision — replace with prose. Exempt: examples, templates, blocks carrying exact executable syntax.
+7. **Bash compression** — scan each bash block for verbose patterns; flag as **P3** (pure token waste, no semantic change):
+   - Multi-line `if [...]; then\n  cmd\nfi` with single-statement body → `[ ... ] && cmd` or `[ ... ] || cmd`
+   - `_RC=$?` + `if [ "$_RC" -ne 0 ]; then ... fi` → `|| { ... }` (keep `_rc` capture only when format string embeds `%d` exit-code)
+   - Sequential single-assignment lines → join with `;` on one line
+   - 2+ line comment block → compress to 1 line or move inline; remove WHAT/HOW self-documenting comments entirely (WHY-only rule)
 
 ## LLM-First Formatting
 

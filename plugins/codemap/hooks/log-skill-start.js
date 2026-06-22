@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+// log-skill-start.js — PreToolUse hook: log codemap:* skill invocations.
+// Fires before every Skill() tool call; ignores non-codemap skills.
+// Writes skill_start event to .cache/codemap/logs/skills.jsonl.
+// Also writes session ID to a per-project tmpfile so scan-query wrapper can join records.
+
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const crypto = require("crypto");
+
+function isoNow() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function main() {
+  let input;
+  try {
+    const raw = fs.readFileSync("/dev/stdin", "utf8");
+    input = JSON.parse(raw);
+  } catch {
+    process.exit(0);
+  }
+
+  const { tool_name, tool_input, session_id: hookSession } = input;
+  if (tool_name !== "Skill") process.exit(0);
+
+  const skill = String((tool_input || {}).skill || "");
+  if (!skill.startsWith("codemap:")) process.exit(0);
+
+  const cwd = process.cwd();
+  const proj = path.basename(cwd);
+  const logDir = path.join(cwd, ".cache", "codemap", "logs");
+  const logFile = path.join(logDir, "skills.jsonl");
+  const sidFile = path.join(os.tmpdir(), `codemap-${proj}-session`);
+
+  // Reuse session ID from tmpfile if present; generate new one otherwise.
+  let sid = "";
+  try {
+    sid = fs.readFileSync(sidFile, "utf8").trim();
+  } catch {
+    /* absent */
+  }
+  if (!sid) {
+    sid = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex");
+    try {
+      fs.writeFileSync(sidFile, sid, { flag: "w" });
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  const intent = String((tool_input || {}).args || "").slice(0, 300);
+
+  const record = {
+    ts: isoNow(),
+    layer: "skill",
+    session: sid,
+    skill,
+    event: "start",
+    intent,
+    hook_session: hookSession || "",
+  };
+
+  try {
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(logFile, JSON.stringify(record) + "\n");
+  } catch {
+    /* never block the tool call */
+  }
+
+  process.exit(0);
+}
+
+main();

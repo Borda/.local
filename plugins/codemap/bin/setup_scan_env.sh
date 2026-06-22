@@ -75,7 +75,28 @@ else
     PROJ_NAME="$(basename "$ROOT_DIR")"
 fi
 
-TMPDIR_DIR="${TMPDIR:-/tmp}"
+# SEC-M1: validate TMPDIR before using it for state files.
+# An attacker-controlled TMPDIR could redirect state writes outside expected dirs.
+_RAW_TMPDIR="${TMPDIR:-}"
+if [ -n "$_RAW_TMPDIR" ]; then
+    # Must be absolute (no relative traversal)
+    case "$_RAW_TMPDIR" in
+        /*) ;;
+        *) printf "setup_scan_env.sh: TMPDIR is not an absolute path — ignoring: %s\n" "$_RAW_TMPDIR" >&2
+           _RAW_TMPDIR="" ;;
+    esac
+    # Must be owned by current user (UID match)
+    if [ -n "$_RAW_TMPDIR" ]; then
+        _TMPDIR_UID=$(stat -f '%u' "$_RAW_TMPDIR" 2>/dev/null || stat -c '%u' "$_RAW_TMPDIR" 2>/dev/null || echo "")
+        _CURRENT_UID=$(id -u)
+        if [ -n "$_TMPDIR_UID" ] && [ "$_TMPDIR_UID" != "$_CURRENT_UID" ]; then
+            printf "setup_scan_env.sh: TMPDIR owner UID (%s) != current UID (%s) — ignoring: %s\n" \
+                "$_TMPDIR_UID" "$_CURRENT_UID" "$_RAW_TMPDIR" >&2
+            _RAW_TMPDIR=""
+        fi
+    fi
+fi
+TMPDIR_DIR="${_RAW_TMPDIR:-/tmp}"
 
 # Per-PROJ_SLUG tmpfiles — survive across Bash tool calls; consumed by Step 1's
 # second block + Step 2 of scan-codebase/SKILL.md. PID-qualified to prevent
@@ -93,6 +114,7 @@ printf '%s' "$PROJ_NAME"      > "${TMPDIR_DIR}/codemap-proj-name-${PROJ_SLUG}"
 
 # --incremental requested but no prior index ⇒ scan-index will fall back to full scan.
 # Drop a sentinel so Step 2 can report the fallback after stats.
+# SEC: [[ == ]] is pattern-match (not eval) — $ARGUMENTS interpolation is safe; spaces around token prevent prefix/suffix false-match.
 if [[ " $ARGUMENTS " == *" --incremental "* ]]; then
     _INDEX_DIR="${CODEMAP_INDEX_DIR:-.cache/codemap}"
     if [ ! -f "${_INDEX_DIR}/${PROJ_NAME}.json" ]; then
