@@ -30,7 +30,7 @@ if ! $SYNC_CLAUDE && ! $SYNC_CODEX; then
 fi
 
 PLUGINS=(foundry oss develop research codemap)
-EXTERNAL_PLUGINS=(codex@openai-codex caveman@caveman)
+EXTERNAL_PLUGINS=(codex@openai-codex caveman@caveman ponytail@ponytail)
 MARKETPLACE=$(jq -r '.name' .claude-plugin/marketplace.json)
 SETTINGS="$HOME/.claude/settings.json"
 KNOWN_MARKETPLACES="$HOME/.claude/plugins/known_marketplaces.json"
@@ -100,6 +100,7 @@ fi
 echo "Refreshing external plugin marketplaces..."
 claude plugin marketplace add openai/codex-plugin-cc 2>/dev/null && echo "  ✓ openai-codex refreshed" || echo "  ⚠ openai-codex refresh failed (offline?)"
 claude plugin marketplace add JuliusBrussee/caveman   2>/dev/null && echo "  ✓ caveman refreshed"      || echo "  ⚠ caveman refresh failed (offline?)"
+claude plugin marketplace add DietrichGebert/ponytail 2>/dev/null && echo "  ✓ ponytail refreshed"     || echo "  ⚠ ponytail refresh failed (offline?)"
 
 echo "Updating external plugins..."
 for p in "${EXTERNAL_PLUGINS[@]}"; do

@@ -393,6 +393,12 @@ Without the plugin: pre-pass review is skipped gracefully (skills check with `cl
 
 → Install: `claude plugin marketplace add JuliusBrussee/caveman && claude plugin install caveman@caveman`
 
+### Ponytail
+
+[ponytail](https://github.com/DietrichGebert/ponytail) makes Claude apply YAGNI and stdlib-first discipline when writing code — checking stdlib, installed dependencies, and existing codebase before authoring anything new. Complements caveman: caveman cuts response verbosity, ponytail cuts code complexity. Intensity levels (lite → full → ultra) and a `/ponytail-review` scan that tags over-engineering by type (`stdlib` / `native` / `yagni` / `delete` / `shrink`) with a net LoC estimate.
+
+→ Install: `claude plugin marketplace add DietrichGebert/ponytail && claude plugin install ponytail@ponytail`
+
 ## 📦 What's Here
 
 <details>
