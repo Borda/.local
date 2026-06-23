@@ -46,7 +46,7 @@ fi
 > - `undocumented` — docstring gaps (doc-scribe)
 > - `symbol --with-imports` — contract reading without re-reading the file (all agents)
 
-Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap_evidence:` line at end of block reports retrieval reliability — agents may skip re-querying only when `completeness=exhaustive`. `scan-query` not found or index missing: proceed silently — no mention to user.
+Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap_evidence:` line at end of block reports retrieval reliability — agents may skip re-querying only when `completeness=exhaustive`. `scan-query` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap: scan-query unavailable or index missing — context reduced to central --top 5" `), then proceed.
 
 **Coverage metadata in output** — each `scan-query` result includes an `index` block with per-command coverage fields:
 - `index.method` — analysis technique used (`static-ast`, `import-graph`, `index-lookup`, `ast-flags`)
@@ -86,7 +86,8 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_scan.py" --source=dif
 Review orchestrators run the v4 pre-flight queries **per changed module** before spawning dimension agents, persist structured output, and pass it to each agent as `CODEMAP_CONTEXT` so the agent skips redundant file reads. Pre-flight queries:
 
 ```bash
-scan-query --timeout 5 fn-blast    "${MODULE}::${FN}"   2>/dev/null  # blast radius (v3)
+scan-query --timeout 5 fn-rdeps    "${MODULE}::${FN}" --exclude-tests 2>/dev/null  # direct callers (v4.6)
+scan-query --timeout 5 fn-blast    "${MODULE}::${FN}"   2>/dev/null  # transitive callers (v3)
 scan-query --timeout 5 mock-rdeps  "${MODULE}::${FN}"   2>/dev/null  # mock coverage (v4.1)
 scan-query --timeout 5 uncovered   --top 20 "$MODULE"   2>/dev/null  # test gaps (v4.2)
 scan-query --timeout 5 xrefs --broken      "$MODULE"    2>/dev/null  # stale doc refs (v4.5)
@@ -96,7 +97,7 @@ scan-query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage (v4.4
 > Per-agent consumption:
 > - `qa-specialist` — read `uncovered` + `mock-rdeps` first; skip manual test-file grep for symbols codemap already classifies; fall back to Read only when codemap context absent or insufficient
 > - `doc-scribe` — read `undocumented` + `xrefs --broken` first; skip docstring-scan reads on listed symbols
-> - `sw-engineer` — read `fn-blast` first; skip caller-walk reads when blast list complete
+> - `sw-engineer` — read `fn-rdeps` first (direct callers), then `fn-blast` for transitive depth; skip caller-walk reads when blast list complete
 > - `challenger` — unchanged; always reads source directly
 
 **Semble companion** — include in agent spawn prompt only when caller sets `SEMBLE_ENABLED=true`; skip if flag absent:

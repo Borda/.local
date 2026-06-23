@@ -200,7 +200,7 @@ def _check_path_within_root(path: Path, allowed_root: Path) -> bool:
         False
     """
     try:
-        path.resolve().relative_to(allowed_root)
+        path.resolve().relative_to(allowed_root.resolve())
         return True
     except ValueError:
         return False

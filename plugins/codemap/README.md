@@ -135,13 +135,13 @@ codemap is not a standalone tool — its primary value is the structural context
 
 ### What is wired today
 
-| Skill               | Integration type             | What codemap provides                                                                                                                                                                                                   |
-| ------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/develop:review`   | Active — per changed module  | rdeps, fn-blast, mock-rdeps, uncovered, xrefs, undocumented — results injected into every dimension-agent prompt with "trust codemap, skip redundant Grep/Read"                                                         |
-| `/oss:review`       | Active — per changed module  | Same per-module query set as develop:review; codemap context piped to each reviewer agent                                                                                                                               |
-| `/develop:refactor` | Active — per affected module | rdeps + coupled callers; flags callers OUTSIDE refactoring scope as silent-contract-break risk                                                                                                                          |
-| `/develop:fix`      | Passive — context only       | Loads codemap-context.md but never sets TARGET_FN/TARGET_MODULE — only `central --top 5` fires (globally hot modules, not bug-specific). fn-blast caller query is currently dead code in this path. *(Fix in progress)* |
-| `/develop:feature`  | Passive — context only       | Same limitation as fix: TARGET vars never set, blast-radius query never fires. *(Fix in progress)*                                                                                                                      |
+| Skill               | Integration type                             | What codemap provides                                                                                                                                                                         |
+| ------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/develop:review`   | Active — per changed module                  | rdeps, fn-blast, mock-rdeps, uncovered, xrefs, undocumented — results injected into every dimension-agent prompt with "trust codemap, skip redundant Grep/Read"                               |
+| `/oss:review`       | Active — per changed module                  | Same per-module query set as develop:review; codemap context piped to each reviewer agent                                                                                                     |
+| `/develop:refactor` | Active — per affected module                 | rdeps + coupled callers; flags callers OUTSIDE refactoring scope as silent-contract-break risk                                                                                                |
+| `/develop:fix`      | Active — per target function                 | `fn-rdeps` fires for direct callers of the bug's target function (`module::function` from ARGUMENTS or auto-derived from `checkpoint.md` after Step 1)                                        |
+| `/develop:feature`  | Active (integration) / Passive (new surface) | Integration target (`module::function` supplied): `fn-rdeps` fires for direct callers. Module-only target: `rdeps` for importers. Net-new surface (no existing symbol): central baseline only |
 
 ### Expected benefits per skill (based on benchmark data — haiku/sonnet, 28-task suite)
 
@@ -154,13 +154,17 @@ codemap is not a standalone tool — its primary value is the structural context
 
 ### Graceful degradation
 
-All skills auto-degrade when the codemap index or `scan-query` binary is absent. Active mode (`--codemap`) aborts cleanly; auto mode (default) proceeds without codemap. **Important**: current degradation is silent — if the index is missing, skills proceed at full token cost with no warning. A self-healing auto-build is in progress.
+All skills auto-degrade when the codemap index or `scan-query` binary is absent. Active mode (`--codemap`) aborts cleanly; auto mode (default) proceeds without codemap. When the index is missing or `scan-query` is unavailable, skills emit a ⚠ warning to stderr and fall back to `central --top 5` baseline.
 
 ### Known gaps (challenger audit 2026-06-20)
 
-- **`fn-rdeps` not used**: The benchmark-proven subcommand for caller accuracy (`fn-rdeps`) is invoked in zero develop/oss skill workflows. Skills use `fn-blast` (transitive) instead. Fix/feature paths now being updated to add `fn-rdeps` (direct callers) as the first query.
-- **`/develop:fix` and `/develop:feature` blast-radius is dead code**: TARGET_FN/TARGET_MODULE never set → only `central --top 5` runs → no per-bug caller impact. Wiring in progress.
-- **check_injection.py blind spot**: Integration health check detects marker comment presence, not query liveness — cannot catch the TARGET-unset defect.
+| Gap                                                                                                                                                                | Status                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`fn-rdeps` not used** — benchmark-proven subcommand for caller accuracy invoked in zero develop/oss skill workflows; skills used `fn-blast` (transitive) instead | Fixed — `fn-rdeps` added to `/develop:review`, `/oss:review`, and the `codemap-context.md` review pipeline                                                   |
+| **`/develop:fix` blast-radius dead code** — TARGET_FN/TARGET_MODULE never set → only `central --top 5` ran → no per-bug caller impact                              | Verified working — `fn-rdeps` fires via `codemap-context.md` when `module::function` format supplied; `checkpoint.md` auto-derive covers free-text ARGUMENTS |
+| **`/develop:feature` blast-radius dead code** — same TARGET-unset defect as fix path                                                                               | Verified working — both TARGET_MODULE and TARGET_FN are extracted; `fn-rdeps` fires via `codemap-context.md` when TARGET_FN set                              |
+| **Silent degradation** — if index missing, skills proceed at full token cost with no warning                                                                       | Fixed — `codemap-context.md` emits ⚠ warning to stderr when `scan-query` unavailable or index missing                                                        |
+| **`check_injection.py` blind spot** — health check detected marker comment presence only; could not catch TARGET-unset defect or missing `fn-rdeps` wiring         | Fixed — second audit layer added: `check_fn_rdeps_wiring()` now reports whether `fn-rdeps` is wired in all required files                                    |
 
 ______________________________________________________________________
 

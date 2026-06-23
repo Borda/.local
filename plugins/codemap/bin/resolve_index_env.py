@@ -136,7 +136,7 @@ def _resolve_tmpdir() -> str:
     tmpdir = os.environ.get("TMPDIR")
     if tmpdir and os.path.isabs(tmpdir):
         try:
-            if Path(tmpdir).stat().st_uid == os.getuid():
+            if not hasattr(os, "getuid") or Path(tmpdir).stat().st_uid == os.getuid():
                 return tmpdir
         except OSError:
             pass

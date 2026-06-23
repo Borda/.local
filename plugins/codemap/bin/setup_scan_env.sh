@@ -87,7 +87,7 @@ if [ -n "$_RAW_TMPDIR" ]; then
     esac
     # Must be owned by current user (UID match)
     if [ -n "$_RAW_TMPDIR" ]; then
-        _TMPDIR_UID=$(stat -f '%u' "$_RAW_TMPDIR" 2>/dev/null || stat -c '%u' "$_RAW_TMPDIR" 2>/dev/null || echo "")
+        _TMPDIR_UID=$(stat -c '%u' "$_RAW_TMPDIR" 2>/dev/null || stat -f '%u' "$_RAW_TMPDIR" 2>/dev/null || echo "")
         _CURRENT_UID=$(id -u)
         if [ -n "$_TMPDIR_UID" ] && [ "$_TMPDIR_UID" != "$_CURRENT_UID" ]; then
             printf "setup_scan_env.sh: TMPDIR owner UID (%s) != current UID (%s) — ignoring: %s\n" \

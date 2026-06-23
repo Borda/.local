@@ -217,6 +217,7 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
         for mod in $CHANGED_MODS; do
             echo "### Module: $mod"
             scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → high/moderate/low risk tier
+            scan-query --timeout 5 fn-rdeps    "$mod" --exclude-tests 2>/dev/null  # direct callers
             scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # caller impact (v3)
             scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock test coverage (v4.1)
             scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)

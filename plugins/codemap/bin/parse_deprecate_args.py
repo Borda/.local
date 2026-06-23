@@ -159,7 +159,11 @@ def _safe_tmpdir() -> str:
     if override:
         candidate = Path(override)
         try:
-            if candidate.is_absolute() and candidate.is_dir() and candidate.stat().st_uid == os.getuid():
+            if (
+                candidate.is_absolute()
+                and candidate.is_dir()
+                and (not hasattr(os, "getuid") or candidate.stat().st_uid == os.getuid())
+            ):
                 return str(candidate)
         except OSError:
             pass  # stat failure (permission, race) — fall through to the trusted default

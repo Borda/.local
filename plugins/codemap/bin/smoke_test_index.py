@@ -53,6 +53,8 @@ def _is_user_owned(path: Path) -> bool:
         any stat error.
     """
     try:
+        if not hasattr(os, "getuid"):
+            return True  # Windows: ownership check via UID unsupported
         return path.stat().st_uid == os.getuid()
     except OSError:
         return False

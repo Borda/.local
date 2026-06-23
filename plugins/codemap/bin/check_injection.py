@@ -44,6 +44,14 @@ AGENT_INJECTION_MARKER = "Structural context (codemap"
 DEFAULT_CACHE_GLOB = "borda-ai-rig/codemap/*"
 MAX_AUDIT_FILE_SIZE = 1_000_000  # 1 MB — skip oversized files in marker scan (SEC-M8: DoS guard)
 
+FN_RDEPS_MARKER = "fn-rdeps"
+# Skills that must have fn-rdeps in their query block (not just scan-query marker)
+FN_RDEPS_REQUIRED_PATTERNS = [
+    "plugins/develop/skills/review/SKILL.md",
+    "plugins/oss/skills/review/SKILL.md",
+    "plugins/develop/skills/_shared/codemap-context.md",
+]
+
 
 @dataclass(frozen=True)
 class AuditResult:
@@ -195,6 +203,33 @@ def missing_canonical_sites(
     return missing
 
 
+def check_fn_rdeps_wiring(skill_files: list[str]) -> list[str]:
+    """Return paths that have scan-query injection but lack fn-rdeps wiring.
+
+    Args:
+        skill_files: unused — retained for API symmetry with other audit helpers.
+
+    Returns:
+        List of paths from ``FN_RDEPS_REQUIRED_PATTERNS`` that contain the
+        scan-query injection marker but do not contain the fn-rdeps marker.
+
+    Examples:
+        >>> check_fn_rdeps_wiring([])  # no required files present → empty list
+        []
+    """
+    missing = []
+    for path in FN_RDEPS_REQUIRED_PATTERNS:
+        try:
+            content = Path(path).read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            continue
+        has_injection = SKILL_INJECTION_MARKER in content
+        has_fn_rdeps = FN_RDEPS_MARKER in content
+        if has_injection and not has_fn_rdeps:
+            missing.append(path)
+    return missing
+
+
 def build_audit_lines(cache: Path) -> list[str]:
     """Produce the ordered status lines for an audit of ``cache``.
 
@@ -225,6 +260,15 @@ def build_audit_lines(cache: Path) -> list[str]:
         lines.append("  ⚠ 0 agent .md files have codemap injection block")
     else:
         lines.append(f"✓ {len(agent_files)} agent file(s) have codemap injection block")
+
+    lines.append("")
+    lines.append("--- fn-rdeps wiring audit ---")
+    fn_rdeps_missing = check_fn_rdeps_wiring(skill_files)
+    if fn_rdeps_missing:
+        for p in fn_rdeps_missing:
+            lines.append(f"  ✗ fn-rdeps missing: {p}")
+    else:
+        lines.append("  ✓ fn-rdeps wiring present in all required files")
 
     lines.extend(
         [

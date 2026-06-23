@@ -275,7 +275,7 @@ AskUserQuestion: "Commit mode for selected items:"
   (d) Stage only — no commits; stay staged on PR branch (⚠ cannot cleanly restore to $SAVED_BRANCH after Step 11)
 ```
 
-**ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** LLMs tend to drop option (d) — do not omit it.
+**ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** Never merge this menu with Q4; these are commit MODES (how to commit), not item SCOPE (which items). Do not pull Q4 bulk-action options into this menu. Option (b) By topic group is a commit mode and must appear — do not drop it. LLMs tend to drop option (d) — do not omit it either.
 
 Set `COMMIT_MODE`:
 - (a) → `each`
@@ -569,7 +569,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses; never `--rebase` (rewrites SHAs); default `--merge`.
 - **Impl agent health + effort**: IMPL_AGENT defaults to `codex:codex-rescue` (CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout). Effort: never `low`; minimum `medium`; typo/doc → `medium`; multi-file/new-feature → `xhigh`; default `high`. `--agent foundry:*`: foreground only, no health monitoring.
 - **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
-- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Now set via Q4 in Step 3d item-selection call — no separate AskUserQuestion.
+- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via a separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), or unanswered — distinct from Q4 (which sets item scope, not commit strategy). Do not merge these two questions.
 - **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be implementation agent (not curator); omit Codex trailer when IMPL_AGENT ≠ `codex:codex-rescue`.
 - **Thread resolution via GraphQL** — `isResolved` on `PullRequestReviewThread` (GraphQL only); REST not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId`; GraphQL failure → `[]`.
 - **Discussion vs inline**: `gh pr view --comments` = discussion (`location: discussion`; no Resolve button); `gh api .../pulls/<N>/comments` = inline (`location: inline`; resolvable). `location: discussion` + `[report]` items: implement-only, no GitHub close action. Surface `Loc` column in Step 11 report.

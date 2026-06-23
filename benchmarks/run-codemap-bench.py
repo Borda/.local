@@ -531,7 +531,7 @@ def _parse_scan_query_subcommand(command: str) -> Optional[str]:
 # Quality evaluators — extract key metric from model output text
 # ---------------------------------------------------------------------------
 
-_EVAL_VER_NAME_RECALL = "v3"  # _evaluate_develop_br (v3: file-dump resolution + Forms 9/10)
+_EVAL_VER_NAME_RECALL = "v4"  # _evaluate_develop_br (v4: Form 11 bare Class.method fallback)
 _EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
 _EVAL_VER_REVIEW = "v2"  # _evaluate_rv — recall-only for symbol-bearing tasks
 _EVAL_VER_OSS = "v1"  # _evaluate_oss
@@ -1114,6 +1114,29 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
             norm = _norm_cls(canonical)
             if any(_norm_cls(qn) == norm for qn in found_qualnames):
                 found_qualnames.add(canonical)
+
+    # Form 11: bare Class.method fallback — fires ONLY when all other forms produced nothing.
+    # Codemap arm sometimes outputs callers as "_EvaluationLoop._evaluation_step" without module
+    # prefix; reverse-lookup against GT by matching the tail component of each expected caller.
+    if not found_qualnames:
+        for canonical in expected_callers:
+            parts = canonical.split("::")
+            if len(parts) < 2:
+                continue
+            tail = parts[-1]  # e.g. "_EvaluationLoop._evaluation_step"
+            if "." not in tail:
+                continue  # skip bare function names (too short, high FP risk)
+            pattern = r"(?<![.\w])" + re.escape(tail) + r"(?![.\w])"
+            if re.search(pattern, output_text):
+                found_qualnames.add(canonical)
+                continue
+            # Also match without leading underscores on the class part (EvaluationLoop.method)
+            tail_parts = tail.split(".", 1)
+            if tail_parts[0].startswith("_"):
+                stripped_tail = tail_parts[0].lstrip("_") + "." + tail_parts[1]
+                pattern2 = r"(?<![.\w])" + re.escape(stripped_tail) + r"(?![.\w])"
+                if re.search(pattern2, output_text):
+                    found_qualnames.add(canonical)
 
     true_positives = len(expected_set & found_qualnames)
     recall = true_positives / max(len(expected_set), 1)

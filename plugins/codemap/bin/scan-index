@@ -2622,7 +2622,7 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
         symbols = extract_symbols(tree, name, nm, mm, star_imports or None)
         dynamic_imports = extract_dynamic_imports(tree)
         _loc, _is_entry = _count_loc_and_main_guard(source)
-        is_test = bool(_TEST_PATH_RE.search(str(rel_path)))
+        is_test = bool(_TEST_PATH_RE.search(rel_path.as_posix()))
         sphinx_xrefs = extract_sphinx_xrefs(tree, filepath, name)
         exports = extract_module_exports(tree)
         entry: dict = {
