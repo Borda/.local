@@ -3,7 +3,7 @@ name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design."
 when_to_use: |
   TRIGGER when: user provides a GitHub PR number (e.g. `42`, `#42`) and asks to review/audit/check it, or provides a saved review-report path with `--reply` to draft a contributor-facing comment; phrases: "review PR 123", "audit this pull request", "look at PR #42", "draft a reply for this review report".
-  SKIP: local file or current git diff review (use `/develop:review` (requires `develop` plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use `oss:analyse`).
+  SKIP: local file or current git diff review (use `/develop:review` (requires `develop` plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use `oss:analyse` (requires `oss` plugin)).
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
@@ -427,7 +427,7 @@ Spawn **foundry:sw-engineer** consolidator agent with prompt:
 Read `$REVIEW_SKILL_DIR/templates/consolidator-prompt.md`. Substitute `<RUN_DIR>`, `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values. Spawn: `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted consolidator-prompt.md content>)`
 
 Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded:
-Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup to verify session config.`
+Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.`
 Do NOT read agent finding files inline — floods main context (~16–32K tokens per run), produces unreliable synthesis.
 
 After parsing confidence: agent < 0.7 → prepend **⚠ LOW CONFIDENCE** to findings section, state gap explicitly. Never drop uncertain findings.
@@ -505,6 +505,16 @@ Spawn with:
 - Report path: review output file from Step 5
 - PR number and contributor handle: from Step 1 `gh pr view` output
 - Output path: `.temp/output-reply-<PR#>-$(date -u +%Y-%m-%d).md`
+
+**Part 2 compliance gate** (after shepherd returns — do NOT trust the return line alone):
+
+```bash
+# fires only when review findings reference file:line — true LGTM has no such findings
+REPLY_OUT=".temp/output-reply-<PR#>-$(date -u +%Y-%m-%d).md"  # timeout: 5000
+grep -qE '^\| *Importance *\| *Confidence *\| *File *\| *Line' "$REPLY_OUT" && echo "PART2_PRESENT=true" || echo "PART2_PRESENT=false"
+```
+
+`PART2_PRESENT=false` while the Step 5 report has ≥1 file:line finding → reply is non-compliant (findings folded into prose). Re-spawn `oss:shepherd` once with the same inputs plus: `"Part 2 table is MANDATORY — every file:line finding from the report must be its own row in the | Importance | Confidence | File | Line | Comment | table; do not fold file:line findings into Part 1 prose."` Re-check; if still absent, surface `⚠ Part 2 table missing — findings remain in prose` in the terminal summary.
 
 End with `## Confidence` block per CLAUDE.md. Always last thing, regardless of `--reply`.
 

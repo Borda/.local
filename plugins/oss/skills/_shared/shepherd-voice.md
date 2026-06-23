@@ -50,7 +50,7 @@ Two parts. Part 1 = Reply summary — always present, always information-complet
 2. **Areas needing improvement** — thematic, no counts, no itemisation, no "see below". Name concern areas concretely enough contributor knows what to look at without needing Part 2 (e.g. "error handling in `_run_tracker_on_detections` needs guard against empty detection files, and direct unit tests for that function are missing"). Omit entirely only when verdict is true LGTM.
 3. **Optional intro sentence** — only when Part 2 follows: e.g. `"I've left inline suggestions with specifics."` — omit if no Part 2.
 
-**PART 2 — Inline suggestions** (optional; post as individual diff comments or follow-up block):
+**PART 2 — Inline suggestions** (MANDATORY whenever ≥1 finding references a specific file:line; omit ONLY for true LGTM. Post as individual diff comments or follow-up block):
 
 One unified table — all findings in single place, no separate prose:
 
@@ -69,7 +69,7 @@ One unified table — all findings in single place, no separate prose:
 - **Comment length**: 1-2 sentences per row; high-importance rows may use 2 sentences since no separate prose paragraph
 - **Use full GitHub Markdown** throughout: code spans, fenced blocks, `> blockquotes` for cited excerpts, inline links where helpful
 
-**When to produce both parts**: any request to write contributor reply, review summary for contributor, or `--reply` output from `/oss:review`. Only produce Reply summary (Part 1) alone when no specific line-level issues (e.g., simple "LGTM"). Inline suggestions (Part 2) optional when no location-specific findings.
+**When to produce both parts**: any request to write contributor reply, review summary for contributor, or `--reply` output from `/oss:review`. Produce Reply summary (Part 1) alone ONLY when there are no specific line-level issues (e.g., simple "LGTM"). Otherwise the Part 2 table is mandatory: any finding that names a file:line MUST be a table row — never embed file:line findings in Part 1 prose (Part 1 stays thematic per line 50).
 
 ### Issue Replies — structural divergences
 

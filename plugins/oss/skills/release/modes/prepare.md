@@ -67,10 +67,11 @@ Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gat
 ## Release prepare: $VERSION
 
 ### Audit
-[readiness table from Phase 1, condensed]
+Reproduce the full Phase-1 readiness table verbatim — the `| Check | Status | Detail |` markdown table from audit-checks.md with ALL check rows (Working tree, CI, Blocking issues, Open PRs, README aligned, CHANGELOG entry, Version consistent, Dependency CVEs, Scheduled removals, Doc proportionality) and their Status glyphs (`✅`/`⚠️`/`❌`). "Condensed" applies to the Detail column only (trim verbose detail) — never to row count. Do NOT replace this table with a finding-bullet digest, and do NOT substitute a different table (e.g. a `File | Status` artifacts box).
 [any warnings carried forward]
 
 ### Written (documentation artifacts — complementary to the release, not the release itself)
+Render as the markdown bullet list below — NOT a box-drawing (`┌─┬─┐`) `File | Status` table.
 - `$CHANGELOG_FILE` — $VERSION entry stamped (Phase 2b); `releases/$VERSION/CHANGELOG.md` symlinks here
 - `releases/$VERSION/HIGHLIGHTS.md` — top 3–5 spotlights with code examples (Phase 3a)
 - `releases/$VERSION/MIGRATION.md` — migration guide (N breaking changes, or "No breaking changes") (Phase 3b)

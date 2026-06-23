@@ -2,7 +2,7 @@
   "autoUpdatesChannel": "stable",
   "effortLevel": "high",
   "env": {
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "80",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "85",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
   "fastModePerSessionOptIn": false,

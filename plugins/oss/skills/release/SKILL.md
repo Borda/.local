@@ -3,7 +3,7 @@ name: release
 description: "Prepare release communication and check readiness. Main mode: notes with optional flags --changelog, --summary, --migration; range as v1->v2. Other modes: prepare (full pipeline: audit → all artifacts), audit (pre-release readiness: blockers, docs alignment, version consistency, CVEs), demo (story-telling release notebook in jupytext # %% format)."
 when_to_use: |
   TRIGGER when: user requests release notes, CHANGELOG entry, migration guide, internal summary, release readiness audit, or release demo; phrases: "draft release notes", "prepare release", "audit release readiness", "generate CHANGELOG for v1->v2", "release demo notebook".
-  SKIP: actual git tagging or PyPI/registry upload (use `git tag`, `gh release create`, `twine upload` directly); release communication for a non-Python project where this skill's pytest-centric audit assumptions do not apply; PR-level review (use `/oss:review`); thread/issue analysis (use `/oss:analyse`).
+  SKIP: actual git tagging or PyPI/registry upload (use `git tag`, `gh release create`, `twine upload` directly); release communication for a non-Python project where this skill's pytest-centric audit assumptions do not apply; PR-level review (use `/oss:review` (requires `oss` plugin)); thread/issue analysis (use `/oss:analyse` (requires `oss` plugin)).
 argument-hint: "[notes] [v1->v2] [--changelog] [--summary] [--migration] | prepare <version> | audit [version] | demo [range]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, TaskList, TaskCreate, TaskUpdate, Agent, AskUserQuestion
 model: sonnet
@@ -110,7 +110,7 @@ When `unconfirmed > 0`, surface removed items as notification (not a gate — al
 Pre-compute output paths and persist for downstream reload (fresh shell, Check 41):
 
 ```bash
-# Reload vars
+# Reload vars (Check 41: fresh shell loses between Bash blocks)
 BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
 DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
 RANGE=$(cat "${TMPDIR:-/tmp}/release-range" 2>/dev/null || echo "")
@@ -190,6 +190,7 @@ for _a in $_PARSE_INPUT; do case "$_a" in --changelog) DO_CHANGELOG=true;; --sum
 RANGE="${RANGE/->/..}"
 ```
 
+<!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
 **Unknown flags**: if any `⚠ unknown flag:` lines printed above, invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke) · (b) **Continue ignoring**. On Abort: stop.
 
 ## Shared setup
@@ -218,6 +219,7 @@ SOURCE_TAG_REF=$(cat "${TMPDIR:-/tmp}/release-setup/SOURCE_TAG_REF" 2>/dev/null 
 [ -z "$REPO_ROOT" ] && { echo "Error: release_setup.py failed — REPO_ROOT empty; verify oss plugin installation"; exit 1; }
 ```
 
+<!-- branch: no-stable-tags — isolated; ≤1 call; fires only when repo has no stable git tags -->
 When no stable tags exist, `LAST_TAG` resolves to initial commit — surface via `AskUserQuestion` ("No stable tags found. Range base is initial commit — proceed?"). Options: (a) Proceed with initial commit as base · (b) Abort — stop release process. On (b): stop, print "Release aborted — no stable tags found; create a tag first with `git tag v0.1.0`" and exit.
 
 ## Gather changes
@@ -410,6 +412,7 @@ Write demo to `$DEMO_OUT`. (`prepare` mode: `releases/$VERSION/demo.py` — see 
 
 **Gate: demo must execute to completion before proceeding to Draft executive summary.**
 
+<!-- branch: demo-approval — only in demo/prepare mode; isolated from notes/changelog path; ≤1 call -->
 Invoke `AskUserQuestion` — "Ready to run demo script `$DEMO_OUT`?" Options: (a) Run now · (b) Review first · (c) Skip and **exclude from release artifacts**.
 
 On option (c): mark demo excluded, skip to Draft executive summary — do NOT invoke the failure-path AskUserQuestion below.
@@ -546,7 +549,9 @@ Read `$SHEPHERD_DIR/shepherd-revised.md` → validate: `if [ -s "$SHEPHERD_DIR/s
 Write to disk:
 
 Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == true`):
+<!-- branch: draft-exists — only when DRAFT.md non-empty (notes/prepare path); call 1 of ≤2 on notes+changelog path -->
 - **notes** (always): shepherd review → write to `DRAFT.md` at repo root. **Overwrite guard** — if `DRAFT.md` non-empty, invoke `AskUserQuestion` ("DRAFT.md already exists — overwrite, append, or abort?") with: (a) **Overwrite** · (b) **Append** (after `---` separator) · (c) **Abort**. Skip prompt only when DRAFT.md is empty or missing. Notify: `→ written to DRAFT.md` / `→ appended to DRAFT.md` / `→ DRAFT.md unchanged — aborted`.
+<!-- branch: changelog-confirm — only with --changelog flag; call 2 of ≤2 on notes+changelog path; max 4 total on prepare+changelog+draft path -->
 - **`--changelog`** (if set): no shepherd (structured, internal) → invoke `AskUserQuestion`: "Ready to prepend to `$CHANGELOG_FILE`?" Options: (a) Proceed · (b) Preview only. On (b): display content, stop. On (a): derive `VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")` and `VERSION_BARE="${VERSION#v}"`. **Idempotency check**: if `$CHANGELOG_FILE` already contains version header in any supported form (`grep -qF "## [${VERSION_BARE}]" "$CHANGELOG_FILE"` for Keep-a-Changelog `## [1.2.0]`, OR `grep -qF "## [${VERSION}]" "$CHANGELOG_FILE"` for `## [v1.2.0]`, OR `grep -qE "^## v?${VERSION_BARE}([^0-9.]|$)" "$CHANGELOG_FILE"` for `## v1.2.0` / `## 1.2.0`) → skip prepend, notify `→ CHANGELOG.md already contains version header — prepend skipped`; otherwise prepend after `# Changelog` heading (create if missing). Notify: `→ prepended to CHANGELOG.md`
 - **`--summary`** (if set): no shepherd (internal) → Draft executive summary saved to `.temp/output-release-summary-$BRANCH-$DATE.md` — confirm written. Notify: `→ saved to .temp/output-release-summary-<branch>-<date>.md`
 - **`--migration`** (if set): shepherd review (public-facing) → save to `.temp/output-release-migration-$BRANCH-$DATE.md`. Notify: `→ saved to .temp/output-release-migration-<branch>-<date>.md`
@@ -599,6 +604,7 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 - **Contributor email privacy**: `.temp/` must be in `.gitignore` — emails from `git log --format="%aN <%aE>"` must not leak into repo.
 - Public-facing output co-authored with `oss:shepherd` (requires `oss` plugin) — follow `$_OSS_SHARED/shepherd-voice.md`
 - **Demo mode output**: jupytext percent format — convert with `jupytext --to notebook <file>.py`; replace placeholder URLs before publishing; Colab badge URL must point to actual notebook after upload
+<!-- branch: demo-synthetic-fallback — only when real data unavailable; isolated deep in demo path -->
 - **Demo real-world-only policy**: use actual project data/fixtures/API — synthetic requires explicit user approval; fallback: (1) document each failed attempt in `## Demo attempts`, (2) ask Codex if available, (3) ask user via `AskUserQuestion`, (4) synthetic only on explicit approval
 - **Changelog audit non-destructive**: adds missing entries, flags extras, never removes automatically
 - Follow-up chains:

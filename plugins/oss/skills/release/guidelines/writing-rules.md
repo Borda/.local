@@ -4,7 +4,7 @@ Write for reader, not commit author.
 | --- | --- |
 | Feature heading | Bold title, period, then plain-English description — no jargon |
 | PR numbers (CHANGELOG) | Full Markdown link — `([#947](https://github.com/owner/repo/pull/947))` |
-| PR numbers (DRAFT.md) | Short inline ref — `(#947)` |
+| PR numbers (DRAFT.md) | Short inline ref — `(#947)` — never `[#947](url)`; strip full links when sourcing from intermediate files |
 | PR ref + fenced code block | Place `(#N)` at end of description text **before** opening fence — never after closing fence; trailing refs after fenced blocks invisible in rendered output |
 | Issue refs | Never include `closes #N` / `fixes #N` in CHANGELOG or DRAFT.md |
 | Code examples | Real usage showing new surface; not pseudocode |
@@ -29,7 +29,7 @@ Bad/good examples:
 - **NEVER guess or hallucinate real name.** Wrong name in public release notes = serious error. When in doubt, omit name entirely.
 - **Name lookup protocol** — run for every human contributor @handle before writing entry:
   1. `gh api /users/<handle> --jq '.name'` — if non-null and non-empty, use as real name (high confidence)
-  2. If empty AND foundry plugin available (`find ~/.claude/plugins -name "foundry-web-explorer.md" -path "*/agents/*" 2>/dev/null | grep -q .`): spawn `foundry:web-explorer` to search `site:linkedin.com "<handle>" developer` — use name only if profile clearly matches (same avatar, repos, or employer). Note LinkedIn URL for inclusion.
+  2. Look up LinkedIn from GitHub profile: `gh api /users/<handle> --jq '.blog'` — if result is a `linkedin.com/in/` URL, use it directly. If blog field is not LinkedIn, spawn `foundry:web-explorer` to fetch `https://github.com/<handle>` and extract any `linkedin.com/in/` URL from the profile bio or Social accounts section. Use only URLs directly found on their GitHub profile — never search by name, never construct or guess from handle or name.
   3. If still uncertain or foundry plugin unavailable: use `@handle` only — no name field
 - Format when name confirmed: `* **Full Name** (@handle) ([LinkedIn](url)) – *noun phrase*`
 - Format when name not confirmed: `* @handle – *noun phrase*`

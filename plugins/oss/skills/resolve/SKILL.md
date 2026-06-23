@@ -166,6 +166,7 @@ fi
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
 ```
 
+<!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
 **Unsupported flag check** — after `eval`, scan remaining `$ARGUMENTS` for any `--<token>` not in `{--no-challenge, --agent, --codemap, --no-codemap}`. Found → invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown tokens). Supported: `--no-challenge`, `--agent <name>`, `--codemap`, `--no-codemap`.
 
 - `MODE="pr+report"` → strip `report` suffix conceptually (already captured separately); find latest review report via `ls -t .reports/review/*/review-report.md 2>/dev/null | head -1`; no report found → warn but continue in pr mode
@@ -229,6 +230,7 @@ Report merged: <N> findings from /review · <M> deduplicated against GitHub comm
 
 ## Step 3d: User item selection
 
+<!-- branch: main-path — item-selection (call 1 of 4 on normal path; always fires in step 3d) -->
 ! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text.
 
 Gather is complete here (3b/3c done). Mark the Step 2 gather task `completed` **before** the selection prompt — otherwise its `activeForm` ("Gathering action items for PR #<number>") keeps driving the spinner through the entire user-selection + commit-mode window, falsely implying gather is still running:
@@ -262,6 +264,7 @@ Sort all pending items by severity descending (most impactful first). Constraint
 
 **≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit mode question unless (c) or (d) selected.
 
+<!-- branch: main-path — commit-mode (call 2 of 4; skipped when Q4=(c) bulk or (d) skip) -->
 **Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), or unanswered (skip when (c) or (d)):
 
 ```text
@@ -405,6 +408,7 @@ if [ "$_RESOLVE_IMPL_AGENT" = "codex:codex-rescue" ] && [ "$(echo "$SELECTED_ITE
 fi
 ```
 
+<!-- branch: codex-cap — only when codex agent AND N>8 items; adds 1 call (max 5 if user proceeds; worst case = item-select + commit-mode + codex-cap + push-auth + post-pr) -->
 If `_RESOLVE_IMPL_AGENT = codex:codex-rescue` AND `SELECTED_ITEMS` has > 8 items, invoke `AskUserQuestion`: "N items selected — Codex cap is 8 per session. Split into batches?" Options: (a) Apply first 8 now, re-run for remainder · (b) Apply all [req] only (if ≤8) · (c) Proceed anyway (sequential, may be slow). For non-Codex agents (`--agent foundry:sw-engineer`, `--agent foundry:linting-expert`, etc.): skip this gate; proceed with all selected items sequentially.
 
 **Structural context (codemap — if `CODEMAP_ENABLED=true`)**: before reading action-item-dispatch.md, query blast radius of modules affected by selected items:
@@ -483,6 +487,7 @@ LAST_SUBJECT=$(git log -1 --format=%s 2>/dev/null) # timeout: 3000
 echo "→ $PUSH_COUNT commits ready to push to $FORK_REMOTE/$HEAD_REF ($PUSH_STAT); last commit: \"$LAST_SUBJECT\""
 ```
 
+<!-- branch: main-path — push-auth (call 3 of 4 normal / 4 of 5 with codex-cap) -->
 **Push authorization gate** — per `git-commit.md` push-safety rule ("Never push without explicit user confirmation"), invoke `AskUserQuestion` before any `git push`. The question must surface:
 
 - Target remote and branch: `$FORK_REMOTE/$HEAD_REF`
@@ -535,6 +540,7 @@ elif [ -n "$SAVED_BRANCH" ]; then
 fi
 ```
 
+<!-- branch: main-path — post-pr (call 4 of 4 normal / 5 of 5 with codex-cap) -->
 Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Merge now (`gh pr merge <PR_NUMBER> --merge`) · (c) Skip.
 
 ## Step 12: Comment dispatch + Codex review loop

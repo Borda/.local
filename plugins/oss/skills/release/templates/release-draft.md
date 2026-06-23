@@ -1,14 +1,14 @@
 # <version>: <release name>
 
-## Summary
+## 📋 Summary
 
 <2–4 sentence para — what changed + why matters to users/devs>
 
-## Spotlights / highlights
+## ✨ Spotlights / highlights
 
 <top 3–5 features or fixes, each with short code example>
 
-## Migration guide
+## 🔄 Migration guide
 
 <Breaking change = worked before, fails/differs now, no prior warning or deprecation shim.
 API deprecated (with warning + forwarding) in prior release then removed → classify as ❌ Removed, not ⚠️ Breaking Changes.
@@ -17,7 +17,7 @@ If none: "No migration required for this release.">
 
 <!-- Use Draft migration guide content — do not regenerate independently. -->
 
-## Notable changes
+## 📝 Notable changes
 
 <Significant changes, grouped by area/component; list all PRs/commits.>
 
