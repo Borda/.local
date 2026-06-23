@@ -122,6 +122,10 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
 # codemap: integrated-via-shared
 ```
 
+> loads: codemap-gates.md
+
+Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+
 **Semble preflight** — if `SEMBLE_ENABLED=true`:
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight if flag set.

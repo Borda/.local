@@ -47,25 +47,6 @@ def _resolve(cmd: str) -> str:
     return p
 
 
-def _is_within(path: Path, root: Path) -> bool:
-    """Return True when *path* resolves within *root* (SEC-M1: path traversal guard).
-
-    Examples:
-        >>> from pathlib import Path
-        >>> _is_within(Path("/a/b/c"), Path("/a/b"))
-        True
-        >>> _is_within(Path("/a/x"), Path("/a/b"))
-        False
-        >>> _is_within(Path("/a/b"), Path("/a/b"))
-        True
-    """
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
 def compute_proj_index(cwd: Path | None = None) -> tuple[str, Path]:
     """Return ``(proj_name, index_path)`` derived from the git root or CWD.
 

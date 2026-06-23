@@ -5,7 +5,7 @@ argument-hint: "<PR number or URL> [report] | report | <review comment text>"
 when_to_use: "TRIGGER when: PR is ready to close and has open comments, conflicts, or review findings to address; user says 'close this PR', 'resolve comments on PR #N', or 'implement review findings'. SKIP: reply-drafting to /oss:analyse findings (use /oss:analyse --reply (requires `oss` plugin)); local bug without a PR (use /develop:fix (requires `develop` plugin))."
 disable-model-invocation: true
 model: sonnet
-allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
+allowed-tools: Read, Edit, Write, Bash, Agent, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
 ---
 
@@ -111,6 +111,12 @@ python "$_DETECT_CODEMAP" --prefix resolve $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && exit 1
 CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled" 2>/dev/null || echo "false")
 ```
+
+Read `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/resolve-codemap-currency" 2>/dev/null || echo "no_index")`.
+
+> loads: codemap-gates.md
+
+Read `$_OSS_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
@@ -243,7 +249,9 @@ Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero
 
 Sort all pending items by severity descending (most impactful first). Constraint: max 3 items/question, max 4 questions/call — Q1–Q3 = item checkboxes, Q4 = bulk action. Note: `AskUserQuestion` always appends "Type something" outside the option list — 3 items + Type something = 4 visible per page; keep ≤3 items per group.
 
-**Q4 = bulk action — hard rule**: Q4 is always the last question, single-select, fixed options. Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
+**Pre-emit self-check (mandatory before any AskUserQuestion in Step 3d)**: verify the call to be emitted includes a Q4 question labelled "Or choose a bulk action:" with all four options (a)–(d). If Q4 is missing, add it before emitting. Never omit Q4 from the item-selection call.
+
+**Q4 = bulk action — enforcement requirement**: Q4 is always the last question in the item-selection call, single-select, fixed options. Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist. Before emitting any AskUserQuestion call in Step 3d, verify the call contains a Q4 question with all four bulk-action options (a)–(d). If Q4 is absent, add it before emitting. Do not proceed without Q4 present.
 
 ```text
 "Q4 — Or choose a bulk action:"
@@ -253,19 +261,21 @@ Sort all pending items by severity descending (most impactful first). Constraint
   (d) Skip all — skip all items, exit
 ```
 
-**Bulk-action resolution from Q4**:
-- (a) → `SELECTED_ITEMS` = all `[req]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
-- (b) → `SELECTED_ITEMS` = all `[suggest]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
-- (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; `COMMIT_MODE = all`; skip Call 2; skip commit mode question
+**Bulk-action resolution from Q4** — every non-empty selection then proceeds to the commit-strategy question; only (d) Skip-all exits without it. Do NOT set `COMMIT_MODE` here — the commit-strategy question is its sole source:
+- (a) → `SELECTED_ITEMS` = all `[req]` IDs; skip selection page 2; proceed to commit-strategy question
+- (b) → `SELECTED_ITEMS` = all `[suggest]` IDs; skip selection page 2; proceed to commit-strategy question
+- (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; skip selection page 2; proceed to commit-strategy question
 - (d) → stop; print `→ All items skipped.`; jump to Step 11
-- Q4 unanswered / "Type something" → use checked IDs from Q1–Q3; proceed to commit mode question; `COMMIT_MODE = each` (default)
+- Q4 unanswered / "Type something" → use checked IDs from Q1–Q3; proceed to commit-strategy question
 
-**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "ALL (req + suggest)" in Call 1 → skip Call 2.
+**Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two selection pages — print `→ N pending items — selecting in 2 pages` before page 1; selection page 2 gets remaining items + Q4 again; "ALL (req + suggest)" on page 1 → skip selection page 2. (These are extra pages of the *same* item-selection call — not the commit-strategy question, which always follows once selection is settled.)
 
-**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit mode question unless (c) or (d) selected.
+**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit-strategy question unless Q4=(d) Skip-all.
 
-<!-- branch: main-path — commit-mode (call 2 of 4; skipped when Q4=(c) bulk or (d) skip) -->
-**Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), or unanswered (skip when (c) or (d)):
+<!-- branch: main-path — commit-strategy question (always fires after a non-empty selection; skipped only when Q4=(d) Skip-all) -->
+**Commit-strategy follow-up — mandatory second AskUserQuestion call.** Fire it immediately after the item-selection call returns, for every path that yields a non-empty `SELECTED_ITEMS` — checkboxes, (a), (b), or (c). Skip ONLY when Q4=(d) Skip-all (already exited at Step 11). This is the call that goes missing when treated as optional — it is **not** optional:
+
+**ESSENTIAL — must be a separate AskUserQuestion call from Step 3d item selection; never inline Q5+ into the Q1–Q4 call.**
 
 ```text
 AskUserQuestion: "Commit mode for selected items:"
@@ -275,7 +285,7 @@ AskUserQuestion: "Commit mode for selected items:"
   (d) Stage only — no commits; stay staged on PR branch (⚠ cannot cleanly restore to $SAVED_BRANCH after Step 11)
 ```
 
-**ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** Never merge this menu with Q4; these are commit MODES (how to commit), not item SCOPE (which items). Do not pull Q4 bulk-action options into this menu. Option (b) By topic group is a commit mode and must appear — do not drop it. LLMs tend to drop option (d) — do not omit it either.
+**ESSENTIAL — all 4 options are mandatory; never emit fewer than 4.** This question MUST be a separate AskUserQuestion call — never merged into the item-selection call (Q1–Q4). Never merge this menu with Q4; these are commit MODES (how to commit), not item SCOPE (which items). Do not pull Q4 bulk-action options into this menu. Option (b) By topic group is a commit mode and must appear — do not drop it. LLMs tend to drop option (d) — do not omit it either.
 
 Set `COMMIT_MODE`:
 - (a) → `each`
@@ -283,6 +293,8 @@ Set `COMMIT_MODE`:
 - (c) → `all`
 - (d) → `stage`
 - unanswered → `each` (default)
+
+**Hard gate — Step 3e MUST NOT begin until `COMMIT_MODE` has been set by the commit-strategy question above.** The only path into Step 3e without emitting that question is Q4=(d) Skip-all, which instead exits at Step 11. Reaching Step 3e having never emitted the commit-strategy `AskUserQuestion` = a dropped mandatory call: go back and emit it before creating any task.
 
 ## Step 3e: Create tasks for selected items
 
@@ -569,7 +581,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses; never `--rebase` (rewrites SHAs); default `--merge`.
 - **Impl agent health + effort**: IMPL_AGENT defaults to `codex:codex-rescue` (CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout). Effort: never `low`; minimum `medium`; typo/doc → `medium`; multi-file/new-feature → `xhigh`; default `high`. `--agent foundry:*`: foreground only, no health monitoring.
 - **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
-- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via a separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), or unanswered — distinct from Q4 (which sets item scope, not commit strategy). Do not merge these two questions.
+- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via a separate `AskUserQuestion` (Step 3d commit-strategy question) issued after any non-empty selection — checkboxes, (a), (b), or (c); distinct from Q4 (which sets item scope, not commit strategy). Do not merge these two questions; never pre-set `COMMIT_MODE` from the Q4 resolution.
 - **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be implementation agent (not curator); omit Codex trailer when IMPL_AGENT ≠ `codex:codex-rescue`.
 - **Thread resolution via GraphQL** — `isResolved` on `PullRequestReviewThread` (GraphQL only); REST not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId`; GraphQL failure → `[]`.
 - **Discussion vs inline**: `gh pr view --comments` = discussion (`location: discussion`; no Resolve button); `gh api .../pulls/<N>/comments` = inline (`location: inline`; resolvable). `location: discussion` + `[report]` items: implement-only, no GitHub close action. Surface `Loc` column in Step 11 report.

@@ -45,12 +45,9 @@ DEFAULT_CACHE_GLOB = "borda-ai-rig/codemap/*"
 MAX_AUDIT_FILE_SIZE = 1_000_000  # 1 MB — skip oversized files in marker scan (SEC-M8: DoS guard)
 
 FN_RDEPS_MARKER = "fn-rdeps"
-# Skills that must have fn-rdeps in their query block (not just scan-query marker)
-FN_RDEPS_REQUIRED_PATTERNS = [
-    "plugins/develop/skills/review/SKILL.md",
-    "plugins/oss/skills/review/SKILL.md",
-    "plugins/develop/skills/_shared/codemap-context.md",
-]
+
+GATE_WIRING_MARKER = "codemap-gates.md"
+GATE_WIRING_INLINE_MARKER = "Gate A — missing index"
 
 
 @dataclass(frozen=True)
@@ -203,31 +200,63 @@ def missing_canonical_sites(
     return missing
 
 
-def check_fn_rdeps_wiring(skill_files: list[str]) -> list[str]:
-    """Return paths that have scan-query injection but lack fn-rdeps wiring.
+def _file_has_marker(path: Path, *markers: str) -> bool:
+    """Return True when ``path`` is readable and contains any of ``markers``.
 
     Args:
-        skill_files: unused — retained for API symmetry with other audit helpers.
+        path: file to read.
+        markers: one or more literal substrings; any match suffices.
 
     Returns:
-        List of paths from ``FN_RDEPS_REQUIRED_PATTERNS`` that contain the
-        scan-query injection marker but do not contain the fn-rdeps marker.
+        True when the file is readable, within size limit, and contains at least one marker.
+    """
+    try:
+        if path.stat().st_size > MAX_AUDIT_FILE_SIZE:
+            return False
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(m in content for m in markers)
+
+
+def check_fn_rdeps_wiring(skill_files: list[Path]) -> list[Path]:
+    """Return injected review-skill files that lack fn-rdeps wiring.
+
+    Filters ``skill_files`` to those whose immediate parent directory name
+    contains ``"review"`` (content-agnostic heuristic that works for any plugin
+    layout, not just borda-ai-rig).
+
+    Args:
+        skill_files: SKILL.md paths that already contain the codemap injection marker.
+
+    Returns:
+        Paths from ``skill_files`` that match the review heuristic but lack fn-rdeps wiring.
 
     Examples:
-        >>> check_fn_rdeps_wiring([])  # no required files present → empty list
+        >>> check_fn_rdeps_wiring([])
         []
     """
-    missing = []
-    for path in FN_RDEPS_REQUIRED_PATTERNS:
-        try:
-            content = Path(path).read_text(encoding="utf-8")
-        except (FileNotFoundError, OSError):
-            continue
-        has_injection = SKILL_INJECTION_MARKER in content
-        has_fn_rdeps = FN_RDEPS_MARKER in content
-        if has_injection and not has_fn_rdeps:
-            missing.append(path)
-    return missing
+    return [p for p in skill_files if "review" in p.parent.name and not _file_has_marker(p, FN_RDEPS_MARKER)]
+
+
+def check_gate_wiring(skill_files: list[Path]) -> list[Path]:
+    """Return injected SKILL.md files that lack Gate A/B wiring.
+
+    Every file with the codemap injection marker must also have gate wiring —
+    either via the shared ``codemap-gates.md`` load directive or inline gate text.
+    Works for any plugin layout; no hardcoded plugin-name assumptions.
+
+    Args:
+        skill_files: SKILL.md paths that already contain the codemap injection marker.
+
+    Returns:
+        Paths from ``skill_files`` that lack gate wiring.
+
+    Examples:
+        >>> check_gate_wiring([])
+        []
+    """
+    return [p for p in skill_files if not _file_has_marker(p, GATE_WIRING_MARKER, GATE_WIRING_INLINE_MARKER)]
 
 
 def build_audit_lines(cache: Path) -> list[str]:
@@ -266,9 +295,18 @@ def build_audit_lines(cache: Path) -> list[str]:
     fn_rdeps_missing = check_fn_rdeps_wiring(skill_files)
     if fn_rdeps_missing:
         for p in fn_rdeps_missing:
-            lines.append(f"  ✗ fn-rdeps missing: {p}")
+            lines.append(f"  ✗ fn-rdeps missing: {p.as_posix().removeprefix(cache_prefix)}")
     else:
-        lines.append("  ✓ fn-rdeps wiring present in all required files")
+        lines.append("  ✓ fn-rdeps wiring present in all injected review skill files")
+
+    lines.append("")
+    lines.append("--- Gate A/B wiring audit ---")
+    gate_missing = check_gate_wiring(skill_files)
+    if gate_missing:
+        for p in gate_missing:
+            lines.append(f"  ✗ Gate A/B missing: {p.as_posix().removeprefix(cache_prefix)}")
+    else:
+        lines.append("  ✓ Gate A/B wiring present in all injected skill files")
 
     lines.extend(
         [

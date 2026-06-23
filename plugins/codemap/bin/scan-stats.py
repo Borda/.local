@@ -84,24 +84,7 @@ def _validate_index_dir(custom_dir: str) -> bool:
         True if resolved path is within an allowed root; False otherwise.
     """
     resolved = Path(os.path.abspath(custom_dir)).resolve()
-    return any(_is_within_dir(resolved, root) for root in _allowed_index_roots())
-
-
-def _is_within_dir(path: Path, root: Path) -> bool:
-    """Return True when ``path`` resolves inside ``root``.
-
-    Args:
-        path: Already-resolved candidate path.
-        root: Already-resolved base directory.
-
-    Returns:
-        ``True`` if ``path`` is ``root`` or a descendant.
-    """
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
+    return any(resolved.is_relative_to(root) for root in _allowed_index_roots())
 
 
 def _load_index(root: str) -> dict:

@@ -18,6 +18,7 @@ ______________________________________________________________________
 - [Why codemap?](#why-codemap)
 - [Install](#install)
 - [Quick start](#quick-start)
+- [Best-practice integration](#best-practice-integration)
 - [Skills reference](#skills-reference)
   - [integration](#integration)
   - [scan-codebase](#scan-codebase)
@@ -35,7 +36,7 @@ ______________________________________________________________________
 
 ## 🤔 What is codemap?
 
-codemap is a Claude Code plugin for Python projects. It pre-builds a structural index — who imports whom, which modules have the widest blast radius, how functions call each other — and injects that context into the `/develop` and `/oss` skills that do real code work. The index is built once and stays current via an optional post-commit hook. Every skill invocation that follows starts with structural awareness already in hand.
+codemap is a Claude Code plugin for Python projects. It pre-builds a structural index — who imports whom, which modules have the widest blast radius, how functions call each other — and injects that context into the `/develop` and `/oss` skills that do real code work. The index is built once; currency gates at skill-invocation time detect stale state automatically (covering `git pull`, branch switches, and uncommitted edits) and prompt for a refresh when needed. An optional post-commit hook accelerates refresh after local commits. Every skill invocation that follows starts with structural awareness already in hand.
 
 Without codemap, every Claude Code session starts blind: the agent gropes through the codebase with Glob and Grep, burning 20–30 tool calls just to understand structure before it can do any real work. On a 200-module project those calls still miss blast-radius risks and import cycles that a structural scan would surface instantly.
 
@@ -154,7 +155,11 @@ codemap is not a standalone tool — its primary value is the structural context
 
 ### Graceful degradation
 
-All skills auto-degrade when the codemap index or `scan-query` binary is absent. Active mode (`--codemap`) aborts cleanly; auto mode (default) proceeds without codemap. When the index is missing or `scan-query` is unavailable, skills emit a ⚠ warning to stderr and fall back to `central --top 5` baseline.
+Skills use two gates at invocation time:
+
+- **Gate A (missing index)**: when `scan-query` is available but the index file is absent, the skill pauses and asks: (a) build the index inline via `/codemap:scan-codebase`, or (b) skip and continue without codemap context.
+- **Gate B (stale index)**: when `check-index-currency` detects the index no longer matches source (changed files since last scan), the skill warns and asks: (a) rescan now, (b) continue with stale index, or (c) abort.
+- **`scan-query` absent**: skill auto-degrades silently and proceeds without codemap — binary absence means the plugin is not installed, not that the source changed.
 
 ### Known gaps (challenger audit 2026-06-20)
 
@@ -271,6 +276,42 @@ That is it. Now run your normal skills — codemap works silently in the backgro
 ```
 
 If you ever want to explore structure manually, `/codemap:query-code` is there for you — but most users rarely need it.
+
+______________________________________________________________________
+
+## ✅ Best-practice integration
+
+______________________________________________________________________
+
+**Five rules that cover 95% of what you need to know:**
+
+### 1 — Build the index once
+
+Run `/codemap:scan-codebase` after cloning or setting up the project. The index lands in `.cache/codemap/<project>.json`. Re-run only after major structural changes or when a gate fires.
+
+### 2 — Wire in once per project
+
+Run `/codemap:integration init` once. This injects the structural context block into each of your `/develop` and `/oss` skills and (optionally) installs the post-commit hook. Without wiring, the index exists but no skill uses it.
+
+### 3 — Gates are the primary safety mechanism
+
+After wiring, two gates fire automatically at the start of each skill invocation:
+
+- **Gate A — missing index**: fires when the index is absent. Offers to build it now, continue without codemap, or abort.
+- **Gate B — stale index**: fires when `check-index-currency` detects drift (git HEAD changed, uncommitted `.py` edits, or per-file SHA-256 mismatch). Offers to rescan, continue with stale data, or skip codemap.
+
+Gates cover what the post-commit hook misses: `git pull`, branch switches, and uncommitted edits.
+
+### 4 — Post-commit hook is optional
+
+The hook triggers `scan-codebase --incremental` after local commits only — a convenience accelerator, not the safety net. Gates work without it. Install via `/codemap:integration init`; skip it if you prefer manual control.
+
+### 5 — Two-tier currency check
+
+`check-index-currency` runs inside Gate B:
+
+- **Tier 1** (git repos): compares stored `git_sha` vs `HEAD`; counts uncommitted `.py` changes via `git status --porcelain`. Fast — no file reads.
+- **Tier 2** (no git or no stored SHA): compares per-file git blob SHA-1 (git repos) or MD5 (non-git) hashes stored at scan time against current content, with mtime pre-filtering to skip unchanged files. Catches changes in non-git workflows or when `git_sha` is absent.
 
 ______________________________________________________________________
 
@@ -410,7 +451,7 @@ Builds the structural index by running `ast.parse` across every `.py` file in th
 
 #### When to run
 
-Run a full scan once when you first set up the project. After that, `--incremental` is fast enough to run after any significant change. If you install the post-commit git hook (via `/codemap:integration init`), incremental rebuilds happen automatically in the background after every commit — you never need to think about it.
+Run a full scan once when you first set up the project. After that, skill-invocation currency gates detect stale state and prompt for a rescan automatically — you rarely need to run this manually. When you do want to force a refresh, `--incremental` is fast enough for most changes. Install the optional post-commit git hook (via `/codemap:integration init`) for background auto-refresh after local commits.
 
 #### Performance
 
@@ -792,9 +833,16 @@ scan-query --root path/to/project symbol MyFunction
 
 Priority chain: `--root` flag › `scan_root` in index › `git rev-parse --show-toplevel` › current directory.
 
-### Automatic index freshness (post-commit hook)
+### Keeping the index current
 
-Install the hook once via `/codemap:integration init` and answer yes to the hook prompt. After that, every `git commit` triggers an incremental background rebuild automatically:
+**Primary mechanism — skill-invocation currency gates**: every `/develop:*` or `/oss:*` skill run calls `check-index-currency` before spawning any agent. This two-tier check compares the stored `git_sha` against HEAD (Tier 1, git repos) or verifies per-file content hashes from the stored `file_shas` map (Tier 2, non-git or after pull/branch switch). If stale:
+
+- **Gate A** (index missing): skill pauses and offers to build the index inline or skip.
+- **Gate B** (index stale): skill warns and offers: rescan now, continue with stale index, or abort.
+
+This catches all staleness paths the post-commit hook misses: `git pull`, branch switches, uncommitted edits, and non-git projects.
+
+**Secondary mechanism — post-commit hook** (optional, local commits only): install once via `/codemap:integration init` and every `git commit` triggers an incremental background rebuild:
 
 ```bash
 # .git/hooks/post-commit (installed by /codemap:integration init)
@@ -804,7 +852,7 @@ if command -v scan-index >/dev/null 2>&1; then
 fi
 ```
 
-The rebuild runs in the background — your commit completes immediately, the index updates silently within seconds.
+The rebuild runs in the background — commit completes immediately, index updates silently within seconds. The hook is a convenience shortcut; skill-invocation gates are the authoritative safety net.
 
 ______________________________________________________________________
 

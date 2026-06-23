@@ -111,9 +111,9 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" "$I
 
 `check_index_freshness.py` prints a human-readable age line (e.g. `  index age: 30h`) for informational context only; stale enforcement (threshold comparison + warning) is handled in C4.
 
-### C4 — Smoke test and mtime-staleness check
+### C4 — Smoke test and currency check
 
-`check_index_smoke.py` validates that the index file is loadable JSON and reports mtime age vs `--max-age-hours` (default 24).
+`check_index_smoke.py` validates the index is loadable JSON and reports mtime age. When valid, `check-index-currency` performs content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from the stored `file_shas` field (covers non-git projects and pulls/branch switches that bypass the post-commit hook).
 
 ```bash
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
@@ -130,11 +130,25 @@ if [ "$OK" != "true" ]; then
     printf "✗ smoke test: %s\n  → Re-run /codemap:scan-codebase to rebuild index\n" "$ERR"
 else
     printf "✓ smoke test: index valid (mtime-age=%sh)\n" "$AGE"
-    [ "$STALE" = "true" ] && printf "  ⚠ Index older than freshness threshold — run /codemap:scan-codebase to update\n"
+    _CIC=$(command -v check-index-currency 2>/dev/null)
+    if [ -n "$_CIC" ]; then
+        _CC_OUT=$(python3 "$_CIC" --index-path "$INDEX" 2>/dev/null || echo '{"status":"error","reason":"check failed"}')
+        _CC_STATUS=$(printf '%s' "$_CC_OUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('status','current'))" 2>/dev/null || echo "current")
+        _CC_REASON=$(printf '%s' "$_CC_OUT" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d.get('reason',''))" 2>/dev/null || echo "")
+        if [ "$_CC_STATUS" = "current" ]; then
+            printf "✓ currency: index matches source tree\n"
+        elif [ "$_CC_STATUS" = "stale" ]; then
+            printf "  ⚠ currency: stale — %s\n  → Run /codemap:scan-codebase --incremental to refresh\n" "$_CC_REASON"
+        fi
+    else
+        [ "$STALE" = "true" ] && printf "  ⚠ mtime age suggests stale — run /codemap:scan-codebase to update\n"
+    fi
 fi
 ```
 
-### C5 — Skill injection audit
+### C5 — Skill injection and gate wiring audit
+
+`check_injection.py` audits three things: (1) the codemap injection block (`scan-query` marker) in installed SKILL.md files; (2) `fn-rdeps` wiring in review skills; (3) Gate A/B wiring — either via `codemap-gates.md` shared file load or inline gate text — in all wired skills.
 
 ```bash
 # timeout: 20000

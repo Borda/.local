@@ -192,33 +192,9 @@ def _resolve_smoke_script() -> Path:
     smoke_script = (plugin_root / "bin" / "smoke_test_index.py").resolve()
     if not smoke_script.is_file():
         raise FileNotFoundError(f"smoke_test_index.py not found at expected location: {smoke_script}")
-    if not any(_is_within(smoke_script, root) for root in _expected_script_roots(plugin_root)):
+    if not any(smoke_script.is_relative_to(root) for root in _expected_script_roots(plugin_root)):
         raise ValueError(f"resolved smoke script escapes expected roots: {smoke_script}")
     return smoke_script
-
-
-def _is_within(path: Path, root: Path) -> bool:
-    """Return True when ``path`` resolves inside ``root``.
-
-    Args:
-        path: Already-resolved candidate path.
-        root: Already-resolved base directory.
-
-    Returns:
-        ``True`` if ``path`` is ``root`` or a descendant, else ``False``.
-
-    Examples:
-        >>> from pathlib import Path
-        >>> _is_within(Path("/a/b/c"), Path("/a/b"))
-        True
-        >>> _is_within(Path("/a/x"), Path("/a/b"))
-        False
-    """
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
 
 
 def run_smoke(
@@ -295,7 +271,7 @@ def _validate_index_path(index_path: str) -> tuple[bool, str]:
         Path(tempfile.gettempdir()).resolve(),  # pytest / CI temp dirs
         Path("/tmp").resolve(),  # macOS: /tmp → /private/tmp
     ]
-    if any(_is_within(resolved, root) for root in allowed_roots):
+    if any(resolved.is_relative_to(root) for root in allowed_roots):
         return True, ""
     return False, f"--index-path resolves outside allowed roots (home dir, cwd, tmp): {resolved}"
 

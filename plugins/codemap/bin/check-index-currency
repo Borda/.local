@@ -1,0 +1,439 @@
+#!/usr/bin/env python3
+"""check-index-currency — verify codemap index matches current source tree.
+
+Two-tier check (prefer false-stale over missed-stale):
+  Tier 1 (git repo): compare stored git_sha vs HEAD; flag dirty .py files.
+  Tier 2 (no git / git_sha absent): compare stored file_shas vs current
+      content using mtime pre-filter then git blob SHA-1 or MD5 verify.
+
+Usage:
+    check-index-currency --index-path <path> [--root <path>] [--field <name>]
+
+Options:
+    --index-path <path>  Path to codemap index JSON file.
+    --root <path>        Project root (default: git toplevel or cwd).
+    --field <name>       Print only the named field from result JSON and exit.
+                         Useful in bash: STATUS=$(check-index-currency ... --field status)
+
+Output (stdout):
+    JSON object:
+        {"status": "current"|"stale"|"no_index", "reason": "<text>", "changed_count": N}
+
+Exit codes:
+    0 — current
+    1 — stale
+    2 — no_index (index file not found or unreadable)
+    3 — argument error
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+_GIT_TIMEOUT = 5
+MAX_INDEX_SIZE = 50_000_000  # 50 MB DoS guard
+
+SKIP_DIRS = frozenset(
+    {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".tox",
+        "dist",
+        "build",
+        ".eggs",
+        "node_modules",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "htmlcov",
+    }
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _sha256_file(path: Path) -> str:
+    """Return hex SHA-256 of file content.
+
+    Args:
+        path: File to hash.
+
+    Returns:
+        Lowercase hex digest string.
+    """
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _md5_file(path: Path) -> str:
+    """Return hex MD5 of file content.
+
+    Args:
+        path: File to hash.
+
+    Returns:
+        Lowercase hex digest string.
+    """
+    h = hashlib.md5()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _git_blob_shas(root: Path) -> dict[str, str] | None:
+    """Return git blob SHAs for all tracked .py files, or None if git unavailable.
+
+    Args:
+        root: Project root used as cwd for git.
+
+    Returns:
+        Mapping from POSIX relpath to 40-char blob SHA, or None on git failure.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "ls-files", "-s", "-z", "--", "*.py"],
+            cwd=str(root),
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+        result: dict[str, str] = {}
+        for entry in out.split("\0"):
+            entry = entry.strip()
+            if not entry:
+                continue
+            try:
+                meta, rel_path = entry.split("\t", 1)
+                sha = meta.split()[1]
+                result[rel_path] = sha
+            except (ValueError, IndexError):
+                continue
+        return result
+    except Exception:
+        return None
+
+
+def _detect_hash_algo(stored_shas: dict[str, str]) -> str:
+    """Detect hash algorithm from stored SHA length.
+
+    Args:
+        stored_shas: Mapping of relpath to stored hash string from file_shas.
+
+    Returns:
+        ``"git"`` for 40-char (git blob SHA-1), ``"md5"`` for 32-char (MD5),
+        ``"sha256"`` for 64-char (SHA-256 legacy), ``"md5"`` as default.
+    """
+    for sha in stored_shas.values():
+        if sha:
+            n = len(sha)
+            if n == 40:
+                return "git"
+            if n == 32:
+                return "md5"
+            if n == 64:
+                return "sha256"
+    return "md5"
+
+
+def _iter_py_files(root: Path) -> dict[str, Path]:
+    """Walk root with SKIP_DIRS pruning, returning POSIX relpath to Path for .py non-symlinks.
+
+    Args:
+        root: Project root to walk.
+
+    Returns:
+        Mapping from POSIX-relative path string to absolute Path for each .py file found.
+    """
+    result: dict[str, Path] = {}
+    for dirpath_str, dirnames, filenames in os.walk(root, topdown=True):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dp = Path(dirpath_str)
+        for fn in filenames:
+            if fn.endswith(".py"):
+                fp = dp / fn
+                if not fp.is_symlink():
+                    try:
+                        result[fp.relative_to(root).as_posix()] = fp
+                    except ValueError:
+                        pass
+    return result
+
+
+def _git_toplevel() -> Path | None:
+    """Return resolved path of git repository root, or None when unavailable.
+
+    Returns:
+        Resolved Path or None.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        ).strip()
+        return Path(out).resolve() if out else None
+    except Exception:
+        return None
+
+
+def _git_head(root: Path) -> str | None:
+    """Return current HEAD SHA, or None when git unavailable or not a repo.
+
+    Args:
+        root: Project root used as cwd.
+
+    Returns:
+        40-char hex SHA or None.
+    """
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(root),
+                stderr=subprocess.DEVNULL,
+                text=True,
+                timeout=_GIT_TIMEOUT,
+            ).strip()
+            or None
+        )
+    except Exception:
+        return None
+
+
+def _git_dirty_py_count(root: Path) -> int:
+    """Return count of uncommitted .py file changes (staged + unstaged).
+
+    Args:
+        root: Project root used as cwd.
+
+    Returns:
+        Number of dirty .py entries, or 0 on any git failure.
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "status", "--porcelain", "--", "*.py"],
+            cwd=str(root),
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=_GIT_TIMEOUT,
+        )
+        return sum(1 for line in out.splitlines() if line.strip())
+    except Exception:
+        return 0
+
+
+def _parse_scanned_at(value: str) -> float:
+    """Parse scanned_at ISO-8601 string to POSIX timestamp; return 0.0 on failure.
+
+    Args:
+        value: scanned_at field from index JSON.
+
+    Returns:
+        POSIX float timestamp, or 0.0 when unparsable.
+    """
+    if not value:
+        return 0.0
+    try:
+        cleaned = value[:19]
+        naive = datetime.strptime(cleaned, "%Y-%m-%dT%H:%M:%S")
+        return naive.replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _read_index(index_path: Path) -> dict | None:
+    """Read and parse index JSON, enforcing size limit.
+
+    Args:
+        index_path: Path to index file.
+
+    Returns:
+        Parsed dict, or None on failure.
+    """
+    try:
+        if index_path.stat().st_size > MAX_INDEX_SIZE:
+            return None
+        with index_path.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _result(status: str, reason: str, changed_count: int = 0) -> tuple[dict, int]:
+    """Build result dict and exit code.
+
+    Args:
+        status: "current", "stale", or "no_index".
+        reason: Human-readable explanation.
+        changed_count: Number of changed/new/deleted files (0 for non-stale).
+
+    Returns:
+        Tuple of (result_dict, exit_code).
+    """
+    code = {"current": 0, "stale": 1, "no_index": 2}.get(status, 1)
+    return {"status": status, "reason": reason, "changed_count": changed_count}, code
+
+
+# ---------------------------------------------------------------------------
+# Core check
+# ---------------------------------------------------------------------------
+
+
+def check_currency(index_path: Path, root: Path) -> tuple[dict, int]:
+    """Check whether the codemap index is current with the source tree.
+
+    Args:
+        index_path: Path to the index JSON file.
+        root: Project root directory.
+
+    Returns:
+        Tuple of (result_dict, exit_code).
+    """
+    if not index_path.exists():
+        return _result("no_index", f"index not found: {index_path}")
+
+    index = _read_index(index_path)
+    if index is None:
+        return _result("no_index", f"index unreadable or oversized: {index_path}")
+
+    stored_git_sha: str | None = index.get("git_sha")
+    current_git_sha = _git_head(root)
+
+    # ------------------------------------------------------------------
+    # Tier 1: git-based (fast — no file reads)
+    # ------------------------------------------------------------------
+    if current_git_sha is not None and stored_git_sha is not None:
+        if stored_git_sha != current_git_sha:
+            short_old = stored_git_sha[:8]
+            short_new = current_git_sha[:8]
+            return _result("stale", f"HEAD changed {short_old}→{short_new}")
+        dirty = _git_dirty_py_count(root)
+        if dirty:
+            return _result("stale", f"{dirty} uncommitted .py change(s)", dirty)
+        return _result("current", "HEAD matches, no dirty .py files")
+
+    # ------------------------------------------------------------------
+    # Tier 2: filesystem — compare file_shas with mtime pre-filter
+    # ------------------------------------------------------------------
+    file_shas: dict[str, str] = index.get("file_shas", {})
+    # Only .py entries; exclude synthetic (__coverage_mtime__ etc.)
+    stored_py = {k: v for k, v in file_shas.items() if k.endswith(".py") and not k.startswith("__")}
+
+    if not stored_py:
+        return _result("stale", "no file_shas in index — rebuild required")
+
+    scanned_ts = _parse_scanned_at(index.get("scanned_at", ""))
+
+    try:
+        current_py = _iter_py_files(root)
+    except Exception as exc:
+        return _result("stale", f"filesystem walk failed: {exc}")
+
+    new_files = set(current_py) - set(stored_py)
+    if new_files:
+        return _result("stale", f"{len(new_files)} new .py file(s)", len(new_files))
+
+    deleted = set(stored_py) - set(current_py)
+    if deleted:
+        return _result("stale", f"{len(deleted)} .py file(s) deleted", len(deleted))
+
+    # Detect stored algorithm from SHA length, then verify content
+    algo = _detect_hash_algo(stored_py)
+    git_blobs: dict[str, str] | None = _git_blob_shas(root) if algo == "git" else None
+
+    changed: list[str] = []
+    for relpath, stored_sha in stored_py.items():
+        if algo == "git":
+            current_sha = git_blobs.get(relpath) if git_blobs is not None else None
+            if current_sha is None:
+                changed.append(relpath)
+                continue
+        else:
+            path = current_py.get(relpath)
+            if path is None:
+                continue
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                changed.append(relpath)
+                continue
+            if scanned_ts and mtime <= scanned_ts:
+                continue  # mtime pre-filter: not modified since scan
+            try:
+                current_sha = _md5_file(path) if algo == "md5" else _sha256_file(path)
+            except OSError:
+                changed.append(relpath)
+                continue
+        if current_sha != stored_sha:
+            changed.append(relpath)
+
+    if changed:
+        return _result("stale", f"{len(changed)} .py file(s) changed", len(changed))
+
+    return _result("current", "all source files match index")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point.
+
+    Args:
+        argv: Argument list override (defaults to sys.argv[1:]).
+
+    Returns:
+        Exit code.
+    """
+    parser = argparse.ArgumentParser(
+        description="Verify codemap index currency against current source tree.",
+    )
+    parser.add_argument("--index-path", required=True, help="Path to codemap index JSON.")
+    parser.add_argument("--root", default=None, help="Project root (default: git toplevel or cwd).")
+    parser.add_argument(
+        "--field",
+        default=None,
+        help="Print only this field from the result JSON (e.g. --field status).",
+    )
+    args = parser.parse_args(argv)
+
+    index_path = Path(args.index_path).expanduser()
+
+    if args.root:
+        root = Path(args.root).expanduser().resolve()
+    else:
+        root = _git_toplevel() or Path.cwd().resolve()
+
+    result, exit_code = check_currency(index_path, root)
+
+    if args.field:
+        val = result.get(args.field)
+        sys.stdout.write(f"{val}\n")
+    else:
+        sys.stdout.write(json.dumps(result) + "\n")
+
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

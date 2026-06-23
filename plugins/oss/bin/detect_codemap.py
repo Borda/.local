@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""detect_codemap.py — detect codemap plugin availability and index presence.
+"""detect_codemap.py — detect codemap plugin availability, index presence, and currency.
 
 consumers: resolve/SKILL.md, review/SKILL.md
 
 Determines whether the codemap plugin is installed and an index exists for the
 current project.  Writes result to ${TMPDIR:-/tmp}/<prefix>-codemap-enabled.
+When check-index-currency is on PATH, also writes currency status to
+${TMPDIR:-/tmp}/<prefix>-codemap-currency ("current", "stale", or "no_index").
 
 Usage:
     python detect_codemap.py --prefix resolve [--force-off] [--strict] [--proj <name>]
@@ -16,8 +18,9 @@ Flags:
     --proj <name>     Project name override (default: basename of git toplevel).
     --idx-dir <path>  Codemap index directory override (default: .cache/codemap).
 
-Temp file written:
+Temp files written:
     ${TMPDIR:-/tmp}/<prefix>-codemap-enabled   → "true" or "false"
+    ${TMPDIR:-/tmp}/<prefix>-codemap-currency  → "current", "stale", or "no_index"
 
 Exit codes:
     0   success (CODEMAP_ENABLED written)
@@ -27,6 +30,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -99,9 +103,11 @@ def main(argv: list[str] | None = None) -> int:
 
     tmpdir = os.environ.get("TMPDIR", "/tmp")
     out_file = Path(tmpdir) / f"{prefix}-codemap-enabled"
+    currency_file = Path(tmpdir) / f"{prefix}-codemap-currency"
 
     if force_off:
         out_file.write_text("false\n")
+        currency_file.write_text("off\n")
         return 0
 
     proj = _resolve_proj(proj_override)
@@ -109,26 +115,56 @@ def main(argv: list[str] | None = None) -> int:
     index_path = Path(idx_dir) / f"{proj}.json"
     index_found = index_path.exists()
 
-    if scan_query_available and index_found:
-        out_file.write_text("true\n")
+    if not scan_query_available or not index_found:
+        if strict:
+            if not scan_query_available:
+                print(
+                    "! --codemap passed but codemap plugin not installed.\n"
+                    "  Install: claude plugin install codemap@borda-ai-rig",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"! --codemap passed but no index found for project '{proj}'.\n"
+                    "  Build index: /codemap:scan-codebase (requires codemap plugin)",
+                    file=sys.stderr,
+                )
+            return 1
+        if scan_query_available and not index_found:
+            print(
+                f"⚠ codemap: no index for project '{proj}' at {index_path}\n"
+                "  Run /codemap:scan-codebase to build it, then re-run this skill.",
+            )
+        currency_file.write_text("no_index\n")
+        out_file.write_text("false\n")
         return 0
 
-    if strict:
-        if not scan_query_available:
-            print(
-                "! --codemap passed but codemap plugin not installed.\n"
-                "  Install: claude plugin install codemap@borda-ai-rig",
-                file=sys.stderr,
+    # Index found — check currency when check-index-currency is available
+    currency_bin = shutil.which("check-index-currency")
+    currency = "current"
+    currency_reason = ""
+    if currency_bin:
+        try:
+            result = subprocess.run(
+                [sys.executable, currency_bin, "--index-path", str(index_path)],
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
-        else:
-            print(
-                f"! --codemap passed but no index found for project '{proj}'.\n"
-                "  Build index: /codemap:scan-codebase (requires codemap plugin)",
-                file=sys.stderr,
-            )
-        return 1
+            data = json.loads(result.stdout.strip())
+            currency = data.get("status", "current")
+            currency_reason = data.get("reason", "")
+        except Exception:
+            currency = "current"  # parse/timeout error → assume current
 
-    out_file.write_text("false\n")
+    currency_file.write_text(f"{currency}\n")
+
+    if currency == "stale":
+        print(
+            f"⚠ codemap: index is stale — {currency_reason}\n  Run /codemap:scan-codebase to refresh it.",
+        )
+
+    out_file.write_text("true\n")
     return 0
 
 

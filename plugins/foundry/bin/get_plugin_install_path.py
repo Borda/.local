@@ -34,31 +34,6 @@ from pathlib import Path
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def _is_within(candidate: Path, root: Path) -> bool:
-    """Return True when ``candidate`` resolves inside ``root`` (inclusive).
-
-    Args:
-        candidate: Already-resolved path to test.
-        root: Already-resolved directory boundary.
-
-    Returns:
-        True iff ``candidate`` is ``root`` or a descendant of ``root``.
-
-    Examples:
-        >>> _is_within(Path('/a/b/c'), Path('/a'))
-        True
-        >>> _is_within(Path('/x/y'), Path('/a'))
-        False
-        >>> _is_within(Path('/a'), Path('/a'))
-        True
-    """
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-
 def _validate_token(value: str, label: str) -> None:
     """Reject empty or shell-metacharacter tokens.
 
@@ -193,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
             Path.cwd().resolve(),
             Path(tempfile.gettempdir()).resolve(),
         ]
-        if not any(_is_within(registry_path, root) for root in allowed_roots):
+        if not any(registry_path.is_relative_to(root) for root in allowed_roots):
             print(
                 f"error: --registry resolves outside ~/.claude, project root, and temp dir: {registry_path}",
                 file=sys.stderr,

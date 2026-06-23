@@ -6,7 +6,7 @@ when_to_use: |
   TRIGGER when: user wants to understand scope and risks before implementation; phrases: "plan this", "scope out X", "what would it take to Y", "analyse before we start".
   SKIP: user already knows what to build and wants code immediately (use `/develop:feature` or `/develop:fix` directly); `.claude/` config planning (use `/foundry:manage`).
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
 
@@ -75,6 +75,10 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
 fi
 echo "$CODEMAP_ENABLED" > "$PLAN_NS/codemap-enabled"
 ```
+
+> loads: codemap-gates.md
+
+Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
 **Preflight** — if `SEMBLE_ENABLED=true`:
 
