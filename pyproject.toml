@@ -12,6 +12,12 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html:.reports/coverage",
 ]
+filterwarnings = [
+    "ignore::coverage.exceptions.CoverageWarning",
+]
+markers = [
+    "integration: marks tests that require external binaries, network access, or large repo checkouts",
+]
 
 [tool.ruff]
 line-length = 120

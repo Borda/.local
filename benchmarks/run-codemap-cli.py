@@ -1,26 +1,22 @@
 #!/usr/bin/env python3
-"""Codemap plugin benchmark — empirically validates codemap's value proposition.
+"""Codemap scan-query benchmark — measures accuracy, latency, and coverage of the scan-query binary.
 
 ## Motivation
 
-Every Claude Code agent session that touches an unfamiliar Python codebase starts the same way: a flurry of Glob and
-Grep calls to assemble a structural picture — which modules exist, what imports what, which files are safest to change.
-On a 200-module project this cold-start burns 20–30 tool calls before the first line of code changes. On a 646-module
-project like pytorch-lightning it still misses blast-radius risks and import cycles that a pre-built graph would
-surface instantly.
+The `codemap` plugin scans a Python codebase once with `ast.parse` and writes a structural JSON index.  Agents and
+developers answer structural questions (rdeps, deps, centrality, import paths) with a single `scan-query` call
+instead of many Glob/Grep passes.  On a 646-module project like pytorch-lightning a pre-built graph surfaces
+blast-radius risks and import cycles that grep pipelines miss.
 
-The `codemap` plugin addresses this by scanning the codebase once with `ast.parse` and writing a structural JSON
-index. Agents then answer structural questions with a single `scan-query` call instead of many Glob/Grep passes.
-Six develop and oss skills (feature, fix, plan, refactor, develop:review, oss:review) inject codemap context into
-their agent spawn prompts automatically when the index is present.
-
-This benchmark provides empirical evidence for — or against — that value claim.
+This script benchmarks the `scan-query` binary directly — not Claude Code agents.  It measures whether the binary's
+output is accurate, fast, and structurally complete compared to cold grep baselines.  It does NOT invoke the Claude
+API, does NOT spawn agents, and does NOT record tool-call counts from live agent sessions.
 
 ## Goal
 
 Quantify codemap's benefit across four dimensions:
 
-Frozen task set: benchmarks/code-tasks.json — 15 tasks grouped by skill:
+Frozen task set: benchmarks/suites/tasks-code.json — 15 tasks grouped by skill:
   B-01–B-05  bug/fix scenarios    (blast radius before touching faulty code)
   F-01–F-05  feature scenarios    (coupling risk before hooking in)
   R-01–R-05  refactor scenarios   (full structural picture before restructuring)
@@ -66,7 +62,7 @@ agent spawn prompt?
                                   (5 tasks)                      rdeps+deps valid
 
 Suite S — Symbol lookup: validates that scan-query symbol returns correct source locations.
-Reads ground truth from benchmarks/tasks-bench.json (SE-01..SE-05).
+Reads ground truth from benchmarks/suites/tasks-bench.json (SE-01..SE-05).
 
   Code       Name                     What it measures                    Pass threshold
   --------   -----------------------  ----------------------------------  ---------------
@@ -74,7 +70,7 @@ Reads ground truth from benchmarks/tasks-bench.json (SE-01..SE-05).
   S2         symbol-all-pass-rate     all symbol tasks pass               100%
 
 Suite H — Health: validates undocumented / uncovered counts match tasks-bench.json ground truth.
-Reads ground truth from benchmarks/tasks-bench.json (CQ-01..CQ-05).
+Reads ground truth from benchmarks/suites/tasks-bench.json (CQ-01..CQ-05).
 
   Code         Name                         What it measures                    Pass threshold
   -----------  ---------------------------  ----------------------------------  ---------------
@@ -83,7 +79,7 @@ Reads ground truth from benchmarks/tasks-bench.json (CQ-01..CQ-05).
   H2           health-uncovered             all uncovered tasks match           100%
 
 Suite X — Xrefs broken: validates xrefs --broken count + target set match ground truth.
-Reads ground truth from benchmarks/tasks-bench.json (CQ-04).
+Reads ground truth from benchmarks/suites/tasks-bench.json (CQ-04).
 
   Code     Name                   What it measures                    Pass threshold
   -------  ---------------------  ----------------------------------  ---------------
@@ -104,20 +100,20 @@ the default output location of scan-index --root.
   - scan-query on PATH OR the plugin present at plugins/codemap/bin/scan-query
     (the script finds it automatically; no manual PATH config needed)
   - git available on PATH (used by scan-query's staleness check)
-  - benchmarks/tasks-bench.json present for suites S, H, X (auto-skipped if absent)
+  - benchmarks/suites/tasks-bench.json present for suites S, H, X (auto-skipped if absent)
 
 ## Quick start
 
     # Full benchmark with markdown report (all suites C/A/L/I/S/H/X always run)
-    python benchmarks/run-codemap-scan-query.py \\
+    python benchmarks/run-codemap-cli.py \\
         --repo-path ./pytorch-lightning-master \\
         --report
 
     # Verify task modules exist in the index before running
-    python benchmarks/run-codemap-scan-query.py --verify-tasks --repo-path ./pytorch-lightning-master
+    python benchmarks/run-codemap-cli.py --verify-tasks --repo-path ./pytorch-lightning-master
 
     # Use a pre-built index at a non-default path
-    python benchmarks/run-codemap-scan-query.py \\
+    python benchmarks/run-codemap-cli.py \\
         --repo-path ./pytorch-lightning \\
         --index-path /tmp/my-index.json \\
         --report
@@ -161,7 +157,7 @@ the default output location of scan-index --root.
   │                                    GAP — not measured by this benchmark                                          │
   │                                                                                                                  │
   │  Did the agent actually USE the injected context to skip tool calls and improve answer quality?                  │
-  │  Closing this gap requires live Claude API calls with tool-use recording  (--measure-agent, not yet impl.)       │
+  │  Closing this gap requires live Claude API calls with tool-use recording — out of scope for this script.         │
   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ## How each suite computes its metrics
@@ -248,8 +244,8 @@ the default output location of scan-index --root.
 
   Each scenario line (one per test case within a suite):
   {
-    "suite": "C" | "A" | "L" | "I",
-    "code": "C1" | "A1" | "L1" | "I_fix" | ...,
+    "suite": "C" | "A" | "L" | "I" | "S" | "H" | "X",
+    "code": "C1" | "A1" | "L1" | "I_fix" | "S2" | "H1" | "X1" | ...,
     "module": "lightning.pytorch.trainer.trainer",   ← task module, where applicable
     "passed": true | false,
     "value": N.NN,            ← the numeric outcome (gap fraction, precision, ms, etc.)
@@ -260,7 +256,15 @@ the default output location of scan-index --root.
   Final summary envelope (last line of stdout):
   {
     "verdict": "PASS" | "PARTIAL" | "FAIL",
-    "suites": {"C": true|false, "A": true|false, "L": true|false, "I": true|false},
+    "suites": {
+      "C": true|false,    ← coverage gap suite
+      "A": true|false,    ← accuracy suite
+      "L": true|false,    ← latency suite
+      "I": true|false,    ← injection suite
+      "S": true|false,    ← symbol lookup suite
+      "H": true|false,    ← health (undocumented/uncovered) suite
+      "X": true|false     ← xrefs broken suite
+    },
     "date": "YYYY-MM-DD",
     "repo": "/abs/path",
     "index": "/abs/path/to/index.json"
@@ -268,16 +272,15 @@ the default output location of scan-index --root.
 
 ## Verdict thresholds
 
-  PASS    — all four suites pass their per-scenario thresholds (see THRESHOLDS dict in source)
-  PARTIAL — 3 of 4 suites pass
-  FAIL    — ≤2 suites pass
+  PASS    — 6–7 of the seven suites pass their per-scenario thresholds (see THRESHOLDS dict in source)
+  PARTIAL — 4–5 suites pass
+  FAIL    — ≤3 suites pass
 
 Full scenario definitions and pass criteria: .plans/blueprint/2026-04-15-codemap-benchmark-spec.md
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
@@ -289,6 +292,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+import fire
 import pandas as pd
 
 try:
@@ -314,7 +318,7 @@ class Query:
 
 @dataclass
 class Task:
-    """A benchmark task loaded from code-tasks.json."""
+    """A benchmark task loaded from tasks-code.json."""
 
     id: str  # "B-01", "F-03", "R-05"
     skill: str  # "fix", "feature", "refactor"
@@ -393,8 +397,8 @@ class ValidationResult:
 
 # ---- CONFIG ----
 
-TASKS_FILE = Path(__file__).parent / "tasks-code.json"
-OSS_TASKS_FILE = Path(__file__).parent / "tasks-bench.json"
+TASKS_FILE = Path(__file__).parent / "suites" / "tasks-code.json"
+OSS_TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
 
 THRESHOLDS = {
     # Coverage gap suite (C): structural completeness of cold grep vs codemap
@@ -417,7 +421,6 @@ THRESHOLDS = {
     # Symbol suite (S): symbol command returns correct line range
     "S1": {"symbol_found": True, "start_line_ok": True},
     "S2": {"symbol_found": True},
-    "S3": {"symbol_found": True, "count_min": 1},
     # Health suite (H): undocumented / uncovered counts match tasks-bench.json ground truth
     "H1": {"count_match": True},  # undocumented tasks
     "H2": {"count_match": True},  # uncovered tasks
@@ -427,7 +430,23 @@ THRESHOLDS = {
 
 
 def load_tasks(skill_filter: str | None = None) -> list[Task]:
-    """Load benchmark tasks from code-tasks.json, optionally filtered by skill."""
+    """Load benchmark tasks from tasks-code.json, optionally filtered by skill.
+
+    Args:
+        skill_filter: When given, return only tasks whose ``skill`` field equals
+            this value (e.g. ``"fix"``, ``"feature"``, ``"refactor"``).
+
+    Returns:
+        List of :class:`Task` objects in the order they appear in the file.
+
+    Examples:
+        >>> tasks = load_tasks()
+        >>> all(isinstance(t, Task) for t in tasks)
+        True
+        >>> fix_tasks = load_tasks(skill_filter="fix")
+        >>> all(t.skill == "fix" for t in fix_tasks)
+        True
+    """
     with TASKS_FILE.open() as f:
         raw = json.load(f)
     tasks = [Task.from_dict(t) for t in raw]
@@ -448,7 +467,8 @@ def load_oss_tasks(type_filter: str | None = None) -> list[dict]:
     if not OSS_TASKS_FILE.exists():
         return []
     with OSS_TASKS_FILE.open() as f:
-        raw: list[dict] = json.load(f)
+        parsed = json.load(f)
+    raw: list[dict] = parsed["tasks"] if isinstance(parsed, dict) else parsed
     if type_filter:
         raw = [t for t in raw if t.get("type") == type_filter]
     return raw
@@ -458,6 +478,28 @@ def load_oss_tasks(type_filter: str | None = None) -> list[dict]:
 
 
 def path_to_module(path: str, repo_root: str) -> str | None:
+    """Convert a filesystem path to a dotted module name relative to the repo root.
+
+    Strips a leading ``src/`` layout prefix if present, converts path separators
+    to dots, drops the ``.py`` suffix, and collapses ``__init__`` to its package.
+
+    Args:
+        path: Absolute or relative path to a ``.py`` file.
+        repo_root: Absolute path to the repository root used as the base for
+            ``os.path.relpath``.
+
+    Returns:
+        Dotted module name (e.g. ``"lightning.pytorch.trainer.trainer"``), or
+        ``None`` if ``path`` does not end with ``.py``.
+
+    Examples:
+        >>> path_to_module("/repo/src/pkg/mod.py", "/repo")
+        'pkg.mod'
+        >>> path_to_module("/repo/pkg/__init__.py", "/repo")
+        'pkg'
+        >>> path_to_module("/repo/README.md", "/repo") is None
+        True
+    """
     rel = os.path.relpath(path, repo_root)
     if rel.startswith("src/"):
         rel = rel[4:]
@@ -470,11 +512,41 @@ def path_to_module(path: str, repo_root: str) -> str | None:
 
 
 def module_to_grep_pattern(module: str) -> str:
+    """Build a grep alternation pattern that matches direct imports of a module.
+
+    The returned pattern matches both ``from <module> import ...`` and
+    ``import <module>`` forms and is suitable for ``grep -rn <pattern>``.
+
+    Args:
+        module: Dotted module name (e.g. ``"lightning.pytorch.trainer.trainer"``).
+
+    Returns:
+        A grep alternation string using ``\\|`` as the separator.
+
+    Examples:
+        >>> module_to_grep_pattern("foo.bar")
+        'from foo.bar import\\\\|import foo.bar'
+    """
     # For grep: match "from <module> import" or "import <module>"
     return rf"from {module} import\|import {module}"
 
 
 def module_to_package(module: str) -> str | None:
+    """Return the parent package of a dotted module name, or None for top-level modules.
+
+    Args:
+        module: Dotted module name (e.g. ``"lightning.pytorch.trainer.trainer"``).
+
+    Returns:
+        The parent package (everything before the last dot), or ``None`` when
+        ``module`` has no dot (i.e. is already a top-level module).
+
+    Examples:
+        >>> module_to_package("foo.bar.baz")
+        'foo.bar'
+        >>> module_to_package("foo") is None
+        True
+    """
     parts = module.rsplit(".", 1)
     return parts[0] if len(parts) > 1 else None
 
@@ -497,7 +569,24 @@ class CallCounter:
 
 
 def cold_greps(repo_path: Path, *cmds: list[str]) -> int:
-    """Run each cmd via CallCounter and return total call count."""
+    """Execute each command via :class:`CallCounter` and return the total invocation count.
+
+    All commands are run with ``cwd=repo_path`` and their output is discarded.
+    The function is used only for counting — it measures how many subprocess
+    calls a cold grep baseline requires, not what the commands return.
+
+    Args:
+        repo_path: Working directory passed to each subprocess call.
+        *cmds: Variable number of command lists, each formatted as a list of
+            strings suitable for :func:`subprocess.run`.
+
+    Returns:
+        Total number of commands executed (always ``len(cmds)``).
+
+    Examples:
+        >>> cold_greps(Path("/tmp"), ["echo", "a"], ["echo", "b"])
+        2
+    """
     counter = CallCounter()
     for cmd in cmds:
         counter.run(cmd, cwd=str(repo_path))
@@ -505,6 +594,17 @@ def cold_greps(repo_path: Path, *cmds: list[str]) -> int:
 
 
 def count_cold_calls_centrality(repo_path: Path) -> int:
+    """Return the number of grep/find calls needed to compute centrality without the index.
+
+    Simulates the three-step cold grep pipeline: (1) enumerate all ``.py`` files,
+    (2) extract import lines, (3) extract module names from import statements.
+
+    Args:
+        repo_path: Root of the repository to search.
+
+    Returns:
+        Number of subprocess invocations executed (always 3 for this query type).
+    """
     repo = str(repo_path)
     return cold_greps(
         repo_path,
@@ -515,6 +615,18 @@ def count_cold_calls_centrality(repo_path: Path) -> int:
 
 
 def count_cold_calls_rdeps(repo_path: Path, module: str) -> int:
+    """Return the number of grep calls needed to find reverse-dependencies without the index.
+
+    Simulates a two-pass cold grep: one for direct dotted-name imports and one
+    for ``from <parent-package> import`` style imports.
+
+    Args:
+        repo_path: Root of the repository to search.
+        module: Dotted module name whose importers are to be found.
+
+    Returns:
+        Number of subprocess invocations executed (always 2 for this query type).
+    """
     repo = str(repo_path)
     pattern = module_to_grep_pattern(module)
     pkg = module_to_package(module)
@@ -527,6 +639,19 @@ def count_cold_calls_rdeps(repo_path: Path, module: str) -> int:
 
 
 def count_cold_calls_deps(repo_path: Path, module: str) -> int:
+    """Return the number of grep calls needed to find a module's direct imports without the index.
+
+    Locates the module source file (checking ``src/`` layout and ``__init__.py``
+    variants) and greps its import block.  Returns 1 even when the file is not
+    found, because a real agent would still attempt the grep.
+
+    Args:
+        repo_path: Root of the repository to search.
+        module: Dotted module name whose import block is to be inspected.
+
+    Returns:
+        Number of subprocess invocations executed (always 1 for this query type).
+    """
     parts = module.replace(".", "/")
     candidates = [
         repo_path / "src" / (parts + ".py"),
@@ -541,6 +666,19 @@ def count_cold_calls_deps(repo_path: Path, module: str) -> int:
 
 
 def count_cold_calls_path(repo_path: Path, frm: str, to: str) -> int:
+    """Return the number of grep calls needed to discover a 2-hop import path without the index.
+
+    Assumes a 2-hop path (A → intermediate → B) requiring three grep passes:
+    grep for ``frm``, grep for ``frm``'s parent package, and grep for ``to``.
+
+    Args:
+        repo_path: Root of the repository to search.
+        frm: Dotted module name of the path source.
+        to: Dotted module name of the path destination.
+
+    Returns:
+        Number of subprocess invocations executed (always 3 for this query type).
+    """
     # BFS via grep: N+1 calls for N-hop path; use 2-hop assumption = 3 calls
     repo = str(repo_path)
     return cold_greps(
@@ -555,7 +693,20 @@ def count_cold_calls_path(repo_path: Path, frm: str, to: str) -> int:
 
 
 def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
-    """Locate a codemap CLI binary (scan-query or scan-index) on PATH or in the plugin directory."""
+    """Locate a codemap CLI binary (scan-query or scan-index) on PATH or in the plugin directory.
+
+    Checks ``PATH`` first via :func:`shutil.which`.  Falls back to
+    ``<plugin_root>/plugins/codemap/bin/<name>`` when ``plugin_root`` is given.
+
+    Args:
+        name: Binary name to locate (e.g. ``"scan-query"`` or ``"scan-index"``).
+        plugin_root: Root of the plugin repository.  When provided and the binary
+            is not on ``PATH``, the function checks the local plugin ``bin/``
+            directory.
+
+    Returns:
+        Resolved :class:`~pathlib.Path` to the binary, or ``None`` when not found.
+    """
     which = shutil.which(name)
     if which:
         return Path(which)
@@ -567,6 +718,21 @@ def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
 
 
 def run_scan_query(scan_query_bin: Path, args: list[str], index_path: Path, repo_path: Path) -> dict | None:
+    """Run scan-query with the given subcommand arguments and return parsed JSON output.
+
+    Always passes ``--index <index_path>`` explicitly so scan-query uses the
+    correct index regardless of ``cwd`` or git availability.
+
+    Args:
+        scan_query_bin: Path to the scan-query Python script.
+        args: Subcommand and its arguments (e.g. ``["rdeps", "foo.bar"]``).
+        index_path: Path to the pre-built codemap JSON index.
+        repo_path: Working directory for the subprocess (the repository root).
+
+    Returns:
+        Parsed JSON dict from scan-query stdout, or ``None`` on non-zero exit
+        code, timeout, JSON decode error, or OS error.
+    """
     # Pass --index explicitly so scan-query uses the correct index regardless of cwd / git availability.
     try:
         result = _run(
@@ -584,6 +750,20 @@ def run_scan_query(scan_query_bin: Path, args: list[str], index_path: Path, repo
 
 
 def grep_rdeps(repo_path: Path, module: str) -> set[str]:
+    """Find reverse-dependencies of a module using grep as a reference baseline.
+
+    Searches all ``.py`` files in ``repo_path`` for direct imports of ``module``
+    using the pattern produced by :func:`module_to_grep_pattern`.  Results are
+    converted to dotted module names via :func:`path_to_module`.
+
+    Args:
+        repo_path: Root of the repository to search.
+        module: Dotted module name whose importers are to be found.
+
+    Returns:
+        Set of dotted module names that import ``module``.  Excludes ``module``
+        itself.  Returns an empty set on timeout or if no matches are found.
+    """
     pattern = module_to_grep_pattern(module)
     try:
         result = _run(
@@ -614,6 +794,19 @@ def grep_rdeps(repo_path: Path, module: str) -> set[str]:
 
 
 def codemap_rdeps(scan_query_bin: Path, index_path: Path, repo_path: Path, module: str) -> set[str]:
+    """Retrieve reverse-dependencies of a module from the codemap index via scan-query.
+
+    Args:
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap JSON index.
+        repo_path: Working directory for the subprocess (the repository root).
+        module: Dotted module name whose importers are to be retrieved.
+
+    Returns:
+        Set of dotted module names from the ``imported_by`` field of the
+        scan-query ``rdeps`` response.  Returns an empty set when scan-query
+        fails or returns no data.
+    """
     data = run_scan_query(scan_query_bin, ["rdeps", module], index_path, repo_path)
     if data is None:
         return set()
@@ -621,6 +814,23 @@ def codemap_rdeps(scan_query_bin: Path, index_path: Path, repo_path: Path, modul
 
 
 def compute_precision_recall(codemap_set: set[str], grep_set: set[str]) -> AccuracyStats:
+    """Compute precision and recall of codemap rdeps relative to a grep baseline.
+
+    Uses grep as the reference set (not ground truth — grep can miss aliased or
+    conditional imports).  Precision measures how much of what codemap returns
+    is confirmed by grep; recall measures how much of what grep finds codemap
+    also returns.
+
+    Args:
+        codemap_set: Set of module names returned by scan-query rdeps.
+        grep_set: Set of module names found by the grep baseline.
+
+    Returns:
+        :class:`AccuracyStats` with precision, recall, TP/FP/FN counts, and the
+        sorted lists of false-positive and false-negative module names.
+        Precision defaults to ``1.0`` when ``codemap_set`` is empty; recall
+        defaults to ``1.0`` when ``grep_set`` is empty.
+    """
     tp_set = codemap_set & grep_set
     fp_set = codemap_set - grep_set
     fn_set = grep_set - codemap_set
@@ -641,6 +851,22 @@ def compute_precision_recall(codemap_set: set[str], grep_set: set[str]) -> Accur
 
 
 def time_command(cmd: list[str], n: int = 5, cwd: str | None = None) -> TimingStats:
+    """Time a single command over ``n`` repeated runs and return sorted wall-clock statistics.
+
+    Timings are sorted before computing the median to eliminate cold-start
+    outliers.  Timed-out runs are recorded as 30,000 ms (the subprocess timeout).
+
+    Args:
+        cmd: Command to run, formatted as a list of strings for
+            :func:`subprocess.run`.
+        n: Number of repetitions.  Default is 5.
+        cwd: Working directory for the subprocess.  ``None`` inherits the current
+            process directory.
+
+    Returns:
+        :class:`TimingStats` with ``min_ms``, ``median_ms``, ``max_ms`` (all in
+        milliseconds, rounded to 2 decimal places), and ``n`` (run count).
+    """
     timings: list[float] = []
     for _ in range(n):
         start = time.perf_counter()
@@ -657,7 +883,34 @@ def time_command(cmd: list[str], n: int = 5, cwd: str | None = None) -> TimingSt
 
 
 def time_commands(cmds: list[list[str]], n: int = 3, cwd: str | None = None) -> TimingStats:
-    """Time a sequence of commands as one logical operation (e.g. a cold grep session)."""
+    """Time a sequence of commands as one logical operation (e.g. a cold grep session).
+
+    Runs all commands in ``cmds`` back-to-back per repetition, measuring total
+    elapsed wall-clock time for the whole sequence.  Timed-out individual
+    commands are skipped but their wall-clock contribution is still counted.
+    Timings are sorted before computing the median to eliminate cold-start
+    outliers.
+
+    Args:
+        cmds: Sequence of commands to run in order; each command is a list of
+            strings suitable for :func:`subprocess.run`.
+        n: Number of full repetitions of the command sequence.  Default is 3.
+        cwd: Working directory for every subprocess call.  ``None`` inherits
+            the current process directory.
+
+    Returns:
+        :class:`TimingStats` with ``min_ms``, ``median_ms``, ``max_ms`` (all
+        in milliseconds, rounded to 2 decimal places), and ``n`` (repetition
+        count).
+
+    Examples:
+        >>> import subprocess
+        >>> stats = time_commands([["echo", "a"], ["echo", "b"]], n=3)
+        >>> stats.n
+        3
+        >>> stats.median_ms >= 0
+        True
+    """
     timings: list[float] = []
     for _ in range(n):
         start = time.perf_counter()
@@ -677,6 +930,18 @@ def time_commands(cmds: list[list[str]], n: int = 3, cwd: str | None = None) -> 
 
 
 def validate_central_json(data: dict) -> ValidationResult:
+    """Validate that a scan-query ``central`` response has the required structure.
+
+    Checks that ``data`` contains a non-empty ``central`` list and that every
+    item in the list has a ``rdep_count`` field.
+
+    Args:
+        data: Parsed JSON dict from a ``scan-query central`` call.
+
+    Returns:
+        :class:`ValidationResult` with ``ok=True`` on success, or ``ok=False``
+        and a reason string describing the first structural violation found.
+    """
     if "central" not in data:
         return ValidationResult(ok=False, reason="missing 'central' key")
     central = data["central"]
@@ -689,6 +954,17 @@ def validate_central_json(data: dict) -> ValidationResult:
 
 
 def validate_rdeps_json(data: dict) -> ValidationResult:
+    """Validate that a scan-query ``rdeps`` response has the required structure.
+
+    Checks that ``data`` contains both ``imported_by`` and ``module`` keys.
+
+    Args:
+        data: Parsed JSON dict from a ``scan-query rdeps`` call.
+
+    Returns:
+        :class:`ValidationResult` with ``ok=True`` on success, or ``ok=False``
+        and a reason string describing the missing key.
+    """
     if "imported_by" not in data:
         return ValidationResult(ok=False, reason="missing 'imported_by' key")
     if "module" not in data:
@@ -697,6 +973,17 @@ def validate_rdeps_json(data: dict) -> ValidationResult:
 
 
 def validate_deps_json(data: dict) -> ValidationResult:
+    """Validate that a scan-query ``deps`` response has the required structure.
+
+    Checks that ``data`` contains both ``direct_imports`` and ``module`` keys.
+
+    Args:
+        data: Parsed JSON dict from a ``scan-query deps`` call.
+
+    Returns:
+        :class:`ValidationResult` with ``ok=True`` on success, or ``ok=False``
+        and a reason string describing the missing key.
+    """
     if "direct_imports" not in data:
         return ValidationResult(ok=False, reason="missing 'direct_imports' key")
     if "module" not in data:
@@ -710,7 +997,30 @@ _INJECTION_VALIDATORS = {"central": validate_central_json, "rdeps": validate_rde
 def run_injection_query(
     scan_query_bin: Path, index_path: Path, repo_path: Path, query: Query
 ) -> tuple[bool, bool, dict | None]:
-    """Run one injection query and validate its output. Returns (present, valid, data)."""
+    """Run one injection query and validate its output.
+
+    Executes ``scan-query <query.cmd> <query.args>`` via :func:`run_scan_query`
+    and validates the returned JSON using the registered validator for the
+    command type (``central``, ``rdeps``, or ``deps``).  Commands without a
+    registered validator (``path``, ``coupled``) are considered automatically
+    valid when they return a non-null result.
+
+    Args:
+        scan_query_bin: Path to the ``scan-query`` executable.
+        index_path: Path to the pre-built codemap index JSON file.
+        repo_path: Root directory of the repository under test.
+        query: :class:`Query` specifying the command and its positional arguments.
+
+    Returns:
+        A 3-tuple ``(present, valid, data)`` where:
+
+        - ``present`` (``bool``): ``True`` when scan-query returned a non-null result.
+        - ``valid`` (``bool``): ``True`` when the result passes the structural
+          JSON validator for ``query.cmd``, or when no validator is registered
+          for that command.
+        - ``data`` (``dict | None``): The raw parsed JSON dict, or ``None`` when
+          the query returned no output.
+    """
     data = run_scan_query(scan_query_bin, [query.cmd] + query.args, index_path, repo_path)
     if data is None:
         return False, False, None
@@ -999,6 +1309,15 @@ def render_report(
 
 
 def compute_verdict(results: list[ScenarioResult]) -> str:
+    """Compute an overall benchmark verdict from a list of scenario results.
+
+    Args:
+        results: All :class:`ScenarioResult` objects produced by the benchmark run.
+
+    Returns:
+        ``"PASS"`` when all scenarios passed, ``"PARTIAL"`` when ≥50% passed,
+        ``"FAIL"`` when fewer than 50% passed or ``results`` is empty.
+    """
     total = len(results)
     passed = sum(1 for r in results if r.passed)
     if total == 0:
@@ -1014,11 +1333,16 @@ def compute_verdict(results: list[ScenarioResult]) -> str:
 
 
 def emit(obj: ScenarioResult | dict) -> None:
-    """Accumulate result silently — only the final summary is printed."""
+    """No-op stub — placeholder for optional result accumulation; not currently implemented."""
     pass  # individual scenario JSON suppressed; summary printed in main()
 
 
 def log(msg: str) -> None:
+    """Print a progress message to the rich console or stderr.
+
+    Args:
+        msg: Message string to display.
+    """
     if _IS_RICH_AVAILABLE and _console is not None:
         _console.print(msg)
     else:
@@ -1029,6 +1353,17 @@ def log(msg: str) -> None:
 
 
 def run_measure_calls(repo_path: Path) -> list[ScenarioResult]:
+    """Run Suite C — measure cold grep call counts vs warm scan-query call counts.
+
+    Evaluates three scenarios: C1 (coverage gap), C2 (infeasible path fraction),
+    and C3 (leverage ratio).  All subprocess calls are counted, not timed.
+
+    Args:
+        repo_path: Root of the pytorch-lightning repository to search.
+
+    Returns:
+        List of three :class:`ScenarioResult` objects (C1, C2, C3).
+    """
     results: list[ScenarioResult] = []
     tasks = load_tasks()
     log("[calls] Starting call-savings measurement...")
@@ -1119,6 +1454,20 @@ def run_measure_calls(repo_path: Path) -> list[ScenarioResult]:
 
 
 def run_measure_accuracy(repo_path: Path, scan_query_bin: Path, index_path: Path) -> list[ScenarioResult]:
+    """Run Suite A — compare scan-query rdeps results against a grep baseline.
+
+    For each task module, computes precision and recall of codemap's rdeps
+    output relative to grep's file-list results.  Evaluates three scenarios:
+    A1 (high-risk task accuracy), A2 (low-risk task precision), A3 (overall FP rate).
+
+    Args:
+        repo_path: Root of the pytorch-lightning repository.
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap JSON index.
+
+    Returns:
+        List of three :class:`ScenarioResult` objects (A1, A2, A3).
+    """
     results: list[ScenarioResult] = []
     tasks = load_tasks()
     log("[accuracy] Starting accuracy measurement...")
@@ -1238,6 +1587,22 @@ def run_measure_accuracy(repo_path: Path, scan_query_bin: Path, index_path: Path
 def run_measure_latency(
     repo_path: Path, scan_query_bin: Path, index_path: Path, scan_index_bin: Path | None
 ) -> list[ScenarioResult]:
+    """Run Suite L — measure wall-clock latency of scan-query commands vs cold grep pipelines.
+
+    Evaluates four scenarios: L1 (central query latency), L2 (rdeps query
+    latency across 3 high-risk modules), L3 (amortized scan-index build time),
+    and L4 (speedup of codemap vs equivalent cold grep baseline).
+
+    Args:
+        repo_path: Root of the pytorch-lightning repository.
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap JSON index.
+        scan_index_bin: Path to the scan-index executable, or ``None`` when not
+            found.  L3 is recorded as failed when this is ``None``.
+
+    Returns:
+        List of four :class:`ScenarioResult` objects (L1, L2, L3, L4).
+    """
     results: list[ScenarioResult] = []
     cwd = str(repo_path)
     sq = str(scan_query_bin)
@@ -1395,7 +1760,29 @@ def run_measure_latency(
 def _validate_skill_group(
     skill: str, tasks_for_skill: list[Task], scan_query_bin: Path, index_path: Path, repo_path: Path, threshold_key: str
 ) -> ScenarioResult:
-    """Validate structural context block for a skill group of tasks."""
+    """Validate structural context block for a skill group of tasks.
+
+    For each task in ``tasks_for_skill``, runs every query defined on the task
+    via :func:`run_injection_query` and checks that the result is both present
+    (non-null) and structurally valid.  Aggregates per-query pass/fail into a
+    single :class:`ScenarioResult` for the whole skill group.
+
+    Args:
+        skill: Skill name, e.g. ``"fix"``, ``"feature"``, or ``"refactor"``.
+            Used only for display labels and log messages.
+        tasks_for_skill: Tasks to validate, filtered to this skill group.
+        scan_query_bin: Path to the ``scan-query`` executable.
+        index_path: Path to the pre-built codemap index JSON file.
+        repo_path: Root directory of the repository under test.
+        threshold_key: Key into :data:`THRESHOLDS` for this group (e.g.
+            ``"I_fix"``, ``"I_feature"``, ``"I_refactor"``).
+
+    Returns:
+        :class:`ScenarioResult` whose ``passed`` field is ``True`` only when
+        every query across all tasks in the group is present and valid, and
+        (for ``threshold_key="I_refactor"``) at least one rdeps and one deps
+        result was returned.
+    """
     log(f"[injection] {threshold_key}: develop:{skill} ({len(tasks_for_skill)} tasks)")
 
     per_task_details: list[dict] = []
@@ -1461,6 +1848,22 @@ def _validate_skill_group(
 def run_measure_injection(
     plugin_root: Path, repo_path: Path, scan_query_bin: Path, index_path: Path
 ) -> list[ScenarioResult]:
+    """Run Suite I — verify that scan-query produces valid structural context for each skill group.
+
+    Runs the same scan-query commands that develop:fix, develop:feature, and
+    develop:refactor would issue when injecting context into an agent spawn
+    prompt, then validates the output structure.  The actual skill is not
+    invoked; only the binary output is checked.
+
+    Args:
+        plugin_root: Root of the plugin repository (used as ``cwd`` fallback).
+        repo_path: Root of the pytorch-lightning repository.
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap JSON index.
+
+    Returns:
+        List of three :class:`ScenarioResult` objects (I_fix, I_feature, I_refactor).
+    """
     results: list[ScenarioResult] = []
     log("[injection] Starting injection verification...")
 
@@ -1523,6 +1926,16 @@ def run_verify_tasks(scan_query_bin: Path, index_path: Path, repo_path: Path) ->
 
 
 def resolve_report_path() -> Path:
+    """Return a non-conflicting path for the benchmark markdown report.
+
+    Creates ``benchmarks/results/`` if it does not exist.  Returns
+    ``benchmarks/results/code-<YYYY-MM-DD>.md`` for the first call on a given
+    day; appends ``-2``, ``-3``, etc. on subsequent calls to avoid overwriting
+    earlier runs.
+
+    Returns:
+        :class:`~pathlib.Path` to a file that does not yet exist.
+    """
     today = date.today().isoformat()
     base_dir = Path("benchmarks") / "results"
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -1540,19 +1953,21 @@ def resolve_report_path() -> Path:
 # ---- MAIN ----
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Codemap plugin benchmark -- proves value across 4 suites.",
-    )
-    parser.add_argument("--repo-path", type=str, default=None, help="Path to pytorch-lightning clone")
-    parser.add_argument("--index-path", type=str, default=None, help="Path to pre-built index JSON")
-    parser.add_argument("--report", action="store_true", help="Write markdown report")
-    parser.add_argument("--json-only", action="store_true", help="Suppress markdown; JSON only")
-    parser.add_argument("--verify-tasks", action="store_true", help="Verify task primary_modules exist in index")
-    return parser.parse_args()
-
-
 def resolve_repo_path(arg: str | None) -> Path | None:
+    """Resolve the path to the pytorch-lightning clone to benchmark.
+
+    Resolution order:
+    1. ``arg`` when provided and is an existing directory.
+    2. ``$PYTORCH_LIGHTNING_PATH`` environment variable.
+    3. ``./pytorch-lightning`` relative to the current working directory.
+
+    Args:
+        arg: Value of the ``--repo-path`` CLI flag, or ``None``.
+
+    Returns:
+        Resolved :class:`~pathlib.Path` to the repository root, or ``None``
+        when no valid directory is found (error logged to stderr).
+    """
     if arg:
         p = Path(arg)
         if p.is_dir():
@@ -1573,6 +1988,24 @@ def resolve_repo_path(arg: str | None) -> Path | None:
 
 
 def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
+    """Resolve the path to the pre-built codemap JSON index.
+
+    When ``arg`` is given it is used directly.  Otherwise searches
+    ``<repo_path>/.cache/codemap/`` then ``<repo_path>/.cache/scan/`` for a
+    JSON file whose stem matches the repository directory name (with ``-master``
+    and ``-main`` suffixes stripped).  Falls back to the first ``.json`` found
+    in the directory, then to the canonical default path
+    ``<repo_path>/.cache/codemap/<bare-name>.json``.
+
+    Args:
+        arg: Value of the ``--index-path`` CLI flag, or ``None``.
+        repo_path: Resolved path to the pytorch-lightning repository root.
+
+    Returns:
+        :class:`~pathlib.Path` to the index file.  The path may not exist yet
+        when the index has not been built; callers must check with
+        :meth:`~pathlib.Path.exists`.
+    """
     if arg:
         return Path(arg)
     stems = [repo_path.name, repo_path.name.replace("-master", ""), repo_path.name.replace("-main", "")]
@@ -1715,7 +2148,7 @@ def run_suite_health(
         repo_path: Root of the pytorch-lightning repository.
 
     Returns:
-        List of ScenarioResult — one per relevant Q-task plus H1/H2 aggregates.
+        List of ScenarioResult — one per relevant CQ-task (code_quality task prefix) plus H1/H2 aggregates.
     """
     tasks = load_oss_tasks(type_filter="code_quality")
     if not tasks:
@@ -1922,10 +2355,52 @@ def run_suite_xrefs(
     return results
 
 
-def main() -> None:
-    args = parse_args()
+def main(
+    repo_path: str = None,
+    index_path: str = None,
+    report: bool = False,
+    json_only: bool = False,
+    verify_tasks: bool = False,
+) -> None:
+    """Run the codemap scan-query benchmark suite against a pytorch-lightning clone.
 
-    write_report = args.report and not args.json_only
+    Executes suites C (coverage gap), A (accuracy), L (latency), I (injection),
+    S (symbol lookup), H (health), and X (xrefs broken) in order.  Prints a
+    one-line verdict summary to stdout; optionally writes a markdown report.
+
+    Exposed via ``python benchmarks/run-codemap-cli.py`` using
+    :func:`fire.Fire`.  CLI flags match parameter names with ``_`` replaced by
+    ``-`` (e.g. ``--repo-path``, ``--json-only``, ``--verify-tasks``).
+
+    Args:
+        repo_path: Path to the pytorch-lightning repository clone.  When omitted,
+            falls back to ``$PYTORCH_LIGHTNING_PATH`` then ``./pytorch-lightning``.
+        index_path: Path to the pre-built codemap JSON index.  When omitted,
+            resolved automatically from the repository directory.
+        report: Write a markdown report to ``benchmarks/results/code-<date>.md``.
+            Ignored when ``json_only`` is ``True``.
+        json_only: Suppress the markdown report; print only the verdict line.
+        verify_tasks: Before running suites, check that each task's
+            ``primary_module`` exists in the index with status ``ok``.
+
+    Examples:
+        # Full benchmark with markdown report
+        python benchmarks/run-codemap-cli.py \\
+            --repo-path ./pytorch-lightning-master \\
+            --report
+
+        # Verify task modules exist before running suites
+        python benchmarks/run-codemap-cli.py \\
+            --repo-path ./pytorch-lightning-master \\
+            --verify-tasks
+
+        # Use a custom index path
+        python benchmarks/run-codemap-cli.py \\
+            --repo-path ./pytorch-lightning \\
+            --index-path /tmp/my-index.json \\
+            --report
+    """
+    write_report = report and not json_only
 
     # Resolve plugin root
     plugin_root = None
@@ -1936,7 +2411,7 @@ def main() -> None:
     except (subprocess.TimeoutExpired, OSError):
         pass
 
-    repo_path = resolve_repo_path(args.repo_path)
+    repo_path = resolve_repo_path(repo_path)
 
     if repo_path is None:
         sys.exit(1)
@@ -1949,7 +2424,7 @@ def main() -> None:
         sys.exit(1)
 
     # Resolve index path
-    index_path = resolve_index_path(args.index_path, repo_path)
+    index_path = resolve_index_path(index_path, repo_path)
     if not index_path.exists():
         log(f"[index] not found at {index_path}")
         if scan_index_bin:
@@ -1964,7 +2439,7 @@ def main() -> None:
                 log(f"ERROR: scan-index failed:\n{result.stderr}")
                 sys.exit(1)
             log(result.stdout.strip())
-            index_path = resolve_index_path(args.index_path, repo_path)
+            index_path = resolve_index_path(index_path, repo_path)
             if not index_path.exists():
                 log(f"ERROR: index still not found at {index_path} after build.")
                 log("Try: --index-path <path-to-index.json>")
@@ -1976,7 +2451,7 @@ def main() -> None:
             sys.exit(1)
 
     # Verify tasks if requested (runs before suites, does not skip them)
-    if args.verify_tasks:
+    if verify_tasks:
         run_verify_tasks(scan_query_bin, index_path, repo_path)
 
     all_results: list[ScenarioResult] = []
@@ -2036,4 +2511,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(main)

@@ -1,0 +1,114 @@
+{
+  "repo": {
+    "default_path": "/Users/jirka/Workspace/pytorch-lightning-master",
+    "name": "pytorch-lightning",
+    "namespace": [
+      "pytorch_lightning",
+      "lightning"
+    ],
+    "owner": "Lightning-AI"
+  },
+  "tasks": [
+    {
+      "benchmark_shaped": false,
+      "difficulty": "simple",
+      "failing_test": "tests/tests_pytorch/loops/test_training_loop.py::test_val_check_interval_with_limit_val_batches_zero",
+      "github_issue": 21553,
+      "github_pr": 21560,
+      "gt_files_changed": [
+        "src/lightning/pytorch/loops/fit_loop.py"
+      ],
+      "id": "PT-01",
+      "pre_fix_commit": "8e805f9268043c9aa8f0d70800be537b56a93c19",
+      "prompt": "Issue #21553: val_check_interval check not bypassed when limit_val_batches=0.\n\nWhen `limit_val_batches=0` (validation disabled), the `val_check_interval` sanity check in `FitLoop.setup_data()` still raises a `ValueError` if `val_check_interval > limit_train_batches`. The check should be skipped entirely when validation is disabled.\n\nFailing test: tests/tests_pytorch/loops/test_training_loop.py::test_val_check_interval_with_limit_val_batches_zero\n\nProduce a minimal unified-diff patch that fixes the bug. Output the patch as a fenced ```diff block.",
+      "reference_patch": "diff --git a/src/lightning/pytorch/loops/fit_loop.py b/src/lightning/pytorch/loops/fit_loop.py\nindex 8bb123939dc20..abc85dc46073a 100644\n--- a/src/lightning/pytorch/loops/fit_loop.py\n+++ b/src/lightning/pytorch/loops/fit_loop.py\n@@ -292,7 +292,11 @@ def setup_data(self) -> None:\n             trainer._last_val_time = trainer._train_start_time\n         elif isinstance(trainer.val_check_interval, int):\n             trainer.val_check_batch = trainer.val_check_interval\n-            if trainer.val_check_batch > self.max_batches and trainer.check_val_every_n_epoch is not None:\n+            if (\n+                trainer.val_check_batch > self.max_batches\n+                and trainer.check_val_every_n_epoch is not None\n+                and trainer.limit_val_batches > 0\n+            ):\n                 raise ValueError(\n                     f\" `val_check_interval` ({trainer.val_check_interval}) must be less than or equal\"\n                     f\" to the number of the training batches ({self.max_batches}).\"\n",
+      "scoreable": true,
+      "source": "real_issue",
+      "test_command": "pytest tests/tests_pytorch/loops/test_training_loop.py::test_val_check_interval_with_limit_val_batches_zero -x",
+      "type": "patch_task",
+      "workflow_subtype": "bug_fix",
+      "workflow_type": "patch"
+    },
+    {
+      "benchmark_shaped": false,
+      "difficulty": "simple",
+      "failing_test": "tests/tests_fabric/utilities/test_distributed.py::test_distributed_sampler_wrapper_set_epoch",
+      "github_issue": 21454,
+      "github_pr": 21456,
+      "gt_files_changed": [
+        "src/lightning/fabric/utilities/distributed.py"
+      ],
+      "id": "PT-02",
+      "pre_fix_commit": "aa0ee0d18d49c6b26f18d34a3473f177adefc262",
+      "prompt": "Issue #21454: DistributedSamplerWrapper does not pass on the `.set_epoch` call to the underlying sampler.\n\nBy default the Trainer calls `.set_epoch` of any sampler in the fit_loop. However when a sampler is wrapped by `DistributedSamplerWrapper` (in src/lightning/fabric/utilities/distributed.py) it ignores forwarding this call to the underlying sampler.\n\nFailing test: tests/tests_fabric/utilities/test_distributed.py::test_distributed_sampler_wrapper_set_epoch\n\nProduce a minimal unified-diff patch that fixes the bug. Output the patch as a fenced ```diff block.",
+      "reference_patch": "diff --git a/src/lightning/fabric/utilities/distributed.py b/src/lightning/fabric/utilities/distributed.py\nindex a5f9f7457862e..d57dcdde75475 100644\n--- a/src/lightning/fabric/utilities/distributed.py\n+++ b/src/lightning/fabric/utilities/distributed.py\n@@ -372,6 +372,14 @@ def __iter__(self) -> Iterator:\n         self.dataset.reset()\n         return (self.dataset[index] for index in super().__iter__())\n \n+    @override\n+    def set_epoch(self, epoch: int) -> None:\n+        super().set_epoch(epoch)\n+        # Forward set_epoch to the original sampler if it supports it\n+        original_sampler = self.dataset._sampler\n+        if hasattr(original_sampler, \"set_epoch\") and callable(original_sampler.set_epoch):\n+            original_sampler.set_epoch(epoch)\n+\n \n def _suggested_max_num_threads(num_processes: int = 1) -> int:\n     if num_processes < 1:\n",
+      "scoreable": true,
+      "source": "real_issue",
+      "test_command": "pytest tests/tests_fabric/utilities/test_distributed.py::test_distributed_sampler_wrapper_set_epoch -x",
+      "type": "patch_task",
+      "workflow_subtype": "bug_fix",
+      "workflow_type": "patch"
+    },
+    {
+      "benchmark_shaped": false,
+      "difficulty": "simple",
+      "failing_test": "tests/tests_pytorch/callbacks/test_throughput_monitor.py::test_throughput_monitor_warn_once",
+      "github_issue": 21450,
+      "github_pr": 21453,
+      "gt_files_changed": [
+        "src/lightning/pytorch/callbacks/throughput_monitor.py"
+      ],
+      "id": "PT-03",
+      "pre_fix_commit": "9df1910f0833100478886bef0a08b450ff2d0c14",
+      "prompt": "Issue #21450: ThroughputMonitor spamming `flops_per_batch` missing warning.\n\nThe 'flops_per_batch' missing warning in src/lightning/pytorch/callbacks/throughput_monitor.py is triggered on every update call. It should be emitted only once instead of on every batch.\n\nFailing test: tests/tests_pytorch/callbacks/test_throughput_monitor.py::test_throughput_monitor_warn_once\n\nProduce a minimal unified-diff patch that fixes the bug. Output the patch as a fenced ```diff block.",
+      "reference_patch": "diff --git a/src/lightning/pytorch/callbacks/throughput_monitor.py b/src/lightning/pytorch/callbacks/throughput_monitor.py\nindex d38928d33de75..ecd5349a3eb68 100644\n--- a/src/lightning/pytorch/callbacks/throughput_monitor.py\n+++ b/src/lightning/pytorch/callbacks/throughput_monitor.py\n@@ -89,6 +89,7 @@ def __init__(\n         self._lengths: dict[RunningStage, int] = {}\n         self._samples: dict[RunningStage, int] = {}\n         self._batches: dict[RunningStage, int] = {}\n+        self._module_has_flops: bool | None = None\n \n     @override\n     def setup(self, trainer: \"Trainer\", pl_module: \"LightningModule\", stage: str) -> None:\n@@ -133,14 +134,15 @@ def _update(self, trainer: \"Trainer\", pl_module: \"LightningModule\", batch: Any,\n         if self.length_fn is not None:\n             self._lengths[stage] += self.length_fn(batch)\n \n-        if hasattr(pl_module, \"flops_per_batch\"):\n-            flops_per_batch = pl_module.flops_per_batch\n-        else:\n-            rank_zero_warn(\n-                \"When using the `ThroughputMonitor`, you need to define a `flops_per_batch` attribute or property\"\n-                f\" in {type(pl_module).__name__} to compute the FLOPs.\"\n-            )\n-            flops_per_batch = None\n+        if self._module_has_flops is None:\n+            self._module_has_flops = hasattr(pl_module, \"flops_per_batch\")\n+            if not self._module_has_flops:\n+                rank_zero_warn(\n+                    \"When using the `ThroughputMonitor`, you need to define a `flops_per_batch` attribute or property\"\n+                    f\" in {type(pl_module).__name__} to compute the FLOPs.\"\n+                )\n+\n+        flops_per_batch = pl_module.flops_per_batch if self._module_has_flops else None\n \n         self._samples[stage] += self.batch_size_fn(batch)\n         self._batches[stage] += 1\n",
+      "scoreable": true,
+      "source": "real_issue",
+      "test_command": "pytest tests/tests_pytorch/callbacks/test_throughput_monitor.py::test_throughput_monitor_warn_once -x",
+      "type": "patch_task",
+      "workflow_subtype": "bug_fix",
+      "workflow_type": "patch"
+    },
+    {
+      "benchmark_shaped": false,
+      "difficulty": "medium",
+      "failing_test": "tests/tests_pytorch/callbacks/test_stochastic_weight_avg.py::test_swa_with_infinite_epochs_and_batchnorm",
+      "github_issue": 21347,
+      "github_pr": 21396,
+      "gt_files_changed": [
+        "src/lightning/pytorch/callbacks/stochastic_weight_avg.py"
+      ],
+      "id": "PT-04",
+      "pre_fix_commit": "3876cc525d2678463199407ca48230d3eba09461",
+      "prompt": "Issue #21347: `Trainer.fit` completes early due to an unexpected increment in `StochasticWeightAveraging` when training a model with `_BatchNorm` and `max_epochs=-1`.\n\nWhen training a model containing a BatchNorm layer with `max_epochs=-1` (infinite training), `StochasticWeightAveraging` increments `max_epochs` from -1, producing `max_epochs=0` and stopping training immediately. The increment must guard against the infinite-epochs sentinel.\n\nFailing test: tests/tests_pytorch/callbacks/test_stochastic_weight_avg.py::test_swa_with_infinite_epochs_and_batchnorm\n\nProduce a minimal unified-diff patch that fixes the bug. Output the patch as a fenced ```diff block.",
+      "reference_patch": "diff --git a/src/lightning/pytorch/callbacks/stochastic_weight_avg.py b/src/lightning/pytorch/callbacks/stochastic_weight_avg.py\nindex 79c5423c54084..9b051b96d0027 100644\n--- a/src/lightning/pytorch/callbacks/stochastic_weight_avg.py\n+++ b/src/lightning/pytorch/callbacks/stochastic_weight_avg.py\n@@ -139,6 +139,8 @@ def swa_start(self) -> int:\n \n     @property\n     def swa_end(self) -> int:\n+        if self._max_epochs == -1:\n+            return float(\"inf\")  # type: ignore[return-value]\n         return self._max_epochs - 1  # 0-based\n \n     @staticmethod\n@@ -163,12 +165,17 @@ def on_fit_start(self, trainer: \"pl.Trainer\", pl_module: \"pl.LightningModule\") -\n \n         assert trainer.max_epochs is not None\n         if isinstance(self._swa_epoch_start, float):\n+            if trainer.max_epochs == -1:\n+                raise MisconfigurationException(\n+                    \"SWA with `swa_epoch_start` as a float is not supported when `max_epochs=-1`. \"\n+                    \"Please provide `swa_epoch_start` as an integer.\"\n+                )\n             self._swa_epoch_start = int(trainer.max_epochs * self._swa_epoch_start)\n \n         self._model_contains_batch_norm = self.pl_module_contains_batch_norm(pl_module)\n \n         self._max_epochs = trainer.max_epochs\n-        if self._model_contains_batch_norm:\n+        if self._model_contains_batch_norm and trainer.max_epochs != -1:\n             # virtually increase max_epochs to perform batch norm update on latest epoch.\n             assert trainer.fit_loop.max_epochs is not None\n             trainer.fit_loop.max_epochs += 1\n@@ -243,7 +250,7 @@ def on_train_epoch_start(self, trainer: \"pl.Trainer\", pl_module: \"pl.LightningMo\n             self._latest_update_epoch = trainer.current_epoch\n \n         # Note: No > here in case the callback is saved with the model and training continues\n-        if trainer.current_epoch == self.swa_end + 1:\n+        if self._max_epochs != -1 and trainer.current_epoch == self.swa_end + 1:\n             # Transfer weights from average model to pl_module\n             assert self._average_model is not None\n             self.transfer_weights(self._average_model, pl_module)\n@@ -267,17 +274,17 @@ def on_train_epoch_end(self, trainer: \"pl.Trainer\", *args: Any) -> None:\n     @override\n     def on_train_end(self, trainer: \"pl.Trainer\", pl_module: \"pl.LightningModule\") -> None:\n         # the trainer increases the current epoch before this hook is called\n-        if self._model_contains_batch_norm and trainer.current_epoch - 1 == self.swa_end + 1:\n+        if self._model_contains_batch_norm and self._max_epochs != -1 and trainer.current_epoch - 1 == self.swa_end + 1:\n             # BatchNorm epoch update. Reset state\n             trainer.accumulate_grad_batches = self._accumulate_grad_batches\n             trainer.fit_loop.max_batches -= 1\n             assert trainer.fit_loop.max_epochs is not None\n             trainer.fit_loop.max_epochs -= 1\n             self.reset_momenta()\n-        elif trainer.current_epoch - 1 == self.swa_end:\n-            # Last SWA epoch. Transfer weights from average model to pl_module\n-            assert self._average_model is not None\n-            self.transfer_weights(self._average_model, pl_module)\n+        elif trainer.current_epoch - 1 == self.swa_end or self._max_epochs == -1:\n+            # Last SWA epoch or infinite training. Transfer weights from average model to pl_module\n+            if self._average_model is not None:\n+                self.transfer_weights(self._average_model, pl_module)\n \n     @staticmethod\n     def transfer_weights(src_pl_module: \"pl.LightningModule\", dst_pl_module: \"pl.LightningModule\") -> None:\n",
+      "scoreable": true,
+      "source": "real_issue",
+      "test_command": "pytest tests/tests_pytorch/callbacks/test_stochastic_weight_avg.py::test_swa_with_infinite_epochs_and_batchnorm -x",
+      "type": "patch_task",
+      "workflow_subtype": "bug_fix",
+      "workflow_type": "patch"
+    },
+    {
+      "benchmark_shaped": false,
+      "difficulty": "medium",
+      "failing_test": "tests/tests_pytorch/loops/test_training_loop.py::test_lr_updated_on_train_batch_start_returns_minus_one",
+      "github_issue": 21296,
+      "github_pr": 21307,
+      "gt_files_changed": [
+        "src/lightning/pytorch/core/hooks.py",
+        "src/lightning/pytorch/loops/training_epoch_loop.py"
+      ],
+      "id": "PT-05",
+      "pre_fix_commit": "b15d394f2a9d36ccefba08328ac8dc2bd13e49b2",
+      "prompt": "Issue #21296: LR is not updated when `on_train_batch_start` returns -1.\n\nWhen `on_train_batch_start` returns -1 to stop the current epoch, the learning-rate scheduler update is skipped for that epoch. The epoch-end LR update should still be applied even when the epoch was short-circuited by the -1 signal. Touches core/hooks.py and loops/training_epoch_loop.py.\n\nFailing test: tests/tests_pytorch/loops/test_training_loop.py::test_lr_updated_on_train_batch_start_returns_minus_one\n\nProduce a minimal unified-diff patch that fixes the bug. Output the patch as a fenced ```diff block.",
+      "reference_patch": "diff --git a/src/lightning/pytorch/core/hooks.py b/src/lightning/pytorch/core/hooks.py\nindex 0b0ab14244e38..ea95e2c4573a6 100644\n--- a/src/lightning/pytorch/core/hooks.py\n+++ b/src/lightning/pytorch/core/hooks.py\n@@ -69,6 +69,7 @@ def on_train_batch_start(self, batch: Any, batch_idx: int) -> Optional[int]:\n         \"\"\"Called in the training loop before anything happens for that batch.\n \n         If you return -1 here, you will skip training for the rest of the current epoch.\n+        Learning rate scheduler will still be stepped at the end of epoch.\n \n         Args:\n             batch: The batched data as it is returned by the training DataLoader.\ndiff --git a/src/lightning/pytorch/loops/training_epoch_loop.py b/src/lightning/pytorch/loops/training_epoch_loop.py\nindex 3d01780b705fe..6212bfe264e6e 100644\n--- a/src/lightning/pytorch/loops/training_epoch_loop.py\n+++ b/src/lightning/pytorch/loops/training_epoch_loop.py\n@@ -325,6 +325,8 @@ def advance(self, data_fetcher: _DataFetcher) -> None:\n         trainer._logger_connector.on_batch_start(batch)\n \n         batch_output: _BATCH_OUTPUTS_TYPE = None  # for mypy\n+        should_skip_rest_of_epoch = False\n+\n         if batch is None and not using_dataloader_iter:\n             self._warning_cache.warn(\"train_dataloader yielded None. If this was on purpose, ignore this warning...\")\n         else:\n@@ -332,23 +334,24 @@ def advance(self, data_fetcher: _DataFetcher) -> None:\n             call._call_callback_hooks(trainer, \"on_train_batch_start\", batch, batch_idx)\n             response = call._call_lightning_module_hook(trainer, \"on_train_batch_start\", batch, batch_idx)\n             call._call_strategy_hook(trainer, \"on_train_batch_start\", batch, batch_idx)\n-            if response == -1:\n-                self.batch_progress.increment_processed()\n-                raise StopIteration\n-\n-            self.batch_progress.increment_started()\n-\n-            kwargs = (\n-                self._build_kwargs(OrderedDict(), batch, batch_idx)\n-                if not using_dataloader_iter\n-                else OrderedDict(any=dataloader_iter)\n-            )\n-            with trainer.profiler.profile(\"run_training_batch\"):\n-                if trainer.lightning_module.automatic_optimization:\n-                    # in automatic optimization, there can only be one optimizer\n-                    batch_output = self.automatic_optimization.run(trainer.optimizers[0], batch_idx, kwargs)\n-                else:\n-                    batch_output = self.manual_optimization.run(kwargs)\n+            should_skip_rest_of_epoch = response == -1\n+            # Signal this is the last batch for the current epoch\n+            if should_skip_rest_of_epoch:\n+                self.batch_progress.increment_by(0, is_last_batch=True)\n+            else:\n+                self.batch_progress.increment_started()\n+\n+                kwargs = (\n+                    self._build_kwargs(OrderedDict(), batch, batch_idx)\n+                    if not using_dataloader_iter\n+                    else OrderedDict(any=dataloader_iter)\n+                )\n+                with trainer.profiler.profile(\"run_training_batch\"):\n+                    if trainer.lightning_module.automatic_optimization:\n+                        # in automatic optimization, there can only be one optimizer\n+                        batch_output = self.automatic_optimization.run(trainer.optimizers[0], batch_idx, kwargs)\n+                    else:\n+                        batch_output = self.manual_optimization.run(kwargs)\n \n         self.batch_progress.increment_processed()\n \n@@ -358,6 +361,10 @@ def advance(self, data_fetcher: _DataFetcher) -> None:\n         if self._num_ready_batches_reached():\n             self.update_lr_schedulers(\"epoch\", update_plateau_schedulers=False)\n \n+        if should_skip_rest_of_epoch:\n+            # Only raise StopIteration now so that the training epoch loop can finish\n+            raise StopIteration\n+\n         if using_dataloader_iter:\n             # update the hook kwargs now that the step method might have consumed the iterator\n             batch = data_fetcher._batch\n",
+      "scoreable": true,
+      "source": "real_issue",
+      "test_command": "pytest tests/tests_pytorch/loops/test_training_loop.py::test_lr_updated_on_train_batch_start_returns_minus_one -x",
+      "type": "patch_task",
+      "workflow_subtype": "bug_fix",
+      "workflow_type": "patch"
+    }
+  ]
+}

@@ -6,13 +6,13 @@ the ground_truth dict stored in the task file.
 
 Usage:
     # Validate all tasks against live index
-    python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir>
+    python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir>
 
     # Validate a single task
-    python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --task SE-01
+    python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --task SE-01
 
     # Refresh ground truth from live scan-query output
-    python benchmarks/tasks-bench-gen.py --repo-path ./<repo-dir> --update
+    python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update
 
 Requirements:
     - repo clone with a pre-built codemap index (see tasks-bench.json "repo.default_path")
@@ -21,7 +21,6 @@ Requirements:
 
 from __future__ import annotations
 
-import argparse
 import ast
 import json
 import os
@@ -31,7 +30,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-TASKS_FILE = Path(__file__).parent / "tasks-bench.json"
+import fire
+
+TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
 
 
 # ---- BINARY RESOLUTION ----
@@ -220,7 +221,7 @@ def _callers_via_ast(primary_fn: str, repo) -> tuple[set[str], str | None]:
         >>> from pathlib import Path
         >>> with tempfile.TemporaryDirectory() as d:
         ...     repo = Path(d)
-        ...     _ = (repo / "m.py").write_text("def caller():\n    target()\n")
+        ...     _ = (repo / "m.py").write_text("def caller():\\n    target()\\n")
         ...     callers, err = _callers_via_ast("m::target", repo)
         >>> sorted(callers), err
         (['m::caller'], None)
@@ -558,7 +559,8 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
     """Merge live computed values into the existing ground_truth dict.
 
     Args:
-        task_type: One of "symbol_extraction", "fn_call_graph", "review_assistance", "code_quality".
+        task_type: One of "symbol_extraction", "fn_call_graph", "develop_blast_radius",
+            "review_assistance", or "code_quality".
         live_gt: Computed ground truth from scan-query output.
         existing_gt: Existing ground_truth from the task file (for fields not recomputed).
 
@@ -580,22 +582,22 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
 # ---- MAIN ----
 
 
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Validate or refresh ground truth in benchmarks/tasks-bench.json.",
-    )
-    parser.add_argument("--repo-path", type=str, default=None, help="Path to the target repository clone")
-    parser.add_argument("--index-path", type=str, default=None, help="Path to pre-built index JSON")
-    parser.add_argument("--task", type=str, default=None, help="Validate only this task ID (e.g. SE-01)")
-    parser.add_argument("--update", action="store_true", help="Write refreshed ground truth back to tasks-bench.json")
-    parser.add_argument("--verbose", "-v", action="store_true", help="Print live ground truth on failure")
-    return parser.parse_args()
+def main(
+    repo_path: str = None,
+    index_path: str = None,
+    task: str = None,
+    update: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Entry point: validate or update tasks-bench.json ground truth.
 
-
-def main() -> None:
-    """Entry point: validate or update tasks-bench.json ground truth."""
-    args = parse_args()
+    Args:
+        repo_path: Path to the target repository clone.
+        index_path: Path to pre-built index JSON.
+        task: Validate only this task ID (e.g. SE-01).
+        update: Write refreshed ground truth back to tasks-bench.json.
+        verbose: Print live ground truth on failure.
+    """
 
     # Resolve plugin root for binary lookup
     try:
@@ -624,8 +626,8 @@ def main() -> None:
         _tasks_wrapper = None
 
     # Resolve repo path
-    if args.repo_path:
-        repo_path = Path(args.repo_path)
+    if repo_path:
+        repo_path = Path(repo_path)
     else:
         _default_path = repo_meta.get("default_path")
         _cands = [Path(_default_path)] if _default_path else []
@@ -646,15 +648,15 @@ def main() -> None:
         print("ERROR: scan-query not found on PATH or in plugins/codemap/bin/")
         sys.exit(1)
 
-    index_path = resolve_index_path(args.index_path, repo_path)
+    index_path = resolve_index_path(index_path, repo_path)
     if not index_path.exists():
         print(f"ERROR: index not found at {index_path}. Run scan-index first.")
         sys.exit(1)
 
-    if args.task:
-        tasks = [t for t in tasks if t.get("id") == args.task]
+    if task:
+        tasks = [t for t in tasks if t.get("id") == task]
         if not tasks:
-            print(f"ERROR: task {args.task!r} not found in {TASKS_FILE.name}")
+            print(f"ERROR: task {task!r} not found in {TASKS_FILE.name}")
             sys.exit(1)
 
     # Validate each task
@@ -679,10 +681,10 @@ def main() -> None:
         else:
             print(f"  FAIL  {task_id}: {reason}")
             failed.append(task_id)
-            if args.verbose and live_gt is not None:
+            if verbose and live_gt is not None:
                 print(f"         live_gt = {json.dumps(live_gt, indent=2)}")
 
-            if args.update and live_gt is not None:
+            if update and live_gt is not None:
                 # Update ground_truth in the task dict
                 updated_task = dict(task)
                 if task_type == "review_assistance":
@@ -704,9 +706,9 @@ def main() -> None:
             else:
                 updated_tasks.append(task)
 
-    if args.update:
+    if update:
         # Only update if the task list matches the full file (no --task filter)
-        if args.task is None:
+        if task is None:
             with TASKS_FILE.open("w") as f:
                 if _tasks_wrapper is not None:
                     out = {**_tasks_wrapper, "tasks": updated_tasks}
@@ -716,16 +718,16 @@ def main() -> None:
                 f.write("\n")
             print(f"\nWrote updated ground truth to {TASKS_FILE.name}")
         else:
-            print(f"\nSingle-task mode: updated task {args.task!r} not written (omit --task to write full file)")
+            print(f"\nSingle-task mode: updated task {task!r} not written (omit --task to write full file)")
 
     total = len(tasks)
     passed = total - len(failed)
     print(f"\n{passed}/{total} passed")
     if failed:
         print(f"Failed: {', '.join(failed)}")
-        if not args.update:
+        if not update:
             sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(main)

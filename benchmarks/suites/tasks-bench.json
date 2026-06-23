@@ -10,6 +10,7 @@
   },
   "tasks": [
     {
+      "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
         {
@@ -30,9 +31,12 @@
       "primary_module": "lightning.pytorch.callbacks.timer",
       "prompt": "You are reviewing the `Timer` callback in `lightning.pytorch.callbacks.timer`. Extract the full source of `Timer.on_train_start` including its module imports \u2014 you need to understand exactly what it does before writing a test for it. Report the file path, start line, and end line.",
       "symbol_name": "Timer.on_train_start",
-      "type": "symbol_extraction"
+      "type": "symbol_extraction",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
         {
@@ -53,9 +57,12 @@
       "primary_module": "lightning.pytorch.tuner.lr_finder",
       "prompt": "Before modifying the LR finder internals, extract the complete `_LRFinder.__init__` method from `lightning.pytorch.tuner.lr_finder` including imports. Report the file path, start line, and end line of the method.",
       "symbol_name": "_LRFinder.__init__",
-      "type": "symbol_extraction"
+      "type": "symbol_extraction",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "hard",
       "expected_queries": [
         {
@@ -76,9 +83,12 @@
       "primary_module": "lightning.pytorch.trainer.trainer",
       "prompt": "You need to understand what `Trainer._run_stage` does in `lightning.pytorch.trainer.trainer` before modifying it. Extract its full source including module imports. Report the file path, start line, and end line.",
       "symbol_name": "Trainer._run_stage",
-      "type": "symbol_extraction"
+      "type": "symbol_extraction",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "hard",
       "expected_queries": [
         {
@@ -99,9 +109,12 @@
       "primary_module": "lightning.pytorch.core.module",
       "prompt": "Before adding a new metric parameter to `LightningModule.log`, extract its full source and imports from `lightning.pytorch.core.module`. This is a large method \u2014 report the file path, start line, and end line.",
       "symbol_name": "LightningModule.log",
-      "type": "symbol_extraction"
+      "type": "symbol_extraction",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "extreme",
       "expected_queries": [
         {
@@ -128,9 +141,12 @@
       "primary_module": "lightning.pytorch.loggers.tensorboard",
       "prompt": "Extract `TensorBoardLogger.save` from the pytorch (not fabric) loggers \u2014 specifically from `lightning.pytorch.loggers.tensorboard`. The name 'save' is ambiguous; make sure you retrieve the method from the correct module. Report the file path, start line, and end line.",
       "symbol_name": "TensorBoardLogger.save",
-      "type": "symbol_extraction"
+      "type": "symbol_extraction",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
         {
@@ -179,9 +195,12 @@
       "primary_fn": "lightning.pytorch.utilities.model_helpers::is_overridden",
       "primary_module": "lightning.pytorch.utilities.model_helpers",
       "prompt": "Before refactoring `is_overridden` in `lightning.pytorch.utilities.model_helpers`, identify every production function that statically calls it. List the full qualified names in the form `module::function`. Exclude test files.",
-      "type": "fn_call_graph"
+      "type": "fn_call_graph",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "hard",
       "expected_queries": [
         {
@@ -241,9 +260,12 @@
       "primary_fn": "lightning.pytorch.trainer.call::_call_lightning_module_hook",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "Before refactoring `_call_lightning_module_hook` in `lightning.pytorch.trainer.call`, identify all production functions that directly call it. List full qualified names (`module::function`). This is a central dispatcher \u2014 expect many callers.",
-      "type": "fn_call_graph"
+      "type": "fn_call_graph",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
         {
@@ -290,9 +312,12 @@
       "primary_fn": "lightning.pytorch.trainer.call::_call_callback_hooks",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "Before refactoring `_call_callback_hooks` in `lightning.pytorch.trainer.call`, identify all production functions that directly call it. List full qualified names (`module::function`).",
-      "type": "fn_call_graph"
+      "type": "fn_call_graph",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
         {
@@ -327,9 +352,12 @@
       "primary_fn": "lightning.pytorch.trainer.call::_call_strategy_hook",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "Before modifying `_call_strategy_hook` in `lightning.pytorch.trainer.call`, identify all production functions that directly call it. List full qualified names (`module::function`).",
-      "type": "fn_call_graph"
+      "type": "fn_call_graph",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
         {
@@ -361,7 +389,9 @@
       "primary_fn": "lightning.pytorch.utilities.signature_utils::is_param_in_hook_signature",
       "primary_module": "lightning.pytorch.utilities.signature_utils",
       "prompt": "Before modifying `is_param_in_hook_signature` in `lightning.pytorch.utilities.signature_utils`, identify all production functions that directly call it. List full qualified names (`module::function`).",
-      "type": "fn_call_graph"
+      "type": "fn_call_graph",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "medium",
@@ -376,6 +406,7 @@
       "id": "RV-01",
       "primary_module": "lightning.pytorch.core.module",
       "prompt": "You are reviewing a PR that adds several new properties to `LightningModule` in `lightning.pytorch.core.module`. As part of the review, assess the current docstring coverage of the module. Answer the following sub-questions using whatever tools are available.",
+      "scoreable": true,
       "sub_questions": [
         {
           "ground_truth": {
@@ -402,7 +433,9 @@
           "prompt": "List the unique qualified names of undocumented symbols in `lightning.pytorch.core.module`."
         }
       ],
-      "type": "review_assistance"
+      "type": "review_assistance",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "simple",
@@ -417,6 +450,7 @@
       "id": "RV-02",
       "primary_module": "lightning.pytorch.utilities.rank_zero",
       "prompt": "You are reviewing a PR that changes the API of `lightning.pytorch.utilities.rank_zero`. Before approving, determine the blast radius of any breaking change to this module. Answer the following sub-question.",
+      "scoreable": true,
       "sub_questions": [
         {
           "ground_truth": {
@@ -427,7 +461,9 @@
           "prompt": "How many modules directly import `lightning.pytorch.utilities.rank_zero`? Report the integer count."
         }
       ],
-      "type": "review_assistance"
+      "type": "review_assistance",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "hard",
@@ -442,6 +478,7 @@
       "id": "RV-03",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "You are reviewing a PR that refactors `_call_lightning_module_hook` in `lightning.pytorch.trainer.call`. This is a central dispatch function \u2014 you need to understand how many production functions call it before approving. Answer the following sub-question.",
+      "scoreable": true,
       "sub_questions": [
         {
           "ground_truth": {
@@ -449,10 +486,12 @@
           },
           "id": "q1",
           "match": "integer_extract",
-          "prompt": "How many production functions (excluding test files) directly call `lightning.pytorch.trainer.call::_call_lightning_module_hook`? Report the integer count returned by the fn-rdeps tool."
+          "prompt": "How many production functions (excluding test files) uniquely call `lightning.pytorch.trainer.call::_call_lightning_module_hook`? Report the number of distinct caller entries in the fn-rdeps result."
         }
       ],
-      "type": "review_assistance"
+      "type": "review_assistance",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "medium",
@@ -467,6 +506,7 @@
       "id": "RV-04",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "You are reviewing a PR that removes `_call_callback_hooks` from `lightning.pytorch.trainer.call`. Before approving, assess how many production functions call it. Answer the following sub-question.",
+      "scoreable": true,
       "sub_questions": [
         {
           "ground_truth": {
@@ -477,7 +517,9 @@
           "prompt": "How many functions (total, from the fn-rdeps count field) call `lightning.pytorch.trainer.call::_call_callback_hooks`? Report the integer count."
         }
       ],
-      "type": "review_assistance"
+      "type": "review_assistance",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "medium",
@@ -492,6 +534,7 @@
       "id": "RV-05",
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
       "prompt": "You are reviewing a PR that adds 3 new public functions to `lightning.pytorch.utilities.model_summary.model_summary` without adding tests. Before merging, assess the current test coverage of the module. Answer the following sub-questions.",
+      "scoreable": true,
       "sub_questions": [
         {
           "ground_truth": {
@@ -516,9 +559,12 @@
           "prompt": "Name the first 5 uncovered symbols in `lightning.pytorch.utilities.model_summary.model_summary` (as listed by the uncovered command)."
         }
       ],
-      "type": "review_assistance"
+      "type": "review_assistance",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
         {
@@ -544,9 +590,12 @@
       "id": "CQ-01",
       "primary_module": "lightning.pytorch.core.module",
       "prompt": "Run a documentation gate on `lightning.pytorch.core.module` before the v2.4.0 release. List all public symbols that currently lack docstrings. Report both the total count and the qualified names.",
-      "type": "code_quality"
+      "type": "code_quality",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
         {
@@ -587,9 +636,12 @@
       "id": "CQ-02",
       "primary_module": "lightning.pytorch.utilities.model_summary.model_summary",
       "prompt": "Run a test coverage gate on `lightning.pytorch.utilities.model_summary.model_summary` before merging a PR. Identify all public symbols not covered by tests and report the total count.",
-      "type": "code_quality"
+      "type": "code_quality",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
         {
@@ -609,9 +661,12 @@
       "id": "CQ-03",
       "primary_module": null,
       "prompt": "Identify the top 5 most coupled (highest total dependency count) modules in the codebase. For each module, report its name and its total dependency count (dep_count).",
-      "type": "code_quality"
+      "type": "code_quality",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "simple",
       "expected_queries": [
         {
@@ -639,9 +694,12 @@
       "id": "CQ-04",
       "primary_module": "lightning.pytorch.trainer.trainer",
       "prompt": "A recent refactor of `lightning.pytorch.trainer.trainer` may have left broken cross-references in the Sphinx docstrings. Find and report all broken sphinx cross-references in that module. Report the target symbol names and line numbers.",
-      "type": "code_quality"
+      "type": "code_quality",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
+      "benchmark_shaped": true,
       "difficulty": "medium",
       "expected_queries": [
         {
@@ -679,7 +737,9 @@
       "id": "CQ-05",
       "primary_module": "lightning.pytorch.loggers.tensorboard",
       "prompt": "Generate a health snapshot for `lightning.pytorch.loggers.tensorboard` for the release notes. Report: (1) how many public symbols lack docstrings and (2) how many public symbols are not covered by tests.",
-      "type": "code_quality"
+      "type": "code_quality",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "medium",
@@ -730,7 +790,9 @@
       "primary_fn": "lightning.pytorch.utilities.model_helpers::is_overridden",
       "primary_module": "lightning.pytorch.utilities.model_helpers",
       "prompt": "You are about to change how `is_overridden` detects method overrides in `lightning.pytorch.utilities.model_helpers`. Before writing any code, perform a blast-radius assessment: list every production function that statically calls `is_overridden`. Report callers as `module::function` qualified names and exclude test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "hard",
@@ -792,7 +854,9 @@
       "primary_fn": "lightning.pytorch.trainer.call::_call_lightning_module_hook",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "You plan to refactor `_call_lightning_module_hook` in `lightning.pytorch.trainer.call` to add structured error handling. Before making any changes, identify all production callers to assess how widespread the impact will be. List callers as `module::function` qualified names, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "hard",
@@ -841,7 +905,9 @@
       "primary_fn": "lightning.pytorch.trainer.call::_call_callback_hooks",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "A PR proposes changing the hook dispatch order in `_call_callback_hooks` in `lightning.pytorch.trainer.call`. Before reviewing or merging, enumerate all production callers to gauge risk. Report each caller as `module::function`, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "medium",
@@ -878,7 +944,9 @@
       "primary_fn": "lightning.pytorch.trainer.call::_call_strategy_hook",
       "primary_module": "lightning.pytorch.trainer.call",
       "prompt": "You need to add a new parameter to `_call_strategy_hook` in `lightning.pytorch.trainer.call`. First assess the blast radius: list every production caller that will need updating. Format as `module::function`, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "simple",
@@ -912,7 +980,9 @@
       "primary_fn": "lightning.pytorch.utilities.signature_utils::is_param_in_hook_signature",
       "primary_module": "lightning.pytorch.utilities.signature_utils",
       "prompt": "You are modifying `is_param_in_hook_signature` in `lightning.pytorch.utilities.signature_utils` to change its return type. Before proceeding, list all production callers to understand scope. Report callers as `module::function`, excluding test files. For each caller listed, add one sentence explaining how your proposed change would affect that call site. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "medium",
@@ -960,7 +1030,9 @@
       "primary_fn": "lightning.fabric.utilities.cloud_io::get_filesystem",
       "primary_module": "lightning.fabric.utilities.cloud_io",
       "prompt": "You are about to change the filesystem abstraction in `get_filesystem` in `lightning.fabric.utilities.cloud_io` \u2014 for example, to add a new storage backend or change its return type. Before making any changes, enumerate all production callers to assess blast radius. For each caller, state in one sentence what aspect of the change affects it. Format callers as `module::function`. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "medium",
@@ -1004,7 +1076,9 @@
       "primary_fn": "lightning.fabric.utilities.distributed::_distributed_is_initialized",
       "primary_module": "lightning.fabric.utilities.distributed",
       "prompt": "You plan to change `_distributed_is_initialized` in `lightning.fabric.utilities.distributed` to use a different internal check (e.g. switching the backend detection method). Before making any changes, enumerate all production callers to assess how widespread the impact is. For each caller, briefly state how the change in check logic would affect that call site. Format callers as `module::function`. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
     },
     {
       "difficulty": "simple",
@@ -1037,7 +1111,347 @@
       "primary_fn": "lightning.fabric.utilities.seed::reset_seed",
       "primary_module": "lightning.fabric.utilities.seed",
       "prompt": "You are modifying `reset_seed` in `lightning.fabric.utilities.seed` to change how seeds are reset after distributed setup. Before making any changes, enumerate all production callers to understand the blast radius. For each caller, state in one sentence how a change in seed-reset behaviour would affect that call site. Format callers as `module::function`. Use the exact qualified name format: `lightning.module.path::ClassName.method_name` (dot-separated module, `::` separator, dot before method name; e.g. `lightning.fabric.strategies.ddp::DDPStrategy.barrier`).",
-      "type": "develop_blast_radius"
+      "type": "develop_blast_radius",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "query"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "simple",
+      "expected_queries": [
+        "symbol lightning.pytorch.callbacks.timer::Timer._check_time_remaining"
+      ],
+      "ground_truth": {
+        "file": "src/lightning/pytorch/callbacks/timer.py",
+        "function": "_check_time_remaining",
+        "start_line": 198
+      },
+      "id": "DG-01",
+      "primary_module": "lightning.pytorch.callbacks.timer",
+      "prompt": "A training run with the Timer callback fails intermittently with:\n\n  File \".../lightning/pytorch/callbacks/timer.py\", line 200, in _check_time_remaining\n    should_stop = self.time_elapsed() >= self._duration\n  TypeError: '>=' not supported between instances of 'float' and 'NoneType'\n\nLocate the source file and the function definition where this comparison happens. Report: file path (relative to repo root), function name, and start line number of the function definition.",
+      "scoreable": true,
+      "symbol_name": "Timer._check_time_remaining",
+      "type": "debug_from_trace",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "debug"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "simple",
+      "expected_queries": [
+        "symbol lightning.pytorch.utilities.model_helpers::is_overridden"
+      ],
+      "ground_truth": {
+        "file": "src/lightning/pytorch/utilities/model_helpers.py",
+        "function": "is_overridden",
+        "start_line": 29
+      },
+      "id": "DG-02",
+      "primary_module": "lightning.pytorch.utilities.model_helpers",
+      "prompt": "A unit test fails with:\n\n  File \".../lightning/pytorch/utilities/model_helpers.py\", line 40, in is_overridden\n    raise ValueError(\"Expected a parent\")\n  ValueError: Expected a parent\n\nThe failure originates in the override-detection helper. Locate the source file and the function definition. Report: file path (relative to repo root), function name, and start line number of the function definition.",
+      "scoreable": true,
+      "symbol_name": "is_overridden",
+      "type": "debug_from_trace",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "debug"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "medium",
+      "expected_queries": [
+        "symbol lightning.fabric.utilities.seed::reset_seed"
+      ],
+      "ground_truth": {
+        "file": "src/lightning/fabric/utilities/seed.py",
+        "function": "reset_seed",
+        "start_line": 72
+      },
+      "id": "DG-03",
+      "primary_module": "lightning.fabric.utilities.seed",
+      "prompt": "After resuming a distributed run, the RNG state diverges across ranks. The traceback points at the seed-reset helper:\n\n  File \".../lightning/fabric/utilities/seed.py\", line 83, in reset_seed\n    seed_everything(int(seed), workers=bool(int(workers)), verbose=False)\n  ValueError: invalid literal for int() with base 10: ''\n\nLocate the source file and the function definition that performs the reset. Report: file path (relative to repo root), function name, and start line number of the function definition.",
+      "scoreable": true,
+      "symbol_name": "reset_seed",
+      "type": "debug_from_trace",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "debug"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "medium",
+      "expected_queries": [
+        "symbol lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_checkpoint"
+      ],
+      "ground_truth": {
+        "file": "src/lightning/pytorch/callbacks/model_checkpoint.py",
+        "function": "_save_checkpoint",
+        "start_line": 593
+      },
+      "id": "DG-04",
+      "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
+      "prompt": "Checkpointing fails near the end of an epoch with:\n\n  File \".../lightning/pytorch/callbacks/model_checkpoint.py\", line 595, in _save_checkpoint\n    trainer.save_checkpoint(filepath, self.save_weights_only)\n  AttributeError: 'NoneType' object has no attribute 'save_checkpoint'\n\nLocate the source file and the method definition that writes the checkpoint. Report: file path (relative to repo root), function name, and start line number of the method definition.",
+      "scoreable": true,
+      "symbol_name": "ModelCheckpoint._save_checkpoint",
+      "type": "debug_from_trace",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "debug"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "hard",
+      "expected_queries": [
+        "symbol lightning.pytorch.trainer.call::_call_lightning_module_hook"
+      ],
+      "ground_truth": {
+        "file": "src/lightning/pytorch/trainer/call.py",
+        "function": "_call_lightning_module_hook",
+        "start_line": 155
+      },
+      "id": "DG-05",
+      "primary_module": "lightning.pytorch.trainer.call",
+      "prompt": "A custom hook crashes the trainer with this traceback excerpt:\n\n  File \".../lightning/pytorch/trainer/call.py\", line 170, in _call_lightning_module_hook\n    output = fn(*args, **kwargs)\n  File \".../my_model.py\", line 88, in on_train_start\n    ...\n  RuntimeError: expected scalar type Float but found Double\n\nThe dispatch happens inside the module-hook caller. Locate the source file and the function definition that invokes the lightning-module hook. Report: file path (relative to repo root), function name, and start line number of the function definition.",
+      "scoreable": true,
+      "symbol_name": "_call_lightning_module_hook",
+      "type": "debug_from_trace",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "debug"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "hard",
+      "expected_queries": [
+        "symbol lightning.pytorch.trainer.trainer::Trainer._run_stage"
+      ],
+      "ground_truth": {
+        "file": "src/lightning/pytorch/trainer/trainer.py",
+        "function": "_run_stage",
+        "start_line": 1116
+      },
+      "id": "DG-06",
+      "primary_module": "lightning.pytorch.trainer.trainer",
+      "prompt": "A distributed run hangs and is killed; the last frame before the barrier is:\n\n  File \".../lightning/pytorch/trainer/trainer.py\", line 1118, in _run_stage\n    self.strategy.barrier(\"run-stage\")\n\nLocate the source file and the method definition that drives the run stage. Report: file path (relative to repo root), function name, and start line number of the method definition.",
+      "scoreable": true,
+      "symbol_name": "Trainer._run_stage",
+      "type": "debug_from_trace",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "debug"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "simple",
+      "expected_queries": [
+        "symbols lightning.pytorch.callbacks.finetuning",
+        "symbol lightning.pytorch.callbacks.finetuning::BaseFinetuning.freeze"
+      ],
+      "ground_truth": {
+        "entry_point": "BaseFinetuning.freeze",
+        "primary_file": "src/lightning/pytorch/callbacks/finetuning.py"
+      },
+      "id": "FT-01",
+      "primary_module": "lightning.pytorch.callbacks.finetuning",
+      "prompt": "We want to add a `freeze_until_epoch` capability to the finetuning callback so users can defer layer unfreezing without subclassing. Locate the primary extension point: the module and the class.method where the freezing behaviour is implemented and where this feature would be added. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "scoreable": true,
+      "symbol_name": "BaseFinetuning.freeze",
+      "type": "feature_scaffolding",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "feature"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "medium",
+      "expected_queries": [
+        "symbols lightning.pytorch.callbacks.early_stopping",
+        "symbol lightning.pytorch.callbacks.early_stopping::EarlyStopping._evaluate_stopping_criteria"
+      ],
+      "ground_truth": {
+        "entry_point": "EarlyStopping._evaluate_stopping_criteria",
+        "primary_file": "src/lightning/pytorch/callbacks/early_stopping.py"
+      },
+      "id": "FT-02",
+      "primary_module": "lightning.pytorch.callbacks.early_stopping",
+      "prompt": "We want to add a `relative_threshold` mode to the EarlyStopping callback so improvement can be judged as a fraction of the current best rather than an absolute delta. Locate the primary extension point: the module and the class.method that decides whether the stopping criteria are met. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "scoreable": true,
+      "symbol_name": "EarlyStopping._evaluate_stopping_criteria",
+      "type": "feature_scaffolding",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "feature"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "medium",
+      "expected_queries": [
+        "symbols lightning.pytorch.callbacks.model_checkpoint",
+        "symbol lightning.pytorch.callbacks.model_checkpoint::ModelCheckpoint._save_checkpoint"
+      ],
+      "ground_truth": {
+        "entry_point": "ModelCheckpoint._save_checkpoint",
+        "primary_file": "src/lightning/pytorch/callbacks/model_checkpoint.py"
+      },
+      "id": "FT-03",
+      "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
+      "prompt": "We want to add optional checkpoint compression (gzip) to ModelCheckpoint so saved files take less disk space. Locate the primary extension point: the module and the class.method that performs the actual checkpoint write, where compression would hook in. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "scoreable": true,
+      "symbol_name": "ModelCheckpoint._save_checkpoint",
+      "type": "feature_scaffolding",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "feature"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "simple",
+      "expected_queries": [
+        "symbols lightning.pytorch.callbacks.timer",
+        "symbol lightning.pytorch.callbacks.timer::Timer._check_time_remaining"
+      ],
+      "ground_truth": {
+        "entry_point": "Timer._check_time_remaining",
+        "primary_file": "src/lightning/pytorch/callbacks/timer.py"
+      },
+      "id": "FT-04",
+      "primary_module": "lightning.pytorch.callbacks.timer",
+      "prompt": "We want the Timer callback to emit a warning when the elapsed time crosses a configurable fraction (e.g. 90%) of the allotted duration, so users get an early heads-up before training is stopped. Locate the primary extension point: the module and the class.method that compares elapsed time against the duration, where the warning logic would be added. Report: primary file path (relative to repo root) and the entry point as `ClassName.method_name`.",
+      "scoreable": true,
+      "symbol_name": "Timer._check_time_remaining",
+      "type": "feature_scaffolding",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "feature"
+    },
+    {
+      "benchmark_shaped": true,
+      "difficulty": "hard",
+      "expected_queries": [
+        "symbols lightning.fabric.utilities.seed",
+        "symbol lightning.fabric.utilities.seed::seed_everything"
+      ],
+      "ground_truth": {
+        "entry_point": "seed_everything",
+        "primary_file": "src/lightning/fabric/utilities/seed.py"
+      },
+      "id": "FT-05",
+      "primary_module": "lightning.fabric.utilities.seed",
+      "prompt": "We want to add deterministic CUDA seeding to the seed utilities so that GPU runs can be made fully reproducible from a single entry point. Locate the primary extension point: the module and the top-level function that sets all RNG seeds, where the new CUDA-determinism option would be wired in. Report: primary file path (relative to repo root) and the entry point as the function name.",
+      "scoreable": true,
+      "symbol_name": "seed_everything",
+      "type": "feature_scaffolding",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "feature"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "file_count": 3,
+        "files_changed": [
+          "src/lightning/pytorch/trainer/connectors/callback_connector.py",
+          "src/lightning/pytorch/trainer/connectors/logger_connector/logger_connector.py",
+          "src/lightning/pytorch/trainer/trainer.py"
+        ]
+      },
+      "id": "RI-01",
+      "issue_number": 21294,
+      "issue_url": "https://github.com/Lightning-AI/pytorch-lightning/issues/21294",
+      "pr_closes_issue": true,
+      "pr_number": 21632,
+      "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21632",
+      "primary_module": "lightning.pytorch.trainer.connectors.callback_connector",
+      "prompt": "No way to silence the `litmodels` advertisement\n\n### Bug description\n\nRunning `trainer.fit` with default checkpointing currently prints\n```\n\ud83d\udca1 Tip: For seamless cloud uploads and versioning, try installing [litmodels](https://pypi.org/project/litmodels/) to enable LitModelCheckpoint, which syncs automatically with the Lightning model registry.\n``` \n\nThis advertisement is displayed even if `litmodels` is installed, but not used.\n\nI don't need any \"cloud uploads and versioning\". In fact, I am often working with proprietary models and restricted data. I sincerely hope that this \"tip\" isn't suggesting that `lightning` is going to automatically upload anything anywhere (whether I have this `litmodels` package installed or not).\n\nPlease, do one of the following (in order of personal preference):\n1) remove this advertisement\n2) only show this advertisement when appropriate (perhaps, if you detect that the user does have `litmodels` installed or is already using some \"cloud\"-related stuff)\n3) provide a way to silence this advertisement\n\n### What version are you seeing the problem on?\n\nv2.5",
+      "scoreable": true,
+      "source": "real_issue",
+      "type": "real_issue",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "real_issue"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "file_count": 3,
+        "files_changed": [
+          "src/lightning/pytorch/callbacks/lr_finder.py",
+          "src/lightning/pytorch/tuner/lr_finder.py",
+          "src/lightning/pytorch/tuner/tuning.py"
+        ]
+      },
+      "id": "RI-02",
+      "issue_number": 21757,
+      "issue_url": "https://github.com/Lightning-AI/pytorch-lightning/issues/21757",
+      "pr_closes_issue": true,
+      "pr_number": 21758,
+      "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21758",
+      "primary_module": "lightning.pytorch.callbacks.lr_finder",
+      "prompt": "`LearningRateFinder` fails due to missing `weights_only` parameter in checkpoint restore\n\n### Bug description\n\n  ## Summary\n`LearningRateFinder` fails when restoring its internally created temporary checkpoint because it does not expose or forward a `weights_only` parameter.  \nSince PyTorch \u2265 2.6 defaults to `weights_only=True` for `torch.load`, Lightning attempts a *weights\u2011only* load on a checkpoint that contains full module objects, causing an `UnpicklingError`.\n\nManual checkpoint loading works correctly when `weights_only=False` is explicitly passed.\n\nThis makes `lr_find()` unusable for any model whose checkpoint includes non\u2011trivial Python objects (e.g., custom modules).\n\n---\n\n ## Environment\n- PyTorch: 2.12.x\n- Lightning: 2.4.x\n- Python: 3.11\n- OS: Windows (Jupyter environment)",
+      "scoreable": true,
+      "source": "real_issue",
+      "type": "real_issue",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "real_issue"
+    },
+    {
+      "difficulty": "simple",
+      "ground_truth": {
+        "file_count": 1,
+        "files_changed": [
+          "src/lightning/fabric/utilities/throughput.py"
+        ]
+      },
+      "id": "RI-03",
+      "issue_number": 21677,
+      "issue_url": "https://github.com/Lightning-AI/pytorch-lightning/issues/21677",
+      "pr_closes_issue": true,
+      "pr_number": 21743,
+      "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21743",
+      "primary_module": "lightning.fabric.utilities.throughput",
+      "prompt": "FLOPs numbers are inconsistent\n\n### Bug description\n\nThe FLOPs numbers in [throughput.py](https://github.com/Lightning-AI/pytorch-lightning/blob/master/src/lightning/fabric/utilities/throughput.py) for H100 and H200 GPUs have some inconsistencies that have caused me some confusion when switching between GPU types: \n\n- all H200 and the H100 NVL GPU seem to be using sparse FLOPs numbers \n- the H100 SXM and PCIE models seem to using dense FLOPs, see: https://resources.nvidia.com/en-us-gpu-resources/h100-datasheet-24306\n\nI think it would be good to standardize on one and also document the behaviour as there's a factor 2 difference between the two.\n\n### What version are you seeing the problem on?\n\nmaster",
+      "scoreable": true,
+      "source": "real_issue",
+      "type": "real_issue",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "real_issue"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "file_count": 2,
+        "files_changed": [
+          "src/lightning/fabric/strategies/ddp.py",
+          "src/lightning/pytorch/strategies/ddp.py"
+        ]
+      },
+      "id": "RI-04",
+      "issue_number": 21567,
+      "issue_url": "https://github.com/Lightning-AI/pytorch-lightning/issues/21567",
+      "pr_closes_issue": true,
+      "pr_number": 21746,
+      "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/21746",
+      "primary_module": "lightning.fabric.strategies.ddp",
+      "prompt": "AccumulateGrad Warning\n\n### Bug description\n\nI get an AccumulateGrad warning when training with Fabric which doesn't happen with plain PyTorch. Not sure what is happening exactly, the current workaround is to disable the warning with `torch.autograd.graph.set_warn_on_accumulate_grad_stream_mismatch(False)`.\n\nThis is on Lightning 2.6.1\n\n### What version are you seeing the problem on?\n\nmaster\n\n### How to reproduce the bug\n\n```python\nfrom __future__ import annotations\n\nimport torch\nfrom lightning_fabric import Fabric\nfrom pytorch_lightning.demos.boring_classes import BoringModel, RandomDataset\nfrom torch.utils.data import DataLoader\n\nimport warnings\nwarnings.filterwarnings(message=\".*AccumulateGrad.*\", action=\"error\")\n\ndef main() -> None:\n    batch_size = 32\n    accumulation_steps = 2\n    max_steps = 20\n    fabric = Fabric(accelerator=\"auto\", devices=\"auto\")\n    fabric.launch()\n    model = BoringModel()\n    optimizer = torch.optim.Adam(params=model.parameters(), lr=1e-3)\n    model, optimizer = fabric.setup(model, optimizer)\n```",
+      "scoreable": true,
+      "source": "real_issue",
+      "type": "real_issue",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "real_issue"
+    },
+    {
+      "difficulty": "medium",
+      "ground_truth": {
+        "file_count": 3,
+        "files_changed": [
+          "pytorch_lightning/accelerators/cpu.py",
+          "pytorch_lightning/callbacks/device_stats_monitor.py",
+          "pytorch_lightning/utilities/imports.py"
+        ]
+      },
+      "id": "RI-05",
+      "issue_number": 11796,
+      "issue_url": "https://github.com/Lightning-AI/pytorch-lightning/issues/11796",
+      "note": "pre-rename issue (2022): GT paths use pytorch_lightning/ layout; verify against pre-rename commit before scoring",
+      "pr_closes_issue": false,
+      "pr_number": 11795,
+      "pr_url": "https://github.com/Lightning-AI/pytorch-lightning/pull/11795",
+      "primary_module": "pytorch_lightning.accelerators.cpu",
+      "prompt": "Improved control of device stats callbacks\n\n## Proposed refactor\nSeparate device stats monitoring into separate callbacks per-device, but sub-class from `DeviceStatsMonitor`. This preserves the desired change from #9032 to consolidate the interface, but also allows for fine-grained control.\n\n### Motivation\nWith #9032, all the accelerators were combined under a single `DeviceStatsMonitor` callback. This consolidated the API, but it also removed fine-grained control. For instance, the `GPUStatsMonitor` that is now being deprecated used to provide fine-grained control over the `nvidia-smi` stats that were tracked.\n\nHowever, the new interface defaults to using torch memory stats (which provide less info than nvidia-smi).\n\nRegardless of whether GPU stats are changed to default to `nvidia-smi`, the user no longer has control over what metrics are monitored. The proposed refactor would allow users to use `CPUStatsMonitor`, `GPUStatsMonitor`, etc. as before, while also keeping the consolidated `DeviceStatsMonitor` API.",
+      "scoreable": false,
+      "source": "real_issue",
+      "type": "real_issue",
+      "workflow_subtype": "pre_implementation_research",
+      "workflow_type": "real_issue"
     }
   ]
 }

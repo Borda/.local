@@ -125,7 +125,7 @@ reducing tool call count, elapsed time, and context consumption.
 
     Each run prints a coloured summary line to stdout via tqdm.write:
     [NN/TT] TASK_ID (type/difficulty) | model  | arm       | elapsed=  NNN.Ns | tokens= NNN.Nk |
-    calls= N (grep= N; glob= N; bash= N; skill= N)
+    calls= N (Gp= N; Gb= N; Bh= N; Sk= N; semble= N; blk= N; bfi= N)
     | erec= N% rrec= N%  sc= N%   ← quality=n/a when no ground truth
   Quality fields:
     erec  — exposure recall: rdeps found in output_text + codemap skill results (multi-form, 2+ components)
@@ -204,7 +204,6 @@ reducing tool call count, elapsed time, and context consumption.
       → captures final cumulative token usage (all cache partitions summed)
 """
 
-import argparse
 import json
 import os
 import re
@@ -218,10 +217,15 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
+import fire
 import pandas as pd
-from tqdm.auto import tqdm
+
+from rich.console import Console as _Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+
+_console = _Console()
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -357,6 +361,7 @@ class Task:
     prompt: str
     primary_module: str = ""
     difficulty: str = "unknown"
+    skill: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -378,20 +383,33 @@ def count_tokens(text: str) -> int:
 def find_index(repo_path: Path, explicit: Optional[Path]) -> Path:
     """Locate the pre-built codemap index for the target repo.
 
-    The index is built once by scan-index and excluded from benchmark timing. This function only
-    validates it exists before the run starts.
+    Checks ``.cache/codemap/`` first, then ``.cache/scan/``. Within each directory,
+    prefers ``<repo_name>.json``; falls back to the lexicographically first ``*.json`` file.
+    The index is built once by ``scan-index`` and is excluded from benchmark timing; this
+    function only validates it exists before any run starts.
+
+    Args:
+        repo_path: Root of the repository to benchmark.
+        explicit: Caller-supplied index path; returned as-is (resolved) when provided.
+
+    Returns:
+        Resolved absolute path to the located index file.
+
+    Raises:
+        FileNotFoundError: If no index is found under ``.cache/codemap/`` or ``.cache/scan/``
+            and ``explicit`` was not provided.
     """
     if explicit:
         return explicit.resolve()
-    scan_dir = repo_path / ".cache" / "scan"
-    preferred = scan_dir / f"{repo_path.name}.json"
-    if preferred.exists():
-        return preferred.resolve()
-    candidates = sorted(scan_dir.glob("*.json"))
-    if candidates:
-        return candidates[0].resolve()
+    for cache_dir in (repo_path / ".cache" / "codemap", repo_path / ".cache" / "scan"):
+        preferred = cache_dir / f"{repo_path.name}.json"
+        if preferred.exists():
+            return preferred.resolve()
+        candidates = sorted(cache_dir.glob("*.json"))
+        if candidates:
+            return candidates[0].resolve()
     raise FileNotFoundError(
-        f"No codemap index found in {scan_dir}.\n"
+        f"No codemap index found in {repo_path / '.cache'}.\n"
         f"Build it first (one-time, not measured):\n"
         f"  python plugins/codemap/bin/scan-index --root {repo_path}"
     )
@@ -481,6 +499,13 @@ class GroundTruth:
     _PATH_RE = re.compile(r"\bsrc/(lightning(?:/[a-zA-Z_][a-zA-Z0-9_]*)+)\.py\b")
 
     def __init__(self, index_path: Path, tasks: list[Task]) -> None:
+        """Load the codemap index and pre-compute expected rdep sets for each task.
+
+        Args:
+            index_path: Path to the pre-built codemap JSON index produced by ``scan-index``.
+            tasks: Task definitions used to derive per-task ground-truth rdep sets. Tasks
+                without a ``primary_module`` are skipped silently.
+        """
         with index_path.open() as f:
             index = json.load(f)
         self.all_modules: set[str] = {m["name"] for m in index.get("modules", []) if m.get("status") == "ok"}
@@ -938,9 +963,32 @@ Rules:
         self.repo_path = repo_path
         self.timeout = timeout
 
-    def run(self, task: Task, arm: str) -> BenchmarkRun:
-        """Run one task in one arm; parse stream-json for tool + token metrics."""
-        system_prompt = self._system_prompt(task.type, arm)
+    def run(
+        self,
+        task: Task,
+        arm: str,
+        update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
+    ) -> BenchmarkRun:
+        """Run one task in one arm and return the parsed metrics.
+
+        Launches a ``claude`` subprocess in stream-json mode and delegates event parsing
+        to ``_stream_events``. Retries up to two times when the API returns zero tokens
+        (connectivity failure). On the third failure the result is returned as-is.
+
+        Args:
+            task: The task to execute.
+            arm: Benchmark arm identifier (``plain``, ``codemap``, ``semble``, or
+                ``combined``). Controls which tools are allowed/disallowed and which
+                system prompt supplement is injected.
+            update_fn: Optional live-progress callback invoked (at most every 0.5 s)
+                with ``(elapsed_seconds, partial_result)``. Used by the rich Progress bar
+                in ``Benchmark.run()``. Pass ``None`` to disable.
+
+        Returns:
+            Populated ``BenchmarkRun`` with tool counts, token metrics, timing, and
+            raw output text ready for quality scoring.
+        """
+        system_prompt = self._system_prompt(task.skill or task.type, arm)
         disallow_flags = self._ARM_DISALLOWED.get(arm, [])
         allow_flags = self._ARM_ALLOWED.get(arm, [])
         cmd = [
@@ -956,11 +1004,12 @@ Rules:
         _MAX_API_RETRIES = 2
         for attempt in range(_MAX_API_RETRIES + 1):
             result = BenchmarkRun(arm=arm, task_id=task.id, task_type=task.type, model=self.model_short, success=False)
-            self._stream_events(cmd, result)
+            self._stream_events(cmd, result, update_fn=update_fn)
             # 0-token result = API connectivity failure (ConnectionRefused / FailedToOpenSocket);
             # retry up to 2 times before surfacing as error.
             if result.input_tokens == 0 and result.output_tokens == 0 and attempt < _MAX_API_RETRIES:
                 result.error = f"api_failure_retry_{attempt + 1}"
+                time.sleep(2**attempt)  # exponential backoff: 1s, 2s
                 continue
             break
         return result
@@ -980,13 +1029,32 @@ Rules:
             env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")
         return env
 
-    def _stream_events(self, cmd: list[str], result: BenchmarkRun) -> None:
-        """Launch claude, enforce wall-clock timeout, and parse stream-json into *result*."""
+    def _stream_events(
+        self,
+        cmd: list[str],
+        result: BenchmarkRun,
+        update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
+    ) -> None:
+        """Launch the claude subprocess, enforce wall-clock timeout, and parse stream-json events.
+
+        Reads stdout line-by-line and routes each JSON event to ``_handle_event``.
+        Calls ``update_fn(elapsed_s, result)`` at most every 0.5 s while the subprocess
+        is running. Kills the subprocess via a ``threading.Timer`` at ``self.timeout``
+        seconds and records the error on *result*.
+
+        Args:
+            cmd: Full ``claude`` CLI command list, constructed by ``run()``.
+            result: Mutable ``BenchmarkRun`` populated in-place as events arrive.
+            update_fn: Optional throttled callback; signature
+                ``(elapsed_seconds: float, result: BenchmarkRun) -> None``.
+                Invoked at most every 0.5 s. Pass ``None`` to disable.
+        """
         pending: dict[str, float] = {}
         pending_codemap_ids: set[str] = set()  # all codemap skill calls (for erec corpus)
         pending_rdeps_ids: set[str] = set()  # codemap rdeps calls specifically (for sc)
         pending_semble_ids: set[str] = set()  # all semble MCP calls (for erec corpus)
         t_start = time.monotonic()
+        _last_update = 0.0
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -1012,6 +1080,9 @@ Rules:
                     self._handle_event(
                         event, result, pending, pending_codemap_ids, pending_rdeps_ids, pending_semble_ids, ts
                     )
+                    if update_fn and (ts - _last_update) >= 0.5:
+                        update_fn(ts - t_start, result)
+                        _last_update = ts
                 stderr_out = proc.stderr.read() if proc.stderr else ""
                 proc.wait(timeout=10)
                 if not result.success and not result.error and stderr_out:
@@ -1159,12 +1230,22 @@ Rules:
     ) -> None:
         """Accumulate token count and capture codemap/semble results from a tool result content field.
 
+        Skips content that contains ``<tool_use_error>`` or starts with
+        ``"Launching skill:"`` (skill-executor status placeholders).
+
         Args:
-            content: Raw content from the tool_result event.
-            result: The accumulating BenchmarkRun.
-            is_codemap: True when this result is from any codemap skill call (appended to codemap_results for erec).
-            is_rdeps: True when this result is from a codemap:query rdeps call (saved to skill_result_text for sc).
-            is_semble: True when this result is from a semble MCP call (appended to semble_results for erec).
+            content: Raw ``content`` field from the ``tool_result`` event — either a plain
+                string or a list of content blocks.
+            result: The accumulating ``BenchmarkRun`` updated in-place.
+            is_codemap: True when this result is from any codemap skill call. Not currently
+                used for corpus capture (rdeps calls are distinguished by ``is_rdeps``);
+                reserved for future per-call filtering.
+            is_rdeps: True when this result is from a ``codemap:query rdeps`` call.
+                Appends the text to ``result.codemap_results`` and ``result.skill_result_text``
+                (used for exposure-recall corpus and skill-coverage scoring).
+            is_semble: True when this result is from a semble MCP tool call
+                (``mcp__semble__search`` or ``mcp__semble__find_related``). Appends the
+                text to ``result.semble_results`` for the exposure-recall corpus.
         """
 
         def _capture(text: str) -> None:
@@ -1437,7 +1518,7 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
         erec_part = f"erec={q.erec:4.0%} rrec={q.rrec:4.0%}"
         sc_part = f"  sc={q.skill_coverage:4.0%}" if q.skill_coverage is not None else ""
         top10_part = f"  e@10={q.erec_top10:4.0%}" if q.erec_top10_k >= 5 else ""
-        quality_suffix = f"\t| {erec_part}{sc_part}{top10_part}"
+        quality_suffix = f" | {erec_part}{sc_part}{top10_part}"
     else:
         quality_suffix = "\t| quality=n/a"
     # Flag possibly-degenerate codemap runs (very few total calls with 0% quality)
@@ -1445,14 +1526,11 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
     if arm == "codemap" and result.tools.total < 6 and result.tools.skill > 0 and q.scored and q.erec == 0.0:
         degenerate_note = " ⚑degenerate?"
     task_num = task.id.lstrip("T")
-    task_type = task.type.replace("feature", "feat").replace("refactor", "refac").replace("review", "rev")
     difficulty = task.difficulty
     return (
-        f"[{run_n:0{len(str(total_runs))}}/{total_runs}] {task_num} ({task_type}/{difficulty}) | {model_short:<6} | {arm:<8}"
-        f"\t| elapsed={result.elapsed_s:7.1f}s"
-        f" | tokens={result.input_tokens / 1000:7.1f}k"
-        f" | calls={result.tools.total:3}"
-        f" (grep={tc.grep:3}; glob={tc.glob:2}; bash={tc.bash:3}; skill={tc.skill:2}; semble={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2})"
+        f"[{run_n:0{len(str(total_runs))}}/{total_runs}] {task_num} ({difficulty}) | {model_short:<6} | {arm:<8}"
+        f" | time={result.elapsed_s:5.1f}s | tok={result.input_tokens / 1000:5.1f}k | calls={result.tools.total:3}"
+        f" (Gp={tc.grep:2}; Gb={tc.glob:2}; Bh={tc.bash:2}; Sk={tc.skill:2}; Sm={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2})"
         f"{quality_suffix}"
         f"{error_suffix}{degenerate_note}"
     )
@@ -1515,12 +1593,12 @@ class Benchmark:
         arm: str,
         run_n: int,
         total_runs: int,
-        pbar: tqdm,
+        print_fn: Callable[[str], None],
         metadata: dict,
+        update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
     ) -> BenchmarkRun:
-        pbar.set_description(f"{task.id} | {model_short} | {arm}")
         runner = ModelRunner(model_short, model_id, self.repo_path, timeout=_MODEL_TIMEOUT.get(model_short, 300))
-        result = runner.run(task, arm)
+        result = runner.run(task, arm, update_fn=update_fn)
         # Build corpora for v2 quality scoring
         exposure_corpus = (
             result.output_text + "\n" + "\n".join(result.codemap_results) + "\n" + "\n".join(result.semble_results)
@@ -1572,19 +1650,52 @@ class Benchmark:
                 )
         self._write_tool_log(result)
         color = _COLOR_FAIL if not result.success else _ARM_COLOR.get(arm, "")
-        tqdm.write(f"{color}{_run_line(run_n, total_runs, task, model_short, arm, result)}{_COLOR_RESET}")
-        pbar.update(1)
+        print_fn(f"{color}{_run_line(run_n, total_runs, task, model_short, arm, result)}{_COLOR_RESET}")
         self._save_snapshot(metadata)
         return result
 
     def run(self, metadata: dict) -> list[BenchmarkRun]:
         """Execute all benchmark runs and return the accumulated results."""
         total_runs = len(self.tasks) * len(self.arms) * len(self.models) * self.repeat
-        pbar = tqdm(total=total_runs, unit="run", dynamic_ncols=True)
-        for run_n, (task, model_short, model_id, arm, _) in enumerate(self._iter_combos(), start=1):
-            result = self._run_single(task, model_short, model_id, arm, run_n, total_runs, pbar, metadata)
-            self.results.append(result)
-        pbar.close()
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=_console,
+        ) as progress:
+            outer = progress.add_task("running", total=total_runs)
+            for run_n, (task, model_short, model_id, arm, _) in enumerate(self._iter_combos(), start=1):
+                sub = progress.add_task(f"  {task.id} | {model_short} | {arm}", total=None)
+                progress.update(outer, description=f"{task.id} | {model_short} | {arm}")
+
+                def _make_update(
+                    sub_id: int = sub,
+                ) -> Callable[[float, "BenchmarkRun"], None]:
+                    def _update(elapsed: float, run: BenchmarkRun) -> None:
+                        calls = run.tools.total
+                        tool_live = f"B={run.tools.bash} G={run.tools.grep} Sk={run.tools.skill} Sm={run.tools.semble}"
+                        progress.update(
+                            sub_id,
+                            description=f"  {elapsed / 60:.1f}m calls={calls} {tool_live}",
+                        )
+
+                    return _update
+
+                result = self._run_single(
+                    task,
+                    model_short,
+                    model_id,
+                    arm,
+                    run_n,
+                    total_runs,
+                    print_fn=lambda text: progress.console.print(text, markup=False, highlight=False),
+                    metadata=metadata,
+                    update_fn=_make_update(),
+                )
+                progress.remove_task(sub)
+                progress.advance(outer)
+                self.results.append(result)
         return self.results
 
     def _write_tool_log(self, result: BenchmarkRun) -> None:
@@ -1614,46 +1725,51 @@ class Benchmark:
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Codemap skill benchmark — agent exploration cost with vs without structural context."
-    )
-    parser.add_argument("--repo-path", required=True, type=Path, help="Path to the indexed repo")
-    parser.add_argument("--index", type=Path, help="Explicit index path (auto-discovered if omitted)")
-    parser.add_argument(
-        "--tasks-file",
-        type=Path,
-        default=Path("benchmarks/tasks-agentic.json"),
-        help="Task definition file (default: benchmarks/tasks-agentic.json)",
-    )
-    parser.add_argument(
-        "--model", choices=list(MODELS.keys()), help="Run a single model tier (default: all — haiku/sonnet/opus)"
-    )
-    parser.add_argument(
-        "--arm", choices=["plain", "codemap", "semble", "combined"], help="Run only one arm (default: all four)"
-    )
-    parser.add_argument("--all", action="store_true", help="Run all tasks in both arms")
-    parser.add_argument("--tasks", nargs="+", metavar="ID", help="Run specific task IDs only")
-    parser.add_argument("--report", action="store_true", help="Write markdown report alongside JSON")
-    parser.add_argument("--output", type=Path, help="JSON output path (auto-named if omitted)")
-    parser.add_argument(
-        "-r",
-        "--repeat",
-        type=int,
-        default=1,
-        metavar="N",
-        help="Repeat runs per (task, arm, model) cell (default: 1); median aggregated",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="Print plan without running claude")
-    args = parser.parse_args()
+def main(
+    repo_path: Path,
+    index: Path = None,
+    tasks_file: Path = Path("benchmarks/suites/tasks-agentic.json"),
+    model: str = None,
+    arm: str = None,
+    run_all: bool = False,
+    tasks: list[str] = None,
+    report: bool = False,
+    output: Path = None,
+    repeat: int = 1,
+    dry_run: bool = False,
+) -> None:
+    """Codemap skill benchmark — agent exploration cost with vs without structural context.
 
-    if not args.all and not args.tasks and not args.arm and not args.dry_run:
-        parser.error("Specify --all to run everything, or narrow with --tasks / --arm.")
+    Args:
+        repo_path: Path to the indexed repo.
+        index: Explicit index path (auto-discovered if omitted).
+        tasks_file: Task definition file.
+        model: Run a single model tier (default: all — haiku/sonnet/opus).
+        arm: Run only one arm (default: all four).
+        run_all: Run all tasks in both arms.
+        tasks: Run specific task IDs only.
+        report: Write markdown report alongside JSON.
+        output: JSON output path (auto-named if omitted).
+        repeat: Repeat runs per (task, arm, model) cell; median aggregated.
+        dry_run: Print plan without running claude.
+    """
+    # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
+    repo_path = Path(repo_path)
+    if index is not None:
+        index = Path(index)
+    tasks_file = Path(tasks_file)
+    if output is not None:
+        output = Path(output)
+
+    if not run_all and not tasks and not arm and not dry_run:
+        sys.exit("Specify --run_all to run everything, or narrow with --tasks / --arm.")
 
     # ── Load tasks ────────────────────────────────────────────────────────
-    if not args.tasks_file.exists():
-        sys.exit(f"Tasks file not found: {args.tasks_file}")
-    with args.tasks_file.open() as f:
+    if not tasks_file.exists():
+        sys.exit(f"Tasks file not found: {tasks_file}")
+    with tasks_file.open() as f:
+        raw = json.load(f)
+        task_list = raw["tasks"] if isinstance(raw, dict) else raw
         all_tasks: list[Task] = [
             Task(
                 id=t["id"],
@@ -1661,31 +1777,32 @@ def main() -> None:
                 prompt=t["prompt"],
                 primary_module=t.get("primary_module", ""),
                 difficulty=t.get("difficulty", "unknown"),
+                skill=t.get("skill", ""),
             )
-            for t in json.load(f)
+            for t in task_list
         ]
-    if args.tasks:
-        all_tasks = [t for t in all_tasks if t.id in args.tasks]
+    if tasks:
+        all_tasks = [t for t in all_tasks if t.id in tasks]
     if not all_tasks:
         sys.exit("No tasks to run.")
 
     # ── Locate prerequisites (validated before any run starts) ──────────
-    repo_path = args.repo_path.resolve()
-    index_path = find_index(repo_path, args.index)
+    repo_path = repo_path.resolve()
+    index_path = find_index(repo_path, index)
 
-    arms = [args.arm] if args.arm else ["plain", "codemap", "semble", "combined"]
+    arms = [arm] if arm else ["plain", "codemap", "semble", "combined"]
 
     if "semble" in arms or "combined" in arms:
         check_semble_mcp()
-    repeat = max(1, args.repeat)
-    models_to_run: list[tuple[str, str]] = [(args.model, MODELS[args.model])] if args.model else list(MODELS.items())
+    repeat = max(1, repeat)
+    models_to_run: list[tuple[str, str]] = [(model, MODELS[model])] if model else list(MODELS.items())
     total_runs = len(all_tasks) * len(arms) * len(models_to_run) * repeat
 
     model_names = ", ".join(m for m, _ in models_to_run)
 
     # ── Output path + tool-call log ───────────────────────────────────────
     date_slug = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    output_path = args.output or (RESULTS_DIR / f"code-{date_slug}.json")
+    output_path = output or (RESULTS_DIR / f"code-{date_slug}.json")
     # Tool-call log: one JSON line per run, for post-run investigation of bash commands
     log_dir = Path(".temp") / f"bench-{date_slug}"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -1698,7 +1815,7 @@ def main() -> None:
     print(f"[→ total runs:  {total_runs}]")
     print(f"[→ tool log:    {log_path}]")
 
-    if args.dry_run:
+    if dry_run:
         for task, model_short, _, arm, rep in _iter_combos(all_tasks, models_to_run, arms, repeat):
             print(f"  [DRY RUN] {task.id} ({task.type}) | {model_short} | {arm} | rep={rep + 1}/{repeat}")
         return
@@ -1740,9 +1857,9 @@ def main() -> None:
     all_results = benchmark.run(metadata)
 
     # ── Report ────────────────────────────────────────────────────────────
-    if args.report:
-        report = Report(all_results, all_tasks, {**metadata, "date": date_slug})
-        report_md = report.render()
+    if report:
+        report_obj = Report(all_results, all_tasks, {**metadata, "date": date_slug})
+        report_md = report_obj.render()
         report_path = output_path.with_suffix(".md")
         report_path.write_text(report_md)
         print(f"\n→ Report: {report_path}")
@@ -1751,4 +1868,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(main)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Codemap real-codebase benchmark — agentic runner for S / FN / RV / OSS / D task series.
+"""Codemap real-codebase benchmark — agentic runner for SE / FN / RV / CQ / BR / DG / FT / RI task series.
 
 ## What this measures
 
@@ -9,10 +9,14 @@ Two arms answer the same structural questions about the target repository:
   codemap  — same tools plus scan-query via PATH and the Skill tool
 
 Task types:
-  S  — symbol_extraction   (locate symbol lines in source)
-  FN — fn_call_graph       (count function callers)
+  SE — symbol_extraction   (locate symbol lines in source)
+  FN — fn_call_graph       (caller name recall for a function)
   RV — review_assistance   (doc/coverage/rdep metrics for code review)
-  Q  — code_quality        (coupled, xrefs, combined health checks)
+  CQ — code_quality        (coupled, xrefs, combined health checks)
+  BR — develop_blast_radius (caller recall >=70% before modifying a function)
+  DG — debug_from_trace    (root-cause function + file from a traceback)
+  FT — feature_scaffolding (files to create or modify for a new feature)
+  RI — real_issue          (files relevant to a real GitHub issue)
 
 Primary metric:
   token_ratio = codemap_input_tokens / plain_input_tokens per task (lower = better for codemap)
@@ -26,11 +30,11 @@ Secondary:
   python plugins/codemap/bin/scan-index --root ./<repo-dir>
 
   # Run all tasks, both arms, haiku model
-  python benchmarks/run-codemap-bench.py --repo-path ./<repo-dir> --all
+  python benchmarks/run-codemap-bench.py --repo-path ./<repo-dir> --run-all
 
   # Single task, codemap arm only
   python benchmarks/run-codemap-bench.py --repo-path ./<repo-dir> \\
-      --tasks SE-01 --arm codemap --model haiku
+      --tasks "['SE-01']" --arm codemap --model haiku
 
 ## Requirements
 
@@ -41,7 +45,6 @@ Secondary:
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
@@ -56,30 +59,31 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+import fire
 import pandas as pd
+from rich.console import Console as _Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 _USE_COLOR = sys.stdout.isatty()
 _GREEN = "\033[32m" if _USE_COLOR else ""
 _RED = "\033[31m" if _USE_COLOR else ""
 _BLUE = "\033[34m" if _USE_COLOR else ""
 _RESET = "\033[0m" if _USE_COLOR else ""
-
-try:
-    from rich.console import Console as _Console
-    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
-
-    _console: _Console | None = _Console()
-    _IS_RICH_AVAILABLE = True
-except ImportError:
-    _console = None
-    _IS_RICH_AVAILABLE = False
+_console = _Console()
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-TASKS_FILE = Path(__file__).parent / "tasks-bench.json"
+TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
+PATCH_TASKS_FILE = Path(__file__).parent / "suites" / "tasks-patch.json"
 RESULTS_DIR = Path("benchmarks/results")
+
+# Synthetic task type assigned to tasks loaded via --tasks-file that carry a `skill`
+# field instead of a `type` field (e.g. tasks-code.json). No evaluator is registered for
+# this type; tasks of this type are forced scoreable=False and contribute token-ratio and
+# tool-count data only — never accuracy.
+_EXTERNAL_TASK_TYPE = "develop_skill"
 
 MODELS: dict[str, str] = {
     "haiku": "claude-haiku-4-5-20251001",
@@ -95,14 +99,19 @@ _CMD = ["claude", "-p", "--verbose", "--output-format", "stream-json"]
 _ARM_DISALLOWED: dict[str, list[str]] = {
     # plain: also block scan-query via Bash so the control arm can't use the index
     # Write/Edit/NotebookEdit blocked on both arms to prevent filesystem contamination during runs
+    # Bash(python3:*)/Bash(python:*) blocked on both arms: prevents implement-validate spirals
+    # in real_issue tasks where agents write repro scripts and edit source via heredoc.
     "plain": [
         "--disallowed-tools",
-        "Skill,Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*)",
+        "Skill,Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(scan-query:*),Bash(python3:*),Bash(python:*)",
     ],
-    "codemap": ["--disallowed-tools", "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related"],
+    "codemap": [
+        "--disallowed-tools",
+        "Write,Edit,NotebookEdit,mcp__semble__search,mcp__semble__find_related,Bash(python3:*),Bash(python:*)",
+    ],
 }
 _ARM_ALLOWED: dict[str, list[str]] = {
-    "codemap": ["--allowedTools", "Bash(scan-query:*),Bash(python3:*)"],
+    "codemap": ["--allowedTools", "Bash(scan-query:*)"],
 }
 
 # ---------------------------------------------------------------------------
@@ -112,6 +121,15 @@ _ARM_ALLOWED: dict[str, list[str]] = {
 _REPO_NAME: str = "the repository"
 _REPO_NAMESPACE: list[str] = ["lightning", "examples"]
 _REPO_DEFAULT_PATH: str | None = None
+
+
+class SandboxError(Exception):
+    """Raised when a patch sandbox cannot be set up or torn down.
+
+    Distinct from a failing test: a SandboxError means the harness could not
+    create the worktree, check out the pre-fix commit, or apply the diff — the
+    pass/fail signal is unobtainable, not that the patch is semantically wrong.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +146,8 @@ class BenchQuality:
         correct: True when the primary metric matches ground truth within tolerance.
         metric_expected: Ground-truth value of the primary metric.
         metric_got: Value extracted from model output; None when extraction failed.
-        recall: Fraction of expected callers found (develop_blast_radius only).
-        caller_count_gt: Ground-truth unique caller count (develop_blast_radius only).
+        recall: Optional evaluator-specific recall metric; set by develop_br, rv (symbol tasks), debug, feature, and real_issue evaluators. None for count-based evaluators (symbol_extraction, code_quality).
+        caller_count_gt: Ground-truth unique caller count; used by caller-list evaluators for both fn_call_graph and develop_blast_radius.
         evaluator_used: Name of the evaluator function that produced this score
             (diagnostic; None when no evaluator ran).
         extracted_metric: Raw value pulled from output_text before comparison — an
@@ -163,6 +181,8 @@ class BenchRun:
         task_type: Task type string (e.g. "symbol_extraction").
         model: Short model tier name.
         success: True when the claude subprocess returned a successful result.
+        workflow_type: Coarse workflow grouping (e.g. "query", "debug", "feature").
+            Falls back to ``task_type`` when the task carries no ``workflow_type`` field.
         input_tokens: Total input token count (all cache partitions summed).
         output_tokens: Total output token count.
         elapsed_s: Wall-clock seconds.
@@ -173,6 +193,9 @@ class BenchRun:
         skill_calls: Number of Skill tool invocations.
         grep_calls: Number of Grep tool invocations.
         bash_calls: Number of Bash tool invocations.
+        patch_pass: Patch tasks only — True when the failing test passed after the
+            agent's diff was applied in a sandbox; None for non-patch tasks or when
+            no diff could be extracted from the agent output.
     """
 
     arm: str
@@ -180,6 +203,7 @@ class BenchRun:
     task_type: str
     model: str
     success: bool
+    workflow_type: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
     elapsed_s: float = 0.0
@@ -198,6 +222,7 @@ class BenchRun:
     incomplete: bool = False  # budget exhausted before final answer; excluded from accuracy
     codemap_methods: list[str] = field(default_factory=list)
     codemap_not_covered: list[str] = field(default_factory=list)
+    patch_pass: bool | None = None  # patch tasks only: True if failing test passed after applying the agent diff
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +230,7 @@ class BenchRun:
 # ---------------------------------------------------------------------------
 
 _PLAIN_SYSTEM = """You are a developer investigating the {repo_name} codebase.
+Your current working directory IS the repository root ({repo_path}) — use relative paths (e.g. `find . -name "*.py"`) or absolute paths starting with {repo_path}.
 Answer the question using Grep, Bash, Glob, and Read. Do NOT use the Skill tool.
 Do NOT use scan-query or any codemap binary — not via bare command, not via python/python3 path.
 Rely on standard filesystem and grep operations only.
@@ -216,6 +242,7 @@ For caller count tasks: report the integer count of unique production callers.
 For caller list tasks: report all callers as a list of qualified names (module::function)."""
 
 _CODEMAP_SYSTEM_TEMPLATE = """You are a developer investigating the {repo_name} codebase.
+Your current working directory IS the repository root ({repo_path}) — use relative paths (e.g. `find . -name "*.py"`) or absolute paths starting with {repo_path}.
 You have the scan-query structural index tool available.
 
 For ALL structural questions (symbol lookup, call graph, coverage, coupling, xrefs),
@@ -331,6 +358,89 @@ def _resolve_index(repo_path: Path, explicit: Path | None = None) -> Path:
     )
 
 
+def _normalize_external_task(task: dict) -> dict:
+    """Normalize one task from a --tasks-file into the harness task schema.
+
+    External task files use a different schema from tasks-bench.json: ``queries``
+    instead of ``expected_queries``, a ``skill`` field instead of ``type``, and
+    ``ground_truth_keys`` instead of materialized ``ground_truth`` values (e.g.
+    tasks-code.json). Files that DO carry materialized ``ground_truth`` and an
+    explicit ``scoreable: true`` (e.g. tasks-debug.json, tasks-feature.json,
+    tasks-oss.json) are evaluated normally — their ``scoreable`` field is
+    preserved so the registered evaluator runs.
+
+    The original task dict is not mutated; a shallow copy is returned.
+
+    Args:
+        task: Raw task dict loaded from a --tasks-file.
+
+    Returns:
+        A new task dict with ``expected_queries``, ``type``, and ``scoreable``
+        keys populated for the harness.
+
+    Examples:
+        >>> t = _normalize_external_task(
+        ...     {"id": "B-01", "prompt": "p", "skill": "fix",
+        ...      "queries": [{"cmd": "rdeps", "args": ["m"]}]}
+        ... )
+        >>> t["type"], t["scoreable"], t["expected_queries"]
+        ('develop_skill', False, [{'cmd': 'rdeps', 'args': ['m']}])
+        >>> "queries" in t  # original key dropped after rename
+        False
+        >>> scored = _normalize_external_task(
+        ...     {"id": "DBG-01", "type": "debug_from_trace", "scoreable": True,
+        ...      "prompt": "p", "ground_truth": {"function": "f", "file": "a.py", "start_line": 1}}
+        ... )
+        >>> scored["scoreable"]
+        True
+    """
+    norm = dict(task)
+    if "queries" in norm and "expected_queries" not in norm:
+        norm["expected_queries"] = norm.pop("queries")
+    # Harness requires a `type` for BenchRun, logging, and summary grouping.
+    if not norm.get("type"):
+        norm["type"] = _EXTERNAL_TASK_TYPE
+    # Only force scoreable=False when no materialized ground truth present.
+    # Tasks with ground_truth + explicit scoreable=True are scored via their evaluator.
+    if not norm.get("ground_truth"):
+        norm["scoreable"] = False
+    elif "scoreable" not in norm:
+        norm["scoreable"] = True
+    return norm
+
+
+def _load_tasks_file(path: Path) -> list[dict]:
+    """Load and normalize an additional task file passed via --tasks-file.
+
+    Accepts either a bare JSON list of tasks or a ``{"repo": ..., "tasks": [...]}``
+    object (the tasks-bench.json shape). Every loaded task is run through
+    :func:`_normalize_external_task`.
+
+    Args:
+        path: Path to the JSON task file.
+
+    Returns:
+        List of normalized task dicts.
+
+    Raises:
+        FileNotFoundError: When the file does not exist.
+        ValueError: When the JSON is malformed or has an unexpected shape.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"--tasks-file not found: {path}")
+    try:
+        raw = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--tasks-file {path} is not valid JSON: {exc}") from exc
+    if isinstance(raw, dict):
+        raw_tasks = raw.get("tasks", [])
+    elif isinstance(raw, list):
+        raw_tasks = raw
+    else:
+        raise ValueError(f"--tasks-file {path} must be a JSON list or object with a 'tasks' key")
+    return [_normalize_external_task(t) for t in raw_tasks]
+
+
 def _subprocess_env(index_path: Path) -> dict[str, str]:
     """Build subprocess environment with codemap bin dir and CODEMAP_INDEX set.
 
@@ -421,11 +531,13 @@ def _parse_scan_query_subcommand(command: str) -> Optional[str]:
 # Quality evaluators — extract key metric from model output text
 # ---------------------------------------------------------------------------
 
-_EVAL_VER_NAME_RECALL = "v2"  # _evaluate_develop_br
-_EVAL_VER_COUNT_TOL = "v1"  # _evaluate_fn
+_EVAL_VER_NAME_RECALL = "v3"  # _evaluate_develop_br (v3: file-dump resolution + Forms 9/10)
 _EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
 _EVAL_VER_REVIEW = "v2"  # _evaluate_rv — recall-only for symbol-bearing tasks
 _EVAL_VER_OSS = "v1"  # _evaluate_oss
+_EVAL_VER_DEBUG = "v1"  # _evaluate_debug
+_EVAL_VER_FEATURE = "v1"  # _evaluate_feature
+_EVAL_VER_REAL_ISSUE = "v1"  # _evaluate_real_issue
 
 
 def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
@@ -443,7 +555,7 @@ def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
         42
         >>> _extract_int("nothing here", [r"(\\d+) caller"])
     """
-    text = re.sub(r"\*+", "", text)  # strip bold markers before matching
+    text = re.sub(r"\*+", " ", text)  # strip bold markers before matching
     for pat in patterns:
         m = re.search(pat, text, re.IGNORECASE)
         if m:
@@ -566,6 +678,7 @@ def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
             got_start = int(m.group(1))
 
     correct = got_start is not None and abs(got_start - expected_start) <= 5
+    # metric_got/metric_expected is a line-number ratio printed as `recall=` diagnostic — not a recall metric
     return BenchQuality(
         scored=True,
         correct=correct,
@@ -581,59 +694,6 @@ def _evaluate_symbol(task: dict, output_text: str) -> BenchQuality:
             "threshold": 5,
             "method": "line_tolerance",
         },
-    )
-
-
-def _evaluate_fn(task: dict, output_text: str) -> BenchQuality:
-    """Evaluate fn_call_graph task: check whether unique_caller_count is in output.
-
-    Args:
-        task: Task dict from tasks-bench.json.
-        output_text: Agent's full response text.
-
-    Returns:
-        BenchQuality with correct=True when extracted count is within 10% of ground truth.
-    """
-    gt = task["ground_truth"]
-    expected = gt["unique_caller_count"]
-    got = _extract_int(
-        output_text,
-        [
-            r"(\d+)\s+unique\s+caller",
-            r"(\d+)\s+unique\s+(?:production\s+)?function",
-            r"(\d+)\s+unique",
-            r"(\d+)\s+production\s+functions?",
-            r"(\d+)\s+direct\s+caller",
-            r"(\d+)\s+caller",
-            r"total[:\s]+(\d+)",
-            r"called\s+(?:by\s+)?(\d+)",
-            r"(\d+)\s+(?:module|file|function)s?\s+call",
-            r"count[:\s]+(\d+)",
-        ],
-    )
-    # Fallback: max numbered list item (e.g. model lists "1. foo\n2. bar\n...\n12. baz")
-    if got is None:
-        list_nums = [int(m) for m in re.findall(r"(?m)^\s*(\d+)\.\s+\S", output_text)]
-        if list_nums:
-            got = max(list_nums)
-
-    # Fallback: count qualified-name lines (module::function or `module::function`)
-    if got is None:
-        qname_lines = re.findall(r"(?m)^\s*`?\w[\w.]+::\w[\w.]+`?", output_text)
-        if len(qname_lines) >= 3:  # avoid triggering on short incidental mentions
-            got = len(qname_lines)
-
-    correct = _int_close(got, expected, tolerance=0.10)
-    return BenchQuality(
-        scored=True,
-        correct=correct,
-        metric_expected=expected,
-        metric_got=got,
-        extraction_failed=got is None,
-        evaluator_used="_evaluate_fn",
-        evaluator_version=_EVAL_VER_COUNT_TOL,
-        extracted_metric=got,
-        scoring_detail=_count_tol_detail(expected, got),
     )
 
 
@@ -872,6 +932,16 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
 
     expected_set = set(expected_callers)
 
+    # Pre-process: if communication.md Long Reply File Dump was used, read actual file.
+    # Pattern: "→ .temp/reply-<slug>-YYYY-MM-DD.md" (plain or backtick-wrapped).
+    _dump_m = re.search(r"^→\s+`?([^`\s]+\.md)`?\s*$", output_text, re.MULTILINE)
+    if _dump_m:
+        try:
+            with open(_dump_m.group(1)) as _df:
+                output_text = output_text + "\n" + _df.read()
+        except OSError:
+            pass
+
     # Extract qualified names. Three forms, then normalize to module::Class.method.
 
     _ns_alt = "|".join(re.escape(n) for n in _REPO_NAMESPACE)
@@ -938,6 +1008,41 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
             found_raw.append(f"{cur_hdr}.{fn_name}")
         else:
             found_raw.append(f"{cur_hdr}::{fn_name}")
+    # Form 9: bold-backtick module header + numbered backtick list.
+    # Handles: **`ns.mod::Class`** or **ns.module** followed by "1. `Class.method`".
+    # Agent used this format when outputting caller lists for FN/BR tasks.
+    _bold_hdrs_9 = [
+        (bm.start(), bm.group(1))
+        for bm in re.finditer(
+            rf"\*\*`?({_ns_pat}(?:\.[\w]+)+(?:::[\w.]+)?)`?\*\*",
+            output_text,
+        )
+    ]
+    for nm in re.finditer(r"^\s*\d+\.\s+`([\w.]+(?:::[\w.]+)?)`", output_text, re.MULTILINE):
+        item_text = nm.group(1).rstrip("`")
+        item_pos = nm.start()
+        cur_hdr_9 = None
+        for hpos, hval in _bold_hdrs_9:
+            if hpos < item_pos:
+                cur_hdr_9 = hval
+            else:
+                break
+        if "::" in item_text:
+            found_raw.append(item_text)
+        elif cur_hdr_9:
+            hdr_mod = cur_hdr_9.split("::")[0] if "::" in cur_hdr_9 else cur_hdr_9
+            found_raw.append(f"{hdr_mod}::{item_text}")
+    # Form 10: slash-paired abbreviated callers under same class prefix.
+    # Handles "ns.mod::Class.fn1/fn2" (agent collapsed two callers into one token).
+    for sm in re.finditer(
+        rf"\b({_ns_pat}(?:\.[\w]+)*(?:::[\w]+)?\.[\w]+)/([\w]+)\b",
+        output_text,
+    ):
+        left = sm.group(0).split("/")[0]
+        right_fn = sm.group(2)
+        found_raw.append(left)
+        cls_prefix = left.rsplit(".", 1)[0] if "." in left else left
+        found_raw.append(f"{cls_prefix}.{right_fn}")
 
     # Normalize all extracted tokens → canonical module::Class.method
     _ns_prefixes = [""] + [f"{n}." for n in _REPO_NAMESPACE]
@@ -1035,13 +1140,325 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
     )
 
 
+def _evaluate_debug(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate debug_from_trace task: function name + file basename both present.
+
+    Correct when both the function name and the file basename (without .py) appear
+    in the output. recall = hits / 2; correct requires recall == 1.0.
+
+    Args:
+        task: Task dict with ground_truth.file, .function, .start_line.
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality with recall = fraction of {function, file_basename} found.
+    """
+    gt = task["ground_truth"]
+    fn_name: str = gt.get("function", "")
+    file_path: str = gt.get("file", "")
+    file_stem = file_path.split("/")[-1].replace(".py", "")
+
+    fn_found = bool(fn_name) and bool(re.search(r"\b" + re.escape(fn_name) + r"\b", output_text, re.IGNORECASE))
+    file_found = bool(file_stem) and bool(re.search(r"\b" + re.escape(file_stem) + r"\b", output_text, re.IGNORECASE))
+
+    total = sum([bool(fn_name), bool(file_stem)])
+    hits = sum([fn_found, file_found])
+    recall = hits / total if total > 0 else 0.0
+
+    return BenchQuality(
+        scored=True,
+        correct=fn_found and file_found,
+        recall=round(recall, 3),
+        extraction_failed=not fn_found and not file_found,
+        evaluator_used="_evaluate_debug",
+        evaluator_version=_EVAL_VER_DEBUG,
+        scoring_detail={
+            "function": fn_name,
+            "fn_found": fn_found,
+            "file": file_path,
+            "file_found": file_found,
+            "recall": recall,
+            "method": "word_boundary_match",
+        },
+    )
+
+
+def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate feature_scaffolding task: entry_point method + primary_file basename.
+
+    Correct when both the method name (last component of entry_point) and the
+    primary_file basename appear in the output.
+
+    Args:
+        task: Task dict with ground_truth.entry_point, .primary_file.
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality with correct=True when both components found.
+    """
+    gt = task["ground_truth"]
+    entry_point: str = gt.get("entry_point", "")
+    primary_file: str = gt.get("primary_file", "")
+    method = entry_point.split(".")[-1] if "." in entry_point else entry_point
+    file_stem = primary_file.split("/")[-1].replace(".py", "")
+
+    ep_found = bool(method) and bool(re.search(r"\b" + re.escape(method) + r"\b", output_text, re.IGNORECASE))
+    file_found = bool(file_stem) and bool(re.search(r"\b" + re.escape(file_stem) + r"\b", output_text, re.IGNORECASE))
+
+    total = sum([bool(entry_point), bool(primary_file)])
+    hits = sum([ep_found, file_found])
+    recall = hits / total if total > 0 else 0.0
+
+    return BenchQuality(
+        scored=True,
+        correct=ep_found and file_found,
+        recall=round(recall, 3),
+        extraction_failed=not ep_found and not file_found,
+        evaluator_used="_evaluate_feature",
+        evaluator_version=_EVAL_VER_FEATURE,
+        scoring_detail={
+            "entry_point": entry_point,
+            "ep_found": ep_found,
+            "primary_file": primary_file,
+            "file_found": file_found,
+            "recall": recall,
+            "method": "word_boundary_match",
+        },
+    )
+
+
+_RI_RECALL_THRESHOLD = 0.70
+
+
+def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate real_issue task: file-set recall over ground_truth.files_changed.
+
+    Recall = |GT file basenames found as whole words in output| / |GT files|.
+    Correct when recall >= 0.70.
+
+    Args:
+        task: Task dict with ground_truth.files_changed list.
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality with recall and correct=True when recall >= 0.70.
+    """
+    gt = task["ground_truth"]
+    gt_files: list[str] = gt.get("files_changed", [])
+    if not gt_files:
+        return BenchQuality(scored=False)
+
+    found = sum(
+        1
+        for fp in gt_files
+        if (stem := fp.split("/")[-1].replace(".py", ""))
+        and re.search(r"\b" + re.escape(stem) + r"\b", output_text, re.IGNORECASE)
+    )
+    recall = found / len(gt_files)
+
+    return BenchQuality(
+        scored=True,
+        correct=recall >= _RI_RECALL_THRESHOLD,
+        recall=round(recall, 3),
+        metric_expected=len(gt_files),
+        metric_got=found,
+        extraction_failed=found == 0,
+        evaluator_used="_evaluate_real_issue",
+        evaluator_version=_EVAL_VER_REAL_ISSUE,
+        scoring_detail={
+            "gt_files": gt_files,
+            "files_found": found,
+            "recall": recall,
+            "threshold": _RI_RECALL_THRESHOLD,
+            "method": "word_boundary_match",
+        },
+    )
+
+
 _EVALUATORS = {
     "symbol_extraction": _evaluate_symbol,
-    "fn_call_graph": _evaluate_develop_br,  # name-recall: _evaluate_fn count-tolerance grabs prose totals, not caller enumeration
+    "fn_call_graph": _evaluate_develop_br,  # name-recall, not count-tolerance: callers are enumerated, not counted
     "review_assistance": _evaluate_rv,
     "code_quality": _evaluate_oss,
     "develop_blast_radius": _evaluate_develop_br,
+    "debug_from_trace": _evaluate_debug,
+    "feature_scaffolding": _evaluate_feature,
+    "real_issue": _evaluate_real_issue,
 }
+
+
+# ---------------------------------------------------------------------------
+# Patch sandbox (Tier E)
+# ---------------------------------------------------------------------------
+
+# Match the start of a unified diff: a `--- ` / `+++ ` header pair followed by an
+# `@@` hunk header. Anchored at line start (MULTILINE) so prose preceding the diff
+# is skipped; the diff is assumed to run to EOF (agents emit one diff block last).
+_DIFF_RE = re.compile(r"^(?:--- .+\n\+\+\+ .+\n@@.+)", re.MULTILINE)
+
+
+def _extract_diff(text: str) -> str | None:
+    """Return the first unified diff block found in *text*, or None.
+
+    The match anchors on a ``---``/``+++``/``@@`` header sequence and returns
+    everything from there to the end of the string, since agents emit the patch
+    as a trailing fenced block. Surrounding markdown fences (```` ```diff ````)
+    are stripped from the tail when present.
+
+    Args:
+        text: Full agent response text.
+
+    Returns:
+        The unified diff substring, or None when no diff header is found.
+
+    Examples:
+        >>> _extract_diff("here is the fix\\n--- a/x.py\\n+++ b/x.py\\n@@ -1 +1 @@\\n-a\\n+b\\n")
+        '--- a/x.py\\n+++ b/x.py\\n@@ -1 +1 @@\\n-a\\n+b\\n'
+        >>> _extract_diff("no diff here") is None
+        True
+    """
+    match = _DIFF_RE.search(text)
+    if not match:
+        return None
+    diff = text[match.start() :]
+    # Drop a trailing markdown code fence if the agent wrapped the diff.
+    fence = diff.find("\n```")
+    if fence != -1:
+        diff = diff[:fence]
+    if not diff.endswith("\n"):
+        diff += "\n"
+    return diff
+
+
+class PatchSandbox:
+    """Apply an agent-produced diff in an isolated git worktree and run its test.
+
+    The sandbox checks out the task's pre-fix commit in a detached ``git worktree``
+    under ``/tmp``, applies the candidate diff, runs the single failing test, then
+    tears the worktree down. It measures one signal only: whether that specific
+    test passes after the patch — not full-suite health or semantic correctness.
+
+    Args:
+        repo_path: Root of a local clone of the target repo with full git history.
+        task: Patch-task dict; must carry ``id``, ``pre_fix_commit``, and either
+            ``test_command`` or ``failing_test``.
+
+    Examples:
+        >>> sandbox = PatchSandbox("/path/to/clone", {  # doctest: +SKIP
+        ...     "id": "PT-01",
+        ...     "pre_fix_commit": "abc123",
+        ...     "failing_test": "tests/test_x.py::test_y",
+        ... })
+        >>> sandbox.run(diff_text)  # doctest: +SKIP
+        True
+    """
+
+    def __init__(self, repo_path: str | Path, task: dict) -> None:
+        self.repo_path = Path(repo_path)
+        self.task = task
+        self._worktree = Path("/tmp") / f"patch-bench-{task['id']}"
+
+    def _test_argv(self) -> list[str]:
+        """Build the pytest argv from the task's test_command or failing_test."""
+        cmd = self.task.get("test_command")
+        if cmd:
+            return shlex.split(cmd)
+        failing = self.task.get("failing_test")
+        if not failing:
+            raise SandboxError(f"task {self.task['id']}: no test_command or failing_test")
+        return ["pytest", failing, "-x"]
+
+    def run(self, diff_text: str) -> bool:
+        """Apply *diff_text* at the pre-fix commit and run the failing test.
+
+        Args:
+            diff_text: Unified diff text produced by the agent.
+
+        Returns:
+            True when the test fails at the pre-fix commit, the patch applies
+            cleanly, and the test passes after patching.
+            False when the patch fails to apply, the test still fails after
+            patching, or the test already passes before patching.
+
+        Raises:
+            SandboxError: When the worktree cannot be created (e.g. unknown
+                pre-fix commit) — the pass/fail signal is then unobtainable.
+        """
+        commit = self.task.get("pre_fix_commit")
+        if not commit:
+            raise SandboxError(f"task {self.task['id']}: missing pre_fix_commit")
+
+        # Pre-clean any stale worktree from a crashed prior run.
+        self._cleanup()
+        try:
+            create = subprocess.run(
+                ["git", "-C", str(self.repo_path), "worktree", "add", "--detach", str(self._worktree), commit],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if create.returncode != 0:
+                raise SandboxError(f"task {self.task['id']}: worktree add failed at {commit}: {create.stderr.strip()}")
+
+            # Verify the test fails at the pre-fix commit before applying the patch.
+            baseline = subprocess.run(
+                [*self._test_argv(), "--timeout=60", "-q"],
+                cwd=str(self._worktree),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if baseline.returncode == 0:
+                # Test already passes before the patch — cannot validate the fix.
+                return False
+
+            # Apply the diff. Prefer `git apply` (respects a/ b/ prefixes); fall back to patch -p1.
+            patch_file = self._worktree / ".patch-bench.diff"
+            patch_file.write_text(diff_text)
+            applied = subprocess.run(
+                ["git", "-C", str(self._worktree), "apply", "--reject", "--whitespace=nowarn", str(patch_file)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if applied.returncode != 0:
+                fallback = subprocess.run(
+                    ["patch", "-p1", "-i", str(patch_file)],
+                    cwd=str(self._worktree),
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if fallback.returncode != 0:
+                    # Patch did not apply — count as a failed patch, not a sandbox error.
+                    return False
+
+            test = subprocess.run(
+                [*self._test_argv(), "--timeout=60", "-q"],
+                cwd=str(self._worktree),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            return test.returncode == 0
+        except subprocess.TimeoutExpired:
+            return False
+        finally:
+            self._cleanup()
+
+    def _cleanup(self) -> None:
+        """Remove the temp worktree; never raise (best-effort teardown)."""
+        if not self._worktree.exists():
+            return
+        try:
+            subprocess.run(
+                ["git", "-C", str(self.repo_path), "worktree", "remove", "--force", str(self._worktree)],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (subprocess.SubprocessError, OSError):
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -1087,9 +1504,11 @@ class BenchRunner:
             BenchRun with all metrics filled.
         """
         system = (
-            _PLAIN_SYSTEM.format(repo_name=_REPO_NAME)
+            _PLAIN_SYSTEM.format(repo_name=_REPO_NAME, repo_path=str(self.repo_path))
             if arm == "plain"
-            else _CODEMAP_SYSTEM_TEMPLATE.format(repo_name=_REPO_NAME, index_path=str(self.index_path))
+            else _CODEMAP_SYSTEM_TEMPLATE.format(
+                repo_name=_REPO_NAME, index_path=str(self.index_path), repo_path=str(self.repo_path)
+            )
         )
         disallow_flags = _ARM_DISALLOWED.get(arm, [])
         allow_flags = _ARM_ALLOWED.get(arm, [])
@@ -1113,15 +1532,31 @@ class BenchRunner:
             system,
             task["prompt"],
         ]
-        result = BenchRun(arm=arm, task_id=task["id"], task_type=task["type"], model=self.model_short, success=False)
+        # workflow_type groups tasks at a coarser level than task_type; default to task_type
+        # so legacy task files (no workflow_type field) still group sensibly.
+        workflow_type = task.get("workflow_type") or task["type"]
+        result = BenchRun(
+            arm=arm,
+            task_id=task["id"],
+            task_type=task["type"],
+            model=self.model_short,
+            success=False,
+            workflow_type=workflow_type,
+        )
         _MAX_RETRIES = 2
         for attempt in range(_MAX_RETRIES + 1):
             result = BenchRun(
-                arm=arm, task_id=task["id"], task_type=task["type"], model=self.model_short, success=False
+                arm=arm,
+                task_id=task["id"],
+                task_type=task["type"],
+                model=self.model_short,
+                success=False,
+                workflow_type=workflow_type,
             )
             self._stream(cmd, result, arm, update_fn=update_fn)
             if result.input_tokens == 0 and result.output_tokens == 0 and attempt < _MAX_RETRIES:
                 result.error = f"api_failure_retry_{attempt + 1}"
+                time.sleep(2**attempt)  # exponential backoff: 1s, 2s
                 continue
             break
 
@@ -1130,6 +1565,11 @@ class BenchRunner:
         # token luck, not blast-radius comprehension.
         if result.error == "error_max_turns":
             result.incomplete = True
+        elif task.get("scoreable") is False:
+            # Task explicitly opted out of scoring (scoreable=false) — e.g. tasks-code.json,
+            # RI-05 (wrong repo layout). Record token ratio + tool counts only; exclude from
+            # accuracy denominator.
+            result.quality = BenchQuality(scored=False)
         else:
             evaluator = _EVALUATORS.get(task["type"])
             if evaluator is not None:
@@ -1337,6 +1777,27 @@ class BenchRunner:
 # ---------------------------------------------------------------------------
 
 
+def _run_correct_symbol(run: BenchRun) -> str:
+    """Single-character status symbol for a completed run.
+
+    Returns:
+        'c' — contaminated (plain arm accessed codemap binary)
+        '!' — incomplete (budget exhausted)
+        '+' — correct
+        '-' — scored but incorrect
+        '?' — not scored
+    """
+    if run.error == "contaminated":
+        return "c"
+    if run.incomplete:
+        return "!"
+    if run.quality.correct:
+        return "+"
+    if run.quality.scored:
+        return "-"
+    return "?"
+
+
 def _effective_recall(run: Optional[BenchRun]) -> Optional[float]:
     """Recall value for summary — mirrors per-run log fallback logic.
 
@@ -1377,6 +1838,8 @@ def _safe_ratio(num: Optional[float], den: Optional[float]) -> float:
         >>> import math; math.isnan(_safe_ratio(10, 0))
         True
     """
+    if num is None or den is None:
+        return float("nan")
     return num / den if den else float("nan")
 
 
@@ -1441,6 +1904,75 @@ def _token_ratio_table(runs: list[BenchRun]) -> pd.DataFrame:
             )
         )
     return pd.DataFrame([asdict(r) for r in rows])
+
+
+def _workflow_type_of(run: BenchRun) -> str:
+    """Return the workflow grouping key for a run.
+
+    Falls back to ``task_type`` when ``workflow_type`` is unset (legacy task
+    files that predate the field).
+
+    Args:
+        run: A completed benchmark run.
+
+    Returns:
+        The workflow grouping key (e.g. ``"query"``, ``"debug"``).
+
+    Examples:
+        >>> _workflow_type_of(BenchRun(arm="plain", task_id="X", task_type="symbol_extraction", model="haiku", success=True, workflow_type="query"))
+        'query'
+        >>> _workflow_type_of(BenchRun(arm="plain", task_id="X", task_type="symbol_extraction", model="haiku", success=True))
+        'symbol_extraction'
+    """
+    return run.workflow_type or run.task_type
+
+
+def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
+    """Print a per-workflow_type breakdown of token ratio and accuracy.
+
+    Groups runs by :func:`_workflow_type_of`. For each workflow type, reports
+    the median codemap/plain token ratio (computed per task that has both arms)
+    and the codemap-arm accuracy over scored, completed runs.
+
+    Args:
+        runs: All benchmark runs (may span multiple arms and workflow types).
+    """
+    by_wf: dict[str, list[BenchRun]] = defaultdict(list)
+    for r in runs:
+        by_wf[_workflow_type_of(r)].append(r)
+    if not by_wf:
+        return
+
+    print("\nPer-workflow_type breakdown:")
+    hdr = f"  {'workflow_type':<22}  {'n_tasks':>7}  {'tok× (med)':>10}  {'cm_acc':>10}"
+    print(hdr)
+    print("  " + "-" * (len(hdr) - 2))
+    for wf in sorted(by_wf):
+        wf_runs = by_wf[wf]
+        # Token ratio per task: codemap_tok / plain_tok where both arms ran.
+        by_task: dict[str, dict[str, BenchRun]] = defaultdict(dict)
+        for r in wf_runs:
+            by_task[r.task_id][r.arm] = r
+        ratios: list[float] = []
+        for arms in by_task.values():
+            plain = arms.get("plain")
+            codemap = arms.get("codemap")
+            if plain and codemap and plain.input_tokens:
+                ratios.append(codemap.input_tokens / plain.input_tokens)
+        ratio_str = f"{statistics.median(ratios):>10.2f}" if ratios else f"{'n/a':>10}"
+
+        cm_scored = [
+            r
+            for r in wf_runs
+            if r.arm == "codemap" and r.quality.scored and not r.quality.extraction_failed and not r.incomplete
+        ]
+        if cm_scored:
+            n_correct = sum(1 for r in cm_scored if r.quality.correct)
+            acc_str = f"{n_correct / len(cm_scored):>9.1%}"
+        else:
+            acc_str = f"{'n/a':>10}"
+        n_tasks = len(by_task)
+        print(f"  {wf:<22}  {n_tasks:>7}  {ratio_str}  {acc_str}")
 
 
 def _print_summary(runs: list[BenchRun], model: str) -> None:
@@ -1559,6 +2091,20 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
             if all_methods:
                 print(f"  codemap query methods used: {', '.join(all_methods)}")
 
+    # Tier E: patch pass rate (failing test → fix → test pass). Only shown when any
+    # run carries a patch_pass signal; agents emitting prose without a diff score 0.
+    patch_runs = [r for r in runs if r.patch_pass is not None]
+    if patch_runs:
+        for arm in ("plain", "codemap"):
+            arm_patch = [r for r in patch_runs if r.arm == arm]
+            if not arm_patch:
+                continue
+            n_pass = sum(1 for r in arm_patch if r.patch_pass)
+            rate = n_pass / len(arm_patch)
+            print(f"  patch_pass_rate ({arm}) = {n_pass}/{len(arm_patch)}  ({rate:.1%})")
+
+    _print_workflow_breakdown(runs)
+
 
 def _save_results(runs: list[BenchRun], model: str) -> Path:
     """Serialise run results to JSONL in the results directory.
@@ -1586,37 +2132,41 @@ def _save_results(runs: list[BenchRun], model: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _parse_args() -> argparse.Namespace:
-    """Parse command-line arguments.
-
-    Returns:
-        Parsed namespace with all benchmark configuration.
-    """
-    parser = argparse.ArgumentParser(description="Codemap benchmark — agentic runner.")
-    parser.add_argument("--repo-path", type=str, default=None, help="Path to the target repository clone")
-    parser.add_argument("--index-path", type=str, default=None, help="Path to codemap index JSON")
-    parser.add_argument("--tasks", nargs="+", default=None, help="Task IDs to run (e.g. SE-01 FN-02)")
-    parser.add_argument(
-        "--task-type",
-        choices=["symbol_extraction", "fn_call_graph", "review_assistance", "code_quality", "develop_blast_radius"],
-        help="Run tasks of this type only",
-    )
-    parser.add_argument("--arm", choices=list(ARMS) + ["all"], default="all", help="Which arm(s) to run (default: all)")
-    parser.add_argument("--model", choices=list(MODELS.keys()), default="haiku")
-    parser.add_argument("--all", dest="run_all", action="store_true", help="Run all tasks")
-    parser.add_argument("--no-save", action="store_true", help="Skip writing JSONL results")
-    parser.add_argument("--timeout", type=int, default=None, help="Per-run timeout in seconds")
-    return parser.parse_args()
-
-
-def main() -> None:
+def main(
+    repo_path: Path = None,
+    index_path: Path = None,
+    tasks: list[str] = None,
+    tasks_file: list[str] = None,
+    task_type: str = None,
+    arm: str = "all",
+    model: str = "haiku",
+    run_all: bool = False,
+    patch: bool = False,
+    no_save: bool = False,
+    timeout: int = None,
+) -> None:
     """Entry point: load tasks, run selected arms, print summary.
 
-    Exits with code 1 when any run fails.
+    Args:
+        repo_path: Path to the target repository clone.
+        index_path: Path to codemap index JSON.
+        tasks: Task IDs to run as a Python list literal, e.g. ``--tasks "['SE-01', 'FN-02']"``.
+        tasks_file: Additional task JSON file(s) to load alongside tasks-bench.json (repeatable).
+        task_type: Run tasks of this type only.
+        arm: Which arm(s) to run (default: all).
+        model: Model to use (default: haiku).
+        run_all: Run all tasks (CLI flag: ``--run-all``).
+        patch: Run patch tasks from tasks-patch.json.
+        no_save: Skip writing JSONL results.
+        timeout: Per-run timeout in seconds.
     """
     global _REPO_NAME, _REPO_NAMESPACE, _REPO_DEFAULT_PATH
 
-    args = _parse_args()
+    # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
+    if repo_path is not None:
+        repo_path = Path(repo_path)
+    if index_path is not None:
+        index_path = Path(index_path)
 
     # Load tasks first — repo header provides identity for evaluators and fallback path
     try:
@@ -1640,11 +2190,49 @@ def main() -> None:
         _REPO_NAMESPACE = list(repo_meta["namespace"])
     _REPO_DEFAULT_PATH = repo_meta.get("default_path")
 
+    # Append tasks from any --tasks-file; scoreable depends on whether ground_truth is present.
+    external_ids: list[str] = []
+    if tasks_file:
+        for tf in tasks_file:
+            try:
+                extra = _load_tasks_file(Path(tf))
+            except (FileNotFoundError, ValueError) as exc:
+                print(f"ERROR: {exc}")
+                sys.exit(1)
+            known_ids = {t["id"] for t in all_tasks}
+            dupes = [t["id"] for t in extra if t["id"] in known_ids]
+            if dupes:
+                print(f"ERROR: --tasks-file {tf} has task IDs already loaded: {sorted(set(dupes))}")
+                sys.exit(1)
+            all_tasks.extend(extra)
+            external_ids.extend(t["id"] for t in extra)
+            n_scored = sum(1 for t in extra if t.get("scoreable") is not False)
+            print(f"Loaded {len(extra)} task(s) from {tf} ({n_scored} scoreable)")
+
+    # Append patch tasks (Tier E) when --patch is set. Unlike --tasks-file tasks,
+    # patch tasks keep their own scoreable flag and are sandbox-executed in _run_combo.
+    patch_ids: list[str] = []
+    if patch:
+        try:
+            with PATCH_TASKS_FILE.open() as f:
+                _patch_raw = json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"ERROR: cannot read {PATCH_TASKS_FILE}: {exc}")
+            sys.exit(1)
+        patch_tasks = _patch_raw.get("tasks", []) if isinstance(_patch_raw, dict) else _patch_raw
+        known_ids = {t["id"] for t in all_tasks}
+        dupes = [t["id"] for t in patch_tasks if t["id"] in known_ids]
+        if dupes:
+            print(f"ERROR: tasks-patch.json has task IDs already loaded: {sorted(set(dupes))}")
+            sys.exit(1)
+        all_tasks.extend(patch_tasks)
+        patch_ids.extend(t["id"] for t in patch_tasks)
+        print(f"Loaded {len(patch_tasks)} patch task(s) from {PATCH_TASKS_FILE.name}")
+
+    patch_id_set = set(patch_ids)
+
     # Resolve repo path
-    repo_path: Optional[Path] = None
-    if args.repo_path:
-        repo_path = Path(args.repo_path)
-    else:
+    if not repo_path:
         _cands: list[Path] = []
         if _REPO_DEFAULT_PATH:
             _cands.append(Path(_REPO_DEFAULT_PATH))
@@ -1652,7 +2240,7 @@ def main() -> None:
             if cand.is_dir():
                 repo_path = cand
                 break
-        if repo_path is None:
+        if not repo_path:
             print("ERROR: cannot find repo. Pass --repo-path.")
             sys.exit(1)
     if not repo_path.is_dir():
@@ -1661,42 +2249,47 @@ def main() -> None:
 
     # Resolve index
     try:
-        index_path = _resolve_index(repo_path, Path(args.index_path) if args.index_path else None)
+        index_path = _resolve_index(repo_path, index_path)
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}")
         sys.exit(1)
 
     # Filter tasks
-    tasks = all_tasks
-    if args.tasks:
-        ids = set(args.tasks)
-        tasks = [t for t in tasks if t["id"] in ids]
-        missing = ids - {t["id"] for t in tasks}
+    task_list = all_tasks
+    if tasks:
+        ids = set(tasks)
+        task_list = [t for t in task_list if t["id"] in ids]
+        missing = ids - {t["id"] for t in task_list}
         if missing:
             print(f"ERROR: task IDs not found: {sorted(missing)}")
             sys.exit(1)
-    elif args.task_type:
-        tasks = [t for t in tasks if t["type"] == args.task_type]
-    elif not args.run_all:
-        print("Specify --tasks, --task-type, or --all")
-        sys.exit(1)
+    elif task_type:
+        task_list = [t for t in task_list if t["type"] == task_type]
+    elif not run_all:
+        # Without --all: run only the externally-supplied subset (--tasks-file / --patch).
+        subset = set(external_ids) | patch_id_set
+        if subset:
+            task_list = [t for t in task_list if t["id"] in subset]
+        else:
+            print("Specify --tasks, --task-type, --tasks-file, --patch, or --all")
+            sys.exit(1)
 
-    if not tasks:
+    if not task_list:
         print("No tasks matched.")
         sys.exit(1)
 
     # Determine arms
-    arms_to_run = list(ARMS) if args.arm == "all" else [args.arm]
+    arms_to_run = list(ARMS) if arm == "all" else [arm]
 
     # Build runner
-    model_short = args.model
+    model_short = model
     model_id = MODELS[model_short]
-    timeout = args.timeout or _MODEL_TIMEOUT[model_short]
+    run_timeout = timeout or _MODEL_TIMEOUT[model_short]
     runner = BenchRunner(
-        model_short=model_short, model_id=model_id, repo_path=repo_path, index_path=index_path, timeout=timeout
+        model_short=model_short, model_id=model_id, repo_path=repo_path, index_path=index_path, timeout=run_timeout
     )
 
-    print(f"Codemap benchmark: {len(tasks)} tasks × {len(arms_to_run)} arm(s) × model={model_short}")
+    print(f"Codemap benchmark: {len(task_list)} tasks × {len(arms_to_run)} arm(s) × model={model_short}")
     print(f"  index: {index_path}")
     print(f"  repo:  {repo_path}")
     print()
@@ -1706,26 +2299,33 @@ def main() -> None:
     print("  RV  review_assistance     — doc-gap / rdep / coverage counts for review")
     print("  CQ  code_quality          — coupling, broken xrefs, doc+coverage health")
     print("  BR  develop_blast_radius  — enumerate direct callers before a change (recall ≥ 0.70)")
+    print("  DG  debug_from_trace      — identify fn + file from traceback/log (word-boundary match)")
+    print("  FT  feature_scaffolding   — identify files to create/modify for a feature (word-boundary match)")
+    print("  RI  real_issue            — reproduce + locate files for a GitHub issue (recall ≥ 0.70)")
     print()
 
     runs: list[BenchRun] = []
-    combos = [(task, arm) for task in tasks for arm in arms_to_run]
+    combos = [(task, arm) for task in task_list for arm in arms_to_run]
 
     def _run_combo(task: dict, arm: str, log_fn: Any, update_fn: Optional[Any] = None) -> BenchRun:
         run = runner.run(task, arm, update_fn=update_fn)
+        # Tier E: for scoreable patch tasks, extract the agent diff and execute it in a
+        # sandbox to record whether the failing test passes. Non-scoreable stubs (placeholder
+        # SHA / no reference) skip the sandbox and report structural GT only.
+        if task["id"] in patch_id_set and task.get("scoreable") is not False and run.success:
+            diff_text = _extract_diff(run.output_text)
+            if diff_text is not None:
+                try:
+                    run.patch_pass = PatchSandbox(repo_path, task).run(diff_text)
+                except SandboxError as exc:
+                    run.error = run.error or f"sandbox_error: {exc}"
+                    run.patch_pass = None
+            else:
+                # No diff block in output — agent produced prose only; scores as a fail.
+                run.patch_pass = False
         runs.append(run)
         status = "✓" if run.success else "✗"
-        correct = (
-            "c"
-            if run.error == "contaminated"
-            else "!"
-            if run.incomplete
-            else "+"
-            if run.quality.correct
-            else "-"
-            if run.quality.scored
-            else "?"
-        )
+        correct = _run_correct_symbol(run)
         tok = run.input_tokens
         tok_str = f"{tok / 1_000_000:.1f}M" if tok >= 1_000_000 else f"{tok // 1000:3d}k"
         _eff = _effective_recall(run)
@@ -1768,56 +2368,35 @@ def main() -> None:
 
         return _update
 
-    if _IS_RICH_AVAILABLE and _console is not None:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=_console,
-        ) as progress:
-            total = len(combos)
-            outer = progress.add_task("running", total=total)
-            for done, (task, arm) in enumerate(combos, 1):
-                caller_count = task.get("ground_truth", {}).get("unique_caller_count", 0)
-                if task.get("type") in ("develop_blast_radius", "fn_call_graph"):
-                    task_max_turns = max(80, caller_count * 4) if arm == "plain" else max(80, caller_count * 2)
-                else:
-                    task_max_turns = 40
-                sub = progress.add_task("  0s calls=0", total=task_max_turns)
-                progress.update(outer, description=f"{task['id']} {arm}")
-                _run_combo(
-                    task,
-                    arm,
-                    progress.console.print,
-                    update_fn=_make_rich_update(progress, outer, sub, task["id"], arm, done, total),
-                )
-                progress.remove_task(sub)
-                progress.advance(outer)
-    else:
-        try:
-            from tqdm import tqdm as _tqdm
-
-            _bar = _tqdm(combos, desc="running", unit="run", file=sys.stderr)
-            for task, arm in _bar:
-                _bar.set_postfix(task=task["id"], arm=arm, time="0s", calls=0)
-
-                def _make_tqdm_update(bar: Any, task_id: str, arm_name: str) -> Any:
-                    def _update(elapsed: float, run: BenchRun) -> None:
-                        calls = run.grep_calls + run.bash_calls + run.skill_calls
-                        last = run.tool_log[-1][:30] if run.tool_log else "…"
-                        bar.set_postfix(task=task_id, arm=arm_name, time=f"{elapsed / 60:.1f}m", calls=calls, last=last)
-
-                    return _update
-
-                _run_combo(task, arm, _tqdm.write, update_fn=_make_tqdm_update(_bar, task["id"], arm))
-        except ImportError:
-            for task, arm in combos:
-                _run_combo(task, arm, print)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=_console,
+    ) as progress:
+        total = len(combos)
+        outer = progress.add_task("running", total=total)
+        for done, (task, arm) in enumerate(combos, 1):
+            caller_count = task.get("ground_truth", {}).get("unique_caller_count", 0)
+            if task.get("type") in ("develop_blast_radius", "fn_call_graph"):
+                task_max_turns = max(80, caller_count * 4) if arm == "plain" else max(80, caller_count * 2)
+            else:
+                task_max_turns = 40
+            sub = progress.add_task("  0s calls=0", total=task_max_turns)
+            progress.update(outer, description=f"{task['id']} {arm}")
+            _run_combo(
+                task,
+                arm,
+                progress.console.print,
+                update_fn=_make_rich_update(progress, outer, sub, task["id"], arm, done, total),
+            )
+            progress.remove_task(sub)
+            progress.advance(outer)
 
     _print_summary(runs, model_short)
 
-    if not args.no_save:
+    if not no_save:
         out = _save_results(runs, model_short)
         print(f"\nResults → {out}")
 
@@ -1830,4 +2409,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    fire.Fire(main)

@@ -35,6 +35,4 @@ jobs:
         run: node tests/hooks/tmp-paths.test.js
 
       - name: Run plugin tests (Python bin/ + JS hooks)
-        env:
-          RUN_INTEGRATION: "1"
         run: pytest -W error::DeprecationWarning

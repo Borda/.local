@@ -81,45 +81,41 @@ That output is prepended to the agent spawn prompt as structural context. The ag
 
 codemap more than halves tool calls vs plain while lifting both recall metrics above 95%.
 
-**Real-codebase benchmark** — 28 developer tasks × 2 arms (plain vs codemap) × 3 model tiers. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header (name, namespace, default path) so the harness can be pointed at any Python codebase by swapping the paired task file. Results below are on pytorch-lightning-master (646 modules, 5 task types). Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
+**Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap) × 3 model tiers. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header (name, namespace, default path) so the harness can be pointed at any Python codebase by swapping the paired task file. Results below are on pytorch-lightning-master (646 modules, 8 task types). Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
 
 ### Three-model comparison
 
-June 21 2026 — 28 tasks × 2 arms × 3 models, pytorch-lightning-master, name-recall evaluator for all FN tasks.
+June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master.
 
 | Model      | Plain accuracy | Codemap accuracy | Accuracy lift | Safety-grade plain→codemap | Token ratio (median) | Token ratio range |
 | ---------- | -------------- | ---------------- | ------------- | -------------------------- | -------------------- | ----------------- |
-| Haiku 4.5  | 70.8% (17/24)  | 82.1% (23/28)    | **+11 pp**    | 7/13 → **13/13**           | **0.21×**            | 0.04–1.82×        |
-| Sonnet 4.6 | 80.8% (21/26)  | 81.5% (22/27)    | **+1 pp**     | 12/13 → 11/12              | **0.14×**            | 0.03–0.61×        |
-| Opus 4.6   | 73.1% (19/26)  | 89.3% (25/28)    | **+16 pp**    | 10/13 → **13/13**          | **0.32×**            | 0.03–1.17×        |
+| Haiku 4.5  | 85.3% (29/34)  | 93.9% (31/33)    | **+9 pp**     | 5/13 → 12/13               | **0.38×**            | 0.04–68.2×†       |
+| Sonnet 4.6 | 83.8% (31/37)  | 91.9% (34/37)    | **+8 pp**     | 11/13 → 12/12              | **0.22×**            | 0.05–1.21×        |
+| Opus 4.6   | 86.1% (31/36)  | 91.7% (33/36)    | **+6 pp**     | 13/13 → 12/12              | **0.31×**            | 0.05–1.46×        |
 
-Safety-grade = fraction of FN + D tasks (those with explicit name-recall) where recall ≥ 0.90. Token savings are model-independent; accuracy lift is model-dependent.
+Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0.90. Token savings are model-independent; accuracy lift is model-dependent.
+
+† Haiku 68.2× is a RI-04 token spiral (error_max_turns); fixed June 23. Excluding RI-04, Haiku max is 1.82×.
+
+> June 23 fix: Opus FN-02 and BR-03 regressions resolved (evaluator v3 — both recall→1.000); Haiku RI-02/RI-04 fixed (blocked python3/python on both arms — both recall→1.000).
 
 #### Model-specific notes
 
-**Haiku 4.5** — largest correctness gap. Safety-grade 7/13 → 13/13: every FN and D task reaches recall ≥ 0.90 with codemap. FN-04 plain=0.000 (complete failure, 28 turns burned) → codemap=1.000. FN-02 plain=0.108 → codemap=1.000. D-series: 8/8 both arms; codemap saves 53–96% tokens. Q-series: codemap 4/5 vs plain 1/3 scoreable. Not-covered gaps: `__import__`, `importlib.import_module`, lazy-loading.
+**Haiku 4.5** — largest correctness gap between arms. Plain arm safety-grade 5/13 reflects chronic failures on FN-series (alias/lazy-import gaps) and real-issue tasks. Codemap restores 12/13. Token median 0.38× across all 44 tasks; query-type workflows median 0.28×. RI-02/RI-04 fixed June 23 (recall→1.000 after python3/python blocked). BR-07 minor regression: codemap recall=0.778 vs plain=0.889.
 
-**Sonnet 4.6** — flattest accuracy delta (+1 pp); token savings are the primary benefit (median 0.14×, 86% reduction). D-series: 8/8 both arms; codemap saves 39–97% tokens. ⚠ FN-series regression on codemap arm: FN-02 codemap recall=0.081 (plain=1.000), FN-03 codemap extraction_failed (plain=1.000). Safety-grade slight regression (12/13 → 11/12). Investigate before deploying codemap for sonnet on `fn_call_graph` tasks.
+**Sonnet 4.6** — smallest token ratio (median 0.22×, query-type 0.14×). Accuracy parity at plain 83.8% / codemap 91.9%. FN-03 codemap extraction_failed; FT-03 codemap recall=0.500 vs plain not-scored. RI workflow cm_acc=75%. DG and SE both arms 100%.
 
-**Opus 4.6** — largest accuracy lift (+16 pp). FN-series is the swing: plain 3/5 (FN-01=0.808, FN-02=0.108) → codemap 5/5 (all 1.000). D-series: 8/8 both arms; codemap saves 49–97% tokens. Q-series: codemap 5/5 vs plain 1/3 scoreable. Safety-grade 10/13 → 13/13. RV-03/04 count-based over-count persists on both arms.
+**Opus 4.6** — token median 0.31×. Best plain accuracy (86.1%). FN-02 and BR-03 regressions fixed June 23 (recall→1.000 both arms). RI workflow cm_acc=100% (sonnet/opus succeed where haiku spirals). CQ-series: codemap lifts CQ-01/CQ-03/CQ-04/CQ-05 to 1.000 from poor plain scores.
 
-**Token efficiency** (codemap / plain input tokens):
-
-| Statistic | Haiku 4.5                 | Sonnet 4.6                | Opus 4.6                  |
-| --------- | ------------------------- | ------------------------- | ------------------------- |
-| Median    | **0.21×** (79% reduction) | **0.14×** (86% reduction) | **0.32×** (68% reduction) |
-| Min       | 0.04× (FN-02)             | 0.03× (D-01)              | 0.03× (D-01)              |
-| Max       | 1.82× (D-08)              | 0.61× (D-06)              | 1.17× (D-07)              |
-
-**By series** (opus canonical — name-recall evaluator throughout):
+**By series** (opus — June 23 full run, `bench-opus-20260623-023648.jsonl`):
 
 | Series                 | plain | codemap | Notes                                                                 |
 | ---------------------- | ----- | ------- | --------------------------------------------------------------------- |
-| S — symbol extraction  | 5/5   | 5/5     | Both arms perfect; codemap saves 37–63% tokens                        |
-| FN — call graph        | 3/5   | 5/5     | Plain misses FN-01 (0.808) and FN-02 (0.108); codemap perfect         |
-| D — blast radius       | 8/8   | 8/8     | Both arms perfect; codemap saves 49–97% tokens                        |
+| SE — symbol extraction | 5/5   | 5/5     | Both arms perfect; codemap saves 37–63% tokens                        |
+| FN — call graph        | 4/5   | 3/4     | Plain misses FN-01 (0.808); FN-03 codemap extraction failed           |
+| BR — blast radius      | 8/8   | 8/8     | Both arms perfect; codemap saves 49–97% tokens                        |
 | RV — review assistance | 2/5   | 3/5     | RV-03/04 over-count both arms; RV-05 codemap lift (0.80 → 1.00)       |
-| Q — code quality       | 1/3†  | 5/5     | †Q-05 ext-fail, Q-04 plain incomplete; codemap scores all 5 correctly |
+| CQ — code quality      | —     | 5/5     | Count-based scoring (no recall); codemap hits all 5, plain unreliable |
 
 > **FN-series is the starkest signal for haiku and opus**: plain arm burns 0.85M–4.0M tokens and fails 2–3 of 5 call-graph tasks; codemap resolves the full caller set in a single query at 4–16% of the token cost. Sonnet inverts this — strong reasoning compensates for lack of structural index on FN, but codemap execution failure on two tasks pulls safety-grade below plain.
 
