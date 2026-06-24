@@ -1,5 +1,6 @@
 ---
 Title:       oss-review — [PR #N title]
+PR:          #[N]
 Date:        [YYYY-MM-DD]
 PR Type:     [fix | feat | refactor | perf | docs | ci | chore | test | mixed — from change intent, not file count or PR title]
 Scope:       [key changed files, comma-separated]

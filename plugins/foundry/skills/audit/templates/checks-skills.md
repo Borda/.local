@@ -568,28 +568,22 @@ for f in $_SKILL_GLOB; do  # timeout: 5000
         printf "⚠ 31a: %s — missing effort: field (required; no default)\n" "$skill"
         found=1
     }
-    # when_to_use: — optional; flag only when content duplicates description: (not mere absence)
-    has_wtu=$(echo "$fm" | grep -c '^when_to_use:' || true)
-    if [ "$has_wtu" -gt 0 ]; then
-        wtu_val=$(awk '/^when_to_use:/{found=1; next} found && /^[a-z]/{exit} found{print}' "$f" 2>/dev/null | head -5)
-        desc_val=$(echo "$fm" | grep '^description:' | sed 's/^description: *//' | head -1)
-        # Only flag if when_to_use content is same as description (true duplication)
-        [ -n "$wtu_val" ] && [ "$wtu_val" = "$desc_val" ] && {
-            printf "⚠ 31a: %s — when_to_use: duplicates description: (remove one)\n" "$skill"
-            found=1
-        }
-    fi
+    # when_to_use: — deprecated; flag any presence (merge content into description:, then strip)
+    echo "$fm" | grep -q '^when_to_use:' && {
+        printf "⚠ 31a: %s — when_to_use: present (deprecated; merge content into description: then remove)\n" "$skill"
+        found=1
+    }
 done
 [ "$found" -eq 0 ] && printf "✓: Check 31a — frontmatter complete across all skills\n"
 ```
 
-Severity: **medium** for `effort:` (no default documented); **low** for `when_to_use:` (routing impact).
+Severity: **medium** for `effort:` (no default documented); **low** for `when_to_use:` (deprecated field).
 
 | Sub-check | Field | Condition | Severity | Auto-fix |
 | --- | --- | --- | --- | --- |
 | 31 — tool-body mismatch | `allowed-tools` | body calls Skill/AskUserQuestion/Agent, not in frontmatter | critical | yes |
 | 31a — effort missing | `effort:` | always required | medium | yes |
-| 31a — when_to_use duplicate | `when_to_use:` | content byte-substantially duplicates `description:` | low | no |
+| 31a — when_to_use present | `when_to_use:` | deprecated — any presence flagged (merge into `description:`, then strip) | low | no |
 
 ## Check C35 — Background agent health monitoring compliance (CLAUDE.md §6)
 

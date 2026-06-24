@@ -48,21 +48,29 @@ First, parse `$ARGUMENTS` for an explicit `--index` override:
 
 ```bash
 # timeout: 5000
+_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 INDEX_OVERRIDE=$(echo "$ARGUMENTS" | sed -n 's/.*--index \([^ ]*\).*/\1/p')
+printf '%s' "$INDEX_OVERRIDE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-override"
 ```
 
-If `INDEX_OVERRIDE` is non-empty, skip default-index resolution AND skip the `present` branch incremental refresh (refreshing the default index when an explicit override is given would update the wrong index). Set `INDEX="$INDEX_OVERRIDE"` and proceed directly to Step 1 with that path, skipping the `present`/`missing`/`unresolved` branch entirely.
+If `INDEX_OVERRIDE` is non-empty (read from `${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-override`), skip default-index resolution AND skip the `present` branch incremental refresh (refreshing the default index when an explicit override is given would update the wrong index). Proceed directly to Step 1, skipping the `present`/`missing`/`unresolved` branch entirely.
 
 Otherwise, resolve the default index path (same helper `/codemap:integration` uses):
 
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
-    --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
-[ -n "$INDEX" ] && { [ -f "$INDEX" ] && STATE="present" || STATE="missing"; } || STATE="unresolved"
-echo "$STATE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-state"
+INDEX_OVERRIDE=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-override" 2>/dev/null || echo "")
+if [ -n "$INDEX_OVERRIDE" ]; then
+    printf '%s' "$INDEX_OVERRIDE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index"
+    echo "present" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-state"
+else
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
+        --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null
+    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || echo "")
+    [ -n "$INDEX" ] && { [ -f "$INDEX" ] && STATE="present" || STATE="missing"; } || STATE="unresolved"
+    echo "$STATE" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-state"
+fi
 ```
 
 Read `INDEX_STATE` from `$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index-state")` in subsequent steps, then branch:

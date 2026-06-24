@@ -1,12 +1,9 @@
 ---
 name: refactor
-description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop."
+description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop. TRIGGER when: user wants to restructure existing Python code without changing behaviour; phrases: \"refactor X\", \"clean up Y\", \"extract Z\", \"restructure this module\", \"improve code quality\". SKIP when: bug fixes (use `/develop:fix`); new features (use `/develop:feature`); mixed refactor+feature — run `/develop:refactor` first, then `/develop:feature`; non-Python projects."
 argument-hint: '<target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
-when_to_use: |
-  TRIGGER when: user wants to restructure existing Python code without changing behaviour; phrases: "refactor X", "clean up Y", "extract Z", "restructure this module", "improve code quality".
-  SKIP: bug fixes (use `/develop:fix`); new features (use `/develop:feature`); mixed refactor+feature — run `/develop:refactor` first, then `/develop:feature`; non-Python projects.
 effort: high
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
 
@@ -99,17 +96,19 @@ echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw
 # timeout: 5000
 CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-refactor-codemap-raw 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
-if [ $? -ne 0 ]; then
-    [ "$CODEMAP_RAW" = "strict" ] && exit 1
+RESOLVE_EXIT=$?
+if [ "$RESOLVE_EXIT" -ne 0 ]; then
+    if [ "$CODEMAP_RAW" = "strict" ]; then
+        echo "! codemap unavailable but --codemap (strict) passed — aborting"
+        exit 1
+    fi
+    # auto/off: soft degrade — skill continues without codemap
+    echo "⚠ codemap unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
     CODEMAP_ENABLED=false
 fi
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled
 # codemap: integrated-via-shared
 ```
-
-> loads: codemap-gates.md
-
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -230,6 +229,7 @@ RUN_DIR=$(echo "$_run" | tail -1)
 RUN_DIR_LITERAL="$RUN_DIR"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-refactor-team-ts
 echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir
+trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT
 ```
 
 **IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with the actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.

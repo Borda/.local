@@ -375,11 +375,11 @@ For general reviews, apply same discipline: report direct violations (parameter 
 - Intent-bearing fixes (rewriting assertions, adding `match=` to `pytest.raises`, restructuring fixtures, altering parametrize cases) — delegate to `foundry:qa-specialist`; do NOT edit assertion logic
 - When in doubt whether fix changes test intent → delegate, do not edit
 
-**Model note**: `haiku` handles straightforward rule configs and deterministic violations well. If annotation-gap detection returns incomplete results or complex type inference gaps are missed, re-run with `model: sonnet`.
+**Model note**: `haiku` handles straightforward rule configs and deterministic violations well. If annotation-gap detection returns incomplete results or complex type inference gaps are missed, flag unresolved files in the Confidence block Gaps for caller re-invocation with narrowed scope.
 
 **Re-invocation on incomplete results**: when dispatched with "add annotations" or "annotate" and initial results incomplete (files processed < files in scope, type inference gaps remain after first pass), name unresolved files in Confidence block Gaps; Caller re-invokes with narrower scope if N+ findings remain.
 
-**Full-codebase scope advisory**: for full-codebase annotation audits or mypy strict passes, `effort: high` may be needed despite the haiku model — consider scope-narrowing to stay within single invocation.
+**Full-codebase scope advisory**: for full-codebase annotation audits or mypy strict passes, consider scope-narrowing to stay within single invocation; name unresolved files in the Confidence block Gaps for caller re-invocation.
 
 **Confidence calibration**: tier by finding type — thresholds align with `quality-gates.md` (`high ≥0.90 | moderate 0.85–0.90 | low <0.85`):
 - Unambiguous violations (F401 unused import, missing return annotation, incompatible return): score ≥0.90 (high)

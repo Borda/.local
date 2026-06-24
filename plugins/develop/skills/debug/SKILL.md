@@ -1,12 +1,9 @@
 ---
 name: debug
-description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file."
-when_to_use: |
-  TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: "debug this failure", "why is X broken", "find the root cause of <error>", "investigate this CI failure".
-  SKIP: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project.
+description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file. TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: \"debug this failure\", \"why is X broken\", \"find the root cause of <error>\", \"investigate this CI failure\". SKIP when: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project."
 argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap]"
 effort: high
-allowed-tools: Read, Write, Bash, Grep, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
+allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 ---
 
@@ -74,16 +71,15 @@ CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
-    [ "$CODEMAP_RAW" = "strict" ] && exit 1
+    if [ "$CODEMAP_RAW" = "strict" ]; then
+        echo "! BLOCKED — codemap unavailable but --codemap (strict) passed; run /codemap:scan-codebase or install codemap plugin"
+        exit 1
+    fi
     CODEMAP_ENABLED=false
 fi
 # Skill-specific namespace — avoids reading stale true from prior feature --codemap run
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-debug-codemap-enabled
 ```
-
-> loads: codemap-gates.md
-
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
 Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled 2>/dev/null || echo true)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id 2>/dev/null || echo "")`.
 

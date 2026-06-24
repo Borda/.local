@@ -68,7 +68,7 @@ case "$SUBCOMMAND" in
 esac
 
 # Conflicting flags guard — --deprecate + --remove-if-no-callers are incompatible
-echo "$ARGUMENTS" | grep -q -- '--deprecate' && [ "$REMOVE_IF_ZERO" = "true" ] && { printf "⚠ conflicting flags: --deprecate creates alias, --remove-if-no-callers deletes target; these are incompatible\n" >&2; exit 1; }
+echo "$ARGUMENTS" | grep -q -- '--deprecate' && [ "$REMOVE_IF_ZERO" = "true" ] && { printf "⚠ conflicting flags: --deprecate creates alias, --remove-if-no-callers deletes target; these are incompatible\n" >&2; rm -f "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-REMOVE_IF_ZERO"; exit 1; }
 
 # Write to project-qualified tmpfiles
 printf '%s' "$SUBCOMMAND"     > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-SUBCOMMAND"
@@ -250,7 +250,7 @@ EXHAUSTIVE=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-rename-EXHAUSTIVE" 2>/dev/
 
 - `REMOVE_IF_ZERO=true` AND `RDEP_COUNT > 0` → print `! --remove-if-no-callers: N callers found. Remove all callers first or omit flag.` and stop the **entire rename operation**.
 - `REMOVE_IF_ZERO=true` AND `EXHAUSTIVE=false` → print `! --remove-if-no-callers requires exhaustive=true. Run /codemap:scan-codebase to ensure full coverage.` and stop the **entire rename operation**.
-- `REMOVE_IF_ZERO=true` AND `RDEP_COUNT == 0` AND `EXHAUSTIVE=true` → invoke `AskUserQuestion` — (a) Delete `$OLD_REF` — no callers confirmed, remove definition · (b) Abort — keep file. On Abort: stop. On Delete: use find-symbol to locate the definition line range, then use `Read` to confirm the block bounds, then `Edit` to remove the definition block (from the `def`/`class` line through the final line of the function body, including any immediately preceding `@decorator` lines). Skip Steps 4a–4d. Print `ℹ Symbol had no callers — removed $OLD_REF without rename` and go to Step 6.
+- `REMOVE_IF_ZERO=true` AND `RDEP_COUNT == 0` AND `EXHAUSTIVE=true` → invoke `AskUserQuestion` — (a) Delete `$OLD_REF` — no callers confirmed, remove definition · (b) Abort — keep file. On Abort: stop. On Delete: use find-symbol to locate the definition line range, then use `Read` to confirm the block bounds — verify the line at `start_line` contains the expected symbol name (bare form `OLD_NAME` or qualified form `OLD_REF`); if the line does NOT match, print `! Symbol name mismatch at line <start_line>: expected <OLD_NAME>, index may be stale — run /codemap:scan-codebase first` and abort without deleting. Only proceed with `Edit` when verified — remove the definition block (from the `def`/`class` line through the final line of the function body, including any immediately preceding `@decorator` lines). Skip Steps 4a–4d. Print `ℹ Symbol had no callers — removed $OLD_REF without rename` and go to Step 6.
 - Otherwise (`REMOVE_IF_ZERO=false`): proceed with normal rename flow.
 
 **`--dry-run`**: derive branch first, then write report:

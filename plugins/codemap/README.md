@@ -283,7 +283,7 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-**Five rules that cover 95% of what you need to know:**
+**Six rules that cover 95% of what you need to know:**
 
 ### 1 — Build the index once
 
@@ -306,7 +306,20 @@ Gates cover what the post-commit hook misses: `git pull`, branch switches, and u
 
 The hook triggers `scan-codebase --incremental` after local commits only — a convenience accelerator, not the safety net. Gates work without it. Install via `/codemap:integration init`; skip it if you prefer manual control.
 
-### 5 — Two-tier currency check
+### 5 — Ambient index status (UserPromptSubmit hook)
+
+A `UserPromptSubmit` hook fires on every user message and injects a one-line codemap status into Claude's context when an index exists at `.cache/codemap/<project>.json`. No output — and no overhead — when the index is absent.
+
+```
+[codemap] .cache/codemap/rfdetr.json · 47 modules · current (git: f20fa19) · scanned: 2026-06-23
+Prefer scan-query over file reads: rdeps, fn-rdeps, fn-blast, xrefs, symbol.
+```
+
+When the index is **stale** (git HEAD differs from stored sha), the hook spawns `scan-index --root <scan_root>` in the background (non-blocking, 10-minute lockfile guard) so the index refreshes silently while Claude is answering. Status reads `· refresh started` on the first stale turn and `· refresh in progress` on subsequent turns until the scan completes.
+
+This complements the per-skill SKILL.md injection — which handles dynamic per-PR `scan-query` output and interactive Gate A/B prompts — with a lightweight always-on preamble that reaches every turn, not just skill invocations.
+
+### 6 — Two-tier currency check
 
 `check-index-currency` runs inside Gate B:
 
@@ -677,7 +690,7 @@ ______________________________________________________________________
 
 **Trigger**: `/codemap:debrief-coding`
 
-Reads `.cache/codemap/logs/` JSONL telemetry produced by the scan-query wrapper and the PreToolUse hook, and writes a diagnostic usage report. Useful for debugging query patterns, investigating errors, understanding which skills drive the most queries, and preparing a shareable anonymized summary for feedback.
+Reads `.cache/codemap/logs/` JSONL telemetry produced by the core CLI tools (`scan-query` and `scan-index`) and the skill-start PreToolUse hook, and writes a diagnostic usage report. Useful for debugging query patterns, investigating errors, understanding which skills drive the most queries, and preparing a shareable anonymized summary for feedback.
 
 #### Flags
 
@@ -692,12 +705,14 @@ Reads `.cache/codemap/logs/` JSONL telemetry produced by the scan-query wrapper 
 
 All logs are local to `.cache/codemap/logs/` and never leave your machine.
 
-| File           | Layer | When written                                         |
-| -------------- | ----- | ---------------------------------------------------- |
-| `cli.jsonl`    | cli   | Every `scan-query` invocation via the wrapper binary |
-| `skills.jsonl` | skill | Every `/codemap:*` skill start (via PreToolUse hook) |
+| File                     | Layer | When written                                                           |
+| ------------------------ | ----- | ---------------------------------------------------------------------- |
+| `cli_<session>.jsonl`    | cli   | Every `scan-query` query and every `scan-index` build (core CLI tools) |
+| `skills_<session>.jsonl` | skill | Every `/codemap:*` skill start (via PreToolUse hook)                   |
 
-CLI records include: subcommand, full argv, result summary (count, method, exhaustive flag, not_covered list, error), timing_ms, stderr tail if any, exit code if non-zero.
+Logs are sharded per session: the SessionStart hook (`seed-session.js`) seeds the Claude Code session id into `$TMPDIR/codemap-<project>-session`, and both layers append to `<layer>_<session>.jsonl`. CLI runs outside a session (no seeded id) fall back to unsuffixed `cli.jsonl` / `skills.jsonl`. Per-session filenames keep concurrent sessions from interleaving appends.
+
+CLI records include: `cmd` (query subcommand, or `index` for a `scan-index` build), full argv, result summary (query: count, method, exhaustive flag, not_covered list, error; index: modules_indexed, degraded, incremental), timing_ms, stderr tail if any, exit code if non-zero.
 
 Skill records include: skill name, session UUID, intent (first 300 chars of the args string).
 
@@ -705,7 +720,7 @@ Logs rotate automatically at 10 MB (3 rotations). Disable logging entirely with 
 
 #### Anonymization
 
-`--anonymize` runs `bin/anonymize.py` on both log files before reading. Qualified names (strings containing `.` or `::`) are replaced with stable `sym_<hash>` pseudonyms using a project-local salt stored at `.cache/codemap/logs/.salt`. The salt must stay local — never share it alongside anonymized output. Without the salt, pseudonyms are not reversible.
+`--anonymize` runs `bin/anonymize.py` on every present log file before reading. Qualified names (strings containing `.` or `::`) are replaced with stable `sym_<hash>` pseudonyms using a project-local salt stored at `.cache/codemap/logs/.salt`. The salt must stay local — never share it alongside anonymized output. Without the salt, pseudonyms are not reversible.
 
 #### Examples
 

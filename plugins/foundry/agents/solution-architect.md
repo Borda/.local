@@ -48,10 +48,13 @@ Load design_artifacts from `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_share
 
 Measure fan-in (importers) and fan-out (imports):
 
-- **Fan-in**: Grep tool (pattern `from mypackage.target import|import mypackage.target`, glob `**/*.py`, path `src/`, output mode `files_with_matches`) — count = fan-in
-- **Fan-out**: Grep tool (pattern `^from |^import `, file `src/mypackage/target.py`, output mode `content`) — list direct imports
+- **Fan-in** (importers): prefer `scan-query rdeps <module>` when codemap index exists (requires `codemap` plugin) — catches aliased imports and star re-exports Grep misses; fallback: Grep tool (pattern `from mypackage.target import|import mypackage.target`, glob `**/*.py`, path `src/`, output mode `files_with_matches`)
+- **Fan-out** (imports): prefer `scan-query deps <module>` when index exists; fallback: Grep tool (pattern `^from |^import `, file `src/mypackage/target.py`, output mode `content`)
+- **Cross-module symbol refs**: `scan-query xrefs <module::symbol>` when codemap available — symbol-level cross-refs, not just import-level; fallback: Grep on symbol name
 - High fan-in = stability required; changes break many things.
 - High fan-out = fragile; breaks when dependencies change.
+
+> Codemap index check: `command -v scan-query >/dev/null 2>&1 && [ -f "${CODEMAP_INDEX_DIR:-.cache/codemap}/$(basename "$(git rev-parse --show-toplevel 2>/dev/null)").json" ]`. Run `/codemap:scan-codebase` first if absent.
 
 ## Cohesion Check
 

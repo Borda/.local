@@ -21,6 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_scan_index():
     """Load scan-index (no .py extension) via SourceFileLoader."""
@@ -37,6 +39,7 @@ def _load_scan_index():
 _scan_index_mod = _load_scan_index()
 extract_dynamic_imports = _scan_index_mod.extract_dynamic_imports
 scan_config_refs = _scan_index_mod.scan_config_refs
+_classify_entity = _scan_index_mod._classify_entity
 
 
 def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):
@@ -118,6 +121,32 @@ class TestExtractDynamicImports:
         """Plain file with no dynamic imports returns empty list."""
         src = "import os\nimport sys\n"
         assert extract_dynamic_imports(ast.parse(src)) == []
+
+
+class TestClassifyEntity:
+    """Unit tests for _classify_entity — entity_type + package derivation."""
+
+    @pytest.mark.parametrize(
+        "path_str, name, expected_type, expected_pkg",
+        [
+            pytest.param("tests/test_foo.py", "tests.test_foo", "test", "tests", id="tests-dir"),
+            pytest.param("test_bar.py", "test_bar", "pkg", "test_bar", id="root-test-file"),
+            pytest.param("src/pkg/conftest.py", "pkg.conftest", "test", "pkg", id="conftest"),
+            pytest.param("docs/conf.py", "docs.conf", "docs", "docs", id="docs-dir"),
+            pytest.param("doc/api.py", "doc.api", "docs", "doc", id="doc-singular"),
+            pytest.param("examples/demo.py", "examples.demo", "example", "examples", id="examples-dir"),
+            pytest.param("example/usage.py", "example.usage", "example", "example", id="example-singular"),
+            pytest.param("mypackage/core.py", "mypackage.core", "pkg", "mypackage", id="pkg-module"),
+            pytest.param("mypackage/sub/mod.py", "mypackage.sub.mod", "pkg", "mypackage", id="pkg-submodule"),
+            pytest.param("standalone.py", "standalone", "pkg", "standalone", id="root-script"),
+            pytest.param("src/mypackage/core.py", "src.mypackage.core", "pkg", "mypackage", id="src-layout-strip"),
+            pytest.param("src/pkg/conftest.py", "src.pkg.conftest", "test", "pkg", id="src-layout-test-strip"),
+        ],
+    )
+    def test_classification(self, path_str, name, expected_type, expected_pkg):
+        """_classify_entity returns correct (entity_type, package) for each path pattern."""
+        result = _classify_entity(Path(path_str), name)
+        assert result == (expected_type, expected_pkg)
 
 
 class TestScanConfigRefs:

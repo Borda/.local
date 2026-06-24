@@ -11,7 +11,7 @@ On (c): stop.
 
 **Gate B — stale index** (`CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`): invoke `AskUserQuestion`:
 - Question: "Codemap index is stale — source files changed since last scan; context may miss recent changes. How to proceed?"
-- (a) Rebuild now — `Skill(skill="codemap:scan-codebase")` then continue with fresh index
+- (a) Rebuild now — `Skill(skill="codemap:scan-codebase")` then continue with fresh index (note: the ambient hook may have already started a background refresh; `scan-codebase` will be blocked by the scan lockfile until it completes — up to 10 min)
 - (b) Continue with stale data — proceed; results may miss recent changes
 - (c) Skip codemap — set `CODEMAP_ENABLED=false`; proceed without structural context
 

@@ -1,5 +1,5 @@
 {
-  "description": "codemap plugin hooks: skill invocation telemetry for /codemap:debrief-coding",
+  "description": "codemap plugin hooks: ambient index status injection + skill invocation telemetry",
   "hooks": {
     "PreToolUse": [
       {
@@ -10,6 +10,26 @@
           }
         ],
         "matcher": "Skill"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/seed-session.js\"",
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/inject-preamble.js\"",
+            "type": "command"
+          }
+        ]
       }
     ]
   }

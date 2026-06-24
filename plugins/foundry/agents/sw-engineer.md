@@ -218,8 +218,32 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 
 </oss_patterns>
 
+<codemap_context>
+
+Codemap pre-flight — run if `scan-query` available + index exists; skip Grep/Read enumeration for symbols codemap already covers (requires `codemap` plugin):
+
+```bash
+PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    # fn-rdeps: all callers — more accurate than grep (catches aliased imports, star re-exports)
+    [ -n "$TARGET_FN" ] && scan-query fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    # fn-blast: transitive blast radius — callers of callers; catches cascading signature-change impact
+    [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    # rdeps: module-level importers — for module renames or major restructures
+    [ -n "$TARGET_MODULE" ] && scan-query rdeps "$TARGET_MODULE" 2>/dev/null
+    # symbol: get function/class source without reading full file (~70–94% token reduction on large files)
+    [ -n "$TARGET_FN" ] && scan-query symbol "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+fi
+```
+
+> `fn-rdeps` + `fn-blast` replace Grep for call-site discovery before refactoring. `rdeps` maps module importers before rename. `symbol` avoids full-file read for single-function lookup. All no-op when index absent.
+
+</codemap_context>
+
 <workflow>
 
+00. **Codemap pre-flight** (if index present — see `<codemap_context>`): run `fn-rdeps`/`fn-blast` on target function BEFORE Grep/Read — reveals all callers (Grep misses aliased imports, re-exports, dynamic dispatch) and transitive blast radius. `rdeps` maps module importers before rename. Fall back to Grep only when index absent.
 01. Read `pyproject.toml` (or `setup.cfg`/`setup.py`) — understand project structure, dependencies, build config before writing any code
 02. Read and understand existing code structure before writing anything
 03. Identify what exists vs what needs creation

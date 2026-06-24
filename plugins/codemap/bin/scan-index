@@ -27,11 +27,13 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _schema import SCAN_VERSION, Resolution
+from _telemetry import log_cli
 
 _STDLIB_MODULES: frozenset[str] = frozenset(sys.stdlib_module_names)  # Python 3.10+; project requires 3.10+
 
@@ -140,6 +142,8 @@ SKIP_DIRS = {
 BUILTINS = frozenset(dir(builtins))
 
 _TEST_PATH_RE = re.compile(r"(^|/)tests?/|/test_[^/]+\.py$|/[^/]+_test\.py$|/conftest\.py$")
+_DOCS_PATH_RE = re.compile(r"(^|/)docs?/")
+_EXAMPLES_PATH_RE = re.compile(r"(^|/)examples?/")
 
 
 def _iter_python_files(root: Path) -> list[Path]:
@@ -153,6 +157,45 @@ def _iter_python_files(root: Path) -> list[Path]:
                 if not fp.is_symlink():
                     result.append(fp)
     return result
+
+
+def _classify_entity(rel_path: Path, name: str) -> tuple[str, str]:
+    """Return ``(entity_type, package)`` for a module.
+
+    ``entity_type`` is one of ``"test"``, ``"docs"``, ``"example"``, or ``"pkg"``.
+    ``package`` is the top-level component of the dotted module name (first segment).
+
+    Args:
+        rel_path: module path relative to the project root.
+        name: fully-qualified dotted module name (e.g. ``"mypackage.sub.mod"``).
+
+    Examples:
+        >>> from pathlib import Path
+        >>> _classify_entity(Path("tests/test_foo.py"), "tests.test_foo")
+        ('test', 'tests')
+        >>> _classify_entity(Path("docs/conf.py"), "docs.conf")
+        ('docs', 'docs')
+        >>> _classify_entity(Path("examples/demo.py"), "examples.demo")
+        ('example', 'examples')
+        >>> _classify_entity(Path("mypackage/core.py"), "mypackage.core")
+        ('pkg', 'mypackage')
+        >>> _classify_entity(Path("src/mypackage/core.py"), "src.mypackage.core")
+        ('pkg', 'mypackage')
+    """
+    posix = rel_path.as_posix()
+    if _TEST_PATH_RE.search(posix):
+        entity_type = "test"
+    elif _DOCS_PATH_RE.search(posix):
+        entity_type = "docs"
+    elif _EXAMPLES_PATH_RE.search(posix):
+        entity_type = "example"
+    else:
+        entity_type = "pkg"
+    parts = name.split(".")
+    # Strip "src" layout prefix that leaks when detect_src_root falls back to root —
+    # mirrors _build_internal_prefix_set which applies the same strip for import matching.
+    pkg = parts[1] if parts[0] == "src" and len(parts) > 1 else parts[0]
+    return entity_type, pkg
 
 
 _GIT_TIMEOUT_S = 10  # max seconds to wait for any git subprocess (H78: hung process guard)
@@ -2623,6 +2666,7 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
         dynamic_imports = extract_dynamic_imports(tree)
         _loc, _is_entry = _count_loc_and_main_guard(source)
         is_test = bool(_TEST_PATH_RE.search(rel_path.as_posix()))
+        entity_type, pkg = _classify_entity(rel_path, name)
         sphinx_xrefs = extract_sphinx_xrefs(tree, filepath, name)
         exports = extract_module_exports(tree)
         entry: dict = {
@@ -2634,6 +2678,8 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             "symbols": [s.as_dict() for s in symbols],
             "is_entry_point": _is_entry,
             "is_test": is_test,
+            "entity_type": entity_type,
+            "package": pkg,
             "has_star_imports": bool(star_imports),
             "exports": exports,
             "sphinx_xrefs": sphinx_xrefs,
@@ -3103,6 +3149,7 @@ def main() -> None:
         signal.signal(signal.SIGALRM, _timeout_handler)
         signal.alarm(args.timeout)
 
+    t0 = time.time()
     try:
         root = args.root or find_root()
         _custom = os.environ.get("CODEMAP_INDEX_DIR")
@@ -3126,6 +3173,12 @@ def main() -> None:
             for m in index["modules"]:
                 if m.get("status") == "degraded":
                     print(f"[codemap]   \u26a0 {m['path']}: {m['reason']}", file=sys.stderr)
+        log_cli(
+            "index",
+            sys.argv[1:],
+            {"modules_indexed": ok, "degraded": degraded, "incremental": bool(args.incremental)},
+            t0,
+        )
     except PermissionError as exc:
         print(f"[codemap] ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

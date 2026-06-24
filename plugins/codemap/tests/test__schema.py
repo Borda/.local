@@ -91,9 +91,9 @@ class TestScanVersion:
         """Version must be a positive number (≥1)."""
         assert SCAN_VERSION >= 1
 
-    def test_value_is_ten(self) -> None:
-        """v5.4 bumps SCAN_VERSION to 10 (was 9 after v5.3) for coverage_pct / covered_by per symbol."""
-        assert SCAN_VERSION == 10
+    def test_value_is_eleven(self) -> None:
+        """v5.5 bumps SCAN_VERSION to 11 for entity_type / package per module."""
+        assert SCAN_VERSION == 11
 
 
 class TestPerFeatureVersionConstants:

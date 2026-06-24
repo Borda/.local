@@ -1,10 +1,7 @@
 ---
 name: feature
-description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop."
+description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop. TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: \"add X\", \"implement Y\", \"build Z feature\", \"create a new module for\". SKIP when: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`)."
 argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
-when_to_use: |
-  TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: "add X", "implement Y", "build Z feature", "create a new module for".
-  SKIP: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`).
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -117,14 +114,13 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 ```bash
 # timeout: 5000
 CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
-CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW") || exit 1
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW") || {
+    echo "! BLOCKED — codemap-resolve failed (likely --codemap strict but codemap unavailable); run /codemap:scan-codebase or install codemap plugin"
+    exit 1
+}
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
 # codemap: integrated-via-shared
 ```
-
-> loads: codemap-gates.md
-
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
 **Semble preflight** — if `SEMBLE_ENABLED=true`:
 
@@ -151,6 +147,7 @@ mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_wor
 TS="${_run[0]}"
 TEAM_DIR="${_run[1]}"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts
+trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-$TS' EXIT
 ```
 
 **IMPORTANT**: in spawn prompts below, substitute `$_SPAWN_TS` and `$_SPAWN_TEAM_DIR` with the actual computed values from the bash block above — literal resolved strings, not shell variable references. Bare `$TS`/`$TEAM_DIR` inside a quoted Agent prompt string will NOT be expanded; the spawned agent receives the literal dollar-sign text, causing path mismatches and health-monitoring false timeouts.

@@ -12,7 +12,7 @@ from enum import Enum
 from typing import TypedDict
 
 # Increment when the index JSON structure changes incompatibly.
-SCAN_VERSION: int = 10
+SCAN_VERSION: int = 11
 
 # Per-feature minimum index versions.
 # v4 and v5 were design epochs shipped together in one release (SCAN_VERSION 4–10).
@@ -27,6 +27,7 @@ MODULE_ALIASES_MIN_VER: int = 7  # v5.1 — module_aliases at index root
 SUBPROCESS_CALLS_MIN_VER: int = 8  # v5.2 — subprocess_calls per module, subprocess_rdep_count at root
 FIXTURE_GRAPH_MIN_VER: int = 9  # v5.3 — fixture_uses per test module, fixture_exports per conftest
 COVERAGE_MIN_VER: int = 10  # v5.4 — coverage_pct, covered_by per symbol (requires --with-coverage build)
+ENTITY_TYPE_MIN_VER: int = 11  # v5.5 — entity_type ("pkg"|"test"|"docs"|"example"), package (top-level name)
 
 
 class Resolution(str, Enum):

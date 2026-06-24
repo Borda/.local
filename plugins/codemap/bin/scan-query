@@ -48,6 +48,9 @@ Commands (dead-symbol detection — requires v4.6+ index):
   dead-symbols [--min-loc N]  Public symbols with no callers anywhere
   dead-modules                Modules with no external importers
 
+Commands (entity map — requires v5.5+ index):
+  packages                 Top-level packages with module/test/docs/example counts
+
 All output is JSON. Staleness is checked on every invocation — warns to
 stderr if Python files were committed after the index was built.
 
@@ -96,6 +99,7 @@ from _schema import (
     VALID_CALL_RESOLUTIONS,
     Symbol,
 )
+from _telemetry import log_cli
 
 # v5.1: MODULE_ALIASES_MIN_VER is imported for downstream feature gating; no
 # command consumes it directly today — module_aliases is applied internally by
@@ -109,69 +113,21 @@ _ = MODULE_ALIASES_MIN_VER
 
 _T0: float = time.time()
 _CMD: str = ""
-_LOG_ENABLED: bool = os.environ.get("CODEMAP_LOGGING", "true").lower() != "false"
 _LOG_DIR: Path = Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))
-_LOG_MAX_BYTES: int = 10 * 1024 * 1024
 _builtin_print = print  # saved before print( → _print( sweep below
 
 
-def _log_rotate(path: Path) -> None:
-    for i in range(2, 0, -1):
-        src = path.parent / f"{path.name}.{i}"
-        dst = path.parent / f"{path.name}.{i + 1}"
-        if src.exists():
-            src.rename(dst)
-    if path.exists():
-        path.rename(path.parent / f"{path.name}.1")
-
-
-def _log_session() -> str:
-    try:
-        git_root = subprocess.check_output(
-            ["git", "rev-parse", "--show-toplevel"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-            timeout=2,
-        ).strip()
-        proj = Path(git_root).name
-    except Exception:
-        proj = Path.cwd().name
-    sid_file = Path(os.environ.get("TMPDIR", "/tmp")) / f"codemap-{proj}-session"
-    try:
-        return sid_file.read_text().strip()
-    except Exception:
-        return ""
-
-
 def _print(*args: object, **kwargs: object) -> None:
-    """Forward to built-in print; for stdout output also append a JSONL record to cli.jsonl."""
+    """Forward to built-in print; for stdout output also append a cli.jsonl record."""
     _builtin_print(*args, **kwargs)
-    if kwargs.get("file") or not _LOG_ENABLED:
+    if kwargs.get("file"):
         return
+    raw = str(args[0]) if args else ""
     try:
-        raw = str(args[0]) if args else ""
-        result: dict = {}
-        try:
-            result = json.loads(raw)
-        except Exception:  # noqa: BLE001
-            pass
-        log_path = _LOG_DIR / "cli.jsonl"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        if log_path.exists() and log_path.stat().st_size > _LOG_MAX_BYTES:
-            _log_rotate(log_path)
-        record = {
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "layer": "cli",
-            "cmd": _CMD,
-            "session": _log_session(),
-            "argv": sys.argv[1:],
-            "timing_ms": max(0, int((time.time() - _T0) * 1000)),
-            "result": result,
-        }
-        with log_path.open("a") as fh:
-            fh.write(json.dumps(record, separators=(",", ":")) + "\n")
-    except Exception:  # noqa: BLE001
-        pass
+        result = json.loads(raw)
+    except Exception:  # noqa: BLE001 — non-JSON stdout still logs an empty result
+        result = {}
+    log_cli(_CMD, sys.argv[1:], result, _T0, log_dir=_LOG_DIR)
 
 
 def _has_call_graph(index: dict) -> bool:
@@ -792,7 +748,7 @@ def cmd_import_types(index: dict, module: str) -> None:
     )
 
 
-def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False) -> None:
+def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: str | None = None) -> None:
     """Print all modules that import a given module as JSON.
 
     Includes static importers (``imported_by``), dynamic importers
@@ -803,10 +759,13 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False) -> None:
         index: parsed codemap index dict.
         module: dotted module name whose reverse dependencies are queried.
         exclude_tests: if True, exclude test modules from static results.
+        entity: if set, restrict importers to this entity_type ("pkg", "test", "docs", "example").
     """
     modules_list = index.get("modules", [])
     if exclude_tests:
         modules_list = [m for m in modules_list if not m.get("is_test")]
+    if entity:
+        modules_list = [m for m in modules_list if _entity_type(m) == entity]
     result = sorted(m["name"] for m in modules_list if module in m.get("direct_imports", []))
     module_map = build_module_map(index)
     entry = module_map.get(module, {})
@@ -827,16 +786,20 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False) -> None:
     )
 
 
-def cmd_central(index: dict, top: int, exclude_tests: bool = False) -> None:
+def cmd_central(index: dict, top: int, exclude_tests: bool = False, entity: str | None = None) -> None:
     """Print the top N most-imported modules ranked by reverse-dependency count.
 
     Args:
         index: parsed codemap index dict.
         top: number of top-ranked modules to return.
+        exclude_tests: if True, exclude test modules.
+        entity: if set, restrict to this entity_type ("pkg", "test", "docs", "example").
     """
     candidates = [m for m in index.get("modules", []) if m.get("status") != "degraded"]
     if exclude_tests:
         candidates = [m for m in candidates if not m.get("is_test")]
+    if entity:
+        candidates = [m for m in candidates if _entity_type(m) == entity]
     ranked = sorted(candidates, key=lambda m: m.get("rdep_count", 0), reverse=True)[:top]
     _print(
         json.dumps(
@@ -855,17 +818,20 @@ def cmd_central(index: dict, top: int, exclude_tests: bool = False) -> None:
     )
 
 
-def cmd_coupled(index: dict, top: int, exclude_tests: bool = False) -> None:
+def cmd_coupled(index: dict, top: int, exclude_tests: bool = False, entity: str | None = None) -> None:
     """Print the top N most-coupled modules ranked by internal import count.
 
     Args:
         index: parsed codemap index dict.
         top: number of top-ranked modules to return.
         exclude_tests: if True, exclude test modules from results.
+        entity: if set, restrict to this entity_type ("pkg", "test", "docs", "example").
     """
     candidates = [m for m in index.get("modules", []) if m.get("status") != "degraded"]
     if exclude_tests:
         candidates = [m for m in candidates if not m.get("is_test")]
+    if entity:
+        candidates = [m for m in candidates if _entity_type(m) == entity]
     all_module_names = {m["name"] for m in index.get("modules", []) if m.get("status") == "ok"}
     # compute internal_count locally — never mutate the loaded index dict
     internal_counts = {
@@ -961,6 +927,50 @@ def cmd_list(index: dict) -> None:
         for m in index.get("modules", [])
     ]
     _print(json.dumps({"modules": modules}))
+
+
+def _entity_type(m: dict) -> str:
+    """Return entity_type for a module, with fallback for pre-v5.5 indexes.
+
+    Args:
+        m: module entry dict from the index.
+    """
+    et = m.get("entity_type")
+    if et:
+        return et
+    return "test" if m.get("is_test") else "pkg"
+
+
+def cmd_packages(index: dict) -> None:
+    """Print top-level packages with module counts broken down by entity_type.
+
+    For indexes predating v5.5 (no entity_type field), entity is derived from
+    is_test (test vs pkg); docs and example are not distinguished.
+
+    Args:
+        index: parsed codemap index dict.
+    """
+    modules = [m for m in index.get("modules", []) if m.get("status") == "ok"]
+    pkg_data: dict[str, dict] = {}
+    for m in modules:
+        pkg = m.get("package") or m["name"].split(".")[0]
+        entity = _entity_type(m)
+        if pkg not in pkg_data:
+            pkg_data[pkg] = {"total": 0, "by_entity": {}}
+        pkg_data[pkg]["total"] += 1
+        by_entity = pkg_data[pkg]["by_entity"]
+        by_entity[entity] = by_entity.get(entity, 0) + 1
+    sorted_pkgs = sorted(pkg_data.items(), key=lambda kv: kv[1]["total"], reverse=True)
+    _print(
+        json.dumps(
+            {
+                "packages": [
+                    {"name": pkg, "total": data["total"], "by_entity": data["by_entity"]} for pkg, data in sorted_pkgs
+                ],
+                "index": _cmd_coverage(index, method="entity-map"),
+            }
+        )
+    )
 
 
 def _resolve_project_root(explicit_root: Path | None, index: dict) -> Path:
@@ -2623,11 +2633,23 @@ def main() -> None:
     p_rdeps = sub.add_parser("rdeps", help="What imports a module?")
     p_rdeps.add_argument("module")
     p_rdeps.add_argument("--exclude-tests", action="store_true", default=False, help="Exclude test files from results")
+    p_rdeps.add_argument(
+        "--entity",
+        default=None,
+        choices=("pkg", "test", "docs", "example"),
+        help="Restrict importers to this entity type (requires v5.5+ index for docs/example).",
+    )
 
     p_central = sub.add_parser("central", help="Most-imported modules (highest blast radius).")
     p_central.add_argument("--top", type=int, default=10, metavar="N")
     p_central.add_argument(
         "--exclude-tests", action="store_true", default=False, help="Exclude test files from results"
+    )
+    p_central.add_argument(
+        "--entity",
+        default=None,
+        choices=("pkg", "test", "docs", "example"),
+        help="Restrict to this entity type (requires v5.5+ index for docs/example).",
     )
 
     p_coupled = sub.add_parser("coupled", help="Modules with the most imports (highest coupling).")
@@ -2635,12 +2657,23 @@ def main() -> None:
     p_coupled.add_argument(
         "--exclude-tests", action="store_true", default=False, help="Exclude test files from results"
     )
+    p_coupled.add_argument(
+        "--entity",
+        default=None,
+        choices=("pkg", "test", "docs", "example"),
+        help="Restrict to this entity type (requires v5.5+ index for docs/example).",
+    )
 
     p_path = sub.add_parser("path", help="Shortest import path between two modules.")
     p_path.add_argument("frm", metavar="from")
     p_path.add_argument("to")
 
     sub.add_parser("list", help="List all indexed modules.")
+
+    sub.add_parser(
+        "packages",
+        help="Top-level packages with module/test/docs/example counts (requires v5.5+ index for docs/example).",
+    )
 
     p_symbol = sub.add_parser("symbol", help="Get source of a symbol by name (function/class/method).")
     p_symbol.add_argument("name", help="Symbol name, e.g. 'authenticate' or 'MyClass.method'")
@@ -2920,15 +2953,17 @@ def main() -> None:
             internal_only=args.internal,
         )
     elif args.command == "rdeps":
-        cmd_rdeps(index, args.module, exclude_tests=args.exclude_tests)
+        cmd_rdeps(index, args.module, exclude_tests=args.exclude_tests, entity=args.entity)
     elif args.command == "central":
-        cmd_central(index, args.top, exclude_tests=args.exclude_tests)
+        cmd_central(index, args.top, exclude_tests=args.exclude_tests, entity=args.entity)
     elif args.command == "coupled":
-        cmd_coupled(index, args.top, exclude_tests=args.exclude_tests)
+        cmd_coupled(index, args.top, exclude_tests=args.exclude_tests, entity=args.entity)
     elif args.command == "path":
         cmd_path(index, args.frm, args.to)
     elif args.command == "list":
         cmd_list(index)
+    elif args.command == "packages":
+        cmd_packages(index)
     elif args.command == "symbol":
         cmd_symbol(
             index,

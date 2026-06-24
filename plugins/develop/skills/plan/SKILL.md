@@ -1,12 +1,9 @@
 ---
 name: plan
-description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/."
+description: "Analysis-only planning — classify and scope a task without writing code; outputs a structured plan to .plans/active/. TRIGGER when: user wants to understand scope and risks before implementation; phrases: \"plan this\", \"scope out X\", \"what would it take to Y\", \"analyse before we start\". SKIP when: user already knows what to build and wants code immediately (use `/develop:feature` or `/develop:fix` directly); `.claude/` config planning (use `/foundry:manage`)."
 argument-hint: "<goal> [--no-challenge] [--codemap] [--no-codemap] [--semble] [--max-depth <N>]"
-when_to_use: |
-  TRIGGER when: user wants to understand scope and risks before implementation; phrases: "plan this", "scope out X", "what would it take to Y", "analyse before we start".
-  SKIP: user already knows what to build and wants code immediately (use `/develop:feature` or `/develop:fix` directly); `.claude/` config planning (use `/foundry:manage`).
 effort: medium
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
 ---
 
@@ -70,15 +67,14 @@ CODEMAP_RAW=$(cat "$PLAN_NS/codemap-raw" 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
-    [ "$CODEMAP_RAW" = "strict" ] && exit 1
+    if [ "$CODEMAP_RAW" = "strict" ]; then
+        echo "! BLOCKED — codemap unavailable but --codemap (strict) passed; run /codemap:scan-codebase or install codemap plugin"
+        exit 1
+    fi
     CODEMAP_ENABLED=false
 fi
 echo "$CODEMAP_ENABLED" > "$PLAN_NS/codemap-enabled"
 ```
-
-> loads: codemap-gates.md
-
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
 **Preflight** — if `SEMBLE_ENABLED=true`:
 

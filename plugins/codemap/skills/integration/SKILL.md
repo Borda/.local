@@ -1,9 +1,8 @@
 ---
 name: integration
-description: "Manage codemap integration — 'check' audits installation health (scan-query reachable, index fresh, injection present), 'init' onboards codemap by discovering skills/agents, recommending injection sites, and wiring them in, 'demo' runs end-to-end validation: plumbing check + plain-vs-codemap A/B on real tasks + telemetry diagnostic."
+description: "Manage codemap integration — 'check' audits installation health (scan-query reachable, index fresh, injection present), 'init' onboards codemap by discovering skills/agents, recommending injection sites, and wiring them in, 'demo' runs end-to-end validation: plumbing check + plain-vs-codemap A/B on real tasks + telemetry diagnostic. TRIGGER when: 'check' — after upgrade or when codemap stops finding context; 'init' — after first plugin install or when adding new agents/skills; 'demo' — to validate end-to-end gains or debug telemetry pipeline."
 argument-hint: "check | init [--approve] | demo [--repo <url|path>] [--public] [--keep-clone] [--output <path>]"
 effort: medium
-when_to_use: "`check` after upgrade or when codemap stops finding context; `init` after first plugin install or when adding new agents/skills; `demo` to validate end-to-end that codemap is plugged in correctly and yields expected gains, or to debug the telemetry pipeline."
 allowed-tools: Read, Write, Edit, Bash, Glob, Skill, AskUserQuestion, Agent
 model: sonnet
 ---
@@ -217,7 +216,7 @@ Report result (module count, degraded count).
 
 Read `~/.claude/plugins/installed_plugins.json` (Claude Code internal plugin registry — format may change across versions; fallback: glob `~/.claude/plugins/cache/*/*/` if file absent or unreadable). After reading, count entries missing `installPath`; if >50% of entries lack `installPath`, print `⚠ installed_plugins.json schema may have changed — installPath absent on majority of entries; aborting I2` and exit with actionable message (suggest re-installing or manually specifying plugin path). Otherwise, for each plugin entry, check `installPath` key present before accessing; if absent on that entry, log `installPath field missing — plugin manifest format may have changed` and fall back gracefully to cache-glob discovery for that entry. For each plugin's `installPath`, glob:
 
-> **⚠ Cache-mutation warning**: files discovered via `installPath` are in the plugin cache (`~/.claude/plugins/cache/`). Edits made by I5 to these files are overwritten on the next `claude plugin install` or upgrade for that plugin. For durable injection that survives upgrades, create a project-local override in `.claude/agents/` or `.claude/skills/` first, then inject into the override copy.
+> **⚠ Cache-mutation warning**: files discovered via `installPath` are in the plugin cache (`~/.claude/plugins/cache/`). Edits made by I5 to these files are overwritten on the next `claude plugin install` or upgrade for that plugin. For durable injection that survives upgrades, create a project-local override in `.claude/agents/` or `.claude/skills/` first, then inject into the override copy. **Scope guard**: in interactive mode, I5 skips any file whose resolved plugin root falls outside the current project root and `$CLAUDE_PLUGIN_ROOT` — injection is project-scoped by default.
 
 - `skills/*/SKILL.md` — skill files
 - `agents/*.md` — agent files
@@ -312,6 +311,17 @@ while [ "$INSTALL_PATH" != "/" ] && [ "$INSTALL_PATH" != "$HOME" ]; do
 done
 { [ "$INSTALL_PATH" = "/" ] || [ "$INSTALL_PATH" = "$HOME" ]; } && { echo "Error: could not find plugin root for $TARGET_FILE"; exit 1; }
 [ -w "$INSTALL_PATH" ] || { echo "Error: no write permission to $INSTALL_PATH — re-run with appropriate permissions"; exit 1; }
+# Scope guard: only inject into current project tree or CLAUDE_PLUGIN_ROOT
+PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
+case "$INSTALL_PATH" in
+    "$PROJECT_ROOT"/*|"${CLAUDE_PLUGIN_ROOT:-plugins/codemap}"/*)
+        :  # in scope
+        ;;
+    *)
+        echo "! BLOCKED — $TARGET_FILE is outside current project scope ($PROJECT_ROOT); skipping. To inject into this plugin, run /codemap:integration init from the target project directory."
+        continue
+        ;;
+esac
 ```
 
 For each file edited, append `printf '%s\t%s\n' "$(date -u +%FT%TZ)" "$FILE" >> "$ROLLBACK_LOG"` before writing the edit.

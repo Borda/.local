@@ -1,8 +1,7 @@
 ---
 name: setup
-description: "Post-install setup for foundry plugin. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
+description: "Post-install setup for foundry plugin. Run once after installing on a new machine, or after a plugin version upgrade to sync settings and symlinks. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
 argument-hint: "[--approve]"
-when_to_use: "Run once after installing foundry plugin on a new machine, or after plugin version upgrade to sync settings and symlinks."
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
 model: sonnet
@@ -417,28 +416,20 @@ printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"
 
 ## Step 11: Final report
 
-Print summary as a markdown table with three columns. Status column rules: `✓` = succeeded or correctly skipped · `✗` = error or failure · `?` = uncertain (step not reached, partial result, or outcome ambiguous).
+Print summary:
 
-| Status | Step | Result |
-| --- | --- | --- |
-| ✓ / ✗ | Python | `<PYTHON_CMD>` (shim installed / already on PATH / n/a) |
-| ✓ / ✗ | settings.json backup | `~/.claude/settings.json.bak-<timestamp>` / not needed |
-| ✓ / ✗ | stale `hooks` block | removed / not present — skipped |
-| ✓ / ✗ | statusLine | set to current version / already current — skipped |
-| ✓ / ✗ | permissions.allow | N new (M already present) |
-| ✓ / ✗ | permissions.deny | N new (M already present) |
-| ✓ / ✗ | permissions-guide.md | written / already present — skipped |
-| ✓ / ✗ | enabledPlugins | set / already set — skipped |
-| ✓ / ✗ | JSON validation | valid / invalid |
-| ✓ / ✗ / ? | Rules removed obsolete | N (files no longer in plugin) / none |
-| ✓ / ✗ / ? | Skills removed obsolete | N (dirs no longer in plugin) / none |
-| ✓ / ✗ / ? | Agent symlinks purged | N stale symlinks removed / none |
-| ✓ / ✗ | Rules linked | N → `~/.claude/rules/` |
-| ✓ / ✗ | TEAM_PROTOCOL.md | linked → `~/.claude/` / already linked — skipped |
-| ✓ / ✗ | Skills linked | N → `~/.claude/skills/` (`setup` excluded) |
-| ✓ / ✗ | CLAUDE.md | written from CLAUDE.src.md |
-
-Fill each Status cell with the actual outcome symbol — not the template options above.
+- Python: `<PYTHON_CMD>` (shim installed at ~/.local/bin/python / already on PATH / n/a)
+- statusLine: set / skipped
+- permissions.allow: N entries added
+- enabledPlugins: set / skipped
+- Rules removed obsolete: N (files no longer in current plugin version)
+- Skills removed obsolete: N (skill dirs no longer in current plugin version)
+- Agent symlinks removed from ~/.claude/agents/: N (stale foundry-managed symlinks purged)
+- Rules linked: N → ~/.claude/rules/
+- TEAM_PROTOCOL.md linked → ~/.claude/TEAM_PROTOCOL.md
+- Skills linked: N → ~/.claude/skills/
+- CLAUDE.md written → ~/.claude/CLAUDE.md
+- Backup at: ~/.claude/settings.json.bak
 
 </workflow>
 

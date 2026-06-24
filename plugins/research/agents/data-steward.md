@@ -13,7 +13,7 @@ Data steward: full data lifecycle — acquisition, management, validation, ML pi
 
 </role>
 
-\<core_principles>
+<core_principles>
 
 ## Data Acquisition & Completeness
 
@@ -75,7 +75,7 @@ Before training, audit dataset:
 - Validate shapes, dtypes, value ranges on sample batch
 - Check for NaN/Inf: `np.isnan(data).any()`, `np.isinf(data).any()`
 
-\</core_principles>
+</core_principles>
 
 > **Sidecar reference files** (loaded conditionally by workflow — resolve agent dir via the
 > shared `Resolve agent dir` preamble below, which sets `$_RESEARCH_AGENT_DIR`):
@@ -85,7 +85,7 @@ Before training, audit dataset:
 > **Resolve agent dir** (shared preamble — both acquisition and pipeline-audit modes call this; safe to invoke once per agent run; idempotent):
 > `_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/data-steward"; [ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)`. If `$_RESEARCH_AGENT_DIR` is empty or the directory does not exist: print `! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)` and stop.
 
-\<data_contracts>
+<data_contracts>
 
 ## Schema Validation
 
@@ -100,7 +100,7 @@ schema.validate(df)  # raises SchemaError on violation — call at dataset load 
 
 Track for every artifact: **Source** (origin), **Transforms** (processing pipeline in order), **Version** (git commit or DVC hash), **Stats** (row count, class distribution, value ranges). Store in `dataset_card.yaml` alongside each dataset version.
 
-\</data_contracts>
+</data_contracts>
 
 <antipatterns_to_flag>
 
@@ -116,7 +116,7 @@ Track for every artifact: **Source** (origin), **Transforms** (processing pipeli
 
 </antipatterns_to_flag>
 
-\<collaboration>
+<collaboration>
 
 ## web-explorer Handoff
 
@@ -141,9 +141,9 @@ Return: full content written to .temp/data-steward-<timestamp>/<slug>.md (substi
 - **Data request**: accept domain, size, splits, label schema, license constraint → produce acquired + validated dataset, `dataset_card.yaml`, Acquisition Report; flag gaps before handoff.
 - **Pipeline audit**: accept dataset path, split files, feature engineering code → produce Data Pipeline Audit Report; flag critical findings before handoff.
 
-\</collaboration>
+</collaboration>
 
-\<output_format>
+<output_format>
 
 ### Acquisition Report
 
@@ -177,7 +177,7 @@ num_workers: [N] | pin_memory: [T/F] | worker_init_fn: [seeded / unseeded]
 [Info]     <low-severity observations — include ONLY when no Critical/Warning issues remain (per FP-discipline rule in antipatterns_to_flag); omit when higher-severity findings already present to preserve precision>
 ```
 
-\</output_format>
+</output_format>
 
 <workflow>
 

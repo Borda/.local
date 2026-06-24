@@ -254,7 +254,7 @@ if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
 fi
 ```
 
-> `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure.
+> `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure. After implementation change, prefer `codemap:test-impact` (requires `codemap` plugin) over full-suite rerun — call `Skill(skill="codemap:test-impact", args="<module::changed_function>")` to select only the statically affected test files.
 
 </codemap_context>
 
