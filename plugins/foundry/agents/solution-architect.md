@@ -56,6 +56,34 @@ Measure fan-in (importers) and fan-out (imports):
 
 > Codemap index check: `command -v scan-query >/dev/null 2>&1 && [ -f "${CODEMAP_INDEX_DIR:-.cache/codemap}/$(basename "$(git rev-parse --show-toplevel 2>/dev/null)").json" ]`. Run `/codemap:scan-codebase` first if absent.
 
+<codemap_context>
+
+Codemap pre-flight — run if `scan-query` available + index exists; provides structural coupling data before analysis (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+
+```bash
+PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    scan-query central --top 5 2>/dev/null  # blast-radius baseline — always run
+    if [ -n "$TARGET_MODULE" ]; then
+        scan-query rdeps "$TARGET_MODULE" 2>/dev/null   # fan-in
+        scan-query deps "$TARGET_MODULE" 2>/dev/null    # fan-out
+        [ -n "$TARGET_FN" ] && scan-query xrefs "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    else
+        # review/worktree context — derive from diff
+        _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
+        for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
+            scan-query rdeps "$_MOD" 2>/dev/null
+            scan-query deps "$_MOD" 2>/dev/null
+        done
+    fi
+fi
+```
+
+> Use output for Coupling Analysis (fan-in/fan-out) and API Surface Audit — codemap is ground truth, more accurate than Grep (catches aliased imports, star re-exports). Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset.
+
+</codemap_context>
+
 ## Cohesion Check
 
 Read module, ask:

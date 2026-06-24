@@ -48,28 +48,12 @@ function getSentinelDir() {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BUILT_INS = new Set(["general-purpose", "claude-code-guide", "Explore", "Plan", "statusline-setup"]);
+const BUILT_INS = new Set(["claude", "general-purpose", "claude-code-guide", "Explore", "Plan", "statusline-setup"]);
 
 const OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
 const COSINE_THRESHOLD = 0.65;
 
 const ANTHROPIC_LLM_MODEL = "haiku";
-
-// ── Semver sort ───────────────────────────────────────────────────────────────
-
-function semverLatest(versions) {
-  return versions
-    .filter((v) => /^\d+\.\d+\.\d+/.test(v))
-    .sort((a, b) => {
-      const pa = a.split(".").map(Number);
-      const pb = b.split(".").map(Number);
-      for (let i = 0; i < 3; i++) {
-        if (pa[i] !== pb[i]) return pa[i] - pb[i];
-      }
-      return 0;
-    })
-    .pop();
-}
 
 // ── Atomic write ──────────────────────────────────────────────────────────────
 
@@ -130,11 +114,27 @@ function collectPluginAgents() {
         for (const namespace of fs.readdirSync(vendorDir)) {
           const pluginDir = path.join(vendorDir, namespace);
           try {
-            const latest = semverLatest(fs.readdirSync(pluginDir));
-            if (!latest) continue;
-            const orphanMarker = path.join(pluginDir, latest, ".orphaned_at");
-            if (fs.existsSync(orphanMarker)) continue;
-            const agentsDir = path.join(pluginDir, latest, "agents");
+            // Sort versions descending; skip orphaned; use first non-orphaned
+            const versions = fs
+              .readdirSync(pluginDir)
+              .filter((v) => /^\d+\.\d+\.\d+/.test(v))
+              .sort((a, b) => {
+                const pa = a.split(".").map(Number);
+                const pb = b.split(".").map(Number);
+                for (let i = 0; i < 3; i++) {
+                  if (pa[i] !== pb[i]) return pb[i] - pa[i];
+                }
+                return 0;
+              });
+            let activeVersion = null;
+            for (const v of versions) {
+              if (!fs.existsSync(path.join(pluginDir, v, ".orphaned_at"))) {
+                activeVersion = v;
+                break;
+              }
+            }
+            if (!activeVersion) continue;
+            const agentsDir = path.join(pluginDir, activeVersion, "agents");
             try {
               for (const file of fs.readdirSync(agentsDir)) {
                 if (file.endsWith(".md")) agents.add(`${namespace}:${file.slice(0, -3)}`);
@@ -386,6 +386,7 @@ process.stdin.on("end", async () => {
           hookEventName: "PreToolUse",
           permissionDecision: "allow",
           updatedInput: {
+            description: (data.tool_input && data.tool_input.description) || prompt.slice(0, 100),
             subagent_type: target,
             prompt: prompt + " " + routingNote,
           },

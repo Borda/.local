@@ -215,3 +215,77 @@ def test_git_missing_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_slug(text: str, expected: str) -> None:
     """``_slug`` lowercases, replaces non-alnum runs, strips trailing hyphens."""
     assert cai._slug(text) == expected
+
+
+# ---------------------------------------------------------------------------
+# build_each_message — pure function (each-mode template)
+# ---------------------------------------------------------------------------
+
+
+def test_build_each_message_structure() -> None:
+    """``each`` message has subject, attribution block, challenge line, Claude trailer."""
+    fields = cai.EachMessageFields(
+        summary="Fix off-by-one",
+        item_id="7",
+        author="octocat",
+        pr="42",
+        comment="The loop bound is wrong and should be len(x) - 1 not len(x) here in the inner pass",
+        challenge="evidence=VALID suggestion=REJECT resolution=self-resolved",
+    )
+    msg = cai.build_each_message(fields)
+    assert msg.splitlines()[0] == "Fix off-by-one"
+    assert "[resolve #7] Review by @octocat (PR #42):" in msg
+    assert "Challenge: evidence=VALID suggestion=REJECT resolution=self-resolved" in msg
+    assert "Co-authored-by: claude[bot]" in msg
+    assert "Co-authored-by: OpenAI Codex" not in msg
+
+
+def test_build_each_message_truncates_comment_to_72_chars() -> None:
+    """Comment body is truncated to the first 72 chars."""
+    long_comment = "x" * 200
+    msg = cai.build_each_message(cai.EachMessageFields("s", "1", "a", "9", long_comment, "evidence=VALID"))
+    assert '"' + "x" * 72 + '..."' in msg
+    assert "x" * 73 not in msg
+
+
+def test_build_each_message_codex_trailer_opt_in() -> None:
+    """``include_codex=True`` appends the Codex co-author trailer."""
+    msg = cai.build_each_message(cai.EachMessageFields("s", "1", "a", "9", "c", "evidence=VALID", include_codex=True))
+    assert "Co-authored-by: OpenAI Codex <codex@openai.com>" in msg
+
+
+def test_build_mode_and_message_file_conflict_exits_1(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--build`` with ``--message-file`` → exit 1 with conflict message."""
+    rc = cai.main(["--build", "--message-file", "m.txt", "--files", "a.py"])
+    assert rc == 1
+    assert "not both" in capsys.readouterr().err
+
+
+def test_build_mode_commits_rendered_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--build`` renders a temp message file and commits it via ``-F``."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
+    monkeypatch.setattr(cai.subprocess, "run", _make_git_mock(calls=calls))
+    rc = cai.main(
+        [
+            "--build",
+            "--summary",
+            "Fix typo",
+            "--item-id",
+            "3",
+            "--author",
+            "octocat",
+            "--pr",
+            "42",
+            "--comment",
+            "fix the typo",
+            "--challenge",
+            "evidence=VALID",
+            "--files",
+            "a.py",
+        ]
+    )
+    assert rc == 0
+    commit_calls = [c for c in calls if "commit" in c]
+    assert len(commit_calls) == 1
+    assert "-F" in commit_calls[0]

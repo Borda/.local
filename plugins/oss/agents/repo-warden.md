@@ -145,54 +145,31 @@ Signal string formats (must match scorecard Key Signal column):
 
 ## Step 4 — Write Partial Scores
 
-Write `$PARTIAL_FILE` via Write tool — do not use Bash with `echo`/`cat` redirection. Use the Write tool to create this file. Format:
+Write `$PARTIAL_FILE` via Write tool — do not use Bash with `echo`/`cat` redirection. Use the Write tool to create this file.
 
-**Group A:**
+**Single parameterized template** — substitute `{{GROUP}}` and `{{AXES}}` per assigned group, emit one `axes` entry per axis in `{{AXES}}`:
+
 ```json
 {
-  "group": "A",
+  "group": "{{GROUP}}",
   "gh_repo": "GH_OWNER/GH_REPO",
   "scored_at": "<ISO timestamp>",
   "axes": {
-    "1": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
-    "2": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
-    "5": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
-    "6": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." }
+    "{{AXIS}}": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." }
   },
-  "axis3_weeks": null
+  "axis3_weeks": {{AXIS3_WEEKS}}
 }
 ```
 
-**Group B** (`axis3_weeks` is always `null` for Groups A and B — only Group C emits the array):
-```json
-{
-  "group": "B",
-  "gh_repo": "GH_OWNER/GH_REPO",
-  "scored_at": "<ISO timestamp>",
-  "axes": {
-    "4": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
-    "7": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
-    "8": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." }
-  },
-  "axis3_weeks": null
-}
-```
+Substitution per group:
 
-**Group C:**
-```json
-{
-  "group": "C",
-  "gh_repo": "GH_OWNER/GH_REPO",
-  "scored_at": "<ISO timestamp>",
-  "axes": {
-    "3": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." },
-    "9": { "score": N, "label": "🟢|🟡|🔴|⚪", "conf": 0.N, "signal": "...", "notes": "..." }
-  },
-  "axis3_weeks": [...]
-}
-```
+| `{{GROUP}}` | `{{AXES}}` (one `axes` entry each) | `{{AXIS3_WEEKS}}` |
+| --- | --- | --- |
+| `A` | 1, 2, 5, 6 | `null` |
+| `B` | 4, 7, 8 | `null` |
+| `C` | 3, 9 | actual weeks[] array from contributor stats (`null` when fallback used) |
 
-Group C sets `axis3_weeks` to actual weeks[] array from contributor stats (or `null` when fallback used). Assembler reads this field for confidence display.
+`axis3_weeks` is always `null` for Groups A and B — only Group C emits the array. Group C sets it to the actual weeks[] array from contributor stats (or `null` when fallback used). Assembler reads this field for confidence display.
 
 ```bash
 echo "[repo-warden] group=$AXIS_GROUP complete → $PARTIAL_FILE"  # timeout: 5000

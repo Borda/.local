@@ -30,10 +30,9 @@ SUMMARY_INTERVAL:           10 iterations
 DIMINISHING_RETURNS_WINDOW: 5 iterations < 0.5% each → warn user and suggest stopping
 STATE_DIR:                  .experiments/state/<run-id>/  (timestamped dir per run — see .claude/rules/artifact-lifecycle.md)
 SENTINEL_SLUG_FORMULA: |
-  REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
-  BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')
+  eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/git_slugs.sh")"
   # Sentinel path: ${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}
-  # Bash state is lost between tool calls — re-derive at each use site; this formula is the only authorized form.
+  # Bash state is lost between tool calls — re-source git_slugs.sh at each use site; it is the only authorized slug form.
 ```
 
 <!-- Note: STATE_DIR (.experiments/state/) holds per-iteration artifacts (diary, experiments.jsonl).
@@ -309,9 +308,8 @@ Then proceed to R5.
 ### Step R5: Iteration loop
 
 ```bash
-# REPO_SLUG / BRANCH_SLUG formulas: see canonical definition in <constants>
-REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
-BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
+# REPO_SLUG / BRANCH_SLUG: source the single authorized slug form (see <constants>)
+eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/git_slugs.sh")"  # timeout: 3000
 COMMIT_SENTINEL="${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
 touch "$COMMIT_SENTINEL"  # timeout: 3000
 # trap not effective across Bash calls — commit protection handled by commit-guard.js hook
@@ -433,9 +431,8 @@ Read `${CLAUDE_SKILL_DIR}/modes/codex-copilot.md` — contains full Phase 2c log
 Refresh commit sentinel before staging — R5 loop can exceed the 15-min sentinel TTL set in R5 setup. Slug computation unavoidably re-run (bash state lost between tool calls); path pattern identical to R5 setup block above:
 
 ```bash
-# Refresh sentinel — bash state lost between calls; re-derive slug (same formula as R5 setup)
-REPO_SLUG=$(git rev-parse --show-toplevel | xargs basename | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
-BRANCH_SLUG=$(git branch --show-current | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | tr -s '-' | sed 's/-$//')  # timeout: 3000
+# Refresh sentinel — bash state lost between calls; re-source slug (same form as R5 setup)
+eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/git_slugs.sh")"  # timeout: 3000
 touch "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000
 ```
 

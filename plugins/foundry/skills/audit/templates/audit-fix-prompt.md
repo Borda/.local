@@ -1,4 +1,4 @@
-<!-- file: audit-fix-prompt.md — consumers: audit/SKILL.md Step 8 -->
+<!-- file: audit-fix-prompt.md — consumers: audit/modes/fix.md Step 8 -->
 <!-- Canonical multi-file fix orchestration. NOT derived from fix-prompt.md (per-file only). Keep both in sync when changing shared audit-fix behavior. -->
 
 Read `<RUN_DIR>/summary.jsonl` — this is the findings list (one JSON object per line).

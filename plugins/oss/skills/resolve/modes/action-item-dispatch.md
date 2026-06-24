@@ -184,25 +184,17 @@ fi
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/stage_item_changes.py" "<id>"  # timeout: 5000
 ```
 
-**`COMMIT_MODE=each`** — commit immediately after each item. Write commit message to temp file, dispatch to `bin/commit_action_item.py`. Omit Codex co-author line when `IMPL_AGENT ≠ codex:codex-rescue`:
+**`COMMIT_MODE=each`** — commit immediately after each item. `commit_action_item.py --build` assembles the canonical per-item message (subject + `[resolve #<id>]` attribution block + co-author trailers) — pass `--codex` only when `IMPL_AGENT = codex:codex-rescue`:
 
 ```bash
-COMMIT_MSG=$(mktemp)  # timeout: 3000
-trap 'rm -f "$COMMIT_MSG"' RETURN
-cat >"$COMMIT_MSG" <<EOF
-<imperative short summary of the change>
-
-[resolve #<item_id>] Review by @<author> (PR #<PR_NUMBER>):
-"<first 72 chars of full_comment_text>..."
-Challenge: evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>
-
----
-Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
-Co-authored-by: OpenAI Codex <codex@openai.com>
-EOF
-
-python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" \
-    --message-file "$COMMIT_MSG" \
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_action_item.py" --build \
+    --summary "<imperative short summary of the change>" \
+    --item-id "<item_id>" \
+    --author "<author>" \
+    --pr "<PR_NUMBER>" \
+    --comment "<full_comment_text>" \
+    --challenge "evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>" \
+    $([ "$IMPL_AGENT" = "codex:codex-rescue" ] && echo "--codex") \
     --files <files-changed-by-this-item>  # timeout: 10000
 ```
 

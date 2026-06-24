@@ -4,11 +4,22 @@
 Touches the commit-auth sentinel for the current repo+branch (required by
 git-commit.md Gate 1) immediately before ``git commit``, so the pre-commit
 hook approves the commit. Cleans the sentinel afterwards regardless of exit
-status. Accepts the fully-formed commit message via --message-file so the
-caller can embed Codex/Claude co-author trailers and per-item attribution.
+status.
+
+Two message-source modes (mutually exclusive):
+
+* ``--message-file <path>`` — caller supplies the fully-formed message (used by
+  the ``grouped``/``all`` commit paths, which assemble bespoke bodies).
+* ``--build`` plus fields — script assembles the canonical per-item ``each``-mode
+  message (subject + ``[resolve #<id>]`` attribution block + co-author trailers),
+  so the ``each``-mode template lives in one place instead of being duplicated in
+  ``action-item-dispatch.md`` and ``dispatch-runner.md``.
 
 Usage:
     commit_action_item.py --message-file <path> --files <file1> [<file2>...]
+    commit_action_item.py --build --summary <s> --item-id <id> --author <a> \\
+        --pr <n> --comment <text> --challenge <text> [--codex] \\
+        --files <file1> [<file2>...]
 
 Exit codes:
     0 — commit succeeded (or staging area was empty — no-op)
@@ -23,10 +34,34 @@ import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+@dataclass(frozen=True)
+class EachMessageFields:
+    """Fields for the ``each``-mode per-item commit message.
+
+    Attributes:
+        summary: Imperative short subject for the change.
+        item_id: Review action-item id.
+        author: GitHub handle of the reviewer (without leading ``@``).
+        pr: Pull request number.
+        comment: Full review comment text (truncated to 72 chars in the body).
+        challenge: Challenge-outcome string (e.g. ``evidence=VALID suggestion=VALID resolution=as-suggested``).
+        include_codex: Whether to add the OpenAI Codex co-author trailer.
+    """
+
+    summary: str
+    item_id: str
+    author: str
+    pr: str
+    comment: str
+    challenge: str
+    include_codex: bool = False
 
 
 def _slug(text: str) -> str:
@@ -52,6 +87,137 @@ def _slug(text: str) -> str:
     return _SLUG_RE.sub("-", text.lower()).rstrip("-")
 
 
+def build_each_message(fields: EachMessageFields) -> str:
+    """Build the canonical ``each``-mode per-item commit message.
+
+    Mirrors the heredoc previously duplicated in ``action-item-dispatch.md`` and
+    ``dispatch-runner.md``: subject line, ``[resolve #<id>]`` attribution block
+    quoting the first 72 chars of the review comment, the challenge-outcome line,
+    then the Claude (and optional Codex) co-author trailers.
+
+    Args:
+        fields: Structured message fields (see :class:`EachMessageFields`).
+
+    Returns:
+        Full commit message string.
+
+    Examples:
+        >>> f = EachMessageFields("Fix typo", "3", "octocat", "42", "Please fix the typo here", "evidence=VALID suggestion=VALID resolution=as-suggested")
+        >>> msg = build_each_message(f)
+        >>> msg.splitlines()[0]
+        'Fix typo'
+        >>> "[resolve #3] Review by @octocat (PR #42):" in msg
+        True
+        >>> "Co-authored-by: OpenAI Codex" in msg
+        False
+        >>> "Co-authored-by: OpenAI Codex" in build_each_message(EachMessageFields("s", "1", "a", "9", "c", "evidence=VALID", True))
+        True
+    """
+    quoted = fields.comment[:72]
+    codex_trailer = "\nCo-authored-by: OpenAI Codex <codex@openai.com>" if fields.include_codex else ""
+    return (
+        f"{fields.summary}\n"
+        f"\n"
+        f"[resolve #{fields.item_id}] Review by @{fields.author} (PR #{fields.pr}):\n"
+        f'"{quoted}..."\n'
+        f"Challenge: {fields.challenge}\n"
+        f"\n---\n"
+        f"Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>"
+        f"{codex_trailer}"
+    )
+
+
+_SINGLE_VALUE_FLAGS = frozenset(
+    {"--message-file", "--summary", "--item-id", "--author", "--pr", "--comment", "--challenge"}
+)
+
+
+def _parse_args(args: list[str]) -> tuple[dict[str, str | bool], list[str], str | None]:
+    """Parse CLI args into an options dict plus the ``--files`` list.
+
+    Args:
+        args: Raw argument list (``sys.argv[1:]``).
+
+    Returns:
+        ``(opts, files, error)`` — ``error`` is ``None`` on success or a message string.
+
+    Examples:
+        >>> opts, files, err = _parse_args(["--message-file", "m.txt", "--files", "a.py", "b.py"])
+        >>> err is None and files == ["a.py", "b.py"]
+        True
+        >>> opts["--message-file"]
+        'm.txt'
+        >>> _parse_args(["--bogus"])[2]
+        "commit_action_item: unknown arg '--bogus'"
+    """
+    opts: dict[str, str | bool] = {}
+    files: list[str] = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--codex":
+            opts["--codex"] = True
+            i += 1
+        elif a == "--build":
+            opts["--build"] = True
+            i += 1
+        elif a in _SINGLE_VALUE_FLAGS:
+            opts[a] = args[i + 1] if i + 1 < len(args) else ""
+            i += 2
+        elif a == "--files":
+            i += 1
+            while i < len(args) and not args[i].startswith("--"):
+                files.append(args[i])
+                i += 1
+        else:
+            return opts, files, f"commit_action_item: unknown arg '{a}'"
+    return opts, files, None
+
+
+def _resolve_message_file(opts: dict[str, str | bool]) -> tuple[str, str | None]:
+    """Resolve the commit message file from either ``--message-file`` or ``--build``.
+
+    In ``--build`` mode the canonical ``each`` message is rendered and written to a
+    NamedTemporaryFile whose path is returned (cleaned up at process exit).
+
+    Args:
+        opts: Parsed options dict from :func:`_parse_args`.
+
+    Returns:
+        ``(message_file_path, error)`` — ``error`` is ``None`` on success.
+
+    Examples:
+        No doctest — ``--build`` path writes a temp file; covered by pytest.
+    """
+    if opts.get("--build"):
+        if "--message-file" in opts:
+            return "", "commit_action_item: pass either --build or --message-file, not both"
+        msg = build_each_message(
+            EachMessageFields(
+                summary=str(opts.get("--summary", "")),
+                item_id=str(opts.get("--item-id", "")),
+                author=str(opts.get("--author", "")),
+                pr=str(opts.get("--pr", "")),
+                comment=str(opts.get("--comment", "")),
+                challenge=str(opts.get("--challenge", "")),
+                include_codex=bool(opts.get("--codex", False)),
+            )
+        )
+        handle = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", encoding="utf-8", newline="\n", delete=False)
+        with handle:
+            handle.write(msg)
+        path = handle.name
+        atexit.register(lambda: Path(path).unlink(missing_ok=True))
+        return path, None
+
+    msg_file = str(opts.get("--message-file", ""))
+    if not msg_file:
+        return "", "commit_action_item: --message-file required"
+    if not Path(msg_file).is_file():
+        return "", f"commit_action_item: message file not found: {msg_file}"
+    return msg_file, None
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point — mirrors ``commit_action_item.sh`` behaviour.
 
@@ -67,31 +233,14 @@ def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
 
-    msg_file = ""
-    files: list[str] = []
-
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == "--message-file":
-            i += 1
-            msg_file = args[i] if i < len(args) else ""
-        elif a == "--files":
-            i += 1
-            while i < len(args) and not args[i].startswith("--"):
-                files.append(args[i])
-                i += 1
-            continue
-        else:
-            print(f"commit_action_item: unknown arg '{a}'", file=sys.stderr)
-            return 1
-        i += 1
-
-    if not msg_file:
-        print("commit_action_item: --message-file required", file=sys.stderr)
+    opts, files, err = _parse_args(args)
+    if err is not None:
+        print(err, file=sys.stderr)
         return 1
-    if not Path(msg_file).is_file():
-        print(f"commit_action_item: message file not found: {msg_file}", file=sys.stderr)
+
+    msg_file, err = _resolve_message_file(opts)
+    if err is not None:
+        print(err, file=sys.stderr)
         return 1
     if not files:
         print("commit_action_item: --files requires at least one path", file=sys.stderr)

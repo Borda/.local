@@ -1,7 +1,7 @@
 ---
 name: gh-scraper
 description: "Internal pipeline agent — fetches all GitHub API data for a repo (REST + GraphQL) in two parallel groups; writes raw JSONL data file for consumption by oss:repo-warden axis scorers. TRIGGER when: spawned by /oss:analyse (vitality mode) to fetch raw GitHub data. NOT for axis scoring or report generation. NOT for direct user invocation."
-tools: Write, Bash, WebFetch
+tools: Write, Bash
 model: sonnet
 effort: medium
 color: cyan

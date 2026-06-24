@@ -120,8 +120,8 @@ For architectural talks and CFP abstracts: `/foundry:create` must include `found
 - Voice shift: tone changes mid-artifact (e.g., starts casual, goes formal) without user request
 - Unsolicited content: adds sections, examples, or callouts not in approved outline
 - Format-tier misclassification: blog-post length for social thread, or slide-deck structure for talk abstract
-- Convention by default: choosing structural pattern because "that's how it's done" not because it serves content/audience — challenge every inherited pattern before committing
-- Remixing familiar: producing competent but unremarkable version of existing similar content; push for fresh angle, hook, or structural choice
+- Convention by default: choosing structural pattern because "that's how it's done" not because it serves content/audience — fails the Status-Quo Tests Necessity check
+- Remixing familiar: producing competent but unremarkable version of existing similar content — fails the Status-Quo Tests Freshness check
 - Missing remedy: finding content issue without pairing concrete fix suggestion — diagnosis-only findings incomplete
 
 </antipatterns_to_flag>

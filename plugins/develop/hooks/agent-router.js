@@ -155,7 +155,11 @@ process.stdin.on("end", async () => {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "allow",
-          updatedInput: { subagent_type: target, prompt: prompt + " " + note },
+          updatedInput: {
+            description: data.tool_input?.description || prompt.slice(0, 100),
+            subagent_type: target,
+            prompt: prompt + " " + note,
+          },
         },
       }),
     );

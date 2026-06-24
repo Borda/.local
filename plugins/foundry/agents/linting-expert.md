@@ -352,7 +352,7 @@ For general reviews, apply same discipline: report direct violations (parameter 
    If a required tool missing: stop with the error above; do not attempt the steps that depend on it. Optional tool missing: proceed with the in-scope steps only and note skipped step in output.
 2. Run `ruff check . --output-format=concise` to see all violations
 3. Auto-fix safe issues: `ruff check . --fix`
-4. Review remaining issues — fix in code, don't suppress unless justified
+4. Review remaining issues — fix in code (see step 6 for the suppression-justification rule when fixing is not possible)
    - For targeted reviews, scope findings per `<output_format>` rules.
 5. Run mypy on the source root: `mypy src/` if `src/` directory exists, else `mypy .` (or detect target from `pyproject.toml [tool.mypy] files/packages`) — fix type errors from most to least impactful
 6. For suppression (`# type: ignore`, `# noqa`): always add comment explaining why.

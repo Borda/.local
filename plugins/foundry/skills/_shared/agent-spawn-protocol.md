@@ -52,6 +52,21 @@ HARD_CUTOFF      = 900   (15 min hard limit; skills may tighten)
 EXTENSION        = 300   (one +5 min extension allowed)
 ```
 
+## §8b health_sentinel.py spawn boilerplate (preferred)
+
+Skills that spawn one or more background agents use the `health_sentinel.py` helper rather than the raw `touch`/`find` template above — it validates the run dir and emits a quoted sentinel path. Paste this immediately after each `Agent(... run_in_background=true ...)` spawn, substituting `<ID>` (unique per spawn) and the find glob for that agent's output files:
+
+```bash
+MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
+eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start <SKILL>-<ID> 2>/dev/null)"  # timeout: 5000
+[ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
+# Persist SENTINEL and LAUNCH_AT across Bash() call boundaries — shell state does not persist
+echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/<SKILL>-<ID>-sentinel"
+echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/<SKILL>-<ID>-launch-at"
+```
+
+Poll per `$MONITOR_INTERVAL`: re-read `SENTINEL=$(cat "${TMPDIR:-/tmp}/<SKILL>-<ID>-sentinel" 2>/dev/null)`, then `find <output-dir> -newer "$SENTINEL" -name "<glob>" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output, surface with ⏱.
+
 ## Rules
 
 - Never omit timed-out signal (⏱) — surface partial results always

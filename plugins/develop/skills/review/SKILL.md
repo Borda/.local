@@ -309,7 +309,9 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 
 <!-- $RUN_DIR pre-expanded into $RUN_DIR_LITERAL, $REPORT_DIR into $REPORT_DIR_LITERAL — substitute literal vars (never bare $RUN_DIR/$REPORT_DIR) in Agent spawn prompt strings. -->
 
-Use `$RUN_DIR_LITERAL` in spawn prompts below — substitute expanded value before building each Agent call.
+### $VAR_LITERAL pre-expansion rule (canonical)
+
+Any shell variable inserted into an Agent spawn prompt string — `$RUN_DIR_LITERAL`, `$REPORT_DIR_LITERAL`, `$REVIEW_CHECKLIST`, `$DATE`, `$_REVIEW_TEMPLATE` — must be substituted with its literal resolved value **before** building the Agent call. A bare variable name inside a quoted Agent prompt will NOT expand — the spawned agent receives the literal dollar-sign text, causing path mismatches. Resolve each to its value first; never pass the bare `$VAR` name.
 
 Resolve develop:review checklist path (version-agnostic):
 
@@ -340,7 +342,7 @@ fi
 
 Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts with resolved path. **If empty, omit checklist instruction from those prompts entirely** — do not pass empty path.
 
-**Pre-expansion required**: `$REVIEW_CHECKLIST` must be substituted with literal resolved value before inserting into any Agent spawn prompt string — same as `$RUN_DIR_LITERAL`. Never pass bare variable name `$REVIEW_CHECKLIST` inside quoted Agent prompt; subshell won't expand it.
+> See [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical) — `$REVIEW_CHECKLIST` follows it; substitute its resolved value before inserting into any Agent spawn prompt.
 
 **Visible-degradation rule** — `$REVIEW_CHECKLIST` empty → print `⚠ REVIEW_CHECKLIST is empty — review scope undefined` at the TOP of the review output (before Findings), and consolidator prompt (Step 5) **must** insert into the report header (YAML `---` block or first line before Findings): "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides gap from reviewers, makes severity drift invisible.
 
@@ -423,7 +425,7 @@ Extract branch and date before constructing output path: `BRANCH=$(git branch --
 Spawn **foundry:sw-engineer** consolidator:
 
 <!-- loads: consolidator-prompt.md -->
-Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Summary: read all finding files in `$RUN_DIR_LITERAL/` (pre-expanded), apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. **Pre-expansion required**: substitute `$RUN_DIR_LITERAL`, `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — bare variable names will not expand inside Agent prompt strings. Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
+Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Summary: read all finding files in `$RUN_DIR_LITERAL/` (pre-expanded), apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$RUN_DIR_LITERAL`, `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
 
 Main context receives only one-liner verdict.
 

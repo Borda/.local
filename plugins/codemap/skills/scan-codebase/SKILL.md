@@ -2,7 +2,7 @@
 name: scan-codebase
 description: "Scan the Python codebase and build a structural JSON index (import graph + blast-radius metrics). TRIGGER when: user asks to build, refresh, or rebuild the codemap index; user mentions stale index, missing symbols, or re-indexing after significant project changes; phrases: \"build codemap\", \"scan codebase\", \"refresh structural index\", \"rebuild import graph\"."
 argument-hint: "[--root <path>] [--incremental]"
-allowed-tools: Bash, Write
+allowed-tools: Bash
 disable-model-invocation: true
 effort: low
 ---

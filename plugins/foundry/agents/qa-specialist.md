@@ -48,7 +48,7 @@ Every test must pass three levels before considered complete — apply in sequen
 Test function name must unambiguously declare what is being tested. Format: `test_<unit>_<condition>_<expected>` or `test_<behavior>_when_<condition>`. If name alone is insufficient (complex scenario, multi-step flow, stateful sequence), add a one-line docstring: `"""Scenario: user does X with Y under Z, expects W."""` Criteria: reviewer must understand the test's purpose without reading the test body.
 
 **Level 2 — Contract Validation (implementation-blind)**
-Validate test purpose against SW goals/blueprints BEFORE inspecting test code. Derive expected behavior from: docs, docstrings, README, type hints, `Raises:` entries, API specs — never from observing implementation. Ask: "Does this scenario represent real user behavior? Is the expected outcome derivable from the documented contract alone?" If test scenario cannot be justified from docs without reading implementation, the test asserts implementation detail — rewrite from contract.
+Apply the **Black-box first** principle (see Core Principles) to review: validate test purpose against SW goals/blueprints BEFORE inspecting test code. Ask: "Does this scenario represent real user behavior? Is the expected outcome derivable from the documented contract alone?" If a test scenario cannot be justified from docs without reading implementation, it asserts implementation detail — rewrite from contract.
 
 **Level 3 — Coverage Completeness**
 Confirm test code is faithful to its declared scenario and covers: all documented parameter variants, boundary values, and error paths named in the scenario. Each parametrize case must map to a distinct documented sub-scenario; no case is a duplicate under different framing; no declared variation missing from the parametrize list.
@@ -236,38 +236,43 @@ If uncertain whether finding is primary or secondary, ask: "Would this allow rea
 
 <codemap_context>
 
-Codemap pre-flight — run if `scan-query` available; skip manual Glob/Grep enumeration for any module codemap already covers:
+Codemap pre-flight — run if `scan-query` available; skip manual Glob/Grep enumeration for any module codemap already covers. Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    # static coverage gaps — replaces step 01 symbol enumeration for indexed modules
-    [ -n "$TARGET_MODULE" ] && scan-query uncovered --top 20 "$TARGET_MODULE" 2>/dev/null
-    # mock coverage — prevents false "untested" on mocked symbols
-    [ -n "$TARGET_FN" ] && scan-query mock-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
-    # runtime line coverage (v5.4 index; no-op if absent)
-    [ -n "$TARGET_MODULE" ] && scan-query coverage-gap --threshold 0.8 "$TARGET_MODULE" 2>/dev/null
-    # fixture blast radius — before rewriting or adding fixtures
+    if [ -n "$TARGET_MODULE" ]; then
+        # targeted invocation (caller pre-set TARGET_MODULE)
+        scan-query uncovered --top 20 "$TARGET_MODULE" 2>/dev/null
+        scan-query coverage-gap --threshold 0.8 "$TARGET_MODULE" 2>/dev/null
+        [ -n "$TARGET_FN" ] && scan-query mock-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    else
+        # review/worktree context — derive changed modules from diff; replaces step 01 enumeration
+        _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
+        for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
+            scan-query uncovered --top 20 "$_MOD" 2>/dev/null
+            scan-query coverage-gap --threshold 0.8 "$_MOD" 2>/dev/null
+        done
+    fi
     [ -n "$TARGET_FIXTURE" ] && scan-query fixture-rdeps "$TARGET_FIXTURE" 2>/dev/null
     [ -n "$TARGET_TEST_FILE" ] && scan-query fixture-graph "$TARGET_TEST_FILE" 2>/dev/null
 fi
 ```
 
-> `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure. After implementation change, prefer `codemap:test-impact` (requires `codemap` plugin) over full-suite rerun — call `Skill(skill="codemap:test-impact", args="<module::changed_function>")` to select only the statically affected test files.
+> `uncovered` output replaces step 01 Glob/Grep scan for indexed modules — skip manual enumeration for symbols codemap already lists as uncovered. Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset. `mock-rdeps` prevents flagging mocked-but-untested symbols as coverage gaps. `coverage-gap` augments static analysis with runtime line coverage when `--with-coverage` index available (v5.4). `fixture-rdeps` + `fixture-graph` replace manual conftest grep when analyzing test fixture structure. After implementation change, prefer `codemap:test-impact` (requires `codemap` plugin) over full-suite rerun — call `Skill(skill="codemap:test-impact", args="<module::changed_function>")` to select only the statically affected test files.
 
 </codemap_context>
 
 <workflow>
 
-00. **Codemap pre-flight** (if index present — see `<codemap_context>`): run `uncovered` + `mock-rdeps` before any Glob/Grep. `uncovered` output is the coverage-gap work queue — skip manual step 01 enumeration for modules it already covers. `mock-rdeps` prevents false coverage gaps on mocked symbols. `coverage-gap` augments with runtime data. `fixture-rdeps`/`fixture-graph` replace manual conftest grep when target is test infrastructure.
-
+00. **Codemap pre-flight** (if index present — see `<codemap_context>`): always runs — when `TARGET_MODULE` set: `uncovered`/`coverage-gap`/`mock-rdeps`; when unset (review/worktree): auto-derives changed modules from diff and runs `uncovered`/`coverage-gap` per module. `uncovered` output is the coverage-gap work queue — skip manual step 01 enumeration for modules it covers. `mock-rdeps` prevents false gaps on mocked symbols. `fixture-rdeps`/`fixture-graph` replace conftest grep when target is test infrastructure.
 01. **Enumerate public API surface first**: use `Glob` (`src/**/*.py`, `*.py`) + `Grep` (pattern `^def [^_]|^class [^_]`) to list all public functions/classes; note CLI entrypoints (`console_scripts` in `pyproject.toml`, `__main__.py`); never start writing tests without this inventory
 02. **Read docs before code**: read docstrings, README, type hints, `Raises:` entries for each public symbol; infer CONTRACT (what it should do) from docs — that what tests validate; only read implementation if docs absent or ambiguous
 03. Locate existing test files: use `Grep` (pattern `^class Test|^def test_`, glob `tests/**/*.py`) and `Glob` (pattern `tests/**/*.py`) to map what exists; check each public API symbol against existing coverage
 04. **Expand-first gate**: before writing any new test, check existing test files for expansion opportunities — (1) add case to existing `@pytest.mark.parametrize` list, (2) convert existing non-parametrized test to parametrized form, (3) extend existing test body with new assertion variant; write new test function only when no existing test can accommodate the scenario; write new test file only when no existing file covers the target module
 05. Identify happy path tests for each public entry point (correct documented inputs → expected documented outputs)
-06. Build edge case matrix per public entry point using checklist in `<core_principles>` — derive every dimension from docs/type hints, not from reading implementation
+06. Build edge case matrix per public entry point using checklist in `<core_principles>` — deriving dimensions per the Black-box first principle
 07. Write parametrized tests covering all cases — each test reads as "user doing X expects Y"
 08. Run tests and verify they actually FAIL when code is broken
 09. Check for missing assertions (test with no assertions = useless)

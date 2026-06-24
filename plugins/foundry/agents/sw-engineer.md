@@ -220,30 +220,36 @@ Prefer dedicated library over raw `warnings.warn` — handles argument forwardin
 
 <codemap_context>
 
-Codemap pre-flight — run if `scan-query` available + index exists; skip Grep/Read enumeration for symbols codemap already covers (requires `codemap` plugin):
+Codemap pre-flight — run if `scan-query` available + index exists; skip Grep/Read enumeration for symbols codemap already covers (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
 
 ```bash
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    # fn-rdeps: all callers — more accurate than grep (catches aliased imports, star re-exports)
-    [ -n "$TARGET_FN" ] && scan-query fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
-    # fn-blast: transitive blast radius — callers of callers; catches cascading signature-change impact
-    [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
-    # rdeps: module-level importers — for module renames or major restructures
-    [ -n "$TARGET_MODULE" ] && scan-query rdeps "$TARGET_MODULE" 2>/dev/null
-    # symbol: get function/class source without reading full file (~70–94% token reduction on large files)
-    [ -n "$TARGET_FN" ] && scan-query symbol "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    scan-query central --top 5 2>/dev/null  # blast-radius baseline — always run
+    if [ -n "$TARGET_MODULE" ]; then
+        # targeted invocation (caller pre-set TARGET_MODULE)
+        scan-query rdeps "$TARGET_MODULE" 2>/dev/null
+        [ -n "$TARGET_FN" ] && scan-query fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+        [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+        [ -n "$TARGET_FN" ] && scan-query symbol "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    else
+        # review/worktree context — derive changed modules from diff; skip grep-based caller walk
+        _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
+        for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
+            scan-query rdeps "$_MOD" 2>/dev/null
+        done
+    fi
 fi
 ```
 
-> `fn-rdeps` + `fn-blast` replace Grep for call-site discovery before refactoring. `rdeps` maps module importers before rename. `symbol` avoids full-file read for single-function lookup. All no-op when index absent.
+> `central` gives blast-radius baseline every run. `fn-rdeps` + `fn-blast` replace Grep for call-site discovery (catches aliased imports, star re-exports). Auto-derive from diff fires in review/worktree context when `TARGET_MODULE` unset — replaces manual module enumeration with zero Grep. `symbol` avoids full-file read for single-function lookup (~70–94% token reduction).
 
 </codemap_context>
 
 <workflow>
 
-00. **Codemap pre-flight** (if index present — see `<codemap_context>`): run `fn-rdeps`/`fn-blast` on target function BEFORE Grep/Read — reveals all callers (Grep misses aliased imports, re-exports, dynamic dispatch) and transitive blast radius. `rdeps` maps module importers before rename. Fall back to Grep only when index absent.
+00. **Codemap pre-flight** (if index present — see `<codemap_context>`): always runs — `central` baseline unconditional; when `TARGET_MODULE` set: `rdeps`/`fn-rdeps`/`fn-blast`/`symbol`; when unset (review/worktree): auto-derives changed modules from diff and runs `rdeps` per module. Skip Grep/Read for any symbols codemap returns; fall back to Grep only when index absent.
 01. Read `pyproject.toml` (or `setup.cfg`/`setup.py`) — understand project structure, dependencies, build config before writing any code
 02. Read and understand existing code structure before writing anything
 03. Identify what exists vs what needs creation

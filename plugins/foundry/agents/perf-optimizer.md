@@ -193,14 +193,20 @@ Codemap pre-flight for structural perf analysis — run alongside step 1a+1b (se
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    # fixture scope map — identify session vs function scope; expensive function-scoped = upgrade candidate
-    [ -n "$TARGET_TEST_FILE" ] && scan-query fixture-graph "$TARGET_TEST_FILE" 2>/dev/null
-    # fixture blast radius — check test count before recommending scope change
+    scan-query central --top 5 2>/dev/null  # hotspot baseline — always run; highest fan-in = highest optimization ROI
+    if [ -n "$TARGET_MODULE" ]; then
+        # targeted invocation
+        scan-query subprocess-deps "$TARGET_MODULE" 2>/dev/null
+        [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    else
+        # review/worktree context — derive from diff; skip manual module enumeration
+        _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
+        for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
+            scan-query subprocess-deps "$_MOD" 2>/dev/null
+        done
+    fi
     [ -n "$TARGET_FIXTURE" ] && scan-query fixture-rdeps "$TARGET_FIXTURE" 2>/dev/null
-    # caller blast radius — before changing a hot function's signature or behavior
-    [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
-    # subprocess call chains — CLI script I/O topology
-    [ -n "$TARGET_MODULE" ] && scan-query subprocess-deps "$TARGET_MODULE" 2>/dev/null
+    [ -n "$TARGET_TEST_FILE" ] && scan-query fixture-graph "$TARGET_TEST_FILE" 2>/dev/null
 fi
 ```
 

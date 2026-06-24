@@ -70,13 +70,7 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 - HARD_CUTOFF:      900   (15 minutes of no file activity → declare timed out)
 - EXTENSION:        300   (one +5 min extension if output file tail explains delay)
 
-Bash equivalent (paste at the start of any health-monitoring block):
-
-```bash
-MONITOR_INTERVAL=300
-HARD_CUTOFF=900
-EXTENSION=300
-```
+Each Step 4 spawn applies the canonical `health_sentinel.py` boilerplate from `_shared/agent-spawn-protocol.md` §8b — substituting only its own `<ID>` suffix and output-file glob. The full snippet (constants + `health_sentinel.py start` + missing-helper warning + sentinel/launch-at persistence) lives there; do not re-paste it per spawn.
 
 Maintain colors manually — add new agent colors here when creating agents; static list advisory only — live Grep in Step 3 authoritative for colors in use.
 
@@ -207,16 +201,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
      ```
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
-   **Health monitoring** (CLAUDE.md §6): After spawning web-explorer agent:
-   ```bash
-   MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
-   eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer 2>/dev/null)"  # timeout: 5000
-   [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
-   # Persist SENTINEL and LAUNCH_AT across Bash() call boundaries
-   echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-sentinel"
-   echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-launch-at"
-   ```
-   Every `$MONITOR_INTERVAL` seconds: re-read sentinel path with `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-web-explorer-sentinel" 2>/dev/null)`; then `find "${TMPDIR:-/tmp}" -newer "$SENTINEL" -name "manage-schema-*.md" | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. On timeout: read partial output; surface with ⏱.
+   **Health monitoring** (CLAUDE.md §6): after spawning the web-explorer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `web-explorer` and find glob `manage-schema-*.md` (poll path `${TMPDIR:-/tmp}`).
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `effort`, `initialPrompt`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `isolation`, `color`), current model shorthands, new fields
    - Note new fields worth including. Adjust template to reflect current schema. If new field broadly useful for agent's role (e.g. `maxTurns` for long-running agents), include with sensible default and inline comment.
@@ -250,15 +235,7 @@ Write the file using the Write tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §6): After spawning foundry:sw-engineer agent:
-```bash
-MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-agent 2>/dev/null)"  # timeout: 5000
-[ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
-echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-agent-sentinel"
-echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-agent-launch-at"
-```
-Poll per `<constants>` interval — re-read: `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-sw-engineer-agent-sentinel" 2>/dev/null)`; adjust find path/name glob to match this agent's output files.
+**Health monitoring** (CLAUDE.md §6): after spawning the foundry:sw-engineer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `sw-engineer-agent` and the find glob matching this agent's output files.
 
 **CRITICAL — worktree isolation copy**: `foundry:sw-engineer` runs with `isolation: worktree` — scaffolded file lands in a temporary worktree, not the main tree. After agent completes: (1) read the worktree path from the agent result (returned in `worktree` field or as part of the result message); (2) run: `cp <worktree-path>/.claude/agents/<name>.md .claude/agents/<name>.md` (substitute actual paths); (3) proceed with Steps 5–9 on the main-tree copy. Without this step, Steps 5–9 Globs find nothing.
 
@@ -273,15 +250,7 @@ Poll per `<constants>` interval — re-read: `SENTINEL=$(cat "${TMPDIR:-/tmp}/ma
      ```
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SKILL_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SKILL_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
-   **Health monitoring** (CLAUDE.md §6): After spawning web-explorer agent:
-   ```bash
-   MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
-   eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-web-explorer-skill 2>/dev/null)"  # timeout: 5000
-   [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
-   echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-skill-sentinel"
-   echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-web-explorer-skill-launch-at"
-   ```
-   Poll per `<constants>` interval — re-read: `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-web-explorer-skill-sentinel" 2>/dev/null)`; adjust find path/name glob to match this agent's output files.
+   **Health monitoring** (CLAUDE.md §6): after spawning the web-explorer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `web-explorer-skill` and the find glob matching this agent's output files.
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `argument-hint`,`disable-model-invocation`, `user-invocable`, `allowed-tools`, `model`, `effort`, `shell`, `paths`, `context`, `agent`, `hooks`), new fields
    - Note new fields worth including. Adjust template to reflect current schema. Include `model` or `context: fork` only when skill's purpose clearly benefits.
@@ -309,15 +278,7 @@ Write using the Write tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","lines":N,"confidence":0.N}
 ```
 
-**Health monitoring** (CLAUDE.md §6): After spawning foundry:sw-engineer agent:
-```bash
-MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
-eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start manage-sw-engineer-skill 2>/dev/null)"  # timeout: 5000
-[ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
-echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-skill-sentinel"
-echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/manage-sw-engineer-skill-launch-at"
-```
-Poll per `<constants>` interval — re-read: `SENTINEL=$(cat "${TMPDIR:-/tmp}/manage-sw-engineer-skill-sentinel" 2>/dev/null)`; adjust find path/name glob to match this agent's output files.
+**Health monitoring** (CLAUDE.md §6): after spawning the foundry:sw-engineer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `sw-engineer-skill` and the find glob matching this agent's output files.
 
 ### Mode: Update Agent (rename)
 

@@ -88,6 +88,13 @@ class TestAgentRouting:
         assert result.returncode == 0, result.stderr
         assert result.stdout == ""
 
+    def test_claude_catchall_passes_through(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """Built-in 'claude' catch-all is recognised; no silent reroute to general-purpose."""
+        result = run_hook("agent-router.js", _pre_agent("claude", sid), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""
+
     def test_known_plugin_agent_passes_through(self, sid: str, tmp_home: Path, run_hook) -> None:
         """Known plugin agent 'foundry:sw-engineer' resolves via tier 1; stdout empty."""
         result = run_hook("agent-router.js", _pre_agent("foundry:sw-engineer", sid), home=tmp_home)

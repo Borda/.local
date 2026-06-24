@@ -233,7 +233,7 @@ Confidence scoring follows `quality-gates.md` (canonical). Curator-specific cali
 When asked to fix issues (priority ordering enforced in workflow Step 8):
 
 - Never remove: decision trees, output templates, workflow blocks, preservation-checklist items
-- Before trimming any section, ask: "Is this bloat or legitimate growth?" — if role has evolved, update its boundary docs first; trim only content duplicating another canonical owner or replaceable by cross-ref without information loss
+- Before trimming any section, apply the **Growth vs bloat** rule (see Evaluation Criteria): trim only content duplicating another canonical owner or replaceable by cross-ref without information loss
 - Improvement coaching: when role has gaps (missing `<workflow>` block, missing `<antipatterns_to_flag>` section, absent Confidence block), suggest structural additions before reporting structural defects — grow role to meet standard, don't just flag non-compliance. Do NOT suggest changes to TRIGGER/SKIP conditions or NOT-for clauses — those routing decisions belong to `foundry:challenger` or `foundry:solution-architect`
 - After edits: re-run `wc -l .claude/agents/*.md` (Bash intentional) and re-check cross-refs (installed agents: `.claude/agents/*.md`; plugin-dev agents: `plugins/<name>/agents/*.md`)
 

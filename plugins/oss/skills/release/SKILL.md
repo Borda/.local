@@ -130,7 +130,7 @@ Working directory: <REPO_ROOT>. Read classified change table from <GATHER_FILE>.
 
 Agent B — Extract contributors (`subagent_type="foundry:sw-engineer"`):
 ```text
-Working directory: <REPO_ROOT>. Range: <RANGE>. Run: git -C <REPO_ROOT> log "<RANGE>" --no-merges --format="%aN <%aE>%n%(trailers:key=Co-authored-by,valueonly)" | grep -v '^$' | sort -u. Deduplicate by email; exclude bots ([bot], noreply@). For each contributor inspect commits in range (git -C <REPO_ROOT> log "<RANGE>" --no-merges --author="<email>" --oneline); pick up to 3 most significant (rank: new public API > major UX > significant fix > internal > docs/typo). Resolve GitHub handle from PR author data (author.login). For each resolved handle fetch gh api /users/<login> --jq '{blog:.blog}' for LinkedIn detection (.blog contains linkedin.com). Format: - **Name** (@handle, [LinkedIn](url)) — <what they did>. Write contributors list to <CONTRIBUTORS_FILE>. Return ONLY: {"status":"done","file":"<CONTRIBUTORS_FILE>","count":N}
+Working directory: <REPO_ROOT>. Range: <RANGE>. Run: python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_contributors.py" --repo <REPO_ROOT> --range "<RANGE>" — emits one `Name <email>` line per contributor, already deduplicated by email and bot-filtered ([bot], noreply@). For each contributor inspect commits in range (git -C <REPO_ROOT> log "<RANGE>" --no-merges --author="<email>" --oneline); pick up to 3 most significant (rank: new public API > major UX > significant fix > internal > docs/typo). Resolve GitHub handle from PR author data (author.login). For each resolved handle fetch gh api /users/<login> --jq '{blog:.blog}' for LinkedIn detection (.blog contains linkedin.com). Format: - **Name** (@handle, [LinkedIn](url)) — <what they did>. Write contributors list to <CONTRIBUTORS_FILE>. Return ONLY: {"status":"done","file":"<CONTRIBUTORS_FILE>","count":N}
 ```
 
 Validate both envelopes:
@@ -362,11 +362,10 @@ Read `$CONTRIBUTORS_FILE` for formatted contributors list. If file missing (dele
 ```bash
 # Reload $RANGE (Check 41: fresh shell)
 RANGE=$(cat "${TMPDIR:-/tmp}/release-range" 2>/dev/null || echo "")
-git log "$RANGE" --no-merges --format="%aN <%aE>%n%(trailers:key=Co-authored-by,valueonly)" \
-  | grep -v '^$' | sort -u  # timeout: 3000
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_contributors.py" --range "$RANGE"  # timeout: 5000
 ```
 
-Deduplicate by email. Exclude bot accounts (e.g. `[bot]`, `noreply@`). Every commit counts, including docs and typo fixes.
+`extract_contributors.py` emits one `Name <email>` line per contributor — already deduplicated by email and bot-filtered (`[bot]`, `noreply@`). Every commit counts, including docs and typo fixes.
 
 For each contributor, inspect commits in range (`git log "$RANGE" --no-merges --author="<email>" --oneline`) and pick up to 3 most significant contributions. Rank: new public API > major UX improvement > significant fix > internal change > docs/typo. No PR numbers, no issue links, no `(#N)` references.
 

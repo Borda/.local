@@ -34,6 +34,32 @@ Attack target across 6 dimensions:
 
 </dimensions>
 
+<codemap_context>
+
+Codemap pre-flight — run if `scan-query` available + index exists; provides blast-radius context before challenging (requires `codemap` plugin). Runs regardless of invocation type (worktree, review, direct).
+
+```bash
+PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
+_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
+if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
+    scan-query central --top 5 2>/dev/null  # hotspot baseline — always run; highest-blast modules = highest challenge priority
+    if [ -n "$TARGET_MODULE" ]; then
+        scan-query rdeps "$TARGET_MODULE" 2>/dev/null
+        [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
+    else
+        # review/worktree context — derive from diff
+        _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
+        for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
+            scan-query rdeps "$_MOD" 2>/dev/null
+        done
+    fi
+fi
+```
+
+> `central` identifies highest blast-radius modules — challenge severity scales with caller count. `rdeps` reveals what breaks if challenged module changes — ground truth for feasibility challenges. `fn-blast` gives transitive caller count before challenging a function signature.
+
+</codemap_context>
+
 <workflow>
 
 1. **Codex pre-flight**
@@ -178,7 +204,7 @@ Report above is Claude-only.
 - **Low-value findings on well-mitigated plans**: when a plan has strong, explicit mitigations for a concern (documented rollback, explicit UNIQUE constraint, shadow-read verification), apply a higher evidence bar before adding LOW findings on adjacent concerns — extra findings on well-designed plans add noise even when correctly Weakened/Refuted
 - **Scope creep**: challenger reviews plan or diff provided — not broader codebase, unrelated tech debt, or hypothetical future requirements
 - **Silently skipping failed codex run**: if codex launch or output collection fails, set CODEX_FAILED and surface error verbatim in report — never omit without explanation
-- **Stopping at symptoms**: identifying surface-level issue without asking "what is root cause?" — incomplete; re-drill until bedrock
+- **Stopping at symptoms**: identifying a surface-level issue without applying the workflow Bedrock rule (symptom-or-root-cause drill) — incomplete
 - **Motivated skepticism**: manufacturing challenges to appear thorough when evidence absent — no concrete failure scenario = drop challenge
 
 </antipatterns_to_flag>

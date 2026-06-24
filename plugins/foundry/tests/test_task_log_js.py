@@ -59,19 +59,28 @@ def tmp_home(tmp_path: Path) -> Path:
 # ── Payload helpers (module-level, not fixtures) ─────────────────────────────
 
 
-def _pre_agent(sid: str, tool_use_id: str, subagent_type: str = "foundry:sw-engineer") -> dict:
+def _pre_agent(
+    sid: str, tool_use_id: str, subagent_type: str = "foundry:sw-engineer", run_in_background: bool = False
+) -> dict:
     """Build a ``PreToolUse`` payload for an ``Agent()`` tool call."""
+    tool_input: dict = {"subagent_type": subagent_type, "description": "x", "prompt": "p"}
+    if run_in_background:
+        tool_input["run_in_background"] = True
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Agent",
-        "tool_input": {"subagent_type": subagent_type, "description": "x", "prompt": "p"},
+        "tool_input": tool_input,
         "tool_use_id": tool_use_id,
         "session_id": sid,
     }
 
 
 def _post_agent(sid: str, tool_use_id: str) -> dict:
-    """Build a ``PostToolUse`` payload for an ``Agent()`` tool call."""
+    """Build a ``PostToolUse`` payload for an ``Agent()`` tool call.
+
+    Mirrors the live payload where PostToolUse's ``tool_input`` omits ``run_in_background`` —
+    the hook must recover background-ness from the ``pending/`` marker written at PreToolUse.
+    """
     return {
         "hook_event_name": "PostToolUse",
         "tool_name": "Agent",
@@ -199,6 +208,24 @@ class TestAgentLifecycle:
 
         assert result.returncode == 0, result.stderr
         assert (state_dir(sid) / "agents" / f"{agent_id}.json").exists()
+
+    def test_background_agent_survives_post_tool_use(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
+        """run_in_background agents stay tracked after PostToolUse, which fires at dispatch.
+
+        Regression: a background agent is still running when its Agent() tool call returns, so
+        PostToolUse must NOT delete the agents/ entry — the 🤖 badge would otherwise show "none"
+        for the agent's whole runtime. Background-ness is recovered from the pending/ marker,
+        since PostToolUse's tool_input omits run_in_background.
+        """
+        tool_use_id = "tu-bgkeep"
+        run_hook("task-log.js", _pre_agent(sid, tool_use_id, run_in_background=True), home=tmp_home)
+        assert (state_dir(sid) / "agents" / f"{tool_use_id}.json").exists()
+
+        result = run_hook("task-log.js", _post_agent(sid, tool_use_id), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        assert (state_dir(sid) / "agents" / f"{tool_use_id}.json").exists()
+        assert (state_dir(sid) / "pending" / f"{tool_use_id}.json").exists()
 
     def test_foreground_agent_subagent_start_consumes_pending(
         self, sid: str, tmp_home: Path, run_hook, state_dir

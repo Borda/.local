@@ -205,9 +205,12 @@ process.stdin.on("end", () => {
               }),
             );
             fs.mkdirSync(pendingDir, { recursive: true });
+            // Persist run_in_background here, where tool_input reliably carries it. PostToolUse reads
+            // this flag to decide whether the Agent() call returned at dispatch (background) or at
+            // completion (foreground) — its own tool_input may omit run_in_background.
             fs.writeFileSync(
               path.join(pendingDir, `${data.tool_use_id}.json`),
-              JSON.stringify({ type: agentType, ts }),
+              JSON.stringify({ type: agentType, ts, bg: tool_input?.run_in_background === true }),
             );
           } catch (_) {}
         }
@@ -284,17 +287,29 @@ process.stdin.on("end", () => {
             fs.unlinkSync(path.join(codexDir, `${data.tool_use_id}.json`));
           } catch (_) {}
         }
-        // Remove agent tracking entry written by PreToolUse when Agent() call completes.
-        // For run_in_background=true agents, PostToolUse fires immediately (before SubagentStart).
-        // Clearing pending/ here signals SubagentStart to re-write agents/<agent_id>.json instead
-        // of assuming the PreToolUse entry still exists (which it no longer does).
+        // Foreground Agent() calls complete when PostToolUse fires → delete the PreToolUse entry so
+        // the 🤖 counter drops promptly. Background agents (run_in_background) return at *dispatch*,
+        // so PostToolUse fires while the agent is still running — keep agents/ + pending/ so the agent
+        // stays visible (and a later SubagentStart, if it fires, consumes pending/ without writing a
+        // duplicate). Background-ness is read from pending/ (captured at PreToolUse) since this event's
+        // tool_input may omit run_in_background.
+        // ponytail: a finished background agent lingers until SubagentStop or the statusline's 10-min
+        // staleness filter reaps it — SubagentStop carries only agent_id, so it can't match this
+        // tool_use_id-keyed entry; the staleness filter is the backstop.
         if (tool_name === "Agent") {
+          let isBackground = tool_input?.run_in_background === true;
           try {
-            fs.unlinkSync(path.join(agentsDir, `${data.tool_use_id}.json`));
+            const p = JSON.parse(fs.readFileSync(path.join(pendingDir, `${data.tool_use_id}.json`), "utf8"));
+            if (p.bg === true) isBackground = true;
           } catch (_) {}
-          try {
-            fs.unlinkSync(path.join(pendingDir, `${data.tool_use_id}.json`));
-          } catch (_) {}
+          if (!isBackground) {
+            try {
+              fs.unlinkSync(path.join(agentsDir, `${data.tool_use_id}.json`));
+            } catch (_) {}
+            try {
+              fs.unlinkSync(path.join(pendingDir, `${data.tool_use_id}.json`));
+            } catch (_) {}
+          }
         }
         // Remove skill tracking entry when Skill() call completes
         if (tool_name === "Skill") {

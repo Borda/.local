@@ -96,42 +96,15 @@ fi
 
 ## Step 1: Locate the installed plugin
 
-Execute this exact jq command — do not parse the JSON manually:
+Resolve the validated install root via the canonical resolver — registry lookup, cache-scan fallback (skips `.orphaned_at`, newest by semver), and both security gates (under cache dir + `plugin.json` name match) live in the script; do not re-implement them inline:
 
 ```bash
-# Primary: registry lookup — sort by installedAt desc, pick latest install path
-PLUGIN_ROOT=$(jq -r '
-    .plugins
-    | to_entries[]
-    | select(.key | ascii_downcase | contains("foundry"))
-    | .value[]
-    | select(.installPath != null)
-    | [.installedAt, .installPath]
-    | @tsv
-' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null \
-    | sort -rk1 | head -1 | cut -f2)  # timeout: 5000
-
-# Fallback: filesystem scan — skip orphaned dirs, semver-sort descending, pick latest
-if [ -z "$PLUGIN_ROOT" ]; then
-    PLUGIN_ROOT=$(find ~/.claude/plugins/cache -maxdepth 5 -name "plugin.json" 2>/dev/null \
-            | xargs grep -l '"name"[[:space:]]*:[[:space:]]*"foundry"' 2>/dev/null \
-            | while IFS= read -r f; do
-                dir=$(dirname "$(dirname "$f")")
-                [ -f "$dir/.orphaned_at" ] && continue
-                echo "$dir"
-              done \
-            | sort -Vr | head -1)  # timeout: 10000
-    [ -n "$PLUGIN_ROOT" ] && printf "  Note: foundry not in installed_plugins.json — using cache scan result; consider reinstalling\n"
-fi
-# Validate PLUGIN_ROOT — must be under ~/.claude/plugins/cache/ and have foundry plugin.json
-if [ -n "$PLUGIN_ROOT" ]; then
-    case "$PLUGIN_ROOT" in
-        "$HOME"/.claude/plugins/cache/*) ;;  # expected location — OK
-        *) echo "! SECURITY: PLUGIN_ROOT '$PLUGIN_ROOT' is outside expected cache dir — aborting setup"; exit 1 ;;
-    esac
-    _PR_NAME=$(jq -r '.name // empty' "$PLUGIN_ROOT/plugin.json" 2>/dev/null)
-    [ "$_PR_NAME" = "foundry" ] || { echo "! SECURITY: plugin.json name '$_PR_NAME' != foundry — aborting setup"; exit 1; }
-fi
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_plugin_root.py" --plugin-name foundry 2>/dev/null)  # timeout: 15000
+case $? in
+    0) ;;
+    2) echo "! SECURITY: resolve_plugin_root.py rejected the candidate root — aborting setup"; exit 1 ;;
+    *) PLUGIN_ROOT="" ;;  # exit 1: not found — handled by the empty-check below
+esac
 echo "$PLUGIN_ROOT" > "${TMPDIR:-/tmp}/setup-plugin-root"  # persist for later blocks (Check 41)
 ```
 
@@ -279,25 +252,8 @@ mkdir -p ~/.claude/rules  # timeout: 5000
 **Phase 1 — Remove obsolete foundry-managed symlinks** (file/dir removed from current plugin version, or dangling target):
 
 ```bash
-# Re-resolve PLUGIN_ROOT from plugin cache — Bash state may not persist across steps; always use installed cache path, never local fallback
-PLUGIN_ROOT=$(jq -r '
-    .plugins
-    | to_entries[]
-    | select(.key | ascii_downcase | contains("foundry"))
-    | .value[]
-    | select(.installPath != null)
-    | [.installedAt, .installPath]
-    | @tsv
-' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null \
-    | sort -rk1 | head -1 | cut -f2)
-[ -z "$PLUGIN_ROOT" ] && PLUGIN_ROOT=$(find ~/.claude/plugins/cache -maxdepth 5 -name "plugin.json" 2>/dev/null \
-        | xargs grep -l '"name"[[:space:]]*:[[:space:]]*"foundry"' 2>/dev/null \
-        | while IFS= read -r f; do
-            dir=$(dirname "$(dirname "$f")")
-            [ -f "$dir/.orphaned_at" ] && continue
-            echo "$dir"
-          done \
-        | sort -Vr | head -1)  # timeout: 10000
+# Re-resolve PLUGIN_ROOT — Bash state may not persist across steps; always use the installed cache path, never the local fallback
+PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_plugin_root.py" --plugin-name foundry 2>/dev/null)  # timeout: 15000
 [ -z "$PLUGIN_ROOT" ] && { printf "! setup Phase 1 — could not resolve PLUGIN_ROOT; run claude plugin install foundry@borda-ai-rig first\n"; exit 1; }
 python "$PLUGIN_ROOT/bin/symlink_with_guard.py" cleanup --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
 ```
