@@ -556,6 +556,8 @@ Codemap is auto-enabled in all skills when the plugin is installed and the index
 | State                              | Behavior                                |
 | ---------------------------------- | --------------------------------------- |
 | Installed + index found + no flag  | Auto-enabled                            |
+| Installed + no index + no flag     | AskUser: build index now? (Gate A)      |
+| Installed + stale index + no flag  | AskUser: rebuild now? (Gate B)          |
 | Not installed + no flag            | Silent skip                             |
 | Not installed + `--codemap`        | AskUser: install codemap? (strict mode) |
 | Installed + no index + `--codemap` | Fail with: build index first            |
@@ -618,7 +620,7 @@ In `/develop:refactor` Step 3, characterization tests must pass before refactori
 
 ### scan-query warnings appearing in output
 
-`codemap` is optional. If `scan-query` is not on your PATH or the index file is missing, all codemap steps are silently skipped — no blast-radius check, no structural context for analysis agents. The skill works fully without it. To enable codemap context, install the `codemap` plugin and run `/codemap:scan-codebase`.
+`codemap` is optional. If `scan-query` is not on your PATH, all codemap steps are silently skipped. If the plugin is installed but the index is missing or stale, the default (auto) mode prompts you to build/rebuild it (Gate A/B); `--no-codemap` skips silently. The skill works fully without it. To enable codemap context, install the `codemap` plugin and run `/codemap:scan-codebase`.
 
 ______________________________________________________________________
 

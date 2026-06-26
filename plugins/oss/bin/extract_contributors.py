@@ -49,18 +49,29 @@ def is_bot(line: str) -> bool:
         line: A ``Name <email>`` contributor line.
 
     Returns:
-        True if the line contains ``[bot]`` or a ``noreply`` address (covers both
-        ``noreply@host`` and GitHub ``user@users.noreply.github.com`` forms).
+        True if the line contains ``[bot]`` or a generic ``noreply`` address.
+        ``users.noreply.github.com`` is **not** treated as a bot signal — GitHub
+        assigns that domain to all humans who commit via the web UI or who enable
+        the privacy-email setting, so it is a human indicator, not a bot one.
 
     Examples:
         >>> is_bot("dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>")
         True
+        >>> is_bot("Jirka Borovec <6035284+Borda@users.noreply.github.com>")
+        False
         >>> is_bot("Jane Doe <jane@example.com>")
         False
         >>> is_bot("CI <ci@noreply.example.com>")
         True
     """
-    return bool(_BOT_LOGIN_RE.search(line) or _NOREPLY_RE.search(line))
+    if _BOT_LOGIN_RE.search(line):
+        return True
+    # GitHub privacy / web-UI email — assigned to every human who commits via
+    # GitHub web editor or enables privacy email; [bot] check above already
+    # catches bots that happen to use this domain.
+    if "users.noreply.github.com" in line:
+        return False
+    return bool(_NOREPLY_RE.search(line))
 
 
 def dedupe_by_email(lines: list[str]) -> list[str]:

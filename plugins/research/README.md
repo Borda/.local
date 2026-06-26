@@ -279,6 +279,8 @@ The core loop. Reads `program.md`, establishes a baseline, then iterates: spawn 
 /research:run program.md --architect                   # pre-generate hypotheses via solution-architect
 /research:run program.md --researcher --journal        # also log every iteration to journal
 /research:run program.md --hypothesis path/to/hypotheses.jsonl  # consume a pre-built queue
+/research:run program.md --no-codemap                  # skip codemap structural context
+/research:run program.md --codemap                     # strict: fail if codemap index missing
 /research:run --resume                                 # resume latest interrupted run
 /research:run program.md --resume                      # resume a specific run
 ```
@@ -378,6 +380,7 @@ After implementing a method from a paper, verify that the implementation actuall
 /research:verify paper.pdf --program program.md         # use scope_files from program.md
 /research:verify paper.pdf --strict                     # stop on HIGH severity formula/eval mismatch
 /research:verify paper.pdf --dim F,H                    # audit only specific dimensions
+/research:verify paper.pdf --no-codemap                # skip codemap structural context
 ```
 
 **Five audit dimensions**:
@@ -399,6 +402,8 @@ After implementing a method from a paper, verify that the implementation actuall
 | < 0.7     | LOW fidelity      |
 
 **Strict mode** (`--strict`): if any HIGH severity mismatch exists in dimensions F or E, stops immediately with a BREAKING notice. Use before running expensive experiments.
+
+**Codemap** (`run`, `verify`): on by default when the `codemap` plugin is installed and a project index exists — supplies blast-radius, importer, and coverage context to the ideation agent (`run`) and the fidelity auditor (`verify`). A missing or stale index prompts you to build/rebuild it (Gate A/B); `--no-codemap` skips silently, `--codemap` makes it strict.
 
 **Output**: full report to `.temp/output-verify-<branch>-<date>.md`.
 

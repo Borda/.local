@@ -76,6 +76,10 @@ fi
 echo "$CODEMAP_ENABLED" > "$PLAN_NS/codemap-enabled"
 ```
 
+> loads: codemap-gates.md
+
+Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+
 **Preflight** — if `SEMBLE_ENABLED=true`:
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight. Codemap validation handled by auto-detect block above.

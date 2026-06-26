@@ -8,11 +8,23 @@ Triggered when `$ARGUMENTS == "lessons"`. Read accumulated lessons and feedback,
 
 Find and read all source material in parallel:
 
-Use Read tool on `.notes/lessons.md` (skip if file not found). Derive MEMORY_DIR via canonical snippet:
+Use Read tool on `.notes/lessons.md` (skip if file not found). Enumerate all project memory directories:
+
 ```bash
-MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # timeout: 5000
+# timeout: 5000
+find "$HOME/.claude/projects" -maxdepth 2 -name "memory" -type d 2>/dev/null | sort | while IFS= read -r d; do
+    slug=$(echo "$d" | sed 's|.*/projects/||;s|/memory||')
+    fb_count=$(find "$d" -maxdepth 1 -name "feedback_*.md" 2>/dev/null | wc -l | tr -d ' ')
+    mem_tokens=$(( $(wc -c < "$d/MEMORY.md" 2>/dev/null || echo 0) / 4 ))
+    echo "MEM_DIR: $slug | ${mem_tokens}k tokens | ${fb_count} feedback files | $d"
+done
 ```
-Then use Glob tool with pattern `feedback_*.md` in `$MEMORY_DIR` to list feedback files; read each with Read tool. Also read `.claude/rules/` (Glob `rules/*.md`, path `.claude/`) to understand what's already captured as rule.
+
+**If `PROJECT_FLAG == true`** (check model context from SKILL.md bash output): call `AskUserQuestion` with `multiSelect: true`. Build options from `MEM_DIR:` lines — label = `<slug> (tokens=<N>k)`, description = `<M> feedback files`. Max 4 options: if more than 4 projects found, take the 4 largest by token count and note in the question text that remaining projects were omitted. Always add a final option with label `Skip` and description `exit without changes`. Checked slugs → extract matching directory paths as the working set.
+
+**If `PROJECT_FLAG == false`**: use all directories from `MEM_DIR:` lines.
+
+For each selected directory, use Glob tool with pattern `feedback_*.md` in that directory to list feedback files; read each with Read tool. Label each cluster of findings with its project slug. Also read `.claude/rules/` (Glob `rules/*.md`, path `.claude/`) to understand what's already captured as rule.
 
 ## Step L2: Cluster and classify
 

@@ -109,7 +109,10 @@ _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/detect_codemap.py"
 python "$_DETECT_CODEMAP" --prefix resolve $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && { echo "! BLOCKED — codemap strict mode requested but codemap not installed or index missing"; exit 1; }
 CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled" 2>/dev/null || echo "false")
+CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/resolve-codemap-currency" 2>/dev/null || echo "off")
 ```
+
+**Codemap gates** — when `CODEMAP_FORCE_OFF=false`, read `$_OSS_SHARED/codemap-gates.md` and run: **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, after `codemap:scan-codebase` set `CODEMAP_ENABLED=true`. Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
@@ -226,6 +229,18 @@ Result: single merged `ACTION_ITEMS`. GitHub items first (`[gh][req]`/`[gh][sugg
 ```text
 Report merged: <N> findings from /review · <M> deduplicated against GitHub comments · <K> added as [report] items
 ```
+
+Print merged ACTION_ITEMS as markdown table to terminal immediately after the merge summary (severity descending; same columns as pr-intelligence.md table):
+
+```markdown
+### Action Items — PR #<N> (merged)
+
+| # | Type | Change | Severity | Author | Status | Summary | Loc | Notes |
+|---|------|--------|----------|--------|--------|---------|-----|-------|
+| 1 | [gh][req] | code | 4 | @reviewer | pending | rename param x to count | inline | — |
+```
+
+Summary ≤60 chars. Loc = inline / discussion / report. Notes = `—` when empty. Print only when merged ACTION_ITEMS has ≥1 row. The merged table is the authoritative set for Step 3d selection — it supersedes the pre-merge table shown in Step 3b.
 
 ## Step 3d: User item selection
 

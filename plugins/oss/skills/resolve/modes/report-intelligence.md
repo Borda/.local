@@ -31,6 +31,18 @@ Read `$_OSS_SHARED/review-section-taxonomy.md` — use **Grep pattern** row for 
 - `full_comment_text`: full finding bullet (or concatenated bullets for composites)
 - All items get `[report]` prefix on `type` (e.g., `[report][req]`, `[report][suggest]`)
 
+Print ACTION_ITEMS as markdown table to terminal (severity descending):
+
+```markdown
+### Action Items — report
+
+| # | Type | Change | Severity | Author | Status | Summary | Loc | Notes |
+|---|------|--------|----------|--------|--------|---------|-----|-------|
+| 1 | [report][req] | code | 4 | foundry:sw-engineer | pending | rename param x to count | report | — |
+```
+
+Summary ≤60 chars. Notes = `—` when empty. Print before branching on PR# presence so user sees all items that will be executed (report mode skips Step 3d — no picker).
+
 PR# found in report header → set `$ARGUMENTS = <N>`, go to Step 4; skip Step 3b entirely. After checkout, set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs (report mode executes all findings; no user selection step); skip to Step 8.
 
 No PR# in header → skip Steps 3b and 4; work on current branch as-is. Before skipping, set fallback values for variables Step 8 reads: `HEAD_REF=$(git branch --show-current 2>/dev/null || echo "")` and `IS_FORK=false` (no cross-repo context). Set `SELECTED_ITEMS` = all report-derived ACTION_ITEMS IDs; skip to Step 8.

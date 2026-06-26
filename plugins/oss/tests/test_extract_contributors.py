@@ -32,13 +32,22 @@ class _FakeCompleted:
 @pytest.mark.parametrize(
     ("line", "expected"),
     [
-        pytest.param("dependabot[bot] <x@users.noreply.github.com>", True, id="bot-login"),
-        pytest.param("CI <ci@noreply.example.com>", True, id="noreply-email"),
-        pytest.param("Jane Doe <jane@example.com>", False, id="human"),
+        pytest.param(
+            "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>", True, id="bot-login-privacy-domain"
+        ),
+        pytest.param(
+            "pre-commit-ci[bot] <66853113+pre-commit-ci[bot]@users.noreply.github.com>",
+            True,
+            id="bot-login-privacy-domain-ci",
+        ),
+        pytest.param("CI <ci@noreply.example.com>", True, id="noreply-email-generic"),
+        pytest.param("Jane Doe <jane@example.com>", False, id="human-plain"),
+        pytest.param("Jirka Borovec <6035284+Borda@users.noreply.github.com>", False, id="human-privacy-email"),
+        pytest.param("Alice <123+alice@users.noreply.github.com>", False, id="human-web-ui-commit"),
     ],
 )
 def test_is_bot(line: str, expected: bool) -> None:
-    """``is_bot`` flags ``[bot]`` logins and ``noreply@`` emails."""
+    """``is_bot`` flags ``[bot]`` logins and generic noreply; keeps GitHub privacy-email humans."""
     assert ec.is_bot(line) is expected
 
 

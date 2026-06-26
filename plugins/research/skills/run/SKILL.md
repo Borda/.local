@@ -149,12 +149,31 @@ After clarification extraction, remaining non-flag tokens (not starting `--`) ar
 ```markdown
 ⚠ Unrecognized argument "<token>" — ignored.
   Known positional args: <program.md path> [clarification]
-  Known flags: --team, --colab[=HW], --codex, --compute=local|colab|docker, --researcher, --architect, --journal, --hypothesis <path>
+  Known flags: --team, --colab[=HW], --codex, --compute=local|colab|docker, --researcher, --architect, --journal, --hypothesis <path>, --codemap, --no-codemap
   If you meant to override the algo, edit the ## Config block in your program.md (algo: sort) and update ## Metric to match.
   If you meant to set a clarification hint, pass it as a quoted string: "/research:run program.md \"sort improvements\" --codex"
 ```
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`.
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`.
+
+**Codemap auto-detection** — structural blast-radius context for the modules the experiment edits; on by default when codemap installed + index found. `--no-codemap` opts out; `--codemap` is strict (fail if unavailable).
+
+```bash
+# timeout: 5000
+CODEMAP_RAW=auto
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_RAW=off
+[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_RAW=strict
+CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/codemap-resolve" "$CODEMAP_RAW")
+if [ $? -ne 0 ]; then
+    [ "$CODEMAP_RAW" = "strict" ] && { echo "! BLOCKED — --codemap (strict) but codemap unavailable; run /codemap:scan-codebase or install codemap plugin"; exit 1; }
+    CODEMAP_ENABLED=false
+fi
+echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/research-run-codemap-enabled
+```
+
+> loads: codemap-gates.md
+
+When `CODEMAP_RAW` ≠ `off`: read `$_RESEARCH_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
 **If argument is a `.md` file** — read and parse with these rules:
 
@@ -376,6 +395,8 @@ else
     git diff --stat HEAD >>.experiments/state/${RUN_ID}/context-${I}.md  # timeout: 3000
 fi
 ```
+
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled`): read `$_RESEARCH_SHARED/codemap-context.md` and execute its block. Leave `TARGET_MODULE`/`TARGET_FN` empty for the global `central` blast-radius baseline, or set `TARGET_MODULE` to the module the experiment edits (from `## Config`) for importer/coverage queries. Append the output to `context-${I}.md` under a `## Structural Context (codemap)` heading so the Phase 2 ideation agent sees blast-radius before proposing edits.
 
 Prepend header block to `context-<i>.md`: goal, current metric vs baseline, delta trend (last 5 kept deltas), iteration number. Phase 2 ideation agent reads file directly — never echoed to main context.
 

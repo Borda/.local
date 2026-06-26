@@ -110,6 +110,10 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled
 # codemap: integrated-via-shared
 ```
 
+> loads: codemap-gates.md
+
+Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
 Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.

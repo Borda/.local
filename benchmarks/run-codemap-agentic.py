@@ -63,11 +63,11 @@ reducing tool call count, elapsed time, and context consumption.
     All forms are word-boundary-aware and case-insensitive.
 
   Two-layer metrics:
-    erec (exposure recall) — what the agent had access to:
-      corpus = output_text + codemap skill result text + semble MCP result text (no grep/glob results)
+    erec (exposure recall) — what the agent expressed in its own text:
+      corpus = output_text only (agent-generated text; tool outputs excluded)
       erec = |{r in expected : any form matches in corpus}| / |expected|
-      Levels the playing field: codemap/semble arms get credit for their structured answers;
-      plain arm does NOT get inflated by grep result echoes.
+      Arm-fair: all arms scored on identical corpus type; tool outputs excluded to avoid
+      codemap erec being near-tautological (skill echoes rdep list → automatic credit).
 
     rrec (report recall) — what the agent told the user:
       corpus = output_text after the last tool_use/tool_result event
@@ -254,7 +254,7 @@ class QualityScore:
     """Quality score for a single benchmark run.
 
     Primary metrics (v2 — multi-form matching with 2+ component surface forms):
-        ``erec``  — exposure recall: rdeps found in output_text + codemap skill results
+        ``erec``  — exposure recall: rdeps found in agent output_text (tool outputs excluded)
         ``rrec``  — report recall: rdeps found in agent's final answer after last tool call
         ``delta`` — erec - rrec: information gap (agent saw but did not report)
         ``deff``  — discovery efficiency: erec_tp / max(tool_calls, 1)
@@ -306,6 +306,7 @@ class ToolCounts:
     semble: int = 0  # mcp__semble__search and mcp__semble__find_related calls
     blocked: int = 0  # tool_use events that returned <tool_use_error> (permission-denied or disallowed)
     bash_for_imports: int = 0  # bash calls matching import-discovery patterns (grep/rg for import)
+    index_reads: int = 0  # bash calls that read .cache/codemap/ or .cache/scan/ index files directly
 
     @property
     def total(self) -> int:
@@ -578,7 +579,7 @@ class GroundTruth:
         """Compute quality score using multi-form matching and optional skill coverage.
 
         Primary metrics (v2):
-            ``erec`` — exposure recall on ``exposure_corpus`` (output_text + codemap results)
+            ``erec`` — exposure recall on ``exposure_corpus`` (agent output_text only; tool outputs excluded)
             ``rrec`` — report recall on ``report_corpus`` (final answer after last tool call)
             ``delta`` — erec - rrec
             ``deff`` — erec_tp / max(tool_calls, 1)
@@ -615,19 +616,27 @@ class GroundTruth:
             erec_top10_k = n_exp
 
         # ── Skill coverage (codemap arm only) ──
-        # Only scored when skill returned valid scan-query JSON with "imported_by" key.
-        # Prose error text (skill failed, permission denied) → None (unscored), not sc=0%.
+        # Two capture paths:
+        # 1. Agent ran scan-query via Bash → skill_result_text is raw JSON → parse imported_by.
+        # 2. Agent used Skill tool → tool returns rendered markdown, one module per line →
+        #    extract dotted module names via regex (require ≥1 dot to avoid YAML-key false-positives).
+        # Prose error text (blocked, permission denied) → None (unscored), not sc=0%.
         skill_coverage: Optional[float] = None
         skill_returned: Optional[int] = None
         if skill_result_text:
+            returned: Optional[set] = None
             try:
                 data = json.loads(skill_result_text)
                 if "imported_by" in data:
                     returned = set(data["imported_by"])
-                    skill_returned = len(returned)
-                    skill_coverage = len(returned & exp) / n_exp
             except (json.JSONDecodeError, AttributeError, TypeError):
-                pass  # prose error or unexpected format — leave skill_coverage=None
+                # Rendered markdown path — extract lines that look like dotted module paths.
+                modules = re.findall(r"^([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)+)\s*$", skill_result_text, re.MULTILINE)
+                if modules:
+                    returned = set(modules)
+            if returned is not None:
+                skill_returned = len(returned)
+                skill_coverage = len(returned & exp) / n_exp
 
         # ── Legacy: leaf-name matching on output_text ──
         expected_leaves = {m.split(".")[-1] for m in exp}
@@ -763,16 +772,16 @@ unless the import block alone is not enough:
 
 ## codemap plugin installed — follow these steps exactly
 
-You have /codemap:query. It answers import-graph questions from a pre-built index.
+You have /codemap:query-code. It answers import-graph questions from a pre-built index.
 
 **SYNTAX — colon separator, never a space:**
-  Skill tool name: codemap:query      ← correct
-  NOT: codemap query                  ← wrong — will fail silently
+  Skill tool name: codemap:query-code      ← correct
+  NOT: codemap query-code                  ← wrong — will fail silently
 
 ### STEP 1 — One rdeps query (max 3 codemap calls total)
 
 Call:
-  /codemap:query rdeps <primary_module> [--exclude-tests]
+  /codemap:query-code rdeps <primary_module> [--exclude-tests]
 
 Read the result immediately:
 - If "exhaustive": true → list is complete and authoritative. Count the entries.
@@ -781,9 +790,9 @@ Read the result immediately:
 - If NOT exhaustive → record the list as your working set. You may make 1-2 more
   codemap calls (e.g. deps or central for context). Then go to STEP 2.
 
-Maximum 3 /codemap:query calls total across all steps.
+Maximum 3 /codemap:query-code calls total across all steps.
 
-If /codemap:query returns <tool_use_error>: skip to STEP 2 with an empty list.
+If /codemap:query-code returns <tool_use_error>: skip to STEP 2 with an empty list.
 
 ### STEP 2 — Write the report (no more tool calls after this point)
 
@@ -792,9 +801,9 @@ Once you reach STEP 2, do NOT call any tool. Write the answer immediately.
 **Hard rules — no exceptions:**
 1. NEVER use Grep, Glob, or Bash to verify or extend codemap results — the index is authoritative. Exception: rule 5 (tool error fallback).
 2. After seeing "exhaustive": true, your tool calls are complete. Write the report.
-3. Maximum 3 codemap:query calls — stop even if not exhaustive after 3 calls.
+3. Maximum 3 codemap:query-code calls — stop even if not exhaustive after 3 calls.
 4. NEVER spawn sub-agents for import-graph questions.
-5. If /codemap:query returns <tool_use_error>: do NOT call codemap:scan. Fall back to Grep for that query only.
+5. If /codemap:query-code returns <tool_use_error>: do NOT call codemap:scan. Fall back to Grep for that query only.
 
 Grep/Glob/Bash are permitted only for reading source code (finding a literal string in files).
 
@@ -869,13 +878,13 @@ Rules:
 
 ## Two structural tools — follow this protocol exactly
 
-You have /codemap:query (deterministic index) and mcp__semble__search (semantic search).
+You have /codemap:query-code (deterministic index) and mcp__semble__search (semantic search).
 Follow the three steps below in order. Do NOT reorder or skip steps.
 
 ### STEP 1 — Codemap anchor (always first; max 2 codemap calls)
 
-Call codemap:query rdeps on the primary module:
-  /codemap:query rdeps <module>
+Call codemap:query-code rdeps on the primary module:
+  /codemap:query-code rdeps <module>
 
 Read the result:
   - If it contains "exhaustive": true → the list is complete and authoritative.
@@ -889,7 +898,7 @@ If the result was non-exhaustive, you may make one additional codemap call (deps
 for task context — skip this if codemap was exhaustive (you are going directly to STEP 3).
 Maximum 2 codemap calls in STEP 1.
 
-If /codemap:query returns <tool_use_error>: skip to STEP 2 with an empty anchor set.
+If /codemap:query-code returns <tool_use_error>: skip to STEP 2 with an empty anchor set.
 
 ### STEP 2 — Semble gap-fill (only if codemap was non-exhaustive)
 
@@ -988,6 +997,9 @@ Rules:
             Populated ``BenchmarkRun`` with tool counts, token metrics, timing, and
             raw output text ready for quality scoring.
         """
+        import contextlib
+        import tempfile
+
         system_prompt = self._system_prompt(task.skill or task.type, arm)
         disallow_flags = self._ARM_DISALLOWED.get(arm, [])
         allow_flags = self._ARM_ALLOWED.get(arm, [])
@@ -1001,17 +1013,42 @@ Rules:
             system_prompt,
             task.prompt,
         ]
+
+        # Plain arm runs in a real directory copy (not symlinks) minus .cache/ so that
+        # macOS `find`/`rg` can traverse the tree without -L. Other arms run directly
+        # in self.repo_path.
+        @contextlib.contextmanager
+        def _effective_cwd():
+            if arm != "plain":
+                yield self.repo_path
+                return
+            import shutil
+
+            with tempfile.TemporaryDirectory(prefix="bench-plain-") as tmpdir:
+                tmp = Path(tmpdir)
+                cwd = tmp / self.repo_path.name
+                shutil.copytree(
+                    self.repo_path,
+                    cwd,
+                    ignore=shutil.ignore_patterns(".cache", ".git"),
+                    symlinks=True,
+                )
+                yield cwd
+
         _MAX_API_RETRIES = 2
-        for attempt in range(_MAX_API_RETRIES + 1):
-            result = BenchmarkRun(arm=arm, task_id=task.id, task_type=task.type, model=self.model_short, success=False)
-            self._stream_events(cmd, result, update_fn=update_fn)
-            # 0-token result = API connectivity failure (ConnectionRefused / FailedToOpenSocket);
-            # retry up to 2 times before surfacing as error.
-            if result.input_tokens == 0 and result.output_tokens == 0 and attempt < _MAX_API_RETRIES:
-                result.error = f"api_failure_retry_{attempt + 1}"
-                time.sleep(2**attempt)  # exponential backoff: 1s, 2s
-                continue
-            break
+        with _effective_cwd() as cwd:
+            for attempt in range(_MAX_API_RETRIES + 1):
+                result = BenchmarkRun(
+                    arm=arm, task_id=task.id, task_type=task.type, model=self.model_short, success=False
+                )
+                self._stream_events(cmd, result, update_fn=update_fn, cwd=cwd)
+                # 0-token result = API connectivity failure (ConnectionRefused / FailedToOpenSocket);
+                # retry up to 2 times before surfacing as error.
+                if result.input_tokens == 0 and result.output_tokens == 0 and attempt < _MAX_API_RETRIES:
+                    result.error = f"api_failure_retry_{attempt + 1}"
+                    time.sleep(2**attempt)  # exponential backoff: 1s, 2s
+                    continue
+                break
         return result
 
     @staticmethod
@@ -1034,6 +1071,7 @@ Rules:
         cmd: list[str],
         result: BenchmarkRun,
         update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
+        cwd: Optional[Path] = None,
     ) -> None:
         """Launch the claude subprocess, enforce wall-clock timeout, and parse stream-json events.
 
@@ -1048,6 +1086,8 @@ Rules:
             update_fn: Optional throttled callback; signature
                 ``(elapsed_seconds: float, result: BenchmarkRun) -> None``.
                 Invoked at most every 0.5 s. Pass ``None`` to disable.
+            cwd: Working directory for the subprocess. Defaults to ``self.repo_path``.
+                Plain-arm runs pass a symlink-based stripped copy without ``.cache/``.
         """
         pending: dict[str, float] = {}
         pending_codemap_ids: set[str] = set()  # all codemap skill calls (for erec corpus)
@@ -1061,7 +1101,7 @@ Rules:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=str(self.repo_path),
+                cwd=str(cwd if cwd is not None else self.repo_path),
                 env=self._subprocess_env(),
             )
             kill_timer = threading.Timer(self.timeout, proc.kill)
@@ -1219,6 +1259,9 @@ Rules:
             # Patterns typical of manual import graph discovery (not file-reading)
             if re.search(r"\b(grep|rg)\b.*\bimport\b|\bgrep\b.*\bfrom\b|\bimport\b.*-r\b", cmd):
                 result.tools.bash_for_imports += 1
+            # Detect direct reads of the codemap index JSON (isolation violation in plain arm)
+            if re.search(r"\.cache/codemap/|\.cache/scan/", cmd):
+                result.tools.index_reads += 1
 
     @staticmethod
     def _on_tool_result(
@@ -1530,7 +1573,7 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
     return (
         f"[{run_n:0{len(str(total_runs))}}/{total_runs}] {task_num} ({difficulty}) | {model_short:<6} | {arm:<8}"
         f" | time={result.elapsed_s:5.1f}s | tok={result.input_tokens / 1000:5.1f}k | calls={result.tools.total:3}"
-        f" (Gp={tc.grep:2}; Gb={tc.glob:2}; Bh={tc.bash:2}; Sk={tc.skill:2}; Sm={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2})"
+        f" (Gp={tc.grep:2}; Gb={tc.glob:2}; Bh={tc.bash:2}; Sk={tc.skill:2}; Sm={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2}; idx={tc.index_reads:2})"
         f"{quality_suffix}"
         f"{error_suffix}{degenerate_note}"
     )
@@ -1599,10 +1642,10 @@ class Benchmark:
     ) -> BenchmarkRun:
         runner = ModelRunner(model_short, model_id, self.repo_path, timeout=_MODEL_TIMEOUT.get(model_short, 300))
         result = runner.run(task, arm, update_fn=update_fn)
-        # Build corpora for v2 quality scoring
-        exposure_corpus = (
-            result.output_text + "\n" + "\n".join(result.codemap_results) + "\n" + "\n".join(result.semble_results)
-        )
+        # Build corpora for v2 quality scoring.
+        # erec uses agent-text only — tool outputs excluded so codemap arm erec measures
+        # agent comprehension, not whether the skill echoed the list back.
+        exposure_corpus = result.output_text
         report_corpus = result.output_text[result.last_tool_text_offset :]
         result.quality = self.gt.score(
             task_id=task.id,
@@ -1635,6 +1678,15 @@ class Benchmark:
             elif result.tools.skill == 0 and effective_semble <= 0:
                 result.success = False
                 result.error = "combined arm: all semble calls were blocked (permission denied)"
+        # Skill-error failure: codemap/combined arm where the skill returned tool_use_error.
+        # These runs fell back to grep — not measuring codemap benefit; exclude from metrics.
+        if result.arm in ("codemap", "combined") and result.success and result.error_type == "skill_blocked":
+            result.success = False
+            result.error_type = "codemap_skill_errored"
+            result.error = (
+                "codemap skill returned <tool_use_error>; run fell back to grep — "
+                "not a valid codemap measurement; re-run after fixing skill invocation"
+            )
         # Degenerate-loop detection: codemap arm that spent ≥70% of calls on Grep
         # ignored the index and fell into a grep loop — mark as failure.
         if result.arm == "codemap" and result.success:
@@ -1648,6 +1700,16 @@ class Benchmark:
                     f"({grep_like}/{total_calls} grep-like calls = {grep_like / total_calls:.0%}); "
                     f"index not used"
                 )
+        # Plain arm isolation check: flag any run that read the codemap index JSON via Bash.
+        # Currently low-yield (agents usually guess the wrong home-dir path) but the vector is
+        # real — a single correct path read hands the agent the full index for free.
+        if result.arm == "plain" and result.tools.index_reads > 0:
+            result.error_type = "plain_index_contamination"
+            result.error = (
+                f"plain arm read .cache/codemap/ or .cache/scan/ index via Bash "
+                f"({result.tools.index_reads} read(s)) — isolation violated; exclude from baseline"
+            )
+            result.success = False
         self._write_tool_log(result)
         color = _COLOR_FAIL if not result.success else _ARM_COLOR.get(arm, "")
         print_fn(f"{color}{_run_line(run_n, total_runs, task, model_short, arm, result)}{_COLOR_RESET}")

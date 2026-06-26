@@ -51,12 +51,12 @@ Runs the same 16 import-graph tasks under four arms:
 
 **Metrics**: tool call count, elapsed time, input tokens, exposure recall (erec), top-10 exposure recall (e@10), report recall (rrec), discovery efficiency (deff).
 
-| Metric | What it measures                                                                  |
-| ------ | --------------------------------------------------------------------------------- |
-| `erec` | Fraction of ground-truth rdeps found anywhere in the agent output or tool results |
-| `e@10` | erec restricted to the 10 most-central rdeps by dep_count                         |
-| `rrec` | Fraction of ground-truth rdeps present in the agent final written answer only     |
-| `deff` | Tool calls saved vs plain arm, normalised                                         |
+| Metric | What it measures                                                                            |
+| ------ | ------------------------------------------------------------------------------------------- |
+| `erec` | Fraction of ground-truth rdeps found in agent output_text (tool results excluded; arm-fair) |
+| `e@10` | erec restricted to the 10 most-central rdeps by dep_count                                   |
+| `rrec` | Fraction of ground-truth rdeps present in the agent final written answer only               |
+| `deff` | Tool calls saved vs plain arm, normalised                                                   |
 
 <details>
 <summary><strong>Tasks</strong></summary>
@@ -71,12 +71,12 @@ Runs the same 16 import-graph tasks under four arms:
 | BA-04 | fix      | extreme    | `lightning.pytorch.utilities.exceptions`                    | Rename `MisconfigurationException` to `LightningConfigError` — assess full blast radius |
 | BA-05 | feature  | simple     | `lightning.pytorch.callbacks.finetuning`                    | Add `freeze_until_epoch` — scope callers before coding                                  |
 | BA-06 | feature  | medium     | `lightning.fabric.utilities.load`                           | Add `map_location` to checkpoint loaders — assess caller integration surface            |
-| BA-07 | feature  | hard       | `lightning.fabric.utilities.rank_zero`                      | Add `group` parameter to rank-zero logging — find dual-importer consistency risk        |
+| BA-07 | feature  | extreme    | `lightning.fabric.utilities.rank_zero`                      | Add `group` parameter to rank-zero logging — find dual-importer consistency risk        |
 | BA-08 | feature  | extreme    | `lightning.fabric.utilities.types`                          | Add `ReduceOp` protocol, deprecate `torch.distributed.ReduceOp`                         |
 | BA-09 | refactor | simple     | `lightning.pytorch.callbacks.lr_finder`                     | Extract `_lr_find` helper into standalone function — classify callers                   |
 | BA-10 | refactor | medium     | `lightning.fabric.plugins.environments.cluster_environment` | Rename `creates_processes_externally` — enumerate all call sites                        |
 | BA-11 | refactor | hard       | `lightning.fabric.utilities.distributed`                    | Replace barrier wrappers with `DistributedBarrier` context manager                      |
-| BA-12 | refactor | extreme    | `lightning.pytorch.callbacks`                               | Split `callbacks.__init__` into training/evaluation sub-modules                         |
+| BA-12 | refactor | hard       | `lightning.pytorch.callbacks`                               | Split `callbacks.__init__` into training/evaluation sub-modules                         |
 | BA-13 | review   | simple     | `lightning.pytorch.strategies.deepspeed`                    | PR adds ZeRO-3 CPU offload — verify isolation                                           |
 | BA-14 | review   | medium     | `lightning.fabric.plugins.precision.utils`                  | PR makes `_convert_fp_tensor` dtype arg keyword-only — quantify coupling                |
 | BA-15 | review   | hard       | `lightning.pytorch.utilities`                               | PR removes 3 deprecated symbols — identify non-migrated callers                         |
@@ -564,6 +564,66 @@ By series:
 | RI (5 tasks) | 4/5   | 3/4     | RI-01 codemap recall=1.000 vs plain=0.667 (+0.33); RI-02 codemap ext-fail                                                |
 
 **Safety-grade**: plain 13/13 → codemap 10/12 (June 22 run). FN-02 and BR-03 regressions were evaluator bugs — fixed June 23 (see `results/bench-opus-20260623-003745.jsonl`, both recall=1.000).
+
+### Agentic benchmark — plain vs codemap — 2026-06-26
+
+pytorch-lightning-master, 16 tasks × 3 models = 48 runs per arm (47 in JSON; BA-16/opus terminal only). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair).
+
+**By model — quality + efficiency:**
+
+| Model       | Plain erec | Codemap erec | Δ erec       | Plain tok | Codemap tok | Plain time | Codemap time |
+| ----------- | ---------- | ------------ | ------------- | --------- | ----------- | ---------- | ------------ |
+| Haiku 4.5   | 85.7%      | 83.8%        | −1.9pp        | 1 018k    | 1 464k      | 108 s      | 126 s        |
+| Sonnet 4.6  | 92.8%      | 97.9%        | **+5.1pp**    | 551k      | 912k        | 224 s      | 205 s        |
+| Opus 4.6    | 87.8%      | 95.5%        | **+7.7pp**    | 689k      | 891k        | 180 s      | 160 s        |
+| **Overall** | **88.8%**  | **92.3%**    | **+3.5pp**    | 754k      | 1 093k      | 170 s      | 164 s        |
+
+Tokens = input + output + tool-result tokens, mean per run. Time = wall-clock seconds, mean per run.
+
+**By difficulty — quality + efficiency:**
+
+| Difficulty | Tasks          | Plain erec | Codemap erec | Δ erec       | Plain tok | Codemap tok | Plain time | Codemap time |
+| ---------- | -------------- | ---------- | ------------ | ----------- | --------- | ----------- | ---------- | ------------ |
+| simple     | BA-01,05,09,13 | 100%       | 100%         | 0           | 572k      | 764k        | 119 s      | 111 s        |
+| medium     | BA-02,06,10,14 | 100%       | 100%         | 0           | 737k      | 1 021k      | 134 s      | 166 s        |
+| hard       | BA-03,11,12,15 | 87.5%      | 78.1%        | **−9.4pp†** | 738k      | 1 157k      | 200 s      | 180 s        |
+| extreme    | BA-04,07,08,16 | 65.9%      | 91.0%        | **+25.1pp** | 989k      | 1 461k      | 233 s      | 200 s        |
+
+**Notable runs**:
+
+- BA-04 (extreme, 49 rdeps): plain 0–18% → codemap 100% all models; BA-07/haiku: plain 43% → codemap 100%
+- BA-08/haiku: codemap `error_max_turns` erec=1% (sonnet + opus both 100%)
+- BA-12/haiku: codemap erec=11% (plain 100%) — tried to read index JSON directly
+- BA-15/haiku: codemap erec=46% (plain 100%) — stale index + Bash restriction prevented fallback
+- BA-03: all three models 81% in codemap vs plain sonnet 100% — stale index (index lagged HEAD)
+- BA-02/opus plain: erec=100%, rrec=0% — rdeps found but omitted from final answer
+- `skill_coverage`: all None — skill returns rendered markdown, not JSON; tracker issue, not agent issue
+
+† Hard regression is haiku-specific on net hard-average (BA-12 + BA-15 drive −35.7pp). Sonnet/opus net hard-averages roughly unchanged (sonnet −0.1pp, opus +7.9pp) though sonnet regresses on BA-03 and BA-15 individually. A fresh index is expected to close the gap.
+
+**Token component breakdown (all 47 pairs):**
+
+| Component | Plain mean | Codemap mean | Delta | Delta % |
+| --------------- | ---------- | ------------ | ------ | ------- |
+| input\_tokens | 740k | 1 082k | +342k | +46% |
+| output\_tokens | 8.9k | 8.9k | ~0 | +0.1% |
+| tool\_result\_tok | 5.4k | 2.5k | -2.9k | -53% |
+| **total** | **754k** | **1 093k** | **+339k** | **+45%** |
+
+Token delta is 100% input-driven. Codemap reduces tool-result tokens (fewer/smaller tool calls) but the system-prompt supplement inflates input on every turn.
+
+**Tool call count (mean per run):**
+
+| Tier | Plain calls | Codemap calls | Delta |
+| ------- | ----------- | ------------- | ------ |
+| simple | 22.6 | 14.8 | -7.8 |
+| medium | 20.9 | 19.2 | -1.8 |
+| hard | 30.3 | 23.5 | -6.8 |
+| extreme | 33.2 | 25.5 | -7.7 |
+
+Codemap reduces tool calls in every tier (-22% overall) — exploration savings are real but small (~3k tokens/run) vs preamble cost (+342k/run). Known limitations and planned mitigations: see `plugins/codemap/README.md`.
+
+semble and combined arm runs pending.
 
 ### Previous: agentic benchmark — 2026-04-29
 

@@ -67,22 +67,62 @@ scan-query central --top 5         # which modules are highest risk overall?
 scan-query rdeps mypackage.auth    # what breaks if auth changes?
 ```
 
-That output is prepended to the agent spawn prompt as structural context. The agent starts the refactor already knowing full blast radius — no cold exploration, no mid-refactor surprise that `middleware.py` also imports `auth`. Benchmark results across 96 runs on pytorch-lightning (4 arms × 3 models × 8 tasks):
+That output is prepended to the agent spawn prompt as structural context. The agent starts the refactor already knowing full blast radius — no cold exploration, no mid-refactor surprise that `middleware.py` also imports `auth`. Across benchmark runs on pytorch-lightning, codemap consistently reduces tool calls by 50–80% while improving structural-recall metrics on import-graph tasks.
 
-| Arm                 | erec  | rrec  | tokens | calls |
-| :------------------ | :---: | :---: | :----: | :---: |
-| plain               | 87.0% | 86.1% | 425.7k | 29.2  |
-| codemap             | 95.6% | 95.6% | 456.2k | 12.8  |
-| semble _(optional)_ | 96.1% | 89.6% | 419.0k |  7.7  |
+**Agentic benchmark — plain vs codemap (2026-06-26):**
 
-- **erec** — exposure recall: fraction of reverse-dependencies (rdeps) surfaced in agent tool results
+16 import-graph tasks × 3 models on pytorch-lightning-master. 47/48 runs per arm (BA-16/opus terminal only). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair). Tokens = input + output + tool-result, mean per run.
+
+| Segment     | Plain erec | Codemap erec | Δ erec       | Plain tok | Codemap tok | Plain time | Codemap time |
+| ----------- | ---------- | ------------ | ------------- | --------- | ----------- | ---------- | ------------ |
+| Haiku 4.5   | 85.7%      | 83.8%        | −1.9pp        | 1 018k    | 1 464k      | 108 s      | 126 s        |
+| Sonnet 4.6  | 92.8%      | 97.9%        | **+5.1pp**    | 551k      | 912k        | 224 s      | 205 s        |
+| Opus 4.6    | 87.8%      | 95.5%        | **+7.7pp**    | 689k      | 891k        | 180 s      | 160 s        |
+| **Overall** | **88.8%**  | **92.3%**    | **+3.5pp**    | 754k      | 1 093k      | 170 s      | 164 s        |
+| simple      | 100%       | 100%         | 0             | 572k      | 764k        | 119 s      | 111 s        |
+| medium      | 100%       | 100%         | 0             | 737k      | 1 021k      | 134 s      | 166 s        |
+| hard        | 87.5%      | 78.1%        | **−9.4pp†**   | 738k      | 1 157k      | 200 s      | 180 s        |
+| extreme     | 65.9%      | 91.0%        | **+25.1pp**   | 989k      | 1 461k      | 233 s      | 200 s        |
+
+† Hard regression is haiku-specific on net hard-average (BA-12 + BA-15) due to stale index (index lagged HEAD) combined with Bash-as-fallback restriction. Sonnet/opus net hard-averages roughly unchanged though individual tasks vary. A fresh index is expected to recover the gap.
+
+**Recall metrics (agentic benchmark):**
+
+- **erec** — exposure recall: fraction of rdeps in agent output_text (tool results excluded, arm-fair)
 - **rrec** — report recall: fraction of rdeps present in the agent's final written answer
-- **tokens** — total tool result tokens consumed
-- **calls** — total tool calls made
 
-codemap more than halves tool calls vs plain while lifting both recall metrics above 95%.
+**Token overhead analysis:**
 
-**Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap) × 3 model tiers. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header (name, namespace, default path) so the harness can be pointed at any Python codebase by swapping the paired task file. Results below are on pytorch-lightning-master (646 modules, 8 task types). Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
+Codemap arm uses +45% more total tokens than plain (754k vs 1 093k/run). Counter-intuitive given codemap is supposed to reduce exploration. Root cause from per-component breakdown:
+
+| Component | Plain | Codemap | Delta |
+| --------------- | ----- | ------- | ----- |
+| input\_tokens | 740k | 1 082k | +342k |
+| output\_tokens | 8.9k | 8.9k | ~0 |
+| tool\_result | 5.4k | 2.5k | -2.9k |
+
+Codemap actually reduces tool calls (-22% across all tiers) and tool-result tokens (-53%). The +342k input overhead comes from the codemap system-prompt supplement carried on every message. Exploration savings (~3k tokens/run) are real but dwarfed by preamble cost.
+
+**Hard-task regression — haiku-specific:**
+
+Net hard-tier delta: plain 87.5% vs codemap 78.1% (−9.4pp). Driven almost entirely by haiku:
+
+| Model | Plain hard erec | Codemap hard erec | Delta |
+| ------- | --------------- | ----------------- | ----- |
+| Haiku | 95.4% | 59.7% | -35.7pp |
+| Sonnet | 91.7% | 91.5% | -0.1pp |
+| Opus | 75.3% | 83.2% | +7.9pp |
+
+Haiku degrades on hard tasks (16-50 rdeps) because the codemap preamble for hard tasks adds +600k input tokens for haiku (vs +240k for sonnet). No simple size-causes-failure correlation — BA-11/haiku has 1.8M input tokens and 100% erec — so model-level instruction-following sensitivity at large context is the primary suspect.
+
+**Planned improvements:**
+
+1. **Tier-gated injection** — skip codemap preamble for simple/medium tasks (0pp erec gain from data); save ~200-280k tokens/run at zero quality cost for 2 of 4 difficulty tiers
+2. **Depth-1 preamble for hard tasks** — inject only direct (depth-1) rdeps, not full transitive graph; reduces preamble proportionally while preserving key blast-radius signal
+3. **Model-aware routing** — haiku + estimated rdep count > threshold: fall back to plain arm or use compressed preamble; avoids -35.7pp hard regression
+4. **Compressed preamble format** — current skill returns rendered markdown; compact JSON or short-form list could cut preamble size 30-50% with no information loss
+
+**Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap) × 3 model tiers on pytorch-lightning-master (646 modules, 8 task types). **Scope**: these are pre-implementation structural-query tasks (blast-radius enumeration, caller discovery) — end-to-end patch quality and test-pass rate are not yet measured. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header so the harness can be pointed at any Python codebase. Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
 
 ### Three-model comparison
 
@@ -94,7 +134,7 @@ June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master.
 | Sonnet 4.6 | 83.8% (31/37)  | 91.9% (34/37)    | **+8 pp**     | 11/13 → 12/12              | **0.22×**            | 0.05–1.21×        |
 | Opus 4.6   | 86.1% (31/36)  | 91.7% (33/36)    | **+6 pp**     | 13/13 → 12/12              | **0.31×**            | 0.05–1.46×        |
 
-Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0.90. Token savings are model-independent; accuracy lift is model-dependent.
+Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0.90. **Accuracy** = fraction of tasks where recall ≥ 0.90 (task scored correct when rdep coverage meets threshold). Token savings are model-independent; accuracy lift is model-dependent. **Single-repo caveat**: all figures on pytorch-lightning-master; gains on other Python codebases are directionally consistent but magnitude may differ.
 
 † Haiku 68.2× is a RI-04 token spiral (error_max_turns); fixed June 23. Excluding RI-04, Haiku max is 1.82×.
 

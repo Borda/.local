@@ -1,7 +1,7 @@
 ---
 name: distill
 description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates."
-argument-hint: '[review | prune | lessons | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--eager]'
+argument-hint: '[review | prune | lessons | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: low
@@ -26,6 +26,7 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
   - `external <source> [--eager]` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory. `--eager`: lower adoption bar — recommend partial adoption even for single useful components.
   - `executables [--eager] [<run-dir-or-report-path>]` — perform bin/ extraction from `/foundry:audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Default gates on HIGH/MEDIUM verdict. `--eager`: also surface LOW verdict clusters as extraction candidates. Spawns `foundry:sw-engineer` per cluster. Skip to **Mode: Executables Extraction** below.
   - `[--eager] <recurring task description>` — use description as context when generating suggestions. `--eager`: lower frequency threshold from 3+ to 2+ occurrences; single high-effort occurrence also qualifies.
+  - `--project` — in `prune` and `lessons` modes, show an interactive project picker: enumerate all slugs under `~/.claude/projects/*/memory/` with MEMORY.md size in tokens, then let user select which project(s) to operate on. Omit to operate across **all** projects automatically. Has no effect on other modes.
 
 </inputs>
 
@@ -47,6 +48,18 @@ echo "ARGUMENTS_STRIPPED=$ARGUMENTS"
 ```
 
 > **Note**: `EAGER` and stripped `ARGUMENTS` are set by this Bash block, but shell variable state does **not** persist across separate Bash() tool calls. After this block runs, read its stdout (`EAGER=true/false`, `ARGUMENTS_STRIPPED=...`) and carry those values as model-context references for all subsequent mode dispatch and threshold decisions. Do not rely on `$EAGER` as a live shell variable in later steps — substitute the literal boolean value read from stdout.
+
+```bash
+PROJECT_FLAG=false
+if echo "$ARGUMENTS" | grep -qE -- "--project"; then
+    PROJECT_FLAG=true
+    ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--project//' | xargs)
+fi
+echo "PROJECT_FLAG=$PROJECT_FLAG"
+echo "ARGUMENTS_FINAL=$ARGUMENTS"
+```
+
+> **Note**: `PROJECT_FLAG` does not persist across Bash calls. Read its value from the stdout line `PROJECT_FLAG=true/false` and carry as model-context reference. When `true`, the mode must run the interactive picker before operating.
 
 ## Step 1: Inventory existing agents and skills
 
@@ -185,19 +198,28 @@ Locate, evaluate, and trim project memory file.
 <!-- Slug-divergence guard: `resolve_memory_dir.py` is the single source of truth for the memory directory and `MEMORY.md` filename. Any consumer that reads or writes session/project memory (e.g. `foundry:session`, lessons mode below) MUST resolve the same path via this script — do NOT hardcode an alternate slug or filename here or elsewhere; divergence causes silent split-brain between writer and reader. -->
 
 ```bash
-# timeout: 5000 — uses canonical resolve_memory_dir.py (aligned with modes/lessons.md)
-MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
-MEMORY_FILE="$MEMORY_DIR/MEMORY.md"
-if [ -n "$MEMORY_DIR" ] && [ -f "$MEMORY_FILE" ]; then
-    echo "PRUNE_FOUND"
-    echo "PRUNE_FOUND_PATH: $MEMORY_FILE"
-else
+# timeout: 5000
+FOUND=$(find "$HOME/.claude/projects" -maxdepth 3 -name "MEMORY.md" -path "*/memory/MEMORY.md" 2>/dev/null | sort)
+if [ -z "$FOUND" ]; then
     echo "PRUNE_ABORT"
-    echo "PRUNE_ABORT_REASON: no memory file at $MEMORY_FILE — skipping prune mode"
+    echo "PRUNE_ABORT_REASON: no memory files found under ~/.claude/projects/"
+else
+    echo "PRUNE_FOUND"
+    echo "$FOUND" | while IFS= read -r f; do
+        slug=$(echo "$f" | sed 's|.*/projects/||;s|/memory/MEMORY.md||')
+        tokens=$(( $(wc -c < "$f" 2>/dev/null || echo 0) / 4 ))
+        echo "PRUNE_ENTRY: $slug | ${tokens}k tokens | $f"
+    done
 fi
 ```
 
- **Short-circuit**: `exit 0` inside this bash block would terminate only the bash subprocess, **not** the surrounding skill — so without the explicit gate below the skill would continue into the prune-evaluation steps with no memory file to operate on. After the block above runs, **scan bash output for a line where the entire line content is exactly `PRUNE_ABORT`** (use exact-line match: `[[ "$line" == "PRUNE_ABORT" ]]`, not substring match). If present, **stop the prune mode entirely**: skip every remaining prune step (read, evaluate, P1–P3, summary) and end the response with the Confidence block. Otherwise, extract the memory file path from the `PRUNE_FOUND_PATH: <path>` output line for use in subsequent Read calls. The remaining prune-mode prose below assumes `PRUNE_FOUND` was in output.
+ **Short-circuit**: After the block runs, scan for `PRUNE_ABORT` (exact-line match). If present, stop prune mode and end with Confidence block. Otherwise, collect all `PRUNE_ENTRY:` lines — each has format `<slug> | <N>k tokens | <path>`.
+
+**If `PROJECT_FLAG == true`** (interactive picker): call `AskUserQuestion` with `multiSelect: true`. Build options from `PRUNE_ENTRY` lines — label = `<slug> (tokens=<N>k)`, description = `prune this project's memory`. Max 4 options: if more than 4 projects found, take the 4 largest by token count and note in the question text that remaining projects were omitted (user can re-run). Always add a final option with label `Skip` and description `exit without changes`. Checked slugs → extract matching `<path>` fields as the working set.
+
+**If `PROJECT_FLAG == false`**: use all `<path>` fields from PRUNE_ENTRY lines as the working set.
+
+Run P1–P3 once per file in the working set. Label each section with its slug. Print consolidated summary at the end.
 
 Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md need not live in memory.
 
