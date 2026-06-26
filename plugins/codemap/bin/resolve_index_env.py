@@ -2,20 +2,19 @@
 """resolve_index_env.py — resolve codemap PROJ + INDEX and write to temp files.
 
 Calls ``bin/resolve_proj_index.py``, reads PROJ (line 1) and INDEX (line 2),
-and writes each to ``<tmpdir>/${prefix}-resolve-{proj,index}-${PID}`` for the
+and writes each to ``<tmpdir>/${prefix}-resolve-{proj,index}`` for the
 caller to read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
 
 ``CLAUDE_PLUGIN_ROOT`` is validated before use (must be an absolute path inside the
 plugin cache subtree or ending in ``plugins/codemap``) to prevent arbitrary subprocess
-execution. ``TMPDIR`` is only honoured when absolute and owned by the current user; the
-PID suffix isolates concurrent invocations.
+execution. ``TMPDIR`` is only honoured when absolute and owned by the current user.
 
 Usage:
     _CM_PROJ=$(git rev-parse --show-toplevel | xargs basename)
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \\
         --output-prefix "codemap-${_CM_PROJ}"
-    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj-$$")
-    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index-$$")
+    PROJ=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-proj")
+    INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index")
 
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" --check-exists
     # exit 1 when INDEX file missing; temp files still written for diagnostics
@@ -246,13 +245,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
-    """Write PROJ and INDEX to ``<tmpdir>/${prefix}-resolve-{proj,index}-${PID}`` temp files.
+    """Write PROJ and INDEX to ``<tmpdir>/${prefix}-resolve-{proj,index}`` temp files.
 
     Callers read back with ``cat`` — avoids the ``eval "$(...)"`` anti-pattern.
     Temp files are always written (even on resolver failure) so downstream ``cat``
     calls can supply their own ``|| echo ""`` fallback without extra conditionals.
-    The temp directory is resolved via :func:`_resolve_tmpdir` (owner-checked ``TMPDIR``)
-    and the process PID is appended to isolate concurrent invocations (CWE-377).
+    The temp directory is resolved via :func:`_resolve_tmpdir` (owner-checked ``TMPDIR``).
 
     Args:
         proj: Project name string (may be empty on resolver failure).
@@ -261,9 +259,8 @@ def _write_temp_vars(proj: str, index: str, prefix: str = "codemap") -> None:
             ``"codemap-<proj>"`` to scope per-project and avoid concurrent collisions.
     """
     tmpdir = _resolve_tmpdir()
-    pid = os.getpid()
     for key, val in (("proj", proj), ("index", index)):
-        Path(tmpdir, f"{prefix}-resolve-{key}-{pid}").write_text(val, encoding="utf-8")
+        Path(tmpdir, f"{prefix}-resolve-{key}").write_text(val, encoding="utf-8")
 
 
 def _run_resolver(plugin_root: str) -> str:

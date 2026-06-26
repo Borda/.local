@@ -565,65 +565,56 @@ By series:
 
 **Safety-grade**: plain 13/13 → codemap 10/12 (June 22 run). FN-02 and BR-03 regressions were evaluator bugs — fixed June 23 (see `results/bench-opus-20260623-003745.jsonl`, both recall=1.000).
 
-### Agentic benchmark — plain vs codemap — 2026-06-26
+### Agentic benchmark — plain vs codemap vs semble — 2026-06-27 (v0.13.2)
 
-pytorch-lightning-master, 16 tasks × 3 models = 48 runs per arm (47 in JSON; BA-16/opus terminal only). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair).
+pytorch-lightning-master, 16 tasks × 3 models × 3 arms = 144 runs (143 completed; BA-16/opus/semble missing 1). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair).
+
+> **🚧 Under reconstruction** — numbers from a benchmark run with skill failures (RC1 PID bug) and v0.13.1 cache. Clean numbers pending after v0.13.2 fix rollout.
 
 **By model — quality + efficiency:**
 
-| Model       | Plain erec | Codemap erec | Δ erec       | Plain tok | Codemap tok | Plain time | Codemap time |
-| ----------- | ---------- | ------------ | ------------- | --------- | ----------- | ---------- | ------------ |
-| Haiku 4.5   | 85.7%      | 83.8%        | −1.9pp        | 1 018k    | 1 464k      | 108 s      | 126 s        |
-| Sonnet 4.6  | 92.8%      | 97.9%        | **+5.1pp**    | 551k      | 912k        | 224 s      | 205 s        |
-| Opus 4.6    | 87.8%      | 95.5%        | **+7.7pp**    | 689k      | 891k        | 180 s      | 160 s        |
-| **Overall** | **88.8%**  | **92.3%**    | **+3.5pp**    | 754k      | 1 093k      | 170 s      | 164 s        |
+| Model       | Plain erec | Codemap erec | Semble erec | Δ cm−plain | Plain tok | Codemap tok |
+| ----------- | ---------- | ------------ | ----------- | ---------- | --------- | ----------- |
+| Haiku 4.5   | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
+| Sonnet 4.6  | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
+| Opus 4.6    | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
+| **Overall** | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
 
-Tokens = input + output + tool-result tokens, mean per run. Time = wall-clock seconds, mean per run.
+Tokens = avg input tokens per run.
 
-**By difficulty — quality + efficiency:**
+**By difficulty — quality:**
 
-| Difficulty | Tasks          | Plain erec | Codemap erec | Δ erec       | Plain tok | Codemap tok | Plain time | Codemap time |
-| ---------- | -------------- | ---------- | ------------ | ----------- | --------- | ----------- | ---------- | ------------ |
-| simple     | BA-01,05,09,13 | 100%       | 100%         | 0           | 572k      | 764k        | 119 s      | 111 s        |
-| medium     | BA-02,06,10,14 | 100%       | 100%         | 0           | 737k      | 1 021k      | 134 s      | 166 s        |
-| hard       | BA-03,11,12,15 | 87.5%      | 78.1%        | **−9.4pp†** | 738k      | 1 157k      | 200 s      | 180 s        |
-| extreme    | BA-04,07,08,16 | 65.9%      | 91.0%        | **+25.1pp** | 989k      | 1 461k      | 233 s      | 200 s        |
+| Difficulty | Tasks          | Plain erec | Codemap erec | Semble erec | Δ cm−plain |
+| ---------- | -------------- | ---------- | ------------ | ----------- | ---------- |
+| simple     | BA-01,05,09,13 | 🚧         | 🚧           | 🚧          | 🚧         |
+| medium     | BA-02,06,10,14 | 🚧         | 🚧           | 🚧          | 🚧         |
+| hard       | BA-03,11,12,15 | 🚧         | 🚧           | 🚧          | 🚧         |
+| extreme    | BA-04,07,08,16 | 🚧         | 🚧           | 🚧          | 🚧         |
 
-**Notable runs**:
+**Notable runs (v0.13.2)**: 🚧 pending clean re-run after bug fixes.
 
-- BA-04 (extreme, 49 rdeps): plain 0–18% → codemap 100% all models; BA-07/haiku: plain 43% → codemap 100%
-- BA-08/haiku: codemap `error_max_turns` erec=1% (sonnet + opus both 100%)
-- BA-12/haiku: codemap erec=11% (plain 100%) — tried to read index JSON directly
-- BA-15/haiku: codemap erec=46% (plain 100%) — stale index + Bash restriction prevented fallback
-- BA-03: all three models 81% in codemap vs plain sonnet 100% — stale index (index lagged HEAD)
-- BA-02/opus plain: erec=100%, rrec=0% — rdeps found but omitted from final answer
-- `skill_coverage`: all None — skill returns rendered markdown, not JSON; tracker issue, not agent issue
+**Token component breakdown (143 runs, v0.13.2):**
 
-† Hard regression is haiku-specific on net hard-average (BA-12 + BA-15 drive −35.7pp). Sonnet/opus net hard-averages roughly unchanged (sonnet −0.1pp, opus +7.9pp) though sonnet regresses on BA-03 and BA-15 individually. A fresh index is expected to close the gap.
+| Component     | Plain mean | Codemap mean | Semble mean | Δ cm−plain |
+| ------------- | ---------- | ------------ | ----------- | ---------- |
+| input_tokens  | 🚧         | 🚧           | 🚧          | 🚧         |
+| output_tokens | 🚧         | 🚧           | 🚧          | 🚧         |
+| **total**     | 🚧         | 🚧           | 🚧          | 🚧         |
 
-**Token component breakdown (all 47 pairs):**
-
-| Component | Plain mean | Codemap mean | Delta | Delta % |
-| --------------- | ---------- | ------------ | ------ | ------- |
-| input\_tokens | 740k | 1 082k | +342k | +46% |
-| output\_tokens | 8.9k | 8.9k | ~0 | +0.1% |
-| tool\_result\_tok | 5.4k | 2.5k | -2.9k | -53% |
-| **total** | **754k** | **1 093k** | **+339k** | **+45%** |
-
-Token delta is 100% input-driven. Codemap reduces tool-result tokens (fewer/smaller tool calls) but the system-prompt supplement inflates input on every turn.
+Token overhead 🚧 (pending clean re-run). Semble uses fewer input tokens than plain due to fewer tool calls.
 
 **Tool call count (mean per run):**
 
-| Tier | Plain calls | Codemap calls | Delta |
-| ------- | ----------- | ------------- | ------ |
-| simple | 22.6 | 14.8 | -7.8 |
-| medium | 20.9 | 19.2 | -1.8 |
-| hard | 30.3 | 23.5 | -6.8 |
-| extreme | 33.2 | 25.5 | -7.7 |
+| Tier    | Plain calls | Codemap calls | Delta |
+| ------- | ----------- | ------------- | ----- |
+| simple  | 🚧          | 🚧            | 🚧    |
+| medium  | 🚧          | 🚧            | 🚧    |
+| hard    | 🚧          | 🚧            | 🚧    |
+| extreme | 🚧          | 🚧            | 🚧    |
 
-Codemap reduces tool calls in every tier (-22% overall) — exploration savings are real but small (~3k tokens/run) vs preamble cost (+342k/run). Known limitations and planned mitigations: see `plugins/codemap/README.md`.
+Codemap reduces tool calls in every tier (🚧) — exploration savings are real but small vs preamble cost. Known limitations and planned mitigations: see `plugins/codemap/README.md`.
 
-semble and combined arm runs pending.
+Results above include all three arms. Combined arm excluded from default "all" runs (run with `--arm combined` to include).
 
 ### Previous: agentic benchmark — 2026-04-29
 

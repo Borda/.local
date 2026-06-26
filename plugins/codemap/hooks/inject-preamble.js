@@ -152,6 +152,24 @@ function main() {
     }
   }
 
+  // Inject preamble only once per session per project — skip when current + recently injected.
+  // Stale index always outputs so the auto-refresh note reaches the agent.
+  const SESSION_TTL_MS = 30 * 60 * 1000; // 30 min ≈ typical session length
+  const sessionFlag = path.join(os.tmpdir(), `codemap-preamble-${proj}`);
+  if (currency === "current") {
+    try {
+      const flagAge = Date.now() - parseInt(fs.readFileSync(sessionFlag, "utf8"), 10);
+      if (flagAge < SESSION_TTL_MS) process.exit(0); // already injected this session
+    } catch {
+      /* no flag yet */
+    }
+  }
+  try {
+    fs.writeFileSync(sessionFlag, String(Date.now()));
+  } catch {
+    /* best-effort; flag write failures never block */
+  }
+
   const relIdx = path.relative(cwd, idxPath);
   const shortSha = gitSha.slice(0, 7);
   const shaLabel = currency === "current" ? ` (git: ${shortSha})` : "";

@@ -345,6 +345,8 @@ class BenchmarkRun:
     error_type: str = ""  # subtype from result event: error_max_turns | error_non_zero_exit | error_timeout | ""
     # Per-call log for post-run investigation: ["Bash: grep -r 'import'", "Skill: /codemap:query rdeps ..."]
     tool_log: list[str] = field(default_factory=list)
+    # Raw tool_use_error payloads (first 2k chars each) for diagnosing skill failures
+    tool_errors: list[str] = field(default_factory=list)
     # Full agent output text — captured for quality scoring
     output_text: str = ""
     quality: QualityScore = field(default_factory=QualityScore)
@@ -792,11 +794,11 @@ Read the result immediately:
 
 Maximum 3 /codemap:query-code calls total across all steps.
 
-If /codemap:query-code returns <tool_use_error>: skip to STEP 2 with an empty list.
+If /codemap:query-code returns <tool_use_error>: do NOT call codemap again. Run one Grep/Bash fallback for that same rdeps query, then proceed to STEP 2.
 
-### STEP 2 — Write the report (no more tool calls after this point)
+### STEP 2 — Write the report
 
-Once you reach STEP 2, do NOT call any tool. Write the answer immediately.
+Once you have codemap results (or completed fallback), do NOT make additional tool calls. Write the answer immediately.
 
 **Hard rules — no exceptions:**
 1. NEVER use Grep, Glob, or Bash to verify or extend codemap results — the index is authoritative. Exception: rule 5 (tool error fallback).
@@ -1037,6 +1039,12 @@ Rules:
 
         _MAX_API_RETRIES = 2
         with _effective_cwd() as cwd:
+            # Each benchmark task is an independent agent session. Clear the
+            # inject-preamble session-once flag so each task receives the
+            # codemap status line regardless of inter-task timing.
+            _flag = Path(tempfile.gettempdir()) / f"codemap-preamble-{cwd.name}"
+            _flag.unlink(missing_ok=True)
+
             for attempt in range(_MAX_API_RETRIES + 1):
                 result = BenchmarkRun(
                     arm=arm, task_id=task.id, task_type=task.type, model=self.model_short, success=False
@@ -1293,8 +1301,10 @@ Rules:
 
         def _capture(text: str) -> None:
             result.tool_result_tokens += count_tokens(text)
-            # Skip error responses and skill executor status placeholders
+            # Skip error responses and skill executor status placeholders from corpus
             if "<tool_use_error>" in text or text.startswith("Launching skill:"):
+                if "<tool_use_error>" in text:
+                    result.tool_errors.append(text[:2000])
                 return
             if is_rdeps:
                 result.codemap_results.append(text)
@@ -1852,7 +1862,9 @@ def main(
     repo_path = repo_path.resolve()
     index_path = find_index(repo_path, index)
 
-    arms = [arm] if arm else ["plain", "codemap", "semble", "combined"]
+    arms = [arm] if arm else ["plain", "codemap", "semble"]
+    if not arm:
+        print("[→ note:        'all' excludes 'combined' — run with --arm combined to include it]")
 
     if "semble" in arms or "combined" in arms:
         check_semble_mcp()

@@ -69,22 +69,22 @@ scan-query rdeps mypackage.auth    # what breaks if auth changes?
 
 That output is prepended to the agent spawn prompt as structural context. The agent starts the refactor already knowing full blast radius — no cold exploration, no mid-refactor surprise that `middleware.py` also imports `auth`. Across benchmark runs on pytorch-lightning, codemap consistently reduces tool calls by 50–80% while improving structural-recall metrics on import-graph tasks.
 
-**Agentic benchmark — plain vs codemap (2026-06-26):**
+**Agentic benchmark — plain vs codemap vs semble (2026-06-27, v0.13.2):**
 
-16 import-graph tasks × 3 models on pytorch-lightning-master. 47/48 runs per arm (BA-16/opus terminal only). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair). Tokens = input + output + tool-result, mean per run.
+16 import-graph tasks × 3 models × 3 arms on pytorch-lightning-master. 143/144 runs (BA-16/opus/semble missing 1). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair). Tokens = avg input tokens per run.
 
-| Segment     | Plain erec | Codemap erec | Δ erec       | Plain tok | Codemap tok | Plain time | Codemap time |
-| ----------- | ---------- | ------------ | ------------- | --------- | ----------- | ---------- | ------------ |
-| Haiku 4.5   | 85.7%      | 83.8%        | −1.9pp        | 1 018k    | 1 464k      | 108 s      | 126 s        |
-| Sonnet 4.6  | 92.8%      | 97.9%        | **+5.1pp**    | 551k      | 912k        | 224 s      | 205 s        |
-| Opus 4.6    | 87.8%      | 95.5%        | **+7.7pp**    | 689k      | 891k        | 180 s      | 160 s        |
-| **Overall** | **88.8%**  | **92.3%**    | **+3.5pp**    | 754k      | 1 093k      | 170 s      | 164 s        |
-| simple      | 100%       | 100%         | 0             | 572k      | 764k        | 119 s      | 111 s        |
-| medium      | 100%       | 100%         | 0             | 737k      | 1 021k      | 134 s      | 166 s        |
-| hard        | 87.5%      | 78.1%        | **−9.4pp†**   | 738k      | 1 157k      | 200 s      | 180 s        |
-| extreme     | 65.9%      | 91.0%        | **+25.1pp**   | 989k      | 1 461k      | 233 s      | 200 s        |
+> **🚧 Under reconstruction** — numbers from a benchmark run that used v0.13.1 (skill failures affected haiku/codemap). Clean numbers pending after v0.13.2 fix rollout.
 
-† Hard regression is haiku-specific on net hard-average (BA-12 + BA-15) due to stale index (index lagged HEAD) combined with Bash-as-fallback restriction. Sonnet/opus net hard-averages roughly unchanged though individual tasks vary. A fresh index is expected to recover the gap.
+| Segment     | Plain erec | Codemap erec | Semble erec | Δ cm−plain | Plain tok | Codemap tok |
+| ----------- | ---------- | ------------ | ----------- | ---------- | --------- | ----------- |
+| Haiku 4.5   | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
+| Sonnet 4.6  | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
+| Opus 4.6    | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
+| **Overall** | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
+| simple      | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
+| medium      | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
+| hard        | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
+| extreme     | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
 
 **Recall metrics (agentic benchmark):**
 
@@ -93,34 +93,43 @@ That output is prepended to the agent spawn prompt as structural context. The ag
 
 **Token overhead analysis:**
 
-Codemap arm uses +45% more total tokens than plain (754k vs 1 093k/run). Counter-intuitive given codemap is supposed to reduce exploration. Root cause from per-component breakdown:
+With v0.13.2, codemap arm uses 🚧 (pending clean re-run). Per-component breakdown:
 
-| Component | Plain | Codemap | Delta |
-| --------------- | ----- | ------- | ----- |
-| input\_tokens | 740k | 1 082k | +342k |
-| output\_tokens | 8.9k | 8.9k | ~0 |
-| tool\_result | 5.4k | 2.5k | -2.9k |
+| Component     | Plain | Codemap (v0.13.2) | Semble | Δ cm−plain |
+| ------------- | ----- | ----------------- | ------ | ---------- |
+| input_tokens  | 🚧    | 🚧                | 🚧     | 🚧         |
+| output_tokens | 🚧    | 🚧                | 🚧     | 🚧         |
+| total         | 🚧    | 🚧                | 🚧     | 🚧         |
 
-Codemap actually reduces tool calls (-22% across all tiers) and tool-result tokens (-53%). The +342k input overhead comes from the codemap system-prompt supplement carried on every message. Exploration savings (~3k tokens/run) are real but dwarfed by preamble cost.
+🚧 Tool call/token-reduction claims pending clean re-run. The pre-v0.13.2 +342k input overhead came primarily from `query-code/SKILL.md` (~4.5k tokens loaded per skill invocation, persisting across all subsequent turns — not the static supplement). v0.13.2 fixes: lean SKILL.md (~1.5k tokens, 3× reduction) + session-once preamble. Validated −26% input tokens across BA-01–04, zero erec regression (haiku, codemap arm, 2026-06-27):
 
-**Hard-task regression — haiku-specific:**
+| Task  | Difficulty | Input pre-v0.13.2 | Input v0.13.2 | Δ    | erec   |
+| ----- | ---------- | ----------------- | ------------- | ---- | ------ |
+| BA-01 | simple     | 754.8k            | 748.7k        | −1%  | 100% = |
+| BA-02 | medium     | 796.7k            | 258.1k        | −68% | 100% = |
+| BA-03 | hard       | 2 014.7k          | 1 354.8k      | −33% | 81% =  |
+| BA-04 | extreme    | 1 772.3k          | 1 594.4k      | −10% | 100% = |
 
-Net hard-tier delta: plain 87.5% vs codemap 78.1% (−9.4pp). Driven almost entirely by haiku:
+**Hard/extreme task analysis (v0.13.2):**
 
-| Model | Plain hard erec | Codemap hard erec | Delta |
-| ------- | --------------- | ----------------- | ----- |
-| Haiku | 95.4% | 59.7% | -35.7pp |
-| Sonnet | 91.7% | 91.5% | -0.1pp |
-| Opus | 75.3% | 83.2% | +7.9pp |
+Hard-tier regression from prior run is resolved. With fresh index and lean SKILL.md (v0.13.2), codemap outperforms plain on hard+extreme tasks for all models:
 
-Haiku degrades on hard tasks (16-50 rdeps) because the codemap preamble for hard tasks adds +600k input tokens for haiku (vs +240k for sonnet). No simple size-causes-failure correlation — BA-11/haiku has 1.8M input tokens and 100% erec — so model-level instruction-following sensitivity at large context is the primary suspect.
+| Model  | Plain hard+extreme erec | Codemap hard+extreme erec | Semble | Δ cm−plain |
+| ------ | ----------------------- | ------------------------- | ------ | ---------- |
+| Haiku  | 🚧                      | 🚧                        | 🚧     | 🚧         |
+| Sonnet | 🚧                      | 🚧                        | 🚧     | 🚧         |
+| Opus   | 🚧                      | 🚧                        | 🚧     | 🚧         |
 
-**Planned improvements:**
+Pending clean re-run after bug fixes.
 
-1. **Tier-gated injection** — skip codemap preamble for simple/medium tasks (0pp erec gain from data); save ~200-280k tokens/run at zero quality cost for 2 of 4 difficulty tiers
-2. **Depth-1 preamble for hard tasks** — inject only direct (depth-1) rdeps, not full transitive graph; reduces preamble proportionally while preserving key blast-radius signal
-3. **Model-aware routing** — haiku + estimated rdep count > threshold: fall back to plain arm or use compressed preamble; avoids -35.7pp hard regression
-4. **Compressed preamble format** — current skill returns rendered markdown; compact JSON or short-form list could cut preamble size 30-50% with no information loss
+**Token overhead — implemented mitigations (v0.13.2):**
+
+1. **Lean `query-code/SKILL.md`** — 324→130 lines (~4.5k→~1.5k tokens); retains Step 0 freshness check, direction table, exhaustive STOP rule, 3-call budget, full parse table, output routing. Validated −26% input overhead, zero erec loss across all difficulty tiers.
+2. **Session-once preamble** — `inject-preamble.js` skips re-injection when index is current and preamble was already injected within the last 30 min (TTL flag at `/tmp/codemap-preamble-<proj>`). Stale index always injects so the auto-refresh note reaches the agent. Saves ~900 tokens/session.
+
+**Open improvements (not yet implemented):**
+
+- **Benchmark re-run pending** — full agentic benchmark re-run needed after RC1 fix; haiku codemap regression cause now identified (PID temp-file mismatch in RC1). Results table above reflects the buggy run.
 
 **Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap) × 3 model tiers on pytorch-lightning-master (646 modules, 8 task types). **Scope**: these are pre-implementation structural-query tasks (blast-radius enumeration, caller discovery) — end-to-end patch quality and test-pass rate are not yet measured. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header so the harness can be pointed at any Python codebase. Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
 
@@ -356,6 +365,8 @@ Prefer scan-query over file reads: rdeps, fn-rdeps, fn-blast, xrefs, symbol.
 ```
 
 When the index is **stale** (git HEAD differs from stored sha), the hook spawns `scan-index --root <scan_root>` in the background (non-blocking, 10-minute lockfile guard) so the index refreshes silently while Claude is answering. Status reads `· refresh started` on the first stale turn and `· refresh in progress` on subsequent turns until the scan completes.
+
+When the index is **current**, the hook injects the status line only once per session (30-min TTL flag at `/tmp/codemap-preamble-<proj>`). Subsequent turns skip injection — saving ~30 tokens × N turns ≈ ~900 tokens/session. Stale index always injects regardless of TTL so the auto-refresh note always reaches the agent.
 
 This complements the per-skill SKILL.md injection — which handles dynamic per-PR `scan-query` output and interactive Gate A/B prompts — with a lightweight always-on preamble that reaches every turn, not just skill invocations.
 
