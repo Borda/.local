@@ -22,17 +22,20 @@ Run **Query** first — validates the index before spending LLM tokens on agenti
 <details>
 <summary><strong>Files</strong></summary>
 
-| File                        | Purpose                                                                                                                                                                              |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `run-codemap-agentic.py`    | 4-arm agentic benchmark — measures how much structural context (codemap / semble / combined) reduces Claude's exploration overhead                                                   |
-| `run-codemap-bench.py`      | Real-codebase benchmark — measures scan-query accuracy and token efficiency across 8 structural navigation task types; **repo-agnostic**, driven by `tasks-bench.json` `repo` header |
-| `run-codemap-cli.py`        | Query-level benchmark — measures scan-query correctness, coverage, and latency against a real repo                                                                                   |
-| `suites/tasks-agentic.json` | 16 blast-radius navigation tasks (BA-01–BA-16), 4 difficulty tiers, used by the agentic benchmark                                                                                    |
-| `suites/tasks-bench.json`   | 44 tasks across 8 series (SE / FN / RV / CQ / BR / DG / FT / RI) + `repo` header (name, namespace, default path) — swap to benchmark a different codebase                            |
-| `suites/tasks-code.json`    | 15 code-level tasks used by the scan-query benchmark                                                                                                                                 |
-| `suites/tasks-patch.json`   | 5 end-to-end patch tasks (PT-01–PT-05) — failing test → minimal fix → test pass; requires `--patch` flag and sandbox harness                                                         |
-| `requirements.txt`          | Python dependencies for all benchmarks                                                                                                                                               |
-| `results/`                  | JSON snapshots and markdown reports from past runs                                                                                                                                   |
+| File                           | Purpose                                                                                                                                                                                                   |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run-codemap-agentic.py`       | 4-arm agentic benchmark — measures how much structural context (codemap / semble / combined) reduces Claude's exploration overhead                                                                        |
+| `run-codemap-bench.py`         | Real-codebase benchmark — measures scan-query accuracy and token efficiency across 8 structural navigation task types; **repo-agnostic**, driven by `tasks-bench.json` `repo` header                      |
+| `run-codemap-cli.py`           | Query-level benchmark — measures scan-query correctness, coverage, and latency against a real repo                                                                                                        |
+| `suites/tasks-agentic.json`    | 16 blast-radius navigation tasks (BA-01–BA-16), 4 difficulty tiers, used by the agentic benchmark                                                                                                         |
+| `suites/tasks-bench.json`      | 44 tasks across 8 series (SE / FN / RV / CQ / BR / DG / FT / RI) + `repo` header (name, namespace, default path) — swap to benchmark a different codebase                                                 |
+| `suites/tasks-code.json`       | 15 code-level tasks used by the scan-query benchmark                                                                                                                                                      |
+| `suites/tasks-patch.json`      | 5 end-to-end patch tasks (PT-01–PT-05) — failing test → minimal fix → test pass; requires `--patch` flag and sandbox harness                                                                              |
+| `suites/tasks-readcrop.json`   | 6 read-crop tasks (RC-01–RC-06) — symbol-contract extraction; scored by keyword recall; headline metric is `tool_result_tokens` (codemap `symbol` extraction vs whole-file Read)                          |
+| `suites/tasks-fix-single.json` | 4 fix-single tasks (FS-01–FS-04) — single-file bug fix with archive/restore isolation; scored by diff keyword recall (`erec`)                                                                             |
+| `suites/tasks-fix-multi.json`  | 3 fix-multicaller tasks (FM-01–FM-03) — signature change + caller update across files; codemap `fn-rdeps` finds all callers before editing; scored by diff keyword recall (`erec`) + file recall (`rrec`) |
+| `requirements.txt`             | Python dependencies for all benchmarks                                                                                                                                                                    |
+| `results/`                     | JSON snapshots and markdown reports from past runs                                                                                                                                                        |
 
 </details>
 
@@ -418,8 +421,8 @@ Scoring is independent per arm. Token ratio = `codemap_input_tokens / plain_inpu
 
 **What this benchmark does NOT yet measure:**
 
-- End-to-end developer task completion (patch quality, test pass rate)
-- Semantic correctness of generated code
+- Test pass rate after fix — `fix_single` / `fix_multicaller` suites score by diff keyword recall and file recall, not compilation or test execution
+- Semantic correctness beyond structural keyword matching
 - Tasks sampled from real developer activity (issues, PRs, maintenance logs)
 - Code quality judgment or review quality beyond structural metrics
 
@@ -428,6 +431,33 @@ Scoring is independent per arm. Token ratio = `codemap_input_tokens / plain_inpu
 ### Extensions
 
 - **Tier E** (hard): End-to-end patch tasks (`tasks-patch.json`, PT-01–PT-05). Run with `--patch` flag; requires git worktree sandbox + pytest. Pre-fix commits and failing test paths embedded in task file.
+
+### Fix-task benchmark families (agentic benchmark)
+
+Two suite files extend agentic benchmark coverage from pure structural discovery into the **edit phase** of real developer work:
+
+| Family            | Suite                   | Tasks       | Scoring                                             | Daily-work proxy                                                  |
+| ----------------- | ----------------------- | ----------- | --------------------------------------------------- | ----------------------------------------------------------------- |
+| `fix_single`      | `tasks-fix-single.json` | FS-01–FS-04 | Diff keyword recall (`erec`)                        | Single-file bug fix — validates archive/restore isolation         |
+| `fix_multicaller` | `tasks-fix-multi.json`  | FM-01–FM-03 | Diff keyword recall (`erec`) + file recall (`rrec`) | Signature change + callers — codemap's edit-assist differentiator |
+
+**Isolation**: both suites use `requires_reset: true` — per arm run, the benchmark copies the demo codebase to a temp dir, yields the copy to the agent, then captures `diff -ru` against the original. The original codebase is never mutated. No git required.
+
+**FM-03 is the decisive cross-file test**: `Strategy.setup` in pytorch-lightning has 6 subclass overrides across `ddp.py`, `fsdp.py`, `deepspeed.py`, `model_parallel.py`, `single_xla.py`, and `xla.py`. The codemap arm uses `fn-rdeps` to enumerate all overrides before any edit; the plain arm must grep and read files. File recall (`rrec`) captures whether the right files were actually changed. This is the first benchmark family that directly measures whether codemap reduces missed callers in a real multi-file edit.
+
+```bash
+# Fix-single (validates archive/restore; single-file; no cross-file index benefit expected)
+python benchmarks/run-codemap-agentic.py \
+    --repo-path /path/to/pytorch-lightning/src/lightning \
+    --tasks "[\'FS-01\',\'FS-02\',\'FS-03\',\'FS-04\']" --run-all --model haiku
+
+# Fix-multicaller (the codemap edit-assist test — run plain + codemap, compare rrec on FM-03)
+python benchmarks/run-codemap-agentic.py \
+    --repo-path /path/to/pytorch-lightning/src/lightning \
+    --tasks "[\'FM-01\',\'FM-02\',\'FM-03\']" --run-all --model haiku --report
+```
+
+**Scoring**: `score_fix()` extracts `+`-prefixed lines from `diff -ru` output, checks keyword hits (`erec`), and checks file recall against `expected_files` (`rrec`). Results flow through the same `QualityScore.erec` / `rrec` columns as the agentic benchmark — no new report rendering required.
 
 ## Results
 

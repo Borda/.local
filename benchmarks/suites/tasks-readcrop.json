@@ -1,0 +1,98 @@
+[
+  {
+    "difficulty": "medium",
+    "expected_keywords": [
+      "prog_bar",
+      "logger",
+      "on_step",
+      "on_epoch",
+      "reduce_fx",
+      "sync_dist",
+      "batch_size",
+      "rank_zero_only",
+      "add_dataloader_idx",
+      "metric_attribute",
+      "enable_graph"
+    ],
+    "id": "RC-01",
+    "primary_module": "lightning.pytorch.core.module",
+    "prompt": "State the full contract of `LightningModule.log` in `lightning.pytorch.core.module`: list every keyword argument and what each one controls. Be exhaustive about the parameters.",
+    "symbol": "LightningModule.log",
+    "type": "read_crop"
+  },
+  {
+    "difficulty": "simple",
+    "expected_keywords": [
+      "model",
+      "train_dataloaders",
+      "val_dataloaders",
+      "datamodule",
+      "ckpt_path"
+    ],
+    "id": "RC-02",
+    "primary_module": "lightning.pytorch.trainer.trainer",
+    "prompt": "State the full signature and contract of `Trainer.fit` in `lightning.pytorch.trainer.trainer`: every parameter it accepts and its purpose.",
+    "symbol": "Trainer.fit",
+    "type": "read_crop"
+  },
+  {
+    "difficulty": "hard",
+    "expected_keywords": [
+      "enable_checkpointing",
+      "check_val_every_n_epoch",
+      "accumulate_grad_batches",
+      "fast_dev_run",
+      "detect_anomaly",
+      "default_root_dir",
+      "deterministic",
+      "devices"
+    ],
+    "id": "RC-03",
+    "primary_module": "lightning.pytorch.trainer.trainer",
+    "prompt": "Enumerate the constructor parameters of `Trainer` (`Trainer.__init__` in `lightning.pytorch.trainer.trainer`) that control checkpointing, validation cadence, gradient accumulation, and debugging. Name the exact argument identifiers.",
+    "symbol": "Trainer.__init__",
+    "type": "read_crop"
+  },
+  {
+    "difficulty": "medium",
+    "expected_keywords": [
+      "monitor",
+      "patience",
+      "min_delta",
+      "mode",
+      "divergence_threshold",
+      "stopping_threshold",
+      "check_finite",
+      "check_on_train_epoch_end"
+    ],
+    "id": "RC-04",
+    "primary_module": "lightning.pytorch.callbacks.early_stopping",
+    "prompt": "State the full contract of the `EarlyStopping` callback constructor (`EarlyStopping.__init__` in `lightning.pytorch.callbacks.early_stopping`): every argument and the stopping behaviour it configures.",
+    "symbol": "EarlyStopping.__init__",
+    "type": "read_crop"
+  },
+  {
+    "difficulty": "simple",
+    "expected_keywords": [
+      "trainer",
+      "filepath"
+    ],
+    "id": "RC-05",
+    "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
+    "prompt": "Describe exactly what `ModelCheckpoint._save_checkpoint` in `lightning.pytorch.callbacks.model_checkpoint` does: its signature and side effects. (Small-symbol case \u2014 the answer is one short method.)",
+    "symbol": "ModelCheckpoint._save_checkpoint",
+    "type": "read_crop"
+  },
+  {
+    "difficulty": "simple",
+    "expected_keywords": [
+      "trainer",
+      "setup"
+    ],
+    "id": "RC-06",
+    "primary_module": "lightning.pytorch.strategies.fsdp",
+    "prompt": "Describe what `FSDPStrategy.setup` in `lightning.pytorch.strategies.fsdp` does and its signature. (Small-symbol case \u2014 one method within a large module file.)",
+    "symbol": "FSDPStrategy.setup",
+    "type": "read_crop"
+  }
+]

@@ -1,0 +1,74 @@
+[
+  {
+    "codebase_module": "lightning",
+    "difficulty": "simple",
+    "expected_files": [
+      "early_stopping.py"
+    ],
+    "expected_patch_keywords": [
+      "patience",
+      "< 1",
+      "MisconfigurationException",
+      "raise"
+    ],
+    "id": "FS-01",
+    "primary_module": "lightning.pytorch.callbacks.early_stopping",
+    "prompt": "In `EarlyStopping.__init__` (`lightning/pytorch/callbacks/early_stopping.py`): the `patience` parameter accepts 0 and negative integers. A `patience=0` stops training immediately on the first check; negative values are silently nonsensical. Add a validation guard \u2014 raise `MisconfigurationException` with message `'patience must be >= 1, got <value>'` if `patience < 1`. The existing `mode` validation at the bottom of `__init__` shows the pattern to follow.",
+    "requires_reset": true,
+    "type": "fix_single"
+  },
+  {
+    "codebase_module": "lightning",
+    "difficulty": "simple",
+    "expected_files": [
+      "early_stopping.py"
+    ],
+    "expected_patch_keywords": [
+      "min_delta",
+      "< 0",
+      "MisconfigurationException",
+      "raise"
+    ],
+    "id": "FS-02",
+    "primary_module": "lightning.pytorch.callbacks.early_stopping",
+    "prompt": "In `EarlyStopping.__init__` (`lightning/pytorch/callbacks/early_stopping.py`): the `min_delta` parameter accepts negative values. A negative `min_delta` effectively inverts the improvement criterion (the stopping condition becomes easier to meet than the user intended). Add a validation guard \u2014 raise `MisconfigurationException` with message `'min_delta must be >= 0, got <value>'` if `min_delta < 0`. Place it near the existing `mode` validation.",
+    "requires_reset": true,
+    "type": "fix_single"
+  },
+  {
+    "codebase_module": "lightning",
+    "difficulty": "simple",
+    "expected_files": [
+      "model_checkpoint.py"
+    ],
+    "expected_patch_keywords": [
+      "_last_global_step_saved",
+      "global_step",
+      "return",
+      "rank_zero_info"
+    ],
+    "id": "FS-03",
+    "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
+    "prompt": "In `ModelCheckpoint._save_checkpoint` (`lightning/pytorch/callbacks/model_checkpoint.py`): the method is sometimes called multiple times within the same global step. Add a guard at the top of `_save_checkpoint`: if `trainer.global_step == self._last_global_step_saved`, call `rank_zero_info` to log that the duplicate save is being skipped and return early without saving. The field `self._last_global_step_saved` already exists and is updated at the end of the method.",
+    "requires_reset": true,
+    "type": "fix_single"
+  },
+  {
+    "codebase_module": "lightning",
+    "difficulty": "medium",
+    "expected_files": [
+      "model_checkpoint.py"
+    ],
+    "expected_patch_keywords": [
+      "save_top_k",
+      "== 0",
+      "rank_zero_warn",
+      "no checkpoints"
+    ],
+    "id": "FS-04",
+    "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
+    "prompt": "In `ModelCheckpoint.__init__` (`lightning/pytorch/callbacks/model_checkpoint.py`): `save_top_k=0` silently disables all checkpoint saving, which is almost always a misconfiguration rather than deliberate. After the existing `save_top_k < -1` validation (which raises `MisconfigurationException`), add a separate warning \u2014 call `rank_zero_warn` with message `'ModelCheckpoint(save_top_k=0) is set: no checkpoints will be saved. Pass save_top_k=-1 to save all checkpoints.'` when `save_top_k == 0`.",
+    "requires_reset": true,
+    "type": "fix_single"
+  }
+]

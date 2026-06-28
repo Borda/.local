@@ -177,6 +177,33 @@ Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0
 >
 > Good integration requires three things: (1) **skill-first protocol** — the agent calls `/codemap:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap queries per task; (3) **hard stop on `exhaustive: true`** — when the index says the list is complete, write the answer immediately, no more tool calls. Skipping any of these — especially ignoring the exhaustive flag — is the primary cause of regressions that flip the codemap benefit into a liability. Use `/codemap:integration init` to wire integration correctly rather than injecting context manually.
 
+### Real-world proof: daily-work benchmark
+
+The benchmarks above measure the **discovery phase** — enumerating callers, assessing blast radius before any code is written. The `fix_multicaller` suite extends coverage to the **edit phase**: a real signature change where all callers must be updated in one pass.
+
+**Benchmark scope**: 7 tasks in `benchmarks/run-codemap-agentic.py` across two families. Both use archive/restore isolation — the demo codebase is copied per arm run, the agent edits the copy, and `diff -ru` is captured against the original. No git required; original codebase never mutated.
+
+| Family                          | Tasks                          | What it tests                                                                 | Scored by                                           |
+| ------------------------------- | ------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------- |
+| `fix_single` (FS-01–FS-04)      | Single-file bug fix            | Validates archive/restore isolation; `EarlyStopping`/`ModelCheckpoint` guards | Diff keyword recall (`erec`)                        |
+| `fix_multicaller` (FM-01–FM-03) | Signature change + all callers | codemap `fn-rdeps` enumerates callers before editing; plain arm must grep     | Diff keyword recall (`erec`) + file recall (`rrec`) |
+
+**FM-03 (`Strategy.setup`) is the decisive test**: adding `verbose: bool = False` to the base-class `setup` method requires updating 6 subclass overrides in `ddp.py`, `fsdp.py`, `deepspeed.py`, `model_parallel.py`, `single_xla.py`, and `xla.py`. The codemap arm runs `scan-query fn-rdeps lightning.pytorch.strategies.strategy::Strategy.setup` before any edit and gets the complete override list in one call. The plain arm must grep for `def setup` and read candidate files. Missing overrides = silent `super().setup()` signature mismatch at runtime. File recall (`rrec`) captures whether the right files were actually changed.
+
+This is the only public Claude Code plugin benchmark that measures edit-phase caller coverage — not just structural discovery.
+
+```bash
+# Fix-multicaller: the codemap vs plain edit-assist test
+python benchmarks/run-codemap-agentic.py \
+    --repo-path /path/to/pytorch-lightning/src/lightning \
+    --tasks "['FM-01','FM-02','FM-03']" --run-all --model haiku --report
+
+# Fix-single: validates the archive/restore isolation mechanism
+python benchmarks/run-codemap-agentic.py \
+    --repo-path /path/to/pytorch-lightning/src/lightning \
+    --tasks "['FS-01','FS-02','FS-03','FS-04']" --run-all --model haiku
+```
+
 ______________________________________________________________________
 
 ## Integration with develop and oss plugins
@@ -370,7 +397,13 @@ When the index is **current**, the hook injects the status line only once per se
 
 This complements the per-skill SKILL.md injection — which handles dynamic per-PR `scan-query` output and interactive Gate A/B prompts — with a lightweight always-on preamble that reaches every turn, not just skill invocations.
 
-### 6 — Two-tier currency check
+### 6 — Redundant-scan guard (Pre/PostToolUse hooks)
+
+Once `scan-query rdeps <module>` returns an **exhaustive** result, the import graph for that module is complete and authoritative — re-grepping it with `grep`/`rg` adds nothing but tokens. Benchmarks showed agents (weak tiers especially) ignoring the "stop" instruction and looping on verification greps, burning millions of input tokens at zero recall gain.
+
+Two hooks close this mechanically: `record-exhausted.js` (PostToolUse on Bash) notes each module returned exhaustive this session; `guard-redundant-scan.js` (PreToolUse on Bash) then **denies** import-discovery greps (`grep`/`rg` for `import`/`from`) targeting an already-exhausted module, pointing the agent back to the codemap result. Scope is deliberately narrow and fail-open: only import-greps for an already-exhausted module are blocked (source reads via `cat`/`Read` are never touched), only within the same session, and any hook error allows the call. Sessions that never run codemap (no sentinel) are unaffected. Disable by removing the two `Bash`-matcher entries from `hooks/hooks.json`.
+
+### 7 — Two-tier currency check
 
 `check-index-currency` runs inside Gate B:
 

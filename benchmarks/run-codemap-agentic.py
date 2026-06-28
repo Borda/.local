@@ -243,6 +243,50 @@ MODELS: dict[str, str] = {
 # Per-model wall-clock timeout (seconds). Opus needs more time for complex reasoning.
 _MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
 
+# Fixed USD price table per million tokens, keyed by short tier (NOT exact model id) so a
+# 4.6 vs 4.8 swap does not perturb cross-run cost comparisons. List prices — edit here to
+# track Anthropic changes; cache_read = 0.1x input, cache_write = 1.25x input (standard ratios).
+# Cost is the fair cross-arm metric because arms run different models (codemap's skill layer
+# is cheaper haiku) — token counts alone hide that a codemap call may be billed at haiku rates.
+PRICES: dict[str, dict[str, float]] = {
+    "haiku": {"input": 1.00, "output": 5.00, "cache_read": 0.10, "cache_write": 1.25},
+    "sonnet": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
+    "opus": {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
+}
+
+
+def run_cost_usd(r: "BenchmarkRun") -> float:
+    """Cache-aware USD cost of one run from the fixed PRICES table.
+
+    ``input_tokens`` stores the summed context (uncached + cache_creation + cache_read); when the
+    cache breakdown was captured (new runs) cost is billed per component, otherwise the whole sum
+    falls back to the full input price — an upper bound flagged in the report Limitations.
+
+    Args:
+        r: Completed benchmark run with token counts and a short model tier.
+
+    Returns:
+        Estimated cost in USD.
+
+    Examples:
+        >>> from types import SimpleNamespace as N
+        >>> round(run_cost_usd(N(model="haiku", input_tokens=1_000_000, output_tokens=0,
+        ...     cache_read_tokens=0, cache_creation_tokens=0)), 2)
+        1.0
+    """
+    p = PRICES.get(r.model)
+    if not p:
+        return 0.0
+    cache_read = getattr(r, "cache_read_tokens", 0) or 0
+    cache_write = getattr(r, "cache_creation_tokens", 0) or 0
+    uncached = max(r.input_tokens - cache_read - cache_write, 0)
+    return (
+        uncached * p["input"]
+        + cache_write * p["cache_write"]
+        + cache_read * p["cache_read"]
+        + r.output_tokens * p["output"]
+    ) / 1_000_000
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -338,6 +382,8 @@ class BenchmarkRun:
     input_tokens: int = 0
     output_tokens: int = 0
     tool_result_tokens: int = 0  # tiktoken estimate of tool result content
+    cache_read_tokens: int = 0  # cache-hit input tokens (billed ~0.1x) — for cache-aware cost
+    cache_creation_tokens: int = 0  # cache-write input tokens (billed ~1.25x)
     # Timing metrics (stored in seconds)
     elapsed_s: float = 0.0
     tool_elapsed_s: float = 0.0  # time inside tool execution only
@@ -350,6 +396,8 @@ class BenchmarkRun:
     # Full agent output text — captured for quality scoring
     output_text: str = ""
     quality: QualityScore = field(default_factory=QualityScore)
+    # Internal — excluded from JSON (see _save_snapshot); populated for fix_single/fix_multicaller tasks
+    agent_diff: str = field(default="", repr=False)  # unified diff of agent's edits vs original codebase
     # Internal fields excluded from JSON serialisation (see _save_snapshot)
     skill_result_text: str = field(default="", repr=False)  # all codemap:query rdeps results joined (for sc)
     codemap_results: list[str] = field(default_factory=list, repr=False)  # ALL codemap skill results (for erec)
@@ -365,6 +413,12 @@ class Task:
     primary_module: str = ""
     difficulty: str = "unknown"
     skill: str = ""
+    symbol: str = ""  # read_crop tasks: target symbol (e.g. "Trainer.fit")
+    expected_keywords: list[str] = field(default_factory=list)  # read_crop tasks: keyword-recall ground truth
+    requires_reset: bool = False  # fix tasks: snapshot/restore codebase around each arm run
+    codebase_module: str = ""  # fix tasks: top-level module to snapshot (e.g. "lightning")
+    expected_patch_keywords: list[str] = field(default_factory=list)  # fix tasks: strings expected in diff +lines
+    expected_files: list[str] = field(default_factory=list)  # fix tasks: file-path fragments expected in diff
 
 
 # ---------------------------------------------------------------------------
@@ -789,6 +843,8 @@ Read the result immediately:
 - If "exhaustive": true → list is complete and authoritative. Count the entries.
   Your final list MUST contain exactly that many modules. Go to STEP 2 NOW.
   Do NOT grep. Do NOT call codemap again. Do NOT read files to verify.
+  (A guard hook now DENIES import-greps for an exhausted module — re-grepping wastes a
+  turn and will be blocked. This applies on every model tier; trust the index.)
 - If NOT exhaustive → record the list as your working set. You may make 1-2 more
   codemap calls (e.g. deps or central for context). Then go to STEP 2.
 
@@ -949,8 +1005,103 @@ Rules:
 - If nothing found: write "Count: 0" and "(none found)"
 - This section must be the LAST thing in your answer"""
 
+    # read_crop task family — measures READ cost: extract ONE symbol's contract using the
+    # fewest tokens of file content. Headline metric is tool_result_tokens (codemap `symbol`
+    # extraction vs plain whole-file Read); correctness via keyword recall (score_read_crop).
+    _READCROP_BASE = (
+        "You are a software engineer answering a precise question about ONE symbol "
+        "(function / method / class) in a Python codebase. Find that symbol's source, then state "
+        "its full contract — every parameter and what it does. Use the FEWEST tokens of file "
+        "content possible: do NOT read unrelated code, and do NOT read an entire large module file "
+        "when you only need one symbol."
+    )
+    _READCROP_PLAIN = (
+        "\n\n## Reading tools\n"
+        "Use Grep to locate the symbol's definition line, then Read ONLY the needed line range "
+        "(pass offset/limit) — never read the whole file if the symbol is a small part of it."
+    )
+    _READCROP_CODEMAP = (
+        "\n\n## codemap installed — extract the symbol directly\n"
+        "Run `scan-query symbol <Name> --with-imports` (via Bash) to get JUST that symbol's source "
+        "with its imports — a fraction of the tokens of the full file. Do NOT Read the whole module "
+        "file. The `symbols[].source` field is the authoritative source; render the contract from it."
+    )
+    _READCROP_SEMBLE = (
+        "\n\n## semble installed — search then read the chunk\n"
+        'Call mcp__semble__search with query naming the symbol and repo="{repo_path}", top_k=5. '
+        "Read only the returned chunk's line range — do not read the whole file."
+    )
+
+    # fix_single task family — single-function / single-file bug fix; scored by diff keyword recall.
+    _FIXSINGLE_BASE = (
+        "You are a software engineer fixing a specific bug in a Python codebase. "
+        "Read the relevant source file(s), understand the described issue, then apply the "
+        "**minimal fix** using the Edit tool. Do not refactor unrelated code. "
+        "The fix should be complete and correct — the scorer checks the diff for expected change markers."
+    )
+    _FIXSINGLE_PLAIN = (
+        "\n\n## Tools\n"
+        "Use Grep to locate the relevant class/function, then Read only the needed lines. "
+        "Apply the fix with Edit."
+    )
+    _FIXSINGLE_CODEMAP = (
+        "\n\n## codemap installed\n"
+        "Use `scan-query symbol <Name>` (via Bash) to locate and read the target symbol "
+        "before editing. For single-file fixes, codemap's symbol extraction shows the relevant "
+        "code without reading the whole file."
+    )
+    _FIXSINGLE_SEMBLE = (
+        "\n\n## semble installed\n"
+        'Call mcp__semble__search with the symbol name and repo="{repo_path}" to locate the '
+        "relevant code, then apply the fix with Edit."
+    )
+
+    # fix_multicaller task family — signature change that requires updating multiple callers;
+    # scored by diff keyword recall + file recall. Codemap's rdeps is the decisive tool here.
+    _FIXMULTI_BASE = (
+        "You are a software engineer making a signature change that touches multiple call sites. "
+        "Before writing any code: **find ALL callers of the function being changed**. "
+        "Then edit the function definition AND every caller. Miss a caller = incomplete fix."
+    )
+    _FIXMULTI_PLAIN = (
+        "\n\n## Tools\n"
+        "Use grep/bash to find all callers of the function (search for the function name as a string). "
+        "Edit the definition first, then each caller."
+    )
+    _FIXMULTI_CODEMAP = (
+        "\n\n## codemap installed — use rdeps to find all callers before touching code\n"
+        "Run `/codemap:query-code rdeps <primary_module>` FIRST to get the complete caller list. "
+        "If the result is exhaustive, that IS the full caller set — do NOT grep for more. "
+        "Then edit the function definition and every caller in the list. "
+        "codemap's caller list is the decisive advantage here: plain grep misses callers "
+        "that import via alias or re-export; codemap's import graph is complete."
+    )
+    _FIXMULTI_SEMBLE = (
+        "\n\n## semble installed\n"
+        'Call mcp__semble__search with the function name and repo="{repo_path}" to locate callers, '
+        "then edit the definition and all callers."
+    )
+
     def _system_prompt(self, task_type: str, arm: str) -> str:
         """Build the system prompt for one arm × task-type combination."""
+        if task_type == "fix_single":
+            supplement = {
+                "codemap": self._FIXSINGLE_CODEMAP,
+                "semble": self._FIXSINGLE_SEMBLE.format(repo_path=self.repo_path),
+            }.get(arm, self._FIXSINGLE_PLAIN)
+            return self._FIXSINGLE_BASE + supplement
+        if task_type == "fix_multicaller":
+            supplement = {
+                "codemap": self._FIXMULTI_CODEMAP,
+                "semble": self._FIXMULTI_SEMBLE.format(repo_path=self.repo_path),
+            }.get(arm, self._FIXMULTI_PLAIN)
+            return self._FIXMULTI_BASE + supplement
+        if task_type == "read_crop":
+            supplement = {
+                "codemap": self._READCROP_CODEMAP,
+                "semble": self._READCROP_SEMBLE.format(repo_path=self.repo_path),
+            }.get(arm, self._READCROP_PLAIN)
+            return self._READCROP_BASE + supplement
         base = self._PLAIN_SKILLS.get(task_type, self._PLAIN_SKILLS["fix"])
         if arm == "codemap":
             supplement = self._CODEMAP_SUPPLEMENT
@@ -1016,17 +1167,19 @@ Rules:
             task.prompt,
         ]
 
-        # Plain arm runs in a real directory copy (not symlinks) minus .cache/ so that
-        # macOS `find`/`rg` can traverse the tree without -L. Other arms run directly
-        # in self.repo_path.
+        _diff_capture: list[str] = []
+
         @contextlib.contextmanager
         def _effective_cwd():
-            if arm != "plain":
+            # plain arm always runs in an isolated copy (no index contamination)
+            # fix tasks run ALL arms in an isolated copy so edits never mutate self.repo_path
+            if arm not in ("plain",) and not task.requires_reset:
                 yield self.repo_path
                 return
             import shutil
 
-            with tempfile.TemporaryDirectory(prefix="bench-plain-") as tmpdir:
+            prefix = "bench-fix-" if task.requires_reset else "bench-plain-"
+            with tempfile.TemporaryDirectory(prefix=prefix) as tmpdir:
                 tmp = Path(tmpdir)
                 cwd = tmp / self.repo_path.name
                 shutil.copytree(
@@ -1036,6 +1189,16 @@ Rules:
                     symlinks=True,
                 )
                 yield cwd
+                if task.requires_reset:
+                    import subprocess as _sp
+
+                    proc = _sp.run(
+                        ["diff", "-ru", "--no-dereference", str(self.repo_path), str(cwd)],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    _diff_capture.append(proc.stdout)
 
         _MAX_API_RETRIES = 2
         with _effective_cwd() as cwd:
@@ -1057,6 +1220,8 @@ Rules:
                     time.sleep(2**attempt)  # exponential backoff: 1s, 2s
                     continue
                 break
+        if _diff_capture:
+            result.agent_diff = _diff_capture[0]
         return result
 
     @staticmethod
@@ -1232,11 +1397,9 @@ Rules:
         elif etype == "result":
             usage = event.get("usage", {})
             # input_tokens is only the uncached portion; sum all parts for real context usage
-            result.input_tokens = (
-                usage.get("input_tokens", 0)
-                + usage.get("cache_creation_input_tokens", 0)
-                + usage.get("cache_read_input_tokens", 0)
-            )
+            result.cache_creation_tokens = usage.get("cache_creation_input_tokens", 0)
+            result.cache_read_tokens = usage.get("cache_read_input_tokens", 0)
+            result.input_tokens = usage.get("input_tokens", 0) + result.cache_creation_tokens + result.cache_read_tokens
             result.output_tokens = usage.get("output_tokens", 0)
             subtype = event.get("subtype", "")
             result.success = subtype == "success"
@@ -1329,6 +1492,80 @@ Rules:
 # ---------------------------------------------------------------------------
 
 
+def score_read_crop(output_text: str, expected_keywords: list[str]) -> QualityScore:
+    """Keyword-recall scorer for read_crop tasks (no rdeps ground truth).
+
+    ``erec``/``rrec`` are reused as keyword recall so the metric flows through the existing
+    report columns; the headline efficiency signal is ``tool_result_tokens`` (read cost),
+    reported separately. A keyword is matched case-insensitively as a substring of the answer.
+
+    Args:
+        output_text: Full agent answer text.
+        expected_keywords: Ground-truth identifiers the correct contract must mention.
+
+    Returns:
+        QualityScore with recall in ``erec``/``rrec``; ``scored=False`` when no keywords given.
+
+    Examples:
+        >>> s = score_read_crop("uses prog_bar and on_step", ["prog_bar", "on_step", "logger"])
+        >>> round(s.erec, 2), s.erec_tp, s.erec_fn
+        (0.67, 2, 1)
+    """
+    if not expected_keywords:
+        return QualityScore(scored=False)
+    low = output_text.lower()
+    hits = sum(1 for k in expected_keywords if k.lower() in low)
+    n = len(expected_keywords)
+    rec = hits / n
+    return QualityScore(scored=True, erec=rec, erec_tp=hits, erec_fn=n - hits, rrec=rec, rrec_tp=hits, rrec_fn=n - hits)
+
+
+def score_fix(diff_text: str, expected_patch_keywords: list[str], expected_files: list[str]) -> QualityScore:
+    """Keyword-recall scorer for fix_single / fix_multicaller tasks.
+
+    Checks the unified diff of agent edits for expected change markers. ``erec`` measures
+    keyword recall in added lines; ``rrec`` measures file recall (were the right files changed).
+
+    Args:
+        diff_text: Output of ``diff -ru original copy`` after agent run.
+        expected_patch_keywords: Strings expected in diff added lines (``+`` prefix).
+        expected_files: Relative file-path fragments expected in ``+++ b/...`` headers.
+
+    Returns:
+        QualityScore with keyword recall in ``erec`` and file-change recall in ``rrec``.
+        Returns ``scored=False`` when no keywords given.
+
+    Examples:
+        >>> d = "+        if patience < 1:\\n+            raise MisconfigurationException('patience')"
+        >>> s = score_fix(d, ["patience < 1", "MisconfigurationException"], ["early_stopping.py"])
+        >>> s.erec
+        1.0
+        >>> s.rrec  # no +++ header in that diff snippet — file path absent
+        0.0
+    """
+    if not expected_patch_keywords:
+        return QualityScore(scored=False)
+    added_lines = "\n".join(
+        line[1:] for line in diff_text.splitlines() if line.startswith("+") and not line.startswith("+++")
+    )
+    low = added_lines.lower()
+    hits = sum(1 for k in expected_patch_keywords if k.lower() in low)
+    erec = round(hits / len(expected_patch_keywords), 3)
+    # diff -ru produces "+++ /full/path\t<timestamp>"; git diff produces "+++ b/path"
+    changed_files = set(re.findall(r"^\+\+\+ (?:b/)?(.+?)(?:\t.*)?$", diff_text, re.MULTILINE))
+    rrec = 0.0
+    if expected_files:
+        file_hits = sum(1 for f in expected_files if any(f in cf for cf in changed_files))
+        rrec = round(file_hits / len(expected_files), 3)
+    return QualityScore(
+        scored=True,
+        erec=erec,
+        erec_tp=hits,
+        erec_fn=len(expected_patch_keywords) - hits,
+        rrec=rrec,
+    )
+
+
 def _median_metrics(rlist: list[BenchmarkRun]) -> dict[str, float]:
     ok = [r for r in rlist if r.success]
     if not ok:
@@ -1336,6 +1573,7 @@ def _median_metrics(rlist: list[BenchmarkRun]) -> dict[str, float]:
     return {
         "tool_calls": statistics.median([r.tools.total for r in ok]),
         "input_tokens": statistics.median([r.input_tokens for r in ok]),
+        "cost_usd": statistics.median([run_cost_usd(r) for r in ok]),
         "tool_result_tokens": statistics.median([r.tool_result_tokens for r in ok]),
         "tool_elapsed_s": statistics.median([r.tool_elapsed_s for r in ok]),
         "elapsed_s": statistics.median([r.elapsed_s for r in ok]),
@@ -1388,6 +1626,7 @@ class Report:
         "- Purely quantitative — answer quality / correctness is not scored",
         "- Tool time tracks wall-clock including I/O; LLM think time is not isolated",
         "- tiktoken o200k_base approximates Claude's tokeniser (not exact)",
+        "- Cost ($) uses the fixed PRICES table (list prices, version-agnostic per tier); runs without a captured cache breakdown bill all input at full price = upper bound",
         "- Results vary across runs; model tier is the primary variance axis here",
         "- Tested on pytorch-lightning; generalisation to other corpora not assessed",
         "",
@@ -1405,10 +1644,16 @@ class Report:
     def _fmt_int(v: float) -> str:
         return f"{v:.0f}"
 
+    @staticmethod
+    def _fmt_usd(v: float) -> str:
+        return f"${v:.3f}"
+
     # Key metrics first — these are the headline savings signal.
     # Diagnostic metrics follow (tool breakdown, tool-only time).
+    # cost_usd is the fair cross-arm metric (arms run different-priced models).
     _METRICS = [
         ("elapsed_s", "Elapsed (s)", _fmt_s),
+        ("cost_usd", "Cost ($)", _fmt_usd),
         ("input_tokens", "Input tokens (k)", _fmt_tokens),
         ("tool_calls", "Tool calls", _fmt_int),
         ("tool_result_tokens", "Tool result tokens (k)", _fmt_tokens),
@@ -1582,7 +1827,7 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
     difficulty = task.difficulty
     return (
         f"[{run_n:0{len(str(total_runs))}}/{total_runs}] {task_num} ({difficulty}) | {model_short:<6} | {arm:<8}"
-        f" | time={result.elapsed_s:5.1f}s | tok={result.input_tokens / 1000:5.1f}k | calls={result.tools.total:3}"
+        f" | time={result.elapsed_s:5.1f}s | ${run_cost_usd(result):6.3f} | tok={result.input_tokens / 1000:5.1f}k | calls={result.tools.total:3}"
         f" (Gp={tc.grep:2}; Gb={tc.glob:2}; Bh={tc.bash:2}; Sk={tc.skill:2}; Sm={tc.semble:2}; blk={tc.blocked:2}; bfi={tc.bash_for_imports:2}; idx={tc.index_reads:2})"
         f"{quality_suffix}"
         f"{error_suffix}{degenerate_note}"
@@ -1665,9 +1910,22 @@ class Benchmark:
             tool_calls=result.tools.total,
             skill_result_text=result.skill_result_text or None,
         )
+        # read_crop tasks have no rdeps ground truth — score by keyword recall instead,
+        # and exempt them from the codemap-skill-required guard (they use scan-query symbol
+        # via Bash, not the Skill tool).
+        if task.type == "read_crop":
+            result.quality = score_read_crop(result.output_text, task.expected_keywords)
+        if task.type in ("fix_single", "fix_multicaller"):
+            result.quality = score_fix(result.agent_diff, task.expected_patch_keywords, task.expected_files)
         # Codemap arm that never invoked the Skill tool is a failure —
         # it fell back to grep/bash entirely, defeating the purpose.
-        if arm == "codemap" and result.tools.skill == 0 and result.success:
+        # fix tasks use Edit (not Skill), so exempt them from this guard.
+        if (
+            arm == "codemap"
+            and result.tools.skill == 0
+            and result.success
+            and task.type not in ("read_crop", "fix_single", "fix_multicaller")
+        ):
             result.success = False
             result.error = "codemap skill never called"
         # Semble arm: failure if never called semble, or all calls were permission-blocked.
@@ -1850,6 +2108,12 @@ def main(
                 primary_module=t.get("primary_module", ""),
                 difficulty=t.get("difficulty", "unknown"),
                 skill=t.get("skill", ""),
+                symbol=t.get("symbol", ""),
+                expected_keywords=t.get("expected_keywords", []),
+                requires_reset=t.get("requires_reset", False),
+                codebase_module=t.get("codebase_module", ""),
+                expected_patch_keywords=t.get("expected_patch_keywords", []),
+                expected_files=t.get("expected_files", []),
             )
             for t in task_list
         ]

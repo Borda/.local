@@ -1,0 +1,56 @@
+[
+  {
+    "codebase_module": "lightning",
+    "difficulty": "medium",
+    "expected_files": [
+      "early_stopping.py"
+    ],
+    "expected_patch_keywords": [
+      "dry_run",
+      "def _run_early_stopping_check",
+      "dry_run=False"
+    ],
+    "id": "FM-01",
+    "primary_module": "lightning.pytorch.callbacks.early_stopping",
+    "prompt": "In `EarlyStopping` (`lightning/pytorch/callbacks/early_stopping.py`): add a `dry_run: bool = False` parameter to `_run_early_stopping_check`. When `dry_run=True`, log what would happen (should_stop and reason) but do NOT set `trainer.should_stop` or update `self.stopped_epoch` \u2014 i.e. observe-only mode. Find all callers of `_run_early_stopping_check` in the same file and update their call sites to pass `dry_run=False` explicitly (to preserve current behaviour and document intent). Update the method signature and all call sites.",
+    "requires_reset": true,
+    "type": "fix_multicaller"
+  },
+  {
+    "codebase_module": "lightning",
+    "difficulty": "medium",
+    "expected_files": [
+      "model_checkpoint.py"
+    ],
+    "expected_patch_keywords": [
+      "reason",
+      "def _save_checkpoint",
+      "reason="
+    ],
+    "id": "FM-02",
+    "primary_module": "lightning.pytorch.callbacks.model_checkpoint",
+    "prompt": "In `ModelCheckpoint` (`lightning/pytorch/callbacks/model_checkpoint.py`): add a `reason: str = ''` parameter to `_save_checkpoint` (defined around line 593). Prepend `reason` to any rank_zero_info/debug log messages inside the method when non-empty, so callers can annotate why the checkpoint was triggered. Find ALL internal call sites of `_save_checkpoint` within the same file (there are 4 of them) and update each to pass an appropriate reason string: e.g. `reason='top_k'`, `reason='last'`, `reason='best'` depending on the save path.",
+    "requires_reset": true,
+    "type": "fix_multicaller"
+  },
+  {
+    "codebase_module": "lightning",
+    "difficulty": "hard",
+    "expected_files": [
+      "strategy.py",
+      "ddp.py",
+      "fsdp.py",
+      "deepspeed.py"
+    ],
+    "expected_patch_keywords": [
+      "verbose",
+      "def setup",
+      "super().setup"
+    ],
+    "id": "FM-03",
+    "primary_module": "lightning.pytorch.strategies.strategy",
+    "prompt": "In `Strategy.setup` (`lightning/pytorch/strategies/strategy.py`): add a `verbose: bool = False` parameter to the base class `setup` method. When `verbose=True`, log (via `log.debug`) that setup is beginning. All subclasses that override `setup` must also add `verbose: bool = False` to their signature and pass it through to `super().setup(trainer, verbose=verbose)`. The subclasses to update are: `DDPStrategy` (`ddp.py`), `FSDPStrategy` (`fsdp.py`), `DeepSpeedStrategy` (`deepspeed.py`), `ModelParallelStrategy` (`model_parallel.py`), `SingleXLAStrategy` (`single_xla.py`), and `XLAStrategy` (`xla.py`). Use codemap rdeps to verify you found them all before editing.",
+    "requires_reset": true,
+    "type": "fix_multicaller"
+  }
+]

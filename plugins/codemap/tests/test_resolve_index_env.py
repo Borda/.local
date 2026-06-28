@@ -33,7 +33,7 @@ main = _mod.main
 
 
 def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str:
-    """Read a PID-qualified resolve temp file by globbing for the single match.
+    """Read a resolve temp file by exact path.
 
     Args:
         tmp_path: Directory where temp files are written.
@@ -41,11 +41,11 @@ def _read_resolve_file(tmp_path: Path, key: str, prefix: str = "codemap") -> str
         prefix: File name prefix (default ``"codemap"``).
 
     Returns:
-        Contents of the matched temp file.
+        Contents of the temp file.
     """
-    matches = list(tmp_path.glob(f"{prefix}-resolve-{key}-*"))
-    assert len(matches) == 1, f"Expected exactly one {key} temp file, got: {matches}"
-    return matches[0].read_text()
+    path = tmp_path / f"{prefix}-resolve-{key}"
+    assert path.exists(), f"Expected temp file not found: {path}"
+    return path.read_text()
 
 
 def _make_resolver_mock(
