@@ -1,101 +1,219 @@
 {
   "agents": {
     "challenger": [
-      "Challenge Dimensions",
-      "Refuted Concerns"
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "Refuted Concerns",
+      "Output Contract"
+    ],
+    "cicd-steward": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "trusted publishing",
+      "Output Contract"
     ],
     "curator": [
-      "Review Checklist",
-      "calibration coverage"
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "merge-prune",
+      "Output Contract"
+    ],
+    "data-steward": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "provenance",
+      "deduplication",
+      "Output Contract"
+    ],
+    "doc-scribe": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "6-Point",
+      "executable",
+      "Output Contract"
     ],
     "linting-expert": [
-      "pre-commit autoupdate",
-      "Detect the mypy target"
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "suppression",
+      "Detect the mypy target",
+      "Output Contract"
+    ],
+    "oss-shepherd": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "SemVer",
+      "contributor-facing",
+      "Output Contract"
     ],
     "qa-specialist": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
       "Black-box first",
-      "Pattern thresholds"
+      "Pattern thresholds",
+      "Output Contract"
     ],
     "scientist": [
-      "Experiment Design Checklist",
-      "Ablation Matrix"
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "falsifiable",
+      "Ablation Matrix",
+      "Output Contract"
+    ],
+    "security-auditor": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "read-only sandbox",
+      "trust boundary",
+      "Output Contract"
     ],
     "solution-architect": [
-      "ADR Skeleton",
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "alternatives table",
       "Migration Risk Matrix",
-      "fan-in and fan-out"
+      "Output Contract"
+    ],
+    "squeezer": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "before metrics",
+      "profile",
+      "Output Contract"
     ],
     "sw-engineer": [
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
       "existing extension points",
-      "Validate inputs at system entry points"
+      "failing doctest",
+      "Output Contract"
     ],
     "web-explorer": [
-      "Minimum Source Protocol",
-      "migration delta table"
+      "TRIGGER when",
+      "SKIP when",
+      "NOT for",
+      "Evidence Standard",
+      "authoritative URLs",
+      "Version Delta",
+      "Output Contract"
     ]
   },
   "skills": {
+    "analyse": [
+      "## Input Schema",
+      "evidence.md",
+      "Self-Critical Gate",
+      "## Quality Gates",
+      "## Calibration Hooks"
+    ],
     "audit": [
       "## Input Schema",
-      "## Workflow \\(Exact Commands\\)",
-      "run-gates.sh",
-      "write-result.sh",
-      "## Fail-fast Rules"
+      "Runtime Leaks",
+      "merge-prune",
+      "## Quality Gates",
+      "## Calibration Hooks"
     ],
     "calibrate": [
+      "## Input Schema",
+      "Native Contract Checks",
+      "Runtime leakage",
       "behavioral-cases.json",
-      "behavioral-observations.jsonl",
-      "run_id",
-      "observed_at",
-      "recall",
-      "precision",
       "confidence_accuracy",
-      "mean_overconfidence",
-      "gate_metrics_raw",
-      "by_source",
-      "observation_freshness",
-      "live_observations",
-      "recommendations",
-      "follow_up"
+      "## Quality Gates",
+      "## Calibration Hooks"
     ],
     "develop": [
       "## Input Schema",
-      "## Workflow \\(Exact Commands\\)",
       "anti-rationalization gate",
       "root-cause evidence",
-      "rejected alternative",
-      "temporary mitigation",
-      "characterization tests",
-      "run-gates.sh",
-      "write-result.sh",
-      "## Fail-fast Rules"
+      "specialist policy",
+      "## Quality Gates",
+      "## Calibration Hooks"
     ],
     "investigate": [
+      "## Input Schema",
       "anti-rationalization gate",
       "rejected alternative",
       "targeted probe",
-      "quality-gates",
-      ".reports/codex/investigate/"
+      "## Quality Gates",
+      "## Calibration Hooks"
+    ],
+    "manage": [
+      "## Input Schema",
+      "deletion safety",
+      "Permission changes",
+      "## Quality Gates",
+      "## Calibration Hooks"
+    ],
+    "optimize": [
+      "## Input Schema",
+      "baseline",
+      "baseline and after",
+      "## Quality Gates",
+      "## Calibration Hooks"
+    ],
+    "release": [
+      "## Input Schema",
+      "SemVer",
+      "release evidence",
+      "## Quality Gates",
+      "## Calibration Hooks"
+    ],
+    "research": [
+      "## Input Schema",
+      "Source rules",
+      "paper/code-fidelity",
+      "## Quality Gates",
+      "## Calibration Hooks"
     ],
     "resolve": [
       "## Input Schema",
-      "## Workflow \\(Exact Commands\\)",
-      "run-gates.sh",
-      "write-result.sh",
-      "## Fail-fast Rules"
+      "action-items.md",
+      "closure evidence",
+      "## Quality Gates",
+      "## Calibration Hooks"
     ],
     "review": [
       "## Input Schema",
-      "## Workflow \\(Exact Commands\\)",
       "T0 mechanical scope gate",
       "T2 specialist fan-out",
-      "qa-specialist",
-      "challenger",
-      "Cross-check every blocking finding",
-      "independent second pass",
-      "run-gates.sh",
-      "write-result.sh",
-      "## Fail-fast Rules"
+      "review-notes.md",
+      "## Quality Gates",
+      "## Calibration Hooks"
+    ],
+    "sync": [
+      "## Input Schema",
+      "dry-run default",
+      "backup",
+      "never delete",
+      "## Quality Gates",
+      "## Calibration Hooks"
     ]
   }
 }

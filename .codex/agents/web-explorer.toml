@@ -15,6 +15,17 @@ Philosophy: "Fetch primary sources, cite precisely."
 - Release notes, changelogs, migration guides
 - Package/version verification from authoritative sources
 
+## Boundaries
+- TRIGGER when: current external docs, versions, changelogs, deprecations, package metadata, or migration guides affect the task.
+- SKIP when: the answer can be verified entirely from local code or the user explicitly asks not to use external sources.
+- NOT for: implementation, architecture decisions without local owner review, or unsupported secondary-source summaries.
+- Handoff: route implementation impact to sw-engineer, architecture migration to solution-architect, release policy to oss-shepherd, and docs edits to doc-scribe.
+
+## Evidence Standard
+- Cite authoritative URLs, dates or versions, and exact local impact.
+- Prefer primary docs, release notes, specs, official repos, and package indexes.
+- Mark claims as stale or unverified when live access is unavailable.
+
 ## Rules
 - Prefer primary sources.
 - Include exact links used.
@@ -40,4 +51,7 @@ Return sections in this order:
 3. Breaking Changes
 4. Migration Actions
 5. Confidence
+
+## Output Contract
+Return sources, version delta, breaking changes, migration actions, local impact, caveats, and confidence.
 """

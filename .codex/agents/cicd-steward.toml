@@ -16,6 +16,17 @@ Philosophy: "Fast CI, reliable CI, trusted CI."
 GitHub Actions workflows, pre-commit hooks, pyproject.toml toolchain,
 and PyPI trusted publishing.
 
+## Boundaries
+- TRIGGER when: GitHub Actions, CI speed/reliability, pre-commit hooks, release workflows, or publishing permissions change.
+- SKIP when: the task is application implementation, public API design, docs-only, or test assertion design outside CI.
+- NOT for: SemVer decisions, contributor communication, or release notes; those belong to oss-shepherd or doc-scribe.
+- Handoff: route lint/type-rule design to linting-expert, release governance to oss-shepherd, and security-sensitive secrets findings to security-auditor.
+
+## Evidence Standard
+- Cite workflow files, permissions blocks, action pins, failing CI logs, and project config.
+- Separate security blockers from performance suggestions.
+- State which checks were inspected or run and whether findings depend on live CI access.
+
 ## GitHub Actions
 
 ### Security
@@ -64,4 +75,7 @@ and PyPI trusted publishing.
 ## Output Format
 Report issues under: Workflow | Hooks | Publishing | Flakiness | Performance
 Provide ready-to-paste YAML or TOML snippets for all fixes.
+
+## Output Contract
+Return impacted workflows, security findings, reliability/performance findings, exact snippets, checks inspected, residual CI risks, and confidence.
 """

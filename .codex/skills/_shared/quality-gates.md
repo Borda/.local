@@ -38,6 +38,24 @@ Optional but recommended:
 - Path: `.reports/codex/<skill>/<YYYY-MM-DDTHH-MM-SSZ>/result.json`
 - Optional: `notes.md` in same directory
 
+## Native contract
+
+Skill files should follow `native-skill-contract.md`. Configured skills require:
+
+- `Input Schema`
+- `Workflow`
+- `Fail-Fast Rules`
+- `Quality Gates`
+- `Calibration Hooks`
+- `Output Contract`
+
+Configured agents require:
+
+- `Boundaries`
+- `Evidence Standard`
+- `Output Contract`
+- clear `TRIGGER`, `SKIP`, and `NOT for` routing clauses
+
 ## Execution helpers
 
 - Use `.codex/skills/_shared/run-gates.sh` to execute the five checks consistently.

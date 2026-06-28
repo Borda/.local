@@ -149,7 +149,11 @@ for skill in "${SKILLS[@]}"; do
     continue
   fi
   check_contains "$SKILL_FILE" "^# " "skill-schema-all"
+  check_contains "$SKILL_FILE" "Input Schema" "native-skill-contract"
   check_contains "$SKILL_FILE" "Workflow" "skill-schema-all"
+  check_contains "$SKILL_FILE" "Fail-[Ff]ast Rules" "native-skill-contract"
+  check_contains "$SKILL_FILE" "Quality Gates" "native-skill-contract"
+  check_contains "$SKILL_FILE" "Calibration Hooks" "native-skill-contract"
   check_contains "$SKILL_FILE" "Output Contract" "skill-schema-all"
   check_contains "$SKILL_FILE" "quality-gates" "skill-schema-all"
   check_contains "$SKILL_FILE" ".reports/codex/$skill/" "skill-schema-all"
@@ -206,7 +210,14 @@ for agent in "${AGENTS[@]}"; do
   check_contains "$PROJECT_CFG" "\\[agents\\.$agent\\]" "agent-registration-project"
   check_contains "$HOME_CFG" "\\[agents\\.$agent\\]" "agent-registration-home"
   if [[ -f "$ROOT/.codex/agents/$agent.toml" ]]; then
+    check_contains "$ROOT/.codex/agents/$agent.toml" "^name[[:space:]]*=" "agent-schema-all"
     check_contains "$ROOT/.codex/agents/$agent.toml" "developer_instructions" "agent-schema-all"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "Boundaries" "native-agent-contract"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "Evidence Standard" "native-agent-contract"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "TRIGGER when" "native-agent-contract"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "SKIP when" "native-agent-contract"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "NOT for" "native-agent-contract"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "Output Contract" "native-agent-contract"
     check_agent_model "$agent" "$ROOT/.codex/agents/$agent.toml"
   else
     echo "missing-agent-file:$agent" >> "$OUT_DIR/leaks.txt"
@@ -216,6 +227,54 @@ for agent in "${AGENTS[@]}"; do
     LEAKS=$((LEAKS + 1))
   fi
 done
+
+python3 - "$ROOT" "$OUT_DIR/leaks.txt" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+leaks = Path(sys.argv[2])
+targets = list((root / ".codex" / "skills").glob("*/SKILL.md"))
+targets.extend((root / ".codex" / "agents").glob("*.toml"))
+
+def token(*parts: str) -> str:
+    return "".join(parts)
+
+patterns = {
+    "external-path-variable": re.compile(token("CLAUDE", "_", "PLUGIN", "_", "ROOT")),
+    "interactive-widget": re.compile(token("Ask", "User", "Question")),
+    "task-widget-create": re.compile(token("Task", "Create")),
+    "task-widget-update": re.compile(token("Task", "Update")),
+    "background-runner": re.compile(token("run", "_", "in", "_", "background")),
+    "web-fetch-tool": re.compile(token("Web", "Fetch")),
+    "web-search-tool": re.compile(token("Web", "Search")),
+    "frontmatter-tools": re.compile(r"^tools\s*:", re.MULTILINE),
+    "frontmatter-max-turns": re.compile(r"^maxTurns\s*:", re.MULTILINE),
+    "frontmatter-isolation": re.compile(r"^isolation\s*:", re.MULTILINE),
+    "frontmatter-memory": re.compile(r"^memory\s*:", re.MULTILINE),
+    "frontmatter-tool-allowlist": re.compile(token("allowed", "-", "tools")),
+    "frontmatter-disable-model": re.compile(token("disable", "-", "model", "-", "invocation")),
+}
+
+with leaks.open("a", encoding="utf-8") as handle:
+    for path in sorted(targets):
+        text = path.read_text(encoding="utf-8")
+        for label, pattern in patterns.items():
+            if pattern.search(text):
+                rel = path.relative_to(root)
+                handle.write(f"native-runtime-leak:{label}:{rel}\n")
+PY
+
+NATIVE_RUNTIME_LEAKS=0
+if [[ -f "$OUT_DIR/leaks.txt" ]]; then
+  NATIVE_RUNTIME_LEAKS="$(grep -c '^native-runtime-leak:' "$OUT_DIR/leaks.txt" || true)"
+fi
+if [[ "$NATIVE_RUNTIME_LEAKS" -gt 0 ]]; then
+  mark_check_failed "native-runtime-leakage"
+  FAILS=$((FAILS + NATIVE_RUNTIME_LEAKS))
+  LEAKS=$((LEAKS + NATIVE_RUNTIME_LEAKS))
+fi
 
 RUN_GATES="$ROOT/.codex/skills/_shared/run-gates.sh"
 WRITE_RESULT="$ROOT/.codex/skills/_shared/write-result.sh"
@@ -529,6 +588,9 @@ payload = {
         "agent-registration-home",
         "agent-schema-all",
         "agent-model-policy",
+        "native-skill-contract",
+        "native-agent-contract",
+        "native-runtime-leakage",
         "fixed-task-set",
         "benchmark-pattern-checks",
         "behavioral-metrics",

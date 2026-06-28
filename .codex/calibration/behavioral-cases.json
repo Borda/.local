@@ -173,14 +173,82 @@
       "id": "develop-root-cause-routing",
       "prompt": "Assess a symptom-first request where tests fail after a dependency or tooling change and the proposed response suggests pinning, skipping, or bypassing the failure without logs, hypotheses, or a falsification check.",
       "target": "develop"
+    },
+    {
+      "expected_findings": [
+        "native-runtime-leakage",
+        "sync-hostile-reference",
+        "contract-section-missing"
+      ],
+      "id": "calibrate-native-runtime-leakage",
+      "prompt": "Assess native skill and agent instructions that include external runner tool names, hidden cache paths, and missing quality-gate sections before syncing to home.",
+      "target": "calibrate"
+    },
+    {
+      "expected_findings": [
+        "dry-run-required",
+        "backup-required",
+        "home-only-delete-blocked"
+      ],
+      "id": "sync-home-safety",
+      "prompt": "Assess a request to sync project Codex files to home where apply mode would overwrite files, delete home-only files, and skip backups.",
+      "target": "sync"
+    },
+    {
+      "expected_findings": [
+        "closure-evidence-missing",
+        "unresolved-critical-blocks"
+      ],
+      "id": "resolve-false-closure",
+      "prompt": "Assess a resolution plan that marks a critical review finding fixed without a reproduction check, regression test, or unresolved ledger.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "baseline-missing",
+        "guard-regression-risk",
+        "rollback-condition-missing"
+      ],
+      "id": "optimize-unmeasured-claim",
+      "prompt": "Assess an optimization proposal that claims speedup without a baseline, after measurement, guard command, or rollback condition.",
+      "target": "optimize"
+    },
+    {
+      "expected_findings": [
+        "primary-source-missing",
+        "stale-source-caveat-missing"
+      ],
+      "id": "research-stale-source",
+      "prompt": "Assess a research answer that recommends an API migration using stale secondary summaries and no primary-source freshness caveat.",
+      "target": "research"
+    },
+    {
+      "expected_findings": [
+        "agent-boundary-missing",
+        "evidence-standard-missing",
+        "runtime-leak-risk"
+      ],
+      "id": "curator-agent-contract",
+      "prompt": "Assess native agent instructions that lack trigger/skip boundaries, evidence standards, and contain sync-hostile runtime assumptions.",
+      "target": "curator"
+    },
+    {
+      "expected_findings": [
+        "overlap-decision-missing",
+        "calibration-coverage-missing",
+        "runtime-leak-risk"
+      ],
+      "id": "audit-agent-overlap",
+      "prompt": "Audit a Codex config change that adds overlapping agent responsibilities without keep/sharpen/merge-prune decisions or calibration coverage.",
+      "target": "audit"
     }
   ],
   "thresholds": {
     "max_confidence_mae": 0.2,
     "max_mean_overconfidence": 0.15,
-    "min_observations": 16,
+    "min_observations": 24,
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.1"
+  "version": "1.2"
 }

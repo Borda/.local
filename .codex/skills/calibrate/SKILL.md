@@ -43,6 +43,26 @@ Run a linear calibration loop for codex workflow integrity and behavioral scorin
 09. Write artifacts to `.reports/codex/calibration/<timestamp>/result.json` and `.reports/codex/calibration/<timestamp>/recommendations.md`.
 10. Write the skill-level artifact to `.reports/codex/calibrate/<timestamp>/result.json` when this skill wraps the runner.
 
+## Native Contract Checks
+
+Calibration must verify the configured native surface, not only the runner internals.
+
+Skill checks:
+
+- each configured skill file exists
+- required contract sections are present
+- artifact path uses `.reports/codex/<skill>/`
+- output examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, and `artifact_path`
+- native skill files do not depend on external runner-only metadata or cache paths
+
+Agent checks:
+
+- each configured agent file exists and is registered
+- role has a clear `Scope` or equivalent boundary
+- counterpart mapping, evidence standard, boundaries, and output contract are present or explicitly waived
+- sensitive agents keep their sandbox constraints, especially read-only security audit
+- no external runtime tool names or external path variables are required by native agents
+
 ## Usage Notes
 
 - Use after any meaningful agent or skill instruction change to confirm routing and output shape still match the configured stack.
@@ -52,6 +72,36 @@ Run a linear calibration loop for codex workflow integrity and behavioral scorin
 - Compare behavioral thresholds against `gate_metrics_raw`, not rounded display metrics.
 - Use `source=live-*`, a stable `run_id`, and UTC `observed_at` timestamps for live behavioral calibration rows.
 - If the run surfaces missing registration or pattern mismatches, prefer a minimal config fix and rerun before widening the change.
+
+## Fail-Fast Rules
+
+1. Missing calibration files => fail.
+2. Missing configured skill or agent file => fail.
+3. Native skill/agent contract mismatch => fail unless explicitly waived in the result.
+4. Runtime leakage in native skill or agent files => fail.
+5. Behavioral gate below threshold => fail.
+6. Result artifact missing => fail.
+
+## Quality Gates
+
+Required checks:
+
+- `calibration`: `.codex/calibration/run.sh`.
+- `review`: inspect failed patterns, leakage, behavioral gaps, and stale fixtures before recommending changes.
+
+Conditional checks:
+
+- `tests`: run focused tests when calibration code changes.
+- `format`: validate JSON and shell syntax when calibration fixtures change.
+
+## Calibration Hooks
+
+When calibration expectations change, update together:
+
+- `.codex/calibration/benchmarks.json`
+- `.codex/calibration/behavioral-cases.json`
+- `.codex/calibration/behavioral-observations.jsonl`
+- `.codex/calibration/run.sh`
 
 ## Output Contract
 

@@ -33,9 +33,35 @@ Run a linear resolve loop for findings closure.
    cp "$FINDINGS_SOURCE" "$OUT_DIR/findings-input.txt"
    ```
 
-3. Apply fixes in priority order: `critical` -> `high` -> `medium`.
+3. Normalize findings before editing.
 
-4. Run shared quality gates.
+   Write `$OUT_DIR/action-items.md` with:
+
+   - finding id or source location
+   - severity
+   - exact affected files
+   - expected closure evidence
+   - owner/status: `todo|fixed|unresolved`
+   - unresolved rationale, when applicable
+
+   If a finding is ambiguous, inspect the referenced code and either sharpen it into an action item or mark it `unresolved-needs-clarification` before editing.
+
+4. Apply fixes in priority order: `critical` -> `high` -> `medium`.
+
+   Fix one finding cluster at a time. After each cluster, record the changed files and evidence in `$OUT_DIR/closure-log.md`.
+
+5. Challenge the closure before running full gates.
+
+   For each fixed finding, answer:
+
+   - Does the original failure still reproduce?
+   - Could the finding pass review while remaining functionally wrong?
+   - Which regression check now protects it?
+   - What risk remains?
+
+   Missing closure evidence keeps the item unresolved.
+
+6. Run shared quality gates.
 
    ```bash
    .codex/skills/_shared/run-gates.sh \
@@ -47,9 +73,9 @@ Run a linear resolve loop for findings closure.
        --review "${REVIEW_CMD:-git diff --check}"
    ```
 
-5. Write unresolved findings to `$OUT_DIR/unresolved.txt`.
+7. Write unresolved findings to `$OUT_DIR/unresolved.txt`.
 
-6. Write mandatory result artifact.
+8. Write mandatory result artifact.
 
    ```bash
    .codex/skills/_shared/write-result.sh \
@@ -70,7 +96,28 @@ Run a linear resolve loop for findings closure.
 1. Missing findings source => fail.
 2. Shared gate script missing => fail.
 3. Critical unresolved findings => fail.
-4. Result artifact missing => fail.
+4. Finding marked fixed without closure evidence => fail.
+5. Gate failure caused by the resolution patch => fail unless explicitly listed as unresolved.
+6. Result artifact missing => fail.
+
+## Quality Gates
+
+Required checks:
+
+- `review`: action-item ledger, closure log, unresolved list, and `git diff --check`.
+- `tests`: the smallest checks that prove closure for fixed findings.
+
+Conditional checks:
+
+- `lint`/`format`/`types`: run project-configured checks for changed code/config.
+- `calibration`: run when findings affect `.codex/skills`, `.codex/agents`, routing, or gate policy.
+
+## Calibration Hooks
+
+Update calibration when resolution policy or output shape changes:
+
+- benchmark patterns: `resolve`
+- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, gate failure disclosure
 
 ## Output Contract
 
