@@ -27,11 +27,9 @@ Extract and record:
 Set up implementation work directory and fetch repo name (used throughout the workflow):
 
 ```bash
-# Guarantee $IMPL_DIR is an absolute path before subagent dispatch — subagents may run
-# with a CWD different from the orchestrator's; a relative $IMPL_DIR would resolve to
-# the wrong directory inside the subagent and silently lose files.
+# absolute path required — subagents may have different CWD; relative path silently loses files
 [ -z "$IMPL_DIR" ] && IMPL_DIR=$(mktemp -d)  # timeout: 3000
-[[ "$IMPL_DIR" = /* ]] || IMPL_DIR=$(mktemp -d)  # replace any relative path with a fresh absolute tempdir
+[[ "$IMPL_DIR" = /* ]] || IMPL_DIR=$(mktemp -d)
 mkdir -p "$IMPL_DIR"  # timeout: 3000
 REPO_NAME=$(gh repo view --json name --jq .name 2>/dev/null)  # timeout: 6000
 ```
@@ -152,7 +150,7 @@ Return ONLY this compact JSON as your FINAL message (nothing after it):
 Validate and source vars after agent returns:
 
 ```bash
-# Validate: only VAR='value' lines — mirrors parse-resolve-args.py defence-in-depth
+# only VAR='value' lines — mirrors parse-resolve-args.py defence-in-depth
 if grep -qvE "^[A-Z_][A-Z0-9_]*='[^']*'$" "$IMPL_DIR/pr-vars.sh"; then
     echo "! BLOCKED — pr-vars.sh has unexpected output; refusing to source"
     cat "$IMPL_DIR/pr-vars.sh"

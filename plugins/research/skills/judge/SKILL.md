@@ -230,7 +230,6 @@ Execute each command once. **Non-blocking** — failures become `critical` findi
 **Substitution invariant** — `metric_cmd` and `guard_cmd` fully resolved in J1. No `{...}` tokens should remain. If any `{field_name}` token still present, add `critical` finding: "Unresolved placeholder `{field_name}` in `<metric_cmd|guard_cmd>` — substitution failed in J1" and skip execution.
 
 ```bash
-# Metric validation — captures baseline value
 # Substitute ${metric_cmd} with the resolved command from J1 before execution
 ${metric_cmd} 2>&1  # timeout: 360000
 ```
@@ -238,7 +237,6 @@ ${metric_cmd} 2>&1  # timeout: 360000
 Parse stdout for float. If found, record as `baseline_value`. If not found or non-zero exit: add critical finding: "Metric command failed or produced no numeric output".
 
 ```bash
-# Guard validation
 # Substitute ${guard_cmd} with the resolved command from J1 before execution
 ${guard_cmd}  # timeout: 360000
 ```

@@ -5,18 +5,15 @@
 For ecosystem CI maintainers — track upstream breaking changes:
 
 ```bash
-# Check latest PyTorch release
 gh release list --repo pytorch/pytorch --limit 5
 
-# Fetch release notes for a specific version
 gh release view <version> --repo pytorch/pytorch
 
-# Extract body then search for deprecation notices using Grep tool on the saved output
+# search for deprecation notices — use Grep tool on saved output
 mkdir -p .cache/gh
 gh release view <version> --repo pytorch/pytorch --json body -q .body > .cache/gh/pytorch-release.txt
 # Use Grep tool: pattern="deprecat" path=".cache/gh/pytorch-release.txt" (case-insensitive: true)
 
-# Track nightly build status
 # check pytorch/pytorch/actions on GitHub for nightly workflow
 ```
 

@@ -87,7 +87,7 @@ CODEMAP_RAW=$(cat ${TMPDIR:-/tmp}/dev-codemap-raw 2>/dev/null || echo auto)
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW" 2>&1)
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
-    echo "$CODEMAP_ENABLED" >&2  # surface stderr (e.g. strict-mode abort message) to caller
+    echo "$CODEMAP_ENABLED" >&2  # surface error msg (e.g. strict-mode abort) to caller
     [ "$CODEMAP_RAW" = "strict" ] && exit 1
     CODEMAP_ENABLED=false
 fi
@@ -197,7 +197,7 @@ $PYTEST_CMD --tb=long <test_path> -v 2>&1 >"${TMPDIR:-/tmp}/pytest-out.txt"; PYT
 if [[ "$ARGUMENTS" == *"::"* ]]; then
     _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
     TARGET_MODULE="${_QNAME%%::*}"
-    TARGET_FN="${_QNAME##*::}"           # bare function name — codemap-context.md builds module::fn itself
+    TARGET_FN="${_QNAME##*::}"           # bare fn — codemap-context.md builds module::fn
 else
     TARGET_MODULE=""
     TARGET_FN=""                         # suspect unknown until Step 1 — auto-derive below
@@ -278,7 +278,6 @@ Parse result:
 1. Search for existing tests covering the broken behavior:
 
    ```bash
-   # Grep for broken function/class name, error string, or issue number across tests/
    grep -r "<broken_symbol_or_error>" tests/ --include="*.py" -l
    grep -r "#<issue_number>" tests/ --include="*.py" -l
    ```
@@ -335,12 +334,10 @@ Both tests must **fail** against current code before proceeding. Check exit code
 
 ```bash
 # timeout: 600000
-# Path 1 gate
 $PYTEST_CMD --tb=short tests/integration/<test_file>::test_<bug>_user_flow -v
 GATE_P1=$?
 [ $GATE_P1 -eq 0 ] && echo "GATE FAIL (Path 1): test passed — bug not captured" || echo "GATE OK (Path 1): failed as expected (exit $GATE_P1)"
 
-# Path 2 gate
 $PYTEST_CMD --tb=short <unit_test_file>::test_<bug>_unit -v
 GATE_P2=$?
 [ $GATE_P2 -eq 0 ] && echo "GATE FAIL (Path 2): test passed — bug not captured" || echo "GATE OK (Path 2): failed as expected (exit $GATE_P2)"
@@ -382,10 +379,9 @@ If issue found: revise test(s) before applying fix. Flawed reproduction = fix va
 **Breaking change gate**: before applying fix, assess whether fix introduces a breaking change.
 
 ```bash
-# Resolve oss plugin shared dir (undefined if oss plugin absent)
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED=$(ls -d plugins/oss/skills/_shared 2>/dev/null | head -1)
-[ -z "$_OSS_SHARED" ] && _OSS_SHARED=""  # oss plugin absent — semver-rules.md unavailable
+[ -z "$_OSS_SHARED" ] && _OSS_SHARED=""  # oss absent — semver-rules.md unavailable
 ```
 
 If `oss` plugin available (i.e., `$_OSS_SHARED` non-empty), read `$_OSS_SHARED/semver-rules.md` for semver classification guidance; otherwise use standard SemVer rules (BREAKING = major bump, new feature = minor, fix = patch). Breaking change definition: worked before → fails/behaves differently now → no prior warning/shim. If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.

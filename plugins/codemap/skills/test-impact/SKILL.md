@@ -56,7 +56,7 @@ If index already exists:
 # timeout: 30000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-# Forward CODEMAP_INDEX_DIR so scan-index writes to the same location as INDEX var above
+# forward CODEMAP_INDEX_DIR; ensures scan-index writes to same path as INDEX
 CODEMAP_INDEX_DIR="${_IDX}" "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental || printf "⚠ scan-index --incremental failed — index may be stale; continuing\n"
 ```
 

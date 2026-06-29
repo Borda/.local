@@ -41,15 +41,14 @@ Dot-prefixed artifact dirs gitignored — ephemeral, TTL-managed.
 Each skill creates timestamped subdir under canonical base dir:
 
 ```bash
-# Intermediate subagent handover files (NEVER in .reports/):
+# intermediate handover — NEVER in .reports/
 RUN_DIR=".temp/<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$RUN_DIR"
 
-# Final consolidated report (one per skill run):
+# final consolidated report — one per skill run
 REPORT_DIR=".reports/<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$REPORT_DIR"
 
-# Dedicated non-.reports skill dirs:
 # RUN_DIR=".<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"   # .experiments/, .developments/
 ```
 

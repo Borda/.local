@@ -78,7 +78,7 @@ Derive `MEMORY_DIR` using the canonical snippet defined in `<constants>` above. 
 # MEMORY_DIR — must re-derive here; shell state lost across Bash calls
 MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)
 [ -n "$MEMORY_DIR" ] || { echo "! resolve_memory_dir.py returned empty — aborting; check Python availability and plugin installation"; exit 1; }
-# Log files before deleting so removals are auditable
+# log before delete for audit trail
 find "$MEMORY_DIR" -name "session-open-*.md" -mtime +30 2>/dev/null | while IFS= read -r f; do
     echo "Removing aged file: $f"
     rm "$f"
@@ -151,11 +151,10 @@ Search candidates from Substep 2a. For `session-open-*.md` files: Grep with part
 
 Track match source:
 ```bash
-# Set these from the match result:
 MATCHED_SOURCE="file"          # "file" for session-open-*.md, "context" for session-context.md
 MATCHED_FILE="<full path>"     # only when MATCHED_SOURCE="file"
-MATCHED_SLUG="<slug>"          # the item's short slug (from bullet or filename)
-ITEM_NAME="<name>"             # name from frontmatter or slug
+MATCHED_SLUG="<slug>"
+ITEM_NAME="<name>"
 printf '%s\n' "$MATCHED_SOURCE" "$MATCHED_FILE" "$MATCHED_SLUG" "$ITEM_NAME" \
     > "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
 ```
@@ -187,7 +186,7 @@ Append one-line JSON entry atomically with bash redirection, using `ITEM_NAME` r
 IFS=$'\n' read -r MATCHED_SOURCE MATCHED_FILE MATCHED_SLUG ITEM_NAME \
     < "${TMPDIR:-/tmp}/session-match-${CLAUDE_SESSION_ID:-$$}.txt"
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-# Use jq to safely escape ITEM_NAME (prevents injection via special chars/quotes)
+# jq escapes ITEM_NAME safely; prevents injection
 jq -n --arg ts "$TS" --arg item "$ITEM_NAME" '{"ts":$ts,"item":$item,"action":"archived"}' >> .claude/logs/session-archive.jsonl  # timeout: 5000
 ```
 
@@ -217,7 +216,7 @@ Combine both sources into a single parked-items list. De-duplicate by slug — w
 ```bash
 OS=$(uname -s)
 SINCE=$([ "$OS" = "Darwin" ] && date -u -v-8H '+%Y-%m-%dT%H:%M:%SZ' || date -u -d '8 hours ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u '+%Y-%m-%dT%H:%M:%SZ')
-git log --oneline --since="$SINCE" | head -20 || true # timeout: 3000 — empty result acceptable (no commits in window)
+git log --oneline --since="$SINCE" | head -20 || true # timeout: 3000; empty OK (no commits in window)
 ```
 
 ### Substep 3d: Collect archived items from this session
@@ -252,7 +251,7 @@ Output-routing rule: ≤ 10 lines → terminal only. If longer:
 ```bash
 mkdir -p .temp/
 OUTPUT=".temp/output-session-summary-$(date +%Y-%m-%d).md"
-# Anti-overwrite: increment counter if slug already exists
+# anti-overwrite: increment counter
 if [ -f "$OUTPUT" ]; then
     n=2
     while [ -f "${OUTPUT%.md}-$n.md" ]; do n=$((n + 1)); done

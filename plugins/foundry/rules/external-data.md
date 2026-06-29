@@ -15,16 +15,14 @@ Silent truncation (30 of 300 items) worse than error — produces wrong answer.
 Default page size 30. Override:
 
 ```bash
-# List commands — raise the limit explicitly
 gh issue list --limit 1000
 gh pr list --state all --limit 500
-gh release list --limit 500  # floor for typical repos; verify against actual release count for prolific repos — this is not a ceiling
+gh release list --limit 500  # floor for typical repos; verify for prolific repos — not a ceiling
 
-# API calls — use --paginate to follow all pages automatically
 gh api repos/:owner/:repo/issues --paginate
 gh api repos/:owner/:repo/pulls --paginate --field state=all
 
-# Combine: paginate + jq for large result sets
+# paginate + jq for large result sets
 # --paginate emits one JSON array per page; jq '[.[]]'
 ```
 
@@ -59,7 +57,6 @@ Rules:
 Example:
 
 ```bash
-# Google Cloud style — loop on nextPageToken
 next_token=""
 all_items=()
 while true; do

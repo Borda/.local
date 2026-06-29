@@ -6,10 +6,10 @@
 **Purpose**: Story-telling release notebook — self-contained Python script in jupytext percent (`# %%`) format. Highlights 2–3 most significant contributions with narrative prose and runnable code cells. Suitable for Colab, local Jupyter, or blog embeds.
 
 ```bash
-# LAST_TAG, REPO_ROOT, SKILL_DIR resolved in Shared setup block above
+# LAST_TAG, REPO_ROOT, SKILL_DIR from Shared setup above
 RANGE="${REST:+${REST/->/../}}"
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
-# BRANCH, DATE from Shared setup block above
+# BRANCH, DATE from Shared setup above
 ```
 
 ### Phase 1: Gather and pick headline features
@@ -84,9 +84,9 @@ Content rules:
 ### Phase 3: Write output
 
 ```bash
-# BRANCH and DATE from Shared setup block above
-# $LAST_TAG is the previous release (range lower bound) — not the release being drafted.
-# Write to .temp/ always; prepare mode uses releases/$VERSION/ with the explicit target version.
+# BRANCH, DATE from Shared setup above
+# LAST_TAG = previous release (range lower bound) — not release being drafted
+# always .temp/; prepare mode uses releases/$VERSION/
 DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"
 mkdir -p .temp  # timeout: 5000
 ```

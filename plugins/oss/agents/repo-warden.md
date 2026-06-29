@@ -36,7 +36,7 @@ Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE`, `PARTIAL_FILE`, `AXIS_GROUP` from prom
 
 ```bash
 # loads: oss-shared-resolver.md
-# shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in gh-scraper.md, shepherd.md)
+# intentional boilerplate; also in gh-scraper.md, shepherd.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/warden-oss-shared"  # persist (Check 41)
@@ -70,7 +70,7 @@ Read `$DATA_FILE` fully via Read tool. Parse JSONL records into in-memory struct
 
 ```bash
 ANALYSIS_NOW=$(jq -r '.timestamp // empty' "$DATA_FILE" 2>/dev/null | head -1 || TZ=UTC date +%s)  # timeout: 5000
-CUTOFF_30D=$((ANALYSIS_NOW - 30*86400))  # CRITICAL-1 fix: explicit 30-day cutoff for Axis 9B window_30d filter
+CUTOFF_30D=$((ANALYSIS_NOW - 30*86400))  # CRITICAL-1: explicit 30d cutoff for Axis 9B window_30d filter
 ```
 
 ## Step 3 — Score Axes

@@ -69,13 +69,13 @@ fi
 
 ```bash
 # timeout: 5000
-# Skip if C1 failed — fresh shell loses C1's exit status, so check project-scoped sentinel file
+# C1 failed check — fresh shell loses exit status; use project-scoped sentinel
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
 [ "$C1_STATUS" = "failed" ] && { echo "C1 failed — skipping this step."; echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status"; exit 0; }
-# Stderr captured to tempfile so eval only sees KEY=value stdout (never mixed stderr).
-# Script always emits PROJ/INDEX on stdout regardless of exit code — no second invocation needed.
-# --output-prefix scopes tmpfiles per-project to avoid concurrent collision across projects.
+# stderr to tempfile; eval sees KEY=value stdout only
+# script emits PROJ/INDEX on stdout regardless of exit code
+# --output-prefix scopes tmpfiles per-project; avoids concurrent collision
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --check-exists --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
 _resolve_rc=$?
@@ -151,7 +151,7 @@ fi
 
 ```bash
 # timeout: 20000
-# cache root: ~/.claude/plugins/cache/ — check_injection.py scans all installed plugins; ls -td derivation handles multi-org layouts
+# cache root: ~/.claude/plugins/cache/; ls -td handles multi-org layouts
 PLUGIN_CACHE=$(ls -td ~/.claude/plugins/cache/ 2>/dev/null | head -1 || echo "$HOME/.claude/plugins/cache")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_PLUGIN_ROOT" --cache-root "$PLUGIN_CACHE"
 ```
@@ -168,7 +168,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 
 ```bash
 # timeout: 5000
-# Stderr to tempfile so eval only sees KEY=value stdout (shared pattern with C2).
+# stderr to tempfile; eval sees KEY=value stdout only (same as C2)
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
@@ -302,7 +302,7 @@ echo "[codemap init] rollback log: $ROLLBACK_LOG"
 Per target file, before editing:
 
 ```bash
-# Derive install path from the actual target file — not from a shared I2 tmpfile
+# derive per target, not shared I2 tmpfile — avoids last-plugin-wins overwrite
 TARGET_FILE="<path to the file being injected>"
 INSTALL_PATH="$(dirname "$TARGET_FILE")"
 while [ "$INSTALL_PATH" != "/" ] && [ "$INSTALL_PATH" != "$HOME" ]; do
@@ -311,7 +311,7 @@ while [ "$INSTALL_PATH" != "/" ] && [ "$INSTALL_PATH" != "$HOME" ]; do
 done
 { [ "$INSTALL_PATH" = "/" ] || [ "$INSTALL_PATH" = "$HOME" ]; } && { echo "Error: could not find plugin root for $TARGET_FILE"; exit 1; }
 [ -w "$INSTALL_PATH" ] || { echo "Error: no write permission to $INSTALL_PATH — re-run with appropriate permissions"; exit 1; }
-# Scope guard: only inject into current project tree or CLAUDE_PLUGIN_ROOT
+# scope guard: only inject within current project or CLAUDE_PLUGIN_ROOT
 PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
 case "$INSTALL_PATH" in
     "$PROJECT_ROOT"/*|"${CLAUDE_PLUGIN_ROOT:-plugins/codemap}"/*)

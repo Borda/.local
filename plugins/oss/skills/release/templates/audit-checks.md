@@ -2,8 +2,8 @@
 
 ```bash
 TARGET=$(echo "$ARGUMENTS" | awk '{print $2}')  # optional target version
-# Accept $RANGE from caller if already set (branch-aware detection in skill's Shared setup)
-# Fallback: simple git describe with stable-tag-only filter — consistent with skill's detection logic
+# accept caller RANGE if set (branch-aware detection in Shared setup)
+# fallback: git describe with stable-tag-only filter — consistent with skill detection
 if [ -z "$RANGE" ]; then
     LAST_TAG=$(git describe --tags --abbrev=0 --exclude='*rc*' --exclude='*dev*' --exclude='*alpha*' --exclude='*beta*' 2>/dev/null || git rev-list --max-parents=0 HEAD)
     RANGE="$LAST_TAG..HEAD"

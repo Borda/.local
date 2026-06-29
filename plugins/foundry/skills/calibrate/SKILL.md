@@ -87,7 +87,7 @@ Domain tables per mode: see `modes/agents.md`, `modes/skills.md`, `modes/routing
 
 **Task hygiene**:
 ```bash
-# audit-skip: resilience-replication — _FS resolver intentionally duplicated across foundry skills (cannot self-locate)
+# audit-skip: resilience-replication — duplicated; plugin cannot self-locate
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
@@ -159,8 +159,7 @@ Every subsequent Bash block in Steps 2–6 that uses `$TIMESTAMP` must re-read i
 ```bash
 TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
 [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
-# NOTE: never fall back to $(date ...) here — that generates a NEW timestamp resolving to a different
-# (non-existent) run directory. State loss must be surfaced explicitly, not silently worked around.
+# never fall back to $(date ...) — generates new timestamp → nonexistent run dir; surface state loss explicitly
 ```
 
 All run dirs use this timestamp.
@@ -348,7 +347,6 @@ Continue to next target. Only if ALL targets are missing: stop with `! No propos
 TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null)
 [ -z "$TIMESTAMP" ] && { echo "! TIMESTAMP state lost — re-invoke /foundry:calibrate"; exit 1; }
 LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/calibrate-state/local-mode" 2>/dev/null || echo "false")
-# Agent target — parse plugin prefix from target name (<plugin>:<agent> pattern)
 # e.g. "oss:shepherd" → plugin="oss", agent="shepherd"; bare "curator" → plugin="foundry" (default)
 PLUGIN_PREFIX=$(echo "<name>" | grep -o '^[^:]*:' | tr -d ':')
 AGENT_BARE=$(echo "<name>" | sed 's/^[^:]*://')
@@ -360,9 +358,6 @@ else
     [ -f "$AGENT_FILE" ] || AGENT_FILE="$(find "${HOME}/.claude/plugins/cache" -maxdepth 5 -name "$AGENT_BARE.md" -path "*/$PLUGIN_PREFIX/*/agents/*" 2>/dev/null | sort -Vr | head -1)"
     [ -n "$AGENT_FILE" ] && [ -f "$AGENT_FILE" ] || AGENT_FILE="plugins/$PLUGIN_PREFIX/agents/$AGENT_BARE.md"
 fi
-# Skill target — substitute skills/<name>/SKILL.md in the same pattern (plugin prefix applies equally)
-
-# Proposal path (same TIMESTAMP used throughout skill)
 PROPOSAL_PATH=".reports/calibrate/$TIMESTAMP/<name>/proposal.md"
 ```
 

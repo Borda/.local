@@ -2,11 +2,15 @@
 
 **Finding evidence standard — applies to every agent, every finding:** Every finding must cite `file:line` from the diff. Training knowledge never sufficient. External standard claims (OWASP, PEP, CVE) cite authoritative document. Tier 2 sources (blog, tutorial, forum) need ≥3 genuinely independent origins OR experimental validation; N posts citing same original = 1 source. Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) that confirms the claim, treat as Tier 1 verified (sufficient alone); if multiple Tier 2 sources share one origin, merge them into one; count distinct origins only. Distinct-origin count < 3 and no experiment → downgrade to LOW or drop; never raise MEDIUM/HIGH/CRITICAL on Tier 2 alone.
 
+**Run-dir resolution preamble — prepend to every agent prompt:**
+
+> "First run Bash `RUN_DIR=$(cat "${TMPDIR:-/tmp}/oss-review-run-dir")` to obtain the exact run-dir path. Use `$RUN_DIR` verbatim for every file you read or write below — never retype the path literally (the leading `.` in `.temp` is easy to drop, which scatters output into a stray `temp/` dir)."
+
 Every agent prompt must end with:
 
-> "Write your FULL findings (all sections, Confidence block) to `<RUN_DIR>/<agent-slug>.md` using the Write tool — where `<agent-slug>` uses hyphen separator (no colon), e.g. `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`. Colons invalid in macOS filenames. Return to caller ONLY compact JSON envelope on final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2},\"file\":\"<RUN_DIR>/<agent-slug>.md\",\"confidence\":0.88}`"
+> "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-slug>.md` using the Write tool — where `<agent-slug>` uses hyphen separator (no colon), e.g. `foundry--sw-engineer.md`, `foundry--qa-specialist.md`, `foundry--perf-optimizer.md`, `foundry--doc-scribe.md`, `foundry--linting-expert.md`, `foundry--solution-architect.md`. Colons invalid in macOS filenames. Return to caller ONLY compact JSON envelope on final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2},\"file\":\"$RUN_DIR/<agent-slug>.md\",\"confidence\":0.88}`"
 
-**Codemap context preamble (substituted by orchestrator)**: when `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with the `## Structural Context (codemap, codemap_available=true)` block from `<RUN_DIR>/codemap-context.md`. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) is unchanged.
+**Codemap context preamble (substituted by orchestrator)**: when `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with the `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md`. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) is unchanged.
 
 **Agent 1 — foundry:sw-engineer**: Review architecture, SOLID, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking vs suggestions. `codemap_available=true`: read `fn-blast` first — skip caller-walk Reads on listed callers; verify only when needed for a specific finding.
 
@@ -25,7 +29,7 @@ Flag rules:
 
 Read `<REVIEW_SKILL_DIR>/checklist.md` — apply CRITICAL/HIGH patterns as severity anchors. Respect suppressions.
 
-`ISSUE_NUMS` non-empty: read `<RUN_DIR>/issue-*.md`. Evaluate whether changes address root cause, not just symptom. PR addresses symptom only → `[blocking] HIGH — root cause misalignment`. PR description diverges from issue problem → `HIGH — PR/issue scope divergence`.
+`ISSUE_NUMS` non-empty: read `$RUN_DIR/issue-*.md`. Evaluate whether changes address root cause, not just symptom. PR addresses symptom only → `[blocking] HIGH — root cause misalignment`. PR description diverges from issue problem → `HIGH — PR/issue scope divergence`.
 
 **Agent 2 — foundry:qa-specialist**: Audit test coverage and run quick security/vulnerability scan. Find untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. `codemap_available=true`: read `uncovered` + `mock-rdeps` sections first — symbols listed in `uncovered` lack any test rdep; symbols listed in `mock-rdeps` are tested via mock (not falsely "untested"). Skip manual grep/Read of `tests/` for symbols codemap already classifies; fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
 
@@ -35,7 +39,7 @@ Also check explicitly: concurrent access to shared state; methods called in wron
 
 **Consolidation rule**: One finding per test gap with concise scenario list. Format: "Missing tests for `parse_numeric()`: empty string, None, very large integers, float-string for int parser." ≤5 items.
 
-`ISSUE_NUMS` non-empty: read `<RUN_DIR>/issue-*.md`. Check tests cover linked issue reproduction scenario. Issue has minimal repro/trace not covered by tests → `HIGH — issue reproduction not tested`.
+`ISSUE_NUMS` non-empty: read `$RUN_DIR/issue-*.md`. Check tests cover linked issue reproduction scenario. Issue has minimal repro/trace not covered by tests → `HIGH — issue reproduction not tested`.
 
 **Agent 3 — foundry:perf-optimizer**: Find perf issues. Algorithmic complexity, Python loops that should be NumPy/torch ops, repeated computation, unnecessary I/O. ML code: DataLoader config, mixed precision. Prioritize by impact.
 
@@ -52,4 +56,4 @@ Also check explicitly: concurrent access to shared state; methods called in wron
 
 **Agent 7 — foundry:challenger (skip only if `CHALLENGE_ENABLED=false` — pass `--no-challenge` to opt out)**: Adversarial review of design decisions. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: output to `foundry--challenger.md`. Severity mapping: Blockers → critical/high; Concerns → medium; Nitpicks → low.
 
-**Agent 8 — oss:cicd-steward (CI/CD-only mode and docs+CI/CD mode)**: Review CI/CD config changes. Check: correctness (valid YAML/syntax, correct job ordering, trigger expressions), security (pinned SHA for third-party actions, no secret exposure in logs, `permissions:` scopes minimal), best practices (cache keys, matrix strategy, workflow topology), and breaking changes to existing CI behavior (removed jobs, changed required checks). Write findings to `<RUN_DIR>/oss--cicd-steward.md`.
+**Agent 8 — oss:cicd-steward (CI/CD-only mode and docs+CI/CD mode)**: Review CI/CD config changes. Check: correctness (valid YAML/syntax, correct job ordering, trigger expressions), security (pinned SHA for third-party actions, no secret exposure in logs, `permissions:` scopes minimal), best practices (cache keys, matrix strategy, workflow topology), and breaking changes to existing CI behavior (removed jobs, changed required checks). Write findings to `$RUN_DIR/oss--cicd-steward.md`.

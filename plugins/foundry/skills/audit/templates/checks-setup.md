@@ -32,14 +32,12 @@ elif [ ! -f ".claude/settings.json" ]; then
 elif [ ! -f ".claude/permissions-guide.md" ]; then
     printf "⚠ SKIPPED: Check 4 — .claude/permissions-guide.md not found\n"
 else
-    # Allow entries missing from guide
     jq -r '.permissions.allow[]' .claude/settings.json 2>/dev/null | \  # timeout: 5000
     while IFS= read -r perm; do
         grep -qF "\`$perm\`" .claude/permissions-guide.md 2>/dev/null \
             || printf "⚠ MISSING from guide: %s\n" "$perm"
     done
 
-    # Guide entries orphaned (not in allow list)
     grep '^| `' .claude/permissions-guide.md 2>/dev/null | awk -F'`' '{print $2}' | \  # timeout: 5000
     while IFS= read -r perm; do
         jq -e --arg p "$perm" '(.permissions.allow // []) + (.permissions.deny // []) | contains([$p])' .claude/settings.json > /dev/null 2>&1 \  # timeout: 5000
@@ -117,7 +115,6 @@ if [ ! -d "$PLUGIN_DIR" ]; then
 else
     FAIL=0
 
-    # 8a — Manifest: exists, valid JSON, required fields
     MANIFEST="$PLUGIN_DIR/.claude-plugin/plugin.json"
     if [ ! -f "$MANIFEST" ]; then
         printf "! CRITICAL: Check 8a — manifest not found: %s\n" "$MANIFEST"
@@ -135,8 +132,6 @@ else
         fi
     fi
 
-    # 8b — agents/ and skills/ must be real directories in plugin (canonical source)
-    #       .claude/agents/*.md and .claude/skills/*/ must be symlinks pointing INTO plugin
     for dir in agents skills; do
         REAL_PATH="$PLUGIN_DIR/$dir"
         if [ -L "$REAL_PATH" ]; then
@@ -149,18 +144,15 @@ else
             printf "✓: Check 8b — real directory: %s\n" "$REAL_PATH"
         fi
     done
-    # Verify .claude/ entries are reverse symlinks into plugin
     for dir in agents skills; do
         LOCAL=".claude/$dir"
         if [ "$dir" = "agents" ]; then
-            # agents: individual .md symlinks
             BROKEN=$(find "$LOCAL" -maxdepth 1 -name "*.md" ! -type l 2>/dev/null | wc -l | tr -d " ")
             STALE=$(find "$LOCAL" -maxdepth 1 -name "*.md" -type l ! -readable 2>/dev/null | wc -l | tr -d " ")
             [ "$BROKEN" -gt 0 ] && printf "⚠ MEDIUM: Check 8b — %d non-symlink .md file(s) in .claude/agents/ (expected symlinks → plugin)\n" "$BROKEN"
             [ "$STALE" -gt 0 ] && printf "! HIGH: Check 8b — %d broken symlink(s) in .claude/agents/\n" "$STALE"
             [ "$BROKEN" -eq 0 ] && [ "$STALE" -eq 0 ] && printf "✓: Check 8b — .claude/agents/ symlinks valid\n"
         else
-            # skills: directory-level symlinks
             BROKEN=$(find "$LOCAL" -maxdepth 1 -mindepth 1 -type d ! -type l 2>/dev/null | wc -l | tr -d " ")
             STALE=$(find "$LOCAL" -maxdepth 1 -mindepth 1 -type l ! -readable 2>/dev/null | wc -l | tr -d " ")
             [ "$BROKEN" -gt 0 ] && printf "⚠ MEDIUM: Check 8b — %d real directory/directories in .claude/skills/ (expected symlinks → plugin)\n" "$BROKEN"
@@ -180,17 +172,14 @@ else
         for js in "$HOOKS_DIR"/*.js; do
             [ -e "$js" ] || continue
             name=$(basename "$js")
-            # 8c-i: plugin hooks must be real files, not symlinks
             if [ -L "$js" ]; then
                 printf "⚠ MEDIUM: Check 8c — %s is a symlink; expected real file in plugin hooks/\n" "$name"
                 JS_FAIL=$((JS_FAIL + 1))
             fi
-            # 8c-ii: verify every .js referenced in hooks.json exists in plugin hooks/
             # (hooks auto-register via hooks.json + CLAUDE_PLUGIN_ROOT — no .claude/hooks/ symlinks needed)
         done
         [ "$JS_FAIL" -eq 0 ] && printf "✓: Check 8c — plugin hook files valid\n"
 
-        # 8c-iii: hooks.json reference integrity — every referenced .js must exist
         if command -v node &>/dev/null && [ -f "$HOOKS_JSON" ]; then
             REF_FAIL=0
             while IFS= read -r js_name; do
@@ -214,7 +203,6 @@ else
         fi
     fi
 
-    # 8d — hooks.json: exists, valid JSON
     if [ ! -f "$HOOKS_JSON" ]; then
         printf "! HIGH: Check 8d — hooks/hooks.json not found\n"
         FAIL=$((FAIL + 1))
@@ -225,7 +213,6 @@ else
         printf "✓: Check 8d — hooks/hooks.json is valid JSON\n"
     fi
 
-    # 8e — Dry-run validate via claude plugin validate
     if ! command -v claude &>/dev/null; then # timeout: 5000
         printf "⚠ SKIPPED: Check 8e — claude CLI not in PATH\n"
     else
@@ -270,17 +257,15 @@ else
         fi
     fi
 
-    # 8g — setup skill: exists in plugin only (not in .claude/skills/), declares required behaviors
     SF_SKILL="$PLUGIN_DIR/skills/setup/SKILL.md"
     if [ ! -f "$SF_SKILL" ]; then
         printf "! HIGH: Check 8g — setup SKILL.md not found at %s\n" "$SF_SKILL"
         FAIL=$((FAIL + 1))
     else
-        # Must NOT exist as standalone .claude/skills/setup/ (plugin-only skill)
+        # plugin-only — must NOT exist in .claude/skills/
         if [ -e ".claude/skills/setup" ]; then
             printf "⚠ MEDIUM: Check 8g — .claude/skills/setup/ exists; setup skill should live only in the plugin\n"
         fi
-        # Must declare all settings it merges and the link subcommand
         MISSING_COVERAGE=0
         for KEYWORD in "statusLine" "permissions.allow" "codex@openai-codex" "link"; do
             if ! grep -qF "$KEYWORD" "$SF_SKILL"; then # timeout: 5000
@@ -308,7 +293,6 @@ fi
 ## Check 9 — Agent color drift (statusline COLOR_MAP vs frontmatter)
 
 ```bash
-# Extract color: values declared in agent frontmatter
 for f in .claude/agents/*.md; do # timeout: 5000
     name=$(basename "$f" .md)
     color=$(awk '/^---$/{c++; if(c==2)exit} c==1 && /^color:/{sub(/^color: */,""); print}' "$f")
@@ -438,7 +422,6 @@ printf "  Global ~/.claude/:  %d bytes
 printf "  Total always-loaded: %d bytes (~%d tokens)
 " "$TOTAL" "$((TOTAL / 4))"
 
-# 34a — total overhead
 if [ "$TOTAL" -gt 102400 ]; then
     printf "! FAIL Check 34a — total always-loaded config %d bytes (> 100 KB)
 " "$TOTAL"
@@ -450,7 +433,6 @@ else
 " "$TOTAL" "$((TOTAL / 4))"
 fi
 
-# 34b — single oversized rules file
 if [ -d .claude/rules ]; then
     find .claude/rules -name "*.md" | while read -r f; do
         sz=$(wc -c < "$f")

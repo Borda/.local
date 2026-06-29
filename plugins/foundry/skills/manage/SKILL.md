@@ -90,7 +90,7 @@ SKIP_AUDIT=false
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/\(^\|[[:space:]]\)--skip-audit\([[:space:]]\|$\)/ /g' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
 MANAGE_SESSION_ID="${CLAUDE_SESSION_ID:-$$}"  # unique per session to prevent concurrent collision
 echo "$SKIP_AUDIT" > "${TMPDIR:-/tmp}/manage-skip-audit-${MANAGE_SESSION_ID}"  # persist (Check 41)
-echo "${TMPDIR:-/tmp}/manage-skip-audit-${MANAGE_SESSION_ID}" > "${TMPDIR:-/tmp}/manage-skip-audit-path"  # record resolved path
+echo "${TMPDIR:-/tmp}/manage-skip-audit-${MANAGE_SESSION_ID}" > "${TMPDIR:-/tmp}/manage-skip-audit-path"
 ```
 
 **Unsupported flag check** — after all supported flags extracted (`--skip-audit`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--skip-audit\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
@@ -490,9 +490,8 @@ After deleting the hook file, also remove its entry from `.claude/settings.json`
 
 ```bash
 # timeout: 5000
-HOOK_NAME="<name>"        # e.g. "rtk-rewrite" — basename of deleted hook, no .js suffix
+HOOK_NAME="<name>"        # e.g. "rtk-rewrite" — no .js suffix
 echo "$HOOK_NAME" > "${TMPDIR:-/tmp}/manage-hook-name-${CLAUDE_SESSION_ID:-$$}"
-# Remove every PreToolUse / PostToolUse / SessionStart / etc. entry whose hooks[].command references this file
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/remove_hook_from_registry.py" \
     --json-file .claude/settings.json \
     --hook-name "$HOOK_NAME" \
@@ -518,7 +517,6 @@ if [ -f "$PLUGIN_HOOKS_JSON" ]; then
         --json-file "$PLUGIN_HOOKS_JSON" \
         --hook-name "$HOOK_NAME" \
         --path-pattern "${HOOK_NAME}\\.js"
-    # Verify the entry is gone from the plugin registry too:
     jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook + "\\.js"))] | length' "$PLUGIN_HOOKS_JSON"  # expected: 0
 else
     printf "  (no plugin hooks.json at %s — skipping registry cleanup)\n" "$PLUGIN_HOOKS_JSON"
@@ -633,7 +631,6 @@ Return ONLY: {"status":"done","files_updated":N}
 After cross-reference propagation, scan for remaining occurrences using word-boundary matching to reduce noise from short or common names:
 
 ```bash
-# Use \b boundaries; fall back to fixed-string grep if rg unavailable
 rg --fixed-strings -n '\b<old-name>\b' plugins/ .claude/ README.md docs/ 2>/dev/null \
   || grep -rn "\b<old-name>\b" plugins/ .claude/ README.md docs/ 2>/dev/null \
   | grep -v ".git/" | grep -v "__pycache__"  # timeout: 10000
@@ -696,7 +693,7 @@ Collect ambiguous hits and invoke `AskUserQuestion` — show file + 5-line conte
 MEMORY.md is Claude Code's auto-memory file — **not** stored under `.claude/`. Injected into conversation context at session start. Absolute path appears near top of system prompt (e.g. `~/.claude/projects/.../memory/MEMORY.md`). Use that absolute path with Edit tool. If system prompt parsing fails or path absent, fall back to:
 
 ```bash
-# Slug both / and . to - (Claude Code's auto-memory dir uses dash for path separators AND dot replacements)
+# Claude Code auto-memory: / and . → - for path slugs
 MEMORY_FALLBACK=~/.claude/projects/$(pwd | sed 's|[/.]|-|g' | sed 's/^-//')/memory/MEMORY.md
 [ -f "$MEMORY_FALLBACK" ] && echo "Fallback MEMORY.md: $MEMORY_FALLBACK" || echo "MEMORY.md not found at fallback path — skip roster update"  # timeout: 5000
 ```

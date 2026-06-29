@@ -90,14 +90,10 @@ Otherwise, look for signals of repetitive or specialist work. First three git co
 ```bash
 # timeout: 3000
 # --- run these three in parallel ---
-
-# Recent git history — what kinds of changes are common?
 git log --oneline -50
 
-# What file types are being worked on?
 git log --name-only --pretty="" -30 | sort | uniq -c | sort -rn | head -20
 
-# Commit message patterns — what verbs appear most?
 git log --oneline -100 | cut -d' ' -f2 | sort | uniq -c | sort -rn | head -15
 ```
 

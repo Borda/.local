@@ -60,7 +60,7 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 # timeout: 10000
 python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
     --skill debug --write-files "$ARGUMENTS"
-# URL normalization and log fetching: see §URL Normalization in ci-log-extract.md below
+# URL normalization + log fetching: §URL Normalization in ci-log-extract.md
 ```
 
 **Codemap resolve** — `CODEMAP_RAW` is already written to `${TMPDIR:-/tmp}/dev-debug-codemap` (per-skill) and `${TMPDIR:-/tmp}/dev-codemap-raw` (legacy) by the flag-parsing block above (via `dev_parse_args.py --skill debug --write-files`). Read the per-skill path, then normalize via `codemap-resolve`:
@@ -77,7 +77,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
     fi
     CODEMAP_ENABLED=false
 fi
-# Skill-specific namespace — avoids reading stale true from prior feature --codemap run
+# skill-specific path — avoids stale value from prior feature --codemap run
 echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-debug-codemap-enabled
 ```
 
@@ -95,7 +95,7 @@ Read `$_DEV_SHARED/ci-log-extract.md`. Follow §URL Normalization to set `CI_RUN
 
 ```bash
 # timeout: 5000
-# Strip flags before integer detection so "123 --no-challenge" correctly detects issue mode
+# strip flags first — "123 --no-challenge" would fail integer detection otherwise
 ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+|--no-codemap|--codemap//g' | xargs)
 if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS_FOR_MODE_DETECT" =~ ^#?[0-9]+$ ]]; then
     DEBUG_MODE="issue"
@@ -167,7 +167,6 @@ echo "$ISSUE_BODY"
 ```
 
 ```bash
-# Extract a test path (e.g., tests/foo.py or test_foo.py) from the issue body
 TEST_PATH=$(echo "$ISSUE_BODY" | grep -oE '(tests?/[^[:space:]]+\.py|test_[^[:space:]]+\.py)' | head -1)
 if [ -z "$TEST_PATH" ]; then
   echo "→ No test file found in issue; running full test suite"
@@ -196,7 +195,7 @@ fi
 git log --oneline -20
 COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 LOOKBACK=$(( COMMIT_COUNT < 5 ? COMMIT_COUNT : 5 ))
-SUSPECT_FILE="${TEST_PATH:-}"  # derive from TEST_PATH resolved above; empty -> full-repo diff (acceptable for small repos)
+SUSPECT_FILE="${TEST_PATH:-}"  # empty → full-repo diff
 [ "$LOOKBACK" -gt 1 ] && git diff HEAD~${LOOKBACK}..HEAD -- "${SUSPECT_FILE:-}"
 ```
 
@@ -237,7 +236,7 @@ Present agent's analysis summary before proceeding.
 **Flaky-test branch** — if symptom is intermittent (passes alone, fails in full suite): run binary-search isolation. `<failing-test-node-id>` is a **substitution token** — before executing this block, resolve the failing test node ID from `$ARGUMENTS` or from prior pytest output (captured in a shell variable, e.g. `FAILING_TEST_NODE=tests/foo.py::test_bar`), then substitute the literal node ID into the command. Do NOT execute with the literal `<failing-test-node-id>` string — bash would interpret `<` as a stdin redirect:
 
 ```bash
-# Resolve FAILING_TEST_NODE before this block (bash would interpret literal `<...>` as redirect):
+# resolve FAILING_TEST_NODE first — bash interprets literal <...> as redirect:
 # FAILING_TEST_NODE=$(echo "$ARGUMENTS" | grep -oE 'tests?/[^[:space:]]+::test_[^[:space:]]+' | head -1)
 _FOUNDRY_BIN=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry-bin 2>/dev/null || ls -td ~/.claude/plugins/cache/*/foundry/*/bin 2>/dev/null | head -1 || echo "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin")  # timeout: 5000
 if [ -z "$FAILING_TEST_NODE" ]; then
@@ -318,7 +317,7 @@ Evidence: <key signals that confirmed the hypothesis>
 
 ```bash
 SLUG=$(echo "$ARGUMENTS" | tr ' ' '\n' | grep -v '^--' | grep -v '^[0-9]\+$' | head -4 | tr '\n' '-' | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-' | sed 's/-$//'); [ -z "$SLUG" ] && SLUG="unnamed-$(date +%s)"
-# Note: grep -v '^[0-9]\+$' strips bare numeric tokens (e.g. CI run IDs) from the slug to avoid confusing filenames like debug_12345678.md
+# grep -v strips bare numeric tokens (e.g. CI run IDs) — avoids filenames like debug_12345678.md
 DIAG_FILE=".plans/active/debug_${SLUG}.md"
 mkdir -p .plans/active
 ```

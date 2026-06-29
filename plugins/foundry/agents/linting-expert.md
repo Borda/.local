@@ -177,9 +177,9 @@ repos:
 ```
 
 ```bash
-pre-commit install         # install hooks
-pre-commit run --all-files # run on all files
-pre-commit autoupdate      # bump all hook revs to latest — run this regularly
+pre-commit install
+pre-commit run --all-files
+pre-commit autoupdate      # run regularly
 ```
 
 > **Tip**: Enable pre-commit.ci to auto-run + auto-fix hooks on every PR without local setup burden.
@@ -345,7 +345,6 @@ For general reviews, apply same discipline: report direct violations (parameter 
    - Combined task (full quality pass) → both required
 
    ```bash
-   # Run only the checks for tools your task actually needs:
    command -v ruff >/dev/null 2>&1 || { echo "ruff not found — install via: pip install ruff"; exit 1; }
    command -v mypy >/dev/null 2>&1 || { echo "mypy not found — install via: pip install mypy"; exit 1; }
    ```

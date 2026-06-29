@@ -55,7 +55,7 @@ else
         printf "✓: Check I2a — statusLine set\n"
     fi
 
-    # I2b — permissions.allow: spot-check that foundry entries were merged (>10 entries expected)
+    # I2b — permissions.allow: foundry entries merged? (>10 expected)
     if ! jq -e '(.permissions.allow // []) | length > 10' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
         printf "⚠ MEDIUM: Check I2b — permissions.allow appears empty or very short; foundry entries may not have been merged\n"
         printf "  Fix: run /foundry:setup\n"
@@ -73,7 +73,7 @@ else
         printf "✓: Check I2c — enabledPlugins.codex@openai-codex enabled\n"
     fi
 
-    # I2d — stale hooks block: must be absent (double-fires with plugin hooks.json)
+    # I2d — stale hooks block (double-fires with plugin hooks.json)
     if jq -e 'has("hooks")' "$SETTINGS" >/dev/null 2>&1; then  # timeout: 5000
         printf "⚠ MEDIUM: Check I2d — 'hooks' key present in ~/.claude/settings.json; stale block from before plugin migration will cause double-firing\n"
         printf "  Fix: run /foundry:setup — it will offer to remove the stale hooks block\n"
@@ -99,7 +99,6 @@ INSTALL_PATH=$(cat /tmp/audit_install_plugin_root 2>/dev/null)
 LINKED=0
 STALE=0
 
-# Agents: check .md symlinks in ~/.claude/agents/
 for f in "$HOME/.claude/agents/"*.md; do
     [ -e "$f" ] || continue
     if [ -L "$f" ]; then
@@ -109,7 +108,6 @@ for f in "$HOME/.claude/agents/"*.md; do
     fi
 done
 
-# Skills: check directory symlinks in ~/.claude/skills/
 for d in "$HOME/.claude/skills/"/*/; do
     [ -e "$d" ] || continue
     d="${d%/}"

@@ -102,7 +102,7 @@ if [ "$RESOLVE_EXIT" -ne 0 ]; then
         echo "! codemap unavailable but --codemap (strict) passed — aborting"
         exit 1
     fi
-    # auto/off: soft degrade — skill continues without codemap
+    # auto/off: soft degrade — continues without codemap
     echo "⚠ codemap unavailable in '$CODEMAP_RAW' mode — proceeding with CODEMAP_ENABLED=false"
     CODEMAP_ENABLED=false
 fi
@@ -321,7 +321,7 @@ For each change:
 # timeout: 3000
 echo "0"             > ${TMPDIR:-/tmp}/dev-inner-cycle
 echo "$(date +%s)"   > ${TMPDIR:-/tmp}/dev-start-time
-MAX_WALL_SECONDS=1800  # 30 min hard cap (5 outer × MAX_INNER_CYCLES inner worst case)
+MAX_WALL_SECONDS=1800  # 30 min cap (5 outer × MAX_INNER_CYCLES worst case)
 ```
 
 At each inner iteration start, read back, increment, check:
@@ -332,7 +332,7 @@ INNER_CYCLE=$(cat ${TMPDIR:-/tmp}/dev-inner-cycle 2>/dev/null || echo 0)
 START_TIME=$(cat ${TMPDIR:-/tmp}/dev-start-time 2>/dev/null || echo $(date +%s))
 INNER_CYCLE=$((INNER_CYCLE+1))
 echo "$INNER_CYCLE" > ${TMPDIR:-/tmp}/dev-inner-cycle
-MAX_INNER_CYCLES=5  # must match constants block — bash cannot reference it directly
+MAX_INNER_CYCLES=5  # must match constants block — bash can't ref it directly
 if [ "$INNER_CYCLE" -gt $MAX_INNER_CYCLES ]; then
     echo "⚠ MAX_INNER_CYCLES ($MAX_INNER_CYCLES) reached — stopping refactor loop; report what succeeded, what broke, what remains"
 fi

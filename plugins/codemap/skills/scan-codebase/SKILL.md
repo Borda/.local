@@ -30,7 +30,7 @@ Parse `$ARGUMENTS` to build invocation. Pass `--root <path>` if provided; pass `
 ```bash
 # timeout: 10000
 _ARGS_UNSUPPORTED=0; _SKIP_NEXT=0
-# Unquoted $ARGUMENTS word-splits — --root paths with spaces break; parse_scan_args.py (next) handles quoted paths.
+# unquoted $ARGUMENTS word-splits; parse_scan_args.py handles quoted paths
 for _FLAG in $ARGUMENTS; do
   [ "$_SKIP_NEXT" -eq 1 ] && { _SKIP_NEXT=0; continue; }
   case "$_FLAG" in
@@ -45,7 +45,7 @@ SCAN_STATE_FILE=$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/setup_scan_en
 if [ $? -ne 0 ] || [ -z "$SCAN_STATE_FILE" ]; then
   printf "! setup_scan_env.sh failed"; [ -s "$SETUP_STDERR" ] && printf ": %s" "$(cat "$SETUP_STDERR")"; printf "\n"; exit 1
 fi
-printf '%s' "$SCAN_STATE_FILE" > "${TMPDIR:-/tmp}/codemap-state-ref"  # persist; subsequent blocks source without knowing PID
+printf '%s' "$SCAN_STATE_FILE" > "${TMPDIR:-/tmp}/codemap-state-ref"  # subsequent blocks read without knowing PID
 ```
 
 ```bash
@@ -54,7 +54,7 @@ SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref" 2>/dev/null)
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run from the beginning\n"; exit 1; }
 # shellcheck source=/dev/null
 . "$SCAN_STATE_FILE"
-# Invoke scan-index without eval — args file written NUL-delimited by parse_scan_args.py.
+# NUL-delimited args file avoids eval; produced by parse_scan_args.py
 _ARGS_FILE="${TMPDIR:-/tmp}/codemap-scan-args-nul-$$"
 python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/parse_scan_args.py" "$SCAN_ARGS_RAW" --nul-output "$_ARGS_FILE"
 SCAN_ARGS=()
@@ -64,7 +64,7 @@ done < "$_ARGS_FILE"
 rm -f "$_ARGS_FILE"
 if ! "$SCAN_BIN" --timeout 360 "${SCAN_ARGS[@]}"; then
     printf "! scan-index failed (exit %d) — index may be stale or incomplete\n" "$?"
-    # Remove incremental-noop sentinel on failure — do not let a failed scan mislead Step 2
+    # remove sentinel on failure; stale sentinel misleads Step 2
     rm -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}"
     exit 1
 fi
@@ -85,7 +85,7 @@ After scan, read index and report compact summary:
 
 ```bash
 # timeout: 15000
-# Only report if index exists — Step 1 may have failed
+# only report if index exists; Step 1 may have failed
 SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref" 2>/dev/null)
 [ -n "$SCAN_STATE_FILE" ] && [ -f "$SCAN_STATE_FILE" ] || { printf "! codemap state missing — re-run /codemap:scan-codebase\n"; exit 1; }
 # shellcheck source=/dev/null
@@ -93,10 +93,9 @@ SCAN_STATE_FILE=$(cat "${TMPDIR:-/tmp}/codemap-state-ref" 2>/dev/null)
 PROJ_NAME="${PROJ_NAME:-$(basename "$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")")}"
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if [ -f "${_IDX}/${PROJ_NAME}.json" ]; then
-    # scan-stats.py reads SCAN_ARGS env var (string form of raw args, e.g. "--root src/mypackage")
-    # to resolve the project root and locate the index. Format: space-separated flag tokens.
+    # scan-stats.py reads SCAN_ARGS env var (e.g. "--root src/mypackage") to resolve project root
     SCAN_ARGS="$SCAN_ARGS_RAW" python3 "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-stats.py"
-    # Check if --incremental was requested but fell back to full scan (sentinel set in Step 1)
+    # --incremental noop check; sentinel set in Step 1 on fallback to full scan
     if [ -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}" ]; then
         echo "[codemap] Note: --incremental had no prior index — full scan ran instead"
         rm -f "${TMPDIR:-/tmp}/codemap-incremental-noop-${PROJ_SLUG}"

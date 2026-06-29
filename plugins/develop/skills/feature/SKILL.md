@@ -246,12 +246,12 @@ If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/
 if [[ "$ARGUMENTS" == *"::"* ]]; then
     _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
     TARGET_MODULE="${_QNAME%%::*}"
-    TARGET_FN="${_QNAME##*::}"           # bare function name — codemap-context.md builds module::fn itself
+    TARGET_FN="${_QNAME##*::}"           # bare fn — codemap-context.md builds module::fn
 elif [[ "$ARGUMENTS" =~ ([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+) ]]; then
-    TARGET_MODULE="${BASH_REMATCH[1]}"     # extending an existing dotted module
+    TARGET_MODULE="${BASH_REMATCH[1]}"     # dotted module extension
     TARGET_FN=""
 else
-    TARGET_MODULE=""                       # net-new surface — only central baseline runs
+    TARGET_MODULE=""                       # net-new — only central baseline runs
     TARGET_FN=""
 fi
 export TARGET_MODULE TARGET_FN
@@ -377,10 +377,10 @@ Both forms must:
 $PYTEST_CMD --collect-only --doctest-modules $MODULE_PATH -q 2>&1 | tail -5; COLLECT_EXIT=${PIPESTATUS[0]}
 if [ "$COLLECT_EXIT" -eq 5 ]; then
     echo "⚠ GATE FAIL: no demo tests collected — demo file missing or doctest malformed"
-    GATE_EXIT=1  # collection failed — skip full run, treat as gate failure
+    GATE_EXIT=1
 elif [ "$COLLECT_EXIT" -ne 0 ]; then
     echo "⚠ Cannot collect doctests — check module for import errors (collect exit $COLLECT_EXIT)"
-    GATE_EXIT=1  # collection failed — skip full run, treat as gate failure
+    GATE_EXIT=1
 fi
 echo "${GATE_EXIT:-0}" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
 echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit
@@ -390,7 +390,7 @@ echo "$COLLECT_EXIT"   > ${TMPDIR:-/tmp}/dev-feature-collect-exit
 # timeout: 600000
 COLLECT_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-collect-exit 2>/dev/null || echo 1)
 GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-feature-gate-exit 2>/dev/null || echo 1)
-# Doctest form (MODULE_PATH resolved before the collect block above):
+# doctest form — MODULE_PATH resolved above
 if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
     $PYTEST_CMD --doctest-modules $MODULE_PATH -v 2>&1 | tail -10; GATE_EXIT=${PIPESTATUS[0]}
     if [ "${GATE_EXIT:-0}" -eq 0 ]; then
@@ -401,7 +401,6 @@ if [ "${COLLECT_EXIT:-1}" -eq 0 ]; then
     echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
 fi
 
-# Script form (use instead of doctest when applicable):
 # python examples/demo_<feature>.py 2>&1 | tail -5; GATE_EXIT=$?
 # echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-feature-gate-exit
 ```
@@ -448,12 +447,9 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
 3. **Run new demo/test — confirm it fails**:
    ```bash
    # timeout: 600000
-   # doctest form
    $PYTEST_CMD --doctest-modules <module>.py -v --tb=short 2>&1 | tail -10
    GATE_EXIT=${PIPESTATUS[0]}
-   # pytest form
    $PYTEST_CMD --tb=short <test_file>::<test_name> -v
-   # script form
    python examples/demo_<feature>.py 2>&1 | tail -5
    ```
 4. **Implement minimal code** (spawn **foundry:sw-engineer** agent for non-trivial logic):

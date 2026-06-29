@@ -68,17 +68,17 @@ Use `foundry:curator`, not `foundry:sw-engineer`, for `.claude/` edits (agents, 
 `SessionEnd` hook runs cleanup automatically:
 
 ```bash
-# completed skill runs (have result.jsonl) older than 30 days
+# completed runs (have result.jsonl), older than 30 days
 find .reports/calibrate .reports/resolve .reports/audit .reports/analyse .experiments .developments \
     -maxdepth 2 -name "result.jsonl" -mtime +30 2>/dev/null |
 xargs dirname | xargs rm -rf
 
-# review dirs (no result.jsonl — keyed on dir mtime)
+# review dirs: no result.jsonl — keyed on dir mtime
 find .reports/review -mindepth 1 -maxdepth 1 -type d -mtime +30 2>/dev/null | xargs rm -rf 2>/dev/null
 
 find .plans/blueprint .cache .temp -type f -mtime +30 2>/dev/null | xargs rm -f
 
-# empty <skill>/<timestamp>/ dirs left after file cleanup
+# empty dirs left after file cleanup
 find .temp -mindepth 2 -maxdepth 2 -type d -empty -delete 2>/dev/null
 ```
 

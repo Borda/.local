@@ -42,22 +42,21 @@ Gate — runs after Classify, before Audit changelog.
 For each in-scope change — prefer codemap (immune to false positives from comments/stubs):
 
 ```bash
-# Check codemap index first (installed by /codemap:scan-codebase)
+# codemap index (installed by /codemap:scan-codebase)
 CODEMAP_OK=$(scan-query list 2>/dev/null | wc -l)  # timeout: 5000
-# Non-zero = index loaded; fall back to grep otherwise
+# non-zero = index loaded; else grep fallback
 
-# Codemap: structural symbol lookup
 scan-query find-symbol '^<symbol_name>$' 2>/dev/null  # timeout: 5000
 
-# Grep fallback: definition-pattern only — skips comments and leftovers
+# grep fallback: definition-pattern only — skips comments/stubs
 git grep -wl "def <symbol_name>\|class <symbol_name>" HEAD -- '*.py' 2>/dev/null || \
   git grep -wl "<symbol_name>" HEAD -- '*.ts' '*.js' '*.go' '*.rs' 2>/dev/null  # timeout: 3000
 
-# For removals/breaking — confirm absent at HEAD
+# removals/breaking: confirm absent at HEAD
 git grep -wl "def <symbol_name>\|class <symbol_name>" HEAD -- '*.py' 2>/dev/null \
   && echo "PRESENT (unexpected)" || echo "ABSENT (confirmed)"  # timeout: 3000
 
-# For behavior changes — confirm changed code path at HEAD
+# behavior changes: confirm changed path at HEAD
 git show HEAD:<changed_file> | grep -n "<distinguishing_pattern>"  # timeout: 3000
 ```
 

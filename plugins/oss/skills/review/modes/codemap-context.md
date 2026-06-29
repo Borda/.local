@@ -12,7 +12,7 @@
 codemap_available=false
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-# $RUN_DIR not yet created at Step 1 (happens in Step 2); stage to TMPDIR, Step 2 copies into $RUN_DIR/codemap-context.md.
+# $RUN_DIR created in Step 2; stage to TMPDIR, copied then
 CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/oss-review-codemap-context-${CLEAN_ARGS}.md"
 if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     codemap_available=true
@@ -25,10 +25,10 @@ if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1 && [
         echo
         for mod in $CHANGED_MODS; do
             echo "### Module: $mod"
-            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → high/moderate/low risk tier
-            scan-query --timeout 5 fn-rdeps    "$mod" --exclude-tests 2>/dev/null  # direct callers
+            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → risk tier
+            scan-query --timeout 5 fn-rdeps    "$mod" --exclude-tests 2>/dev/null
             scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # caller impact (v3)
-            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock test coverage (v4.1)
+            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock coverage (v4.1)
             scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)
             scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5)
             scan-query --timeout 5 undocumented "$mod" 2>/dev/null  # doc coverage (v4.4)

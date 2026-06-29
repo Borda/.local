@@ -7,9 +7,9 @@
 ## Step 9: Lint and QA gate
 
 ```bash
-[ -z "$RUN_DIR" ] && RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # IMPORTANT: expand $RUN_DIR to its literal value in each prompt string below — agents receive text, not shell context; un-expanded $RUN_DIR means literal string in instructions
+[ -z "$RUN_DIR" ] && RUN_DIR=".reports/resolve/$(date -u +%Y-%m-%dT%H-%M-%SZ)"  # expand $RUN_DIR to literal value in prompts below — agents receive text, not shell context
 mkdir -p "$RUN_DIR" # timeout: 5000
-# Compute BASE_REF merge base for accurate diff range in agent prompts
+# merge-base for accurate diff range in agent prompts
 BASE_REF_MERGE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || echo "origin/$BASE_REF")
 ```
 

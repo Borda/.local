@@ -66,7 +66,7 @@ In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via
 
 1. Pre-compute gather file path and create dir:
    ```bash
-   # BRANCH and DATE defined in Shared setup block below — see next section
+   # BRANCH, DATE from Shared setup below
    GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
    mkdir -p .temp  # timeout: 5000
    ```
@@ -107,7 +107,7 @@ When `unconfirmed > 0`, surface removed items as notification (not a gate — al
 Pre-compute output paths and persist for downstream reload (fresh shell, Check 41):
 
 ```bash
-# Reload vars (Check 41: fresh shell loses between Bash blocks)
+# Check 41: fresh shell loses between blocks
 BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
 DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
 RANGE=$(cat "${TMPDIR:-/tmp}/release-range" 2>/dev/null || echo "")
@@ -146,7 +146,7 @@ fi
 if [ "$STATUS_B" != "done" ] || [ -z "$CONTRIBUTORS_FILE" ] || [ ! -f "$CONTRIBUTORS_FILE" ]; then
     echo "Error: contributors delegation failed — status=$STATUS_B, file=$CONTRIBUTORS_FILE" >&2; exit 1
 fi
-# Re-persist resolved paths (subagent may have canonicalized them)
+# re-persist — subagent may canonicalize paths
 echo "${CHANGELOG_AUDIT_FILE:-}" > "${TMPDIR:-/tmp}/release-changelog-audit"
 echo "${CONTRIBUTORS_FILE:-}" > "${TMPDIR:-/tmp}/release-contributors"
 [ -n "$CHANGELOG_FILE_FROM_A" ] && echo "${CHANGELOG_FILE_FROM_A}" > "${TMPDIR:-/tmp}/release-changelog-file"
@@ -177,10 +177,10 @@ mkdir -p .temp  # timeout: 5000
 ```bash
 DO_CHANGELOG=false; DO_SUMMARY=false; DO_MIGRATION=false
 FIRST=$(echo "$ARGUMENTS" | awk '{print $1}')
-# safe REST: empty when ARGUMENTS is single word (cut -d' ' -f2- returns whole line for missing delimiter)
+# empty when single-word ARGUMENTS (cut -d' ' -f2- echoes whole line for missing delimiter)
 REST=""; case "$ARGUMENTS" in *" "*) REST="${ARGUMENTS#* }";; esac
 echo "${REST:-}" > "${TMPDIR:-/tmp}/release-rest"
-# strip mode token so it never leaks into RANGE
+# strip mode token — prevents leak into RANGE
 _PARSE_INPUT="$ARGUMENTS"; case "$FIRST" in notes|prepare|audit|demo) _PARSE_INPUT="$REST";; esac
 RANGE=$(echo "$_PARSE_INPUT" | grep -oE '[^ ]+([[:space:]]*->[[:space:]]*|\.\.)[^ ]+' | head -1 | tr -d '[:space:]')
 for _a in $_PARSE_INPUT; do case "$_a" in --changelog) DO_CHANGELOG=true;; --summary) DO_SUMMARY=true;; --migration) DO_MIGRATION=true;; --*) echo "⚠ unknown flag: $_a";; *) [ -z "$RANGE" ] && RANGE="$_a";; esac; done
@@ -196,7 +196,7 @@ Run this first — cold-start fallback (sets `$_OSS_SHARED`):
 
 ```bash
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
-# Persist $_OSS_SHARED across Bash blocks (Check 41: fresh shell loses vars)
+# Check 41: persist across Bash blocks
 echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/release-oss-shared"
 # loads: oss-shared-resolver.md
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
@@ -229,15 +229,15 @@ LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup/LAST_TAG" 2>/dev/null || echo "")
 CHERRY_PICK_SUBJECTS=$(cat "${TMPDIR:-/tmp}/release-setup/CHERRY_PICK_SUBJECTS" 2>/dev/null || echo "")
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 [ -z "$RANGE" ] && echo "Error: could not determine commit range" && exit 1
-# Persist $RANGE across Bash blocks (Check 41: fresh shell loses vars)
+# Check 41: persist across Bash blocks
 echo "${RANGE:-}" > "${TMPDIR:-/tmp}/release-range"
 
-# Quote "$RANGE" throughout — tags can carry unusual characters (e.g. `v1.2-rc.1+build.42`)
+# quote RANGE — tags may carry unusual chars (e.g. v1.2-rc.1+build.42)
 git log "$RANGE" --oneline --no-merges # timeout: 3000
 git log "$RANGE" --no-merges --format="--- %H%n%B" # timeout: 3000
 git diff --stat "$(echo "$RANGE" | sed 's/\.\.\./\ /;s/\.\./\ /')" # timeout: 3000
 
-# Default-branch detection: prefer gh, then git remote show origin; never hardcode `main`
+# prefer gh; fallback to git remote show origin; never hardcode main
 TRUNK=$(gh repo view --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null)  # timeout: 6000
 if [ -z "$TRUNK" ]; then
     TRUNK=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | { read -r _ _ val; echo "$val"; })  # timeout: 5000
@@ -306,7 +306,6 @@ MIGRATION_DOC=$(find "$REPO_ROOT" -maxdepth 3 \( \
   -iname "api-changes*" -o -iname "release-notes*" \
 \) -not -path "*/node_modules/*" -not -path "*/.venv/*" -not -path "*/.git/*" \
 | head -1)  # timeout: 5000
-# Also check docs/ subdirectory
 [ -z "$MIGRATION_DOC" ] && MIGRATION_DOC=$(find "$REPO_ROOT/docs" -maxdepth 2 \( \
   -iname "migration*" -o -iname "upgrade*" -o -iname "breaking*" -o -iname "api-changes*" \
 \) 2>/dev/null | head -1)  # timeout: 5000
@@ -521,7 +520,7 @@ Dispatch shepherd for public-facing voice/tone review before writing to disk. Ch
 
 ```bash
 SHEPHERD_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss shepherd 2>/dev/null)  # timeout: 5000
-# IMPORTANT: expand $SHEPHERD_DIR to literal value before inserting into spawn prompt
+# expand to literal value before spawning
 SHEPHERD_DIR=".temp/release-shepherd-$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')-$(date +%Y-%m-%d)"
 mkdir -p "$SHEPHERD_DIR"  # timeout: 5000
 ```
@@ -568,7 +567,7 @@ Read `$SKILL_DIR/modes/prepare.md` and execute.
 
 ```bash
 [ -f "$SKILL_DIR/modes/audit.md" ] || { echo "Error: modes/audit.md not found at $SKILL_DIR/modes/audit.md — verify oss plugin installation"; exit 1; }
-# Forward-readiness guard: refuse to audit an already-published release.
+# guard: refuse to audit already-published release
 _AUDIT_VERSION=$(cat "${TMPDIR:-/tmp}/release-rest" 2>/dev/null | awk '{print $1}')
 if [ -n "$_AUDIT_VERSION" ]; then
     if gh release view "$_AUDIT_VERSION" --json tagName --jq .tagName >/dev/null 2>&1; then  # timeout: 15000

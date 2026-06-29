@@ -6,7 +6,7 @@ Challenge every factual claim in assembled draft against codebase and project do
 **Scope**: applies to `notes` mode (DRAFT.md) and `prepare` mode (releases/$VERSION/DRAFT.md) and `--migration` flag output. Skip for `--summary` (internal audience) and `--changelog` entries (structured format, not claim-heavy prose).
 
 ```bash
-# Adversarial review run dir — expand to literal value before spawning
+# expand to literal value before spawning
 ADVERSARIAL_DIR=".temp/release-adversarial-$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')-$(date +%Y-%m-%d)"
 mkdir -p "$ADVERSARIAL_DIR"  # timeout: 5000
 ```

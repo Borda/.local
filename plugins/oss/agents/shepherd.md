@@ -32,7 +32,7 @@ Resolve shared dir before any section uses it:
 
 ```bash
 # loads: oss-shared-resolver.md
-# shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in gh-scraper.md, repo-warden.md)
+# intentional boilerplate; also in gh-scraper.md, repo-warden.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 [ -d "$_OSS_SHARED" ] || { echo "[shepherd] FATAL: cannot resolve _OSS_SHARED — oss plugin not installed or path missing"; exit 1; }
@@ -106,11 +106,11 @@ See `oss:cicd-steward` agent for nightly YAML pattern and xfail policy (`<ecosys
 Before merging breaking change:
 
 ```bash
-# Verify PACKAGE against pyproject.toml — repo name ≠ PyPI name when they differ
+# repo name ≠ PyPI name — verify against pyproject.toml
 PACKAGE=$(gh repo view --json name --jq .name 2>/dev/null || echo "mypackage")
 PACKAGE=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['name'])" 2>/dev/null || echo "$PACKAGE")
 
-# Extract changed public symbols from __init__.py exports (src-layout + flat-layout)
+# src-layout + flat-layout
 _EXTRACT_SCRIPT="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_changed_symbols.py"
 [ -f "$_EXTRACT_SCRIPT" ] || { echo "\u26a0 extract_changed_symbols.py not found — verify oss plugin installation"; CHANGED_SYMBOLS=""; }
 [ -f "$_EXTRACT_SCRIPT" ] && CHANGED_SYMBOLS=$(python "$_EXTRACT_SCRIPT" "HEAD~1..HEAD")
@@ -118,7 +118,7 @@ _EXTRACT_SCRIPT="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_changed_symbols.
 if [ -z "$CHANGED_SYMBOLS" ]; then
     echo "No changed symbols — skipping ecosystem check"
 else
-    # search_downstream_consumers.py: reads symbols stdin, loops gh api search/code
+    # reads symbols from stdin, loops gh api search/code
     echo "$CHANGED_SYMBOLS" | python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/search_downstream_consumers.py" --package "$PACKAGE"  # timeout: 60000
 fi
 ```

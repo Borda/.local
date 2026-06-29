@@ -57,8 +57,7 @@ else # discussion
 
 fi
 
-# Wide-net: same for all types — all related items open AND closed
-TITLE=$(...) # extract from fetched item above
+TITLE=$(...)
 
 gh issue list --state all --search "$TITLE" --json number,title,state,labels --limit 50 |  # timeout: 15000
 jq --argjson self $NUMBER '[.[] | select(.number != $self)]'

@@ -69,28 +69,24 @@ push: ${{ github.event_name != 'pull_request' }}
 ## Step-by-Step Failure Diagnosis
 
 ```bash
-# 1. Get full CI log for a failing run
 gh run view <run-id> --log-failed
 
-# 2. List recent failed runs
 gh run list --status failure --limit 10
 
-# 3. For a specific PR
 gh pr checks <pr-number>
 gh run view --log-failed $(gh run list --branch <branch> --json databaseId -q '.[0].databaseId')
-# Note: check inner command returns a value before running; split into two steps if scripting
+# verify inner cmd returns a value before running; split into two steps if scripting
 
-# 4. Re-run a specific job
 gh run rerun <run-id> --job <job-id> --failed-only
 ```
 
 ## Flaky Test Detection
 
 ```bash
-# Run tests N times to detect flakiness (requires: uv add --dev pytest-repeat)
-pytest --count=5 tests/unit/ -x # fail on first flaky
+# requires: uv add --dev pytest-repeat
+pytest --count=5 tests/unit/ -x
 
-# Or use pytest-flakefinder (write operation: uv add --dev mutates pyproject.toml and uv.lock)
+# write op: mutates pyproject.toml and uv.lock
 uv add --dev pytest-flakefinder
 pytest --flake-finder --flake-runs=5 tests/
 ```
@@ -106,8 +102,8 @@ Common flakiness causes:
 ## Build Time Profiling
 
 ```bash
-uv run pytest --durations=20 tests/ -q # find slow tests
-# Check uv cache hit rate in run logs; review step timing in GitHub Actions UI
+uv run pytest --durations=20 tests/ -q
+# check uv cache hit rate in run logs; review step timing in GitHub Actions UI
 ```
 
 </diagnosing_failures>

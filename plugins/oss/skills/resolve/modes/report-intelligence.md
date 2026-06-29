@@ -53,11 +53,10 @@ No PR# in header → skip Steps 3b and 4; work on current branch as-is. Before s
 
 ```bash
 BASE_REF=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")  # timeout: 3000
-# Pre-compute MERGE_BASE for Step 9 with shallow-clone fallback to the repo's root commit;
-# without this, `git merge-base HEAD origin/$BASE_REF` returns empty in shallow clones and
-# `git diff <empty>..HEAD` shows the entire branch history (or nothing at all).
+# shallow-clone fallback: git merge-base returns empty in --depth=1 clones
+# and git diff <empty>..HEAD shows entire branch history (or nothing)
 MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null)  # timeout: 3000
 if [ -z "$MERGE_BASE" ]; then
-    MERGE_BASE=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1)  # timeout: 3000 — root commit fallback
+    MERGE_BASE=$(git rev-list --max-parents=0 HEAD 2>/dev/null | head -1)  # timeout: 3000
 fi
 ```

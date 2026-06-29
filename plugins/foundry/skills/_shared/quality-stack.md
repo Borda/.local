@@ -45,12 +45,12 @@ fi
 [ "${SKIP_RUFF:-0}" -ne 1 ] && $RUNNER ruff format <changed_files>  # timeout: 30000
 
 [ "${SKIP_MYPY:-0}" -ne 1 ] && { $RUNNER mypy <changed_files> --no-error-summary 2>&1 | head -30; MYPY_EXIT=${PIPESTATUS[0]}; }  # timeout: 30000
-# MYPY_EXIT: non-zero = type errors found
+# non-zero = type errors
 
 $RUNNER pytest <test_dir> -v --tb=short  # timeout: 600000
 SUITE_EXIT=$?
 
-# Flaky test detection — if suite failed, retry twice
+# flaky detection — retry twice on failure
 RETRY_COUNT=2
 if [ $SUITE_EXIT -ne 0 ]; then
     PASS_COUNT=0
@@ -125,7 +125,6 @@ Include `### Codex Pre-pass` section in final report:
 ```bash
 if ! claude plugin list 2>/dev/null | grep -q 'oss@'; then  # timeout: 15000
     echo "oss plugin not installed — Progressive Review Loop skipped; proceeding to Codex Mechanical Delegation"
-    # Skip all 3 cycles
 fi
 ```
 

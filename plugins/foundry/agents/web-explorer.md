@@ -199,7 +199,6 @@ Description of return value.
 Check if dependency has new release:
 
 ```bash
-# Check latest version on PyPI
 uv pip index versions <package>
 ```
 
@@ -210,10 +209,8 @@ Fetch CHANGELOG for version range to identify breaking changes, deprecations, mi
 ## GitHub Release Notes Extraction
 
 ```bash
-# Fetch release notes for a specific version
 gh release view v<version> --repo <org>/<repo>
 
-# List recent releases
 gh release list --repo <org>/<repo> --limit 10
 ```
 

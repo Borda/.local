@@ -123,7 +123,7 @@ Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step
 When `$ARGUMENTS` empty:
 
 ```bash
-# Find most recent review output (written by /review to .reports/review/)
+# written by /review to .reports/review/
 REVIEW_FILE=$(ls -t .reports/review/*/review-report.md 2>/dev/null | head -1)
 if [ -z "$REVIEW_FILE" ]; then
     echo "No review output found in .reports/review/ — run /review <PR#> first, or provide a PR number"
@@ -146,16 +146,13 @@ Parse $ARGUMENTS:
 ```bash
 [ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" ] || { echo "Error: parse-resolve-args.py not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
-# Extract codemap flags before passing to parser (parse-resolve-args.py does not handle them)  # timeout: 3000
+# parse-resolve-args.py does not handle codemap flags — strip before passing  # timeout: 3000
 CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
 [[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_FORCE_OFF=true
 [[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_STRICT=true
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--no-codemap//g; s/ --codemap / /g' | xargs)
-# Defence-in-depth: capture parser output to a temp file and validate that every
-# line is a plain VAR=value assignment (no shell metacharacters that could trigger
-# command substitution, pipelines, or backgrounding) before sourcing. parse-resolve-args.py
-# uses shlex.quote so its output is already safe, but validating here protects against
-# future regressions or a tampered binary.
+# Defence-in-depth: validate every output line is plain VAR=value (no metacharacters) before sourcing.
+# parse-resolve-args.py uses shlex.quote but this guards against future regressions or a tampered binary.
 tmpenv=$(mktemp)  # timeout: 3000
 trap 'rm -f "$tmpenv"' EXIT INT TERM
 python "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" "$ARGUMENTS" >"$tmpenv"  # timeout: 5000
@@ -327,7 +324,7 @@ command -v gh >/dev/null 2>&1 || { echo "! BLOCKED — gh CLI required; install:
 **Branch-safety pre-check** — must run BEFORE `gh pr checkout` so a wrong-branch commit is impossible (per `git-commit.md` Gate 2). Verify the PR's `headRefName` is not the repo's default branch — `gh pr checkout` of a same-repo PR whose HEAD = default branch would land us on default and any later commit (Step 8) would violate Gate 2:
 
 ```bash
-# Local-first detection (no network); fall back to network query; hard-fail when neither resolves
+# local-first (no network); network fallback; hard-fail if neither resolves
 DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')  # timeout: 3000
 [ -z "$DEFAULT_BRANCH" ] && DEFAULT_BRANCH=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}')  # timeout: 6000
 [ -z "$DEFAULT_BRANCH" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }
@@ -337,19 +334,17 @@ if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     exit 1
 fi
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
-# SHA-first checkout guard: if local HEAD already matches PR remote head, skip checkout entirely.
-# Avoids worktree conflict where gh pr checkout creates pr-N-slug alias instead of HEAD_REF
-# (git rejects checking out a branch active in another worktree).
+# SHA-first checkout guard: skip if already at PR head. Avoids worktree conflict — gh pr checkout
+# creates pr-N-slug alias when branch active in another worktree.
 PR_HEAD_OID=$(gh pr view "<PR#>" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
 LOCAL_SHA=$(git rev-parse HEAD 2>/dev/null)  # timeout: 3000
-# Diagnostic trace so reflog forensics can correlate skill state with branch outcome
-# (cf. investigate report 2026-06-13T11-00-00Z: pr195 alias created when state opaque)
+# diagnostic trace for reflog forensics (cf. investigate report 2026-06-13T11-00-00Z: pr195 alias when state opaque)
 >&2 echo "→ Step 4 state: SAVED_BRANCH=$SAVED_BRANCH PR_HEAD_REF=$PR_HEAD_REF PR_HEAD_OID=${PR_HEAD_OID:-<empty>} LOCAL_SHA=${LOCAL_SHA:-<empty>}"
 if [ -n "$PR_HEAD_OID" ] && [ "$LOCAL_SHA" = "$PR_HEAD_OID" ]; then
     echo "→ Already at PR head ($LOCAL_SHA) — skipping gh pr checkout"
-    # SHA matches but caller may sit on a *different branch name* pointing at same OID
-    # (e.g. a prior `gh pr checkout` left them on `pr<N>` alias from a previous run).
-    # Force-align to PR_HEAD_REF so Step 8 commits + Step 10 push land on the PR branch.
+    # SHA matches but caller may be on different branch name pointing at same OID
+    # (e.g. prior gh pr checkout left pr<N> alias). Force-align to PR_HEAD_REF so
+    # Step 8 commits + Step 10 push land on correct branch.
     CURRENT=$(git branch --show-current 2>/dev/null)
     if [ -n "$PR_HEAD_REF" ] && [ "$CURRENT" != "$PR_HEAD_REF" ]; then
         echo "→ Re-aligning local branch: $CURRENT → $PR_HEAD_REF (same SHA $LOCAL_SHA)"
@@ -358,14 +353,12 @@ if [ -n "$PR_HEAD_OID" ] && [ "$LOCAL_SHA" = "$PR_HEAD_OID" ]; then
             || { echo "⛔ Cannot switch to $PR_HEAD_REF — aborting (branch active in another worktree?)"; exit 1; }
     fi
 else
-    # Hard-exit on checkout failure — silent failure leaves git on the caller's branch while
-    # $HEAD_REF is set from Step 3b, causing Step 8 commits to land on the wrong branch.
-    # `--branch "$PR_HEAD_REF"` forces gh to use the PR's headRefName as the local branch
-    # name — without it, gh CLI v2.93+ falls back to a `pr<N>` alias when name collision
-    # is detected, causing Step 10 `git push HEAD:$HEAD_REF` to create an unrelated remote
-    # branch (root cause of CRITICAL bug in pyDeprecate run 2026-06-13T08:33Z).
+    # Hard-exit on checkout failure — silent failure leaves git on caller's branch while
+    # $HEAD_REF is set, causing Step 8 commits to land on wrong branch.
+    # --branch "$PR_HEAD_REF": without it, gh CLI v2.93+ falls back to pr<N> alias on name
+    # collision → Step 10 push creates unrelated remote branch (CRITICAL bug pyDeprecate 2026-06-13T08:33Z).
     gh pr checkout <PR#> --branch "$PR_HEAD_REF" \
-        || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # fetches HEAD_REF; for forks, adds the contributor's remote + sets up tracking  # timeout: 15000
+        || { echo "⛔ gh pr checkout failed — aborting (network, branch deleted, auth expired, or local conflicts)"; exit 1; }   # timeout: 15000
 fi
 ```
 
@@ -373,11 +366,11 @@ fi
 
 ```bash
 git remote -v | grep '(fetch)' | head -10 # timeout: 3000
-git status                                # confirm we are on HEAD_REF  # timeout: 3000
+git status  # timeout: 3000
 CURRENT_BRANCH=$(git branch --show-current 2>/dev/null)  # timeout: 3000
-# Same-repo rule: for non-fork PRs, local branch name MUST equal PR_HEAD_REF — no aliases ever.
-# gh CLI sometimes silently falls back to `pr<N>` when a same-name local branch exists;
-# `--branch "$PR_HEAD_REF"` in the checkout above prevents this, but assert here as hard gate.
+# Same-repo rule: local branch MUST equal PR_HEAD_REF — no aliases.
+# gh CLI silently falls back to pr<N> on same-name collision; --branch above prevents it,
+# but assert here as hard gate.
 if [ "$IS_CROSS_REPO" = "false" ] && [ "$CURRENT_BRANCH" != "$PR_HEAD_REF" ]; then
     echo "⛔ SAME-REPO RULE VIOLATION: on '$CURRENT_BRANCH' but PR headRefName='$PR_HEAD_REF' — branch alias (pr<N>) created instead of using original branch. Aborting to prevent push to wrong branch."
     exit 1
@@ -394,7 +387,7 @@ if [ "$IS_CROSS_REPO" = "true" ]; then
 else
     FORK_REMOTE="origin"
 fi
-# Soft-verify remote exists; gh pr checkout layouts vary across versions
+# soft-verify — gh pr checkout layouts vary across versions
 git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
     || echo "⚠ Remote $FORK_REMOTE not registered — Step 10 will add it before push" # timeout: 3000
 ```
@@ -413,11 +406,10 @@ Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
 **Soft cap: 8 Codex dispatches per session** — Codex-specific. Skip this cap entirely when `--agent <name>` is set and the resolved agent is not `codex:codex-rescue` (other implementation agents have no per-session dispatch ceiling here):
 
 ```bash
-# IMPL_AGENT resolved in action-item-dispatch.md (Step 8); compute here too for cap branching
+# computed here (resolved fully in action-item-dispatch.md) to branch on cap threshold
 _RESOLVE_IMPL_AGENT="codex:codex-rescue"
 [[ "$ARGUMENTS" == *"--agent "* ]] && _RESOLVE_IMPL_AGENT=$(echo "$ARGUMENTS" | grep -oP '(?<=--agent )\S+')
 if [ "$_RESOLVE_IMPL_AGENT" = "codex:codex-rescue" ] && [ "$(echo "$SELECTED_ITEMS" | wc -w)" -gt 8 ]; then
-    # invoke AskUserQuestion as described below
     :
 fi
 ```
@@ -485,7 +477,7 @@ Read and execute `$_OSS_RESOLVE/modes/lint-qa-gate.md`.
 if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
     REPO_NAME=$(git remote get-url origin | sed 's|.*/||' | sed 's|\.git$||')
     ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")
-    # Mirror SSH vs HTTPS — SSH-only contributors have no HTTPS credentials; hardcoding HTTPS breaks their push silently
+    # mirror SSH vs HTTPS — SSH-only contributors have no HTTPS credentials; hardcoding HTTPS breaks push silently
     if [[ "$ORIGIN_URL" == git@* ]]; then
         FORK_URL="git@github.com:$FORK_REMOTE/$REPO_NAME.git"
     else
@@ -546,7 +538,7 @@ Mark remaining open tasks `completed`. Read report template from `$_OSS_RESOLVE/
 Include `### Challenge Log` section in report — one row per item: id · evidence verdict · suggestion verdict · resolution (as-suggested / self-resolved / rejected). Omit section when `--no-challenge`.
 
 ```bash
-# Branch restore — skip when COMMIT_MODE=stage (staged changes would be lost)
+# skip restore when COMMIT_MODE=stage — staged changes would be lost
 if [ "$COMMIT_MODE" = "stage" ]; then
     echo "⚠ COMMIT_MODE=stage: changes are staged on $(git branch --show-current) — restore to $SAVED_BRANCH skipped to preserve staged work. Run: git stash && git switch $SAVED_BRANCH && git stash pop (on PR branch) when ready."
 elif [ -n "$SAVED_BRANCH" ]; then

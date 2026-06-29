@@ -30,14 +30,13 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
 ```bash
 TOKEN="$ARGUMENTS"
 if [[ "$TOKEN" =~ ^[0-9]+$ ]] && [ ! -e "$TOKEN" ]; then
-    # Strict PR mode: bare positive integer, no extension, no existing path
+    # bare positive integer, no extension, no existing path
     echo "PR number detected — checking oss plugin availability"
     [ -f "$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review/SKILL.md 2>/dev/null | head -1)" ] && OSS_AVAILABLE=true || OSS_AVAILABLE=false  # timeout: 5000
 elif [ -f "$TOKEN" ]; then
-    # File mode: valid path, even if it looks numeric (e.g. `42.py`)
+    # valid path, even if numeric (e.g. 42.py)
     OSS_AVAILABLE=skip
 elif [[ "$TOKEN" =~ ^#[0-9]+$ ]] && [ ! -e "$TOKEN" ]; then
-    # `#NNN` form — also PR-like
     echo "PR number detected — checking oss plugin availability"
     [ -f "$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review/SKILL.md 2>/dev/null | head -1)" ] && OSS_AVAILABLE=true || OSS_AVAILABLE=false  # timeout: 5000
 else
@@ -95,8 +94,8 @@ Strip flags from `$ARGUMENTS` before using as path:
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" --skill review --write-files "$ARGUMENTS"
-# Values written to: ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap} (per-skill) + legacy paths
-# CLEAN_ARGS (flags stripped) written to ${TMPDIR:-/tmp}/dev-review-clean-args
+# values → ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap} + legacy paths
+# CLEAN_ARGS → ${TMPDIR:-/tmp}/dev-review-clean-args
 REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")
 CHALLENGE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-enabled" 2>/dev/null || echo "true")
 SEMBLE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-semble-enabled" 2>/dev/null || echo "false")
@@ -106,7 +105,7 @@ CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || ec
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
-# Codemap auto-detection — normalize CODEMAP_RAW to true/false; strict exits on unavailability  # timeout: 5000
+# normalize CODEMAP_RAW → true/false; strict exits on unavailability  # timeout: 5000
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -127,8 +126,8 @@ If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. DMI s
 # timeout: 5000
 SEMBLE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-semble-enabled 2>/dev/null || echo false)
 if [ "$SEMBLE_ENABLED" = "true" ]; then
-    # Semble MCP availability cannot be reliably verified in bash — check must be done in LLM context.
-    # If mcp__semble__search is NOT available in your tools when you reach this point:
+    # can't verify semble MCP in bash — must check in LLM context
+    # if mcp__semble__search not available in your tools:
     #   echo "! --semble requested but semble MCP server not configured. Configure: claude mcp add semble -s user -- uvx --from 'semble[mcp]' semble"
     #   exit 1
     echo "⚠ --semble enabled: verify mcp__semble__search is available in your tools before proceeding; if absent, abort with error above"
@@ -141,11 +140,9 @@ Use `$REVIEW_ARGS` (not `$ARGUMENTS`) as path for rest of workflow.
 
 ```bash
 if [ -n "$REVIEW_ARGS" ]; then
-    # Path given directly — collect Python files under it
     TARGET="$REVIEW_ARGS"
     echo "Reviewing: $TARGET"
 else
-    # No argument — review current working-tree diff vs HEAD
     git diff HEAD --name-only  # timeout: 3000
     TARGET="working-tree diff ($(git diff HEAD --name-only 2>/dev/null | grep '\.py$' | wc -l | tr -d ' ') Python files)"  # timeout: 3000
 fi
@@ -204,13 +201,13 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || P
 CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-enabled 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     codemap_available=true
-    # src-layout assumed; files outside src/ (scripts/, tools/) may not be valid importable modules — scan-query returns empty, not error
+    # src-layout assumed; non-src files may not be valid modules — scan-query returns empty
     CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')  # timeout: 3000
     if [ -z "$CHANGED_MODS" ]; then
         CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|/[^/]*\.py$||' | sort -u | head -10)
     fi
-    # RUN_DIR not yet created (happens in Step 2); stage to TMPDIR; orchestrator copies into $RUN_DIR/codemap-context.md after mkdir.
-    # scan-query PATH guarantee: CODEMAP_ENABLED=true only after codemap-resolve confirmed scan-query on PATH (via bin/codemap-resolve). Bare `scan-query` invocations below are safe.
+    # RUN_DIR not yet created (Step 2); stage here, copy to $RUN_DIR/codemap-context.md after mkdir
+    # scan-query on PATH guaranteed — codemap-resolve confirmed it
     CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md"
     {
         echo "## Structural Context (codemap)"
@@ -220,13 +217,13 @@ if [ "$CODEMAP_ENABLED" = "true" ]; then
         echo
         for mod in $CHANGED_MODS; do
             echo "### Module: $mod"
-            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → high/moderate/low risk tier
-            scan-query --timeout 5 fn-rdeps    "$mod" --exclude-tests 2>/dev/null  # direct callers
-            scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # caller impact (v3)
-            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # mock test coverage (v4.1)
-            scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # test gaps (v4.2)
-            scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # stale doc refs (v4.5)
-            scan-query --timeout 5 undocumented "$mod" 2>/dev/null  # doc coverage (v4.4)
+            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → risk tier
+            scan-query --timeout 5 fn-rdeps    "$mod" --exclude-tests 2>/dev/null
+            scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # v3
+            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # v4.1
+            scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # v4.2
+            scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # v4.5
+            scan-query --timeout 5 undocumented "$mod" 2>/dev/null  # v4.4
             echo
         done
     } > "$CODEMAP_CONTEXT_STAGE"
@@ -259,7 +256,8 @@ Set up run directory:
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".temp/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR"  # timeout: 5000
-RUN_DIR_LITERAL="$RUN_DIR"
+# persisted for agents — hand-retyping drops leading dot (stray temp/review/ dirs)
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/dev-review-run-dir"
 REPORT_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR"  # timeout: 5000
 REPORT_DIR_LITERAL="$REPORT_DIR"
@@ -284,7 +282,7 @@ If Codex available:
 
 ```bash
 CODEX_OUT="$RUN_DIR/codex.md"
-echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # persist for Step 6 — Bash() state lost between calls
+echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # Step 6 re-reads — bash state lost
 ```
 
 If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
@@ -307,11 +305,19 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 
 **File-based handoff**: read `$_FOUNDRY_SHARED/file-handoff-protocol.md`. Run directory created in Step 2 (`$RUN_DIR`).
 
-<!-- $RUN_DIR pre-expanded into $RUN_DIR_LITERAL, $REPORT_DIR into $REPORT_DIR_LITERAL — substitute literal vars (never bare $RUN_DIR/$REPORT_DIR) in Agent spawn prompt strings. -->
+<!-- $REPORT_DIR pre-expanded into $REPORT_DIR_LITERAL — substitute literal vars in Agent spawn prompt strings. Run-dir is the exception: agents self-resolve it (see run-dir preamble below), never hand-substituted. -->
+
+### Run-dir preamble (canonical)
+
+Prepend this to every agent spawn prompt (Agents 1–7 and the Step 5 consolidator):
+
+> "First run Bash `RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir")` to obtain the exact run-dir path. Use `$RUN_DIR` verbatim for every file you read or write — never retype the path literally (the leading `.` in `.temp` is easy to drop, scattering output into a stray `temp/` dir)."
+
+Inside agent prompt strings, leave `$RUN_DIR` literal — the agent resolves it via the preamble. The orchestrator must NOT hand-substitute the run-dir path.
 
 ### $VAR_LITERAL pre-expansion rule (canonical)
 
-Any shell variable inserted into an Agent spawn prompt string — `$RUN_DIR_LITERAL`, `$REPORT_DIR_LITERAL`, `$REVIEW_CHECKLIST`, `$DATE`, `$_REVIEW_TEMPLATE` — must be substituted with its literal resolved value **before** building the Agent call. A bare variable name inside a quoted Agent prompt will NOT expand — the spawned agent receives the literal dollar-sign text, causing path mismatches. Resolve each to its value first; never pass the bare `$VAR` name.
+Any OTHER shell variable inserted into an Agent spawn prompt string — `$REPORT_DIR_LITERAL`, `$REVIEW_CHECKLIST`, `$DATE`, `$_REVIEW_TEMPLATE` — must be substituted with its literal resolved value **before** building the Agent call. A bare variable name inside a quoted Agent prompt will NOT expand — the spawned agent receives the literal dollar-sign text, causing path mismatches. Resolve each to its value first; never pass the bare `$VAR` name. (`$RUN_DIR` is the deliberate exception above — agents self-resolve it.)
 
 Resolve develop:review checklist path (version-agnostic):
 
@@ -324,7 +330,7 @@ fi
 
 ```bash
 if command -v jq >/dev/null 2>&1; then
-    OSS_ROOT=$(jq -r 'to_entries[] | select(.key | test("oss@")) | .value.installPath' ${HOME}/.claude/plugins/installed_plugins.json 2>/dev/null | head -1) || OSS_ROOT=""  # timeout: 5000; jq parse failure → empty string, handled below
+    OSS_ROOT=$(jq -r 'to_entries[] | select(.key | test("oss@")) | .value.installPath' ${HOME}/.claude/plugins/installed_plugins.json 2>/dev/null | head -1) || OSS_ROOT=""  # timeout: 5000; jq failure → empty, handled below
     if [ -z "$OSS_ROOT" ]; then
         echo "⚠ oss plugin checklist unavailable — review will proceed without severity anchors; install oss plugin for full coverage"
         REVIEW_CHECKLIST=""
@@ -355,9 +361,9 @@ Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts with resol
 - Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) that confirms the claim, treat as Tier 1 verified; if multiple Tier 2 sources share one origin, merge them into one; count distinct origins only
 - When only Tier 2 available, distinct-origin count < 3, and no experiment run: downgrade finding to LOW or drop it; never raise MEDIUM/HIGH/CRITICAL on Tier 2 alone
 
-Launch agents simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional). Every agent prompt must end with:
+Launch agents simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional). Every agent prompt must begin with the [run-dir preamble (canonical)](#run-dir-preamble-canonical) and end with:
 
-> "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR_LITERAL/<agent-name>.md` using the Write tool — where `<agent-name>` is e.g. `sw-engineer`, `qa-specialist`, `perf-optimizer`, `doc-scribe`, `linting-expert`, `solution-architect`. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2,\"low\":0},\"file\":\"$RUN_DIR_LITERAL/<agent-name>.md\",\"confidence\":0.88}`"
+> "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-name>.md` using the Write tool — where `<agent-name>` is e.g. `sw-engineer`, `qa-specialist`, `perf-optimizer`, `doc-scribe`, `linting-expert`, `solution-architect`. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2,\"low\":0},\"file\":\"$RUN_DIR/<agent-name>.md\",\"confidence\":0.88}`"
 
 **Codemap context preamble (substituted by orchestrator)**: rehydrate `codemap_available=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-available 2>/dev/null || echo false)`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with the `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per the propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) is unchanged.
 
@@ -398,7 +404,7 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Agent 6 — foundry:solution-architect (optional, for changes touching public API boundaries)**: Target touches `__init__.py` exports, adds/modifies Protocols or ABCs, changes module structure, or introduces new public classes → evaluate API design quality, coupling impact, backward compatibility. Skip for internal implementation changes.
 
-**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR_LITERAL/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR_LITERAL/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
+**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
 
 **Challenger severity propagation**: when consolidator (Step 5) reads `challenger.md`, map challenger severity labels to review severity labels before merging — CRITICAL → `critical`, HIGH → `high`, MEDIUM → `medium`, LOW → `low`. Do not drop severity; if challenger uses non-standard labels (e.g. "blocker", "concern"), apply the mapping: blockers → `high`, concerns → `medium`.
 
@@ -425,7 +431,7 @@ Extract branch and date before constructing output path: `BRANCH=$(git branch --
 Spawn **foundry:sw-engineer** consolidator:
 
 <!-- loads: consolidator-prompt.md -->
-Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Summary: read all finding files in `$RUN_DIR_LITERAL/` (pre-expanded), apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$RUN_DIR_LITERAL`, `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
+Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Prepend the [run-dir preamble (canonical)](#run-dir-preamble-canonical) so the consolidator self-resolves `$RUN_DIR`. Summary: read all finding files in `$RUN_DIR/`, apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical); leave `$RUN_DIR` literal (agent self-resolves). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
 
 Main context receives only one-liner verdict.
 

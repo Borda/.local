@@ -102,7 +102,7 @@ if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFF
     exit 1
 fi
 
-# Inlined from _shared/preflight-helpers.md — fresh shell per Bash() call; sourced functions unavailable in subsequent blocks
+# Inlined from _shared/preflight-helpers.md — fresh shell per Bash() call; sourced functions unavailable
 preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
 preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
 
@@ -128,7 +128,7 @@ else
     preflight_ok git || preflight_pass git
 fi
 
-# node — Check 10 (RTK prefix parsing) and upgrade hook syntax check depend on it
+# node — Check 10 (RTK prefix parsing) + upgrade hook syntax check depend on it
 if preflight_ok node; then
     NODE_AVAILABLE=true
 elif command -v node &>/dev/null; then # timeout: 5000
@@ -141,8 +141,8 @@ fi
 
 AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" )) || { printf "! BREAKING: audit/templates not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
 
-# Persist LOCAL_MODE and AUDIT_TPL for subsequent Bash blocks (fresh-shell state loss).
-# Re-derive at start of each Step that uses them — see ADV-M1 protocol below.
+# Persist LOCAL_MODE + AUDIT_TPL — fresh-shell state loss
+# Re-derive at each Step start — see ADV-M1
 mkdir -p "${TMPDIR:-/tmp}/audit-state"
 echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/audit-state/local-mode"
 echo "$AUDIT_TPL"  > "${TMPDIR:-/tmp}/audit-state/audit-tpl"

@@ -43,7 +43,7 @@ trap 'rm -f "$SENTINEL"' EXIT INT TERM
 ```
 
 ```bash
-# IMPL_AGENT defaults to codex:codex-rescue; falls back per table above when CODEX_AVAILABLE=false
+# IMPL_AGENT: codex:codex-rescue default; falls back per table above when CODEX_AVAILABLE=false
 Agent(subagent_type="${IMPL_AGENT:-codex:codex-rescue}", prompt="Apply this review comment to the codebase. If the change is already present, or the comment has no actionable code change, make no changes and briefly explain why. Comment: $ARGUMENTS")
 ```
 
@@ -54,7 +54,7 @@ Record initial dispatch outcome (code changed or no change + reason).
 **Skip entirely when `CODEX_AVAILABLE=false`** — review loop is Codex-specific. Set `CODEX_REVIEW_FINDINGS=""` and continue to Step 12c.
 
 ```bash
-git diff HEAD --stat # timeout: 3000 — confirm there are changes to review
+git diff HEAD --stat  # timeout: 3000
 ```
 
 No changes: skip loop; set `CODEX_REVIEW_FINDINGS=""`.

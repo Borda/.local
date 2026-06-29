@@ -43,10 +43,9 @@ Parse flags into actual shell variables (not prose) so downstream blocks see cor
 # timeout: 5000
 PLAN_NS="${TMPDIR:-/tmp}/dev-plan-$$"
 mkdir -p "$PLAN_NS"
-echo "$PLAN_NS" > "${TMPDIR:-/tmp}/dev-plan-ns-current"  # downstream blocks recover namespace
+echo "$PLAN_NS" > "${TMPDIR:-/tmp}/dev-plan-ns-current"  # downstream blocks read back namespace
 python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" --skill plan --write-files "$ARGUMENTS"
-# Values written to ${TMPDIR:-/tmp}/dev-plan-<flag> (and legacy paths — see SKILL_SPECS["plan"])
-# Copy to namespaced paths for this invocation
+# values written to ${TMPDIR:-/tmp}/dev-plan-<flag> (legacy paths: see SKILL_SPECS["plan"])
 cp "${TMPDIR:-/tmp}/dev-challenge-enabled"  "$PLAN_NS/challenge-enabled" 2>/dev/null || echo "true"  > "$PLAN_NS/challenge-enabled"
 cp "${TMPDIR:-/tmp}/dev-codemap-raw"        "$PLAN_NS/codemap-raw"       2>/dev/null || echo "auto"  > "$PLAN_NS/codemap-raw"
 cp "${TMPDIR:-/tmp}/dev-semble-enabled"     "$PLAN_NS/semble-enabled"    2>/dev/null || echo "false" > "$PLAN_NS/semble-enabled"
@@ -97,14 +96,14 @@ Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent
   - **WARNING**: debug classification triggers `/develop:debug` which can re-invoke `/develop:plan` — caller tracks dispatch depth to prevent infinite loop via a shared checkpoint file (not a CLI flag — `/develop:debug` does not accept `--max-depth`). Max depth = `$MAX_DEPTH` (default 3, CLAUDE.md safety break). Before invoking `/develop:debug`, execute the depth-checkpoint bash block below:
 
 ```bash
-# Depth-checkpoint anti-loop guard  # timeout: 3000
+# anti-loop guard  # timeout: 3000
 PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
 MAX_DEPTH=$(cat "$PLAN_NS/max-depth" 2>/dev/null || echo 3)
 DEPTH_FILE="${TMPDIR:-/tmp}/dev-plan-depth-checkpoint"
 CURRENT_DEPTH=$(cat "$DEPTH_FILE" 2>/dev/null || echo "$MAX_DEPTH")
 if [ "$CURRENT_DEPTH" -le 0 ]; then
     echo "! depth limit ($MAX_DEPTH) reached — stopping plan→debug→plan loop"
-    # Do NOT invoke /develop:debug; proceed to AskUserQuestion below
+    # don't invoke /develop:debug — proceed to AskUserQuestion below
 else
     NEXT_DEPTH=$(( CURRENT_DEPTH - 1 ))
     echo "$NEXT_DEPTH" > "$DEPTH_FILE"
@@ -131,7 +130,7 @@ Breaking change criteria — a change is breaking when it affects **public API**
 Derive filename slug from goal: first 4-5 meaningful words, lowercase, hyphen-separated (e.g. `"improve caching in data loader"` -> `plan_improve-caching-data-loader.md`). If `.plans/active/<slug>` already exists, append counter suffix (`-2`, `-3`, etc.) before writing — never silently overwrite. Store full path as `PLAN_FILE` — used in Steps 3 and Final output.
 
 ```bash
-# Persist PLAN_FILE for cross-block access (bash state lost between Bash() calls)  # timeout: 3000
+# persist — bash state lost between Bash() calls  # timeout: 3000
 PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
 echo "$PLAN_FILE" > "$PLAN_NS/plan-file"
 ```
@@ -238,7 +237,7 @@ Do not escalate: items resolvable from codebase, items that are risks (not block
 **Skip if `CHALLENGE_ENABLED=false`.**
 
 ```bash
-# Re-hydrate PLAN_FILE from persisted temp file (bash state lost between Bash() calls)  # timeout: 3000
+# re-hydrate PLAN_FILE — bash state lost between Bash() calls  # timeout: 3000
 PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
 PLAN_FILE=$(cat "$PLAN_NS/plan-file" 2>/dev/null)
 [ -f "$PLAN_FILE" ] || { echo "plan: PLAN_FILE not found: $PLAN_FILE" >&2; exit 1; }

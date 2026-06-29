@@ -226,15 +226,14 @@ Codemap pre-flight — run if `scan-query` available + index exists; skip Grep/R
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    scan-query central --top 5 2>/dev/null  # blast-radius baseline — always run
+    scan-query central --top 5 2>/dev/null  # blast-radius baseline; always run
     if [ -n "$TARGET_MODULE" ]; then
-        # targeted invocation (caller pre-set TARGET_MODULE)
         scan-query rdeps "$TARGET_MODULE" 2>/dev/null
         [ -n "$TARGET_FN" ] && scan-query fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
         [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
         [ -n "$TARGET_FN" ] && scan-query symbol "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
-        # review/worktree context — derive changed modules from diff; skip grep-based caller walk
+        # review/worktree — skip grep-based caller walk
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
             scan-query rdeps "$_MOD" 2>/dev/null

@@ -6,7 +6,7 @@
 ## Step 5: Conflict detection
 
 ```bash
-# Detect in-progress merge via MERGE_HEAD sentinel — git status --porcelain does not expose this reliably
+# MERGE_HEAD sentinel — git status --porcelain does not expose in-progress merge reliably
 MERGE_HEAD_FILE="$(git rev-parse --git-dir)/MERGE_HEAD" # timeout: 3000
 test -f "$MERGE_HEAD_FILE" && echo "MERGING" || echo "clean"
 ```
@@ -18,12 +18,11 @@ test -f "$MERGE_HEAD_FILE" && echo "MERGING" || echo "clean"
 Pull latest state for both branches before merging:
 
 ```bash
-# 1. Update source branch (PR / HEAD_REF) — ff-only; non-ff = contributor force-pushed, use local
+# 1. update source branch (ff-only; non-ff = force-pushed, use local)
 git pull "${FORK_REMOTE:-origin}" "$HEAD_REF" --ff-only 2>/dev/null \
     || echo "⚠ PR branch not fast-forwardable — proceeding with local state"  # timeout: 6000
-# 2. Update target branch (BASE_REF) from origin
 git fetch origin "$BASE_REF" || { echo "⛔ fetch origin/$BASE_REF failed — cannot guarantee base is current; check network/auth and retry"; exit 1; }  # timeout: 6000
-# 3. Attempt merge — no-commit so we can inspect conflicts before finalizing
+# 3. merge — no-commit to inspect conflicts before finalizing
 git merge "origin/$BASE_REF" --no-commit --no-ff # timeout: 6000
 ```
 
@@ -148,12 +147,11 @@ Parse JSON from sw-engineer. Check `resolved == staged` — mismatch = file reso
 Verify no conflict markers remain and all resolved files staged:
 
 ```bash
-# Unmerged files still outstanding?
 STILL_CONFLICTED=$(git diff --name-only --diff-filter=U 2>/dev/null)
 [ -z "$STILL_CONFLICTED" ] || { echo "⛔ Unmerged files remain — resolve before continuing: $STILL_CONFLICTED"; exit 1; }  # timeout: 3000
-# Residual <<<<<<< / >>>>>>> markers in staged content? (--cached = index, not worktree)
+# residual conflict markers in staged content? (--cached = index, not worktree)
 git diff --cached --check 2>&1 | grep -qE 'conflict marker' && { echo "⛔ Conflict markers still present in staged files — re-inspect and re-stage"; exit 1; } || true  # timeout: 3000
-# Stage only the files that were conflicted — avoid pulling in unrelated tracked changes
+# only conflicted files — avoid pulling in unrelated tracked changes
 RESOLVED_FILES=$(git diff --cached --name-only 2>/dev/null)
 [ -n "$RESOLVED_FILES" ] || { echo "⛔ No staged files found — sw-engineer may not have staged resolutions"; exit 1; }
 ```

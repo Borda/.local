@@ -35,7 +35,7 @@ Parse `GH_OWNER`, `GH_REPO`, `DATA_FILE` from prompt key=value pairs. Compute ti
 ```bash
 ANALYSIS_NOW=$(TZ=UTC date +%s)  # timeout: 5000
 TODAY=$(TZ=UTC date +%Y-%m-%d)   # timeout: 5000
-# Compute cutoff dates using date (cross-platform: macOS BSD and GNU/Linux)
+# cross-platform: macOS BSD and GNU/Linux
 if date -v-1d +%Y-%m-%d 2>/dev/null | grep -q '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$'; then
     # macOS BSD date (-v relative offset) — verify output shape, not just exit code
     CUTOFF_30D=$(date -u -v-30d +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
@@ -43,33 +43,29 @@ if date -v-1d +%Y-%m-%d 2>/dev/null | grep -q '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-
     CUTOFF_180D=$(date -u -v-180d +%Y-%m-%dT%H:%M:%SZ)  # timeout: 5000
     CUTOFF_3Y=$(date -u -v-1095d +%Y-%m-%d)              # timeout: 5000
 else
-    # GNU date (-d relative offset)
     CUTOFF_30D=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
     CUTOFF_90D=$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)    # timeout: 5000
     CUTOFF_180D=$(date -u -d '180 days ago' +%Y-%m-%dT%H:%M:%SZ)  # timeout: 5000
     CUTOFF_3Y=$(date -u -d '1095 days ago' +%Y-%m-%d)             # timeout: 5000
 fi
 
-# Auth preflight — fail fast before any API calls
+# auth preflight — fail fast before any API calls
 gh auth status 2>/dev/null || { echo "[gh-scraper] ERROR: not authenticated — run gh auth login"; exit 1; }  # timeout: 6000
 
-# Rate-limit preflight — warn if too few calls remain for a full scrape (~80 API calls needed)
+# rate-limit preflight — warn if <80 calls remain (~80 needed for full scrape)
 RATE_REMAINING=$(gh api rate_limit --jq '.resources.core.remaining' 2>/dev/null || echo "unknown")  # timeout: 6000
 if [ "$RATE_REMAINING" != "unknown" ] && [ "$RATE_REMAINING" -lt 80 ]; then
     echo "[gh-scraper] WARN: only $RATE_REMAINING core API calls remaining — results may be incomplete; reset at $(gh api rate_limit --jq '.resources.core.reset' 2>/dev/null | xargs -I{} date -r {} 2>/dev/null || echo 'unknown time')"  # timeout: 6000
 fi
 
-# DATA_FILE path is set by the caller (oss:analyse vitality mode) inside its
-# per-run REPORT_DIR — keep it as-is so vitality.md reads the same file gh-scraper
-# wrote. Do NOT inject a PID suffix here — that breaks the handoff (vitality.md
-# would read the original non-PID path while we wrote to a PID-suffixed one).
+# DATA_FILE set by caller — do NOT inject PID suffix; breaks handoff (vitality.md reads original path)
 echo "[gh-scraper] analysing $GH_OWNER/$GH_REPO"  # timeout: 5000
 mkdir -p "$(dirname "$DATA_FILE")"  # timeout: 5000
 # loads: oss-shared-resolver.md
-# shared pattern — see plugins/oss/skills/_shared/oss-shared-resolver.md (intentional boilerplate; also used in repo-warden.md, shepherd.md)
+# intentional boilerplate; also in repo-warden.md, shepherd.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
-# Persist time anchors and input vars across Bash calls (Check 41: fresh shell per call)
+# persist across Bash calls (Check 41: fresh shell per call)
 printf "%s" "$CUTOFF_3Y"   > "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y"
 printf "%s" "$CUTOFF_30D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-30d"
 printf "%s" "$CUTOFF_90D"  > "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d"
@@ -82,7 +78,7 @@ Run all calls simultaneously — independent. Extracted to `bin/fetch_gh_data_gr
 
 ```bash
 GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000
-# Reload time anchors (Check 41: fresh shell loses Step 1 vars)
+# reload (Check 41: fresh shell loses Step 1 vars)
 CUTOFF_3Y=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-3y" 2>/dev/null)
 CUTOFF_90D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-90d" 2>/dev/null)
 CUTOFF_180D=$(cat "${TMPDIR:-/tmp}/gh-scraper-cutoff-180d" 2>/dev/null)
@@ -104,7 +100,7 @@ Read Group 1 outputs before the bash block:
 
 ```bash
 GROUP1_DIR="$(dirname "$DATA_FILE")/group1"  # timeout: 5000  # redeclare: separate bash block, prior block's vars not in scope
-# ROOT_FILES: JSON array of filenames in repo root, written by fetch_gh_data_group1.py to $GROUP1_DIR/root_contents.json
+# JSON array of root filenames; written by fetch_gh_data_group1.py
 ROOT_FILES=$(cat "${GROUP1_DIR}/root_contents.json" 2>/dev/null || echo "[]")  # timeout: 5000
 DEFAULT_BRANCH=$(jq -r '.[]|select(.name=="default_branch")|.data' "${GROUP1_DIR}/repo_meta.json" 2>/dev/null || echo "main")  # timeout: 5000
 ```
@@ -131,7 +127,7 @@ Rules:
 ## Step 5 — Return Envelope
 
 ```bash
-DATASET_COUNT=$(grep -c '' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000  # grep -c counts lines including files without trailing newline
+DATASET_COUNT=$(grep -c '' "$DATA_FILE" 2>/dev/null || echo 0)  # timeout: 5000  # grep -c counts lines incl. files with no trailing newline
 PARTIAL_COUNT=$(jq -c 'select(.partial == true)' "$DATA_FILE" 2>/dev/null | wc -l || echo 0)  # timeout: 5000
 if [ "$PARTIAL_COUNT" -eq 0 ]; then CONFIDENCE=0.95
 elif [ "$PARTIAL_COUNT" -le 2 ]; then CONFIDENCE=0.88

@@ -49,11 +49,10 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 ```bash
 # loads: oss-shared-resolver.md
 # loads: review-section-taxonomy.md
-# Cold-start fallback (sets $_OSS_SHARED — run this first):
+# cold-start fallback (sets $_OSS_SHARED) — run first:
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
-# $_OSS_SHARED is required by --reply mode (Step 8 reads shepherd-reply-protocol.md). For non-reply
-# flows the helpers are nice-to-have but not load-bearing — degrade gracefully instead of exiting.
+# --reply requires $_OSS_SHARED (Step 8 reads shepherd-reply-protocol.md); non-reply flows degrade gracefully
 if [ ! -d "$_OSS_SHARED" ]; then
     if [[ "$ARGUMENTS" == *--reply* ]]; then
         echo "⛔ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — --reply requires oss plugin shared dir; verify oss plugin installed"
@@ -91,7 +90,6 @@ Parse `$ARGUMENTS` flags (applied directly — no subprocess):
 `CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed, leading whitespace stripped, leading `#` stripped.
 
 ```bash
-# Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)
 # loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
 _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/detect_codemap.py"
 [ "$CODEMAP_FORCE_OFF" = "true" ] && _DETECT_FLAGS="--force-off" || _DETECT_FLAGS=""
@@ -100,7 +98,6 @@ python "$_DETECT_CODEMAP" --prefix review $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && { echo "! BLOCKED — codemap strict mode requested but codemap not installed or index missing"; exit 1; }
 CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/review-codemap-enabled" 2>/dev/null || echo "false")
 CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/review-codemap-currency" 2>/dev/null || echo "off")
-# codemap: integrated-via-shared
 ```
 
 **Codemap gates** — when `CODEMAP_FORCE_OFF=false`, read `$_OSS_SHARED/codemap-gates.md` and run: **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, after `codemap:scan-codebase` set `CODEMAP_ENABLED=true`. Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
@@ -112,12 +109,12 @@ If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at f
 ```bash
 DIRECT_PATH_MODE=false
 if [[ "$CLEAN_ARGS" == *.md ]]; then
-    # Guard: reject plan files — shepherd must not draft replies from plan content
+    # reject plan files — shepherd must not draft replies from plan content
     if [[ "$CLEAN_ARGS" == .plans/* ]] || [[ "$CLEAN_ARGS" == *todo_*.md ]]; then
         echo "Error: plan files cannot be used as review report input. Pass a review report from .reports/review/<timestamp>/review-report.md or a PR number."
         exit 1
     fi
-    # Validate file looks like a review report — required markers: ## Summary, verdict:, or APPROVED|NEEDS_WORK|REQUEST_CHANGES in header region.
+    # required markers: ## Summary, verdict:, or APPROVED|NEEDS_WORK|REQUEST_CHANGES
     if [ -f "$CLEAN_ARGS" ] && grep -qE '(^## Summary|^verdict:|APPROVED|NEEDS_WORK|REQUEST_CHANGES)' "$CLEAN_ARGS" 2>/dev/null; then  # timeout: 5000
         DIRECT_PATH_MODE=true
         REVIEW_FILE="$CLEAN_ARGS"
@@ -143,8 +140,8 @@ if [ "$DIRECT_PATH_MODE" = "false" ]; then
     fi
     # Run all four in parallel:
     CHANGED_FILES=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # cache for reuse in codemap block # timeout: 6000
-    gh pr view $CLEAN_ARGS                                            # PR description and metadata       # timeout: 6000
-    gh pr checks $CLEAN_ARGS                                          # CI status                        # timeout: 15000
+    gh pr view $CLEAN_ARGS                                            # timeout: 6000
+    gh pr checks $CLEAN_ARGS                                          # timeout: 15000
     gh pr view $CLEAN_ARGS --json reviews,labels,milestone            # timeout: 6000
 fi
 ```
@@ -174,22 +171,21 @@ Before spawning agents (Python mode only — all three mode flags false), classi
 H6 — assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) can branch on it without comparing to an undefined value:
 
 ```bash
-# Count Python files + total Python LOC delta for the classification heuristic
+# for classification heuristic
 PY_FILE_COUNT=$(echo "$PY_FILES" | grep -c . 2>/dev/null || echo 0)
-# PY_LOC_DELTA = total churn (added + deleted lines), NOT net delta.
-# Pure rename refactors produce PY_LOC_DELTA>0 even when net change is 0; label/keyword override above is the intended mitigation.
+# PY_LOC_DELTA = total churn, NOT net delta — pure renames produce >0 even with net 0; label/keyword override handles this
 PY_LOC_DELTA=$(gh pr diff $CLEAN_ARGS 2>/dev/null | grep -E '^[+-][^+-]' | grep -vE '^[+-]{3}' | wc -l | tr -d ' ')  # timeout: 6000
 
-# Detect new public API surface: added lines in src/**/__init__.py
+# new public API surface: added lines in src/**/__init__.py
 NEW_API_LINES=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep -c '^+[^+]' || echo 0)  # timeout: 6000
 
-# Detect pure config/deps changes (no .py logic changes)
+# pure config/deps changes (no .py logic changes)
 NON_CONFIG_PY=$(echo "$PY_FILES" | grep -vE '(pyproject\.toml|setup\.cfg|setup\.py|requirements.*\.txt|conftest\.py)' || true)
 
 SCOPE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/classify_pr_scope.py" --py-files "$PY_FILE_COUNT" --loc-delta "$PY_LOC_DELTA" --new-api-lines "$NEW_API_LINES" --labels "$PR_LABELS" --title "$PR_TITLE" 2>/dev/null)  # timeout: 10000
 echo "→ SCOPE=$SCOPE (py_files=$PY_FILE_COUNT, py_loc=$PY_LOC_DELTA, new_api=$NEW_API_LINES)"
 
-# Persist SCOPE and CHORE_DEPS flags — Step 2 EXPECTED_FILE construction is in a separate bash block.
+# persist — Step 2 EXPECTED_FILE is in a separate bash block
 echo "$CHANGED_FILES" | grep -qE '(^|/)(requirements.*\.txt|pyproject\.toml|package.*\.json|Pipfile|poetry\.lock|setup\.cfg|.*\.lock)$' && CHORE_DEPS=true || CHORE_DEPS=false
 _REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${CLEAN_ARGS}"
 {
@@ -239,6 +235,8 @@ Set up run directory (shared by all agents) and resolve skill paths:
 TIMESTAMP=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".temp/review/$TIMESTAMP"
 mkdir -p "$RUN_DIR" # timeout: 5000
+# persisted so agents resolve via cat; hand-typing caused leading-dot drops → stray temp/review/ dirs
+echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir"
 REPORT_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR" # timeout: 5000
 ```
@@ -247,7 +245,7 @@ mkdir -p "$REPORT_DIR" # timeout: 5000
 
 **File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn and continue without it.
 
-**IMPORTANT**: Replace `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` with actual literal computed values in every Agent spawn prompt. Do NOT pass as shell variables — agents receive text, not shell context.
+**IMPORTANT**: Replace `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` with actual literal computed values in every Agent spawn prompt. Do NOT pass as shell variables — agents receive text, not shell context. **Exception — `$RUN_DIR`**: never hand-substitute it; agents self-resolve via `cat "${TMPDIR:-/tmp}/oss-review-run-dir"` per the run-dir preamble in `agent-prompts.md` (eliminates leading-dot transcription slips).
 
 Check Codex availability:
 
@@ -256,7 +254,7 @@ claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE
 ```
 
 <!-- loads: agent-prompts.md -->
-Read `$REVIEW_SKILL_DIR/templates/agent-prompts.md`. Substitute `<RUN_DIR>` → `$RUN_DIR`, `<REVIEW_SKILL_DIR>` → `$REVIEW_SKILL_DIR` before using content in spawn prompts. All placeholders (`<RUN_DIR>`, `<REVIEW_SKILL_DIR>`) must be expanded to literal values — agents receive text, not shell variables.
+Read `$REVIEW_SKILL_DIR/templates/agent-prompts.md`. Substitute `<REVIEW_SKILL_DIR>` → `$REVIEW_SKILL_DIR` before using content in spawn prompts. Leave `$RUN_DIR` literal in the prompt text — agents resolve it themselves via the run-dir preamble (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`); the orchestrator must NOT retype the run-dir path.
 
 **Codemap context propagation**: rehydrate `codemap_available` from Step 1 persist file, copy staged context into `$RUN_DIR/codemap-context.md`, substitute into every dimension-agent spawn prompt per the rules in the Structural-context block above. Block omitted when `codemap_available=false`.
 
@@ -274,7 +272,7 @@ fi
 ```bash
 REVIEW_CHECKPOINT="${TMPDIR:-/tmp}/review-check-$(date +%s)"
 touch "$REVIEW_CHECKPOINT"
-# Persist checkpoint path — the poll block (separate bash invocation) reads it back.
+# poll block (separate bash invocation) reads it back
 echo "$REVIEW_CHECKPOINT" > "${TMPDIR:-/tmp}/oss-review-checkpoint"
 ```
 
@@ -285,7 +283,7 @@ Poll for expected output files per `$MONITOR_INTERVAL` / `$HARD_CUTOFF` until al
 Write expected paths to file (Bash arrays don't persist across tool invocations):
 
 ```bash
-# Restore mode flags + SCOPE persisted in Step 1 (each SKILL.md bash block runs in a fresh shell).
+# restore — each SKILL.md bash block runs in fresh shell
 _PR_TAG=$(cat "${TMPDIR:-/tmp}/oss-review-pr-tag" 2>/dev/null || echo "unknown")
 _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${_PR_TAG}"
 _REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${_PR_TAG}"
@@ -338,16 +336,13 @@ PR_BASE=$(git merge-base HEAD "origin/${TRUNK:-main}" 2>/dev/null || echo "origi
 > **Scope disclosure**: check searches public GitHub code globally. Results may include unrelated projects using same symbol names — treat as signal, not proof. Rate-limited responses (HTTP 429, empty results) may indicate limitation, not absence of usage.
 
 ```bash
-# Check if changed APIs are used by downstream projects
-# Rate-limit guard: if gh api returns HTTP 429, wait 10 seconds and retry once.
-# If still rate-limited, log "rate-limited — downstream search may be incomplete" and continue.
+# rate-limit guard: on HTTP 429, retry once after 10s; if still limited, log and continue
 CHANGED_EXPORTS=$(gh pr diff $CLEAN_ARGS -- ':(glob)src/**/__init__.py' 2>/dev/null | grep "^[-+]" | grep -v "^[-+][-+]" | grep -oP '\w+' | sort -u) # timeout: 6000
 for export in $CHANGED_EXPORTS; do
     echo "=== $export ==="
     gh api "search/code" --field "q=$export language:python" --jq '.items[:5] | .[].repository.full_name' 2>/dev/null # timeout: 30000
 done
 
-# Check if deprecated APIs have migration guides
 gh pr diff $CLEAN_ARGS 2>/dev/null | grep -A2 "deprecated" # timeout: 6000
 ```
 
@@ -383,7 +378,7 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 Spawn **foundry:sw-engineer** consolidator agent with prompt:
 
 <!-- loads: consolidator-prompt.md -->
-Read `$REVIEW_SKILL_DIR/templates/consolidator-prompt.md`. Substitute `<RUN_DIR>`, `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values. Spawn: `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted consolidator-prompt.md content>)`
+Read `$REVIEW_SKILL_DIR/templates/consolidator-prompt.md`. Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values; leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted consolidator-prompt.md content>)`
 
 Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded:
 Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.`
@@ -417,8 +412,7 @@ Check `oss:resolve` availability:
 
 ```bash
 RESOLVE_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss resolve 2>/dev/null || echo "false")  # timeout: 5000
-# check_agent.py checks ~/.claude/plugins/cache/borda-ai-rig/oss/*/agents/resolve.md and .claude/agents/resolve.md
-# Note: resolve is a skill not an agent — check_agent.py returns false for skills; check skill path directly:
+# resolve is a skill — check_agent.py checks agent paths only, returns false; check skill path directly:
 if [ "$RESOLVE_AVAILABLE" = "false" ]; then
     ls "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/resolve/SKILL.md" >/dev/null 2>&1 && RESOLVE_AVAILABLE=true || RESOLVE_AVAILABLE=false
 fi
@@ -468,7 +462,7 @@ Spawn with:
 **Part 2 compliance gate** (after shepherd returns — do NOT trust the return line alone):
 
 ```bash
-# fires only when review findings reference file:line — true LGTM has no such findings
+# only when findings reference file:line — true LGTM has none
 REPLY_OUT=".temp/output-reply-<PR#>-$(date -u +%Y-%m-%d).md"  # timeout: 5000
 grep -qE '^\| *Importance *\| *Confidence *\| *File *\| *Line' "$REPLY_OUT" && echo "PART2_PRESENT=true" || echo "PART2_PRESENT=false"
 ```

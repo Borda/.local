@@ -9,7 +9,7 @@ Thresholds: agents > 300 lines (~4 k tokens) · skill SKILL.md > 600 lines (~8 k
 > **Line count = human-readable proxy; token count = true measure.** Thresholds guide human review — not actual context budget. Short sentences + short lines preferred: easier to read AND cheaper per logical unit. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines not a fix.
 
 ```bash
-# Token estimate: wc -c (bytes) / 4 — rough but consistent proxy (1 token ≈ 4 bytes in English markdown)
+# bytes / 4 ≈ tokens (1 token ≈ 4 bytes in English markdown)
 printf "%-52s %8s %8s\n" "FILE" "~TOKENS" "LINES"
 for f in .claude/agents/*.md; do # timeout: 5000
     [ -f "$f" ] || continue
@@ -180,11 +180,10 @@ Plugin skill and agent files must not contain bare `plugins/<name>/` paths as pr
 
 ```bash
 printf "=== Check C32: Hardcoded source-tree paths ===\n"
-# C32 inherently scans plugin source tree — only meaningful in LOCAL mode
+# C32 inherently scans plugin source tree — LOCAL mode only
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓ [Check C32/shared] Skipped in non-local mode (no plugin source tree)\n"
 else
-    # Find bare plugins/ primary paths — not inside comments, not inside fallback guards
     grep -rn ' plugins/[a-z]' plugins/*/skills/*/SKILL.md plugins/*/agents/*.md 2>/dev/null |
       grep -v '^Binary' |
       grep -v '^\s*#' |
@@ -325,7 +324,6 @@ Per agent or skill file, extract lines with emoji and annotated concept label. G
 printf "=== Check 26a: Emoji/symbol consistency ===\n"
 for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
     [ -f "$f" ] || continue
-    # Print filename + any line containing common status emoji (skip code fences)
     awk '/^```/{skip=!skip} !skip && /[🔴🟡🟢🔵⛔✅❌⚠️💭▶️🔗🔹🔸🚫]/{print FILENAME": "NR": "$0}' "$f" 2>/dev/null
 done
 ````
@@ -342,7 +340,6 @@ Directive references to other skills (e.g., "run → /audit") must use `/name` f
 printf "=== Check 26b: Slash command notation ===\n"
 for f in .claude/agents/*.md .claude/skills/*/SKILL.md; do # timeout: 5000
     [ -f "$f" ] || continue
-    # Collect directive-looking references in both forms
     grep -n '→ `/\?[a-z][a-z:-]*`\|run `/\?[a-z][a-z:-]*`\|suggest.*`/\?[a-z][a-z:-]*`' "$f" 2>/dev/null
 done
 ```
@@ -436,10 +433,9 @@ printf "=== Check 44: Sub-check naming symmetry ===\n"
 found=0
 for f in "${MD_FILES[@]}"; do  # timeout: 5000
     [ -f "$f" ] || continue
-    # skip CLAUDE.md files — authoring-rules docs that cross-reference check numbers, not define sub-checks
+    # skip CLAUDE.md — cross-references check numbers, not defining sub-checks
     [ "$(basename "$f")" = "CLAUDE.md" ] && continue
-    # grep -o extracts matches only (no filename prefix); sort -u dedupes per file
-    # -w: whole-word match on BSD grep (macOS); \b unsupported in ERE mode on macOS grep
+    # -w: BSD grep whole-word (macOS — \b unsupported in ERE)
     while IFS= read -r entry; do
         num=$(printf '%s' "$entry" | grep -oE '[0-9]+')
         letter=$(printf '%s' "$entry" | grep -oE '[a-z]$')

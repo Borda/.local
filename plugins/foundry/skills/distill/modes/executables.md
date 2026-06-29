@@ -11,9 +11,8 @@ _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py"
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make_run_dir.py" .reports/distill 2>/dev/null || echo ".reports/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)")  # timeout: 5000
 mkdir -p "$RUN_DIR"  # timeout: 5000
 
-# Optional path override: /distill executables <run-dir-or-report-path>
 EXEC_ARGS="${ARGUMENTS#executables}"
-EXEC_ARGS="${EXEC_ARGS# }"  # strip leading space
+EXEC_ARGS="${EXEC_ARGS# }"
 if [ -n "$EXEC_ARGS" ]; then
   if [ -d "$EXEC_ARGS" ]; then
     mapfile -t CHECK33_FILES < <(ls "$EXEC_ARGS"/efficiency-check33-*.md 2>/dev/null)
@@ -24,7 +23,6 @@ if [ -n "$EXEC_ARGS" ]; then
     exit 1
   fi
 else
-  # Auto-detect: latest run dir that contains check33 files
   LATEST_RUN=$(find .reports/audit -maxdepth 1 -type d -name "20*" 2>/dev/null \
     | sort -r \
     | while IFS= read -r d; do
@@ -43,7 +41,6 @@ Determine LOCAL_MODE-aware scan path and extract code blocks:
 
 ```bash
 [ -d "plugins/" ] && _SCAN_DIR="plugins/" || _SCAN_DIR=".claude/"  # timeout: 3000
-# Structured extraction: produce JSONL for each plugin dir, pass to curator
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/extract_code_blocks.py" "$_SCAN_DIR" --min-tokens 5 > "$RUN_DIR/blocks.jsonl"  # timeout: 30000
 ```
 

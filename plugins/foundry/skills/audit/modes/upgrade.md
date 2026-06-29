@@ -48,9 +48,7 @@ Mark "Apply config proposals" in_progress. Each **config** proposal, in sequence
 1. Apply change (Edit/Write tool)
 2. Correctness check:
    ```bash
-   # settings.json — JSON validity
    jq empty .claude/settings.json && echo "✓ valid JSON" || echo "✗ invalid JSON" # timeout: 5000
-   # JS hook files — syntax check
    node --check .claude/hooks/*.js 2>&1 | grep -v '^$' || true # timeout: 5000
    ```
 3. Accept (✓) if check passes; revert + mark rejected (✗) with reason if fails

@@ -5,7 +5,7 @@
 `context:fork + disable-model-invocation:true` is broken combination.
 
 ```bash
-# LOCAL_MODE-aware path globs (defined once, reused across all checks in this file)
+# LOCAL_MODE-aware globs — reused across checks in this file
 [ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
 [ "$LOCAL_MODE" = "true" ] && _SKILL_DIR_GLOB="plugins/*/skills/*/" || _SKILL_DIR_GLOB=".claude/skills/*/"
 [ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
@@ -117,8 +117,7 @@ Rules:
 
 ```bash
 printf "=== Check 23b: # timeout: comment without shell enforcement ===\n"
-# Bash call sites: # timeout: N without timeout S shell prefix
-# Exempt: python invocations (timeout enforced by --timeout default inside script)
+# Exempt: python — timeout enforced by --timeout default inside script
 # (colon in timeout: distinguishes comment from command)
 grep -rn '# timeout: [0-9]' $_SKILL_GLOB $_AGENT_GLOB $_RULE_GLOB 2>/dev/null |
   grep -v '^Binary' |
@@ -127,7 +126,6 @@ grep -rn '# timeout: [0-9]' $_SKILL_GLOB $_AGENT_GLOB $_RULE_GLOB 2>/dev/null |
   grep -v 'python ' &&
 printf "  hint: prepend 'timeout S' (S = ms ÷ 1000) — e.g. 'timeout 5 \$(command 2>/dev/null || echo fallback)'\n" || true
 
-# Python bin/ scripts: subprocess without timeout= (hard enforcement missing even with --timeout default)
 [ "$LOCAL_MODE" = "true" ] && _BIN_PY_GLOB="plugins/*/bin/*.py" || _BIN_PY_GLOB=".claude/bin/*.py"
 printf "=== Check 23b: Python subprocess missing timeout= ===\n"
 grep -rn 'subprocess\.\(check_output\|run\|call\|Popen\)' $_BIN_PY_GLOB 2>/dev/null |
@@ -135,7 +133,6 @@ grep -rn 'subprocess\.\(check_output\|run\|call\|Popen\)' $_BIN_PY_GLOB 2>/dev/n
   grep -v '^\s*#' &&
 printf "  hint: add timeout=args.timeout to every subprocess call; --timeout default must equal # timeout: N ÷ 1000\n" || true
 
-# Python bin/ scripts: --timeout argparse default missing or zero
 printf "=== Check 23b: Python --timeout default compliance ===\n"
 grep -rln 'subprocess\.' $_BIN_PY_GLOB 2>/dev/null | while read -r f; do
   grep -q 'add_argument.*--timeout' "$f" ||
@@ -163,7 +160,6 @@ Skill uses `eval "$(...)"` or `eval "$(python ...)"` to capture data values from
 ```bash
 # timeout: 10000
 printf "=== Check 23c: eval for data output ===\n"
-# Scan for eval of python script output — exclude known shell-setup patterns
 grep -rn 'eval.*"\$.*python\|eval.*"\$.*bin/' \
     plugins/*/skills/*/SKILL.md .claude/skills/*/SKILL.md 2>/dev/null |
   grep -v 'health_sentinel\|ssh-agent\|direnv\|rbenv\|pyenv\|nvm\|# shell-setup' |
@@ -243,8 +239,7 @@ Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inl
 **Step 1 — Collect cross-plugin shared-file references**:
 
 ```bash
-# Find all Read/include refs to .claude/skills/_shared/ in plugin SKILL.md files  # timeout: 5000
-grep -rn '\.claude/skills/_shared/' plugins/*/skills/ 2>/dev/null | grep -v 'foundry'
+grep -rn '\.claude/skills/_shared/' plugins/*/skills/ 2>/dev/null | grep -v 'foundry'  # timeout: 5000
 ```
 
 For each match: record `(plugin, skill-file, referenced-filename)`.
@@ -276,7 +271,6 @@ ls plugins/*/skills/_shared/ 2>/dev/null  # timeout: 5000
 Plugin-local `_shared/` directories (e.g. `plugins/develop/skills/_shared/`) have **no install-time mount point** — invisible to model at runtime. Any file there that SKILL.md references is unreachable.
 
 ```bash
-# For each plugin-local _shared/ file, check if any SKILL.md in that plugin references it  # timeout: 5000
 for f in plugins/*/skills/_shared/*; do
     plugin=$(echo "$f" | cut -d/ -f2)
     fname=$(basename "$f")
@@ -304,9 +298,7 @@ Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depe
 **Step 1 — Map skills to owning plugin:**
 
 ```bash
-# Map each plugin skill file to its owning plugin  # timeout: 5000
-# Note: cross-plugin dispatch analysis is only meaningful against plugin source tree;
-# in non-LOCAL mode the .claude/skills/ directory has no plugin-prefixed structure to scan.
+# cross-plugin dispatch meaningful only against plugin source tree; .claude/skills/ has no plugin-prefixed structure
 if [ "$LOCAL_MODE" != "true" ]; then
     echo "[Check 28 Step 1] Skipped in non-local mode (no plugin source tree)"
 else
@@ -321,11 +313,10 @@ fi
 **Step 2 — Collect cross-plugin dispatches per skill:**
 
 ```bash
-# Find all subagent_type values across plugin skill files  # timeout: 5000
 if [ "$LOCAL_MODE" != "true" ]; then
     echo "[Check 28 Step 2] Skipped in non-local mode (no plugin source tree)"
 else
-    grep -rn 'subagent_type' plugins/*/skills/*/SKILL.md 2>/dev/null | grep -v '^Binary'
+    grep -rn 'subagent_type' plugins/*/skills/*/SKILL.md 2>/dev/null | grep -v '^Binary'  # timeout: 5000
 fi
 ```
 
@@ -421,11 +412,9 @@ Fix pattern: `cmd 2>&1 | tail -N; EXIT=${PIPESTATUS[0]}`
 
 ```bash
 printf "=== Check 30b: SKIP variable guard ===\n"
-# Find SKIP_X=1 detection lines; check whether subsequent runner commands have a guard
 grep -rn 'SKIP_[A-Z_]*=1' $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v '^Binary' | grep -v '#' | while IFS= read -r match; do
     file=$(echo "$match" | cut -d: -f1)
-    # Check if any guard exists in same file
     grep -q '\[ "\${SKIP_' "$file" 2>/dev/null ||
       printf "⚠ SKIP guard missing: %s — SKIP variable set but no conditional guard found\n" "$file"
 done
@@ -485,7 +474,6 @@ Severity: **high** — heredoc triggers permission prompt; user deny = workflow 
 
 ```bash
 printf "=== Check 30f: Missing exit on confirmed failure ===\n"
-# Find "GENUINE FAILURE" / "all retries failed" / "failed — abort" markers NOT followed by exit within 3 lines
 grep -rn 'GENUINE.FAILURE\|all retries failed\|failed.*abort\|error.*critical\|cannot continue' \
   $_SKILL_DIR_ROOT 2>/dev/null |
   grep -v '^Binary' | grep -v '^\s*#' | while IFS= read -r match; do
@@ -563,12 +551,12 @@ for f in $_SKILL_GLOB; do  # timeout: 5000
     [ -f "$f" ] || continue
     skill=$(basename "$(dirname "$f")")
     fm=$(awk '/^---$/{c++} c==1{print} c==2{exit}' "$f" 2>/dev/null)
-    # effort: — required always; no documented default
+    # effort: required, no default
     echo "$fm" | grep -q '^effort:' || {
         printf "⚠ 31a: %s — missing effort: field (required; no default)\n" "$skill"
         found=1
     }
-    # when_to_use: — deprecated; flag any presence (merge content into description:, then strip)
+    # when_to_use: deprecated — merge into description: then strip
     echo "$fm" | grep -q '^when_to_use:' && {
         printf "⚠ 31a: %s — when_to_use: present (deprecated; merge content into description: then remove)\n" "$skill"
         found=1
@@ -604,12 +592,10 @@ fi  # timeout: 5000
 ```bash
 for f in $BG_SKILLS; do  # timeout: 5000
     skill=$(basename "$(dirname "$f")")
-    # Check for _shared/agent-spawn-protocol.md reference (preferred) OR inline §8 elements
     if grep -q 'agent-spawn-protocol' "$f" 2>/dev/null; then
         printf "✓ C35: %s — references agent-spawn-protocol.md\n" "$skill"
         continue
     fi
-    # Fallback: check for inline §8 elements
     has_sentinel=$(grep -c 'LAUNCH_AT\|touch /tmp/' "$f" 2>/dev/null || echo 0)
     has_poll=$(grep -c 'find.*-newer.*-type f.*wc -l\|MONITOR_INTERVAL' "$f" 2>/dev/null || echo 0)
     has_cutoff=$(grep -c 'HARD_CUTOFF\|timed.out\|15 min\|900' "$f" 2>/dev/null || echo 0)
@@ -753,14 +739,12 @@ printf "=== Check 32e: bin/ script cross-similarity ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then
     printf "✓: Check 32e skipped in non-local mode (no plugin source tree)\n"
 else
-    # collect non-private Python bin/ scripts
     mapfile -t _C32E_SCRIPTS < <(find plugins -path '*/bin/*.py' -not -name '_*.py' 2>/dev/null | sort)  # timeout: 5000
     _C32E_N=${#_C32E_SCRIPTS[@]}
     if [ "$_C32E_N" -lt 2 ]; then
         printf "✓: Check 32e — fewer than 2 bin/ scripts, skip\n"
     else
         printf "⚙ Check 32e — %d bin/ scripts found; delegating similarity analysis to foundry:curator\n" "$_C32E_N"
-        # pass file list to curator (see delegation prompt below)
     fi
 fi
 ```
@@ -788,12 +772,9 @@ else
         [ -d "$modes_dir" ] || continue
         for mode_file in "$modes_dir"/*.md; do
             basename_mode=$(basename "$mode_file")
-            # skip if mode file not referenced from SKILL.md
             grep -qF "$basename_mode" "$skill_md" || continue
-            # count non-blank, non-heading lines in mode file
             mode_lines=$(grep -c -v '^[[:space:]]*$\|^#' "$mode_file" 2>/dev/null || echo 0)
             [ "$mode_lines" -lt 20 ] && continue
-            # count matching non-blank lines in SKILL.md
             overlap=$(grep -Fxf <(grep -v '^[[:space:]]*$\|^#' "$mode_file") "$skill_md" 2>/dev/null | wc -l | tr -d ' ')
             if [ "$overlap" -ge 20 ]; then
                 printf "⚠ 32f [medium] %s — body of %s shadowed inline (%d overlapping lines); delete inline twin\n" \
@@ -850,11 +831,10 @@ Full-spectrum detection of duplicate or near-duplicate fenced code blocks across
 **Phase 1 — Bash quick scan** (known duplication hotspots):
 
 ```bash
-# Scope: all .md files in plugin tree — templates, _shared/, agents, rules, modes included
 if [ "$LOCAL_MODE" = "true" ]; then
     _C33_DIR="plugins/"
 else
-    # Resolve to latest foundry version dir — avoids scanning all cached versions × all plugins
+    # latest foundry version dir — avoids scanning all cached versions × all plugins
     _C33_DIR=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/ 2>/dev/null | head -1)
     _C33_DIR="${_C33_DIR:-.claude/}"
 fi
@@ -863,24 +843,19 @@ printf "=== Check 33b: scope=%s files=%d ===\n" "$_C33_DIR" \
 
 printf "=== Check 33b Phase 1: Cross-file code block quick scan ===\n"
 
-# Known bash cross-file patterns
-# Mode-dispatch: find .../plugins/cache.../audit/modes/<x>.md (bash)
 MODE_DISPATCH=$(grep -rl 'find.*plugins/cache.*-path.*modes/' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 [ "${MODE_DISPATCH:-0}" -ge 3 ] && printf "⚠ 33b: bash mode-dispatch pattern in %s files — bin/ extraction candidate: resolve-skill-mode.sh <mode>\n" "$MODE_DISPATCH"
 
-# _shared/ resolution: find .../foundry.../_shared or ls -td .../foundry/*/skills/_shared (bash)
 SHARED_RES=$(grep -rl '=\$(find.*plugins/cache.*_shared\|=\$(ls -td.*plugins/cache' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 [ "${SHARED_RES:-0}" -ge 3 ] && printf "⚠ 33b: bash _shared resolution pattern in %s files (variants may be inconsistent) — bin/ extraction candidate\n" "$SHARED_RES"
 
-# Python heredoc pattern (bin/ python script candidate)
 PY_HEREDOC=$(grep -rl 'python -c' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 [ "${PY_HEREDOC:-0}" -ge 3 ] && printf "⚠ 33b: python -c one-liner in %s files — evaluate if any cluster repeats\n" "$PY_HEREDOC"
 
-# audit-skip: resilience-replication (unsupported-flag-check — intentional per-plugin resilience)
+# audit-skip: resilience-replication — unsupported-flag-check is intentional per-plugin
 FLAG_CHECK=$(grep -rl 'Unknown flag' "$_C33_DIR" --include="*.md" 2>/dev/null | wc -l | tr -d ' ')
 [ "${FLAG_CHECK:-0}" -ge 3 ] && printf "ℹ 33b: unsupported-flag-check boilerplate in %s files — known intentional per-plugin resilience\n" "$FLAG_CHECK"
 
-# Count code blocks by language marker — identifies files for Phase 2 curator NxN
 echo "--- Code block language distribution across all .md files (Phase 2 trigger signals) ---"
 NEEDS_CURATOR_NXN=false
 for lang in bash python sh perl ruby node js; do
@@ -889,7 +864,6 @@ for lang in bash python sh perl ruby node js; do
   [ "${count:-0}" -ge 2 ] && [ "${count:-0}" -lt 5 ] && echo "  ${lang}: ${count} files"
 done
 
-# Emit trigger signal for Phase 2 decision
 [ "$NEEDS_CURATOR_NXN" = "true" ] && printf "→ Phase 2: curator NxN delegation triggered — see 33b Phase 2 instructions below\n"
 printf "✓: Check 33b Phase 1 complete\n"  # timeout: 5000
 ```

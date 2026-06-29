@@ -59,8 +59,8 @@ From $ARGUMENTS extract:
 # timeout: 5000
 INVESTIGATE_RUN=".temp/investigate/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 mkdir -p "$INVESTIGATE_RUN"
-echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"  # persist for re-resolution in later steps
-echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"  # capture this stdout — bash vars do not persist across Bash tool calls
+echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"  # persist; re-read in later steps
+echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"  # bash vars don't persist; read from stdout
 ```
 
 Collect evidence in parallel — do NOT form hypotheses yet.
@@ -148,11 +148,11 @@ Otherwise, set up adversarial review. The run dir was already created in Step 2;
 ```bash
 # timeout: 5000
 INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null)
-# fallback: pick most recent under .temp/investigate/ if the path file is absent
+# fallback if path file absent
 [ -z "$INVESTIGATE_RUN" ] && INVESTIGATE_RUN=$(find .temp/investigate -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -Vr | head -1)
 CODEX_OUT="$INVESTIGATE_RUN/codex-review.md"
 echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"
-echo "CODEX_OUT=$CODEX_OUT"  # capture both stdout lines for spawn-prompt substitution below
+echo "CODEX_OUT=$CODEX_OUT"  # spawn-prompt reads both stdout lines
 ```
 
 > **Step 2 appends the resolved run path to `${TMPDIR:-/tmp}/investigate-run-path`** so this resolution succeeds — see `echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"` in Step 2.
@@ -161,14 +161,13 @@ Re-check Codex availability at point of use (bash variables don't persist across
 
 ```bash
 CODEX_AVAILABLE=false
-# (1) plugin installed
 jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q . && CODEX_AVAILABLE=true  # timeout: 5000
-# (2) honor user opt-out — explicit `false` in enabledPlugins disables codex even when installed
+# honor user opt-out — false in enabledPlugins overrides installed state
 if [ "$CODEX_AVAILABLE" = "true" ] && jq -e '.enabledPlugins["codex@openai-codex"] == false' ~/.claude/settings.json >/dev/null 2>&1; then
     CODEX_AVAILABLE=false
     printf "  codex plugin installed but disabled in ~/.claude/settings.json — skipping codex review\n"
 fi
-echo "CODEX_AVAILABLE=$CODEX_AVAILABLE"  # capture this stdout line — bash vars do not persist across Bash tool calls; the branch decision below MUST read this value, not rely on shell state
+echo "CODEX_AVAILABLE=$CODEX_AVAILABLE"  # bash vars don't persist; branch below MUST read this value from stdout
 ```
 
 **Read `CODEX_AVAILABLE=…` from the bash stdout above** (NOT shell state). If the printed value was `true`: spawn Codex; else spawn `foundry:challenger`. The spawn prompts below instruct the subagent to Read the persisted symptom/signals/hypotheses files (written in Steps 2 and 3) — this is more reliable than inlining the values, which the LLM can paraphrase under context pressure.
@@ -198,16 +197,16 @@ One targeted test per hypothesis — clear confirm/rule-out signal. Run independ
 ```bash
 # Example probes — adapt to the actual symptom
 
-# Environment mismatch: check active interpreter
+# Environment mismatch
 python --version  # timeout: 3000
 
-# Missing allow entry: check home settings.json allow list
+# Missing allow entry
 jq -r '.permissions.allow[]' ~/.claude/settings.json
 
-# Hook path wrong: verify hook file exists
+# Hook path wrong
 ls -la ~/.claude/hooks/
 
-# Sync drift: compare project vs home settings
+# Sync drift
 diff <(jq -S . .claude/settings.json) <(jq -S . ~/.claude/settings.json) | head -40
 ```
 

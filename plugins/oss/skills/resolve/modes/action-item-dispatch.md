@@ -16,7 +16,7 @@ IMPL_AGENT="codex:codex-rescue"
     echo "→ Using --agent: $IMPL_AGENT"
 }
 
-# File-handoff dir — set in Step 3b (pr-intelligence subagent writes here); idempotent if already set
+# set in Step 3b (pr-intelligence subagent); idempotent if already set
 [ -z "$IMPL_DIR" ] && IMPL_DIR=$(mktemp -d)  # timeout: 3000
 mkdir -p "$IMPL_DIR"  # timeout: 3000
 CHALLENGE_LOG=()  # per-item records: id|evidence|suggestion|resolution
@@ -64,7 +64,7 @@ Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for stash label and 
 **Pre-loop blast-radius scan** — run once in the main orchestrator before the loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `scan-query` is a no-op.
 
 ```bash
-# Pre-loop; never blocks; BLAST_RADIUS_CONTEXT shared with impl agents below
+# pre-loop; BLAST_RADIUS_CONTEXT shared with impl agents
 BLAST_RADIUS_CONTEXT=""
 if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
     echo "→ Codemap pre-scan — caller context for selected action items:"
@@ -136,9 +136,8 @@ Append to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=<VALID|REJECT> res
 ### Phase 2: Implementation
 
 ```bash
-# Ensure clean state before each item — substitute <id> with item.id.
-# Stash with a trap so we never leave the working tree dirty when the
-# implementation agent makes no changes (no pop in that branch).
+# clean state before each item (substitute <id> with item.id); STASHED=false when agent
+# makes no changes — no pop needed
 STASHED=false
 if [ -n "$(git status --porcelain)" ]; then
     echo "⚠ dirty tree before item #<id> — stashing"
@@ -162,14 +161,14 @@ else
     IMPL_PROMPT="Apply this review feedback exactly as suggested. Feedback from @<author>: <full_comment_text>"
 fi
 
-# File-handoff: agent writes full context to file; orchestrator reads only compact JSON envelope
+# file-handoff: agent writes full context to file; orchestrator reads compact JSON only
 Agent(subagent_type="$IMPL_AGENT", prompt="Effort level: $ITEM_EFFORT. $IMPL_PROMPT
 $([ -n "$ITEM_CALLERS" ] && printf "Blast-radius context — modules that call into the code you are changing; preserve their public contracts:\n%s" "$ITEM_CALLERS")
 Write your findings (approach taken, files changed) to $IMPL_DIR/impl-<id>.md using the Write tool.
 Return ONLY compact JSON as your FINAL message (nothing after it):
 {\"status\":\"done\"|\"skipped\",\"reason\":\"<if skipped, else null>\",\"files_changed\":N}")
 
-# Parse compact JSON from agent final message; read $IMPL_DIR/impl-<id>.md only if full context needed
+# parse compact JSON; read impl-<id>.md only if full context needed
 git diff HEAD --stat  # timeout: 3000
 ```
 
@@ -207,9 +206,9 @@ No code changed → record agent's reason; do NOT create empty commit. Record pe
 Mark item's task per COMMIT_MODE — do NOT fire `completed` here for `all`/`grouped` (commit hasn't happened yet; a post-loop commit failure would leave false-completed tasks):
 
 ```text
-# each → completed now (committed in this loop iteration)
-# stage → completed now (staged is the terminal intent for this mode; task list has no "staged" state)
-# all / grouped → leave in_progress; post-loop commit block flips to completed after commit succeeds
+# each → completed now (committed this iteration)
+# stage → completed now (staged = terminal; no "staged" task status)
+# all/grouped → leave in_progress; post-loop commit block flips after commit
 if COMMIT_MODE == "each" or COMMIT_MODE == "stage":
     TaskUpdate(task_id=<item.task_id>, status="completed")
 ```
@@ -233,7 +232,6 @@ Type a topic for each item ID (e.g. '1=style 2=logic 3=tests'), or type 'auto' t
 Group items by topic label. For each unique topic group (ordered by first item ID in group):
 
 ```bash
-# For each topic group:
 GROUP_IDS=(<item ids in this group>)
 GROUP_SUMMARIES=(<item summaries in this group>)
 COMBINED_SUMMARY=$(echo "${GROUP_SUMMARIES[@]}" | tr ' ' '\n' | head -5 | paste -sd '; ')

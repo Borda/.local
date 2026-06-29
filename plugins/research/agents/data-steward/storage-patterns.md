@@ -12,7 +12,7 @@ Contains: DVC versioning, Polars tabular loading, HuggingFace datasets, 3D volum
 
 ```bash
 # Verify remote configured BEFORE push — `dvc push` exits 0 with "no remote storage"
-# warning when unconfigured; .dvc stub records hash that nothing can resolve.
+# when unconfigured; .dvc stub records hash nothing can resolve.
 dvc remote list  # must list at least one; if empty: dvc remote add -d myremote s3://bucket/path
 
 dvc add data/raw/dataset.zip

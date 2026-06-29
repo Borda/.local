@@ -1,8 +1,7 @@
 Before cycle 1 of review loop, run Codex pre-pass if diff meaningful:
 
 ```bash
-# canonical codex availability check — align develop:review:190 and vitality.md:97 with this pattern.
-# Two-source check: (1) plugin installed in installed_plugins.json; (2) not explicitly disabled in ~/.claude/settings.json
+# canonical check — sync: develop:review:190, vitality.md:97
 CODEX_AVAILABLE=false
 if jq -e 'to_entries[] | select(.key | contains("codex")) | .value[].installPath' ~/.claude/plugins/installed_plugins.json 2>/dev/null | grep -q .; then
     if ! jq -e '.enabledPlugins["codex@openai-codex"] == false' ~/.claude/settings.json >/dev/null 2>&1; then

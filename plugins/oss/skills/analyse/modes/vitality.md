@@ -80,17 +80,17 @@ TaskUpdate "Step 3 Assemble Scores" completed.
 REPORT_TIMESTAMP=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
 REPORT_FILE=".reports/analyse/vitality/output-analyse-vitality-${GH_OWNER}-${GH_REPO}-${REPORT_TIMESTAMP}.md"
 
-# Provenance metadata — embedded in report header for self-complete, deterministic output
+# Provenance metadata — embedded for self-complete, deterministic output
 _VER_FILE=$(ls ~/.claude/plugins/cache/borda-ai-rig/oss/*/.claude-plugin/plugin.json 2>/dev/null | sort | tail -1)  # timeout: 5000
 [ -z "$_VER_FILE" ] && _VER_FILE="plugins/oss/.claude-plugin/plugin.json"
 SKILL_VERSION=$(jq -r '.version // "unknown"' "$_VER_FILE" 2>/dev/null || echo "unknown")  # timeout: 5000
 
 REPORT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")  # timeout: 5000
 
-# Codex availability check — done here so agents list in frontmatter is accurate at write time
+# Codex check here — agents list in frontmatter must be accurate at write time
 find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
 
-# Build agents list for YAML frontmatter — deterministic, reflects actual contributors
+# Build agents list for frontmatter — reflects actual contributors
 REPORT_AGENTS_YAML="  - oss:analyse (orchestrator)
   - foundry:challenger (adversarial review)"
 [ "$CODEX_AVAILABLE" = "1" ] && REPORT_AGENTS_YAML="$REPORT_AGENTS_YAML
@@ -198,8 +198,8 @@ _(Only axes with delta ≥ 2.0. If none: "Main analysis and Codex agree within 2
 After Step 5 aggregation complete — report includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess **complete combined report** iteratively; rework applied between iterations.
 
 ```bash
-# CODEX_AVAILABLE already set in Step 4 — do not re-check; use value as-is
-# REVIEW_DIR already set in Step 5 — do not redefine
+# CODEX_AVAILABLE set in Step 4 — reuse as-is
+# REVIEW_DIR set in Step 5 — do not redefine
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 REWORK_ITER=0

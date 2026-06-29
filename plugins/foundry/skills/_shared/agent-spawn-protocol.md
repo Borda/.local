@@ -11,12 +11,11 @@ Replace: `<SKILL>` = skill name (e.g. `calibrate`), `<RUN_DIR>` = run directory 
 LAUNCH_AT=$(date +%s)
 touch /tmp/<SKILL>-check-<ID>
 
-# Spawn background agent
 Agent(subagent_type="...", run_in_background=true, prompt="...", ...)
 
 MONITOR_INTERVAL=300
 HARD_CUTOFF=900   # 15 min
-EXTENSION=300     # one extension allowed
+EXTENSION=300     # one +5 min extension
 stall_count=0
 while true; do
     sleep $MONITOR_INTERVAL
@@ -30,7 +29,7 @@ while true; do
     fi
     stall_count=$(( stall_count + 1 ))
     if [ "$stall_count" -eq 1 ] && [ "$elapsed" -lt $(( HARD_CUTOFF + EXTENSION )) ]; then
-        # one extension if tail output explains delay
+        # extend only if tail explains delay
         tail_out=$(tail -20 <RUN_DIR>/output.md 2>/dev/null || echo "")
         [ -n "$tail_out" ] && continue
     fi
@@ -60,7 +59,7 @@ Skills that spawn one or more background agents use the `health_sentinel.py` hel
 MONITOR_INTERVAL=300; HARD_CUTOFF=900; EXTENSION=300   # see <constants> block
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/health_sentinel.py" start <SKILL>-<ID> 2>/dev/null)"  # timeout: 5000
 [ -n "$SENTINEL" ] || printf "⚠ health monitoring disabled — health_sentinel.py missing or failed\n"
-# Persist SENTINEL and LAUNCH_AT across Bash() call boundaries — shell state does not persist
+# shell state doesn't persist across Bash() calls — persist to file
 echo "${SENTINEL:-}" > "${TMPDIR:-/tmp}/<SKILL>-<ID>-sentinel"
 echo "${LAUNCH_AT:-}" > "${TMPDIR:-/tmp}/<SKILL>-<ID>-launch-at"
 ```

@@ -36,15 +36,12 @@ When `LOCAL_MODE=true`, resolve target file from source tree before Phase 2:
 LOCAL_MODE=<LOCAL_MODE>
 TARGET_FILE=""
 if [ "$LOCAL_MODE" = "true" ]; then
-  # Strip leading / and split plugin:name
   BARE=$(echo "<TARGET>" | sed 's|^/||')
   PLUGIN=$(echo "$BARE" | cut -d: -f1)
   NAME=$(echo "$BARE" | cut -d: -f2)
   if [[ "<TARGET>" == /* ]]; then
-    # Skill target: plugins/<plugin>/skills/<name>/SKILL.md
     CANDIDATE="plugins/$PLUGIN/skills/$NAME/SKILL.md"
   else
-    # Agent target: plugins/<plugin>/agents/<name>.md
     CANDIDATE="plugins/$PLUGIN/agents/$NAME.md"
   fi
   if [ -f "$CANDIDATE" ]; then

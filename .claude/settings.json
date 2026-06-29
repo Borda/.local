@@ -3,7 +3,8 @@
   "effortLevel": "high",
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "85",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "PONYTAIL_DEFAULT_MODE": "off"
   },
   "fastModePerSessionOptIn": false,
   "model": "opusplan",

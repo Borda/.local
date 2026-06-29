@@ -42,10 +42,8 @@ Rule adherence test: for each rule file in `.claude/rules/`, measures three dime
 **Detect scope for each rule file**: check whether `paths:` frontmatter present and non-empty — set `IS_PATH_SCOPED=true` accordingly.
 
 ```bash
-# Enumerate rule files
 ls .claude/rules/*.md 2>/dev/null | sort
 
-# Detect path-scoped rule (IS_PATH_SCOPED=true if paths: field is non-empty)
 awk '/^---$/{c++; if(c==2)exit} c==1 && /^paths:/{found=1} END{print found+0}' <rule-file>
 ```
 

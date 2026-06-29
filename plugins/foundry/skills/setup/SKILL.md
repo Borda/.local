@@ -86,7 +86,7 @@ else
 fi
 printf "  Python: %s\n" "$PYTHON_CMD"
 
-# PATH guidance — ~/.local/bin standard on modern macOS/Linux (XDG Base Directory spec) but not always on PATH by default
+# ~/.local/bin is XDG-standard but not always on PATH
 if [ -f "$SHIM_DIR/python" ] && ! echo ":$PATH:" | grep -q ":$SHIM_DIR:"; then
     printf "  ⚠ %s not on PATH — add to shell rc:\n      export PATH=\"\$HOME/.local/bin:\$PATH\"\n" "$SHIM_DIR"
 fi
@@ -103,7 +103,7 @@ PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_plugin_
 case $? in
     0) ;;
     2) echo "! SECURITY: resolve_plugin_root.py rejected the candidate root — aborting setup"; exit 1 ;;
-    *) PLUGIN_ROOT="" ;;  # exit 1: not found — handled by the empty-check below
+    *) PLUGIN_ROOT="" ;;  # not found; handled by empty-check below
 esac
 echo "$PLUGIN_ROOT" > "${TMPDIR:-/tmp}/setup-plugin-root"  # persist for later blocks (Check 41)
 ```
@@ -252,7 +252,7 @@ mkdir -p ~/.claude/rules  # timeout: 5000
 **Phase 1 — Remove obsolete foundry-managed symlinks** (file/dir removed from current plugin version, or dangling target):
 
 ```bash
-# Re-resolve PLUGIN_ROOT — Bash state may not persist across steps; always use the installed cache path, never the local fallback
+# re-resolve — Bash state not persistent across steps; use installed cache path, not local fallback
 PLUGIN_ROOT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_plugin_root.py" --plugin-name foundry 2>/dev/null)  # timeout: 15000
 [ -z "$PLUGIN_ROOT" ] && { printf "! setup Phase 1 — could not resolve PLUGIN_ROOT; run claude plugin install foundry@borda-ai-rig first\n"; exit 1; }
 python "$PLUGIN_ROOT/bin/symlink_with_guard.py" cleanup --plugin-root "$PLUGIN_ROOT"  # timeout: 15000
@@ -267,8 +267,7 @@ The same cleanup also scans `~/.claude/agents/` for any foundry-managed symlinks
 ```bash
 mkdir -p "$HOME/.claude/skills"  # timeout: 5000
 mapfile -t LINK_CONFLICTS < <(python "$PLUGIN_ROOT/bin/symlink_with_guard.py" scan --plugin-root "$PLUGIN_ROOT")  # timeout: 30000
-# Persist for Phase 4 — Bash tool calls don't share shell state
-printf '%s\n' "${LINK_CONFLICTS[@]}" > ${TMPDIR:-/tmp}/foundry-setup-conflicts-${CLAUDE_SESSION_ID:-$$}.txt  # timeout: 3000
+printf '%s\n' "${LINK_CONFLICTS[@]}" > "${TMPDIR:-/tmp}/foundry-setup-conflicts-${CLAUDE_SESSION_ID:-$$}.txt"  # timeout: 3000; persist for Phase 4; Bash calls don't share state
 ```
 
 The `scan` mode walks the same three patterns (rules `*.md`, `TEAM_PROTOCOL.md`, skill dirs) and prints one conflict per line. Entries surface only when the dest is a real file or a symlink whose target does NOT contain `borda-ai-rig/foundry/`. Output format matches the legacy bash array entries: `rules/<name> → <target>` · `rules/<name>  (real file)` · `TEAM_PROTOCOL.md → <target>` · `skills/<name> → <target>` · `skills/<name>  (real entry)`.
@@ -303,11 +302,11 @@ On **(c)**: initialize `APPROVED_CONFLICT_ENTRIES=()` and `PER_ITEM_REVIEW_MODE=
 - Neither flag (option a or no conflicts): replace unconditionally.
 
 ```bash
-# Restore arrays from Phase 2/3 — Bash tool calls don't share shell state
+# restore arrays from Phase 2/3; Bash calls don't share state
 mapfile -t LINK_CONFLICTS < ${TMPDIR:-/tmp}/foundry-setup-conflicts-${CLAUDE_SESSION_ID:-$$}.txt 2>/dev/null || LINK_CONFLICTS=()
 mapfile -t APPROVED_CONFLICT_ENTRIES < ${TMPDIR:-/tmp}/foundry-setup-approved-${CLAUDE_SESSION_ID:-$$}.txt 2>/dev/null || APPROVED_CONFLICT_ENTRIES=()
 
-# Helper: is identifier in APPROVED_CONFLICT_ENTRIES?
+# is identifier in APPROVED_CONFLICT_ENTRIES?
 _approved() {
     local needle="$1"
     for e in "${APPROVED_CONFLICT_ENTRIES[@]:-}"; do
@@ -315,7 +314,7 @@ _approved() {
     done
     return 1
 }
-# Helper: is this dest listed as a conflict in Phase 2?
+# is this dest listed as conflict in Phase 2?
 _in_conflicts() {
     local needle="$1"
     for c in "${LINK_CONFLICTS[@]:-}"; do
@@ -346,10 +345,10 @@ else
     unlink "$dest" 2>/dev/null || true; ln -sf "$PLUGIN_ROOT/TEAM_PROTOCOL.md" "$dest"  # timeout: 5000
     echo "  linked: TEAM_PROTOCOL.md"
 fi
-# Skills — ln -sf each skills/ subdir; `setup` intentionally excluded — must be invoked as /foundry:setup only (never bare /setup)
+# skills: 'setup' excluded — must invoke as /foundry:setup, not bare /setup
 for src_dir in "$PLUGIN_ROOT/skills/"*/; do
     skill=$(basename "${src_dir%/}")
-    [ "$skill" = "setup" ] && continue  # excluded: plugin-namespaced only; bare /setup would be ambiguous
+    [ "$skill" = "setup" ] && continue  # plugin-namespaced only; bare /setup ambiguous
     dest="$HOME/.claude/skills/$skill"
     if [ "${SKIP_CONFLICTS_MODE:-false}" = "true" ] && [ -e "$dest" ] && [ ! -L "$dest" ]; then
         echo "  skipped (user choice b): skill:$skill"; continue

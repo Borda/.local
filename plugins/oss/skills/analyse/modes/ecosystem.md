@@ -5,15 +5,12 @@
 Replace `mypackage` in commands below with actual package name (e.g. from `gh repo view --json name --jq .name`).
 
 ```bash
-# Find downstream dependents on GitHub
 gh api "search/code" --field "q=from mypackage import language:python" \
     --jq '[.items[].repository.full_name] | unique | .[]'
 
-# Check PyPI reverse dependencies (who depends on us?)
 # Requires johnnydep: pip install johnnydep (not installed by default — skip if unavailable)
 # johnnydep mypackage --fields=name --reverse 2>/dev/null || echo "johnnydep not available — skipping PyPI reverse deps"
 
-# Check conda-forge feedstock dependents
 gh api "search/code" --field "q=mypackage repo:conda-forge/*-feedstock filename:meta.yaml" \
     --jq '[.items[].repository.full_name] | .[]'
 ```

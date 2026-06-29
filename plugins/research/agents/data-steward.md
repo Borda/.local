@@ -200,8 +200,7 @@ If mode is unrecognised, print:
 ## Agent Resolution
 
 ```bash
-# foundry:web-explorer availability check
-# When CLAUDE_PLUGIN_ROOT unset, path-strip produces empty prefix; skip that path, rely on cache search only
+# CLAUDE_PLUGIN_ROOT unset → path-strip yields empty prefix; skip, use cache search only
 _FOUNDRY_BASE="${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT%/research*}/foundry}"
 _FOUNDRY_AVAILABLE=$(find ${_FOUNDRY_BASE:+"$_FOUNDRY_BASE"} "${HOME}/.claude/plugins/cache" -path "*/foundry*" -name "web-explorer.md" 2>/dev/null | head -1)
 ```

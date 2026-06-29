@@ -6,8 +6,8 @@
 **Purpose**: Pre-release readiness check — surfaces outstanding work, alignment gaps, blockers before cutting release.
 
 ```bash
-# LAST_TAG, REPO_ROOT, SKILL_DIR resolved in Shared setup block above
-# In audit mode, $REST = optional version token (not a range) — RANGE always defaults to $LAST_TAG..HEAD
+# LAST_TAG, REPO_ROOT, SKILL_DIR from Shared setup above
+# audit mode: REST = optional version token (not range); RANGE defaults to LAST_TAG..HEAD
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
 ```
 
@@ -22,7 +22,7 @@ Verify all APIs scheduled for removal at `$TARGET` absent from HEAD. Runs after 
 **Step 1** — find all scheduled removals from two sources (run in parallel):
 
 ```bash
-# Source A: pyDeprecate remove_in= markers in source (includes deprecated_class, deprecated_instance)
+# Source A: pyDeprecate remove_in= markers (includes deprecated_class, deprecated_instance)
 git -C "$REPO_ROOT" grep -n 'remove_in=' HEAD -- '*.py' 2>/dev/null | grep -v '^\s*#'  # timeout: 5000
 
 # Source B: CHANGELOG 🗑️ Deprecated entries — prior releases may name removal version in prose
@@ -36,7 +36,7 @@ CHANGELOG_FILE=$(find "$REPO_ROOT" -maxdepth 2 -name "CHANGELOG.md" 2>/dev/null 
 - OVERDUE = `remove_in ≤ $TARGET`:
 
 ```bash
-# Pure stdlib version parse — no packaging dependency
+# stdlib version parse — no packaging dep
 python3 -c "
 import sys, re
 def parse_ver(v):
@@ -51,7 +51,7 @@ print('OVERDUE' if rv <= tv else 'FUTURE')
 **Step 3** — for each OVERDUE item, check if old symbol still present in HEAD. Read 3-line context around `remove_in=` match to extract deprecated function or class name (typically decorated name 1–2 lines above), then:
 
 ```bash
-# Definition-level check only — not mention-level; comments and docstrings can reference removed names
+# definition-level only — comments/docstrings may reference removed names
 git -C "$REPO_ROOT" grep -n "^def <symbol>\|^class <symbol>\|    def <symbol>\|    class <symbol>" HEAD -- '*.py' 2>/dev/null  # timeout: 3000
 ```
 

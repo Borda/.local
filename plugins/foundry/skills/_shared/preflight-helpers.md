@@ -5,13 +5,11 @@ TTL binary availability cache for skill pre-flight checks. Results cached 4 hour
 ## Functions
 
 ```bash
-# Returns 0 (true) if binary $1 passed preflight within the last 4 hours
 preflight_ok() {
     local f=".claude/state/preflight/$1.ok"
     [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]
 }
 
-# Records a passing preflight result for binary $1 at the current timestamp
 preflight_pass() {
     mkdir -p .claude/state/preflight
     date +%s >".claude/state/preflight/$1.ok"

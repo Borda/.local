@@ -44,7 +44,7 @@ Spawn **foundry:curator** per file with efficiency-specific prompt:
 **Phase B — System-wide spawn pattern + duplication scan** (parallel with Phase A):
 
 ```bash
-# LOCAL_MODE set in audit/SKILL.md pre-flight
+# LOCAL_MODE from audit/SKILL.md pre-flight
 [ "$LOCAL_MODE" = "true" ] && _SKILL_GLOB="plugins/*/skills/*/SKILL.md" || _SKILL_GLOB=".claude/skills/*/SKILL.md"
 [ "$LOCAL_MODE" = "true" ] && _AGENT_GLOB="plugins/*/agents/*.md" || _AGENT_GLOB=".claude/agents/*.md"
 [ "$LOCAL_MODE" = "true" ] && _SCAN_DIR="plugins/" || _SCAN_DIR=".claude/"

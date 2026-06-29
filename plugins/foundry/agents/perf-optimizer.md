@@ -93,7 +93,7 @@ iostat -x 1
 When system-level tracers unavailable (macOS SIP, restricted environments):
 
 ```bash
-py-spy record -o profile.svg -- python script.py  # uv tool install py-spy
+py-spy record -o profile.svg -- python script.py
 python -m cProfile -o output.prof script.py
 python -c "import pstats; pstats.Stats('output.prof').sort_stats('cumulative').print_stats(30)"
 uv tool install memory-profiler && python -m memory_profiler script.py
@@ -193,13 +193,11 @@ Codemap pre-flight for structural perf analysis — run alongside step 1a+1b (se
 PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    scan-query central --top 5 2>/dev/null  # hotspot baseline — always run; highest fan-in = highest optimization ROI
+    scan-query central --top 5 2>/dev/null  # always run; highest fan-in = highest optimization ROI
     if [ -n "$TARGET_MODULE" ]; then
-        # targeted invocation
         scan-query subprocess-deps "$TARGET_MODULE" 2>/dev/null
         [ -n "$TARGET_FN" ] && scan-query fn-blast "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
-        # review/worktree context — derive from diff; skip manual module enumeration
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
             scan-query subprocess-deps "$_MOD" 2>/dev/null

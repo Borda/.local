@@ -21,9 +21,6 @@ Scan all `*/SKILL.md` and `*/skills/*/SKILL.md` files in scope. Flag any bash co
 
 ```bash
 printf "=== Check 35: \$ARGUMENTS shell injection risk ===\n"
-# Use Grep to find SKILL.md files containing ARGUMENTS interpolation
-# then inspect each for safe-pattern presence in surrounding context
-# Flag: any file where $ARGUMENTS appears unguarded in a bash block
 ```
 
 **Severity**: `security` — direct shell injection vector.

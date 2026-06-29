@@ -145,10 +145,10 @@ When all hold: delete script (and its test file if present), replace call-site w
 How to invoke bin/ scripts from `.md` files:
 
 ```bash
-# Bash script — Claude Code annotation enforces timeout
+# timeout enforced via annotation
 RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/script-name.sh" arg1 arg2 2>/dev/null || echo "fallback-value")  # timeout: 5000
 
-# Python script — timeout enforced inside the script via --timeout default
+# timeout enforced by --timeout default inside script
 RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script-name.py" arg1 arg2)
 ```
 
@@ -189,7 +189,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/myplugin}/bin/resolve.py" "myplugin-resolv
 ```
 
 ```bash
-# downstream bash block — only when value feeds a shell command
+# only when value feeds shell command
 INDEX=$(cat "${TMPDIR:-/tmp}/myplugin-resolve-index")
 python scan.py --index "$INDEX"  # timeout: 30000
 ```
@@ -202,16 +202,16 @@ Read ${TMPDIR:-/tmp}/myplugin-resolve-index. If empty: print ✗ and stop.
 **Anti-patterns — data output:**
 
 ```bash
-# ✗ eval for data — shell-assignment output is fragile; shlex discipline required;
-#   vars die at next separate Bash tool call anyway
+# ✗ eval for data — fragile; shlex discipline required;
+#   vars die at next Bash tool call anyway
 eval "$(python resolve.py ...)"
 
-# ✗ tab-delimited read — vars still die at next separate Bash tool call
+# ✗ tab-delimited read — vars die at next Bash tool call
 IFS=$'\t' read -r PROJ INDEX < <(python resolve.py ...)
 
-# Determinism anti-pattern (separate concern): two calls for two values
-# Even with TMPDIR routing, the right design is one invocation that writes both files.
-# ✗ two calls — non-atomic; second call may return different state
+# non-atomic anti-pattern (separate concern): two calls may see different state
+# even with TMPDIR routing, one invocation writes both files
+# ✗ two calls — non-atomic
 PROJ=$(python resolve.py --field proj)
 INDEX=$(python resolve.py --field index)
 ```
@@ -225,12 +225,12 @@ Every bin/ executable called from a SKILL.md with a `# timeout: N` comment must 
 **Bash scripts** — use `# timeout: N` annotation; do NOT wrap with `timeout S` shell command:
 
 ```bash
-# ✓ — Claude Code kills the Bash tool after N ms; annotation is the correct mechanism
+# ✓ — Claude Code kills Bash tool after N ms; annotation is correct
 RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/script.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
 
 # ✗ — timeout S inside $() is redundant with # timeout: N and adds risk:
-#     (1) timeout not in Claude Code allow list — future permission prompt exposure
-#     (2) both fire at same threshold; inner timeout adds only subprocess fork overhead
+#     (1) not in allow list — future permission prompt
+#     (2) same threshold; adds only subprocess fork overhead
 RESULT=$(timeout 5 "${CLAUDE_PLUGIN_ROOT}/bin/script.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
 ```
 
@@ -239,10 +239,10 @@ Note: `timeout S` IS valid for scripts invoked outside Claude Code (CI pipelines
 **Python scripts** — add `--timeout SECS` argparse argument; scripts doing subprocess or network I/O must pass it to every blocking call. The `--timeout` parameter is optional at the call site — default value must equal N ÷ 1000 (from the calling SKILL.md `# timeout: N` annotation). Shell `timeout S` wrapper is not required for Python scripts; the argparse default enforces the budget internally:
 
 ```bash
-# ✓ — timeout enforced by --timeout default inside the script; no shell wrapper needed
+# ✓ — --timeout default enforces budget; no shell wrapper needed
 RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script.py" args)  # timeout: 5000
 
-# ✓ — explicit override also valid when caller needs a different budget
+# ✓ — explicit override for different budget
 RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script.py" --timeout 30 args)  # timeout: 30000
 ```
 

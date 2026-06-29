@@ -150,16 +150,13 @@ Print report path on completion.
 ## Example invocations
 
 ```bash
-# Basic report of all logs
 /codemap:debrief-coding
 
-# Last week only
 /codemap:debrief-coding --since 2026-06-15
 
-# Single session trace
 /codemap:debrief-coding --session 3f2e1a90-...
 
-# Anonymized (safe to share) — use a project-relative path, not /tmp
+# use project-relative path, not /tmp
 /codemap:debrief-coding --anonymize --output .reports/codemap/debrief-anon-$(date +%Y-%m-%d).md
 ```
 

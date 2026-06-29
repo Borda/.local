@@ -92,9 +92,8 @@ After spawn, lead must monitor — protocol (canonical: orchestrator owns sentin
 
 ```bash
 touch /tmp/<skill>-team-check-<TS>
-# every 5 min:
 find <RUN_DIR> -newer /tmp/<skill>-team-check-<TS> -type f | wc -l
-# new files = alive; zero count = stalled; hard cutoff 15 min.
+# nonzero = alive; zero = stalled; hard cutoff 15 min
 ```
 
 One +5-min extension allowed if `tail -20 <RUN_DIR>/<OUTPUT_NAME>.md` explains the delay. Second unexplained stall = hard cutoff. On timeout: read `tail -100` of stalled file, surface partial results with ⏱ marker — never silently omit timed-out teammates.

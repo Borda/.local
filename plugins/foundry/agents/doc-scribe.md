@@ -174,11 +174,9 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     if [ -n "$TARGET_MODULE" ]; then
-        # targeted invocation (caller pre-set TARGET_MODULE)
         scan-query undocumented "$TARGET_MODULE" 2>/dev/null
         scan-query xrefs --broken "$TARGET_MODULE" 2>/dev/null
     else
-        # review/worktree context — derive changed modules from diff
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
             scan-query undocumented "$_MOD" 2>/dev/null

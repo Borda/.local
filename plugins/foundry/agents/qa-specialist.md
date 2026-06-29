@@ -243,12 +243,11 @@ PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
 if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
     if [ -n "$TARGET_MODULE" ]; then
-        # targeted invocation (caller pre-set TARGET_MODULE)
         scan-query uncovered --top 20 "$TARGET_MODULE" 2>/dev/null
         scan-query coverage-gap --threshold 0.8 "$TARGET_MODULE" 2>/dev/null
         [ -n "$TARGET_FN" ] && scan-query mock-rdeps "${TARGET_MODULE}::${TARGET_FN}" 2>/dev/null
     else
-        # review/worktree context — derive changed modules from diff; replaces step 01 enumeration
+        # review/worktree — replaces step 01 enumeration
         _BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null)
         for _MOD in $(git diff "${_BASE}..HEAD" --name-only 2>/dev/null | grep '\.py$' | sed 's|^src/||;s|/|.|g;s|\.py$||' | head -10); do
             scan-query uncovered --top 20 "$_MOD" 2>/dev/null

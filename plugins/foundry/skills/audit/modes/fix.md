@@ -128,7 +128,6 @@ Treat findings as additional issues entering Step 10 re-audit scope. Skip if Ste
 For every file changed in Step 8, spawn **foundry:curator** to confirm fix resolved finding and no new issues introduced. Write full re-audit findings to `<RUN_DIR>/<file-basename>-reaudit.md`; end the full findings file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements); return ONLY compact JSON envelope: `{"status":"done","file":"<RUN_DIR>/<file-basename>-reaudit.md","findings":N,"severity":{"security":N,"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N,"summary":"<filename>: fix confirmed, N residual findings"}`
 
 ```bash
-# Spot-check: confirm the previously broken reference no longer appears
 # Replace BROKEN_NAME and FIXED_FILE with the actual values from the finding
 grep -n "BROKEN_NAME" FIXED_FILE
 ```

@@ -98,7 +98,6 @@ GUARD_CMD="${GUARD_CMD:-git diff --stat HEAD}"
 **Assign `$RUN_ID`** from input resolution above (must be set before guard block uses it):
 
 ```bash
-# Resolve RUN_ID from $ARGUMENTS (first non-flag token) or auto-detect latest completed run
 _ARG1=$(echo "$ARGUMENTS" | awk '{print $1}')
 if [ -n "$_ARG1" ] && [ "${_ARG1#-}" = "$_ARG1" ] && [ ! -f "$_ARG1" ] && [ -d "$STATE_DIR_BASE/$_ARG1" ]; then
   RUN_ID="$_ARG1"
@@ -122,7 +121,6 @@ if [ -z "$JUDGE_VERDICT_FILE" ]; then
 fi
 JUDGE_VERDICT=$(grep -i '^[*]*[Vv]erdict[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*[Vv]erdict[: ]+//' | sed 's/[[:space:]]*$//')  # strip trailing only; preserve internal spaces (e.g. "NEEDS REVISION")
 
-# Cross-match: confirm verdict was issued for the current experiment's program
 PROGRAM_FILE=$(grep -iE '^[*]*(Program(_file)?|Program file)[*]*:' "$JUDGE_VERDICT_FILE" | head -1 | sed 's/\*\*//g' | sed -E 's/.*:[[:space:]]*//' | sed 's/[[:space:]]*$//')
 # F-02 guard: empty PROGRAM_FILE means verdict lacks program metadata — cannot verify applicability
 if [ -z "$PROGRAM_FILE" ]; then
@@ -137,7 +135,6 @@ if [ -n "$STATE_PROGRAM" ] && [ -n "$PROGRAM_FILE" ] && [ "$PROGRAM_FILE" != "$S
     printf "Run: /research:judge %s\n" "$STATE_PROGRAM"
     exit 1
 fi
-# Confirm program file still exists on disk
 if [ -n "$PROGRAM_FILE" ] && [ ! -f "$PROGRAM_FILE" ]; then
     printf "! BLOCKED — program file %s referenced by judge verdict not found on disk\n" "$PROGRAM_FILE"
     exit 1
@@ -281,8 +278,6 @@ For each variant in `variants.jsonl`:
 **4a-init. Derive `VARIANT_NAME` from the current iteration** (must be set before any 4a/4b/4c/4d/4e block uses it):
 
 ```bash
-# variant_spec = the JSON line currently being processed from variants.jsonl
-# Slugify: lowercase, spaces to hyphens, strip leading "variant-" if already present
 VARIANT_NAME="variant-$(echo "$variant_spec" | jq -r '.variant_name' 2>/dev/null | tr ' ' '-' | tr '[:upper:]' '[:lower:]' | sed 's/^variant-//')"
 # Fallback when variant_spec is just the bare name (not full JSON object) OR jq returned empty/null/error.
 # Covers: empty (`variant-`), JSON null (`variant-null`), plain-text input that jq cannot parse.

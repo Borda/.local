@@ -205,10 +205,10 @@ For `develop:fix` / `develop:refactor`:
 ```bash
 # timeout: 5000
 _CM_PROJ=$(git -C "$TARGET" rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$TARGET")
-# prefer recently modified .py file (more likely to have real issues)
-# grep only on lines that look like file paths (contain a slash or end in .py) to avoid matching commit subjects
+# prefer recently modified .py — more likely to have real issues
+# grep to file-path-looking lines only; avoids matching commit subjects
 PROBE_FILE=$(git -C "$TARGET" log --oneline -30 --diff-filter=M --name-only -- '*.py' 2>/dev/null | grep -E '^[^[:space:]]+\.py$' | head -1)
-# fallback: most central module path from index via scan-query central
+# fallback: most central module from index
 [ -z "$PROBE_FILE" ] && PROBE_FILE=$("$SQ" --timeout 5 central --top 1 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); mods=d.get('central',[]); print(mods[0].get('path','') if mods else '')" 2>/dev/null || echo "")
 ```
 
@@ -298,7 +298,7 @@ If present: `AskUserQuestion` — "Rigorous token-measured benchmark available."
 
 ```bash
 # timeout: 30000
-# debrief-coding only accepts YYYY-MM-DD format — derive today's date explicitly
+# debrief-coding requires YYYY-MM-DD; explicit derivation
 _TODAY=$(date +%Y-%m-%d)
 Skill(skill="codemap:debrief-coding", args="--since ${_TODAY}${ANONYMIZE_FLAG}")
 ```

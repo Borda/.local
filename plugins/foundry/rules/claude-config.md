@@ -37,11 +37,11 @@ Rules:
 Never combine directory navigation with command in single Bash call — always use **two separate Bash calls**:
 
 ```bash
-# ✓ correct — two calls; working directory persists between calls
+# ✓ correct — two calls; CWD persists between calls
 cd /path/to/dir
 uv run pytest tests/
 
-# ✗ wrong — all three forms below cause the same failure
+# ✗ wrong — all three forms cause same failure
 cd /path && uv run pytest tests/
 cd /path
 uv run pytest tests/
