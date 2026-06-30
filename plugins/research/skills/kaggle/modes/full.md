@@ -10,31 +10,79 @@
 
 `# %%` cell (setup):
   - **When `OFFLINE_SETUP=true`** (i.e. `--offline-setup` flag passed, or inference is bundled in this notebook):
-    - `! cp -r ../input/python-packages/frozen_packages .`
-    - `! pip install -q <library> --no-index --find-links frozen_packages/ 2>/dev/null || pip install -q <library>`
+    - `# ! cp -r ../input/python-packages/frozen_packages .`
+    - `# ! pip install -q <library> --no-index --find-links frozen_packages/ 2>/dev/null || pip install -q <library>`
   - **When `OFFLINE_SETUP=false`** (default — training-only, internet available):
-    - `! pip install -q <library>`
-  - `! pip list | grep -E 'torch|lightning|timm'`
+    - `# ! pip download -q <library> --dest frozen_packages/`
+    - `# ! pip install -q --no-index --find-links frozen_packages/ <library> 2>/dev/null || pip install -q <library>`
+  - `# ! pip list | grep -E 'torch|lightning|timm'`
 
-### Section 2: Imports + Constants
-Single `# %%` cell:
+### Section 2: Imports + Path Constants
+Single `# %%` cell — global imports and paths only; **config constants live JIT in their section**:
   - stdlib: `import os, glob` (same line for short ones)
-  - domain libraries grouped loosely by concern
+  - domain libraries grouped loosely: numpy/pandas first, then torch/timm/pl, then sklearn/xgb
+  - `from tqdm.auto import tqdm` (not `tqdm.tqdm` — auto selects notebook vs terminal bar)
   - `import warnings; warnings.simplefilter("ignore", UserWarning)` when noisy libs used
-  - PATH constants: `PATH_DATASET`, `PATH_OUTPUT`, `PATH_MODELS` — ALL_CAPS, string values
-  - Config constants: `BATCH_SIZE`, `MAX_EPOCHS`, `LEARNING_RATE`, `MODEL_NAME`, `IMAGE_SIZE`
-  - `nb_epochs = MAX_EPOCHS if torch.cuda.is_available() else 2` (GPU check)
-  - Version print block: `print(f"PyTorch: {torch.__version__}")` etc.
+  - PATH constants only: `PATH_DATASET = "/kaggle/input/<competition>"`, `PATH_OUTPUT = "."`, `PATH_MODELS` — ALL_CAPS
+  - Version print block: `print(f"PyTorch: {torch.__version__}")`, `print(f"Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")`
   - `pl.seed_everything(42)` (DL notebooks only) — covers torch/numpy/random; no separate manual seeds needed
 
-### Section 3: EDA
-`# %% [markdown]` header: `## EDA`
+> **JIT constants rule**: do NOT dump all constants here. Each major section opens with its own config block — EDA constants before EDA, DataModule constants before Dataset class, Model constants before Model class. Reader sees config exactly when it becomes relevant.
 
-Sub-cells (each a separate `# %%`):
-1. Load metadata CSV: `df_train = pd.read_csv(...)`, `print(f"size: {len(df_train)}")`, `display(df_train.head())`
-2. Label/target distribution: pie or bar chart, value_counts; `_=` suppression pattern
-3. Sample display — dispatch by `input_modality`; see `modality-dispatch.md`
-4. Dimension/size analysis if `image`: scatter of (width, height) with marginal histograms
+### Section 3: EDA
+`# %% [markdown]` header: `## EDA` — include explanation of what/why/how it contributes to the solution.
+
+**EDA config block** — first `# %%` cell in this section (JIT constants):
+```python
+# %%
+SAMPLE_N = 9          # images shown in sample grid
+TARGET_COL = "<col>"  # label column name in df_train
+```
+
+Sub-cells in narrative order (each a separate `# %%`):
+
+**3a. Dataset overview**
+```python
+# %%
+df_train = pd.read_csv(os.path.join(PATH_DATASET, "train.csv"))
+print(f"Train size: {len(df_train):,}  |  Columns: {list(df_train.columns)}")
+display(df_train.head())
+display(df_train.dtypes.to_frame("dtype"))
+print(f"\nMissing values:\n{df_train.isnull().sum()[df_train.isnull().sum() > 0]}")
+display(df_train.describe())
+```
+
+**3b. Label / target distribution**
+- bar or pie chart with axis labels, grid, legend when >1 class; `_=` suppression
+
+**3c. Hypothesis validation** — `# %% [markdown]` cell listing hypotheses that gate design decisions, then one `# %%` per hypothesis:
+
+Generate hypotheses from `problem_type` + `input_modality` — examples:
+- *class balance* → affects loss function choice (BCE vs weighted cross-entropy); code: `df_train[TARGET_COL].value_counts(normalize=True)`
+- *image resolution consistency* → affects whether fixed-resize is safe; code: read a sample of images, collect (H, W), plot scatter
+- *label noise / duplicates* → affects augmentation strength; code: check duplicate `image_id` rows
+- *missing modality files* → affects DataModule robustness; code: `sum(not os.path.exists(p) for p in paths)`
+
+Each hypothesis cell pattern:
+```python
+# %% [markdown]
+# ### Hypothesis: <name>
+# <one-sentence why this matters for the solution>
+# %%
+<code to test hypothesis>
+# conclusion printed inline: print(f"→ Imbalance ratio: {ratio:.2f} — use weighted loss: {ratio > 3}")
+```
+
+**3d. Helper definition (JIT)** — define visualization helpers in a `# %%` cell immediately before the cell that uses them. Never define helpers at top of notebook. Pattern:
+```python
+# %%
+def show_images(imgs, titles=None, cols=3):
+    """Display a grid of tensors or PIL images."""
+    ...
+```
+
+**3e. Sample display** — dispatch by `input_modality`; see `modality-dispatch.md`
+- uses helper defined in 3d
 
 > loads: modality-dispatch.md
 
@@ -44,6 +92,8 @@ Sub-cells (each a separate `# %%`):
 - `tabular` → describe + correlation heatmap + target distribution
 - `point-cloud` → open3d scatter (adds open3d to setup cell)
 
+**3f. Dimension / size analysis** (image modalities) — scatter of (width, height) with marginal histograms; axis labels + grid.
+
 Any modality-specific installs required by the chosen branch go at the top of the setup `# %%` cell.
 
 **Training sanity check** (Section 5 lens cell) also uses the same modality dispatch — call `show_images()` / `show_volume()` / `show_pcd()` on one batch from `train_dataloader()` to verify shapes before first epoch.
@@ -51,7 +101,16 @@ Any modality-specific installs required by the chosen branch go at the top of th
 ### Section 4: Dataset & DataModule (DL) or Feature Engineering (tabular)
 
 **For DL:**
-`# %% [markdown]`: `## Dataset & DataModule`
+`# %% [markdown]`: `## Dataset & DataModule` — include explanation.
+
+**DataModule config block** — first `# %%` in this section (JIT constants derived from EDA findings):
+```python
+# %%
+IMAGE_SIZE  = 224    # from EDA: median image dimension; set to nearest power-of-2 ≥ median
+BATCH_SIZE  = 32
+VAL_SPLIT   = 0.2
+NUM_WORKERS = os.cpu_count()
+```
 
 `# %%` — Dataset class:
   - `class <Name>Dataset(Dataset):`
@@ -77,24 +136,68 @@ Any modality-specific installs required by the chosen branch go at the top of th
 `# %% [markdown]`: `## Feature Engineering`
 
 `# %%` cells for:
+  - CSV load: `pd.read_csv(...)` + `display(df.head())`; parquet: `pd.read_parquet(path)` or multi-file merge: `pd.concat([pd.read_parquet(p) for p in glob.glob(str(folder / "*.parquet"))])`
   - Missing value handling
   - Categorical encoding
   - Feature creation
   - `# ==============================` separator between steps
   - Train/val split: `X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)`
 
+**Image preprocessing (when needed before Dataset):**
+```python
+# %%
+from joblib import Parallel, delayed
+_ = Parallel(n_jobs=os.cpu_count())(delayed(preprocess_fn)(p) for p in tqdm(image_paths))
+```
+
 ### Section 5: Model
-`# %% [markdown]`: `## Model`
+`# %% [markdown]`: `## Model` — include explanation.
 
-**For DL + PTL:**
-`# %%` — LightningModule:
-  - `class <Name>Model(pl.LightningModule):`
-  - `__init__`: `save_hyperparameters()`, `timm.create_model(arch, pretrained=True, num_classes=<N>)` (`num_classes=0` for regression), one `train_<metric>` + `val_<metric>` TorchMetric
-  - `forward(x)`: single line `return self.net(x)`
-  - `training_step` / `validation_step`: compute loss, `self.log(..., prog_bar=True)`, metric via `.update()` then `.log()` (not `.compute()` at epoch end)
-  - `configure_optimizers`: AdamW + CosineAnnealingLR(`T_max=MAX_EPOCHS`); always include 1–2 commented-out alternatives (e.g. OneCycleLR)
+**Model config block** — first `# %%` in this section (JIT constants):
+```python
+# %%
+MODEL_NAME     = "efficientnet_b0"  # timm model name — swap to compare architectures
+MAX_EPOCHS     = 10
+LEARNING_RATE  = 1e-3
+nb_epochs      = MAX_EPOCHS if torch.cuda.is_available() else 2  # safe CPU fallback
+```
 
-**For tabular XGBoost:**
+**For DL + PTL — `%%writefile` pattern (mandatory for DL models):**
+
+Write the model class to a standalone file using `%%writefile` so inference notebooks can import without duplication:
+
+```python
+# %%
+%%writefile {COMPETITION_NAME}_model.py
+
+# ALL imports the class needs — this file is standalone
+import torch
+import torch.nn as nn
+import pytorch_lightning as pl
+from torchmetrics import <Metric>
+# ... other imports required by the class (no notebook globals available here)
+
+
+class <Name>Model(pl.LightningModule):
+    # __init__: save_hyperparameters(); timm.create_model(arch, pretrained=True, num_classes=<N>)
+    #           (num_classes=0 for regression); one train_<metric> + val_<metric> TorchMetric
+    # forward(x): single line return self.net(x)
+    # training_step / validation_step: compute loss, self.log("...", logger=True, prog_bar=True),
+    #           metric via .update() then .log() (not .compute() at epoch end)
+    # configure_optimizers: AdamW + CosineAnnealingLR(T_max=MAX_EPOCHS);
+    #           always 1–2 commented-out alternatives (e.g. OneCycleLR)
+    ...
+```
+
+Follow with an import cell to make the class available in the training notebook:
+```python
+# %%
+from {competition_name}_model import <Name>Model
+```
+
+The inference notebook then imports the same file — zero duplication, zero divergence.
+
+**For tabular XGBoost (no writefile needed — no inference notebook reuse):**
   - `xgb.XGBClassifier`/`XGBRegressor` with `device="cuda"` (XGBoost 2.0+ API — not deprecated `tree_method`), `enable_categorical=True`, `random_state=42`
 
 ### Section 6: Training
@@ -121,7 +224,12 @@ Any modality-specific installs required by the chosen branch go at the top of th
       max_epochs=nb_epochs,
       precision="16-mixed",
       accumulate_grad_batches=4,
-      callbacks=[ckpt, pl.callbacks.LearningRateMonitor()],
+      callbacks=[
+          ckpt,
+          pl.callbacks.LearningRateMonitor(),
+          pl.callbacks.EarlyStopping(monitor="valid_<metric>", patience=5, mode="max"),
+          # pl.callbacks.StochasticWeightAveraging(swa_lrs=1e-2),  # SWA alternative
+      ],
       logger=logger,
       log_every_n_steps=5,
       # val_check_interval=0.5,  # check val twice per epoch
@@ -137,8 +245,10 @@ Any modality-specific installs required by the chosen branch go at the top of th
   metrics.set_index("epoch", inplace=True)
   display(metrics.dropna(axis=1, how="all").head())
   g = sns.relplot(data=metrics, kind="line")
+  g.set_axis_labels("epoch", "value")
   plt.gcf().set_size_inches(12, 4)
-  plt.grid()
+  plt.grid(True)
+  plt.legend()
   ```
 
 ### Section 7: Inference
@@ -177,21 +287,16 @@ Two sub-patterns — BOTH present in same script:
   df_sub = pd.read_csv(os.path.join(PATH_DATASET, "sample_submission.csv"))
   df_sub["<target_col>"] = preds
   df_sub.to_csv("submission.csv", index=False)
-  ! head submission.csv
+  # ! head submission.csv
   ```
 
 ## Style enforcement rules for the generator
 
-Apply ALL of these in the generated script:
+> loads: style-rules.md
 
-1. **`!` for ALL shell commands — never `subprocess`, never `get_ipython().system()`**: write `! cmd` verbatim; `%matplotlib inline` not `get_ipython().run_line_magic(...)`; if a linter rejects these, fix the linter config — NEVER rewrite the magic syntax
-2. `# ==============================` between logical blocks within a cell (not every line — only at major breaks)
-3. `_=` to suppress matplotlib/pandas return values: `_= df["col"].plot(...)`
-4. ALL_CAPS for paths and config constants
-5. Version print block right after imports
-6. `! head submission.csv` at the very end — always
-7. No `if __name__ == '__main__':` guards
-8. No argparse, no dataclasses for config
+Apply all 11 base rules from `style-rules.md`, plus:
+
+11. `# ! head submission.csv` at the very end — always
 
 ## Output format
 
@@ -201,7 +306,7 @@ Use the Write tool. The file must start with:
 ```python
 # %% [markdown]
 # # 🔬 <Title>
-# ...
+# Short description of the competition and the chosen approach.
 ```
 
 Return ONLY on the final line:

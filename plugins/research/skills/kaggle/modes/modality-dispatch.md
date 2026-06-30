@@ -43,8 +43,8 @@ _= df_train.plot.scatter("w", "h", alpha=0.3, title="Image dimensions")
 Setup cell (add to notebook setup `# %%`):
 ```python
 # %%
-! pip install -q tifffile imagecodecs ipywidgets
-! pip list | grep -E 'tifffile|ipywidgets'
+# ! pip install -q tifffile imagecodecs ipywidgets
+# ! pip list | grep -E 'tifffile|ipywidgets'
 ```
 
 Imports (add to imports `# %%`):
@@ -156,8 +156,8 @@ _= df_train[TARGET_COL].value_counts().plot(kind="bar", title="Target distributi
 Setup cell:
 ```python
 # %%
-! pip install -q open3d
-! python -c "import open3d; print(open3d.__version__)"
+# ! pip install -q open3d
+# ! python -c "import open3d; print(open3d.__version__)"
 ```
 
 ```python

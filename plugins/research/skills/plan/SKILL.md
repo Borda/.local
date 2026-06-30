@@ -184,7 +184,7 @@ Poll each checkpoint independently every `$PLAN_MONITOR_INTERVAL` seconds:
 
 Zero hits for any agent = that agent stalled (independent of others). Hard cutoff: `$PLAN_HARD_CUTOFF` (15 min). One extension (+5 min) per agent if partial output visible in its own review file. On per-agent timeout: surface partial results with ⏱, continue to P-P3 with the remaining advisor output.
 
-**Architect gate** — spawn `foundry:solution-architect` only when `scope_files` contains >1 file OR `agent_strategy = arch`. Single-file optimization goals skip architect (no architectural surface to validate; saves ~5–10 min and `opusplan`-tier tokens). Record skip reason in advisory block as `architect: skipped (single-file scope)`.
+**Architect gate** — spawn `foundry:solution-architect` only when `scope_files` contains >1 file OR `agent_strategy = arch`. Single-file optimization goals skip architect (no architectural surface to validate; saves ~5–10 min of opus-tier compute). Record skip reason in advisory block as `architect: skipped (single-file scope)`.
 
 When gate fires, before constructing the Agent() call, substitute the actual computed value of `$PLAN_RUN_DIR` into the prompt string (e.g. `.experiments/plan-2026-05-13T10-00-00Z`):
 

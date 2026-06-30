@@ -536,6 +536,10 @@ Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + Dat
 
 **Grounding protocol**: all competition-specific facts (input modality, eval metric, submission format) must be sourced from a fetched URL, user answer, or past notebook. The skill asks via `AskUserQuestion` for any required facts it cannot ground — it never hallucinates competition details.
 
+**Competitor context**: if `resources/competitors/` contains any `.ipynb` or `.py` files, the skill reads each and summarises the approach (model choice, preprocessing, augmentation strategy) before profiling the problem. Findings inform detection method and domain-specific preprocessing decisions.
+
+**Package distillation gate**: after the notebook is verified, the skill offers to extract reusable helpers (data loading, submission builder, metric utilities) into `src/<package>/` with Google-style docstrings and tests. The refactored notebook is written as a new file (`notebooks/01_<name>_pkg.py`) — the validated baseline is never modified.
+
 **Requires**: `foundry` plugin (`foundry:sw-engineer`).
 
 **Output**: `.experiments/kaggle/<competition-name>.py`

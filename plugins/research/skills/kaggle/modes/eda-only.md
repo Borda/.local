@@ -6,32 +6,70 @@ Generate ONLY sections 1–3 below. Do not generate Dataset/DataModule, Model, T
 
 ### Section 1: Header + Setup
 `# %% [markdown]` cell:
-  - Title: `# 🔬 <Competition Title> ⚡PTL + <ModelLibrary>` (emoji fitting the domain)
+  - Title: `# 🔬 <Competition Title> — EDA` (emoji fitting the domain)
   - 2–3 sentences: what the competition is about, approach chosen
   - Link: `Competition: <url-if-known>`
 
-`# %%` cell (setup — EDA always online, no frozen packages):
-  - `! pip install -q <library>`
-  - `! pip list | grep -E 'torch|lightning|timm'`
+`# %%` cell (setup — EDA online; downloads packages to `frozen_packages/` for offline reuse):
+  - `# ! pip download -q <library> --dest frozen_packages/`
+  - `# ! pip install -q --no-index --find-links frozen_packages/ <library> 2>/dev/null || pip install -q <library>`
+  - `# ! pip list | grep -E 'torch|lightning|timm'`
 
-### Section 2: Imports + Constants
-Single `# %%` cell:
+### Section 2: Imports + Path Constants
+Single `# %%` cell — global imports and paths only; **EDA config lives JIT in Section 3**:
   - stdlib: `import os, glob` (same line for short ones)
-  - domain libraries grouped loosely by concern
+  - domain libraries grouped loosely: numpy/pandas first, then torch/timm, then sklearn
+  - `from tqdm.auto import tqdm` (not `tqdm.tqdm`)
   - `import warnings; warnings.simplefilter("ignore", UserWarning)` when noisy libs used
-  - PATH constants: `PATH_DATASET`, `PATH_OUTPUT`, `PATH_MODELS` — ALL_CAPS, string values
-  - Config constants: `BATCH_SIZE`, `MAX_EPOCHS`, `LEARNING_RATE`, `MODEL_NAME`, `IMAGE_SIZE`
-  - Version print block: `print(f"PyTorch: {torch.__version__}")` etc.
-  - `pl.seed_everything(42)` (DL notebooks only)
+  - PATH constants only: `PATH_DATASET = "/kaggle/input/<competition>"`, `PATH_OUTPUT = "."` — ALL_CAPS
+  - Version print block: `print(f"PyTorch: {torch.__version__}")`, `print(f"Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")`
 
 ### Section 3: EDA
-`# %% [markdown]` header: `## EDA`
+`# %% [markdown]` header: `## EDA` — include explanation of what/why/how it contributes to the solution.
 
-Sub-cells (each a separate `# %%`):
-1. Load metadata CSV: `df_train = pd.read_csv(...)`, `print(f"size: {len(df_train)}")`, `display(df_train.head())`
-2. Label/target distribution: pie or bar chart, value_counts; `_=` suppression pattern
-3. Sample display — dispatch by `input_modality`; see `modality-dispatch.md`
-4. Dimension/size analysis if `image`: scatter of (width, height) with marginal histograms
+**EDA config block** — first `# %%` in this section (JIT constants):
+```python
+# %%
+SAMPLE_N   = 9          # images shown in sample grid
+TARGET_COL = "<col>"    # label column name in df_train
+```
+
+Sub-cells in narrative order (each a separate `# %%`):
+
+**3a. Dataset overview**
+```python
+# %%
+df_train = pd.read_csv(os.path.join(PATH_DATASET, "train.csv"))
+print(f"Train size: {len(df_train):,}  |  Columns: {list(df_train.columns)}")
+display(df_train.head())
+display(df_train.dtypes.to_frame("dtype"))
+print(f"\nMissing values:\n{df_train.isnull().sum()[df_train.isnull().sum() > 0]}")
+display(df_train.describe())
+```
+
+**3b. Label / target distribution** — bar or pie chart with axis labels, grid, legend when >1 class; `_=` suppression.
+
+**3c. Hypothesis validation** — `# %% [markdown]` cell listing hypotheses that gate design decisions, then one `# %%` per hypothesis:
+
+Generate from `problem_type` + `input_modality` — examples:
+- *class balance* → affects loss choice; code: `df_train[TARGET_COL].value_counts(normalize=True)`
+- *image resolution consistency* → affects resize strategy; code: sample (H, W) scatter
+- *label noise / duplicates* → affects augmentation strength; code: check duplicate ids
+- *missing files* → affects DataModule robustness; code: `sum(not os.path.exists(p) for p in paths)`
+
+Each hypothesis cell pattern:
+```python
+# %% [markdown]
+# ### Hypothesis: <name>
+# <one sentence why this matters for the solution>
+# %%
+<code to test>
+print(f"→ <finding> — design implication: <implication>")
+```
+
+**3d. Helper definition (JIT)** — define visualization helpers in a `# %%` cell immediately before the cell that uses them. Never at top of notebook.
+
+**3e. Sample display** — dispatch by `input_modality`; see `modality-dispatch.md`; uses helper from 3d.
 
 > loads: modality-dispatch.md
 
@@ -41,19 +79,15 @@ Sub-cells (each a separate `# %%`):
 - `tabular` → describe + correlation heatmap + target distribution
 - `point-cloud` → open3d scatter (adds open3d to setup cell)
 
+**3f. Dimension / size analysis** (image modalities) — scatter of (width, height); axis labels + grid.
+
 Any modality-specific installs required by the chosen branch go at the top of the setup `# %%` cell, not inline in Section 3.
 
 ## Style enforcement rules for the generator
 
-Apply ALL of these in the generated script:
+> loads: style-rules.md
 
-1. **`!` for ALL shell commands — never `subprocess`, never `get_ipython().system()`**: write `! cmd` verbatim; `%matplotlib inline` not `get_ipython().run_line_magic(...)`; if a linter rejects these, fix the linter config — NEVER rewrite the magic syntax
-2. `# ==============================` between logical blocks within a cell (not every line — only at major breaks)
-3. `_=` to suppress matplotlib/pandas return values: `_= df["col"].plot(...)`
-4. ALL_CAPS for paths and config constants
-5. Version print block right after imports
-6. No `if __name__ == '__main__':` guards
-7. No argparse, no dataclasses for config
+Apply all 11 base rules from `style-rules.md`.
 
 ## Output format
 
@@ -65,7 +99,7 @@ Use the Write tool. The file must start with:
 ```python
 # %% [markdown]
 # # 🔬 <Title>
-# ...
+# Short description of the competition and the chosen approach.
 ```
 
 Return ONLY on the final line:

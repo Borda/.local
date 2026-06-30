@@ -127,7 +127,7 @@ LAUNCH_AT_SCI=$(echo "$_HM_SCI" | grep '^LAUNCH_AT=' | cut -d= -f2)
 CHECKPOINT_SCI=$(echo "$_HM_SCI" | grep '^SENTINEL=' | cut -d= -f2)
 ```
 
-Then dispatch both agents (architect + scientist) in a single response.
+Dispatch agents in a single response — scientist always; architect only when complexity gate fires.
 
 Before constructing the J3 prompts, expand all bash variables into concrete paths — never pass literal `<path_to_program.md>` or `<RUN_DIR>` placeholders to agents:
 
@@ -147,7 +147,20 @@ else
 fi
 ```
 
-Spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opusplan`). The full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
+**Complexity gate** — mirrors P-P2b; skip architect for narrow single-scope experiments (saves full opus pass):
+
+```bash
+_SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null || echo 0)  # timeout: 5000
+_STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
+SPAWN_ARCHITECT=false
+if [ "${_SCOPE_COUNT:-0}" -gt 1 ] || [ "$_STRATEGY" = "arch" ] || grep -qiE "cross.domain|multi.system|distributed|multiple.*component|pipeline.*stage" "$PROGRAM_PATH" 2>/dev/null; then
+    SPAWN_ARCHITECT=true
+fi
+```
+
+When `SPAWN_ARCHITECT=false`: skip architect spawn; J5b precedence step 0 sets `methodology_rating="sound"` (scientist review still covers scientific rigor); record `architect: skipped (narrow scope)` in J6 summary.
+
+When `SPAWN_ARCHITECT=true`: spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opus`). The full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
 
 ```markdown
 Act as a research supervisor reviewing a PhD student's experimental protocol.
@@ -177,7 +190,7 @@ Return ONLY a compact JSON envelope on your final line — nothing else after it
 
 > **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in the template above MUST be replaced with the concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before the string is passed to `Agent(...)`. Passing the literal `${RUN_DIR}` to the agent will cause the agent to write to a directory named `${RUN_DIR}`. This applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation that the Agent runtime expands.
 
-Poll architect every 5 min: `find $RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
+When `SPAWN_ARCHITECT=true` — poll architect every 5 min: `find $RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
 
 - **Hard cutoff: 15 min** no file activity → timed out
 - **One extension (+5 min)**: if `tail -20 $RUN_DIR/methodology.md` shows active progress, grant one extension; second stall = hard cutoff
@@ -286,11 +299,18 @@ note: `claude` CLI not in PATH — Codex availability cannot be verified; skippi
 
 Apply rating source precedence before J6 verdict computation — fixes ambiguity when envelope and file-parsed ratings disagree.
 
-For each rating (`methodology_rating`, `scientific_rating`):
+For `methodology_rating`:
 
-1. If `$RUN_DIR/methodology.md` (or `scientific-review.md`) is present AND parsable, use file-parsed value — authoritative.
+0. If `SPAWN_ARCHITECT=false` (complexity gate did not fire): set `methodology_rating="sound"` directly — no file or envelope; log `→ methodology_rating: sound (architect gate skipped — narrow scope)`. Skip steps 1–2 for methodology_rating.
+1. If `$RUN_DIR/methodology.md` present AND parsable, use file-parsed value — authoritative.
 2. Else use envelope value from the agent's returned JSON — fallback.
-3. Log source used: print `→ methodology_rating source: file | envelope` and `→ scientific_rating source: file | envelope` before entering J6.
+3. Log source used: print `→ methodology_rating source: file | envelope`.
+
+For `scientific_rating`:
+
+1. If `$RUN_DIR/scientific-review.md` present AND parsable, use file-parsed value — authoritative.
+2. Else use envelope value from the agent's returned JSON — fallback.
+3. Log source used: print `→ scientific_rating source: file | envelope`.
 
 Resolved rating values feed directly into J6 verdict table — no further source disambiguation in J6.
 

@@ -7,7 +7,7 @@ Assume a trained checkpoint already exists (either from a prior training run or 
 
 > **Package API note**: patterns below are based on past notebooks — some packages may be at older API versions
 > (rfdetr, older pytorch_lightning, MONAI). Use most current available API; prefer `pytorch_lightning` over
-> `lightning` for Kaggle kernel compatibility. Check with `! pip list | grep -E 'torch|lightning|monai'`.
+> `lightning` for Kaggle kernel compatibility. Check with `! pip list | grep -E 'torch|lightning|monai'` in the setup cell.
 
 ### Section 1: Header + Setup
 
@@ -17,10 +17,10 @@ Assume a trained checkpoint already exists (either from a prior training run or 
   - `Checkpoint: <path-or-input-dataset>`
 
 `# %%` cell (setup — inference-only subset):
-  - `! cp -r ../input/python-packages/frozen_packages .` (frozen offline packages pattern)
+  - `# ! cp -r ../input/python-packages/frozen_packages .` (frozen offline packages pattern)
   - Install only inference-relevant libs: model architecture lib (timm, monai, rfdetr etc.) + tqdm
   - NO: lightning training callbacks, csv_logger, torchmetrics train_* metrics
-  - `! pip list | grep -E 'torch|lightning|timm|monai'`
+  - `# ! pip list | grep -E 'torch|lightning|timm|monai'`
 
 ### Section 2: Imports + Constants
 
@@ -35,13 +35,22 @@ Single `# %%` cell:
     - Detection: `from torchvision.ops import batched_nms`, `from PIL import Image`, `from torch.utils.data import DataLoader`
     - 3D segmentation: `import torch.nn.functional as F`, `from monai import transforms as MT`, `from monai.networks.nets import SegResNet, SwinUNETR`, `import tifffile`
   - `import warnings; warnings.simplefilter("ignore", UserWarning)`
-  - PATH constants: `PATH_DATASET`, `PATH_OUTPUT`, `PATH_CHECKPOINT` — ALL_CAPS
+  - PATH constants: `PATH_DATASET = "/kaggle/input/<competition>"`, `PATH_OUTPUT = "."` (Kaggle working dir — submission and output files land here), `PATH_CHECKPOINT` — ALL_CAPS
   - Inference-only config: `BATCH_SIZE`, `IMAGE_SIZE`, `DEVICE = "cuda" if torch.cuda.is_available() else "cpu"`
   - Version print: `print(f"PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}")`
 
 ### Section 3: Load Checkpoint
 
 `# %% [markdown]` header: `## Load Model`
+
+**First: check for `{COMPETITION_NAME}_model.py`** — if the training notebook used `%%writefile`, import from it instead of redefining the class:
+
+```python
+# %%
+from {competition_name}_model import <Name>Model  # written by training notebook %%writefile cell
+```
+
+If `{COMPETITION_NAME}_model.py` exists: use this import — do NOT redefine the class inline. If absent: choose a pattern below and define the class fully in this notebook (with all required imports).
 
 Choose ONE pattern based on `<recommended_model>` and checkpoint format:
 
@@ -71,7 +80,7 @@ model.eval()
 **Pattern C — custom model constructor (e.g. detection models):**
 ```python
 # %%
-# rfdetr example — API may differ in current version; check !rfdetr --version
+# rfdetr example — API may differ in current version; check: # ! rfdetr --version
 predictor = RFDETRLarge(
     pretrain_weights=str(PATH_CHECKPOINT),
     num_classes=NUM_CLASSES,
@@ -202,6 +211,9 @@ THRESHOLD = 0.5
 binary_preds = (np.array(all_preds) > THRESHOLD).astype(int)
 # Distribution check
 _= pd.Series(binary_preds).value_counts().plot(kind='bar', title='Prediction distribution')
+plt.xlabel("class")
+plt.ylabel("count")
+plt.grid(True)
 ```
 
 **Detection — coordinate rescaling (when model uses fixed resolution):**
@@ -243,7 +255,7 @@ Choose by output format:
 df_sub = pd.read_csv(os.path.join(PATH_DATASET, "sample_submission.csv"))
 df_sub["<target_col>"] = all_preds  # or binary_preds for classification
 df_sub.to_csv("submission.csv", index=False)
-! head submission.csv
+# ! head submission.csv
 ```
 
 **Detection — space-separated prediction string:**
@@ -260,7 +272,7 @@ def format_preds(boxes, scores, labels):
 df_sub = pd.read_csv(os.path.join(PATH_DATASET, "sample_submission.csv"))
 df_sub["PredictionString"] = [format_preds(**r) if "boxes" in r else NEGATIVE_PRED for r in results]
 df_sub.to_csv("submission.csv", index=False)
-! head submission.csv
+# ! head submission.csv
 ```
 
 **3D segmentation — TIFF per volume:**
@@ -276,17 +288,12 @@ print(f"Saved {len(predictions_clean)} masks to {PATH_OUTPUT}")
 
 ## Style enforcement rules for the generator
 
-Apply ALL of these in the generated script:
+> loads: style-rules.md
 
-1. **`!` for ALL shell commands — never `subprocess`, never `get_ipython().system()`**: write `! cmd` verbatim; if a linter rejects these, fix the linter config — NEVER rewrite the magic syntax
-2. `# ==============================` between logical blocks within a cell (not every line — only at major breaks)
-3. `_=` to suppress matplotlib/pandas return values: `_= df["col"].plot(...)`
-4. ALL_CAPS for paths and config constants
-5. Version print block right after imports
-6. `! head submission.csv` at the very end (or equivalent output confirmation for non-CSV formats)
-7. No `if __name__ == '__main__':` guards
-8. No argparse, no dataclasses for config
-9. **Package API note**: verify API compatibility before use — prefer `pytorch_lightning` over `lightning` for Kaggle; MONAI transforms dict-key API (`keys=["image"]`) is current; rfdetr/custom libs — check `! pip show <lib>` for installed version
+Apply all 11 base rules from `style-rules.md`, plus:
+
+12. `# ! head submission.csv` at the very end (or equivalent output confirmation for non-CSV formats)
+13. **Package API note**: verify API compatibility before use — prefer `pytorch_lightning` over `lightning` for Kaggle; MONAI transforms dict-key API (`keys=["image"]`) is current; rfdetr/custom libs — check `# ! pip show <lib>` for installed version
 
 ## Output format
 
@@ -298,7 +305,7 @@ Use the Write tool. The file must start with:
 ```python
 # %% [markdown]
 # # 🔬 <Title> — Inference
-# ...
+# Short description: checkpoint loaded, what this notebook produces.
 ```
 
 Return ONLY on the final line:
