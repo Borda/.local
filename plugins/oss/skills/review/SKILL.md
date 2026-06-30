@@ -1,6 +1,6 @@
 ---
 name: review
-description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design. TRIGGER when: user provides a GitHub PR number (e.g. 42, #42) and asks to review/audit/check it, or provides a saved review-report path with --reply to draft a contributor-facing comment; phrases: 'review PR 123', 'audit this pull request', 'look at PR #42', 'draft a reply for this review report'. SKIP: local file or current git diff review (use /develop:review); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use /oss:analyse)."
+description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design. TRIGGER when: user provides a GitHub PR number (e.g. 42, #42) and asks to review/audit/check it, or provides a saved review-report path with --reply to draft a contributor-facing comment; phrases: 'review PR 123', 'audit this pull request', 'look at PR #42', 'draft a reply for this review report'. SKIP: local file or current git diff review (use /develop:review (requires 'develop' plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use /oss:analyse)."
 argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
@@ -65,6 +65,8 @@ fi
 
 Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`, `oss:cicd-steward`. <!-- Inline fallback (if unreadable): all → general-purpose. -->
 
+**Resolve `REVIEW_SKILL_DIR`**: run `find ~/.claude/plugins -path "*/oss/skills/review" -type d 2>/dev/null`; if non-empty use that as the literal value, otherwise fall back to `plugins/oss/skills/review`. This resolved literal is `REVIEW_SKILL_DIR` — substitute it into every Agent spawn prompt and every `Read $REVIEW_SKILL_DIR/...` call below.
+
 **Task hygiene**: Call `TaskList` first. Each found task: `completed` if work done · `deleted` if orphaned · `in_progress` if genuinely continuing. TaskCreate each major phase; mark in_progress/completed throughout.
 
 Create these tasks **before** starting Step 1 (in order, all at once):
@@ -74,6 +76,60 @@ Create these tasks **before** starting Step 1 (in order, all at once):
 - **"Step 4: Cross-validate critical findings"** — TaskUpdate(in_progress) before spawning verifier agents; TaskUpdate(completed) when all verdicts received; **skip task creation entirely** when no critical/blocking findings exist after Step 3
 - **"Step 5: Consolidate findings"** — TaskUpdate(in_progress) before spawning consolidator; TaskUpdate(completed) before printing terminal block (per task-lifecycle.md: before long output)
 - **"Step 8: Contributor reply draft"** — create only when REPLY_MODE=true, before spawning oss:shepherd; TaskUpdate(in_progress) immediately after creation; TaskUpdate(completed) when shepherd output written
+
+## Step 0: Content-type pre-classification (PR mode only)
+
+Skip when `DIRECT_PATH_MODE=true`.
+
+Classify PR from changed file patterns. Default `PR_TYPE=CODE`; override only when unambiguous.
+
+```bash
+PR_TYPE="CODE"
+DOCS_TYPING_MODE=false; TESTS_CI_MODE=false
+if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
+    _CHANGED=$(gh pr diff $CLEAN_ARGS --name-only 2>/dev/null)  # timeout: 6000
+    _PY_LOGIC_COUNT=$(echo "$_CHANGED" | grep -E '\.py$' | grep -cvE '(test_|_test\.py|conftest\.py|\.pyi$)' 2>/dev/null || echo 0)
+    _ALL_COUNT=$(echo "$_CHANGED" | grep -c . 2>/dev/null || echo 0)
+    _DOC_COUNT=$(echo "$_CHANGED" | grep -cE '\.(md|rst|txt|ipynb)$' 2>/dev/null || echo 0)
+    _TEST_CI_COUNT=$(echo "$_CHANGED" | grep -cE '(test_|_test\.py|conftest\.py|\.ya?ml$|\.github/|tox\.ini|Makefile)' 2>/dev/null || echo 0)
+
+    if [ "${_PY_LOGIC_COUNT:-0}" -eq 0 ] && [ "${_ALL_COUNT:-0}" -gt 0 ]; then
+        if [ "$_DOC_COUNT" -ge "$_ALL_COUNT" ]; then
+            PR_TYPE="DOCS_TYPING"; DOCS_TYPING_MODE=true
+        elif [ "$(( _TEST_CI_COUNT + _DOC_COUNT ))" -ge "$_ALL_COUNT" ]; then
+            PR_TYPE="TESTS_CI"; TESTS_CI_MODE=true
+        fi
+    fi
+    echo "→ PR_TYPE=$PR_TYPE (_py_logic=$_PY_LOGIC_COUNT, _all=$_ALL_COUNT)"
+fi
+```
+
+**A2** — challenger adds no value for non-logic PRs:
+```bash
+if [ "$PR_TYPE" = "DOCS_TYPING" ] || [ "$PR_TYPE" = "TESTS_CI" ]; then
+    CHALLENGE_ENABLED=false
+fi
+```
+
+Persist for Step 2:
+```bash
+{
+    echo "PR_TYPE=$PR_TYPE"
+    echo "DOCS_TYPING_MODE=$DOCS_TYPING_MODE"
+    echo "TESTS_CI_MODE=$TESTS_CI_MODE"
+} >> "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
+echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag"
+```
+
+Agent lineup — `PR_TYPE != CODE` overrides scope-based rules in Step 1:
+
+| `PR_TYPE` | Agents | Challenger | Consolidator |
+| --- | --- | --- | --- |
+| `DOCS_TYPING` | `foundry:linting-expert` only | skip | `foundry:linting-expert` |
+| `TESTS_CI` | `foundry:qa-specialist` + `foundry:linting-expert` | skip | `foundry:qa-specialist` |
+| `CODE` | full scope-based lineup | per `--no-challenge` | `foundry:sw-engineer` |
+
+When `DOCS_TYPING_MODE=true` or `TESTS_CI_MODE=true`: skip Step 1 file-scope detection and SCOPE classification; proceed directly to Step 2 agent launch.
 
 ## Step 1: Identify scope and context (run in parallel for PR mode)
 
@@ -155,6 +211,10 @@ Read `$REVIEW_SKILL_DIR/modes/scope-detection.md` and execute its bash blocks in
 
 ### Scope pre-check
 
+**DOCS_TYPING mode** (`DOCS_TYPING_MODE=true`): annotation-only .py changes (no logic). Spawn: `foundry:linting-expert` only; challenger disabled by Step 0; skip all other agents. Proceed directly to agent launch.
+
+**TESTS_CI mode** (`TESTS_CI_MODE=true`): test files and CI config only. Spawn: `foundry:qa-specialist` + `foundry:linting-expert`; challenger disabled by Step 0; skip all other agents. Proceed directly to agent launch.
+
 **CI/CD-only mode** (`CICD_ONLY_MODE=true`): no `.py`/`.md`/`.rst`. Spawn: `oss:cicd-steward` + Agent 1 + Agent 7 (if `CHALLENGE_ENABLED=true`) + Codex; skip Agents 2–6. Proceed directly to agent launch.
 
 **Docs-only mode** (`DOCS_ONLY_MODE=true`): no `.py`. **foundry:doc-scribe (Agent 4) leads** — Agent 1 explicitly skipped (NOT for docs clause); linked-issue spawns also skip Agent 1. Spawn: Agent 4 + Agent 7 (if `CHALLENGE_ENABLED=true`) + Codex; skip Agents 1, 2, 3, 5, 6. Proceed directly to agent launch.
@@ -215,7 +275,7 @@ Skip optional agents by classification:
 
 Parse PR body (`gh pr view $CLEAN_ARGS`) for issue refs (`Closes #N`, `Fixes #N`, `Resolves #N`, `refs #N` — case-insensitive). Extract to `ISSUE_NUMS`. Cap 3.
 
-`ISSUE_NUMS` non-empty AND `DOCS_CICD_MODE != true`: spawn one **foundry:sw-engineer** per issue in Step 2 alongside Codex — all launch simultaneously. Each issue agent: fetch `gh issue view <N> --json title,body,comments,state,labels` + `gh issue view <N> --comments`; produce `/oss:analyse`-style output (Summary, Root Cause Hypotheses top 3, Code Evidence); write full analysis to `$RUN_DIR/issue-<N>.md`; return only `{"status":"done","issue":N,"root_cause":"<one-line>","file":"$RUN_DIR/issue-<N>.md","confidence":0.N}`.
+`ISSUE_NUMS` non-empty AND `DOCS_CICD_MODE != true`: spawn one **foundry:doc-scribe** per issue in Step 2 alongside Codex — all launch simultaneously. Each issue agent: fetch `gh issue view <N> --json title,body,comments,state,labels` + `gh issue view <N> --comments`; produce `/oss:analyse`-style output (Summary, Root Cause Hypotheses top 3, Code Evidence); write full analysis to `$RUN_DIR/issue-<N>.md`; return only `{"status":"done","issue":N,"root_cause":"<one-line>","file":"$RUN_DIR/issue-<N>.md","confidence":0.N}`.
 
 `ISSUE_NUMS` empty → skip issue checks downstream.
 
@@ -240,8 +300,6 @@ echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir"
 REPORT_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR" # timeout: 5000
 ```
-
-**Resolve `REVIEW_SKILL_DIR`**: run `find ~/.claude/plugins -path "*/oss/skills/review" -type d 2>/dev/null`; if non-empty use that as the literal value, otherwise fall back to `plugins/oss/skills/review`. This resolved literal is `REVIEW_SKILL_DIR` — substitute it into every Agent spawn prompt below.
 
 **File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn and continue without it.
 
@@ -293,16 +351,25 @@ _REVIEW_SCOPE_FILE="${TMPDIR:-/tmp}/oss-review-scope-${_PR_TAG}"
 POLL_START=$(date +%s)
 EXPECTED_FILE="$RUN_DIR/.expected-files"
 : >"$EXPECTED_FILE"  # truncate / create empty
-[ "$CODEX_AVAILABLE" = "1" ] && echo "$RUN_DIR/foundry--codex.md" >>"$EXPECTED_FILE"
-[ "$DOCS_CICD_MODE" != "true" ] && for N in $ISSUE_NUMS; do echo "$RUN_DIR/issue-$N.md" >>"$EXPECTED_FILE"; done
-{ [ "$CICD_ONLY_MODE" = "true" ] || [ "$DOCS_CICD_MODE" = "true" ]; } && echo "$RUN_DIR/oss--cicd-steward.md" >>"$EXPECTED_FILE"
-[ "$DOCS_CICD_MODE" != "true" ] && [ "$DOCS_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--sw-engineer.md" >>"$EXPECTED_FILE"
-{ [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && { [ "$SCOPE" != "CHORE" ] || [ "$CHORE_DEPS" = "true" ]; }; } && echo "$RUN_DIR/foundry--qa-specialist.md" >>"$EXPECTED_FILE"
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && echo "$RUN_DIR/foundry--perf-optimizer.md" >>"$EXPECTED_FILE"
-[ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--doc-scribe.md" >>"$EXPECTED_FILE"
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
-[ "$CHALLENGE_ENABLED" = "true" ] && echo "$RUN_DIR/foundry--challenger.md" >>"$EXPECTED_FILE"
-[ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "FIX" ] && [ "$SCOPE" != "CHORE" ] && echo "$RUN_DIR/foundry--solution-architect.md" >>"$EXPECTED_FILE"
+
+# Step 0 simplified modes — short-circuit full agent lineup
+if [ "${DOCS_TYPING_MODE:-false}" = "true" ]; then
+    echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
+elif [ "${TESTS_CI_MODE:-false}" = "true" ]; then
+    echo "$RUN_DIR/foundry--qa-specialist.md" >>"$EXPECTED_FILE"
+    echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
+else
+    [ "$CODEX_AVAILABLE" = "1" ] && echo "$RUN_DIR/foundry--codex.md" >>"$EXPECTED_FILE"
+    [ "$DOCS_CICD_MODE" != "true" ] && for N in $ISSUE_NUMS; do echo "$RUN_DIR/issue-$N.md" >>"$EXPECTED_FILE"; done
+    { [ "$CICD_ONLY_MODE" = "true" ] || [ "$DOCS_CICD_MODE" = "true" ]; } && echo "$RUN_DIR/oss--cicd-steward.md" >>"$EXPECTED_FILE"
+    [ "$DOCS_CICD_MODE" != "true" ] && [ "$DOCS_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--sw-engineer.md" >>"$EXPECTED_FILE"
+    { [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && { [ "$SCOPE" != "CHORE" ] || [ "$CHORE_DEPS" = "true" ]; }; } && echo "$RUN_DIR/foundry--qa-specialist.md" >>"$EXPECTED_FILE"
+    [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "CHORE" ] && [ "$SCOPE" != "FIX" ] && echo "$RUN_DIR/foundry--perf-optimizer.md" >>"$EXPECTED_FILE"
+    [ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--doc-scribe.md" >>"$EXPECTED_FILE"
+    [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && echo "$RUN_DIR/foundry--linting-expert.md" >>"$EXPECTED_FILE"
+    [ "$CHALLENGE_ENABLED" = "true" ] && echo "$RUN_DIR/foundry--challenger.md" >>"$EXPECTED_FILE"
+    [ "$DOCS_ONLY_MODE" = "false" ] && [ "$DOCS_CICD_MODE" = "false" ] && [ "$CICD_ONLY_MODE" != "true" ] && [ "$SCOPE" != "FIX" ] && [ "$SCOPE" != "CHORE" ] && echo "$RUN_DIR/foundry--solution-architect.md" >>"$EXPECTED_FILE"
+fi
 ```
 
 Later poll blocks read paths back via `while read -r path; do [ -f "$path" ] || PENDING=1; done <"$EXPECTED_FILE"` — no in-memory array required.
@@ -375,10 +442,21 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 
 **IMPORTANT**: expand `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt. Un-expanded variables create wrong paths. The `## Source Files` footnote `Glob(... path="<EXPANDED_RUN_DIR>")` path must also be expanded to the literal `$RUN_DIR` value.
 
-Spawn **foundry:sw-engineer** consolidator agent with prompt:
+Select consolidator agent by `PR_TYPE` (B3 — lighter model for non-logic PRs):
+```bash
+_REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
+[ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
+case "${PR_TYPE:-CODE}" in
+    DOCS_TYPING) CONSOLIDATOR_AGENT="foundry:linting-expert" ;;
+    TESTS_CI)    CONSOLIDATOR_AGENT="foundry:qa-specialist" ;;
+    *)           CONSOLIDATOR_AGENT="foundry:sw-engineer" ;;
+esac
+```
+
+Spawn `$CONSOLIDATOR_AGENT` consolidator agent with prompt:
 
 <!-- loads: consolidator-prompt.md -->
-Read `$REVIEW_SKILL_DIR/templates/consolidator-prompt.md`. Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values; leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted consolidator-prompt.md content>)`
+Read `$REVIEW_SKILL_DIR/templates/consolidator-prompt.md`. Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values; leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
 
 Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded:
 Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.`
@@ -479,6 +557,8 @@ Scenarios:
 1. FIX scope: single bug-fix PR with 1 changed file → scope=FIX, 2 agents skipped: perf-optimizer (scope), solution-architect (scope). Remaining: sw-engineer, qa-specialist, doc-scribe, linting-expert, challenger (unless `--no-challenge`) = 5 agents run (+ Codex if installed).
 2. FEATURE scope: new feature PR with API changes → scope=FEATURE, all 7 agents run
 3. --reply mode: existing review report + --reply flag → skip to Step 8, no agents spawned
+4. DOCS_TYPING scope: PR with only annotation-type .py changes (no logic) → Step 0 sets PR_TYPE=DOCS_TYPING, CHALLENGE_ENABLED=false, CONSOLIDATOR_AGENT=foundry:linting-expert; only linting-expert spawned; Step 5 uses linting-expert consolidator.
+5. TESTS_CI scope: PR with only test files + CI config → Step 0 sets PR_TYPE=TESTS_CI, CHALLENGE_ENABLED=false, CONSOLIDATOR_AGENT=foundry:qa-specialist; qa-specialist + linting-expert spawned; Step 5 uses qa-specialist consolidator.
 
 </calibration>
 

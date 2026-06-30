@@ -86,6 +86,7 @@ Capture caller's branch first — needed for Step 11 restore even when Step 4 (`
 
 ```bash
 SAVED_BRANCH=$(git branch --show-current 2>/dev/null || echo "")  # timeout: 3000
+echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch"
 ```
 
 Extracted to `bin/resolve_preflight.py` — checks codex availability, `gh` binary + auth, syncs with remote. Caches positive results under `.claude/state/preflight/` (4 h TTL). Writes `CODEX_AVAILABLE` and `GH_OK` to `${TMPDIR:-/tmp}/resolve-preflight-*` files; status messages go to stderr; exits non-zero only on hard failure (`gh` missing/unauthenticated, `git pull` conflict).
@@ -267,16 +268,16 @@ Sort all pending items by severity descending (most impactful first). Constraint
 **Bulk-action resolution from Q4**:
 - (a) → `SELECTED_ITEMS` = all `[req]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
 - (b) → `SELECTED_ITEMS` = all `[suggest]` IDs; skip Call 2 in two-call flow; proceed to commit mode question
-- (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; `COMMIT_MODE = all`; skip Call 2; skip commit mode question
+- (c) → `SELECTED_ITEMS` = all pending [req+suggest] IDs; skip Call 2; proceed to commit mode question (do NOT hardcode `COMMIT_MODE` — scope and commit mode are orthogonal; user still chooses granularity)
 - (d) → stop; print `→ All items skipped.`; jump to Step 11
 - Q4 unanswered / "Type something" → use checked IDs from Q1–Q3; proceed to commit mode question; `COMMIT_MODE = each` (default)
 
 **Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "ALL (req + suggest)" in Call 1 → skip Call 2.
 
-**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit mode question unless (c) or (d) selected.
+**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit mode question unless (d) selected.
 
-<!-- branch: main-path — commit-mode (call 2 of 4; skipped when Q4=(c) bulk or (d) skip) -->
-**Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), or unanswered (skip when (c) or (d)):
+<!-- branch: main-path — commit-mode (call 2 of 4; skipped only when Q4=(d) skip) -->
+**Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), (c), or unanswered (skip only when (d) skip-all). Commit mode is always the user's choice; item scope ((c) = all items) never implies a commit mode:
 
 ```text
 AskUserQuestion: "Commit mode for selected items:"
@@ -334,6 +335,7 @@ if [ "$PR_HEAD_REF" = "$DEFAULT_BRANCH" ]; then
     exit 1
 fi
 SAVED_BRANCH=$(git rev-parse --abbrev-ref HEAD)  # timeout: 3000
+echo "$SAVED_BRANCH" > "${TMPDIR:-/tmp}/resolve-saved-branch"
 # SHA-first checkout guard: skip if already at PR head. Avoids worktree conflict — gh pr checkout
 # creates pr-N-slug alias when branch active in another worktree.
 PR_HEAD_OID=$(gh pr view "<PR#>" --json headRefOid --jq .headRefOid 2>/dev/null)  # timeout: 6000
@@ -538,6 +540,7 @@ Mark remaining open tasks `completed`. Read report template from `$_OSS_RESOLVE/
 Include `### Challenge Log` section in report — one row per item: id · evidence verdict · suggestion verdict · resolution (as-suggested / self-resolved / rejected). Omit section when `--no-challenge`.
 
 ```bash
+SAVED_BRANCH=$(cat "${TMPDIR:-/tmp}/resolve-saved-branch" 2>/dev/null || echo "")
 # skip restore when COMMIT_MODE=stage — staged changes would be lost
 if [ "$COMMIT_MODE" = "stage" ]; then
     echo "⚠ COMMIT_MODE=stage: changes are staged on $(git branch --show-current) — restore to $SAVED_BRANCH skipped to preserve staged work. Run: git stash && git switch $SAVED_BRANCH && git stash pop (on PR branch) when ready."
@@ -575,7 +578,8 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **`gh pr merge` flags**: `--merge` = preserves all commits; `--squash` = collapses; never `--rebase` (rewrites SHAs); default `--merge`.
 - **Impl agent health + effort**: IMPL_AGENT defaults to `codex:codex-rescue` (CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout). Effort: never `low`; minimum `medium`; typo/doc → `medium`; multi-file/new-feature → `xhigh`; default `high`. `--agent foundry:*`: foreground only, no health monitoring.
 - **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
-- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via a separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), or unanswered — distinct from Q4 (which sets item scope, not commit strategy). Do not merge these two questions.
+- **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via a separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), (c), or unanswered — skipped only when Q4=(d) skip-all — distinct from Q4 (which sets item scope, not commit strategy). Item scope never implies a commit mode. Do not merge these two questions.
+- **AskUserQuestion usage**: 10 total calls across all paths. Normal path: 4 calls (Steps 3a, 3d, per-item challenge, Step 11); worst-case path: 5 calls when codex-cap fires (N>8 items + codex available adds 1 call). <!-- worst-case path: 5 calls (with codex-cap) -->
 - **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be implementation agent (not curator); omit Codex trailer when IMPL_AGENT ≠ `codex:codex-rescue`.
 - **Thread resolution via GraphQL** — `isResolved` on `PullRequestReviewThread` (GraphQL only); REST not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId`; GraphQL failure → `[]`.
 - **Discussion vs inline**: `gh pr view --comments` = discussion (`location: discussion`; no Resolve button); `gh api .../pulls/<N>/comments` = inline (`location: inline`; resolvable). `location: discussion` + `[report]` items: implement-only, no GitHub close action. Surface `Loc` column in Step 11 report.

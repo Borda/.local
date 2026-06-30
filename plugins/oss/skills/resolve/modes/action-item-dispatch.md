@@ -91,7 +91,25 @@ ITEM_CALLERS=$(awk "/^item #${item_id} /,/^[[:space:]]*$/" <<< "$BLAST_RADIUS_CO
 
 Include non-empty `$ITEM_CALLERS` in impl agent prompt — see Phase 2.
 
-### Phase 1: Two-phase challenge (skip when `--no-challenge`)
+**C1 — Codex-first routing for `medium` effort items** (skip Phase 1+2 when Codex handles it):
+
+When `ITEM_EFFORT=medium` AND `CODEX_AVAILABLE=true`: dispatch Codex for evidence check + implementation in one call.
+
+```text
+Agent(subagent_type="codex:codex-rescue", prompt="Effort level: medium. Review and implement this action item if valid.
+Item: <full_comment_text>
+File: <file>  Line: <line>
+Implement directly if the issue clearly exists. Return ONLY compact JSON as your FINAL message:
+{\"verdict\":\"DONE\"|\"UNCERTAIN\",\"reason\":\"<one sentence>\",\"files_changed\":N}")
+```
+
+Parse JSON:
+- **DONE** → mark item resolved; stage/commit per `COMMIT_MODE`; append to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=VALID resolution=codex-direct`; skip Phase 1+2; proceed to next item
+- **UNCERTAIN** → fall through to Phase 1+2 (normal challenge + implementation flow)
+
+When `CODEX_AVAILABLE=false` OR `ITEM_EFFORT!=medium`: skip Codex routing; use Phase 1+2 directly.
+
+### Phase 1: Challenge (skip when `--no-challenge`)
 
 Route by domain to foreground challenge agent:
 
@@ -104,32 +122,22 @@ Route by domain to foreground challenge agent:
 
 Set `DOMAIN_CHALLENGER` from routing table: architecture/API/coupling/default → `foundry:challenger`; code logic/correctness/edge-cases → `foundry:sw-engineer`; test coverage/assertions/regressions → `foundry:qa-specialist`. Use agent-resolution.md fallback if foundry absent.
 
-**1a — challenge evidence** (does the stated problem actually exist in the code?):
+**Combined evidence + suggestion challenge** (B1 — single agent call, saves one opus spawn per item):
 
 ```text
-Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Challenge evidence only — does this issue actually exist in the code as described?
-Read the referenced file at <file:line>. Max 2 tool calls.
-Write full analysis to $IMPL_DIR/challenge-<id>-1a.md using the Write tool.
+Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Two-part challenge for this review item.
+Part 1 — does the stated problem actually exist in the code as described?
+Part 2 — if problem exists, is the suggested fix the right approach?
+Read the referenced file at <file:line>. Max 3 tool calls.
+Write full analysis to $IMPL_DIR/challenge-<id>.md using the Write tool.
 Return ONLY compact JSON as your FINAL message (nothing after it):
-{\"verdict\":\"VALID\"|\"REJECT\",\"rationale\":\"<one sentence>\"}")
+{\"evidence\":\"VALID\"|\"REJECT\",\"evidence_rationale\":\"<one sentence>\",\"suggestion\":\"VALID\"|\"REJECT\",\"suggestion_rationale\":\"<one sentence>\",\"alternative\":\"<brief alternative or null>\"}")
 ```
 
 Parse compact JSON from agent final message:
-- **REJECT** → print `⊘ #<id> evidence rejected: <rationale>`; set type `[challenged:reject]`; append to `CHALLENGE_LOG`; skip to next item
-- **VALID** → proceed to 1b
-
-**1b — challenge suggestion** (is the suggested fix the right approach?):
-
-```text
-Agent(subagent_type="${DOMAIN_CHALLENGER}", prompt="Evidence confirmed. Challenge the suggested fix only — is it the right approach?
-Write full analysis to $IMPL_DIR/challenge-<id>-1b.md using the Write tool.
-Return ONLY compact JSON as your FINAL message (nothing after it):
-{\"verdict\":\"VALID\"|\"REJECT\",\"rationale\":\"<one sentence>\",\"alternative\":\"<brief alternative or null>\"}")
-```
-
-Parse compact JSON from agent final message:
-- **VALID** → `SUGGESTION_VERDICT=VALID`; use original suggestion for implementation
-- **REJECT** → `SUGGESTION_VERDICT=REJECT`; self-resolve: implement best fix for confirmed issue using `alternative` as guidance
+- `evidence=REJECT` → print `⊘ #<id> evidence rejected: <evidence_rationale>`; set type `[challenged:reject]`; append to `CHALLENGE_LOG`; skip to next item
+- `evidence=VALID` + `suggestion=VALID` → `SUGGESTION_VERDICT=VALID`; use original suggestion for implementation
+- `evidence=VALID` + `suggestion=REJECT` → `SUGGESTION_VERDICT=REJECT`; self-resolve using `alternative` as guidance
 
 Append to `CHALLENGE_LOG`: `id=<id> evidence=VALID suggestion=<VALID|REJECT> resolution=<as-suggested|self-resolved>`.
 
@@ -272,6 +280,7 @@ for _entry in "${CHALLENGE_LOG[@]}"; do
     esac
 done
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/commit_all_items.py" "$PR_NUMBER" "$N_AS_SUGGESTED" "$N_SELF_RESOLVED" "$N_REJECTED" "$SUMMARIES_FILE" $( [ "${CODEX_AVAILABLE:-false}" = "true" ] && echo "--codex" )  # timeout: 10000
+```
 
 After the commit succeeds, flip all staged items to completed (deferred from per-item loop body where commit had not yet happened):
 

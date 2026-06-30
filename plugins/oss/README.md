@@ -1,6 +1,6 @@
 # 🌱 oss — Claude Code Plugin
 
-OSS workflow plugin for Python/ML open-source projects. Two specialist agents and four slash-command skills covering issue analysis, parallel code review, PR resolution, and SemVer-disciplined releases.
+OSS workflow plugin for Python/ML open-source projects. Four agents (two user-facing, two internal pipeline) and four slash-command skills covering issue analysis, parallel code review, PR resolution, and SemVer-disciplined releases.
 
 > Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:qa-specialist`, etc.) and is strongly recommended for production use.
 
@@ -357,7 +357,7 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 
 | Mode / Flag   | What it produces                                                                                                                          |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `notes`       | Release notes (`PUBLIC-NOTES.md`); add flags for extra outputs                                                                            |
+| `notes`       | Release notes (`DRAFT.md`); add flags for extra outputs                                                                                   |
 | `--changelog` | CHANGELOG.md entry (no shepherd review)                                                                                                   |
 | `--summary`   | Internal summary saved to `.temp/`                                                                                                        |
 | `--migration` | Migration guide for breaking changes saved to `.temp/` (shepherd review)                                                                  |
@@ -373,7 +373,7 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 | Classify changes      | ✓             | ✓         | -       | ✓      |
 | Explore codebase      | full          | diff      | full    | diff   |
 | Shepherd voice review | ✓             | ✓         | -       | -      |
-| PUBLIC-NOTES.md       | write         | write     | -       | -      |
+| DRAFT.md              | write         | write     | -       | -      |
 | CHANGELOG.md          | `--changelog` | write     | -       | -      |
 | SUMMARY.md            | `--summary`   | write     | -       | -      |
 | MIGRATION.md          | `--migration` | write¹    | -       | -      |
@@ -493,7 +493,7 @@ ______________________________________________________________________
 
 **Role:** GitHub Actions health specialist. Owns CI configuration quality: workflow topology, runner strategy, caching, branch protections, and flaky test detection.
 
-**Model:** Haiku (fast iteration on workflow YAML)
+**Model:** Sonnet (fast iteration on workflow YAML)
 
 **When to use cicd-steward directly:**
 

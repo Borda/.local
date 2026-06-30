@@ -42,7 +42,7 @@ Infer `INTEL_AGENT` from `PR_LABELS` + `PR_TITLE` (lowercase, first match wins) 
 | --- | --- |
 | `test`, `spec`, `pytest`, `coverage` | `foundry:qa-specialist` |
 | `doc`, `readme`, `changelog`, `sphinx` | `foundry:doc-scribe` |
-| `lint`, `style`, `format`, `ruff`, `mypy` | `foundry:linting-expert` |
+| `lint`, `style`, `format`, `ruff`, `mypy`, `typing`, `type hint`, `annotation`, `annotate`, `docstring`, `comments` | `foundry:linting-expert` |
 | (no match / mixed) | `foundry:sw-engineer` |
 
 **`--agent` override applies to `INTEL_AGENT`**: when the caller passes `--agent <name>`, the resolved (auto-prefixed) agent overrides the routing table for `INTEL_AGENT` as well as the Step 8 implementation agent — caller's explicit agent choice always wins. Exception: when the resolved agent is `codex:codex-rescue` (Codex is the implementation default; not a classification agent), fall back to the routing table for `INTEL_AGENT`.

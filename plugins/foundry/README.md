@@ -455,7 +455,7 @@ ______________________________________________________________________
 
 **Use for**: evaluating architectural trade-offs, designing public API contracts, planning deprecation strategies, assessing architectural feasibility of AI-generated hypotheses against codebase constraints.
 
-**Model**: `opusplan` (plan-gated Opus)
+**Model**: `opus`
 
 **Not for**: writing implementation code (use `foundry:sw-engineer`), release management (use `oss:shepherd`), performance profiling or DataLoader throughput tuning (use `foundry:perf-optimizer`).
 
@@ -607,7 +607,7 @@ Agents form a directed pipeline, not a flat pool:
 - `foundry:web-explorer` **feeds** `research:scientist` — fetches current docs and papers; scientist interprets
 - `foundry:creator` is always **downstream** of `/foundry:create` — reads the approved outline file; never generates content without a prior outline
 
-**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:solution-architect`, `foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`.
+**Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, `foundry:solution-architect`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`.
 
 ______________________________________________________________________
 
@@ -681,7 +681,7 @@ Each pipeline subagent has a 10-minute hard cutoff (15 minutes when Codex is act
 
 **`/foundry:manage create` picks wrong model tier**
 
-Model tier is chosen by role complexity at creation time: `opusplan` for plan-gated roles, `opus` for complex implementation, `sonnet` for focused execution, `haiku` for high-frequency diagnostics. To fix after creation: `/foundry:manage update <name> "change model to sonnet"`.
+Model tier is chosen by role complexity at creation time: `opusplan` for plan-gated quality review (e.g. `foundry:curator`), `opus` for complex reasoning (e.g. `foundry:sw-engineer`, `foundry:solution-architect`), `sonnet` for focused execution, `haiku` for high-frequency diagnostics. To fix after creation: `/foundry:manage update <name> "change model to sonnet"`.
 
 **`foundry:curator` returns low confidence during `/foundry:audit`**
 

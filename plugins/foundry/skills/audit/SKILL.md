@@ -53,7 +53,8 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 MONITOR_INTERVAL=300   # 5 minutes between polls
 HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
 EXTENSION=300          # one +5 min extension if output file explains delay
-BATCH_SIZE=5           # max files per foundry:curator spawn in Step 3; keep small to avoid context compaction
+BATCH_SIZE_MIN=5       # minimum files per batch; ensures curator gets sufficient context per spawn
+MAX_BATCHES=10         # total batch cap; EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total / MAX_BATCHES))
 ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention; override with --batch-size N
 
 </constants>
@@ -223,11 +224,11 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 
 **Hard rule — no pre-reading**: Never call Read on agent/skill file before spawning foundry:curator. Spawned agent does the reading. Orchestrator reads only returned JSON envelope. Pre-reading 41 KB files into main context = defeats delegation + causes context overflow at scale.
 
-**Batching rule**: Always apply the grouping algorithm — group files into batches of up to `BATCH_SIZE` regardless of total file count. Never spawn one agent per file. Total files ≤ `BATCH_SIZE` produces one batch containing all files, not N batches of one file each.
+**Batching rule**: Always apply the grouping algorithm. Compute `EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total_files / MAX_BATCHES))` before grouping — caps total batches at `MAX_BATCHES` while guaranteeing `BATCH_SIZE_MIN` files per batch for adequate curator context. Group files into batches of up to `EFFECTIVE_BATCH`. Never spawn one agent per file. Total files ≤ `EFFECTIVE_BATCH` → one batch containing all files.
 
 **Grouping algorithm**: (1) sort by plugin origin (`plugins/<name>/` prefix); (2) assign each plugin's files to batches, fill to `BATCH_SIZE` before next — keeps same-plugin files together; (3) remaining files (`.claude/` and mixed) fill open slots. Grouping plugin-first, not strictly ordered — unconnected files assigned randomly to reach `BATCH_SIZE`.
 
-**Scope-restricted runs**: fewer than `BATCH_SIZE` files → one batch containing ALL files in scope (single foundry:curator spawn). Read only relevant template file(s) for active scope, not all 4.
+**Scope-restricted runs**: fewer than `EFFECTIVE_BATCH` files → one batch containing ALL files in scope (single foundry:curator spawn). Read only relevant template file(s) for active scope, not all 4.
 
 Set up the run directory once before spawning any agents:
 

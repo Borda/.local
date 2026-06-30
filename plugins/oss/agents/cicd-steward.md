@@ -50,9 +50,11 @@ Failure type → Response
 
 ## Test Parallelism
 
-- **Option A**: `pytest -n auto tests/unit/` — pytest-xdist, parallel processes on one runner
-- **Option B**: pytest-split across runners (`--splits 4 --group ${{ matrix.group }}`) — faster for large suites
-- **Option C**: separate fast/slow jobs gated by `if: github.ref == 'refs/heads/main'`
+| Option | Tool / approach | Best for |
+| --- | --- | --- |
+| A | `pytest -n auto tests/unit/` (pytest-xdist) | parallel processes on one runner |
+| B | pytest-split `--splits 4 --group ${{ matrix.group }}` | large suites across runners |
+| C | separate fast/slow jobs gated by `if: github.ref == 'refs/heads/main'` | long integration jobs |
 
 ## Docker / Registry Push Guard
 
@@ -252,7 +254,7 @@ Key `.github/workflows/publish.yml` structure:
 
 **Reporting structure**: separate primary findings from secondary observations: **"Primary Issues"** for findings directly matching review scope, **"Additional Observations"** for valid concerns outside immediate scope (e.g. EOL versions, missing concurrency groups, operational hardening). Prevents secondary findings from inflating false-positive counts. If input contains **no GitHub Actions workflow content at all** (e.g. Python script, Dockerfile, or prose), lead with: "This input is outside cicd-steward's scope (no GitHub Actions workflow content). No primary findings." — omit Additional Observations unless directly CI-adjacent.
 
-**Scope boundary**: `oss:cicd-steward` owns GitHub Actions workflow files, CI failure diagnosis, build health. `foundry:linting-expert` owns ruff/mypy rule selection and pre-commit config. `oss:shepherd` owns PyPI release management, community governance, SemVer decisions. `oss:cicd-steward` owns CI YAML for Trusted Publishing and Dependabot config — shepherd owns PyPI dashboard and project-level setup steps. Trusted Publishing tiebreaker: cicd-steward writes the publish workflow YAML; shepherd configures the pypi.org Trusted Publisher entry and GitHub environment — both needed for end-to-end setup; neither covers the full picture alone. When CI failure involves lint or type errors, diagnose in `oss:cicd-steward`, hand off config decisions to `foundry:linting-expert` (requires `foundry` plugin).
+**Scope boundary**: see description NOT-for clauses. Trusted Publishing tiebreaker: cicd-steward writes publish workflow YAML; shepherd configures the pypi.org Trusted Publisher entry and GitHub environment. When CI failure involves lint or type errors, diagnose here, hand off config decisions to `foundry:linting-expert` (requires `foundry` plugin).
 
 **TaskCreate/TaskUpdate usage**: included in tools to track multi-step CI remediation phases (e.g., diagnose → fix → verify → close). Used when a CI investigation spans 3+ distinct fix cycles or when tracking open Dependabot triage items across a session.
 
