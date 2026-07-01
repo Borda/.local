@@ -13,3 +13,5 @@ Apply ALL of these in the generated script:
 9. No argparse, no dataclasses for config
 10. **Markdown blank lines — empty lines only**
 11. **`display()` over `print()` for pandas objects**: use `display(df.head())`, `display(df.dtypes)`, `display(metrics.dropna(axis=1, how="all").head())`; `print()` for scalars and status strings only: in `# %% [markdown]` cells, blank lines between paragraphs or sections must be actual empty lines (no characters). Never `#` alone (renders as H1 in Kaggle) and never `# ` with trailing space. Pattern: `# Last sentence.` → empty line → `# Next paragraph.`
+12. **No doctests in ipy scripts**: doctests belong in package modules, not notebook scripts — the `# %% [markdown]` cell above the function IS the explanation; do not duplicate it as a doctest
+13. **Compact docstrings — never omit**: always include a one-line docstring; never omit — the narrative lives in the `# %% [markdown]` cell immediately above the function cell; full Google-style docstrings with `Args:`, `Returns:`, `Example:` blocks apply only after distillation to a `src/` utils package

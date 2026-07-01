@@ -36,6 +36,7 @@ Default focus: PUBLIC API surface; test internals only when caller asks. Apply c
 - New features: follow TDD — write tests before implementation; test defines contract, code makes it pass
 - **Expand-first**: when improving coverage, scan existing tests before writing new — (1) extend existing `@pytest.mark.parametrize` list with new cases, (2) convert existing non-parametrized test to parametrized form, (3) add assertion variant to existing test body; write new test function only when no existing test can be expanded to cover scenario; write new test file only when no existing file covers the module
 - Default on duplication: two test functions with same body structure → parametrize them
+- **Factory default = most common shape**: when writing a test data factory function, set defaults to the most frequent test case; each call site passes only the field(s) that make that scenario unique — avoids burying the distinguishing value inside boilerplate
 - Fixture scope default: `session` scope for expensive objects (model weights, DB migrations), `function` scope for state that must reset between tests
 - **Mocking discipline**: only mock external dependencies outside user control (network, filesystem, time, third-party services); never mock internals of system under test
 - **Security embedding (all modes)**: when task scope includes authentication or authorization logic, payment flows or financial data handling, or user PII or sensitive data (storage, transmission, access control) — embed OWASP Top 10 review automatically; applies in solo mode and team mode alike; not gated on team invocation
@@ -329,6 +330,8 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 - **Mocking internals without good reason**: `patch` on internal methods/attributes — prefer asserting on observable outcomes; rewrite unless caller explicitly requested internal mock
 - **Missing public symbol in inventory**: public function/class (no `_` prefix, not excluded from `__all__`) with zero coverage and no `# pragma: no cover` — always primary finding
 - **N nearly-identical test functions**: 3+ functions same structure differing only in input/expected — collapse to single `@pytest.mark.parametrize`
+- **Repeated inline fixture scaffold**: 3+ tests each repeat the same N-field dict (≥6 fields) changing only 1–2 fields — extract a module-level factory function with defaults matching the most common shape; each call site passes only what makes that test unique
+- **Verbatim fixture duplicate**: two or more test functions copy-paste identical inline dict — extract to a module-level constant and reference it; copy-paste creates silent divergence when one copy is updated
 - **New test when existing could expand**: scenario structurally similar to existing test — extend parametrize instead
 - **Dead-code detection out of scope**: unreachable functions, unused public API, missing `__all__` exports → use `foundry:linting-expert` or `foundry:solution-architect`; qa-specialist NOT-for excludes dead-code analysis
 - **`if`/`for`/`while` logic in test bodies**: control flow = doing too much — split into parametrized cases; `if`/`else` inside parametrize value generation OK when <30% of cases
@@ -336,6 +339,7 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 - **Inline skip in test body**: `pytest.skip(...)` or `pytest.skipif(...)` called inside function body — use decorator `@pytest.mark.skipif(<cond>, reason="...")` instead; body-skip OK only when condition can't be evaluated at import time
 - **`try`/`except` suppressing test failure**: `except: pass` or `except: pytest.skip(...)` around act+assert — `[critical]`; remove wrapper and fix the bug
 - **`try`/`finally` for cleanup in test body**: extract to `pytest.fixture` with `yield`; inline OK only when teardown is assertion logic, not pure resource cleanup
+- **pytest.fixture for pure factory data**: fixture with no setup/teardown and no yield used only to return a data dict — replace with a plain module-level function; plain functions work inside `@pytest.mark.parametrize` lists where fixture injection is unavailable
 - **`@pytest.mark.xfail` without `raises=` and issue ref**: open-ended xfail = silent regression hole; require `raises=<ExceptionType>` + `reason="<issue-url>"`
 - **Mock to make test pass, not isolate dependency**: mock added after test started failing — covers bug; remove mock to expose root cause
 - **`# doctest: +SKIP`**: skipped doctest = dead docs; use `+REQUIRES(module:X)`, `__doctest_skip__`, or `@pytest.mark.skipif` instead

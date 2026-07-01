@@ -276,6 +276,7 @@ fi
 - Deep inheritance hierarchies instead of composition
 - Reimplementing existing functionality instead of extending or composing — new code duplicating substantial logic from existing class/function should inherit, delegate, or compose rather than reinvent
 - New class mirroring existing class's interface without inheriting — use subclassing with targeted method overrides rather than parallel reimplementation
+- **Same new block replicated across ≥2 files in one diff**: identical or near-identical logic introduced into multiple files within the same change (e.g. one algorithm pasted into 5 modules) — extract to a single shared helper/mixin/base method and import it; flag even when no pre-existing original exists. Newness of the duplication does not exempt it — N symmetric edits (same +/− line counts across sibling files) are the signature. Per-file review misses this; scan the full file set for cross-file repetition before approving.
 - Magic numbers/strings without named constants
 - Hardcoding version strings in multiple places (single source of truth in pyproject.toml)
 - Happy-path-only implementations ignoring empty inputs, boundary values, error conditions

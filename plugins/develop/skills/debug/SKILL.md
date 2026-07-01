@@ -220,6 +220,27 @@ else
 fi
 ```
 
+**Claim-validation gate** — before debugging, validate that the user's expectation is itself correct. A bug report always contains an implicit or explicit claim: "X should behave like Y". That claim may be wrong — misread docs, misunderstood API contract, incorrect formula, outdated assumption. Fixing a correct implementation to match a wrong expectation wastes effort and introduces regressions.
+
+Classify the claim type and validate accordingly:
+
+| Claim type | Example | Validation approach |
+| --- | --- | --- |
+| Numeric / metric result | "IoU should be 0.5 but returns 0.3" | Verify formula from authoritative source; compute expected value independently |
+| API contract | "function should return list but returns generator" | Read docstring, type hints, and docs — not the current implementation |
+| Algorithm correctness | "sorting is wrong — element 3 should come before element 1" | Trace comparison logic against the documented sort key or invariant |
+| Behavioral invariant | "adding item twice should raise, not silently dedupe" | Check README, docs, or published contract — not assumed behavior |
+| Cross-version assumption | "this worked in v1, now broken" | Check changelog/release notes for intentional breaking change |
+| Domain-specific formula | ML metric, statistical estimator, signal processing | Spawn `research:scientist` (requires `research` plugin); pass metric name, formula used, claimed expected value; ask: "Is the claimed expected value correct per authoritative definition?" |
+
+**Resolution rules:**
+
+1. Claim verifiable from docs/type hints/tests → read source now; confirm before proceeding
+2. Claim verifiable by quick computation → run inline script to compute expected value independently
+3. Domain-specific claim requiring literature → spawn `research:scientist`; if plugin absent flag: `⚠ Expected value unverified — treating as assumption`
+4. Claim contradicts docs/contract → it is a **documentation misunderstanding**, not a bug; surface this to user before any code change
+5. **Gate**: do not form root-cause hypothesis until claimed expectation confirmed or explicitly flagged as unverified; wrong expectation → wrong fix
+
 Use Grep (pattern: failing symbol, class, or error keyword) to trace call path from entry point to failure site. Path hint: use `src/` if exists, else search from project root (`.`).
 
 Spawn **foundry:sw-engineer** agent to map execution path and produce:

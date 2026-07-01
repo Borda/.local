@@ -1,8 +1,8 @@
-<!-- file: lessons.md — consumers: foundry:distill (SKILL.md reads this file directly; single source of truth) -->
+<!-- file: memory.md — consumers: foundry:distill (SKILL.md reads this file directly; single source of truth) -->
 
-# Mode: Lessons Distillation
+# Mode: Memory Distillation
 
-Triggered when `$ARGUMENTS == "lessons"`. Read accumulated lessons and feedback, identify patterns to promote into durable governance — rule files, agent instruction updates, or skill workflow changes.
+Triggered when `$ARGUMENTS == "memory"`. Read accumulated lessons and feedback, identify patterns to promote into durable governance — rule files, agent instruction updates, or skill workflow changes.
 
 ## Step L1: Collect raw material
 
@@ -12,12 +12,14 @@ Use Read tool on `.notes/lessons.md` (skip if file not found). Enumerate all pro
 
 ```bash
 # timeout: 5000
-find "$HOME/.claude/projects" -maxdepth 2 -name "memory" -type d 2>/dev/null | sort | while IFS= read -r d; do
-    slug=$(echo "$d" | sed 's|.*/projects/||;s|/memory||')
+# Use -print0/read -d '' to handle spaces in paths
+while IFS= read -r -d '' d; do
+    slug=$(echo "$d" | sed 's|.*/projects/||;s|/memory$||')
     fb_count=$(find "$d" -maxdepth 1 -name "feedback_*.md" 2>/dev/null | wc -l | tr -d ' ')
-    mem_tokens=$(( $(wc -c < "$d/MEMORY.md" 2>/dev/null || echo 0) / 4 ))
+    mem_file="$d/MEMORY.md"
+    mem_tokens=$([ -f "$mem_file" ] && echo $(( $(wc -c < "$mem_file") / 4 )) || echo 0)
     echo "MEM_DIR: $slug | ${mem_tokens}k tokens | ${fb_count} feedback files | $d"
-done
+done < <(find "$HOME/.claude/projects" -maxdepth 3 -name "memory" -type d -print0 2>/dev/null | sort -z)
 ```
 
 **If `PROJECT_FLAG == true`** (check model context from SKILL.md bash output): call `AskUserQuestion` with `multiSelect: true`. Build options from `MEM_DIR:` lines — label = `<slug> (tokens=<N>k)`, description = `<M> feedback files`. Max 4 options: if more than 4 projects found, take the 4 largest by token count and note in the question text that remaining projects were omitted. Always add a final option with label `Skip` and description `exit without changes`. Checked slugs → extract matching directory paths as the working set.
@@ -25,6 +27,37 @@ done
 **If `PROJECT_FLAG == false`**: use all directories from `MEM_DIR:` lines.
 
 For each selected directory, use Glob tool with pattern `feedback_*.md` in that directory to list feedback files; read each with Read tool. Label each cluster of findings with its project slug. Also read `.claude/rules/` (Glob `rules/*.md`, path `.claude/`) to understand what's already captured as rule.
+
+## Step L1b: Enrich with project context
+
+Ground each project's feedback in its codebase context — prevents misclassifying project-specific constraints as general rules, and vice versa. Run all lookups in parallel across selected projects.
+
+For each `<slug> | <path>` pair from the working set, attempt to resolve the project root:
+
+```bash
+# timeout: 5000
+SLUG="<slug>"
+# slug derivation: pwd | sed 's|[/.]|-|g' | sed 's/^-//'
+# heuristic reversal: prepend / and replace - with / (works for simple paths)
+CAND=$(echo "/$SLUG" | tr '-' '/')
+if [ -d "$CAND" ]; then
+    echo "PROJ_ROOT: $CAND"
+else
+    # fallback: search by last slug component (project name)
+    LAST=$(echo "$SLUG" | grep -oE '[^-]+$')
+    FOUND=$(find "$HOME" -maxdepth 5 -name "$LAST" -type d 2>/dev/null | head -1)
+    echo "PROJ_ROOT: ${FOUND:-not_found}"
+fi
+```
+
+If `PROJ_ROOT` resolved (≠ `not_found`):
+- Read `$PROJ_ROOT/CLAUDE.md` (limit=60) — tech stack, project constraints, custom rules
+- Run `git -C "$PROJ_ROOT" log --oneline -15 2>/dev/null` — recent work context
+- Use Glob (pattern `todo_*.md`, path `$PROJ_ROOT/.plans/active/`) and read found files
+
+Label collected context as `[Project grounding: <slug>]` and pass alongside feedback to Step L2.
+
+If `PROJ_ROOT` not resolved: note `[Project grounding: <slug> — path not resolved]` in L2; treat ambiguous feedback for that project as `→ too narrow` unless evidence in feedback files themselves is strong.
 
 ## Step L2: Cluster and classify
 
@@ -180,7 +213,7 @@ Print diff. If anything unexpected appears, revert individual files before proce
 After applying changes, dispatch curator to audit created and modified config files:
 
 ```text
-Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:lessons: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to $RUN_DIR/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"$RUN_DIR/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
+Agent(subagent_type="foundry:curator", prompt="Review the following Claude config files just created or modified by /distill:memory: <list new rule files and updated agent/skill files from Step L4>. Check: (1) quality — rules are concrete, not vague; (2) duplication — no overlap with existing files; (3) NOT-for boundary clarity; (4) structural consistency. Write your full findings to $RUN_DIR/curator-review.md using the Write tool. Return ONLY a compact JSON envelope: {\"status\":\"done\",\"file\":\"$RUN_DIR/curator-review.md\",\"issues\":N,\"confidence\":0.N}")
 ```
 
 Surface curator findings as advisory block in terminal output. Do not block on curator findings — quality recommendations, not release gates.

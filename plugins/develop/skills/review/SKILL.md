@@ -428,7 +428,7 @@ If file present: read and follow cross-validation protocol from `$_FOUNDRY_SHARE
 
 Extract branch and date before constructing output path: `BRANCH=$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` `DATE=$(date +%Y-%m-%d)`
 
-Spawn **foundry:sw-engineer** consolidator:
+Spawn consolidator agent (general-purpose — synthesis only, no engineering specialization needed):
 
 <!-- loads: consolidator-prompt.md -->
 Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Prepend the [run-dir preamble (canonical)](#run-dir-preamble-canonical) so the consolidator self-resolves `$RUN_DIR`. Summary: read all finding files in `$RUN_DIR/`, apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical); leave `$RUN_DIR` literal (agent self-resolves). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`

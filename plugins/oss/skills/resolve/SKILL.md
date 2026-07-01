@@ -230,13 +230,20 @@ Report merged: <N> findings from /review · <M> deduplicated against GitHub comm
 
 Print merged ACTION_ITEMS as markdown table to terminal immediately after the merge summary (severity descending; same columns as pr-intelligence.md table):
 
+> **Output-Routing exemption (canonical — applies to every ACTION_ITEMS table in this skill, Steps 3b/3c/3d)**: ACTION_ITEMS tables are selection-driving, read-in-context enumerations the user must see before the Step 3d picker. Always print inline to terminal regardless of row count. Global Output Routing (*5+ findings → `.temp/output-*.md`, summary only*) does **not** apply — never divert these tables to a file. This makes explicit what the global rule's own copy-intent override (*read-in-context, acted-on-immediately → terminal only even if long*) already implies.
+
 ```markdown
 ### Action Items — PR #<N> (merged)
 
 | # | Type | Change | Severity | Author | Status | Summary | Loc | Notes |
 |---|------|--------|----------|--------|--------|---------|-----|-------|
 | 1 | [gh][req] | code | 4 | @reviewer | pending | rename param x to count | inline | — |
+| 2 | [report][suggest] | docs | 2 | foundry:doc-scribe | pending | add docstring to Foo.bar | report | — |
 ```
+
+**Author field rules** — Author = who owns fixing this item:
+- `[gh]` items: GitHub reviewer's `@login`
+- `[report]` items: Owner agent from taxonomy (e.g. `foundry:doc-scribe`, `foundry:qa-specialist`) — **never** the skill name `review` or `/review`
 
 Summary ≤60 chars. Loc = inline / discussion / report. Notes = `—` when empty. Print only when merged ACTION_ITEMS has ≥1 row. The merged table is the authoritative set for Step 3d selection — it supersedes the pre-merge table shown in Step 3b.
 
@@ -258,6 +265,7 @@ Sort all pending items by severity descending (most impactful first). Constraint
 **Q4 = bulk action — hard rule**: Q4 is always the last question, single-select, fixed options. Never put items in Q4. Items span ≤3 groups regardless of how many type categories exist.
 
 ```text
+Q4 — multiSelect: FALSE (single-select only — user picks one bulk action, not a checklist)
 "Q4 — Or choose a bulk action:"
   (a) +All [req] — implement all required items
   (b) +All [suggest] — implement all suggested items
@@ -274,7 +282,7 @@ Sort all pending items by severity descending (most impactful first). Constraint
 
 **Item checkbox questions (Q1–Q3)**: each `multiSelect: true`, header "Items to implement:", labels: `<type> #<id>: <summary>` (≤55 chars), description: `<file:line> · @<author>` + for `location: discussion` items append `· thread (no GH resolve)`. Fill Q1→Q3 in severity order (≤3 items each). If >9 pending items: two calls — print `→ N pending items — selecting in 2 calls` before call 1; Call 2 gets remaining items + Q4 again; "ALL (req + suggest)" in Call 1 → skip Call 2.
 
-**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) then Q4 only; follow with commit mode question unless (d) selected.
+**≥20 pending items — context-budget mode**: skip per-item checkboxes; print compressed table (type · id · summary ≤40 chars · file) **inline to terminal** (Output-Routing exemption from Step 3c applies — never divert to `.temp`) then Q4 only; follow with commit mode question unless (d) selected.
 
 <!-- branch: main-path — commit-mode (call 2 of 4; skipped only when Q4=(d) skip) -->
 **Commit mode follow-up** — ask immediately after Q4 resolves to (a), (b), (c), or unanswered (skip only when (d) skip-all). Commit mode is always the user's choice; item scope ((c) = all items) never implies a commit mode:

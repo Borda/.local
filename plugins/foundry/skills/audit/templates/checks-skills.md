@@ -816,7 +816,7 @@ fi  # timeout: 10000
 ```
 
 Severity: **medium** — self-confessed sync = guaranteed future drift.
-Auto-fix: run `/distill lessons` or extract to `modes/` + replace inline block with bash+read pattern.
+Auto-fix: run `/distill memory` or extract to `modes/` + replace inline block with bash+read pattern.
 
 ## Check 33 — Code block duplication (NxN similarity matrix)
 

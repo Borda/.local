@@ -449,7 +449,7 @@ _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
 case "${PR_TYPE:-CODE}" in
     DOCS_TYPING) CONSOLIDATOR_AGENT="foundry:linting-expert" ;;
     TESTS_CI)    CONSOLIDATOR_AGENT="foundry:qa-specialist" ;;
-    *)           CONSOLIDATOR_AGENT="foundry:sw-engineer" ;;
+    *)           CONSOLIDATOR_AGENT="claude" ;;
 esac
 ```
 

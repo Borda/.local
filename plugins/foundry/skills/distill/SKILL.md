@@ -1,7 +1,7 @@
 ---
 name: distill
 description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates."
-argument-hint: '[review | prune | lessons | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager]'
+argument-hint: '[review | prune | memory | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: low
@@ -21,12 +21,12 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
 - **$ARGUMENTS**: optional. Modes:
   - Omitted — analyze existing patterns and agents; generate suggestions proactively.
   - `prune [--eager]` — evaluate project memory file for stale, redundant, or verbose entries. Default: advisory diff + apply prompt. `--eager`: score every entry (Usage likelihood × Impact → Tier P0/P1/P2), print full scored table with `#` column, let user select by tier or item numbers, delegate edits to `foundry:curator`.
-  - `lessons [--eager]` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes. `--eager`: include Pattern count, Strength, and Tier columns in proposal table; let user select clusters to promote by tier or item numbers; delegate writes to `foundry:curator`.
+  - `memory [--eager]` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes. `--eager`: include Pattern count, Strength, and Tier columns in proposal table; let user select clusters to promote by tier or item numbers; delegate writes to `foundry:curator`.
   - `review [--eager]` — review existing agent/skill roster for quality and gaps without suggesting new additions. `--eager`: lower overlap flag threshold from >50% to >30% scope coverage; surface any shared single capability between agents as boundary issue; add "Sharpen Boundary" section to output.
   - `external <source> [--eager]` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory. `--eager`: lower adoption bar — recommend partial adoption even for single useful components.
   - `executables [--eager] [<run-dir-or-report-path>]` — perform bin/ extraction from `/foundry:audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Default gates on HIGH/MEDIUM verdict. `--eager`: also surface LOW verdict clusters as extraction candidates. Spawns `foundry:sw-engineer` per cluster. Skip to **Mode: Executables Extraction** below.
   - `[--eager] <recurring task description>` — use description as context when generating suggestions. `--eager`: lower frequency threshold from 3+ to 2+ occurrences; single high-effort occurrence also qualifies.
-  - `--project` — in `prune` and `lessons` modes, show an interactive project picker: enumerate all slugs under `~/.claude/projects/*/memory/` with MEMORY.md size in tokens, then let user select which project(s) to operate on. Omit to operate across **all** projects automatically. Has no effect on other modes.
+  - `--project` — in `prune` and `memory` modes, show an interactive project picker: enumerate all slugs under `~/.claude/projects/*/memory/` with MEMORY.md size in tokens, then let user select which project(s) to operate on. Omit to operate across **all** projects automatically. Has no effect on other modes.
 
 </inputs>
 
@@ -215,13 +215,43 @@ fi
 
 **If `PROJECT_FLAG == false`**: use all `<path>` fields from PRUNE_ENTRY lines as the working set.
 
-Run P1–P3 once per file in the working set. Label each section with its slug. Print consolidated summary at the end.
+**Parallel analysis across projects** — for working sets with 2+ files, spawn one analysis agent per project simultaneously. For single-file working sets, run P1–P2 inline (no spawn).
 
-Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overlap — anything already covered in CLAUDE.md need not live in memory.
+Spawn one `Agent` per project (no schema — returns text analysis):
+
+```text
+Read MEMORY.md at <absolute-path>.
+Also read .claude/CLAUDE.md in the current working directory (limit=40) to identify overlap — anything already there need not live in memory.
+Evaluate every section using these criteria:
+  Drop: stale/no-longer-accurate, fully duplicated in CLAUDE.md, resolved one-time issues
+  Trim: accurate but contains rationale/history no longer needed day-to-day; keep operational facts only
+  Keep: rules applied every session, project-specific facts absent from CLAUDE.md
+Return structured analysis (no prose):
+PROJECT: <slug>
+DROP: <section-name> — <one-line reason>
+TRIM: <section-name> — <what to keep vs remove>
+KEEP: <section-name>
+CONFIDENCE: 0.N
+```
+
+Wait for all agents to complete. Merge into consolidated proposal list keyed by slug, labeling each section with its project slug.
 
 **If `$EAGER == true`** — skip P1–P3 below; execute P-eager steps:
 
-**P-eager-1**: Score every MEMORY.md section against two dimensions:
+**P-eager-1**: Spawn one scoring agent per project in parallel (working sets with 2+ files); inline for single file. Each agent scores every section in its assigned MEMORY.md:
+
+```text
+Read MEMORY.md at <absolute-path>.
+Score every section on two dimensions:
+  Usage likelihood: High (every session) | Moderate (occasional) | Low (rare/one-off)
+  Impact if missing: High (wrong behavior) | Moderate (degraded output) | Low (no effect)
+  Tier: P0=keep (High×High or High×Moderate) | P1=trim (Moderate×Moderate or mixed) | P2=drop (Low on either)
+  Action: if content belongs in rules/*.md or agent file → "→ rule"
+Return ONLY (one TSV line per section, no prose):
+PROJECT:<slug>  #:<n>  Section:<name>  Usage:<tier>  Impact:<tier>  Tier:P<n>  Action:<keep|drop|trim|→ rule>
+```
+
+Collect responses from all projects. Assign sequential `#` IDs across all projects. Print one consolidated scored table (all projects, `#` as primary sort):
 
 - **Usage likelihood**: High = needed every session · Moderate = occasional · Low = rare/one-off
 - **Impact if missing**: High = wrong behavior without it · Moderate = degraded output · Low = no effect
@@ -231,15 +261,13 @@ Read memory file with Read tool. Also read `.claude/CLAUDE.md` to identify overl
   - P2: Low usage OR Low impact (especially both)
 - **Action**: entries whose content could live in `rules/*.md` or an agent file → mark `→ rule` in Action column
 
-Print scored table:
-
 ```text
-| #  | Section | Usage likelihood | Impact if missing | Tier | Action      |
-|----|---------|-----------------|-------------------|------|-------------|
-| 1  | ...     | High            | High              | P0   | Keep        |
-| 2  | ...     | Low             | Low               | P2   | Drop        |
-| 3  | ...     | Moderate        | High              | P1   | Trim        |
-| 4  | ...     | Low             | High              | P2   | → rule      |
+| #  | Project | Section | Usage likelihood | Impact if missing | Tier | Action      |
+|----|---------|---------|-----------------|-------------------|------|-------------|
+| 1  | slug-a  | ...     | High            | High              | P0   | Keep        |
+| 2  | slug-b  | ...     | Low             | Low               | P2   | Drop        |
+| 3  | slug-a  | ...     | Moderate        | High              | P1   | Trim        |
+| 4  | slug-b  | ...     | Low             | High              | P2   | → rule      |
 
 Legend:
   Usage likelihood — High: every session · Moderate: occasional · Low: rare/one-off
@@ -257,29 +285,30 @@ Legend:
 
 If user picks (c): print "Enter item numbers (e.g. 2, 4, 7):" and wait for next message; resolve item numbers against # column before proceeding.
 
-**P-eager-3**: Spawn **foundry:curator** to apply selected edits. Substitute absolute memory file path (resolved from `PRUNE_FOUND_PATH`) inline before issuing the Agent call:
+**P-eager-3**: Spawn one **foundry:curator** agent per project in parallel. Group selected `#` items by project slug; each agent receives only the items for its project. Substitute absolute memory file path inline before issuing each Agent call:
 
 ```text
 Read MEMORY.md at <absolute-path>.
-Apply these prune actions (sections identified by # from scored table):
+Apply these prune actions (sections identified by # from scored table — only the items for this project):
   <list: # — section name — action (Drop | Trim | Convert to rule)>
 Rules:
 - Drop: remove entire section including heading
 - Trim: keep operational directive only (1 line max per entry); remove rationale/backstory
 - Convert to rule: remove section from MEMORY.md; print proposed rule file content inline in response for user review before writing — do NOT write the rule file
 Write MEMORY.md changes using the Edit tool.
-Return ONLY: {"status":"done","sections_dropped":N,"sections_trimmed":N,"rule_conversions":N,"confidence":0.N}
+Return ONLY: {"status":"done","project":"<slug>","sections_dropped":N,"sections_trimmed":N,"rule_conversions":N,"confidence":0.N}
 ```
 
-Print compact summary after curator completes:
+Wait for all curator agents to complete. Collect results. Print consolidated summary:
 
 ```text
 Pruned MEMORY.md — <date>
-  Dropped: N sections — [names]
-  Trimmed: N sections — [names]
-  Rule conversions proposed: N — [names] (review and write manually or via /manage)
+  Projects processed: N
+  Dropped: N sections total — [project: names, ...]
+  Trimmed: N sections total — [project: names, ...]
+  Rule conversions proposed: N — [project: names, ...] (review and write manually or via /manage)
   Kept:    N sections unchanged
-  Saved:   ~N lines
+  Saved:   ~N lines total
 ```
 
 End response with `## Confidence` block per CLAUDE.md output standards.
@@ -294,40 +323,45 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 
 **Memory-write gate** — project CLAUDE.md `Memory Policy` prohibits auto-writes to MEMORY.md. Prune mode runs read-only by default and produces advisory diff/report rather than applying edits silently:
 
-**P1**: Read memory file and analyse for stale, redundant, and verbose entries.
+**P1**: Read all memory files (parallel for 2+ files). Analyse each for stale, redundant, and verbose entries.
 
-**P2**: Print proposed prune report to terminal (sections to drop + sections to trim, with line ranges and reasoning):
+**P2**: Print consolidated proposed prune report across all projects:
 
    ```text
    Prune proposals (apply manually unless explicitly approved below):
+
+   [Project: <slug>]
      Drop  — <section name>: <reason>
      Trim  — <section name>: <what to remove vs keep>
+
+   [Project: <slug>]
      ...
    ```
 
 **P3**: Call `AskUserQuestion` — do NOT write question as plain text. Map options directly into tool call:
-   - question: "Apply prune edits to MEMORY.md?"
-   - (a) label: `Apply now` — description: use Edit tool to apply all proposals to memory file
+   - question: "Apply prune edits across all N project memory files?"
+   - (a) label: `Apply now` — description: apply all proposals to all memory files in parallel
    - (b) label: `Show diff first` — description: print line-by-line preview before applying any change
-   - (c) label: `Skip` — description: leave MEMORY.md untouched; user will edit manually
+   - (c) label: `Skip` — description: leave all MEMORY.md files untouched; user will edit manually
 
-Only after user picks (a) (or (b) followed by approval) may Edit be invoked on memory file. **Never apply prune edits silently.**
+Only after user picks (a) (or (b) followed by approval) may Edit be invoked on memory files. **Never apply prune edits silently.** Apply edits to all projects in parallel using Edit tool (one project per call, concurrent).
 
-Print compact summary after applying (or after user declines):
+Print consolidated summary after applying (or after user declines):
 
 ```text
 Pruned MEMORY.md — <date>
-  Dropped: N sections — [names]
-  Trimmed: N sections — [names]
+  Projects: N
+  Dropped: N sections total — [project: names, ...]
+  Trimmed: N sections total — [project: names, ...]
   Kept:    N sections unchanged
-  Saved:   ~N lines
+  Saved:   ~N lines total
 ```
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
-## Mode: Lessons Distillation — only when `$ARGUMENTS == "lessons"`
+## Mode: Memory Distillation — only when `$ARGUMENTS == "memory"`
 
-Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/lessons.md`.
+Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/memory.md`.
 
 ## Mode: External Distillation — only when `$ARGUMENTS` begins with `external`
 

@@ -262,7 +262,7 @@ Invoke `AskUserQuestion`:
 
 If **(a)**:
 1. Identify every function in the notebook with no hardcoded paths, no `plt.show()`, no `tqdm` calls
-2. Write each to `src/<package>/<module>.py` with Google-style docstring + `Example:` block
+2. Write each to `src/<package>/<module>.py` with **full** Google-style docstring + `Example:` block — all standard coding patterns apply (doctests for pure functions, `Args:`/`Returns:` sections, full `if __name__ == "__main__":` guards where appropriate); these are package modules, not notebook cells
 3. Create `tests/test_<module>.py` covering each function
 4. Create `notebooks/01_<competition-name>_pkg.py` — inline definitions replaced by package imports; **never modify the validated baseline `$OUTFILE`**
 

@@ -160,7 +160,7 @@ fi
 [ "${RESOLVED_THREAD_IDS_COUNT:-0}" = "0" ] && echo "⚠ Could not fetch resolved thread status — some items may already be resolved; review table carefully"  # timeout: 3000
 ```
 
-Read `$IMPL_DIR/pr-intelligence.md` and print its contents (Sources block + motivation + action item table). Orchestrator context now holds the *classified* table (~500–1000 tokens) rather than raw PR thread (often 5000–20000+ tokens on active PRs). All later steps read per-item details from `$IMPL_DIR/action-items.jsonl` when `full_comment_text` or other fields are needed:
+Read `$IMPL_DIR/pr-intelligence.md` and print its contents (Sources block + motivation + action item table) **inline to terminal** — this is the only ACTION_ITEMS table in pure `pr` mode; Output-Routing `.temp` diversion does **not** apply to it (selection-driving, read-in-context; canonical exemption in SKILL.md Step 3c). Orchestrator context now holds the *classified* table (~500–1000 tokens) rather than raw PR thread (often 5000–20000+ tokens on active PRs). All later steps read per-item details from `$IMPL_DIR/action-items.jsonl` when `full_comment_text` or other fields are needed:
 
 ```bash
 jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl"  # timeout: 5000
