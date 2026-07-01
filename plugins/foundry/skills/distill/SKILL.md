@@ -1,7 +1,7 @@
 ---
 name: distill
-description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, roster quality review, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates."
-argument-hint: '[review | prune | memory | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager]'
+description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates. Roster boundary analysis → /foundry:audit agents (Check 34)."
+argument-hint: '[prune | memory | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: low
@@ -22,7 +22,6 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
   - Omitted — analyze existing patterns and agents; generate suggestions proactively.
   - `prune [--eager]` — evaluate project memory file for stale, redundant, or verbose entries. Default: advisory diff + apply prompt. `--eager`: score every entry (Usage likelihood × Impact → Tier P0/P1/P2), print full scored table with `#` column, let user select by tier or item numbers, delegate edits to `foundry:curator`.
   - `memory [--eager]` — read `.notes/lessons.md` and memory feedback files, distill recurring patterns into proposed rule files, agent instruction updates, and skill workflow changes. `--eager`: include Pattern count, Strength, and Tier columns in proposal table; let user select clusters to promote by tier or item numbers; delegate writes to `foundry:curator`.
-  - `review [--eager]` — review existing agent/skill roster for quality and gaps without suggesting new additions. `--eager`: lower overlap flag threshold from >50% to >30% scope coverage; surface any shared single capability between agents as boundary issue; add "Sharpen Boundary" section to output.
   - `external <source> [--eager]` — analyse external plugin, skill, or agentic resource and produce structured adoption proposal. `<source>` is URL, file path, or local directory. `--eager`: lower adoption bar — recommend partial adoption even for single useful components.
   - `executables [--eager] [<run-dir-or-report-path>]` — perform bin/ extraction from `/foundry:audit --efficiency` Check 33 candidates. Auto-detects latest run dir under `.reports/audit/`; pass optional path to target a specific run dir or report file. Runs inline Check 33 scan when no report exists. Default gates on HIGH/MEDIUM verdict. `--eager`: also surface LOW verdict clusters as extraction candidates. Spawns `foundry:sw-engineer` per cluster. Skip to **Mode: Executables Extraction** below.
   - `[--eager] <recurring task description>` — use description as context when generating suggestions. `--eager`: lower frequency threshold from 3+ to 2+ occurrences; single high-effort occurrence also qualifies.
@@ -83,8 +82,6 @@ For each agent/skill found, extract: name, description, tools, purpose. Tag each
 
 **If first token equals `external`** (i.e. `external <source>`, NOT a word that merely starts with the string `external`): skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
 
-**If `$ARGUMENTS` is `review`**: skip git analysis below and go directly to Step 3 (Gap analysis). Use agent/skill descriptions from Step 1 as sole input — goal is to assess quality and coverage of existing roster, not look for new patterns in recent work. In Step 5, suppress all "Recommend: New Agent/Skill" sections and output only "Existing Coverage", "Recommend: Enhance Existing", and "No Action Needed" entries. With `--eager`: apply stricter overlap detection in Step 4 (threshold drops to >30%; any shared single named capability flags as boundary issue); add "Recommend: Sharpen Boundary" section to Step 5 output listing all partial-overlap pairs with specific capability to split.
-
 Otherwise, look for signals of repetitive or specialist work. First three git commands are independent — run in parallel:
 
 ```bash
@@ -115,8 +112,6 @@ With `--eager` (lower thresholds):
 
 ## Step 3: Gap analysis
 
-> **`review` mode**: focus on agent/skill quality and coverage gaps — skip "Recommend: New Agent/Skill" analysis and focus on "Existing Coverage" and "Recommend: Enhance Existing".
-
 For each identified pattern, check:
 
 1. **Already covered?** — search existing agent/skill descriptions for overlap
@@ -131,8 +126,6 @@ Thresholds for recommendation:
 - **No new file needed**: one-off or already covered by existing agent
 
 ## Step 4: Check for duplication
-
-> **`review` mode**: duplication checks still apply — review mode does not skip this step.
 
 Before recommending anything, run overlap check and anti-pattern checklist:
 

@@ -73,3 +73,55 @@ done
 Every Check 20 finding must include: overlapping pair, shared surface, remaining distinct surface (if any), decision (`keep`, `sharpen`, `merge-prune`), concrete fix path.
 
 Fix reference: run `/calibrate routing` to verify description overlap translates to actual routing confusion.
+
+## Check 34 — Roster boundary alignment
+
+Holistic roster-level analysis. Subsumes former `/distill review` mode. Run as part of `foundry:audit agents`.
+
+**34a — Per-pair overlap scan**: for every agent pair, compute scope overlap from descriptions + NOT-for clauses. Default threshold: **>50%** shared scope → flag. With `--eager`: threshold drops to **>30%**; any single shared named capability also flags as boundary issue.
+
+```bash
+# Extract all agent descriptions for model reasoning
+printf "%-25s %s\n" "AGENT" "DESCRIPTION"
+for f in .claude/agents/*.md plugins/*/agents/*.md 2>/dev/null; do  # timeout: 5000
+    [ -f "$f" ] || continue
+    name=$(basename "$f" .md)
+    desc=$(awk '/^---$/{c++; if(c==2)exit} c==1 && /^description:/{sub(/^[^:]*: /,""); print}' "$f")
+    printf "%-25s %s\n" "$name" "$desc"
+done
+```
+
+Use model reasoning to score each pair: `overlap_pct` = fraction of one agent's scope covered by the other. Flag pairs exceeding threshold.
+
+**34b — Coverage gap detection**: scan agent descriptions for task domains with no clear owner. Coverage gap = a realistic task type where no agent's TRIGGER applies and no NOT-for exclusion explains the gap.
+
+Examples of coverage gap signals:
+- "Who handles X?" produces no confident agent → gap
+- Two agents exclude a domain ("NOT for Y") but no agent includes it → gap
+
+**34c — Sharpen Boundary section** (always include when ≥1 overlap pair found; required when `--eager`):
+
+```markdown
+### Sharpen Boundary
+
+| Pair | Shared capability | Recommended split |
+|------|------------------|-------------------|
+| agent-a / agent-b | <specific capability> | <which agent owns it; what NOT-for to add to the other> |
+```
+
+**Report format** (report only — no auto-fix):
+
+```markdown
+## Check 34 — Roster Boundary Alignment
+
+### Overlap Findings (threshold: >50% [or >30% with --eager])
+- **agent-a / agent-b** — overlap: ~N% — <shared domain> — decision: keep|sharpen|merge-prune
+
+### Coverage Gaps
+- <task domain>: no clear owner — <which agent is closest; what's missing>
+
+### Sharpen Boundary
+| Pair | Shared capability | Recommended split |
+```
+
+Severity: **medium** per overlap pair above threshold; **low** per coverage gap; **medium** per missing Sharpen entry when `--eager`.

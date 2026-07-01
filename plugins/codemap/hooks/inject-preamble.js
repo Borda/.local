@@ -2,8 +2,13 @@
 // inject-preamble.js — UserPromptSubmit hook
 //
 // Injects a terse codemap status line before each user turn when a codemap
-// index exists at .cache/codemap/<project>.json. Zero output (zero cost)
-// when no index is present — unindexed projects are unaffected.
+// index exists at .cache/codemap/<project>.json.
+//
+// No index yet: for Python projects (__init__.py present at depth ≤2 under
+// git root) emit a once-per-session directive asking the agent to offer building
+// the index — hooks are stdout-only and cannot call AskUserQuestion themselves,
+// so the agent raises it and, on yes, runs scan-index foreground. Non-Python
+// dirs stay silent (zero output, ≤3 stat calls) — see handleMissingIndex().
 //
 // When stale (git HEAD differs from indexed sha, OR uncommitted .py files
 // exist): spawns scan-index --root in the background (non-blocking,
@@ -26,12 +31,64 @@ const { execSync, spawn } = require("child_process");
 const MAX_PARSE_BYTES = 10 * 1024 * 1024; // full parse skipped for indexes >10 MB
 const LOCK_TTL_MS = 10 * 60 * 1000; // 10 min — max expected scan duration before re-allow
 const HEADER_PEEK_BYTES = 8 * 1024; // header fields always appear before file_shas (first ~1-2 KB)
+const NOINDEX_TTL_MS = 30 * 60 * 1000; // 30 min — ask to bootstrap the index at most once per session
 
 // Extract a plain string field from the first N bytes of the JSON file via regex.
 // Sufficient for our header fields (git_sha = hex, scanned_at = ISO dt, scan_root = path).
 function extractField(key, text) {
   const m = text.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"'));
   return m ? m[1] : "";
+}
+
+// No-index branch: a project with zero index never bootstraps itself (the stale
+// auto-refresh below only fires on an already-existing index). For Python projects
+// emit a once-per-session directive; the agent turns it into an AskUserQuestion and,
+// on consent, runs scan-index foreground. Always exits 0 — never blocks the turn.
+function handleMissingIndex(projRoot, proj) {
+  // Python-only gate — __init__.py at depth ≤2 catches root packages and src/flat
+  // layouts without relying on packaging files (pyproject.toml etc. are weak proxies).
+  const isPython = (() => {
+    try {
+      if (fs.statSync(path.join(projRoot, "__init__.py")).isFile()) return true;
+    } catch {}
+    try {
+      return fs
+        .readdirSync(projRoot, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+        .some((dir) => {
+          try {
+            return fs.statSync(path.join(projRoot, dir.name, "__init__.py")).isFile();
+          } catch {
+            return false;
+          }
+        });
+    } catch {
+      return false;
+    }
+  })();
+  if (!isPython) process.exit(0);
+
+  // Ask at most once per session per project — flag write precedes emit so a
+  // user "no" is not re-asked within the TTL.
+  const askFlag = path.join(os.tmpdir(), `codemap-noindex-${proj}`);
+  try {
+    if (Date.now() - parseInt(fs.readFileSync(askFlag, "utf8"), 10) < NOINDEX_TTL_MS) process.exit(0);
+  } catch {
+    /* no flag yet */
+  }
+  try {
+    fs.writeFileSync(askFlag, String(Date.now()));
+  } catch {
+    /* best-effort; flag write failures never block */
+  }
+
+  process.stdout.write(
+    `[codemap] No structural index for "${proj}" (.cache/codemap/${proj}.json missing) — blast-radius / coupling queries unavailable.\n` +
+      `ACTION (ask once): call AskUserQuestion — ask the user whether to build the codemap index now.\n` +
+      `  • yes → run scan-index (\${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index) in the FOREGROUND and WAIT until it finishes, then continue using scan-query.\n` +
+      `  • no  → proceed without codemap; do not raise again this session.\n`,
+  );
+  process.exit(0);
 }
 
 function main() {
@@ -43,20 +100,34 @@ function main() {
   }
 
   const cwd = process.cwd();
-  const proj = path.basename(cwd);
+
+  // Project identity mirrors scan-index / scan-query / seed-session: git-root basename
+  // (fallback cwd basename). Using cwd basename would miss the index on a subdir launch —
+  // the index is named for the git root and stored under <git-root>/.cache/codemap. Resolve
+  // once and reuse for both the lookup path and the Python gate.
+  let projRoot = cwd;
+  try {
+    const r = execSync("git rev-parse --show-toplevel", { cwd, timeout: 3000, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+    if (r) projRoot = r;
+  } catch {
+    /* non-git → cwd */
+  }
+  const proj = path.basename(projRoot);
 
   // Resolve index path (CODEMAP_INDEX_DIR env override supported)
-  const idxDir = process.env.CODEMAP_INDEX_DIR || path.join(cwd, ".cache", "codemap");
+  const idxDir = process.env.CODEMAP_INDEX_DIR || path.join(projRoot, ".cache", "codemap");
   const idxPath = path.join(idxDir, `${proj}.json`);
 
-  // No index → exit silently; zero output, zero overhead
+  // No index → prompt once per session (Python projects only); non-Python dirs stay silent
   let idxStat;
   try {
     idxStat = fs.statSync(idxPath);
   } catch {
-    process.exit(0);
+    return handleMissingIndex(projRoot, proj);
   }
-  if (!idxStat.isFile()) process.exit(0);
+  if (!idxStat.isFile()) return handleMissingIndex(projRoot, proj);
 
   // Parse header fields from the first HEADER_PEEK_BYTES only — avoids full
   // parse of the large file_shas dict on every prompt for big indexes.

@@ -174,20 +174,26 @@ fi
 - `MODE="pr"` → continue Step 2
 - `MODE="comment-dispatch"` → branch safety check before Step 12: `CURRENT=$(git branch --show-current); DEFAULT=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||'); [ -z "$DEFAULT" ] && DEFAULT=$(git remote show origin 2>/dev/null | grep 'HEAD branch' | awk '{print $NF}'); [ -z "$DEFAULT" ] && { printf "! BLOCKED — cannot determine default branch; refusing to proceed\n"; exit 1; }; [ "$CURRENT" = "$DEFAULT" ] && { echo "⛔ On default branch '$CURRENT' — comment dispatch must not commit to default branch"; exit 1; }` → jump to Step 12
 
-## Step 2: Create initial task
+## Step 1.5: Create all workflow tasks upfront
+
+After `PR_NUMBER` and `MODE` resolved above, create all major-step tasks now.
+Store each returned `task_id` for step-level `TaskUpdate` calls.
+Conditional tasks: include condition in subject brackets; cancel via `TaskUpdate(status="deleted")` at skip point — never leave conditional tasks pending.
 
 ```text
-TaskCreate(
-  subject="Resolve PR #<number> — gather action items",
-  description="Fetch PR thread, linked issues, and/or review report; classify all comments into ACTION_ITEMS",
-  activeForm="Gathering action items for PR #<number>"
-)
+TASK_GATHER   = TaskCreate(subject="Step 2: Gather action items — PR #<N>",              activeForm="Gathering action items for PR #<N>")
+TASK_SELECT   = TaskCreate(subject="Step 3: Select action items — PR #<N>",               activeForm="Selecting action items")
+TASK_CHECKOUT = TaskCreate(subject="Step 4: Checkout PR branch [if pr mode]",             activeForm="Checking out PR branch")
+TASK_CONFLICT = TaskCreate(subject="Steps 5–7: Conflict resolution [if pr mode]",         activeForm="Resolving conflicts")
+TASK_IMPL     = TaskCreate(subject="Step 8: Implement selected items [if items selected]", activeForm="Implementing action items")
+TASK_LINT     = TaskCreate(subject="Step 9: Lint and QA gate",                             activeForm="Running lint and QA")
+TASK_CLOSE    = TaskCreate(subject="Steps 10–11: Push and final report [if pr mode]",      activeForm="Pushing to fork and reporting")
 ```
 
-Mark `in_progress` immediately:
+## Step 2: Gather action items
 
 ```text
-TaskUpdate(task_id=<task_id_from_above>, status="in_progress")
+TaskUpdate(task_id=TASK_GATHER, status="in_progress")
 ```
 
 ## Step 3a: Report intelligence (report mode only)
@@ -212,8 +218,8 @@ Find + read latest review report (`ls -t .reports/review/*/review-report.md 2>/d
 
 **Deduplication**:
 
-- Report finding matches GitHub item at same `file:line` → drop report item; annotate GitHub item with `(also flagged by /review)`
-- Semantic match (same file, no exact line, similar description) → drop report item; same annotation
+- Report finding matches GitHub item at same `file:line` → drop report item; annotate GitHub item with `(also flagged by /review — <owner-agent>)` where `<owner-agent>` is the report item's owner agent from taxonomy; update Author to `@login + <owner-agent>`
+- Semantic match (same file, no exact line, similar description) → drop report item; same annotation and Author update
 - No match → append report finding as `[report]` item
 
 **Re-prefix GitHub items** in deduplication: `[gh][req]` stays `[gh][req]`; `[suggest]` → `[gh][suggest]`, `[question]` → `[gh][question]` if not already prefixed. GitHub items carry `[gh]` prefix in all modes — no change needed for items already classified with `[gh]` in Step 3b.
@@ -238,12 +244,14 @@ Print merged ACTION_ITEMS as markdown table to terminal immediately after the me
 | # | Type | Change | Severity | Author | Status | Summary | Loc | Notes |
 |---|------|--------|----------|--------|--------|---------|-----|-------|
 | 1 | [gh][req] | code | 4 | @reviewer | pending | rename param x to count | inline | — |
-| 2 | [report][suggest] | docs | 2 | foundry:doc-scribe | pending | add docstring to Foo.bar | report | — |
+| 2 | [gh][suggest] | docs | 2 | @reviewer + foundry:doc-scribe | pending | add docstring (also flagged by /review — foundry:doc-scribe) | inline | — |
+| 3 | [report][suggest] | docs | 2 | foundry:doc-scribe | pending | add docstring to Foo.bar | report | — |
 ```
 
 **Author field rules** — Author = who owns fixing this item:
-- `[gh]` items: GitHub reviewer's `@login`
-- `[report]` items: Owner agent from taxonomy (e.g. `foundry:doc-scribe`, `foundry:qa-specialist`) — **never** the skill name `review` or `/review`
+- `[gh]` items (no dedup): GitHub reviewer's `@login`
+- `[gh]` items (dedup collision with report): `@login + <owner-agent>` (e.g. `@reviewer + foundry:doc-scribe`) — both authors preserved
+- `[report]` items (no collision): Owner agent from taxonomy (e.g. `foundry:doc-scribe`, `foundry:qa-specialist`) — **never** the skill name `review` or `/review`
 
 Summary ≤60 chars. Loc = inline / discussion / report. Notes = `—` when empty. Print only when merged ACTION_ITEMS has ≥1 row. The merged table is the authoritative set for Step 3d selection — it supersedes the pre-merge table shown in Step 3b.
 
@@ -252,10 +260,11 @@ Summary ≤60 chars. Loc = inline / discussion / report. Notes = `—` when empt
 <!-- branch: main-path — item-selection (call 1 of 4 on normal path; always fires in step 3d) -->
 ! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text.
 
-Gather is complete here (3b/3c done). Mark the Step 2 gather task `completed` **before** the selection prompt — otherwise its `activeForm` ("Gathering action items for PR #<number>") keeps driving the spinner through the entire user-selection + commit-mode window, falsely implying gather is still running:
+Gather is complete here (3b/3c done). Mark TASK_GATHER `completed` and TASK_SELECT `in_progress` **before** the selection prompt — otherwise the gather `activeForm` keeps driving the spinner through the user-selection window, falsely implying gather is still running:
 
 ```text
-TaskUpdate(task_id=<step2_task_id>, status="completed")
+TaskUpdate(task_id=TASK_GATHER, status="completed")
+TaskUpdate(task_id=TASK_SELECT, status="in_progress")
 ```
 
 Pending items = ACTION_ITEMS where type ≠ `[done]` and type ≠ `[info]`. Zero pending → set `SELECTED_ITEMS` = all pending IDs, skip to Step 3e.
@@ -304,6 +313,10 @@ Set `COMMIT_MODE`:
 - (d) → `stage`
 - unanswered → `each` (default)
 
+```text
+TaskUpdate(task_id=TASK_SELECT, status="completed")
+```
+
 ## Step 3e: Create tasks for selected items
 
 > Step 2 gather task already marked `completed` at top of Step 3d.
@@ -323,6 +336,16 @@ Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`. Then use the
 ## Step 4: Checkout PR branch
 
 *Skip only when `MODE = report` with no PR# (`$PR_NUMBER` unset — no remote branch to check out). In pr mode, runs unconditionally regardless of `SELECTED_ITEMS` — conflict resolution must happen even when 0 action items selected.*
+
+When skipping:
+```text
+TaskUpdate(task_id=TASK_CHECKOUT, status="deleted")
+TaskUpdate(task_id=TASK_CONFLICT, status="deleted")
+```
+
+```text
+TaskUpdate(task_id=TASK_CHECKOUT, status="in_progress")
+```
 
 **`gh` availability check** — hard prereq; `gh pr checkout` has no fallback path:
 
@@ -404,14 +427,35 @@ git remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
 
 `FORK_REMOTE`: contributor login (e.g. `alice`) for forks, `origin` for same-repo. Push always `git push` — tracking configured by `gh pr checkout`.
 
+```text
+TaskUpdate(task_id=TASK_CHECKOUT, status="completed")
+```
+
 ## Steps 5–7: Conflict detection, context, and resolution
 <!-- Steps 5–7 defined in conflict-resolution.md — see that file for sub-step numbering -->
 
+```text
+TaskUpdate(task_id=TASK_CONFLICT, status="in_progress")
+```
+
 Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
+
+```text
+TaskUpdate(task_id=TASK_CONFLICT, status="completed")
+```
 
 ## Step 8: Implement action items
 
 *Skip when `SELECTED_ITEMS` is empty — jump to Step 9.*
+
+When skipping:
+```text
+TaskUpdate(task_id=TASK_IMPL, status="deleted")
+```
+
+```text
+TaskUpdate(task_id=TASK_IMPL, status="in_progress")
+```
 
 **Soft cap: 8 Codex dispatches per session** — Codex-specific. Skip this cap entirely when `--agent <name>` is set and the resolved agent is not `codex:codex-rescue` (other implementation agents have no per-session dispatch ceiling here):
 
@@ -475,13 +519,34 @@ jq -rc 'select(.task_id != "null" and .task_id != null) | "\(.task_id) \(.status
 
 For each `task_id status` line: `committed`/`staged` → `TaskUpdate(task_id=<id>, status="completed")`; `skipped`/`error` → `TaskUpdate(task_id=<id>, status="completed")` (terminal; note outcome in Step 11 report — the task list has no failed state). Any selected item whose `task_id` is `null` (map miss) → surface in the report rather than silently leaving it `pending`.
 
+```text
+TaskUpdate(task_id=TASK_IMPL, status="completed")
+```
+
 ## Step 9: Lint and QA gate
 
+```text
+TaskUpdate(task_id=TASK_LINT, status="in_progress")
+```
+
 Read and execute `$_OSS_RESOLVE/modes/lint-qa-gate.md`.
+
+```text
+TaskUpdate(task_id=TASK_LINT, status="completed")
+```
 
 ## Step 10: Push
 
 *Skip when report mode with no PR# (`$FORK_REMOTE`, `$HEAD_REF`, `$BASE_REF` unset — no fork branch; workflow ends at Step 11).*
+
+When skipping:
+```text
+TaskUpdate(task_id=TASK_CLOSE, status="deleted")
+```
+
+```text
+TaskUpdate(task_id=TASK_CLOSE, status="in_progress")
+```
 
 ```bash
 if ! git remote get-url "$FORK_REMOTE" &>/dev/null; then # timeout: 3000
@@ -535,7 +600,7 @@ gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messa
 
 ## Step 11: Final report
 
-Mark remaining open tasks `completed`. Read report template from `$_OSS_RESOLVE/templates/resolve-report.md` for section structure.
+Read report template from `$_OSS_RESOLVE/templates/resolve-report.md` for section structure.
 
 **Action Items table** — one row per selected item, columns: `#` | `Type` | `Change` | `Status` | `Resolution` | `Commit`:
 
@@ -558,6 +623,10 @@ fi
 ```
 
 <!-- branch: main-path — post-pr (call 4 of 4 normal / 5 of 5 with codex-cap) -->
+```text
+TaskUpdate(task_id=TASK_CLOSE, status="completed")
+```
+
 Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Merge now (`gh pr merge <PR_NUMBER> --merge`) · (c) Skip.
 
 ## Step 12: Comment dispatch + Codex review loop

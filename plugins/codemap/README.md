@@ -384,7 +384,7 @@ The hook triggers `scan-codebase --incremental` after local commits only — a c
 
 ### 5 — Ambient index status (UserPromptSubmit hook)
 
-A `UserPromptSubmit` hook fires on every user message and injects a one-line codemap status into Claude's context when an index exists at `.cache/codemap/<project>.json`. No output — and no overhead — when the index is absent.
+A `UserPromptSubmit` hook fires on every user message and injects a one-line codemap status into Claude's context when an index exists at `.cache/codemap/<project>.json`. When the index is **absent**, the hook stays silent for non-Python dirs (zero output, near-zero overhead); for Python projects it emits a once-per-session bootstrap prompt (see below).
 
 ```
 [codemap] .cache/codemap/rfdetr.json · 47 modules · current (git: f20fa19) · scanned: 2026-06-23
@@ -394,6 +394,8 @@ Prefer scan-query over file reads: rdeps, fn-rdeps, fn-blast, xrefs, symbol.
 When the index is **stale** (git HEAD differs from stored sha), the hook spawns `scan-index --root <scan_root>` in the background (non-blocking, 10-minute lockfile guard) so the index refreshes silently while Claude is answering. Status reads `· refresh started` on the first stale turn and `· refresh in progress` on subsequent turns until the scan completes.
 
 When the index is **current**, the hook injects the status line only once per session (30-min TTL flag at `/tmp/codemap-preamble-<proj>`). Subsequent turns skip injection — saving ~30 tokens × N turns ≈ ~900 tokens/session. Stale index always injects regardless of TTL so the auto-refresh note always reaches the agent.
+
+When there is **no index yet** and the project is Python (`__init__.py` present at depth ≤2 — root package or top-level subdirectory), the hook emits a once-per-session directive (30-min TTL flag at `/tmp/codemap-noindex-<proj>`) asking the agent to raise an `AskUserQuestion` offering to build the index. On consent the agent runs `scan-index` in the foreground and waits for it to finish before continuing. This bootstraps first-time projects that would otherwise never self-scan — the stale auto-refresh only fires on an already-existing index, and the skill-level Gate A missing-index prompt only fires inside wired `/develop`/`/oss` skills. Non-Python dirs receive nothing.
 
 This complements the per-skill SKILL.md injection — which handles dynamic per-PR `scan-query` output and interactive Gate A/B prompts — with a lightweight always-on preamble that reaches every turn, not just skill invocations.
 
