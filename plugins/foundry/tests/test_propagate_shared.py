@@ -1,0 +1,74 @@
+"""Tests for ``bin/propagate_shared.py``.
+
+The tool keeps byte-identical cross-plugin shared files in sync from a single
+canonical source. These tests use a synthetic MANIFEST over ``tmp_path`` to
+verify drift detection (``check``) and syncing (``apply``) without touching the
+real repository manifest.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+_MOD_PATH = Path(__file__).resolve().parent.parent / "bin" / "propagate_shared.py"
+_spec = importlib.util.spec_from_file_location("propagate_shared", _MOD_PATH)
+assert _spec and _spec.loader
+ps = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ps)
+
+
+def _manifest() -> list[dict[str, object]]:
+    """Return a one-entry manifest matching the tmp tree built below."""
+    return [{"canonical": "a/hook.js", "copies": ["b/hook.js", "c/hook.js"]}]
+
+
+def _tree(root: Path, canonical: str, b: str, c: str) -> None:
+    """Create a/hook.js, b/hook.js, c/hook.js with the given contents."""
+    for sub, content in (("a", canonical), ("b", b), ("c", c)):
+        (root / sub).mkdir(parents=True, exist_ok=True)
+        (root / sub / "hook.js").write_text(content, encoding="utf-8")
+
+
+def test_check_clean_when_all_match(tmp_path: Path) -> None:
+    """No findings when every copy equals the canonical."""
+    _tree(tmp_path, "X\n", "X\n", "X\n")
+    assert ps.check(tmp_path, _manifest()) == []
+
+
+def test_check_reports_each_drifted_copy(tmp_path: Path) -> None:
+    """Each copy differing from canonical is reported once."""
+    _tree(tmp_path, "X\n", "OLD\n", "X\n")
+    findings = ps.check(tmp_path, _manifest())
+    assert len(findings) == 1
+    assert "b/hook.js" in findings[0]
+
+
+def test_check_reports_missing_canonical(tmp_path: Path) -> None:
+    """A missing canonical file is reported, not silently skipped."""
+    manifest = [{"canonical": "gone/hook.js", "copies": ["b/hook.js"]}]
+    findings = ps.check(tmp_path, manifest)
+    assert len(findings) == 1
+    assert "canonical missing" in findings[0]
+
+
+def test_apply_syncs_drifted_copies(tmp_path: Path) -> None:
+    """apply() overwrites drifted copies and returns their paths; check() then clean."""
+    _tree(tmp_path, "NEW\n", "OLD\n", "NEW\n")
+    updated = ps.apply(tmp_path, _manifest())
+    assert updated == ["b/hook.js"]
+    assert (tmp_path / "b" / "hook.js").read_text() == "NEW\n"
+    assert ps.check(tmp_path, _manifest()) == []
+
+
+def test_main_check_exit_codes(tmp_path: Path) -> None:
+    """main --check exits 1 on drift, 0 when clean (via monkeypatched MANIFEST)."""
+    _tree(tmp_path, "X\n", "OLD\n", "X\n")
+    original = ps.MANIFEST
+    ps.MANIFEST = _manifest()
+    try:
+        assert ps.main(["--root", str(tmp_path)]) == 1
+        ps.main(["--apply", "--root", str(tmp_path)])
+        assert ps.main(["--root", str(tmp_path)]) == 0
+    finally:
+        ps.MANIFEST = original

@@ -109,6 +109,87 @@ class TestCheckFile:
         f = _file(tmp_path, content)
         assert any(var in x for x in cspv.check_file(f))
 
+    def test_genuine_literal_still_flagged(self, tmp_path: Path) -> None:
+        """A real literal $FOO — no default, not env var, no bracket, no directive — still flags."""
+        content = "```markdown\nRead $FOO_LITERAL/config.md before starting\n```\n"
+        f = _file(tmp_path, content)
+        findings = cspv.check_file(f)
+        assert len(findings) == 1
+        assert "FOO_LITERAL" in findings[0]
+
+
+class TestSuppressionClasses:
+    """Covers the four false-positive suppression classes (C42 triage)."""
+
+    def test_param_expansion_with_default_not_flagged(self, tmp_path: Path) -> None:
+        """${VAR:-default} idiom (class 1) is a portable shell form — not flagged."""
+        content = "```markdown\nwrite to ${TMPDIR:-/tmp}/out and ${CACHE_DIR:-/var}/x\n```\n"
+        f = _file(tmp_path, content)
+        assert cspv.check_file(f) == []
+
+    def test_default_form_elsewhere_suppresses_bare_occurrence(self, tmp_path: Path) -> None:
+        """Bare $VAR is suppressed when the same file uses ${VAR:-default} anywhere (class 1)."""
+        content = "```bash\n_IDX=${CODEMAP_INDEX_DIR:-/x}\n```\n```markdown\nread $CODEMAP_INDEX_DIR/y\n```\n"
+        f = _file(tmp_path, content)
+        assert cspv.check_file(f) == []
+
+    @pytest.mark.parametrize("var", ["TMPDIR", "HOME", "PWD", "CLAUDE_PLUGIN_ROOT"])
+    def test_well_known_env_var_not_flagged(self, tmp_path: Path, var: str) -> None:
+        """Bare well-known env vars (class 2) resolve in the subagent's own env — not flagged."""
+        content = f"```markdown\nread ${var}/thing\n```\n"
+        f = _file(tmp_path, content)
+        assert cspv.check_file(f) == []
+
+    def test_env_var_phrase_placeholder_not_flagged(self, tmp_path: Path) -> None:
+        """A $VAR documented as an env var name (class 2) is not orchestrator payload."""
+        content = "```markdown\nRemove; use env var `$MY_KEY` instead\n```\n"
+        f = _file(tmp_path, content)
+        assert cspv.check_file(f) == []
+
+    def test_substitute_directive_suppresses_var(self, tmp_path: Path) -> None:
+        """A substitute/expand/replace directive naming the token (class 3) suppresses it."""
+        content = (
+            "Block header: expand `${PROGRAM_PATH}` before passing.\n"
+            "```markdown\nRead the program at ${PROGRAM_PATH}.\n```\n"
+        )
+        f = _file(tmp_path, content)
+        assert cspv.check_file(f) == []
+
+    def test_substitute_directive_inside_block_suppresses_var(self, tmp_path: Path) -> None:
+        """Directive line within the block itself (class 3) also suppresses the var."""
+        content = "```markdown\nRead `<MANAGE_TPL>/x.md` (substitute resolved `$MANAGE_TPL`).\n```\n"
+        f = _file(tmp_path, content)
+        assert cspv.check_file(f) == []
+
+    def test_square_bracket_editorial_placeholder_not_flagged(self, tmp_path: Path) -> None:
+        """$VAR inside a [...] editorial span (class 4) is an orchestrator instruction."""
+        content = "```markdown\n[Continue with section template from $TEMPLATE_FILE]\n```\n"
+        f = _file(tmp_path, content)
+        assert cspv.check_file(f) == []
+
+    def test_var_outside_brackets_on_bracket_line_still_flagged(self, tmp_path: Path) -> None:
+        """A literal $VAR outside the [...] span on the same line is still flagged."""
+        content = "```markdown\nRead $REAL_LIT then [note about $INNER_VAR here]\n```\n"
+        f = _file(tmp_path, content)
+        findings = cspv.check_file(f)
+        assert any("REAL_LIT" in x for x in findings)
+        assert not any("INNER_VAR" in x for x in findings)
+
+
+class TestContextHelpers:
+    """Covers scan_file_context() and is_suppressed() directly."""
+
+    def test_scan_file_context_collects_default_and_directive_vars(self) -> None:
+        """Default-expansion vars and directive-line vars are gathered separately."""
+        text = "x=${TMP:-/t}\nsubstitute `$RUN_DIR` before passing\nplain $UNTOUCHED\n"
+        default_vars, directive_vars = cspv.scan_file_context(text)
+        assert default_vars == {"TMP"}
+        assert directive_vars == {"RUN_DIR"}
+
+    def test_is_suppressed_flags_true_literal(self) -> None:
+        """A bare literal with no suppression signal returns False."""
+        assert cspv.is_suppressed("FOO", 0, "$FOO/x", set(), set()) is False
+
 
 class TestMain:
     """Covers main() CLI integration."""

@@ -109,6 +109,57 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_fence_symmetry.py" \
 
 > Root cause: timeout annotation placed on closing fence delimiter instead of inside block (most common); or copy-paste lost a closing ` ``` `.
 
+## Check 14c — README drift
+
+Detects README facts that have drifted from disk: (1) a literal `Current version: `X.Y.Z`` marker not matching the plugin's `plugin.json` version; (2) a `.py`/`.sh` script named on a README line mentioning `bin/` (or as an explicit `plugins/<plugin>/bin/<name>` path) that exists nowhere in the plugin. Arbitrary version-shaped strings (release examples, historical benchmark tags) are ignored — only the explicit marker is checked.
+
+Scan all plugins via deterministic bin/ script:
+
+```bash
+printf "=== Check 14c: README drift ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_readme_drift.py" \
+    --scan-dir plugins  # timeout: 10000
+```
+
+**Severity**: **medium** — user-facing wrong facts; gate-level.
+- **Version marker drift**: **Auto-fix: YES** — update the marker to the current `plugin.json` version.
+- **Stale bin/ reference**: **Auto-fix: NO** — resolve to the current script name (often a sh→py migration) by inspecting the actual `bin/` directory.
+
+> Root cause: operational constants and inventories duplicated into README prose by hand; README-sync is convention-only and demonstrably fails. Also enforced pre-commit (per-file on `README.md`).
+
+## Check 14d — Mode dispatch integrity
+
+Detects dangling mode-dispatch references: a SKILL.md line routing control to a named section (e.g. `go to "Mode: Lessons Distillation"` or `skip to **Mode: X**`) with no matching `## Mode: X` header in the same file — the half-done-rename bug class where the header was renamed but a dispatch line still points at the old name.
+
+Scan all plugins via deterministic bin/ script:
+
+```bash
+printf "=== Check 14d: Mode dispatch integrity ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_mode_dispatch.py" \
+    --scan-dir plugins  # timeout: 10000
+```
+
+**Severity**: **high** — dangling dispatch sends the agent to a section that does not exist; the mode silently never runs.
+- **Dangling dispatch**: **Auto-fix: NO** — resolve to the intended header name (restore the renamed header or update the dispatch line to match); manual inspection determines which side is stale.
+
+> Root cause: a `## Mode: <Name>` header renamed without updating every `go to`/`skip to`/`see` dispatch line that references it (or vice versa).
+
+## Check 14e — Cross-plugin shared-file drift
+
+Detects byte-level drift in files that must be identical across plugins because each plugin ships its own copy of a shared mechanism (a plugin cannot depend on another being installed). The canonical copy lives in one plugin; the others must track it byte-for-byte. Source of truth is the `MANIFEST` in the script (currently the `agent-router.js` fallback hook: foundry canonical → oss/develop/research copies). Files that legitimately vary per plugin (e.g. `agent-resolution.md` fallback tables, per-plugin `rules/quality-gates.md`) are intentionally NOT in the manifest.
+
+Scan via deterministic bin/ script:
+
+```bash
+printf "=== Check 14e: Cross-plugin shared-file drift ===\n"
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/propagate_shared.py"  # timeout: 10000
+```
+
+**Severity**: **high** — a stale copy means one plugin runs old fallback logic; behaviour diverges silently by plugin.
+- **Drifted copy**: **Auto-fix: YES** — run `propagate_shared.py --apply` to overwrite copies with the canonical.
+
+> Root cause: `sync.sh` does not propagate cross-plugin shared files; a canonical edit was not mirrored into the consuming plugins. Also enforced pre-commit.
+
 ## Check 15 — Hardcoded user paths
 
 Use Grep tool (pattern `/Users/|/home/`, glob `{agents/*.md,skills/*/SKILL.md}`, path `.claude/`, output mode `content`) to flag non-portable paths in agent and skill files. Run second Grep on `.claude/settings.json` with same pattern to catch absolute hook paths.

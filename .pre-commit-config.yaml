@@ -125,8 +125,66 @@ repos:
         name: 🟩 node --check (hooks)
         language: system
         entry: node --check
-        files: ^\.claude/hooks/.*\.js$|^\.codex/hooks/.*\.js$
+        # Plugin hooks under plugins/*/hooks/ are the source of truth; .claude/hooks
+        # are symlinks to them. Scan both so a syntax error in plugin source is caught.
+        files: ^plugins/[^/]+/hooks/.*\.js$|^\.claude/hooks/.*\.js$|^\.codex/hooks/.*\.js$
         types: [javascript]
+
+      - id: check-tag-symmetry
+        name: 🏷️ XML tag symmetry (agents/skills)
+        language: system
+        entry: python3 plugins/foundry/bin/check_tag_symmetry.py
+        files: ^plugins/[^/]+/(agents/[^/]+|skills/[^/]+/SKILL)\.md$
+        types: [markdown]
+
+      - id: check-orphaned-bin
+        name: 🔗 orphaned bin/ scripts
+        language: system
+        entry: python3 plugins/foundry/bin/check_orphaned_bin.py
+        pass_filenames: false
+        always_run: true
+
+      - id: check-readme-drift
+        name: 📄 README drift (version + bin/ refs)
+        language: system
+        entry: python3 plugins/foundry/bin/check_readme_drift.py --scan-dir plugins
+        pass_filenames: false
+        always_run: true
+
+      - id: check-fence-symmetry
+        name: 🚧 code fence symmetry
+        language: system
+        entry: python3 plugins/foundry/bin/check_fence_symmetry.py
+        files: ^plugins/.*\.md$
+        types: [markdown]
+
+      - id: check-routing-links
+        name: 🧭 bin/ + computed-path reference integrity
+        language: system
+        entry: python3 plugins/foundry/bin/check_routing_links.py
+        pass_filenames: false
+        always_run: true
+
+      - id: check-spawn-prompt-vars
+        name: 🪧 unexpanded $VAR in spawn prompts
+        language: system
+        entry: python3 plugins/foundry/bin/check_spawn_prompt_vars.py --scan-dir plugins
+        pass_filenames: false
+        always_run: true
+
+      - id: check-mode-dispatch
+        name: 🧵 mode dispatch integrity
+        language: system
+        entry: python3 plugins/foundry/bin/check_mode_dispatch.py --scan-dir plugins
+        pass_filenames: false
+        always_run: true
+
+      - id: check-shared-drift
+        name: 🔁 cross-plugin shared-file drift
+        language: system
+        entry: python3 plugins/foundry/bin/propagate_shared.py
+        pass_filenames: false
+        always_run: true
 
       - id: trim-plugin-tables
         name: ✂️ trim plugin table padding
@@ -181,7 +239,10 @@ repos:
         # Matches /Users/<realname>/ or /home/<realname>/ — alphanumeric usernames only.
         # Placeholder docs like /Users/<name>/ are not flagged (< is not alphanumeric).
         entry: /Users/[a-zA-Z0-9_-]+/|/home/[a-zA-Z0-9_-]+/
-        files: ^\.claude/(agents|skills|rules)/.*\.md$|^\.claude/hooks/[^/]+\.js$|^\.claude/settings\.json$|^\.codex/(agents|skills|rules)/.*\.md$|^\.codex/hooks/[^/]+\.js$|^\.codex/settings\.json$
+        # Plugin source (agents/skills/rules/hooks + manifest json) is the real install
+        # surface; a hardcoded path there breaks on every other machine. .claude/state
+        # runtime dirs are gitignored and excluded from the pattern by not matching.
+        files: ^plugins/[^/]+/(agents|skills|rules|hooks)/.*\.(md|js)$|^plugins/[^/]+/\.claude-plugin/[^/]+\.json$|^\.claude/(agents|skills|rules)/.*\.md$|^\.claude/hooks/[^/]+\.js$|^\.claude/settings\.json$|^\.codex/(agents|skills|rules)/.*\.md$|^\.codex/hooks/[^/]+\.js$|^\.codex/settings\.json$
 
   - repo: https://github.com/jorisroovers/gitlint
     rev: v0.19.1 # run `pre-commit autoupdate --repo https://github.com/jorisroovers/gitlint` to set

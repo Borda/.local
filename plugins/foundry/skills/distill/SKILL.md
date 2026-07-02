@@ -78,7 +78,7 @@ For each agent/skill found, extract: name, description, tools, purpose. Tag each
 
 **If first token equals `prune`**: skip Steps 2–5 entirely and go to "Mode: Memory Pruning" below.
 
-**If first token equals `lessons`**: skip Steps 2–5 entirely and go to "Mode: Lessons Distillation" below.
+**If first token equals `memory`**: skip Steps 2–5 entirely and go to "Mode: Memory Distillation" below.
 
 **If first token equals `external`** (i.e. `external <source>`, NOT a word that merely starts with the string `external`): skip Steps 2–5 entirely and go to "Mode: External Distillation" below.
 
@@ -184,7 +184,7 @@ Locate, evaluate, and trim project memory file.
 **Find memory file:**
 
 <!-- Note: if the auto-memory path convention changes, update this slug derivation. -->
-<!-- Slug-divergence guard: `resolve_memory_dir.py` is the single source of truth for the memory directory and `MEMORY.md` filename. Any consumer that reads or writes session/project memory (e.g. `foundry:session`, lessons mode below) MUST resolve the same path via this script — do NOT hardcode an alternate slug or filename here or elsewhere; divergence causes silent split-brain between writer and reader. -->
+<!-- Slug-divergence guard: `resolve_memory_dir.py` is the single source of truth for the memory directory and `MEMORY.md` filename. Any consumer that reads or writes session/project memory (e.g. `foundry:session`, `memory` mode below) MUST resolve the same path via this script — do NOT hardcode an alternate slug or filename here or elsewhere; divergence causes silent split-brain between writer and reader. -->
 
 ```bash
 # timeout: 5000
@@ -352,7 +352,7 @@ Pruned MEMORY.md — <date>
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
-## Mode: Memory Distillation — only when `$ARGUMENTS == "memory"`
+## Mode: Memory Distillation — only when first token is `memory`
 
 Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/memory.md`.
 
@@ -376,7 +376,7 @@ Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/ex
 
 - After creating new agent/skill based on suggestion, re-run skill once to confirm gap resolved, then stop
 
-- **`lessons` mode is primary consolidation path** — run after any session with significant corrections to prevent lesson drift back into MEMORY.md noise
+- **`memory` mode is primary consolidation path** — run after any session with significant corrections to prevent lesson drift back into MEMORY.md noise
 
 - **Agent Teams signal tracking**: when reviewing patterns, also look for:
 
@@ -393,7 +393,7 @@ Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/ex
 
   - Suggestion accepted for new agent/skill → `/foundry:manage create` to scaffold and register it
   - Suggestion to enhance existing → edit agent/skill directly, then `/foundry:setup`
-  - `lessons` proposals applied → `/foundry:setup` to propagate; `/foundry:audit rules` to verify new rule files structurally sound
+  - `memory` proposals applied → `/foundry:setup` to propagate; `/foundry:audit rules` to verify new rule files structurally sound
   - `executables` extraction complete → `/foundry:setup` to propagate bin/ scripts; run `/foundry:audit --efficiency` to confirm `clusters == 0`
 
 </notes>

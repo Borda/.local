@@ -777,6 +777,12 @@ def run_bin_ref_integrity(
                     continue
                 seen.add(key)
 
+                # A reference into a plugin dir that does not exist is an illustrative
+                # placeholder (e.g. `plugins/myplugin/bin/resolve.py` in an authoring guide),
+                # not real dispatch — a "missing bin" failure is meaningless for a non-plugin.
+                if not (plugins_dir / bin_plugin).is_dir():
+                    continue
+
                 local_path = plugins_dir / bin_plugin / "bin" / script_name
                 local_exists = local_path.exists()
 

@@ -466,6 +466,18 @@ class TestRunR3:
         assert len(warns) >= 1
         assert warns[0].script_name == "new_script.py"
 
+    def test_skip_when_plugin_dir_absent(self, tmp_path: Path) -> None:
+        """A ref into a non-existent plugin dir (placeholder like `myplugin`) is skipped, not FAILed."""
+        plugins_dir, plugin_dir = _make_plugin_tree(tmp_path)
+        cache_dir = _make_cache(tmp_path)
+
+        # Illustrative placeholder plugin with no directory on disk (e.g. authoring-guide example).
+        skill_md = plugin_dir / "skills" / "audit" / "SKILL.md"
+        skill_md.write_text('python "${CLAUDE_PLUGIN_ROOT:-plugins/myplugin}/bin/resolve.py"\n')
+
+        findings = run_bin_ref_integrity(plugins_dir, cache_dir)
+        assert findings == []
+
 
 # ---------------------------------------------------------------------------
 # format_results

@@ -99,7 +99,7 @@ Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`
 - **General rule: resilience code lives in plugin whose users need protecting, not plugin being protected against**
 - Examples: fallback for missing `foundry` agents → cannot live in `foundry`; fallback for missing `oss` agents → cannot live in `oss`; same for any plugin pair
 
-Correct placement: every plugin dispatching agents from others ships own fallback hook. Source of truth in one plugin; `sync.sh` copies to others at release.
+Correct placement: every plugin dispatching agents from others ships own fallback hook. Source of truth in one plugin; copies live in each consuming plugin. **Byte-identical shared files are propagated by `plugins/foundry/bin/propagate_shared.py`** — its `MANIFEST` maps each canonical file to the copies that must equal it (currently `agent-router.js`: foundry canonical → oss/develop/research). `--apply` syncs; the default `--check` mode is enforced in pre-commit and audit Check 14e, so drift is caught at commit. When you edit a manifested shared file, edit the canonical and run `propagate_shared.py --apply`. `sync.sh` still only copies `.codex/` + the `~/.claude` cache — it does NOT propagate cross-plugin files. NOTE: files that legitimately vary per plugin (`agent-resolution.md` fallback tables, per-plugin `rules/quality-gates.md`) are intentionally NOT manifested — do not add them.
 
 No plugin dependency system in Claude Code — never propose "install `foo` as prerequisite" or "register globally via `foo` init" as solution to missing-plugin resilience. Circular: requires thing that might be absent.
 

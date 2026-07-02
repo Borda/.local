@@ -156,6 +156,120 @@ class TestCheckFile:
         assert cbp.check_file(f) == []
 
 
+class TestReferencedVarsComments:
+    """Covers comment-line skipping in referenced_vars()."""
+
+    def test_full_comment_reference_ignored(self) -> None:
+        """A var named only in a full-line # comment is not a reference."""
+        assert "COMMIT_SENTINEL" not in cbp.referenced_vars("# $COMMIT_SENTINEL is gone\n")
+
+    def test_code_reference_still_detected(self) -> None:
+        """A real reference on a code line survives alongside comment lines."""
+        assert "FOO" in cbp.referenced_vars("# note $BAR\necho $FOO\n")
+
+
+class TestTemplateBlock:
+    """Covers is_template_block() placeholder detection (suppression rule 3)."""
+
+    def test_unassigned_placeholder_flags_template(self) -> None:
+        """A never-assigned ${I} loop-counter token marks the block a template."""
+        assert cbp.is_template_block("cp x .../ctx-${I}.md\n", frozenset({"RUN_ID"})) is True
+
+    def test_all_tokens_assigned_not_template(self) -> None:
+        """Block whose refs are all assigned somewhere is not a template."""
+        assert cbp.is_template_block("echo ${RUN_ID}\n", frozenset({"RUN_ID"})) is False
+
+    def test_known_env_var_not_placeholder(self) -> None:
+        """A known-safe env var (ARGUMENTS) never assigned is not a placeholder."""
+        assert cbp.is_template_block('echo "$ARGUMENTS"\n', frozenset()) is False
+
+    def test_comment_placeholder_ignored(self) -> None:
+        """A placeholder token appearing only in a comment does not mark a template."""
+        assert cbp.is_template_block("# uses ${I}\necho done\n", frozenset()) is False
+
+
+class TestReloadsBeforeRef:
+    """Covers reloads_before_ref() state-reload detection (suppression rule 1)."""
+
+    def test_eval_reload_before_reference(self) -> None:
+        """eval "$(...)" before the reference re-derives the value."""
+        assert cbp.reloads_before_ref('eval "$(git_slugs.sh)"\nrm -f "$SENTINEL"\n', "SENTINEL") is True
+
+    def test_source_reload_before_reference(self) -> None:
+        """source of a state file before the reference re-derives the value."""
+        assert cbp.reloads_before_ref('source ./state.sh\necho "$VARX"\n', "VARX") is True
+
+    def test_reload_after_reference_not_suppressed(self) -> None:
+        """A reload appearing after the reference does not rescue it — still lost."""
+        assert cbp.reloads_before_ref('echo "$VARX"\neval "$(gen)"\n', "VARX") is False
+
+    def test_no_reload_returns_false(self) -> None:
+        """A plain reference with no reload command is not suppressed."""
+        assert cbp.reloads_before_ref('echo "$VARX"\n', "VARX") is False
+
+
+class TestRefsAllDefended:
+    """Covers refs_all_defended() empty-var defence detection (suppression rule 2)."""
+
+    def test_strip_assignment_with_guard(self) -> None:
+        """VAR2=${VAR%x} followed by a [ -z "$VAR2" ] guard defends the reference."""
+        block = '_SKILLS="${_SHARED%/_shared}"\n[ -z "$_SKILLS" ] && _SKILLS="fallback"\n'
+        assert cbp.refs_all_defended(block, "_SHARED") is True
+
+    def test_default_expansion_defended(self) -> None:
+        """A ${VAR:-default} parameter expansion defends against empty."""
+        assert cbp.refs_all_defended('echo "${OUTDIR:-/tmp}"\n', "OUTDIR") is True
+
+    def test_bare_reference_not_defended(self) -> None:
+        """A bare $VAR reference is not defended."""
+        assert cbp.refs_all_defended('echo "$OUTDIR"\n', "OUTDIR") is False
+
+    def test_partial_defence_not_all(self) -> None:
+        """One defended and one bare reference means not all-defended."""
+        block = 'X="${A:-y}"\necho "$A"\n'
+        assert cbp.refs_all_defended(block, "A") is False
+
+
+class TestSuppressionEndToEnd:
+    """Covers check_file() suppression of the three FP classes plus real-loss preservation."""
+
+    def test_reload_suppresses_finding(self, tmp_path: Path) -> None:
+        """eval reload of a state file in the referencing block suppresses C41."""
+        content = '```bash\nSENTINEL=/tmp/x\n```\n```bash\neval "$(gen_slugs)"\nrm -f "$SENTINEL"\n```\n'
+        assert cbp.check_file(_skill(tmp_path, content)) == []
+
+    def test_comment_only_reference_suppressed(self, tmp_path: Path) -> None:
+        """A cross-block var named only in a comment is not flagged."""
+        content = "```bash\nSENTINEL=/tmp/x\n```\n```bash\n# $SENTINEL gone\necho done\n```\n"
+        assert cbp.check_file(_skill(tmp_path, content)) == []
+
+    def test_defended_reference_suppressed(self, tmp_path: Path) -> None:
+        """A stripped-and-guarded reference is empty-var-defended, not flagged."""
+        content = (
+            "```bash\n_SHARED=/a/b/_shared\n```\n"
+            '```bash\n_SKILLS="${_SHARED%/_shared}"\n[ -z "$_SKILLS" ] && _SKILLS="x"\n```\n'
+        )
+        assert cbp.check_file(_skill(tmp_path, content)) == []
+
+    def test_template_placeholder_block_suppressed(self, tmp_path: Path) -> None:
+        """A referencing block containing a never-assigned ${I} placeholder is suppressed."""
+        content = "```bash\nRUN_ID=$(date -u +%s)\n```\n```bash\ngit log > state/${RUN_ID}/ctx-${I}.md\n```\n"
+        assert cbp.check_file(_skill(tmp_path, content)) == []
+
+    def test_real_bare_loss_still_flags(self, tmp_path: Path) -> None:
+        """A bare cross-block ref with no re-derivation, guard, or placeholder still flags."""
+        content = '```bash\nMEMORY_DIR=/a/b\n```\n```bash\nls "$MEMORY_DIR"/x-*.md\n```\n'
+        findings = cbp.check_file(_skill(tmp_path, content))
+        assert len(findings) == 1
+        assert "MEMORY_DIR" in findings[0]
+
+    def test_real_loss_with_reload_after_ref_still_flags(self, tmp_path: Path) -> None:
+        """A reload placed after the reference does not rescue the lost value."""
+        content = '```bash\nVARX=1\n```\n```bash\necho "$VARX"\neval "$(gen)"\n```\n'
+        findings = cbp.check_file(_skill(tmp_path, content))
+        assert any("VARX" in f for f in findings)
+
+
 class TestMain:
     """Covers main() CLI integration."""
 

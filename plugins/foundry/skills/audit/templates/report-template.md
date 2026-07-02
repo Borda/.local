@@ -66,6 +66,7 @@ Or if limit hit:
 
 - [low findings that were not auto-fixed]
 - [any infinite loops flagged for user decision]
+```
 
 ### Code Block Similarity
 
@@ -79,6 +80,7 @@ Include when `$RUN_DIR/similarity-check33.md` exists (`--efficiency` mode only).
 
 Omit section entirely if `similarity-check33.md` absent (efficiency not active or no clusters found).
 
+```markdown
 ### Agent Confidence
 
 | File | Score | Label | Gaps |

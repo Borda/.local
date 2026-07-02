@@ -54,24 +54,18 @@ Read current project before searching, extract constraints:
 - Task (classification, detection, generation, regression)?
 - Constraints (latency, memory, dataset size, compute budget)?
 
-**Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. are accepted:
-
-```bash
-ARGUMENTS_LOWER=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]')
-```
-
-Use `$ARGUMENTS_LOWER` for all flag/mode dispatch checks (`--team`, `--plan`, leading `plan` token); preserve original `$ARGUMENTS` only where literal substitution into prompts is required (e.g. topic string).
+**Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. are accepted. Each Bash tool call runs in a fresh shell, so a lowercased copy does NOT persist across blocks — re-derive it inline from `$ARGUMENTS` (harness-substituted every block) wherever a dispatch check needs it, e.g. `echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | …`. Preserve original `$ARGUMENTS` only where literal substitution into prompts is required (e.g. topic string).
 
 **Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`.
 
 ```bash
-UNKNOWN_FLAGS=$(echo "$ARGUMENTS_LOWER" | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)  # timeout: 5000
+UNKNOWN_FLAGS=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)  # timeout: 5000
 ```
 
 **Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3. Priority: `--team` wins over `plan` (`plan --team` → Team Mode, topic string = "plan"):
 
 ```bash
-FIRST_WORD=$(echo "$ARGUMENTS_LOWER" | awk '{print $1}')  # timeout: 5000
+FIRST_WORD=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | awk '{print $1}')  # timeout: 5000
 ```
 
 - If `$ARGUMENTS_LOWER` contains `--team` flag → skip Steps 2-3; jump directly to **Team Mode** section below.

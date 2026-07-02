@@ -40,9 +40,77 @@ _CALLER_SUBSTITUTED: frozenset[str] = frozenset(
     }
 )
 
+# Well-known env vars the spawned subagent resolves in its OWN environment — a bare
+# $TMPDIR / ${HOME} etc. is not orchestrator-context payload, so never flag them.
+_WELL_KNOWN_ENV: frozenset[str] = frozenset({"TMPDIR", "HOME", "PWD", "CLAUDE_PLUGIN_ROOT"})
+
 _MD_OPEN = re.compile(r"^```markdown\s*$")
 _FENCE_CLOSE = re.compile(r"^```\s*$")
 _VAR_REF = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]+)\}?")
+# Parameter-expansion-with-default idiom: ${VAR:-default}. Portable shell the subagent
+# reproduces and expands in its own shell — never an unexpanded-literal bug.
+_DEFAULT_EXPANSION = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]+):-[^}]*\}")
+# A directive line telling the orchestrator to resolve a token before dispatch.
+_DIRECTIVE_WORDS = re.compile(r"(?i)\b(?:expand|substitute|replace)\b")
+# "env var" / "environment variable" — the $VAR on the line is a documented env-var name.
+_ENV_VAR_PHRASE = re.compile(r"(?i)\benv(?:ironment)?\s+var(?:iable)?s?\b")
+# Editorial square-bracket span, e.g. [Continue with template from $TEMPLATE_FILE].
+_BRACKET_SPAN = re.compile(r"\[[^\[\]]*\]")
+
+
+def scan_file_context(text: str) -> tuple[set[str], set[str]]:
+    """Pre-scan the whole file for var names that must never be flagged.
+
+    Args:
+        text: full file contents.
+
+    Returns:
+        Tuple ``(default_vars, directive_vars)`` where ``default_vars`` appear in a
+        ``${VAR:-default}`` idiom somewhere in the file, and ``directive_vars`` appear
+        on a line that also carries an expand/substitute/replace instruction.
+
+    Examples:
+        >>> d, s = scan_file_context("use ${TMP:-/x}\\nexpand $FOO before passing\\n")
+        >>> sorted(d), sorted(s)
+        (['TMP'], ['FOO'])
+    """
+    default_vars: set[str] = set()
+    directive_vars: set[str] = set()
+    for line in text.splitlines():
+        for dm in _DEFAULT_EXPANSION.finditer(line):
+            default_vars.add(dm.group(1))
+        if _DIRECTIVE_WORDS.search(line):
+            for vm in _VAR_REF.finditer(line):
+                directive_vars.add(vm.group(1))
+    return default_vars, directive_vars
+
+
+def is_suppressed(var: str, start: int, line: str, default_vars: set[str], directive_vars: set[str]) -> bool:
+    """Return True when a ``$VAR`` occurrence is a known false-positive.
+
+    Args:
+        var: variable name (without ``$`` / braces).
+        start: column offset of the match on the line.
+        line: full source line the match was found on.
+        default_vars: vars seen in ``${VAR:-default}`` form file-wide.
+        directive_vars: vars named on an expand/substitute/replace directive line file-wide.
+
+    Returns:
+        True if the occurrence should be suppressed, False if it must be flagged.
+
+    Examples:
+        >>> is_suppressed("TMPDIR", 0, "$TMPDIR/x", set(), set())
+        True
+        >>> is_suppressed("FOO", 0, "$FOO/x", set(), set())
+        False
+    """
+    if var in _CALLER_SUBSTITUTED or var in _WELL_KNOWN_ENV:
+        return True
+    if var in default_vars or var in directive_vars:
+        return True
+    if _ENV_VAR_PHRASE.search(line):
+        return True
+    return any(b0 <= start < b1 for b0, b1 in (m.span() for m in _BRACKET_SPAN.finditer(line)))
 
 
 def check_file(path: Path) -> list[str]:
@@ -68,6 +136,7 @@ def check_file(path: Path) -> list[str]:
     except OSError:
         return []
 
+    default_vars, directive_vars = scan_file_context(text)
     findings: list[str] = []
     in_md = False
     block_num = 0
@@ -85,7 +154,7 @@ def check_file(path: Path) -> list[str]:
             continue
         for m in _VAR_REF.finditer(line):
             var = m.group(1)
-            if var in _CALLER_SUBSTITUTED or len(var) <= 1:
+            if len(var) <= 1 or is_suppressed(var, m.start(), line, default_vars, directive_vars):
                 continue
             key = (block_num, var)
             if key in reported:

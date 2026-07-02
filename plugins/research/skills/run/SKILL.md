@@ -589,7 +589,10 @@ TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 **After campaign loop completes** (outside per-iteration loop):
 
 ```bash
-rm -f "$COMMIT_SENTINEL"  # timeout: 3000  (best-effort; commit-guard.js owns lifecycle)
+# Fresh shell — $COMMIT_SENTINEL from R5 setup is gone; re-derive the path before rm
+# (matches the Phase 4 re-derivation) or the cleanup is a silent no-op on "".
+eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/git_slugs.sh")"  # timeout: 3000
+rm -f "${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"  # timeout: 3000  (best-effort; commit-guard.js owns lifecycle)
 ```
 
 ### Step R6: Results report

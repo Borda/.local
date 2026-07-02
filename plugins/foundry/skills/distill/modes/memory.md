@@ -96,7 +96,7 @@ Thresholds:
 Produce structured proposal table. Do not apply anything yet — report first.
 
 ````markdown
-## Lessons Distillation Proposals
+## Memory Distillation Proposals
 
 ### Summary
 - Source files read: N (.notes/lessons.md + N feedback files)

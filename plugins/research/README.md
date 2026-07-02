@@ -825,11 +825,11 @@ This plugin is part of the Borda-AI-Rig project. The skills and agents are in `p
 
 The skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) are the canonical source of truth — this README must stay in sync with them. Any change to a skill's behavior (flags, NOT-for scope, trigger conditions) requires an update here.
 
-Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.7.0`.
+Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.9.2`.
 
 **Mode-dispatch layout**: large conditional sections are externalised under `skills/<skill>/modes/*.md` and loaded on demand. Run's hypothesis pipeline, team, and report modes live under `skills/run/modes/`. The ML-concepts reference for `research:scientist` lives under `agents/scientist/ml-concepts.md` — loaded only when the task is ML-domain.
 
-**Shared bin/ scripts** (`plugins/research/bin/`): `resolve-shared.sh`, `make-run-dir.sh`, `health-monitor-start.sh`, `git_slugs.sh` (emits sourceable `REPO_SLUG`/`BRANCH_SLUG` for the `research:run` commit-sentinel path), `docker_sandbox_run.py` (`--mode explore|verify` — sandboxed metric and script execution under `python:3.11-slim`).
+**Shared bin/ scripts** (`plugins/research/bin/`): `resolve_shared.py`, `make_run_dir.py`, `health_monitor_start.py`, `git_slugs.sh` (emits sourceable `REPO_SLUG`/`BRANCH_SLUG` for the `research:run` commit-sentinel path), `docker_sandbox_run.py` (`--mode explore|verify` — sandboxed metric and script execution under `python:3.11-slim`).
 
 ______________________________________________________________________
 
