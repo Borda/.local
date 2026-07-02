@@ -4,8 +4,9 @@
 // Injects a terse codemap status line before each user turn when a codemap
 // index exists at .cache/codemap/<project>.json.
 //
-// No index yet: for Python projects (__init__.py present at depth ≤2 under
-// git root) emit a once-per-session directive asking the agent to offer building
+// No index yet: for Python projects (root/flat __init__.py, a src/<pkg>/__init__.py
+// src-layout, or a pyproject.toml/setup.py at the root) emit a once-per-session
+// directive asking the agent to offer building
 // the index — hooks are stdout-only and cannot call AskUserQuestion themselves,
 // so the agent raises it and, on yes, runs scan-index foreground. Non-Python
 // dirs stay silent (zero output, ≤3 stat calls) — see handleMissingIndex().
@@ -45,26 +46,49 @@ function extractField(key, text) {
 // emit a once-per-session directive; the agent turns it into an AskUserQuestion and,
 // on consent, runs scan-index foreground. Always exits 0 — never blocks the turn.
 function handleMissingIndex(projRoot, proj) {
-  // Python-only gate — __init__.py at depth ≤2 catches root packages and src/flat
-  // layouts without relying on packaging files (pyproject.toml etc. are weak proxies).
-  const isPython = (() => {
+  // Python-only gate. Any one signal is sufficient (all checks bounded — non-Python
+  // dirs still return fast):
+  //   1. __init__.py at git root (root-level package)
+  //   2. __init__.py one level down (flat multi-package layout)
+  //   3. src/<pkg>/__init__.py two levels down (PEP 517 src-layout — depth 3)
+  //   4. pyproject.toml / setup.py at root (Python project-root marker for layouts 1–3 miss)
+  const hasInit = (dir) => {
     try {
-      if (fs.statSync(path.join(projRoot, "__init__.py")).isFile()) return true;
-    } catch {}
-    try {
-      return fs
-        .readdirSync(projRoot, { withFileTypes: true })
-        .filter((e) => e.isDirectory() && !e.name.startsWith("."))
-        .some((dir) => {
-          try {
-            return fs.statSync(path.join(projRoot, dir.name, "__init__.py")).isFile();
-          } catch {
-            return false;
-          }
-        });
+      return fs.statSync(path.join(dir, "__init__.py")).isFile();
     } catch {
       return false;
     }
+  };
+  const isPython = (() => {
+    if (hasInit(projRoot)) return true;
+    let dirs = [];
+    try {
+      dirs = fs
+        .readdirSync(projRoot, { withFileTypes: true })
+        .filter((e) => e.isDirectory() && !e.name.startsWith("."));
+    } catch {
+      dirs = [];
+    }
+    if (dirs.some((d) => hasInit(path.join(projRoot, d.name)))) return true;
+    // src-layout: src/<pkg>/__init__.py
+    if (dirs.some((d) => d.name === "src")) {
+      const srcDir = path.join(projRoot, "src");
+      try {
+        const found = fs
+          .readdirSync(srcDir, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+          .some((d) => hasInit(path.join(srcDir, d.name)));
+        if (found) return true;
+      } catch {}
+    }
+    // Packaging-file fallback — Python-specific project-root markers.
+    return ["pyproject.toml", "setup.py"].some((f) => {
+      try {
+        return fs.statSync(path.join(projRoot, f)).isFile();
+      } catch {
+        return false;
+      }
+    });
   })();
   if (!isPython) process.exit(0);
 

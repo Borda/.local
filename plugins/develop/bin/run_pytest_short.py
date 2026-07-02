@@ -5,8 +5,10 @@ Usage:
     run_pytest_short.py [pytest_cmd] [target] [tail_n]
 
 Behaviour:
-    Validates ``pytest_cmd`` against an allowlist of three values
-    (``pytest``, ``uv run pytest``, ``python -m pytest``) before any execution.
+    Validates ``pytest_cmd`` against an allowlist
+    (``pytest``, ``uv run pytest``, ``python -m pytest``, ``poetry run pytest``,
+    ``poetry run python -m pytest``) before any execution — the set must cover
+    every runner ``runner-detection.md`` can emit.
     Captures combined stdout+stderr, then prints the last ``tail_n`` lines (default 20).
     Bad/non-integer ``tail_n`` silently falls back to 20.
 
@@ -24,7 +26,15 @@ import sys
 from pathlib import Path
 from shutil import which
 
-_PYTEST_ALLOWLIST: frozenset[str] = frozenset({"pytest", "uv run pytest", "python -m pytest"})
+_PYTEST_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "pytest",
+        "uv run pytest",
+        "python -m pytest",
+        "poetry run pytest",
+        "poetry run python -m pytest",
+    }
+)
 _DEFAULT_TAIL_N: int = 20
 
 

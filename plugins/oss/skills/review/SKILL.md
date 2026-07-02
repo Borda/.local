@@ -78,9 +78,41 @@ Create these tasks **before** starting Step 1 (in order, all at once):
 - **"Step 5: Consolidate findings"** — TaskUpdate(in_progress) before spawning consolidator; TaskUpdate(completed) before printing terminal block (per task-lifecycle.md: before long output)
 - **"Step 8: Contributor reply draft"** — create only when REPLY_MODE=true, before spawning oss:shepherd; TaskUpdate(in_progress) immediately after creation; TaskUpdate(completed) when shepherd output written
 
-## Step 0: Content-type pre-classification (PR mode only)
+## Step 0: Parse flags and content-type pre-classification
 
-Skip when `DIRECT_PATH_MODE=true`.
+Parse `$ARGUMENTS` flags first (applied directly — no subprocess) — this sets `CLEAN_ARGS`, the mode flags, and `DIRECT_PATH_MODE` **before** any step below references them (the pre-classification and Step 1 both read them):
+
+| Flag | Variable | Present | Absent |
+| --- | --- | --- | --- |
+| `--reply` | `REPLY_MODE` | `true` | `false` |
+| `--no-challenge` | `CHALLENGE_ENABLED` | `false` | `true` |
+| `--no-codemap` | `CODEMAP_FORCE_OFF` | `true` | `false` |
+| `--codemap` | `CODEMAP_STRICT` | `true` | `false` |
+| `--semble` | `SEMBLE_ENABLED` | `true` | `false` |
+
+`CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed, leading whitespace stripped, leading `#` stripped.
+
+Then set direct-report fast-path mode (a review-report `.md` path passed instead of a PR number):
+
+```bash
+DIRECT_PATH_MODE=false
+if [[ "$CLEAN_ARGS" == *.md ]]; then
+    # reject plan files — shepherd must not draft replies from plan content
+    if [[ "$CLEAN_ARGS" == .plans/* ]] || [[ "$CLEAN_ARGS" == *todo_*.md ]]; then
+        echo "Error: plan files cannot be used as review report input. Pass a review report from .reports/review/<timestamp>/review-report.md or a PR number."
+        exit 1
+    fi
+    # required markers: ## Summary, verdict:, or APPROVED|NEEDS_WORK|REQUEST_CHANGES
+    if [ -f "$CLEAN_ARGS" ] && grep -qE '(^## Summary|^verdict:|APPROVED|NEEDS_WORK|REQUEST_CHANGES)' "$CLEAN_ARGS" 2>/dev/null; then  # timeout: 5000
+        DIRECT_PATH_MODE=true
+        REVIEW_FILE="$CLEAN_ARGS"
+    else
+        echo "⚠ $CLEAN_ARGS is a .md file but lacks review-report markers (## Summary | verdict: | APPROVED|NEEDS_WORK|REQUEST_CHANGES) — refusing direct-path fast-path; continuing with normal review path which expects a PR number."
+    fi
+fi
+```
+
+**Content-type pre-classification (PR mode only)** — skip when `DIRECT_PATH_MODE=true`.
 
 Classify PR from changed file patterns. Default `PR_TYPE=CODE`; override only when unambiguous.
 
@@ -137,17 +169,7 @@ When `DOCS_TYPING_MODE=true` or `TESTS_CI_MODE=true`: skip Step 1 file-scope det
 
 ## Step 1: Identify scope and context (run in parallel for PR mode)
 
-Parse `$ARGUMENTS` flags (applied directly — no subprocess):
-
-| Flag | Variable | Present | Absent |
-| --- | --- | --- | --- |
-| `--reply` | `REPLY_MODE` | `true` | `false` |
-| `--no-challenge` | `CHALLENGE_ENABLED` | `false` | `true` |
-| `--no-codemap` | `CODEMAP_FORCE_OFF` | `true` | `false` |
-| `--codemap` | `CODEMAP_STRICT` | `true` | `false` |
-| `--semble` | `SEMBLE_ENABLED` | `true` | `false` |
-
-`CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed, leading whitespace stripped, leading `#` stripped.
+Flags, `CLEAN_ARGS`, and `DIRECT_PATH_MODE` were parsed in Step 0 — reuse those values here.
 
 ```bash
 # loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
@@ -165,24 +187,6 @@ CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/review-codemap-currency" 2>/dev/null || 
 If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
-
-```bash
-DIRECT_PATH_MODE=false
-if [[ "$CLEAN_ARGS" == *.md ]]; then
-    # reject plan files — shepherd must not draft replies from plan content
-    if [[ "$CLEAN_ARGS" == .plans/* ]] || [[ "$CLEAN_ARGS" == *todo_*.md ]]; then
-        echo "Error: plan files cannot be used as review report input. Pass a review report from .reports/review/<timestamp>/review-report.md or a PR number."
-        exit 1
-    fi
-    # required markers: ## Summary, verdict:, or APPROVED|NEEDS_WORK|REQUEST_CHANGES
-    if [ -f "$CLEAN_ARGS" ] && grep -qE '(^## Summary|^verdict:|APPROVED|NEEDS_WORK|REQUEST_CHANGES)' "$CLEAN_ARGS" 2>/dev/null; then  # timeout: 5000
-        DIRECT_PATH_MODE=true
-        REVIEW_FILE="$CLEAN_ARGS"
-    else
-        echo "⚠ $CLEAN_ARGS is a .md file but lacks review-report markers (## Summary | verdict: | APPROVED|NEEDS_WORK|REQUEST_CHANGES) — refusing direct-path fast-path; continuing with normal review path which expects a PR number."
-    fi
-fi
-```
 
 ```bash
 FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000

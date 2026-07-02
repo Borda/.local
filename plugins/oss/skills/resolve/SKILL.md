@@ -105,6 +105,10 @@ gh missing or not authenticated → script exits 1 (error printed above; eval sk
 # Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)
 # loads: detect_codemap.py — consumers: resolve/SKILL.md, review/SKILL.md
 _DETECT_CODEMAP="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/detect_codemap.py"
+# parse codemap flags here — this block is their first use, before parse-resolve-args runs
+CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
+[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_FORCE_OFF=true
+[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_STRICT=true
 [ "$CODEMAP_FORCE_OFF" = "true" ] && _DETECT_FLAGS="--force-off" || _DETECT_FLAGS=""
 [ "$CODEMAP_STRICT" = "true" ] && _DETECT_FLAGS="$_DETECT_FLAGS --strict"
 python "$_DETECT_CODEMAP" --prefix resolve $_DETECT_FLAGS 2>&1  # timeout: 5000
@@ -147,10 +151,7 @@ Parse $ARGUMENTS:
 ```bash
 [ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" ] || { echo "Error: parse-resolve-args.py not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
-# parse-resolve-args.py does not handle codemap flags — strip before passing  # timeout: 3000
-CODEMAP_FORCE_OFF=false; CODEMAP_STRICT=false
-[[ " $ARGUMENTS " == *" --no-codemap "* ]] && CODEMAP_FORCE_OFF=true
-[[ " $ARGUMENTS " == *" --codemap "* ]] && [[ " $ARGUMENTS " != *" --no-codemap "* ]] && CODEMAP_STRICT=true
+# parse-resolve-args.py does not handle codemap flags — strip before passing (flags already parsed in the codemap-detect block above)  # timeout: 3000
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--no-codemap//g; s/ --codemap / /g' | xargs)
 # Defence-in-depth: validate every output line is plain VAR=value (no metacharacters) before sourcing.
 # parse-resolve-args.py uses shlex.quote but this guards against future regressions or a tampered binary.
@@ -331,7 +332,7 @@ TaskCreate(
 )
 ```
 
-Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`. Then use the **Write tool** to persist the `{item_id: task_id}` map (you hold it in-context after the TaskCreate calls above) to `$IMPL_DIR/task-ids.json` as a JSON object, e.g. `{"3":"task_abc","7":"task_def"}`. The Step 8 subagent path (>20 items) reads this file to stamp `task_id` into `results.jsonl` for the orchestrator's post-return sweep; without it the sweep cannot map results back to tasks. (The ≤20 orchestrator-owned path updates tasks live from the in-memory `task_id` and does not read this file.) **Applies to `pr` and `pr+report` modes only** — these are the only modes that run Step 3b (which initialises `IMPL_DIR`) and Step 3e. `report` mode skips both steps and has no per-item tasks; do not write this file in report mode.
+Store returned task ID in each `SELECTED_ITEMS` entry as `task_id`; the orchestrator holds this `{item_id: task_id}` map in-context and flips each task live during the Step 8 loop. **Applies to `pr` and `pr+report` modes only** — these are the only modes that run Step 3b (which initialises `IMPL_DIR`) and Step 3e. `report` mode skips both steps and has no per-item tasks.
 
 ## Step 4: Checkout PR branch
 
@@ -484,40 +485,11 @@ fi
 
 If codemap output returned: prepend `## Structural Context (codemap)` block to each implementation agent prompt in action-item-dispatch.md — blast radius, top callers, coupling pairs.
 
-<!-- Step 8 defined in action-item-dispatch.md + dispatch-runner.md -->
-<!-- loads: dispatch-runner.md -->
+<!-- Step 8 defined in action-item-dispatch.md -->
 
-Read `$_OSS_RESOLVE/modes/action-item-dispatch.md`; execute its prelude (IMPL_AGENT routing, IMPL_DIR init, blast-radius scan). Then choose **one** loop path below — do NOT run the per-item loop body from the load step unconditionally.
+Read `$_OSS_RESOLVE/modes/action-item-dispatch.md`; execute its prelude (IMPL_AGENT routing, IMPL_DIR init, blast-radius scan), then run its per-item loop directly in the orchestrator: per item, `TaskUpdate(in_progress)` → challenge → impl → commit → `TaskUpdate(completed)`. Orchestrator-owned so each task flips **live** as work starts and finishes — never delegate the loop to a subagent (a subagent cannot drive the parent's task list, which would freeze every per-item task until return).
 
-**Default — orchestrator owns the per-item loop (`SELECTED_ITEMS` ≤ 20).** Run the `action-item-dispatch.md` loop directly: per item, `TaskUpdate(in_progress)` → challenge → impl → commit → `TaskUpdate(completed)`. This is the path that gives the user **live per-item progress** — each task flips as work starts and finishes. Do NOT delegate to the dispatch subagent at this size; a subagent cannot drive the parent's task list, so delegating freezes all per-item tasks until return. The ≤20 cap matches the Step 8 hard cap in `action-item-dispatch.md` (>20 is gated by AskUserQuestion to split or proceed).
-
-**Step 8 batch dispatch (only when `SELECTED_ITEMS` > 20 and the user chose "proceed with all")** — at this size the orchestrator context cannot hold the full loop; delegate to a dedicated subagent. Per-item live `TaskUpdate` is not possible on this path (subagent constraint); the orchestrator runs a post-return sweep instead (see below). Spawn shape:
-
-```text
-Agent(subagent_type="foundry:sw-engineer", prompt="Read $_OSS_RESOLVE/modes/dispatch-runner.md and execute with these variables:
-SELECTED_ITEMS='$SELECTED_ITEMS'
-COMMIT_MODE='$COMMIT_MODE'
-IMPL_AGENT='$IMPL_AGENT'
-IMPL_DIR='$IMPL_DIR'
-PR_NUMBER='$PR_NUMBER'
-PR_AUTHOR='$PR_AUTHOR'
-BLAST_RADIUS_CONTEXT='$BLAST_RADIUS_CONTEXT'
-NO_CHALLENGE='$NO_CHALLENGE'
-CODEX_AVAILABLE='$CODEX_AVAILABLE'
-CLAUDE_PLUGIN_ROOT='$CLAUDE_PLUGIN_ROOT'
-RESOLVE_TASK_IDS_FILE='$IMPL_DIR/task-ids.json'
-Return compact JSON envelope when done.")
-```
-
-Parse result envelope; use `results_file` and `challenge_log_file` paths for Step 11 report.
-
-**Post-return TaskUpdate sweep (>20 subagent path only)** — the dispatch subagent cannot call `TaskUpdate`, so it leaves every per-item task `pending`. After parsing the envelope, read `results.jsonl` and flip each task to its terminal state so the list reflects what happened (the ≤20 orchestrator path already updated tasks live and skips this):
-
-```bash
-jq -rc 'select(.task_id != "null" and .task_id != null) | "\(.task_id) \(.status)"' "$IMPL_DIR/results.jsonl"  # timeout: 5000
-```
-
-For each `task_id status` line: `committed`/`staged` → `TaskUpdate(task_id=<id>, status="completed")`; `skipped`/`error` → `TaskUpdate(task_id=<id>, status="completed")` (terminal; note outcome in Step 11 report — the task list has no failed state). Any selected item whose `task_id` is `null` (map miss) → surface in the report rather than silently leaving it `pending`.
+`action-item-dispatch.md` caps a single pass at 20 items and gates >20 behind `AskUserQuestion` (split into ≤20 batches · `[req]` only · proceed with all). On "proceed with all", run the same orchestrator loop over every item — slower and context-heavy at that size, but no separate code path.
 
 ```text
 TaskUpdate(task_id=TASK_IMPL, status="completed")

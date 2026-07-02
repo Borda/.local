@@ -31,36 +31,35 @@ ls .cache/codemap/logs/*.jsonl 2>/dev/null  # timeout: 5000
 
 No files → stop: "No codemap telemetry found. Run any `/codemap:*` skill or `scan-query` command to start collecting logs."
 
-Record which log files are present (`cli.jsonl`, `skills.jsonl`).
+Telemetry is **sharded per session** (`_telemetry.py` + `log-skill-start.js`): CLI records land in `cli_<session>.jsonl` and skill records in `skills_<session>.jsonl`; runs with no seeded session id fall back to unsuffixed `cli.jsonl` / `skills.jsonl`. Collect **all** matching files, not just the legacy names:
+
+```bash
+CLI_LOGS=$(ls .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl 2>/dev/null)  # timeout: 5000
+SKILLS_LOGS=$(ls .cache/codemap/logs/skills_*.jsonl .cache/codemap/logs/skills.jsonl 2>/dev/null)  # timeout: 5000
+```
 
 ## Step 1: Optionally anonymize
 
 If `--anonymize` flag given:
 
-**Guard**: check which log files exist before anonymizing — only run `anonymize.py` on files that are present. If one file is missing, anonymize only the present file and note the gap; do not mix anonymized and original data in Step 2 (use original for any file without a corresponding `-anon` variant only when user explicitly confirms, otherwise stop and report the missing file).
+**Guard**: anonymize every present shard — never assume the legacy `cli.jsonl` / `skills.jsonl` exist (per-session sharding means they usually don't). Loop over the `$CLI_LOGS` / `$SKILLS_LOGS` sets from Step 0, writing a `-anon` sibling per file; do not mix anonymized and original data in Step 2.
 
 ```bash
-ls .cache/codemap/logs/cli.jsonl 2>/dev/null && CLI_EXISTS="true" || CLI_EXISTS="false"
-ls .cache/codemap/logs/skills.jsonl 2>/dev/null && SKILLS_EXISTS="true" || SKILLS_EXISTS="false"
+for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
+         .cache/codemap/logs/skills_*.jsonl .cache/codemap/logs/skills.jsonl; do
+    [ -f "$f" ] || continue
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/anonymize.py" \
+        --input "$f" --output "${f%.jsonl}-anon.jsonl"  # timeout: 15000
+done
 ```
 
-If both exist:
-```bash
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/anonymize.py" \
-    --input .cache/codemap/logs/cli.jsonl \
-    --output .cache/codemap/logs/cli-anon.jsonl  # timeout: 15000
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/anonymize.py" \
-    --input .cache/codemap/logs/skills.jsonl \
-    --output .cache/codemap/logs/skills-anon.jsonl  # timeout: 15000
-```
-
-If one file missing: print `⚠ --anonymize: <missing_file> not found — cannot produce fully anonymized report. Proceed with available file only, or stop?` and wait for user decision before continuing.
+If neither set has any file: print `⚠ --anonymize: no CLI or skill logs found — cannot produce anonymized report.` and stop. If only one layer is present, anonymize it and note the gap.
 
 Use the `-anon` variants as source in Step 2. If anonymize.py not found, warn and proceed with originals.
 
 ## Step 2: Read log files
 
-Read `.cache/codemap/logs/cli.jsonl` (or `cli-anon.jsonl`) and `.cache/codemap/logs/skills.jsonl` (or `skills-anon.jsonl`) with the Read tool.
+Read **every** CLI shard (`cli_*.jsonl` plus legacy `cli.jsonl`) and **every** skill shard (`skills_*.jsonl` plus legacy `skills.jsonl`) with the Read tool — use the `$CLI_LOGS` / `$SKILLS_LOGS` lists from Step 0 (or the `-anon` siblings when anonymized). Concatenate their records before analysing; a single-file read misses all per-session shards and reports a near-empty dataset.
 
 Each line is one JSON record. Filter by `--since` (compare `ts` field) and `--session` if given.
 

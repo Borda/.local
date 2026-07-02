@@ -27,16 +27,16 @@ IMPORTANCE_CLASS_CRITICAL: 50.0 (% of full metric lost)
 IMPORTANCE_CLASS_SIGNIFICANT: 10.0
 FORTIFY_DIR_BASE:         .experiments
 STATE_DIR_BASE:           .experiments/state
-METRIC_CMD_DEFAULT:       "python -m pytest -x --tb=no -q"
-GUARD_CMD_DEFAULT:        "git diff --stat HEAD"
+METRIC_CMD_SOURCE:        state.json .config.metric_cmd (campaign's real metric — no fail-open default; env METRIC_CMD overrides)
+GUARD_CMD_SOURCE:         state.json .config.guard_cmd (campaign's real guard — no fail-open default; env GUARD_CMD overrides)
 ```
 
 </constants>
 
 **Environment overrides** — set these before invoking the skill to override per-variant defaults:
 
-- `METRIC_CMD` — command run inside each variant worktree to measure the ablation metric (default: `python -m pytest -x --tb=no -q`)
-- `GUARD_CMD` — command run inside each variant worktree to detect regressions (default: `git diff --stat HEAD`)
+- `METRIC_CMD` — command run inside each variant worktree to measure the ablation metric (override; default sourced from source-run `state.json` `.config.metric_cmd`)
+- `GUARD_CMD` — command run inside each variant worktree to detect regressions (override; default sourced from source-run `state.json` `.config.guard_cmd`)
 - `STATE_DIR_BASE` — base directory for source-run state lookups (default: `.experiments/state`)
 - `FORTIFY_DIR_BASE` — base directory for per-run fortify artifacts (default: `.experiments`)
 
@@ -91,9 +91,9 @@ Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
 ```bash
 STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"
 FORTIFY_DIR_BASE="${FORTIFY_DIR_BASE:-.experiments}"
-METRIC_CMD="${METRIC_CMD:-python -m pytest -x --tb=no -q}"
-GUARD_CMD="${GUARD_CMD:-git diff --stat HEAD}"
 ```
+
+> `METRIC_CMD`/`GUARD_CMD` are NOT defaulted here — they are sourced from the source-run `state.json` after `$RUN_ID` resolves (see block below). No fail-open default: `git diff --stat HEAD` always exits 0, so a defaulted guard would be a no-op that never catches ablation regressions.
 
 **Assign `$RUN_ID`** from input resolution above (must be set before guard block uses it):
 
@@ -110,6 +110,23 @@ else
 fi
 [ -z "$RUN_ID" ] && { echo "fortify: No completed run found. Run /research:run first."; exit 1; }
 echo "$RUN_ID" > "${TMPDIR:-/tmp}/fortify-run-id"  # persist for later blocks (Check 41: fresh shell)
+```
+
+**Source `metric_cmd`/`guard_cmd` from the campaign** — env override first, then source-run `state.json` `.config`; fail closed if neither present (a defaulted `git diff --stat HEAD` guard always exits 0 → no-op that never catches regressions):
+
+```bash
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
+RUN_ID=$(cat "${TMPDIR:-/tmp}/fortify-run-id" 2>/dev/null)  # re-hydrate from F1 (Check 41)
+STATE_JSON="$STATE_DIR_BASE/$RUN_ID/state.json"
+METRIC_CMD="${METRIC_CMD:-$(jq -r '.config.metric_cmd // empty' "$STATE_JSON" 2>/dev/null)}"
+GUARD_CMD="${GUARD_CMD:-$(jq -r '.config.guard_cmd // empty' "$STATE_JSON" 2>/dev/null)}"
+if [ -z "$METRIC_CMD" ] || [ -z "$GUARD_CMD" ]; then
+  echo "fortify: BLOCKED — $STATE_JSON .config missing metric_cmd/guard_cmd; ablation needs the campaign's real metric and guard commands."
+  echo "Re-run /research:run to regenerate state.json, or set METRIC_CMD/GUARD_CMD in the environment."
+  exit 1
+fi
+printf '%s' "$METRIC_CMD" > "${TMPDIR:-/tmp}/fortify-metric-cmd"  # persist for 4d (Check 41: fresh shell)
+printf '%s' "$GUARD_CMD" > "${TMPDIR:-/tmp}/fortify-guard-cmd"    # persist for 4e (Check 41: fresh shell)
 ```
 
 **Guard: judge approval required.** Judge skill writes verdict to `.reports/research/judge-<branch>-<date>.md` — scan for APPROVED verdict line:
@@ -134,7 +151,10 @@ if [ -z "$PROGRAM_FILE" ]; then
 fi
 # Use explicit run-specific state.json path (resolved during F1 input resolution) — never CWD-relative
 STATE_PROGRAM=$(jq -r '.program_file // ""' "$STATE_DIR_BASE/$RUN_ID/state.json" 2>/dev/null)
-if [ -n "$STATE_PROGRAM" ] && [ -n "$PROGRAM_FILE" ] && [ "$PROGRAM_FILE" != "$STATE_PROGRAM" ]; then
+# Normalize both to absolute paths before comparing: judge report may store a relative program path while state.json stores absolute (run does realpath) — a raw string compare would false-BLOCK a matching program
+_PF_ABS=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
+_SP_ABS=$(realpath "$STATE_PROGRAM" 2>/dev/null || echo "$STATE_PROGRAM")
+if [ -n "$STATE_PROGRAM" ] && [ -n "$PROGRAM_FILE" ] && [ "$_PF_ABS" != "$_SP_ABS" ]; then
     printf "! BLOCKED — judge verdict references program '%s' but current experiment is for '%s'\n" "$PROGRAM_FILE" "$STATE_PROGRAM"
     printf "Run: /research:judge %s\n" "$STATE_PROGRAM"
     exit 1
@@ -364,8 +384,9 @@ If revert produces merge conflicts: append `{"variant":"<name>","status":"revert
 **4d. Run metric_cmd in worktree:**
 
 ```bash
-METRIC_CMD="${METRIC_CMD:-python -m pytest -x --tb=no -q}"  # re-derive env default (Check 41: fresh shell)
-$METRIC_CMD  # timeout: 360000  (initialized in F1 from env or default)
+METRIC_CMD=$(cat "${TMPDIR:-/tmp}/fortify-metric-cmd" 2>/dev/null)  # re-hydrate from F1 (Check 41: fresh shell)
+[ -z "$METRIC_CMD" ] && { echo "fortify: BLOCKED — metric_cmd not initialized in F1"; exit 1; }
+$METRIC_CMD  # timeout: 360000  (sourced from state.json .config.metric_cmd in F1)
 METRIC_EXIT=$?
 ```
 
@@ -374,8 +395,9 @@ Parse stdout for numeric metric value. If command fails or no numeric output: re
 **4e. Run guard_cmd in worktree:**
 
 ```bash
-GUARD_CMD="${GUARD_CMD:-git diff --stat HEAD}"  # re-derive env default (Check 41: fresh shell)
-$GUARD_CMD  # timeout: 360000  (initialized in F1 from env or default)
+GUARD_CMD=$(cat "${TMPDIR:-/tmp}/fortify-guard-cmd" 2>/dev/null)  # re-hydrate from F1 (Check 41: fresh shell)
+[ -z "$GUARD_CMD" ] && { echo "fortify: BLOCKED — guard_cmd not initialized in F1"; exit 1; }
+$GUARD_CMD  # timeout: 360000  (sourced from state.json .config.guard_cmd in F1)
 GUARD_EXIT=$?
 ```
 

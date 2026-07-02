@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // record-exhausted.js — PostToolUse(Bash) hook.
-// When a `scan-query rdeps <module>` call returns an exhaustive result (the import
-// graph is authoritative and complete), record the module in a per-session sentinel.
+// When a `scan-query rdeps <module>` / `fn-rdeps <module>::<fn>` call returns an
+// exhaustive result (the import graph is authoritative and complete), record the
+// module in a per-session sentinel. Matches every real emitted form: quoted or
+// unquoted args, the `$SQ` / resolved-binary fallback (query-code SKILL.md), and
+// interposed flags like `--timeout 5` (develop codemap-context.md).
 // guard-redundant-scan.js then blocks any later import-grep for that same module —
 // re-grepping an exhaustive caller set is the dominant wasted-token pattern (benchmark:
 // 40/48 codemap runs grepped after the skill already answered; haiku looped to 2M+
@@ -27,7 +30,13 @@ function main() {
   }
 
   const cmd = String(input?.tool_input?.command || "");
-  const m = cmd.match(/scan-query\s+rdeps\s+([A-Za-z0-9_.]+)/);
+  // Gate: command must invoke scan-query in some real form — the literal binary, a
+  // resolved path ending in scan-query, or the `$SQ` fallback var (query-code SKILL.md).
+  if (!/\bscan-query\b|\$SQ\b/.test(cmd)) process.exit(0);
+  // Capture the exhausting subcommand (`rdeps` or `fn-rdeps`) and its first positional
+  // arg. Tolerates quoted/unquoted args and a `module::function` qname for fn-rdeps.
+  // Interposed flags (`--timeout 5`) sit before the subcommand, so they don't interfere.
+  const m = cmd.match(/\b(?:fn-)?rdeps\s+["']?([A-Za-z0-9_.]+(?:::[A-Za-z0-9_.]+)?)["']?/);
   if (!m) process.exit(0);
 
   // tool_response is the Bash stdout — string or object depending on Claude Code version.
@@ -35,7 +44,9 @@ function main() {
     typeof input.tool_response === "string" ? input.tool_response : JSON.stringify(input.tool_response || "");
   if (!/"exhaustive"\s*:\s*true/.test(resp)) process.exit(0);
 
-  const dotted = m[1];
+  // For fn-rdeps the arg is `module::function`; record the module portion — the guard
+  // operates on module names when blocking redundant import-greps.
+  const dotted = m[1].split("::")[0];
   const slashed = dotted.replace(/\./g, "/");
   try {
     fs.appendFileSync(sentinelPath(input.session_id), `${dotted}\n${slashed}\n`);

@@ -147,9 +147,9 @@ Compute run directory:
 
 ```bash
 # timeout: 5000
-mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py")
-TS="${_run[0]}"
-TEAM_DIR="${_run[1]}"
+_run=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_worktree.py")   # mapfile absent on macOS bash 3.2 — use portable head/tail
+TS=$(echo "$_run" | head -1)
+TEAM_DIR=$(echo "$_run" | tail -1)
 echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts
 echo "$TEAM_DIR" > ${TMPDIR:-/tmp}/dev-feature-team-dir
 trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-$TS' EXIT

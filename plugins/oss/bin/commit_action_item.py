@@ -12,8 +12,8 @@ Two message-source modes (mutually exclusive):
   the ``grouped``/``all`` commit paths, which assemble bespoke bodies).
 * ``--build`` plus fields — script assembles the canonical per-item ``each``-mode
   message (subject + ``[resolve #<id>]`` attribution block + co-author trailers),
-  so the ``each``-mode template lives in one place instead of being duplicated in
-  ``action-item-dispatch.md`` and ``dispatch-runner.md``.
+  so the ``each``-mode template lives in one place instead of being inlined in
+  ``action-item-dispatch.md``.
 
 Usage:
     commit_action_item.py --message-file <path> --files <file1> [<file2>...]
@@ -90,8 +90,8 @@ def _slug(text: str) -> str:
 def build_each_message(fields: EachMessageFields) -> str:
     """Build the canonical ``each``-mode per-item commit message.
 
-    Mirrors the heredoc previously duplicated in ``action-item-dispatch.md`` and
-    ``dispatch-runner.md``: subject line, ``[resolve #<id>]`` attribution block
+    Mirrors the heredoc previously inlined in ``action-item-dispatch.md``:
+    subject line, ``[resolve #<id>]`` attribution block
     quoting the first 72 chars of the review comment, the challenge-outcome line,
     then the Claude (and optional Codex) co-author trailers.
 

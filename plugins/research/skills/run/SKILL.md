@@ -20,7 +20,7 @@ NOT for: methodology validation before run (use `/research:judge`); hypothesis g
 Campaign mode only:
 
 ```yaml
-MAX_ITERATIONS:             20 (hard cap — program.md values above 20 are silently clamped with a warning; 20 is the effective maximum)
+MAX_ITERATIONS:             50 (hard cap); DEFAULT 20 when max_iterations unset in program.md; program.md may raise up to 50; values above 50 clamped to 50 with a warning
 MAX_CODEX_RUNS:             10 (cost ceiling for --codex Phase 2c — disable Codex once exceeded)
 STUCK_THRESHOLD:            5 consecutive discards → escalation
 GUARD_REWORK_MAX:           2 attempts before revert
@@ -643,7 +643,7 @@ Call `AskUserQuestion` tool after R7 output — do NOT write options as plain te
 - **Guard/metric scripts protected** — ideation agent must not modify the files referenced in `guard_cmd` or `metric_cmd`; do not include them in `scope_files`. New test files may be created within `scope_files` for coverage improvement campaigns.
 - **JSONL over TSV** — richer structured fields, `jq`-parseable, no delimiter ambiguity; query with `jq -c 'select(.status == "kept")' experiments.jsonl`.
 - **State persistence enables resume** — if loop crashes/times out, `resume` picks up exactly where it stopped.
-- **Safety break**: max iterations = 20 (hard cap — values above 20 in program.md are silently clamped to 20 with a warning); skill never exceeds MAX_ITERATIONS.
+- **Safety break**: hard cap = 50 iterations (values above 50 in program.md clamped to 50 with a warning); default 20 when max_iterations unset in program.md; skill never exceeds MAX_ITERATIONS.
 - **Explicit flags = hard requirements**: all flags (`--colab`, `--compute=docker`, `--codex`, `--researcher`, `--architect`) must be available at R2. If unavailable, stop — never silently degrade.
 - R7 Codex delegation requires `/foundry:setup` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `.claude/skills/_shared/`; R7 is silently skipped if absent.
 

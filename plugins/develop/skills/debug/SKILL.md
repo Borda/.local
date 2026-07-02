@@ -260,7 +260,9 @@ Present agent's analysis summary before proceeding.
 ```bash
 # resolve FAILING_TEST_NODE first — bash interprets literal <...> as redirect:
 # FAILING_TEST_NODE=$(echo "$ARGUMENTS" | grep -oE 'tests?/[^[:space:]]+::test_[^[:space:]]+' | head -1)
-_FOUNDRY_BIN=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry-bin 2>/dev/null || ls -td ~/.claude/plugins/cache/*/foundry/*/bin 2>/dev/null | head -1 || echo "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin")  # timeout: 5000
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # --foundry emits foundry's skills/_shared on line 2 (no --foundry-bin flag exists)
+_FOUNDRY_BIN="${_FOUNDRY_SHARED%/skills/_shared}/bin"
+[ -d "$_FOUNDRY_BIN" ] || _FOUNDRY_BIN=$(ls -td ~/.claude/plugins/cache/*/foundry/*/bin 2>/dev/null | head -1 || echo "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin")  # timeout: 5000
 if [ -z "$FAILING_TEST_NODE" ]; then
     echo "⚠ FAILING_TEST_NODE not resolved — cannot run polluter isolation; surface failing test node ID first"
 elif [ -f "$_FOUNDRY_BIN/find-polluter.py" ]; then

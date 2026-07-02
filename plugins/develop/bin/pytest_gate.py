@@ -5,8 +5,10 @@ Usage:
     pytest_gate.py [pytest_cmd] [target]
 
 Behaviour:
-    Validates ``pytest_cmd`` against an allowlist of three values
-    (``pytest``, ``uv run pytest``, ``python -m pytest``) before any execution.
+    Validates ``pytest_cmd`` against an allowlist
+    (``pytest``, ``uv run pytest``, ``python -m pytest``, ``poetry run pytest``,
+    ``poetry run python -m pytest``) before any execution — the set must cover
+    every runner ``runner-detection.md`` can emit.
     Streams full pytest output to stdout/stderr; this is the no-tail inner-loop variant.
 
 Exit codes:
@@ -23,7 +25,15 @@ import sys
 from pathlib import Path
 from shutil import which
 
-_PYTEST_ALLOWLIST: frozenset[str] = frozenset({"pytest", "uv run pytest", "python -m pytest"})
+_PYTEST_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "pytest",
+        "uv run pytest",
+        "python -m pytest",
+        "poetry run pytest",
+        "poetry run python -m pytest",
+    }
+)
 
 
 def _validate_target_in_cwd(target: str) -> None:

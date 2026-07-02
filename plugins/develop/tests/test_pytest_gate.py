@@ -8,12 +8,31 @@ The script validates ``PYTEST_CMD`` against an allowlist
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 import pytest_gate  # type: ignore[import-not-found]
+
+_RUNNER_DETECTION = Path(__file__).parents[1] / "skills" / "_shared" / "runner-detection.md"
+
+
+def _runner_detection_pytest_cmds() -> list[str]:
+    """Extract every pytest-invoking runner ``runner-detection.md`` can emit.
+
+    Returns:
+        Deduplicated list of ``TEST_CMD``/``PYTEST_CMD`` string values that contain
+        ``pytest`` — these are exactly the commands that reach the gate allowlist.
+
+    Examples:
+        >>> "python -m pytest" in _runner_detection_pytest_cmds()
+        True
+    """
+    text = _RUNNER_DETECTION.read_text(encoding="utf-8")
+    values = re.findall(r'(?:TEST_CMD|PYTEST_CMD)="([^"]+)"', text)
+    return sorted({v for v in values if "pytest" in v})
 
 
 class _FakeCompleted:
@@ -35,6 +54,21 @@ def captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     monkeypatch.setattr(pytest_gate.subprocess, "run", _fake_run)
     monkeypatch.setattr(pytest_gate, "which", lambda name: f"/fake/bin/{name}")
     return recorded
+
+
+def test_runner_detection_outputs_are_allowlisted() -> None:
+    """Every pytest runner ``runner-detection.md`` emits must pass the gate allowlist."""
+    emitted = _runner_detection_pytest_cmds()
+    assert emitted, "runner-detection.md yielded no pytest commands — parse regression"
+    missing = [cmd for cmd in emitted if cmd not in pytest_gate._PYTEST_ALLOWLIST]
+    assert not missing, f"runner-detection emits commands not in allowlist: {missing}"
+
+
+def test_allowlisted_poetry_run(captured_argv: list[list[str]]) -> None:
+    """``"poetry run pytest"`` accepted; first token resolved; full argv passed."""
+    rc = pytest_gate.main(["poetry run pytest", "tests/"])
+    assert rc == 0
+    assert captured_argv[0] == ["/fake/bin/poetry", "run", "pytest", "--tb=short", "tests/", "-v"]
 
 
 def test_default_cmd_and_target(captured_argv: list[list[str]]) -> None:

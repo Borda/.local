@@ -187,9 +187,11 @@ fi
 
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
 
+`<test_path>` is a **substitution token** — resolve the failing test file/node (from `$ARGUMENTS` or the fetched issue) into `TEST_PATH` before running; bash reads a literal `<...>` as a stdin redirect. Redirect order is `>file 2>&1` (stdout to file, then stderr onto stdout) — the reverse `2>&1 >file` loses stderr to the terminal.
+
 ```bash
 # timeout: 600000
-$PYTEST_CMD --tb=long <test_path> -v 2>&1 >"${TMPDIR:-/tmp}/pytest-out.txt"; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
+$PYTEST_CMD --tb=long "$TEST_PATH" -v >"${TMPDIR:-/tmp}/pytest-out.txt" 2>&1; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 
 **Codemap target derivation** — set `TARGET_MODULE`/`TARGET_FN` before loading `codemap-context.md` so its caller-impact queries (`fn-rdeps`, `fn-blast`) fire instead of only the `central` baseline. The user may pass an explicit suspect as `module.path::function`:
