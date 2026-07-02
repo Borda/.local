@@ -106,6 +106,7 @@ CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || ec
 
 ```bash
 # normalize CODEMAP_RAW → true/false; strict exits on unavailability  # timeout: 5000
+CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || echo "auto")   # re-derive — bash state lost between Bash() calls
 CODEMAP_ENABLED=$("${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap-resolve" "$CODEMAP_RAW")
 RESOLVE_EXIT=$?
 if [ "$RESOLVE_EXIT" -ne 0 ]; then
@@ -139,6 +140,7 @@ Use `$REVIEW_ARGS` (not `$ARGUMENTS`) as path for rest of workflow.
 ## Step 1: Identify scope
 
 ```bash
+REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")   # re-derive — bash state lost between Bash() calls
 if [ -n "$REVIEW_ARGS" ]; then
     TARGET="$REVIEW_ARGS"
     echo "Reviewing: $TARGET"
@@ -163,6 +165,11 @@ Filter to Python files only. No Python files → exit early (DMI skill — prose
 
 ```bash
 # timeout: 5000
+REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")   # re-derive — bash state lost between Bash() calls
+# re-derive NON_PY_WARNINGS (assigned in a prior block; lost in this fresh shell)
+NON_PY_WARNINGS=""
+git diff --name-only HEAD 2>/dev/null | grep -qE '(pyproject\.toml|setup\.cfg|requirements.*\.txt)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ dependency changes detected — not reviewed; verify Python imports still resolve\n"
+git diff --name-only HEAD 2>/dev/null | grep -qE '(Dockerfile|docker-compose.*\.yml)' && NON_PY_WARNINGS="${NON_PY_WARNINGS}⚠ container config changes detected — not reviewed\n"
 if [ -n "$REVIEW_ARGS" ]; then
     PYTHON_FILES=$(find "$REVIEW_ARGS" -name '*.py' -type f 2>/dev/null | head -1)
 else
@@ -413,6 +420,9 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 ## Step 4: Cross-validate critical/blocking findings
 
 ```bash
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # re-derive — bash state lost between Bash() calls
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir" 2>/dev/null || echo "$RUN_DIR")
 if [ ! -f "$_FOUNDRY_SHARED/cross-validation-protocol.md" ]; then
     echo "⚠ cross-validation-protocol.md not found at $_FOUNDRY_SHARED — Step 4 skipped; critical findings are unverified. Install foundry plugin or verify _FOUNDRY_SHARED path."
     echo "## Cross-Validation: SKIPPED" >> "$RUN_DIR/cross-validation.md"

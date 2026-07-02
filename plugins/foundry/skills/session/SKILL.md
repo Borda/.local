@@ -92,6 +92,7 @@ echo "cleanup done"
 
 **Legacy source (backwards-compat)**: List `session-open-*.md` files via Bash (Glob with absolute paths outside project root may return empty on restricted installs — Bash `ls` is the reliable fallback):
 ```bash
+MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # re-derive: fresh shell
 ls "$MEMORY_DIR"/session-open-*.md 2>/dev/null  # timeout: 5000
 ```
 For each file path returned, read with Read tool to extract `name` and `description` frontmatter fields and item body. Show legacy items alongside current items in output. If `ls` returns no files, skip — no legacy items.

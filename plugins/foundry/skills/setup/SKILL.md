@@ -205,6 +205,7 @@ Note: this step writes to `.claude/permissions-guide.md` relative to the current
 Copy `$PLUGIN_ROOT/permissions-guide.md` to `.claude/permissions-guide.md` — only if destination absent (preserves project-local edits via `/manage`):
 
 ```bash
+PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root" 2>/dev/null)  # reload: fresh shell (Check 41)
 if [ ! -f ".claude/permissions-guide.md" ]; then  # timeout: 5000
     cp "$PLUGIN_ROOT/permissions-guide.md" ".claude/permissions-guide.md"
     printf "  copied: permissions-guide.md\n"
@@ -364,6 +365,7 @@ done  # timeout: 10000
 ## Step 10: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
 
 ```bash
+PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root" 2>/dev/null)  # reload: fresh shell (Check 41)
 [ -f "$HOME/.claude/CLAUDE.md" ] && cp "$HOME/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md.bak"  # timeout: 5000
 cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"

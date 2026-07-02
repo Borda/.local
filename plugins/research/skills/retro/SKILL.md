@@ -91,11 +91,13 @@ echo "$RUN_DIR" > "${TMPDIR:-/tmp}/retro-run-dir"  # T3 + fallback path reload f
 Run the Wilcoxon signed-rank test via the bundled bin/ script — pure Python with scipy.stats:
 
 ```bash
+RUN_ID=$(cat "${TMPDIR:-/tmp}/retro-run-id-resolved" 2>/dev/null)  # re-hydrate RUN_ID from T1 (Check 41: fresh shell)
 ALPHA="${ALPHA:-0.05}"
 METRIC_DIRECTION=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/read_state_field.py" ".experiments/state/$RUN_ID/state.json" "config.metric.direction" --default "higher" 2>/dev/null || echo "higher")  # loads: read_state_field.py
 RETRO_JSONL=$(cat "${TMPDIR:-/tmp}/retro-jsonl-path" 2>/dev/null || echo ".experiments/state/$RUN_ID/experiments-clean.jsonl")  # re-hydrate sanitized path from T1 (Check 41: fresh shell)
 RETRO_RESULT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/retro_analyze.py" --jsonl "$RETRO_JSONL" --baseline "baseline" --alpha "$ALPHA" --direction "$METRIC_DIRECTION")  # timeout: 30000
 RETRO_EXIT=$?
+echo "$RETRO_RESULT" > "${TMPDIR:-/tmp}/retro-result"  # persist for effect-size block (Check 41: fresh shell)
 [ "$RETRO_EXIT" -eq 2 ] && { echo "retro: Input error (exit 2) — run-id '$RUN_ID' missing, malformed, or has no baseline record; re-run /research:run to create baseline"; exit 1; }
 ```
 
@@ -117,6 +119,7 @@ Read `direction` from `state.json` config (or infer from goal text); pass via `$
 **Effect size** — script does not return rank-biserial `r` directly. Compute via the bundled bin/ script:
 
 ```bash
+RETRO_RESULT=$(cat "${TMPDIR:-/tmp}/retro-result" 2>/dev/null)  # re-hydrate from T2 (Check 41: fresh shell)
 EFFECT_R=$(echo "$RETRO_RESULT" | python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/compute_effect_size.py")  # timeout: 5000
 ```
 

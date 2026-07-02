@@ -133,6 +133,7 @@ Before constructing the J3 prompts, expand all bash variables into concrete path
 
 ```bash
 PROGRAM_PATH=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
+echo "$PROGRAM_PATH" > "${TMPDIR:-/tmp}/judge-program-path"  # persist for J3 complexity-gate block (Check 41)
 # Reload RUN_DIR (Check 41: fresh shell per call — persisted in J2 block)
 RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir" 2>/dev/null)
 ```
@@ -150,6 +151,7 @@ fi
 **Complexity gate** — mirrors P-P2b; skip architect for narrow single-scope experiments (saves full opus pass):
 
 ```bash
+PROGRAM_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path" 2>/dev/null)  # re-hydrate (Check 41: fresh shell — persisted in J3 pre-spawn block)
 _SCOPE_COUNT=$(grep -cE "^\s*[-*]?\s*\S+\.(py|ts|js|cpp|go|rs)\s*$" "$PROGRAM_PATH" 2>/dev/null || echo 0)  # timeout: 5000
 _STRATEGY=$(grep -m1 "agent_strategy:" "$PROGRAM_PATH" 2>/dev/null | sed 's/.*agent_strategy:[[:space:]]*//' | tr -d '\r\n')
 SPAWN_ARCHITECT=false

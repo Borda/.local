@@ -103,7 +103,13 @@ _REF = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]+)\}?")
 # Single-char-permitting reference regex — used only for template-placeholder detection (e.g. ${I}).
 _REF_ANY = re.compile(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?")
 # State-reload commands that re-derive prior shell state within a fresh block.
-_RELOAD = re.compile(r'^[ \t]*(?:eval[ \t]+"?\$\(|source[ \t]+|\.[ \t]+[./~$])')
+# The `.`/`source` path may be quoted (`. "$FILE"`) or bare (`. $FILE`, `. ./f`).
+_RELOAD = re.compile(r"""^[ \t]*(?:eval[ \t]+"?\$\(|source[ \t]+|\.[ \t]+["'./~$])""")
+# Angle-bracket identifier placeholders (e.g. <TARGET_MODULE>, <file>) mark a block
+# as a usage-example/doc snippet, not verbatim-executed shell. Matches only
+# <identifier> with no interior spaces — never shell redirection (`< file`),
+# process substitution (`<(`), or heredocs (`<<`).
+_ANGLE_PLACEHOLDER = re.compile(r"<[A-Za-z_][A-Za-z0-9_]*>")
 
 
 def extract_bash_blocks(text: str) -> list[str]:
@@ -244,7 +250,8 @@ def is_template_block(block: str, all_assigned: frozenset[str]) -> bool:
     """Return True when block contains an orchestrator-substituted placeholder token.
 
     A ``$X``/``${X}`` token never assigned in ANY bash block (and not a known-safe
-    env/loop var) signals the block is a Claude-filled template, not verbatim shell.
+    env/loop var), or an ``<identifier>`` angle-bracket placeholder, signals the
+    block is a Claude-filled template / usage example, not verbatim shell.
 
     Args:
         block: referencing bash block body.
@@ -258,10 +265,14 @@ def is_template_block(block: str, all_assigned: frozenset[str]) -> bool:
         True
         >>> is_template_block("echo ${RUN_ID}\\n", frozenset({"RUN_ID"}))
         False
+        >>> is_template_block('grep "$SQ" rdeps <TARGET_MODULE>\\n', frozenset({"SQ"}))
+        True
     """
     for line in block.splitlines():
         if line.lstrip().startswith("#"):
             continue
+        if _ANGLE_PLACEHOLDER.search(line):
+            return True
         for m in _REF_ANY.finditer(line):
             tok = m.group(1)
             if tok in _SKIP_VARS or tok in all_assigned:

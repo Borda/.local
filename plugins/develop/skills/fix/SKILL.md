@@ -140,6 +140,8 @@ Spawn 2 teammates in parallel using Agent() tool:
 
 ```bash
 # timeout: 5000
+TS=$(cat ${TMPDIR:-/tmp}/dev-fix-team-ts 2>/dev/null || echo "")                                        # re-derive — bash state lost between Bash() calls
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | head -1)
 _SPAWN_DEV_SHARED="$_DEV_SHARED"
 _SPAWN_TS="$TS"
 _SPAWN_ARGS="$ARGUMENTS"

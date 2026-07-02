@@ -80,8 +80,9 @@ echo "Competition: $COMPETITION_NAME"
 echo "Type: ${PROBLEM_TYPE:-auto-detect}"
 echo "EDA only: $EDA_ONLY | Inference only: $INFERENCE_ONLY | Offline setup: $OFFLINE_SETUP"
 
-# Persist for Step 4 (bash state lost across Bash() calls)
+# Persist for Steps 3+4 (bash state lost across Bash() calls)
 echo "$COMPETITION_NAME" > "${TMPDIR:-/tmp}/kaggle-competition-name"
+echo "$EDA_ONLY"         > "${TMPDIR:-/tmp}/kaggle-eda-only"
 echo "$INFERENCE_ONLY"   > "${TMPDIR:-/tmp}/kaggle-inference-only"
 echo "$OFFLINE_SETUP"    > "${TMPDIR:-/tmp}/kaggle-offline-setup"
 
@@ -158,6 +159,10 @@ FOUNDRY_AVAILABLE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents
 The spawn prompt is assembled from the inline problem profile (below) plus the section template loaded from the appropriate mode file:
 
 ```bash
+# Re-hydrate flags persisted in Step 1 (bash state lost between Bash calls)
+COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name" 2>/dev/null || echo "$COMPETITION_NAME")
+EDA_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-eda-only" 2>/dev/null || echo "false")
+INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only" 2>/dev/null || echo "false")
 _KAGGLE_MODES="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/kaggle/modes"
 TEMPLATE_FILE="$_KAGGLE_MODES/full.md"
 [ "$EDA_ONLY" = "true" ] && TEMPLATE_FILE="$_KAGGLE_MODES/eda-only.md"
@@ -206,11 +211,13 @@ Formatting rules (strict):
 ```bash
 KAGGLE_CHECKPOINT="${TMPDIR:-/tmp}/kaggle-check-$(date +%s)"
 touch "$KAGGLE_CHECKPOINT"  # timeout: 3000
+echo "$KAGGLE_CHECKPOINT" > "${TMPDIR:-/tmp}/kaggle-checkpoint-path"  # persist for poll block (Check 41: timestamped name not re-derivable)
 ```
 
 Poll every 5 min:
 
 ```bash
+KAGGLE_CHECKPOINT=$(cat "${TMPDIR:-/tmp}/kaggle-checkpoint-path" 2>/dev/null)  # re-hydrate (Check 41: fresh shell per poll)
 NEW_FILES=$(find ".experiments/kaggle" -newer "$KAGGLE_CHECKPOINT" -type f 2>/dev/null | wc -l)  # timeout: 5000
 echo "Activity check: $NEW_FILES new files since checkpoint"
 ```

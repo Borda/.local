@@ -103,22 +103,25 @@ if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
     fi
     echo "→ PR_TYPE=$PR_TYPE (_py_logic=$_PY_LOGIC_COUNT, _all=$_ALL_COUNT)"
 fi
+# Persist PR_TYPE + mode flags — fresh shell loses vars (Check 41); A2 block + Steps 2/5 reload
+{
+    echo "PR_TYPE=$PR_TYPE"
+    echo "DOCS_TYPING_MODE=$DOCS_TYPING_MODE"
+    echo "TESTS_CI_MODE=$TESTS_CI_MODE"
+} > "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
 ```
 
 **A2** — challenger adds no value for non-logic PRs:
 ```bash
+# Reload PR_TYPE — fresh shell (Check 41)
+[ -f "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}" ] && . "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
 if [ "$PR_TYPE" = "DOCS_TYPING" ] || [ "$PR_TYPE" = "TESTS_CI" ]; then
     CHALLENGE_ENABLED=false
 fi
 ```
 
-Persist for Step 2:
+Persist PR tag for Step 2:
 ```bash
-{
-    echo "PR_TYPE=$PR_TYPE"
-    echo "DOCS_TYPING_MODE=$DOCS_TYPING_MODE"
-    echo "TESTS_CI_MODE=$TESTS_CI_MODE"
-} >> "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag"
 ```
 

@@ -387,7 +387,9 @@ Full review of refactored code. **Loop** — review -> targeted refactoring (ret
 **Foundry availability check** before quality stack:
 
 ```bash
-# timeout: 3000
+# timeout: 5000
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # re-derive — bash state lost between Bash() calls
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 [ ! -d "$_FOUNDRY_SHARED" ] || [ ! -f "$_FOUNDRY_SHARED/quality-stack.md" ] && echo "⚠ foundry plugin not installed — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review Loop, Codex Mechanical Delegation)"
 ```
 

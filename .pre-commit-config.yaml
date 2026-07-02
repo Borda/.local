@@ -186,6 +186,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-bash-persistence
+        name: 🫙 shell var persistence across Bash blocks
+        language: system
+        entry: python3 plugins/foundry/bin/check_bash_persistence.py --scan-dir plugins
+        pass_filenames: false
+        always_run: true
+
       - id: trim-plugin-tables
         name: ✂️ trim plugin table padding
         language: system

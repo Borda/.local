@@ -150,6 +150,9 @@ echo "Phases 5–6 delegated: $ADDED changelog entries added, $FLAGGED flagged; 
 `notes` and `demo` modes: skip delegation — single-pass; run gather/explore/validate inline. **Size guard**: estimate commit count with `git rev-list --count ${RANGE:-${LAST_TAG:-HEAD~20}..HEAD} 2>/dev/null`. If >50, delegate to `foundry:sw-engineer` subagent same as prepare mode — inline gather with >50 commits causes context flood. Define `GATHER_FILE` before spawning so envelope-validation block above can resolve the path:
 
 ```bash
+# Reload BRANCH, DATE (Check 41: fresh shell)
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
 GATHER_FILE=".temp/release-gather-$BRANCH-$DATE.md"
 mkdir -p .temp  # timeout: 5000
 ```
@@ -290,6 +293,8 @@ Gate — runs after Truth check. Only when project has migration docs page.
 
 **Detect** — migration doc OR any alternative describing API changes between versions:
 ```bash
+# Reload REPO_ROOT (Check 41: fresh shell)
+REPO_ROOT=$(cat "${TMPDIR:-/tmp}/release-setup/REPO_ROOT" 2>/dev/null || echo "")
 MIGRATION_DOC=$(find "$REPO_ROOT" -maxdepth 3 \( \
   -iname "MIGRATION*" -o -iname "UPGRADING*" -o \
   -iname "migration.md" -o -iname "upgrading.md" -o \
@@ -466,6 +471,8 @@ Read `$SKILL_DIR/modes/release-draft-template.md` and execute (format templates,
 ## Mode: prepare
 
 ```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/prepare.md" ] || { echo "Error: modes/prepare.md not found at $SKILL_DIR/modes/prepare.md — verify oss plugin installation"; exit 1; }
 ```
 Read `$SKILL_DIR/modes/prepare.md` and execute.
@@ -474,6 +481,8 @@ Read `$SKILL_DIR/modes/prepare.md` and execute.
 ## Mode: audit
 
 ```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/audit.md" ] || { echo "Error: modes/audit.md not found at $SKILL_DIR/modes/audit.md — verify oss plugin installation"; exit 1; }
 # guard: refuse to audit already-published release
 _AUDIT_VERSION=$(cat "${TMPDIR:-/tmp}/release-rest" 2>/dev/null | awk '{print $1}')
@@ -491,6 +500,8 @@ Read `$SKILL_DIR/modes/audit.md` and execute.
 ## Mode: demo
 
 ```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/demo.md" ] || { echo "Error: modes/demo.md not found at $SKILL_DIR/modes/demo.md — verify oss plugin installation"; exit 1; }
 ```
 Read `$SKILL_DIR/modes/demo.md` and execute.

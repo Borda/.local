@@ -163,10 +163,11 @@ if [ -n "$REPO_NAME" ]; then
 else
     ISSUE_BODY=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/issue_fetch.py" "$ARGUMENTS" 2>/dev/null)
 fi
-echo "$ISSUE_BODY"
+echo "$ISSUE_BODY" | tee ${TMPDIR:-/tmp}/dev-issue-body   # persist — reloaded in next block (bash state lost between Bash() calls; re-fetching would duplicate the gh call)
 ```
 
 ```bash
+ISSUE_BODY=$(cat ${TMPDIR:-/tmp}/dev-issue-body 2>/dev/null || echo "")
 TEST_PATH=$(echo "$ISSUE_BODY" | grep -oE '(tests?/[^[:space:]]+\.py|test_[^[:space:]]+\.py)' | head -1)
 if [ -z "$TEST_PATH" ]; then
   echo "→ No test file found in issue; running full test suite"

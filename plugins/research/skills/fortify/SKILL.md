@@ -98,6 +98,7 @@ GUARD_CMD="${GUARD_CMD:-git diff --stat HEAD}"
 **Assign `$RUN_ID`** from input resolution above (must be set before guard block uses it):
 
 ```bash
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
 _ARG1=$(echo "$ARGUMENTS" | awk '{print $1}')
 if [ -n "$_ARG1" ] && [ "${_ARG1#-}" = "$_ARG1" ] && [ ! -f "$_ARG1" ] && [ -d "$STATE_DIR_BASE/$_ARG1" ]; then
   RUN_ID="$_ARG1"
@@ -108,11 +109,14 @@ else
   RUN_ID=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" "$STATE_DIR_BASE" 2>/dev/null)
 fi
 [ -z "$RUN_ID" ] && { echo "fortify: No completed run found. Run /research:run first."; exit 1; }
+echo "$RUN_ID" > "${TMPDIR:-/tmp}/fortify-run-id"  # persist for later blocks (Check 41: fresh shell)
 ```
 
 **Guard: judge approval required.** Judge skill writes verdict to `.reports/research/judge-<branch>-<date>.md` — scan for APPROVED verdict line:
 
 ```bash
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
+RUN_ID=$(cat "${TMPDIR:-/tmp}/fortify-run-id" 2>/dev/null)  # re-hydrate from F1 (Check 41)
 JUDGE_VERDICT_FILE=$(ls -t .reports/research/judge-*.md 2>/dev/null | head -1)  # timeout: 5000
 if [ -z "$JUDGE_VERDICT_FILE" ]; then
   echo "fortify: BLOCKED — no judge verdict found in .reports/research/."
@@ -139,6 +143,7 @@ if [ -n "$PROGRAM_FILE" ] && [ ! -f "$PROGRAM_FILE" ]; then
     printf "! BLOCKED — program file %s referenced by judge verdict not found on disk\n" "$PROGRAM_FILE"
     exit 1
 fi
+echo "$PROGRAM_FILE" > "${TMPDIR:-/tmp}/fortify-program-file"  # persist for F6 reviewer-Q&A block (Check 41)
 ```
 
 Verify `JUDGE_VERDICT == "APPROVED"`. The program cross-match above guarantees the verdict was issued for the current experiment — fortify cannot ablate against a different program's verdict. Apply explicit bash gate — prose alone never halts execution:
@@ -165,6 +170,7 @@ Also read `baseline_commit` — iteration 0 commit from `experiments.jsonl` (fir
 FORTIFY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "fortify" ".experiments" 2>/dev/null)  # timeout: 5000
 [ -z "$FORTIFY_DIR" ] && { echo "! make_run_dir.py failed — ensure research plugin installed"; exit 1; }
 mkdir -p "$FORTIFY_DIR"
+echo "$FORTIFY_DIR" > "${TMPDIR:-/tmp}/fortify-dir"  # persist run dir for F2/F4-loop/F6 blocks (Check 41: make_run_dir non-idempotent)
 WORKTREE_BASE="$FORTIFY_DIR/worktrees"
 mkdir -p "$WORKTREE_BASE"
 STATE_DIR="${STATE_DIR_BASE:-/tmp}/fortify-$(basename "$FORTIFY_DIR")"
@@ -183,6 +189,9 @@ Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt
 Before building the prompt, substitute all bash variables into a single concrete string — never pass literal `<FORTIFY_DIR>` or `<path>` placeholders to the agent:
 
 ```bash
+STATE_DIR_BASE="${STATE_DIR_BASE:-.experiments/state}"  # re-derive env default (Check 41: fresh shell)
+RUN_ID=$(cat "${TMPDIR:-/tmp}/fortify-run-id" 2>/dev/null)  # re-hydrate from F1 (Check 41)
+FORTIFY_DIR=$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null)  # re-hydrate from F1 (Check 41)
 EXPERIMENTS_PATH="$STATE_DIR_BASE/$RUN_ID/experiments.jsonl"
 DIARY_PATH="$STATE_DIR_BASE/$RUN_ID/diary.md"
 F2_PROMPT="Act as an ML ablation study designer.
@@ -259,6 +268,7 @@ Run each variant **sequentially** — parallel worktrees would conflict.
 
 ```bash
 ORIG_DIR="$(pwd)"  # timeout: 3000
+echo "$ORIG_DIR" > "${TMPDIR:-/tmp}/fortify-orig-dir"  # persist for 4f cleanup cd (Check 41: fresh shell)
 WORKTREE_PATHS_FILE=$(mktemp -t fortify-XXXX) || { echo "! BLOCKED — mktemp failed (tmpfs full or permission denied); cannot create cleanup accumulator. Aborting."; exit 1; }  # timeout: 3000
 echo "$WORKTREE_PATHS_FILE" > "${TMPDIR:-/tmp}/fortify-paths-ptr"
 
@@ -269,6 +279,7 @@ if ! best_commit_sha=$(git rev-parse --verify "$best_commit^{commit}" 2>/dev/nul
     exit 1
 fi
 best_commit="$best_commit_sha"  # downstream `git worktree add` always sees a SHA → detached HEAD
+echo "$best_commit" > "${TMPDIR:-/tmp}/fortify-best-commit"  # persist for 4a worktree-add (Check 41: fresh shell)
 ```
 
 **On interrupt** (user abort or unexpected error mid-loop): `cd "$ORIG_DIR"` first, then `git worktree prune` (`timeout: 15000`) to clean up partially created worktrees before exiting. The trap below makes interrupt cleanup automatic — never rely on prose-only cleanup discipline.
@@ -289,12 +300,14 @@ if [ "$VARIANT_NAME" = "variant-" ] || [ -z "$VARIANT_NAME" ]; then
     echo "! BLOCKED — could not derive non-empty VARIANT_NAME from variant_spec; check variants.jsonl format. Skipping iteration."
     continue
 fi
+echo "$VARIANT_NAME" > "${TMPDIR:-/tmp}/fortify-variant-name"  # persist for 4a–4f blocks this iteration (Check 41: fresh shell)
 ```
 
 **4a. Create isolated worktree at best_commit:**
 
 ```bash
-git worktree add "$WORKTREE_BASE/$VARIANT_NAME" "$best_commit"  # timeout: 15000
+# Re-hydrate WORKTREE_BASE/VARIANT_NAME/best_commit inline (Check 41: fresh shell; inline keeps `git` as first token for allow-list match)
+git worktree add "$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name" 2>/dev/null)" "$(cat "${TMPDIR:-/tmp}/fortify-best-commit" 2>/dev/null)"  # timeout: 15000
 ```
 
 **4a-trap. Register cleanup trap immediately after worktree creation** (guarantees removal on EXIT / INT / TERM, even on uncaught error):
@@ -303,6 +316,8 @@ git worktree add "$WORKTREE_BASE/$VARIANT_NAME" "$best_commit"  # timeout: 15000
 # Reload (Check 41: shell var lost between Bash calls)
 WORKTREE_PATHS_FILE=$(cat "${TMPDIR:-/tmp}/fortify-paths-ptr" 2>/dev/null)
 [ -z "$WORKTREE_PATHS_FILE" ] && WORKTREE_PATHS_FILE="${TMPDIR:-/tmp}/fortify-worktree-paths-fallback"
+FORTIFY_DIR=$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null); WORKTREE_BASE="$FORTIFY_DIR/worktrees"  # re-hydrate (Check 41: fresh shell)
+VARIANT_NAME=$(cat "${TMPDIR:-/tmp}/fortify-variant-name" 2>/dev/null)  # re-hydrate (Check 41: fresh shell)
 WORKTREE_PATH="${FORTIFY_WORKTREE:-$WORKTREE_BASE/$VARIANT_NAME}"
 echo "$WORKTREE_PATH" >> "$WORKTREE_PATHS_FILE"  # accumulator file persists across Bash calls; array vars do not
 trap 'while IFS= read -r _wt; do git worktree remove --force "$_wt" 2>/dev/null; done < "$WORKTREE_PATHS_FILE" 2>/dev/null; rm -f "$WORKTREE_PATHS_FILE"' EXIT INT TERM
@@ -313,7 +328,8 @@ The accumulator file (`$WORKTREE_PATHS_FILE`) is pre-created via `mktemp` before
 **4b. Navigate into worktree** (two separate Bash calls — cd first, then command):
 
 ```bash
-cd "$WORKTREE_BASE/$VARIANT_NAME"  # timeout: 3000
+# Re-hydrate WORKTREE_BASE/VARIANT_NAME inline (Check 41: fresh shell; inline keeps `cd` as first token)
+cd "$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name" 2>/dev/null)"  # timeout: 3000
 ```
 
 **4c. Apply revert (skip for `full` variant):**
@@ -327,16 +343,20 @@ For `no-<component>` variant: revert component's commits.
 **Bash call 1 — extract and sort revert_commits via jq + awk** (no python; jq-based JSONL filter avoids per-iteration approval prompt):
 
 ```bash
+FORTIFY_DIR=$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null)  # re-hydrate (Check 41: fresh shell)
+VARIANT_NAME=$(cat "${TMPDIR:-/tmp}/fortify-variant-name" 2>/dev/null)  # re-hydrate (Check 41: fresh shell)
 REVERT_COMMITS_RAW=$(jq -r --arg vn "$VARIANT_NAME" 'select(.variant_name==$vn) | .revert_commits[]' "$FORTIFY_DIR/variants.jsonl" 2>/dev/null | tr '\n' ' ')  # timeout: 5000
 [ -z "$REVERT_COMMITS_RAW" ] && { echo "⚠ No revert_commits for $VARIANT_NAME — skipping"; echo '{"variant":"'$VARIANT_NAME'","status":"revert-missing"}' >> "$FORTIFY_DIR/results.jsonl"; continue; }
 # Sort newest-first for conflict-free revert (portable awk reverse — tac not on macOS)
 REVERT_COMMITS_SORTED=$(echo "$REVERT_COMMITS_RAW" | tr ' ' '\n' | awk '{lines[NR]=$0} END{for(i=NR;i>=1;i--) print lines[i]}' | tr '\n' ' ')
+echo "$REVERT_COMMITS_SORTED" > "${TMPDIR:-/tmp}/fortify-revert-sorted"  # persist for git-revert block (Check 41: fresh shell)
 ```
 
 **Bash call 2 — apply revert** (separated so first-token allow-list matches `git`):
 
 ```bash
-git revert $REVERT_COMMITS_SORTED --no-edit  # timeout: 15000
+# Re-hydrate REVERT_COMMITS_SORTED inline (Check 41: fresh shell; unquoted for multi-SHA word-splitting; inline keeps `git` first token)
+git revert $(cat "${TMPDIR:-/tmp}/fortify-revert-sorted" 2>/dev/null) --no-edit  # timeout: 15000
 ```
 
 If revert produces merge conflicts: append `{"variant":"<name>","status":"revert-conflict",...}` to `results.jsonl`, jump to 4f (cleanup).
@@ -344,6 +364,7 @@ If revert produces merge conflicts: append `{"variant":"<name>","status":"revert
 **4d. Run metric_cmd in worktree:**
 
 ```bash
+METRIC_CMD="${METRIC_CMD:-python -m pytest -x --tb=no -q}"  # re-derive env default (Check 41: fresh shell)
 $METRIC_CMD  # timeout: 360000  (initialized in F1 from env or default)
 METRIC_EXIT=$?
 ```
@@ -353,6 +374,7 @@ Parse stdout for numeric metric value. If command fails or no numeric output: re
 **4e. Run guard_cmd in worktree:**
 
 ```bash
+GUARD_CMD="${GUARD_CMD:-git diff --stat HEAD}"  # re-derive env default (Check 41: fresh shell)
 $GUARD_CMD  # timeout: 360000  (initialized in F1 from env or default)
 GUARD_EXIT=$?
 ```
@@ -362,11 +384,13 @@ Record guard result: `"pass"` (exit 0) or `"fail"` (non-zero).
 **4f. Cleanup worktree (INVARIANT — must execute even if 4c/4d/4e fail):**
 
 ```bash
-cd "$ORIG_DIR"  # timeout: 3000
+# Re-hydrate ORIG_DIR inline (Check 41: fresh shell; inline keeps `cd` as first token)
+cd "$(cat "${TMPDIR:-/tmp}/fortify-orig-dir" 2>/dev/null)"  # timeout: 3000
 ```
 
 ```bash
-git worktree remove --force "$WORKTREE_BASE/$VARIANT_NAME"  # timeout: 15000
+# Re-hydrate WORKTREE_BASE/VARIANT_NAME inline (Check 41: fresh shell; inline keeps `git` as first token)
+git worktree remove --force "$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null)/worktrees/$(cat "${TMPDIR:-/tmp}/fortify-variant-name" 2>/dev/null)"  # timeout: 15000
 ```
 
 **4g. Record result** — append one JSON line to `$FORTIFY_DIR/results.jsonl`:
@@ -452,6 +476,8 @@ Before building the prompt, substitute all bash variables into a single concrete
 
 ```bash
 VENUE="${VENUE:-workshop}"  # parsed from --venue flag in F1
+PROGRAM_FILE=$(cat "${TMPDIR:-/tmp}/fortify-program-file" 2>/dev/null)  # re-hydrate from F1 (Check 41: fresh shell)
+FORTIFY_DIR=$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null)  # re-hydrate from F1 (Check 41: fresh shell)
 [ -z "$PROGRAM_FILE" ] && { echo "! fortify: BLOCKED — PROGRAM_FILE not set; re-invoke from F1"; exit 1; }  # absolute path resolved in F1
 F6_PROMPT="Act as a peer reviewer for ${VENUE}.
 

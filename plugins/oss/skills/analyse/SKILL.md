@@ -76,17 +76,26 @@ if [[ " $ARGUMENTS " == *" --reply "* ]]; then
     REPLY_MODE=true
     CLEAN_ARGS=$(echo "$ARGUMENTS" | sed -E 's/(^| )--reply($| )/\1\2/')
     CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
-fi # timeout: 5000
+fi
+# Persist REPLY_MODE + CLEAN_ARGS — fresh shell loses vars (Check 41)
+echo "$REPLY_MODE" > "${TMPDIR:-/tmp}/analyse-reply-mode"
+echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args" # timeout: 5000
 ```
 
 ```bash
+# Reload CLEAN_ARGS — fresh shell (Check 41)
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
 CLEAN_ARGS="${CLEAN_ARGS#\#}"
+echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args"
 ```
 
 `REPLY_MODE` only meaningful when `$CLEAN_ARGS` is number — silently ignored for `vitality` and `ecosystem`.
 
 ```bash
+# Reload CLEAN_ARGS — fresh shell (Check 41)
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
 DIRECT_PATH_MODE=false
+REPORT_FILE=""
 # *.md check must not intercept vitality/ecosystem; also reject plan/todo files
 if [[ "$CLEAN_ARGS" == *.md ]] && [[ "$CLEAN_ARGS" != vitality* ]] && [[ "$CLEAN_ARGS" != ecosystem* ]]; then
     if [[ "$CLEAN_ARGS" == .plans/* ]] || [[ "$CLEAN_ARGS" == *todo_*.md ]]; then
@@ -96,7 +105,10 @@ if [[ "$CLEAN_ARGS" == *.md ]] && [[ "$CLEAN_ARGS" != vitality* ]] && [[ "$CLEAN
     fi
     DIRECT_PATH_MODE=true
     REPORT_FILE="$CLEAN_ARGS"
-fi # timeout: 5000
+fi
+# Persist DIRECT_PATH_MODE + REPORT_FILE — fresh shell loses vars (Check 41)
+echo "$DIRECT_PATH_MODE" > "${TMPDIR:-/tmp}/analyse-direct-path-mode"
+echo "$REPORT_FILE" > "${TMPDIR:-/tmp}/analyse-report-file" # timeout: 5000
 # Persist TODAY — repeated `date +%Y-%m-%d` may roll over midnight, producing mismatched cache/report paths
 _TODAY_FILE="${TMPDIR:-/tmp}/analyse-today"
 if [ -f "$_TODAY_FILE" ]; then
@@ -110,6 +122,8 @@ fi
 `DIRECT_PATH_MODE=true` only valid when `REPLY_MODE=true` — if combined without `--reply`, Step 2 prints plain-text error and stops; execution never reaches Step 5 mode dispatch.
 
 ```bash
+# Reload CLEAN_ARGS — fresh shell (Check 41)
+CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
 GH_OWNER=""
 GH_REPO=""
 if [[ "$CLEAN_ARGS" == vitality* ]]; then
@@ -170,6 +184,10 @@ Skip when `REPLY_MODE=false` and `DIRECT_PATH_MODE=false`.
 **Direct report path** (`DIRECT_PATH_MODE=true` — checked first). The error branches below execute as explicit bash `exit 1` blocks — `stop` is not prose advice; the workflow must terminate hard before any downstream step can fire a misleading `Item .md not found on GitHub` error:
 
 ```bash
+# Reload vars — fresh shell (Check 41)
+REPLY_MODE=$(cat "${TMPDIR:-/tmp}/analyse-reply-mode" 2>/dev/null || echo "false")
+DIRECT_PATH_MODE=$(cat "${TMPDIR:-/tmp}/analyse-direct-path-mode" 2>/dev/null || echo "false")
+REPORT_FILE=$(cat "${TMPDIR:-/tmp}/analyse-report-file" 2>/dev/null || echo "")
 if [ "$DIRECT_PATH_MODE" = "true" ] && [ "$REPLY_MODE" = "false" ]; then
     echo "! Error: report path '$REPORT_FILE' passed without --reply."
     echo "  Re-run as: /oss:analyse $REPORT_FILE --reply"

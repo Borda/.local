@@ -58,18 +58,21 @@ done
 STAMP="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
 REPORT_DIR=".reports/profile/$STAMP"
 mkdir -p "$REPORT_DIR"
-echo "REPORT_DIR=$REPORT_DIR"
-echo "SINCE=$SINCE"
-echo "SESSION_ID=$SESSION_ID"
-echo "TOP_N=$TOP_N"
+{
+  echo "REPORT_DIR=$REPORT_DIR"
+  echo "SINCE=$SINCE"
+  echo "SESSION_ID=$SESSION_ID"
+  echo "TOP_N=$TOP_N"
+} | tee "${TMPDIR:-/tmp}/foundry-profile-state"
 ```
 
-Capture printed values — bash state does not persist across Bash calls.
+Values are persisted to `${TMPDIR:-/tmp}/foundry-profile-state`; Steps 2–3 re-source it (bash state does not persist across Bash calls, and `REPORT_DIR` carries a per-shell timestamp that cannot be re-derived).
 
 ## Step 2: Run analyzer
 
 ```bash
 # timeout: 60000
+. "${TMPDIR:-/tmp}/foundry-profile-state" 2>/dev/null   # reload REPORT_DIR/SINCE/SESSION_ID/TOP_N (fresh shell)
 OPT_SID=""
 [ -n "$SESSION_ID" ] && OPT_SID="--session-id $SESSION_ID"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/timing_analyzer.py" \
@@ -86,6 +89,7 @@ echo "exit=$?"
 
 ```bash
 # timeout: 5000
+. "${TMPDIR:-/tmp}/foundry-profile-state" 2>/dev/null   # reload REPORT_DIR/SINCE/SESSION_ID/TOP_N (fresh shell)
 echo '{"status":"complete","since":"'"$SINCE"'","session_id":"'"$SESSION_ID"'","top_n":'"$TOP_N"'}' > "$REPORT_DIR/result.jsonl"
 ```
 

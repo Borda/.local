@@ -187,6 +187,15 @@ class TestTemplateBlock:
         """A placeholder token appearing only in a comment does not mark a template."""
         assert cbp.is_template_block("# uses ${I}\necho done\n", frozenset()) is False
 
+    def test_angle_bracket_placeholder_flags_template(self) -> None:
+        """An <identifier> angle-bracket placeholder marks a usage-example block."""
+        assert cbp.is_template_block('grep "$SQ" rdeps <TARGET_MODULE>\n', frozenset({"SQ"})) is True
+
+    def test_shell_redirection_not_angle_placeholder(self) -> None:
+        """Real shell redirection (`< file`, `<(`, `<<`) is not an angle placeholder."""
+        assert cbp.is_template_block('sort < "$INFILE"\n', frozenset({"INFILE"})) is False
+        assert cbp.is_template_block('diff <(sort "$A") "$B"\n', frozenset({"A", "B"})) is False
+
 
 class TestReloadsBeforeRef:
     """Covers reloads_before_ref() state-reload detection (suppression rule 1)."""
@@ -198,6 +207,10 @@ class TestReloadsBeforeRef:
     def test_source_reload_before_reference(self) -> None:
         """source of a state file before the reference re-derives the value."""
         assert cbp.reloads_before_ref('source ./state.sh\necho "$VARX"\n', "VARX") is True
+
+    def test_dot_reload_quoted_path(self) -> None:
+        """A quoted dot-source path (. "$FILE") is recognized as a reload."""
+        assert cbp.reloads_before_ref('. "${TMPDIR:-/tmp}/state"\necho "$VARX"\n', "VARX") is True
 
     def test_reload_after_reference_not_suppressed(self) -> None:
         """A reload appearing after the reference does not rescue it — still lost."""

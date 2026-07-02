@@ -151,6 +151,7 @@ mapfile -t _run < <(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/setup_wor
 TS="${_run[0]}"
 TEAM_DIR="${_run[1]}"
 echo "$TS" > ${TMPDIR:-/tmp}/dev-feature-team-ts
+echo "$TEAM_DIR" > ${TMPDIR:-/tmp}/dev-feature-team-dir
 trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-$TS' EXIT
 ```
 
@@ -158,6 +159,8 @@ trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-$TS' EXIT
 
 ```bash
 # timeout: 5000
+TS=$(cat ${TMPDIR:-/tmp}/dev-feature-team-ts 2>/dev/null || echo "")        # re-derive — bash state lost between Bash() calls
+TEAM_DIR=$(cat ${TMPDIR:-/tmp}/dev-feature-team-dir 2>/dev/null || echo "")
 _SPAWN_TS="$TS"
 _SPAWN_TEAM_DIR="$TEAM_DIR"
 ```
@@ -255,6 +258,8 @@ else
     TARGET_FN=""
 fi
 export TARGET_MODULE TARGET_FN
+echo "$TARGET_MODULE" > ${TMPDIR:-/tmp}/dev-feature-target-module   # persist — reloaded by rdeps block (bash state lost between Bash() calls)
+echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn
 ```
 
 > Pure net-new feature (no existing module/function named) → both empty → only the `central` baseline runs, which is correct: nothing to compute caller impact against yet.
@@ -264,6 +269,7 @@ export TARGET_MODULE TARGET_FN
 ```bash
 # timeout: 6000
 CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-codemap-enabled 2>/dev/null || echo false)
+TARGET_MODULE=$(cat ${TMPDIR:-/tmp}/dev-feature-target-module 2>/dev/null || echo "")   # re-derive — bash state lost between Bash() calls
 if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v scan-query >/dev/null 2>&1; then
     scan-query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests 2>/dev/null || true
 fi
