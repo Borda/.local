@@ -39,5 +39,13 @@
   "Bash(gh repo create:*)",
   "Bash(gh gist create:*)",
   "Bash(gh gist edit:*)",
-  "Bash(gh gist delete:*)"
+  "Bash(gh gist delete:*)",
+  "Bash(gh api --method POST:*)",
+  "Bash(gh api --method PATCH:*)",
+  "Bash(gh api --method PUT:*)",
+  "Bash(gh api --method DELETE:*)",
+  "Bash(gh api -X POST:*)",
+  "Bash(gh api -X PATCH:*)",
+  "Bash(gh api -X PUT:*)",
+  "Bash(gh api -X DELETE:*)"
 ]

@@ -2,21 +2,30 @@
 // rtk-rewrite.js — PreToolUse hook
 //
 // PURPOSE
-//   Transparently rewrites Bash commands to their `rtk <cmd>` equivalents,
-//   giving 60–99% token savings without requiring duplicate allow entries in
-//   settings.json.  Only commands matching an explicit RTK prefix list are
-//   rewritten and auto-approved — everything else passes through to normal
-//   permission checking untouched.
+//   Transparently rewrites read-heavy Bash commands to their `rtk <cmd>`
+//   equivalents, giving 60–99% token savings without requiring duplicate
+//   allow entries in settings.json.
 //
-// HOW IT WORKS
-//   1. Parse stdin JSON for tool_name and tool_input.command.
-//   2. Skip non-Bash tools or commands already prefixed with `rtk` (exit 0).
-//   3. Check the command's first word against RTK_PREFIXES.
-//   4. If matched, check DENY_PATTERNS — excluded subcommands (git push, branch -D, etc.)
-//      exit 0 so normal permission checking and deny rules apply unchanged.
-//   5. Otherwise: emit hookSpecificOutput with updatedInput (prepends `rtk `)
-//      and permissionDecision:"allow" so no allow-list lookup is needed.
-//   6. If not matched: exit 0 — normal permission checking proceeds.
+// SECURITY MODEL — why the rewrite is safe
+//   Rewriting `gh …` to `rtk gh …` changes the command string, so the
+//   rewritten form no longer matches ANY allow OR deny prefix in
+//   settings.json. That means a rewrite carrying permissionDecision:"allow"
+//   BYPASSES the deny list entirely. Therefore the hook must never rewrite a
+//   command it has not itself proven read-only. Two prefix classes:
+//
+//     SAFE_PREFIXES    — dev/build/search tools with no destructive subcommand
+//                        the deny list guards against. Rewritten + auto-allowed.
+//     GUARDED_PREFIXES — CLIs that mix read and mutating subcommands (git, gh,
+//                        docker, kubectl, aws). Rewritten + auto-allowed ONLY
+//                        when the command matches a positive READ_ONLY_GUARDS
+//                        pattern. Anything else — including every unknown or
+//                        mutating subcommand — passes through UNCHANGED (exit 0)
+//                        to normal permission + deny checking on the original
+//                        string. No hand-copied deny mirror to drift.
+//
+//   Commands whose OUTPUT semantics rtk alters (e.g. `diff` exit status /
+//   "identical" summary) are excluded outright — wrapping them corrupts
+//   results that callers branch on.
 //
 // EXIT CODES
 //   0  passthrough (no output) or successful rewrite (JSON to stdout)
@@ -31,36 +40,16 @@ if (spawnSync("which", ["rtk"]).status !== 0) {
   process.exit(0);
 }
 
-// Subcommands that must never be auto-approved even when their prefix is in RTK_PREFIXES.
-// These match commands that are intentionally excluded from settings.json allow entries
-// or that are covered by settings.json deny entries. Matched commands exit 0 (passthrough)
-// so normal permission checking and deny rules apply.
-const DENY_PATTERNS = [
-  // git: push and destructive subcommands excluded from allow list by design
-  /^git\s+(push|branch\s+-[Dd]|branch\s+--delete|reset\s+--hard|clean\s+-[fd]|checkout\s+--)\b/,
-  // gh: release/publish actions require explicit user confirmation
-  /^gh\s+(release\s+create|pr\s+merge|repo\s+delete)\b/,
-  // curl: block mutation methods to prevent auto-approving external state changes
-  /^curl\s+(?:.*-X\s+(?:POST|PUT|PATCH|DELETE)|.*--(?:data|data-raw|upload-file))\b/,
-];
-
-// Commands RTK knows how to filter (derived from `rtk --help`).
-// Each entry is the bare command name (no trailing space).
-// Omitted intentionally:
-//   test, read, env  — bash builtins; rewriting would break scripts
-//   err, log, json, deps, summary, smart  — RTK-only wrappers, not standard CLIs
-//   gain, proxy, discover, session, learn, init, config, …  — RTK meta commands
-const RTK_PREFIXES = [
-  // Version control
-  "git",
-  "gh",
+// Read-heavy CLIs with no destructive subcommand the deny list guards against.
+// Auto-allowed on match. `diff` is intentionally absent — rtk changes its exit
+// status and prints "Files are identical" for differing files, corrupting any
+// caller that branches on the result.
+const SAFE_PREFIXES = [
   // JS / TS
   "tsc",
   "jest",
   "vitest",
   "next",
-  "pnpm",
-  "npm",
   "prettier",
   "lint",
   "format",
@@ -70,34 +59,57 @@ const RTK_PREFIXES = [
   "ruff",
   "pytest",
   "mypy",
-  "pip",
   // Go
-  "go",
   "golangci-lint",
   // Ruby
-  "rake",
   "rubocop",
   "rspec",
-  // Cloud & containers
-  "docker",
-  "kubectl",
-  "aws",
-  // Database
-  "psql",
-  "prisma",
-  // .NET
-  "dotnet",
-  // Network
-  "wget",
-  "curl",
   // Files & search
   "ls",
   "tree",
   "grep",
   "find",
   "wc",
-  "diff",
 ];
+
+// CLIs that mix read-only and mutating subcommands. Rewritten + auto-allowed
+// ONLY when a READ_ONLY_GUARDS pattern matches; otherwise passthrough so the
+// original command hits the real allow/deny matcher. curl, wget, psql, and
+// prisma are deliberately NOT here — their read/write intent is hard to prove
+// from the command line and the token payoff is marginal, so they always
+// passthrough (deny list stays authoritative for them).
+const GUARDED_PREFIXES = ["git", "gh", "docker", "kubectl", "aws"];
+
+// Positive read-only allowlist for GUARDED_PREFIXES. A guarded command is
+// rewritten + allowed only if it matches one of these. Add patterns here to
+// grant token savings to more read-only subcommands — never widen to cover a
+// mutating one.
+const READ_ONLY_GUARDS = [
+  // git — inspection verbs only; add/commit/checkout/merge/fetch passthrough
+  // to the real allow list (they are low-output, so no token loss). `branch` is
+  // intentionally absent: `git branch <name>` creates a branch (a mutation) and
+  // the list output is tiny — no token payoff to justify the risk.
+  /^git\s+(status|log|diff|show|rev-parse|rev-list|describe|shortlog|ls-files|ls-tree|merge-base|blame|cat-file|for-each-ref|reflog|whatchanged|grep|tag\s+(?:-l|--list)|tag$|stash\s+list|remote(?:\s+(?:-v|show|get-url))?$|remote\s+-v)\b/,
+  // gh — read subcommands + gh api GET (no mutating --method)
+  /^gh\s+(issue|pr|release|run|repo|search|cache|workflow)\s+(list|view|diff|checks|status|ls)\b/,
+  /^gh\s+api\s+(?!.*(?:-X|--method)\s*(?:POST|PUT|PATCH|DELETE))(?!.*(?:-f|--field|--input)\b)/,
+  /^gh\s+(auth\s+status|repo\s+view)\b/,
+  // docker — inspection subcommands
+  /^docker\s+(ps|images|image\s+ls|logs|inspect|version|info|stats|top|history|port|diff)\b/,
+  // kubectl — read verbs
+  /^kubectl\s+(get|describe|logs|top|explain|version|api-resources|api-versions|cluster-info|config\s+view)\b/,
+  // aws — describe-/get-/list- verbs and `aws s3 ls`
+  /^aws\s+\S+\s+(describe|get|list)[\w-]*\b/,
+  /^aws\s+s3\s+ls\b/,
+];
+
+// Shell control operators that could chain, substitute, or redirect a second
+// command after a read-only prefix. A prefix-anchored read-only match proves
+// only the FIRST command is safe — `git status && git push` would otherwise get
+// the WHOLE string rewritten + auto-allowed, smuggling `git push` (deny-listed)
+// past the permission matcher. Any of these present → refuse to rewrite, so the
+// original string reaches normal permission + deny checking intact.
+const SHELL_META = /[;&|`\n<>]|\$\(/;
 
 /**
  * Returns true if `cmd` starts with `prefix` as a whole word
@@ -105,6 +117,25 @@ const RTK_PREFIXES = [
  */
 function matchesPrefix(cmd, prefix) {
   return cmd === prefix || cmd.startsWith(prefix + " ");
+}
+
+/**
+ * Decide whether `cmd` may be rewritten to `rtk <cmd>` and auto-approved.
+ * Returns true only when the ENTIRE command is provably read-only.
+ */
+function isRewritable(cmd) {
+  // A rewrite auto-approves the whole string, so a compound command is only as
+  // safe as its most dangerous segment — refuse to rewrite any of them.
+  if (SHELL_META.test(cmd)) {
+    return false;
+  }
+  if (SAFE_PREFIXES.some((p) => matchesPrefix(cmd, p))) {
+    return true;
+  }
+  if (GUARDED_PREFIXES.some((p) => matchesPrefix(cmd, p))) {
+    return READ_ONLY_GUARDS.some((re) => re.test(cmd));
+  }
+  return false;
 }
 
 let raw = "";
@@ -119,25 +150,20 @@ process.stdin.on("end", () => {
       process.exit(0);
     }
 
-    const cmd = (data.tool_input && data.tool_input.command) || "";
+    const cmd = ((data.tool_input && data.tool_input.command) || "").trim();
 
     // Skip empty commands or those already prefixed
     if (!cmd || cmd.startsWith("rtk ")) {
       process.exit(0);
     }
 
-    // Check against known RTK-filterable prefixes
-    if (!RTK_PREFIXES.some((p) => matchesPrefix(cmd, p))) {
+    // Only rewrite commands proven read-only; everything else passes through
+    // to normal permission + deny checking on the ORIGINAL string.
+    if (!isRewritable(cmd)) {
       process.exit(0);
     }
 
-    // Safety gate: never auto-approve commands that are intentionally excluded
-    // from the allow list or covered by deny rules (e.g. git push, git branch -D).
-    if (DENY_PATTERNS.some((p) => p.test(cmd))) {
-      process.exit(0);
-    }
-
-    // Rewrite and auto-approve — permission check already covered by prefix list
+    // Rewrite and auto-approve — command is read-only by construction.
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {
