@@ -514,7 +514,7 @@
           },
           "id": "q1",
           "match": "integer_extract",
-          "prompt": "How many functions (total, from the fn-rdeps count field) call `lightning.pytorch.trainer.call::_call_callback_hooks`? Report the integer count."
+          "prompt": "How many production functions (excluding test files) uniquely call `lightning.pytorch.trainer.call::_call_callback_hooks`? Report the number of distinct caller entries in the fn-rdeps result."
         }
       ],
       "type": "review_assistance",

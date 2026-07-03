@@ -56,12 +56,12 @@ Runs the same 16 import-graph tasks under four arms:
 
 **Metrics**: tool call count, elapsed time, input tokens, exposure recall (erec), top-10 exposure recall (e@10), report recall (rrec), discovery efficiency (deff).
 
-| Metric | What it measures                                                                            |
-| ------ | ------------------------------------------------------------------------------------------- |
-| `erec` | Fraction of ground-truth rdeps found in agent output_text (tool results excluded; arm-fair) |
-| `e@10` | erec restricted to the 10 most-central rdeps by dep_count                                   |
-| `rrec` | Fraction of ground-truth rdeps present in the agent final written answer only               |
-| `deff` | Tool calls saved vs plain arm, normalised                                                   |
+| Metric | What it measures                                                                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `erec` | Fraction of ground-truth rdeps found in agent output_text (tool results excluded; arm-fair)                                                                                           |
+| `e@10` | erec restricted to the 10 most-central rdeps, ranked by reverse-dependency count (in-degree — how many modules import each), matching the "imported by the most modules" task wording |
+| `rrec` | Fraction of ground-truth rdeps present in the agent final written answer only                                                                                                         |
+| `deff` | Tool calls saved vs plain arm, normalised                                                                                                                                             |
 
 <details>
 <summary><strong>Tasks</strong></summary>
@@ -300,15 +300,15 @@ Validates `scan-query` directly — no LLM involved. Requires a pre-built index.
 
 Seven suites run together, split into two tracks. **Primary** suites (C / A / L / Q) decide the verdict. **Self-consistency** suites (S / H / X) validate scan-query against ground truth that is itself partly scan-query-derived — they check determinism, not independent correctness, and are reported separately (excluded from the verdict).
 
-| Suite           | Codes                      | What it measures                                                                    |
-| --------------- | -------------------------- | ----------------------------------------------------------------------------------- |
-| **C** Coverage | C1 C2 C3 | AST-verified importers codemap finds beyond boundary-anchored grep (real set comparison since 2026-07-03) |
-| **A** Accuracy | A1 A2 A3 | Precision (vs AST-verified importer oracle) + recall floor (vs boundary-anchored grep) on rdeps queries — codemap is not penalized for importers grep cannot see |
-| **L** Latency   | L1 L2 L3 L4                | Wall-clock time for `central`, `rdeps`, index build, vs cold grep baseline          |
+| Suite             | Codes                      | What it measures                                                                                                                                                              |
+| ----------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **C** Coverage    | C1 C2 C3                   | AST-verified importers codemap finds beyond boundary-anchored grep (real set comparison since 2026-07-03)                                                                     |
+| **A** Accuracy    | A1 A2 A3                   | Precision (vs AST-verified importer oracle) + recall floor (vs boundary-anchored grep) on rdeps queries — codemap is not penalized for importers grep cannot see              |
+| **L** Latency     | L1 L2 L3 L4                | Wall-clock time for `central`, `rdeps`, index build, vs cold grep baseline                                                                                                    |
 | **Q** Query-shape | Q_fix Q_feature Q_refactor | scan-query returns well-formed JSON with the fields develop/oss skills expect (`has_rdeps`+`has_deps`) — shape validation only; does NOT exercise the SKILL.md injection path |
-| **S** Symbol    | S_SE-01..SE-05 S2          | `symbol` command returns correct start/end lines (ground truth: `tasks-bench.json`) |
-| **H** Health    | H_CQ-\* H1 H2              | `undocumented`/`uncovered` totals match `tasks-bench.json` ground truth             |
-| **X** Xrefs     | X_CQ-04 X1                 | `xrefs --broken` count + target set match `tasks-bench.json` ground truth           |
+| **S** Symbol      | S_SE-01..SE-05 S2          | `symbol` command returns correct start/end lines (ground truth: `tasks-bench.json`)                                                                                           |
+| **H** Health      | H_CQ-\* H1 H2              | `undocumented`/`uncovered` totals match `tasks-bench.json` ground truth                                                                                                       |
+| **X** Xrefs       | X_CQ-04 X1                 | `xrefs --broken` count + target set match `tasks-bench.json` ground truth                                                                                                     |
 
 Suites S, H, X auto-skip (no error) when `tasks-bench.json` is absent.
 
@@ -359,10 +359,10 @@ Index resolution checks `.cache/codemap/<name>.json` first, then `.cache/scan/<n
 | A3            | FP rate < 5%                                                                                                                                                                                |
 | L1            | `central` median < 200 ms                                                                                                                                                                   |
 | L2            | `rdeps` median < 100 ms                                                                                                                                                                     |
-| L3 | amortised index build < 500 ms — build_ms / QUERIES_PER_SESSION (=10); expected to FAIL on large repos under this honest divisor, and the verdict owns that |
-| L4 | speedup >= 2x (warm-index vs cold grep; gate is warm-only, a build-inclusive variant is reported alongside for honesty) |
-| Q_fix/feature | JSON valid block present |
-| Q_refactor | JSON valid + has_rdeps + has_deps |
+| L3            | amortised index build < 500 ms — build_ms / QUERIES_PER_SESSION (=10); expected to FAIL on large repos under this honest divisor, and the verdict owns that                                 |
+| L4            | speedup >= 2x (warm-index vs cold grep; gate is warm-only, a build-inclusive variant is reported alongside for honesty)                                                                     |
+| Q_fix/feature | JSON valid block present                                                                                                                                                                    |
+| Q_refactor    | JSON valid + has_rdeps + has_deps                                                                                                                                                           |
 | S\_\* / S2    | symbol found + start_line within +-3 of ground truth                                                                                                                                        |
 | H1 / H2       | undocumented / uncovered total == ground truth (exact)                                                                                                                                      |
 | X1            | xrefs --broken count + target set == ground truth (exact)                                                                                                                                   |
@@ -408,6 +408,9 @@ Scoring is independent per arm. Token ratio = `codemap_input_tokens / plain_inpu
 ### Known limitations
 
 - **Arm ordering**: plain arm always runs before codemap on each task. Token metrics are unaffected. Wall-clock time metrics may be biased toward codemap (OS page cache warm on second run); treat token ratio as the primary efficiency signal.
+- **Equal turn caps (2026-07-03)**: both arms get the same per-task max-turns budget (was plain×4 / codemap×2 per caller, which lowered the codemap/plain token ratio precisely on the highest-caller tasks). The token_ratio headline is now measured under symmetric caps.
+- **Paired accuracy (2026-07-03)**: because extraction failures are excluded per-arm, per-arm accuracy is computed over different task subsets. The summary now also prints a paired accuracy — both arms scored over the tasks where BOTH extracted — with the paired-n stated; treat that as the comparable figure.
+- **Hardware capture (2026-07-03)**: the query-benchmark report header and JSON envelope record platform / processor / cpu_count / python, since the latency thresholds (L1–L3) are hardware-calibrated and not comparable across machines without it.
 - **RV recall > 1.0**: Scores above 1.0 (marked `^` in per-run log) indicate model over-counts, not evaluator error. In June 22 runs RV-03/04 both showed systematic over-count (`^1.1–1.25×`). RV-03 was a task-definition bug — sub-question asked for "fn-rdeps count field" (= 42 total call-site edges) but GT = 37 unique callers; fixed June 23 (prompt now asks for "distinct caller entries"; new runs show RV-03 codemap recall ≈ 1.0). RV-04 remains: `fn-rdeps count: 24` = 24 unique callers = GT, so over-count is pure model error (grep over-counting).
 - **NaN in summary table**: A task shows `NaN` recall in the summary table for any of four reasons: (1) `extraction_failed == True` — evaluator regex cannot extract the target metric from model output (most common); (2) `quality.scored == False` — task is marked not scoreable (e.g. RI-05); (3) only one arm ran — no plain+codemap pair to compare; (4) `quality.recall` is None and `metric_got`/`metric_expected` are also None. In June 22 runs (44 tasks): plain arm extraction_failed on SE-05/CQ-01/CQ-05/RI-04 (haiku), FT-03 (sonnet), CQ-01/CQ-05 (opus). Codemap arm extraction_failed on SE-05/CQ-03/CQ-05 (haiku), FN-03 (sonnet), FN-03/RI-02 (opus). Extraction failures are excluded from the accuracy denominator. Count-based tasks (SE / CQ / count-branch RV) show `NaN` in the summary table recall columns; per-task recall is visible in the per-run log line (`recall=…`).
 - **RV-02 both arms low**: GT has 64 callers — too many for a single LLM response to enumerate exhaustively. Haiku plain 15.6% / codemap 28.1%; sonnet and opus similar. Task may be ill-suited for recall-based scoring at this scale.

@@ -5,14 +5,13 @@
 
 The `codemap` plugin scans a Python codebase once (`ast.parse`) into a structural JSON index; agents answer
 structural questions (rdeps, deps, centrality, import paths) with one `scan-query` call instead of many Glob/Grep
-passes. This script benchmarks the `scan-query` binary directly against cold grep baselines — it does NOT invoke the
-Claude API, spawn agents, or record live tool-call counts.
+passes. This benchmarks the `scan-query` binary against cold grep baselines — NOT via the Claude API, agents,
+or live tool-call counts.
 
 ## Goal
 
-Quantify codemap's benefit across four dimensions:
-
-Frozen task set: benchmarks/suites/tasks-code.json — 15 tasks grouped by skill:
+Quantify codemap's benefit (coverage, accuracy, latency, query-shape). Frozen task set:
+benchmarks/suites/tasks-code.json — 15 tasks grouped by skill:
   B-01–B-05  bug/fix scenarios    (blast radius before touching faulty code)
   F-01–F-05  feature scenarios    (coupling risk before hooking in)
   R-01–R-05  refactor scenarios   (full structural picture before restructuring)
@@ -31,9 +30,11 @@ Suite A — Accuracy: AST-verified rdeps precision + boundary-grep recall floor.
 
   Code  Name         What it measures                                   Pass threshold
   ----  -----------  -------------------------------------------------  ---------------
-  A1    rdeps-high   AST precision + grep recall floor, high-risk tasks precision >= 0.90
-                     (B-01,B-03,B-05,F-02,F-05,R-01,R-02)              recall    >= 0.85
-  A2    rdeps-low    AST precision for low-risk tasks (B-04, R-05)      precision = 1.00
+  A1    rdeps-high   AST precision + grep recall; tiers high /          precision >= 0.90
+                     very-high / moderate-high; EVERY module must pass  recall    >= 0.85
+  A2    rdeps-low    AST precision; ALL other tiers (low / low-moderate precision = 1.00
+                     / moderate) — catch-all, so no task is ever
+                     silently ungraded (A1 ∪ A2 = every task)
   A3    fp-rate      overall AST false-positive rate across all tasks   FP rate < 5%
 
 Suite L — Latency: wall-clock cost of codemap queries vs cold grep pipelines.
@@ -47,10 +48,9 @@ Suite L — Latency: wall-clock cost of codemap queries vs cold grep pipelines.
                      (total build time / 10)
   L4    speedup      codemap (L1+L2) vs cold grep baseline               >= 2x faster
 
-Suite Q — Query shape: validates the OUTPUT SHAPE of the scan-query commands a skill would inject. It
+Suite Q — Query shape: validates the OUTPUT SHAPE of the scan-query commands a skill would inject; it
 does NOT invoke the skill, exercise the SKILL.md injection block, or prove the context is wired into a
-prompt. (plugins/codemap/bin/check_injection.py separately audits SKILL.md/agent files for injection
-MARKERS — also not a runtime context-block test.)
+prompt. (check_injection.py separately audits SKILL.md/agent files for injection MARKERS.)
 
   Code        Skill queries       What is validated              Pass threshold
   ---------   ------------------  -----------------------------  ---------------
@@ -59,11 +59,10 @@ MARKERS — also not a runtime context-block test.)
   Q_refactor  develop:refactor    per-task queries + rdeps/deps  all present,
                                   (5 tasks)                      rdeps+deps valid
 
-Suites S, H, X are SELF-CONSISTENCY / DETERMINISM checks, not independent-correctness checks: their
-ground truth in tasks-bench.json is derived from scan-query's own output, so a pass confirms
-determinism / index-version stability against a frozen snapshot, not independent correctness. They
-run on a separate self-consistency track EXCLUDED from the primary verdict (see below). All three
-pass on an exact/tolerant match against that frozen snapshot:
+Suites S, H, X are SELF-CONSISTENCY / DETERMINISM checks, not independent-correctness: their ground
+truth in tasks-bench.json is derived from scan-query's own output, so a pass confirms determinism /
+index-version stability against a frozen snapshot, not correctness. They run on a separate track
+EXCLUDED from the primary verdict (below), each passing on an exact/tolerant match to that snapshot:
   Suite S — Symbol lookup (SE-01..SE-05): scan-query symbol start_line within ±3 of gt; S2 = all pass.
   Suite H — Health (CQ-01..CQ-05): undocumented/uncovered total == gt.count; H1/H2 = all pass.
   Suite X — Xrefs broken (CQ-04): xrefs --broken count + target set == gt; X1 = all pass.
@@ -73,76 +72,57 @@ Index path resolution: .cache/codemap/ is checked before .cache/scan/ (scan-inde
 ## Requirements
 
   - Python 3.8+ (stdlib for C/A/L/Q/X; pandas+rich for reporting); git on PATH
-  - A pytorch-lightning clone plus a pre-built codemap index for it:
-      python3 plugins/codemap/bin/scan-index --root ./pytorch-lightning-master
+  - A pytorch-lightning clone + pre-built index (python3 plugins/codemap/bin/scan-index --root <clone>)
   - scan-query on PATH or at plugins/codemap/bin/scan-query (found automatically)
   - benchmarks/suites/tasks-bench.json present for S/H/X (auto-skipped if absent)
 
 ## Quick start
 
-    # Full benchmark with markdown report (suites C/A/L/Q always run; S/H/X when tasks-bench.json present)
-    python benchmarks/run-codemap-cli.py \\
-        --repo-path ./pytorch-lightning-master \\
-        --report
+    # Full benchmark + markdown report (C/A/L/Q always run; S/H/X when tasks-bench.json present)
+    python benchmarks/run-codemap-cli.py --repo-path ./pytorch-lightning-master --report
 
-    # Verify task modules exist in the index before running
+    # Verify task modules exist in the index; non-default index via --index-path /path/to/index.json
     python benchmarks/run-codemap-cli.py --verify-tasks --repo-path ./pytorch-lightning-master
-
-    # Non-default index path: add --index-path /path/to/index.json  (see main() docstring for more)
 
 ## Where the benchmark fits in the full flow
 
-  A develop/oss skill's codemap soft-check injects a structural-context block (scan-query rdeps/deps)
-  or skips it when the index/plugin is absent. This script starts AFTER that: Suite Q checks the query
-  output shape; C/A/L compare the WITH-codemap path against a WITHOUT-codemap cold Glob/Grep/Read
-  baseline. It does NOT measure whether the agent actually USED the injected context (needs live
-  Claude API runs with tool-use recording — out of scope).
+  A develop/oss skill injects a structural-context block (scan-query rdeps/deps) or skips it when the
+  index/plugin is absent. This script runs AFTER that: Suite Q checks query output shape; C/A/L compare
+  the WITH-codemap path against a cold Glob/Grep/Read baseline (agent USE of the context is out of scope).
 
 ## How each suite computes its metrics
 
-  Each suite's exact formula lives in its function docstring (the authoritative source), and the
-  per-scenario pass thresholds are the tables above plus the THRESHOLDS dict:
-    Suite C — run_measure_calls / _measure_coverage_gap (AST-verified importer gap) /
-      _measure_infeasible_paths (direct-edge grep test).
-    Suite A — score_rdeps_accuracy: precision judged against an INDEPENDENT AST import-resolver (not
-      raw grep, so aliased / relative / re-export importers are not penalised) and recall as a FLOOR
-      against a boundary-anchored grep set; a scan-query failure FAILS the scenario (never scored as
-      an empty result with precision 1.0).
-    Suite L — run_measure_latency: L3 amortizes the one-time build over _QUERIES_PER_SESSION (an
-      explicit stated assumption, not telemetry; L3 is expected to fail on large repos and the verdict
-      owns it); L4 reports both the warm-only (gate) and the build-inclusive speedup.
-    Suite Q — run_measure_query_shape: validates scan-query output SHAPE only; it does NOT invoke the
-      skill or exercise the SKILL.md injection block.
+  Each suite's exact formula lives in its function docstring (the authoritative source); thresholds
+  are the tables above plus THRESHOLDS. Honesty points: Suite A judges precision against an INDEPENDENT
+  AST resolver (aliased/relative/re-export importers not penalised) with grep only a recall FLOOR, and
+  a scan-query failure FAILS the scenario (never precision 1.0); Suite L's L3 amortizes build over
+  _QUERIES_PER_SESSION (stated assumption; expected to fail on large repos, verdict owns it) and L4
+  reports warm-only (gate) plus build-inclusive speedup; Suite Q validates output SHAPE only.
 
 ## Output
 
-  Default mode: stdout carries the human verdict + self-consistency lines, the summary envelope
-  (JSON), and the report path (with --report); stderr carries progress narration; the markdown report
-  is written to benchmarks/results/code-YYYY-MM-DD.md with --report.
-
-  --json-only mode (machine consumption): stdout carries ONLY one compact JSON object per scenario
-  (JSONL) followed by the summary envelope; human logs, the progress bar, and the report are suppressed.
+  Default: stdout = human verdict + self-consistency lines + summary envelope (JSON) + report path
+  (with --report); stderr = progress; markdown report at benchmarks/results/code-YYYY-MM-DD.md.
+  --json-only: stdout = one compact JSON object per scenario (JSONL) then the summary envelope; human
+  logs, progress bar, and report suppressed.
 
 ## JSON output schema (per-scenario lines + summary envelope)
 
-  Each scenario line mirrors the ScenarioResult dataclass fields exactly (see :func:`emit`):
-  scenario (e.g. "C1"|"A1"|"Q_fix"|"S2"), name, suite ("calls"|"accuracy"|"latency"|"query-shape"|
-  "symbol"|"health"|"xrefs"), passed, result (suite-specific measurement dict), threshold, notes.
+  Each scenario line mirrors the ScenarioResult dataclass fields (see :func:`emit`): scenario, name,
+  suite, passed, result (suite-specific measurement dict), threshold, notes.
 
-  Final summary envelope (last stdout line): verdict (PRIMARY correctness), scenarios_passed/total
-  (all scenarios), primary {passed,total} (the verdict basis), self_consistency
-  {verdict ∈ CONSISTENT|PARTIAL|INCONSISTENT|SKIPPED, passed, total} (S/H/X determinism track, NOT in
-  the verdict), suites {<suite>: {passed,total}} for calls/accuracy/latency/query-shape/symbol/health/
-  xrefs, and date/repo/index.
+  Final summary envelope (last stdout line): verdict (PRIMARY correctness), scenarios_passed/total,
+  primary {passed,total} (verdict basis), self_consistency {verdict ∈ CONSISTENT|PARTIAL|INCONSISTENT|
+  SKIPPED, passed, total} (S/H/X determinism track, NOT in the verdict), suites {<suite>:{passed,total}},
+  hardware (platform/processor/cpu_count/python), and date/repo/index.
 
 ## Verdict thresholds (single source of truth — compute_verdict in source)
 
-  SCENARIO-based, computed ONLY from the four PRIMARY suites checked against an independent oracle:
-  calls (C), accuracy (A), latency (L), query-shape (Q). The self-consistency suites (symbol/health/
-  xrefs) validate against frozen scan-query-derived GT and are reported on a separate self_consistency
-  track that NEVER contributes — circular passes cannot float the verdict up. With P/T = primary
-  passed/total: PASS = P == T; PARTIAL = P/T >= 0.50; FAIL = P/T < 0.50 or T == 0. FAIL headroom is
-  real: A uses an AST oracle (codemap can be wrong) and L3 fails on large repos under an honest divisor.
+  SCENARIO-based over the four PRIMARY suites (calls C, accuracy A, latency L, query-shape Q), each
+  checked against an independent oracle. Self-consistency suites (symbol/health/xrefs) use frozen
+  scan-query-derived GT on a separate track that NEVER contributes, so circular passes cannot float the
+  verdict. With P/T = primary passed/total: PASS = P==T; PARTIAL = P/T >= 0.50; FAIL = P/T < 0.50 or
+  T==0. FAIL headroom is real: A's AST oracle can mark codemap wrong and L3 fails on large repos.
 
 Full scenario definitions and pass criteria: .plans/blueprint/2026-04-15-codemap-benchmark-spec.md
 """
@@ -152,6 +132,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import platform
 import re
 import shutil
 import statistics
@@ -615,11 +596,10 @@ def find_codemap_bin(name: str, plugin_root: Path | None = None) -> Path | None:
 def run_scan_query_result(scan_query_bin: Path, args: list[str], index_path: Path, repo_path: Path) -> ScanResult:
     """Run scan-query and return a :class:`ScanResult` distinguishing success from failure.
 
-    Always passes ``--index <index_path>`` explicitly so scan-query uses the
-    correct index regardless of ``cwd`` or git availability.  On failure the
-    ``error`` field carries a short reason (a trailing stderr line when
-    available) so a crashed / timed-out / absent-module query is never confused
-    with a genuine empty result.
+    Always passes ``--index <index_path>`` so scan-query uses the correct index
+    regardless of ``cwd`` / git availability.  On failure the ``error`` field
+    carries a short reason (trailing stderr line when available) so a crashed,
+    timed-out, or absent-module query is never confused with an empty result.
 
     Args:
         scan_query_bin: Path to the scan-query Python script.
@@ -631,7 +611,6 @@ def run_scan_query_result(scan_query_bin: Path, args: list[str], index_path: Pat
         :class:`ScanResult` with ``data`` set and ``error=None`` on success, or
         ``data=None`` and a non-empty ``error`` reason on any failure.
     """
-    # Pass --index explicitly so scan-query uses the correct index regardless of cwd / git availability.
     cmd = ["python3", str(scan_query_bin.resolve()), "--index", str(index_path.resolve())] + args
     try:
         result = _run(cmd, cwd=str(repo_path))
@@ -650,11 +629,11 @@ def run_scan_query_result(scan_query_bin: Path, args: list[str], index_path: Pat
 
 
 def run_scan_query(scan_query_bin: Path, args: list[str], index_path: Path, repo_path: Path) -> dict | None:
-    """Run scan-query with the given subcommand arguments and return parsed JSON output.
+    """Run scan-query and return parsed JSON, or ``None`` on any failure.
 
-    Thin wrapper over :func:`run_scan_query_result` that discards the error
-    reason.  Retained for call sites that only need the parsed data and treat
-    any failure as ``None``.
+    Thin wrapper over :func:`run_scan_query_result` for call sites that only need
+    the data and treat every failure (non-zero exit, timeout, bad JSON, OS error)
+    as ``None``.
 
     Args:
         scan_query_bin: Path to the scan-query Python script.
@@ -663,8 +642,7 @@ def run_scan_query(scan_query_bin: Path, args: list[str], index_path: Path, repo
         repo_path: Working directory for the subprocess (the repository root).
 
     Returns:
-        Parsed JSON dict from scan-query stdout, or ``None`` on non-zero exit
-        code, timeout, JSON decode error, or OS error.
+        Parsed JSON dict from scan-query stdout, or ``None`` on failure.
     """
     return run_scan_query_result(scan_query_bin, args, index_path, repo_path).data
 
@@ -1172,6 +1150,20 @@ def run_query_shape_query(
 # ---- REPORT ----
 
 
+def _hardware_info() -> dict[str, str | int | None]:
+    """Capture stdlib-only host identity (platform/processor/cpu_count/python).
+
+    L1/L2/L3 latency gates are hardware-calibrated; recording the host in the report
+    header and JSON envelope keeps a slow CI runner's pass/fail flip interpretable.
+    """
+    return {
+        "platform": platform.platform(),
+        "processor": platform.processor() or "unknown",
+        "cpu_count": os.cpu_count(),
+        "python": platform.python_version(),
+    }
+
+
 def render_report(
     results: list[ScenarioResult],
     repo_path: Path,
@@ -1245,6 +1237,11 @@ def render_report(
     )
     lines.append(f"**pytorch-lightning**: commit {git_sha}")
     lines.append(f"**Index**: {index_path} ({mod_count} modules, {degraded_count} degraded)")
+    hw = _hardware_info()
+    lines.append(
+        f"**Hardware** (latency thresholds are hardware-calibrated): {hw['platform']} · "
+        f"{hw['processor']} · {hw['cpu_count']} CPUs · Python {hw['python']}"
+    )
     lines.append("")
 
     # --- Summary table (primary suites decide the verdict) ---
@@ -1299,6 +1296,14 @@ def render_report(
         )
         lines.append("")
         lines.append(pd.DataFrame(sc_rows).to_markdown(index=False))
+        lines.append("")
+    elif self_consistency["verdict"] == "SKIPPED":
+        lines.append("## Self-Consistency (determinism) Checks — skipped (no ground truth)")
+        lines.append("")
+        lines.append(
+            "> Suites S/H/X did not run (tasks-bench.json absent or index too old); the primary "
+            "verdict above is unaffected — it is computed from the primary track only."
+        )
         lines.append("")
 
     # --- Call Savings table ---
@@ -1411,6 +1416,10 @@ def render_report(
                     }
                 )
         lines.append("## Latency\n")
+        lines.append(
+            f"> Thresholds are hardware-calibrated; measured on {hw['platform']} "
+            f"({hw['cpu_count']} CPUs). Compare cross-machine numbers against this host.\n"
+        )
         lines.append(pd.DataFrame(lat_rows).to_markdown(index=False))
         lines.append("")
 
@@ -1491,7 +1500,7 @@ def _tally(results: list[ScenarioResult], suites: frozenset[str]) -> tuple[int, 
         suites: Set of suite names to count.
 
     Returns:
-        Tuple of passed-scenario count and total-scenario count for that subset.
+        ``(passed, total)`` counts for that subset.
 
     Examples:
         >>> a = ScenarioResult("C1", "x", "calls", True, {}, {})
@@ -1504,20 +1513,18 @@ def _tally(results: list[ScenarioResult], suites: frozenset[str]) -> tuple[int, 
 
 
 def compute_verdict(results: list[ScenarioResult]) -> str:
-    """Compute the PRIMARY correctness verdict (scenario-based, independent-oracle suites only).
+    """Compute the PRIMARY correctness verdict (independent-oracle suites only).
 
-    Only the primary suites (calls, accuracy, latency, query-shape) count — the
+    Only the primary suites (calls, accuracy, latency, query-shape) count; the
     self-consistency suites (symbol, health, xrefs), whose ground truth is
-    scan-query-derived, are excluded so a block of near-guaranteed circular passes
-    cannot float the verdict up.
+    scan-query-derived, are excluded so circular passes cannot float the verdict up.
 
     Args:
         results: All :class:`ScenarioResult` objects produced by the benchmark run.
 
     Returns:
-        ``"PASS"`` when every primary scenario passed, ``"PARTIAL"`` when at least
-        half passed, ``"FAIL"`` when fewer than half passed or there are no
-        primary scenarios.
+        ``"PASS"`` (all primary passed), ``"PARTIAL"`` (≥ half), or ``"FAIL"``
+        (< half, or no primary scenarios).
     """
     passed, total = _tally(results, _PRIMARY_SUITES)
     if total == 0:
@@ -1532,16 +1539,15 @@ def compute_verdict(results: list[ScenarioResult]) -> str:
 def compute_self_consistency(results: list[ScenarioResult]) -> dict:
     """Summarize the self-consistency / determinism track (symbol, health, xrefs).
 
-    This track never contributes to :func:`compute_verdict`; it reports whether
-    scan-query output is stable against its own frozen ground truth.
+    Never contributes to :func:`compute_verdict`; reports whether scan-query
+    output is stable against its own frozen ground truth.
 
     Args:
         results: All scenario results produced by the benchmark run.
 
     Returns:
-        Dict ``{"verdict", "passed", "total"}`` where verdict is ``"CONSISTENT"``
-        (all passed), ``"PARTIAL"`` (≥50%), ``"INCONSISTENT"`` (<50%), or
-        ``"SKIPPED"`` (no self-consistency scenarios ran).
+        ``{"verdict", "passed", "total"}`` — verdict is ``"CONSISTENT"`` (all),
+        ``"PARTIAL"`` (≥50%), ``"INCONSISTENT"`` (<50%), or ``"SKIPPED"`` (none ran).
     """
     passed, total = _tally(results, _SELF_CONSISTENCY_SUITES)
     if total == 0:
@@ -1575,9 +1581,8 @@ _OUT = _OutputState()
 def emit(result: ScenarioResult) -> None:
     """Print one compact JSON line describing a single scenario result to stdout.
 
-    Emits the dataclass fields directly: ``scenario``, ``name``, ``suite``,
-    ``passed``, ``result``, ``threshold``, and ``notes``.  Intended for machine
-    consumption in ``--json-only`` mode (one JSON object per line).
+    Emits the dataclass fields (scenario/name/suite/passed/result/threshold/notes)
+    for ``--json-only`` mode (one JSON object per line).
 
     Args:
         result: The :class:`ScenarioResult` to serialize.
@@ -1606,11 +1611,9 @@ def emit(result: ScenarioResult) -> None:
 def build_summary_envelope(results: list[ScenarioResult], repo_path: Path, index_path: Path, verdict: str) -> dict:
     """Build the final one-line summary envelope for machine consumption.
 
-    Aggregates per-suite pass/total counts keyed by the scenario ``suite`` field
-    (``calls``, ``accuracy``, ``latency``, ``query-shape``, ``symbol``,
-    ``health``, ``xrefs``), the PRIMARY-suite pass/total that the verdict is
-    computed from, and the separate self-consistency track, plus scenario totals,
-    date, repo, and index path.
+    Aggregates per-suite pass/total counts (keyed by ``suite``), the primary
+    pass/total the verdict derives from, the separate self-consistency track,
+    scenario totals, the hardware fingerprint, date, repo, and index path.
 
     Args:
         results: All scenario results produced by the benchmark run.
@@ -1641,6 +1644,7 @@ def build_summary_envelope(results: list[ScenarioResult], repo_path: Path, index
         "primary": {"passed": primary_passed, "total": primary_total},
         "self_consistency": compute_self_consistency(results),
         "suites": suites,
+        "hardware": _hardware_info(),
         "date": date.today().isoformat(),
         "repo": str(repo_path),
         "index": str(index_path),
@@ -1648,12 +1652,11 @@ def build_summary_envelope(results: list[ScenarioResult], repo_path: Path, index
 
 
 def write_report_file(results: list[ScenarioResult], repo_path: Path, index_path: Path) -> str:
-    """Resolve the report path once, render the report to it, and return that path.
+    """Resolve the report path once, create its parent, render, and return the path.
 
-    Resolving the destination a single time (rather than calling
-    :func:`resolve_report_path` again after the file already exists) guarantees
-    the returned path is exactly the file that was written — not a ``-2`` sibling
-    that does not exist.
+    Resolving the destination a single time (not re-calling
+    :func:`resolve_report_path` after the file exists) guarantees the returned
+    path is exactly the file written — not a ``-2`` sibling that never got created.
 
     Args:
         results: Scenario results to render.
@@ -1664,6 +1667,7 @@ def write_report_file(results: list[ScenarioResult], repo_path: Path, index_path
         String path of the markdown report actually written.
     """
     report_path = resolve_report_path()
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     render_report(results, repo_path, index_path, report_path)
     return str(report_path)
 
@@ -1885,7 +1889,8 @@ def run_measure_calls(repo_path: Path, scan_query_bin: Path, index_path: Path) -
 
 
 _A1_TIERS = _HIGH_RISK_TIERS  # high-risk accuracy group (high / very-high / moderate-high)
-_A2_TIERS = {"low"}  # low-risk accuracy group
+# A2 grades EVERY task not in A1 (low / low-moderate / moderate) with a precision-only rubric — the
+# complement of A1, so the two sets partition the suite and no task is ever silently ungraded.
 
 
 def _errored_accuracy_row(task: Task, module: str, error: str) -> dict:
@@ -1921,9 +1926,9 @@ def _errored_accuracy_row(task: Task, module: str, error: str) -> dict:
 def _score_accuracy_tasks(tasks: list[Task], scan_query_bin: Path, index_path: Path, repo_path: Path) -> list[dict]:
     """Score every rdeps task with AST-verified precision and a grep recall floor.
 
-    A scan-query failure is recorded as an errored row (via
-    :func:`_errored_accuracy_row`) rather than a silent empty result, so a
-    crashed or absent-module query can never score precision 1.0.
+    A scan-query failure is recorded as an errored row (via :func:`_errored_accuracy_row`)
+    rather than a silent empty result, so a crashed or absent-module query can never score
+    precision 1.0.
 
     Args:
         tasks: All benchmark tasks (those without an rdeps query are skipped).
@@ -1968,7 +1973,11 @@ def _score_accuracy_tasks(tasks: list[Task], scan_query_bin: Path, index_path: P
 
 
 def _a1_scenario(rows: list[dict]) -> ScenarioResult:
-    """Build the A1 result: AST-verified precision + grep recall floor for high-risk tasks."""
+    """Build the A1 result: AST precision + grep recall floor for high-risk tasks.
+
+    PASS requires EVERY scored module to meet both thresholds; group means are reported
+    as context only and never decide the gate, so one failing module cannot be masked.
+    """
     thr = THRESHOLDS["A1"]
     group = [m for m in rows if m["risk_tier"] in _A1_TIERS]
     scored = [m for m in group if not m["errored"]]
@@ -1987,8 +1996,10 @@ def _a1_scenario(rows: list[dict]) -> ScenarioResult:
     avg_recall = statistics.mean(m["recall"] for m in scored)
     for pm in scored:
         pm["pass"] = pm["precision"] >= thr["precision_min"] and pm["recall"] >= thr["recall_min"]
-    passed = avg_precision >= thr["precision_min"] and avg_recall >= thr["recall_min"] and not errored
+    failing = [m["module"] for m in scored if not m["pass"]]
+    passed = not failing and not errored
     err_note = f"; {len(errored)} errored" if errored else ""
+    fail_note = f"; {len(failing)} below threshold" if failing else ""
     return ScenarioResult(
         "A1",
         "rdeps-accuracy-high",
@@ -1997,24 +2008,24 @@ def _a1_scenario(rows: list[dict]) -> ScenarioResult:
         {
             "avg_precision": round(avg_precision, 4),
             "avg_recall": round(avg_recall, 4),
+            "failing_modules": failing,
             "errored": [m["module"] for m in errored],
             "per_module": group,
         },
         thr,
-        notes=f"scored {len(scored)} high-risk tasks (AST precision, grep recall floor){err_note}",
+        notes=f"scored {len(scored)} high-risk tasks; every module gated{fail_note}{err_note}",
     )
 
 
 def _a2_scenario(rows: list[dict]) -> ScenarioResult:
-    """Build the A2 result: AST-verified precision must be perfect for low-risk tasks.
+    """Build the A2 result: AST precision must be perfect for lower-risk tasks (precision-only).
 
-    A2 is precision-only (no recall gate), so a non-errored EMPTY codemap result would score
-    precision 1.0 vacuously — an empty non-answer is not a correct precise answer. Such modules are
-    treated as N/A (excluded from the perfection check), never a free pass; if every low-risk module
-    is empty or errored the scenario FAILS.
+    With no recall gate, a non-errored EMPTY result would score precision 1.0 vacuously; such modules
+    are treated as N/A (excluded from the perfection check), never a free pass, and A2 FAILS if every
+    module is empty or errored.
     """
     thr = THRESHOLDS["A2"]
-    group = [m for m in rows if m["risk_tier"] in _A2_TIERS]
+    group = [m for m in rows if m["risk_tier"] not in _A1_TIERS]
     errored = [m for m in group if m["errored"]]
     scored = [m for m in group if not m["errored"] and m["codemap_count"] > 0]
     vacuous = [m for m in group if not m["errored"] and m["codemap_count"] == 0]
@@ -2087,13 +2098,11 @@ def _a3_scenario(rows: list[dict]) -> ScenarioResult:
 def run_measure_accuracy(repo_path: Path, scan_query_bin: Path, index_path: Path) -> list[ScenarioResult]:
     """Run Suite A — score scan-query rdeps with an AST oracle and a grep recall floor.
 
-    For each task module, precision is judged against an independent AST
-    import-resolver (the authoritative oracle — codemap is not penalised for
-    surfacing aliased / relative / re-export importers grep cannot see) and
-    recall is a floor against a boundary-anchored grep importer set.  A
-    scan-query failure fails the scenario rather than scoring a false precision
-    of 1.0.  Evaluates A1 (high-risk accuracy), A2 (low-risk precision), and A3
-    (overall AST false-positive rate).
+    Precision is judged against an independent AST import-resolver (the authoritative
+    oracle — codemap is not penalised for aliased / relative / re-export importers grep
+    cannot see) and recall is a floor against a boundary-anchored grep set. A scan-query
+    failure fails the scenario rather than scoring a false precision 1.0. Evaluates A1
+    (high-risk accuracy), A2 (lower-risk precision), and A3 (overall AST FP rate).
 
     Args:
         repo_path: Root of the pytorch-lightning repository.
@@ -2479,28 +2488,24 @@ def run_verify_tasks(scan_query_bin: Path, index_path: Path, repo_path: Path) ->
 
 
 def resolve_report_path() -> Path:
-    """Return a non-conflicting path for the benchmark markdown report.
+    """Return a non-conflicting path for the benchmark markdown report (pure — no I/O).
 
-    Creates ``benchmarks/results/`` if it does not exist.  Returns
-    ``benchmarks/results/code-<YYYY-MM-DD>.md`` for the first call on a given
-    day; appends ``-2``, ``-3``, etc. on subsequent calls to avoid overwriting
-    earlier runs.
+    Computes ``benchmarks/results/code-<YYYY-MM-DD>.md`` for the first run on a
+    given day, appending ``-2``, ``-3``, ... when earlier files already exist.
+    Creating the parent directory is the caller's responsibility (see
+    :func:`write_report_file`) so resolution stays side-effect free.
 
     Returns:
         :class:`~pathlib.Path` to a file that does not yet exist.
     """
     today = date.today().isoformat()
     base_dir = Path("benchmarks") / "results"
-    base_dir.mkdir(parents=True, exist_ok=True)
     candidate = base_dir / f"code-{today}.md"
-    if not candidate.exists():
-        return candidate
     counter = 2
-    while True:
+    while candidate.exists():
         candidate = base_dir / f"code-{today}-{counter}.md"
-        if not candidate.exists():
-            return candidate
         counter += 1
+    return candidate
 
 
 # ---- MAIN ----
@@ -2544,20 +2549,17 @@ def resolve_index_path(arg: str | None, repo_path: Path) -> Path:
     """Resolve the path to the pre-built codemap JSON index.
 
     When ``arg`` is given it is used directly.  Otherwise searches
-    ``<repo_path>/.cache/codemap/`` then ``<repo_path>/.cache/scan/`` for a
-    JSON file whose stem matches the repository directory name (with ``-master``
-    and ``-main`` suffixes stripped).  Falls back to the first ``.json`` found
-    in the directory, then to the canonical default path
-    ``<repo_path>/.cache/codemap/<bare-name>.json``.
+    ``<repo_path>/.cache/codemap/`` then ``.cache/scan/`` for a JSON whose stem
+    matches the repo dir name (``-master`` / ``-main`` stripped), falling back to
+    the first ``.json`` found, then ``<repo_path>/.cache/codemap/<bare-name>.json``.
 
     Args:
         arg: Value of the ``--index-path`` CLI flag, or ``None``.
         repo_path: Resolved path to the pytorch-lightning repository root.
 
     Returns:
-        :class:`~pathlib.Path` to the index file.  The path may not exist yet
-        when the index has not been built; callers must check with
-        :meth:`~pathlib.Path.exists`.
+        :class:`~pathlib.Path` to the index file (may not exist yet when unbuilt;
+        callers must check :meth:`~pathlib.Path.exists`).
     """
     if arg:
         return Path(arg)
@@ -2587,12 +2589,11 @@ def run_suite_symbol(
 ) -> list[ScenarioResult]:
     """Suite S: symbol line-range self-consistency / determinism check.
 
-    Runs the ``symbol`` command for each S-task in tasks-bench.json and compares
-    ``start_line`` / ``end_line`` against ground truth (±3 lines tolerance for
-    disambiguating decorator vs def line).  The ground-truth line numbers are
-    derived from scan-query's own output, so this validates determinism and
-    index-version stability, not independent correctness — it is reported on the
-    self-consistency track and EXCLUDED from the primary verdict.
+    Runs ``symbol`` for each S-task in tasks-bench.json and compares
+    ``start_line`` / ``end_line`` against ground truth (±3 lines, for decorator
+    vs def).  Ground truth is scan-query-derived, so this validates determinism /
+    index-version stability, not correctness — self-consistency track, EXCLUDED
+    from the primary verdict.
 
     Args:
         scan_query_bin: Path to the scan-query executable.
@@ -2696,11 +2697,10 @@ def run_suite_health(
 ) -> list[ScenarioResult]:
     """Suite H: undocumented/uncovered count self-consistency / determinism check.
 
-    Runs each code_quality task that uses ``undocumented`` or ``uncovered`` commands and checks
-    whether the returned ``total`` matches the ground truth count (exact match).  The counts in
-    tasks-bench.json are frozen scan-query-derived (uncovered) or bench-generator-derived
-    ground truth, so this is a regression/determinism check — reported on the self-consistency
-    track and EXCLUDED from the primary verdict, not an independent-correctness measurement.
+    Runs each code_quality task using ``undocumented`` / ``uncovered`` and checks
+    the returned ``total`` against the ground-truth count (exact).  Counts in
+    tasks-bench.json are frozen scan-query- or bench-generator-derived, so this is
+    a regression/determinism check — self-consistency track, EXCLUDED from the verdict.
 
     Args:
         scan_query_bin: Path to the scan-query executable.
@@ -2708,7 +2708,7 @@ def run_suite_health(
         repo_path: Root of the pytorch-lightning repository.
 
     Returns:
-        List of ScenarioResult — one per relevant CQ-task (code_quality task prefix) plus H1/H2 aggregates.
+        List of ScenarioResult — one per CQ-task plus H1/H2 aggregates.
     """
     tasks = load_oss_tasks(type_filter="code_quality")
     if not tasks:
@@ -2819,10 +2819,9 @@ def run_suite_xrefs(
     """Suite X: xrefs --broken self-consistency / determinism check.
 
     Runs ``xrefs --broken`` for each OSS task with ``check == "xrefs_broken"`` and
-    confirms both the broken count and the set of broken target/line pairs.  The
-    ground truth in tasks-bench.json is frozen scan-query-derived output, so this
-    validates determinism rather than independent correctness — reported on the
-    self-consistency track and EXCLUDED from the primary verdict.
+    confirms both the broken count and the broken target/line pairs.  Ground truth
+    is frozen scan-query-derived, so this validates determinism, not correctness —
+    self-consistency track, EXCLUDED from the primary verdict.
 
     Args:
         scan_query_bin: Path to the scan-query executable.
@@ -2928,11 +2927,33 @@ def _resolve_plugin_root() -> Path | None:
     return Path(r.stdout.strip()) if r.returncode == 0 else None
 
 
+# Lowest index scan_version the self-consistency track (S/H/X) needs: the X suite's
+# ``xrefs --broken`` is gated by SPHINX_XREFS_MIN_VER (5) in codemap _schema.py; an
+# older index makes those suites fail cryptically, so we skip them instead.
+_SELF_CONSISTENCY_MIN_VER = 5
+
+
+def _index_scan_version(index_path: Path) -> int:
+    """Return the ``scan_version`` recorded in *index_path*, or ``0`` if unreadable.
+
+    Args:
+        index_path: Path to the codemap index JSON.
+
+    Returns:
+        The ``scan_version`` int, or ``0`` on any read/parse error.
+    """
+    try:
+        with index_path.open() as f:
+            return int(json.load(f).get("scan_version", 0))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return 0
+
+
 def _ensure_index(index_path: Path, repo_path: Path, scan_index_bin: Path | None) -> Path:
     """Return an existing index path, building it once via scan-index when missing.
 
-    Exits the process with a clear message when the index cannot be located or
-    built (scan-index absent, build failure, or still-missing index after build).
+    Exits with a clear message when the index cannot be located or built
+    (scan-index absent, build failure, or still-missing after build).
 
     Args:
         index_path: Resolved (possibly non-existent) candidate index path.
@@ -3005,42 +3026,25 @@ def main(
 ) -> None:
     """Run the codemap scan-query benchmark suite against a pytorch-lightning clone.
 
-    Executes primary suites C (coverage gap), A (accuracy), L (latency), and Q
-    (query shape), plus the self-consistency suites S (symbol), H (health), and X
-    (xrefs) in order.  Prints the primary correctness verdict and the separate
-    self-consistency line to stdout; optionally writes a markdown report.
-
-    Exposed via ``python benchmarks/run-codemap-cli.py`` using
-    :func:`fire.Fire`.  CLI flags match parameter names with ``_`` replaced by
-    ``-`` (e.g. ``--repo-path``, ``--json-only``, ``--verify-tasks``).
+    Runs primary suites C (coverage gap), A (accuracy), L (latency), Q (query
+    shape), then the self-consistency suites S/H/X (skipped on an index older
+    than ``_SELF_CONSISTENCY_MIN_VER``).  Prints the primary verdict plus the
+    separate self-consistency line; optionally writes a markdown report.  Exposed
+    via ``python benchmarks/run-codemap-cli.py`` (:func:`fire.Fire`); CLI flags
+    are the parameter names with ``_``→``-`` (e.g. ``--repo-path``).
 
     Args:
-        repo_path: Path to the pytorch-lightning repository clone.  When omitted,
-            falls back to ``$PYTORCH_LIGHTNING_PATH`` then ``./pytorch-lightning``.
-        index_path: Path to the pre-built codemap JSON index.  When omitted,
-            resolved automatically from the repository directory.
-        report: Write a markdown report to ``benchmarks/results/code-<date>.md``.
-            Ignored when ``json_only`` is ``True``.
-        json_only: Suppress the markdown report; print only the verdict line.
-        verify_tasks: Before running suites, check that each task's
-            ``primary_module`` exists in the index with status ``ok``.
+        repo_path: pytorch-lightning clone; falls back to
+            ``$PYTORCH_LIGHTNING_PATH`` then ``./pytorch-lightning``.
+        index_path: Pre-built codemap JSON index; auto-resolved when omitted.
+        report: Write ``benchmarks/results/code-<date>.md`` (ignored under ``json_only``).
+        json_only: Suppress the report; emit scenario JSONL + envelope only.
+        verify_tasks: Before running suites, check each task's ``primary_module``
+            exists in the index with status ``ok``.
 
     Examples:
         # Full benchmark with markdown report
-        python benchmarks/run-codemap-cli.py \\
-            --repo-path ./pytorch-lightning-master \\
-            --report
-
-        # Verify task modules exist before running suites
-        python benchmarks/run-codemap-cli.py \\
-            --repo-path ./pytorch-lightning-master \\
-            --verify-tasks
-
-        # Use a custom index path
-        python benchmarks/run-codemap-cli.py \\
-            --repo-path ./pytorch-lightning \\
-            --index-path /tmp/my-index.json \\
-            --report
+        python benchmarks/run-codemap-cli.py --repo-path ./pytorch-lightning --report
     """
     write_report = report and not json_only
     _OUT.quiet = json_only  # suppress human progress narration for machine consumers
@@ -3070,10 +3074,21 @@ def main(
             "Q — Query shape",
             lambda: run_measure_query_shape(plugin_root or Path.cwd(), repo_path, scan_query_bin, index_path),
         ),
-        ("S — Symbol lookup", lambda: run_suite_symbol(scan_query_bin, index_path, repo_path)),
-        ("H — Health (doc/cov)", lambda: run_suite_health(scan_query_bin, index_path, repo_path)),
-        ("X — Xrefs broken", lambda: run_suite_xrefs(scan_query_bin, index_path, repo_path)),
     ]
+    # Stale-index guard: skip the self-consistency track (never the verdict) when the index
+    # predates the fields S/H/X read, rather than letting each suite fail cryptically.
+    found_ver = _index_scan_version(index_path)
+    if found_ver >= _SELF_CONSISTENCY_MIN_VER:
+        suites += [
+            ("S — Symbol lookup", lambda: run_suite_symbol(scan_query_bin, index_path, repo_path)),
+            ("H — Health (doc/cov)", lambda: run_suite_health(scan_query_bin, index_path, repo_path)),
+            ("X — Xrefs broken", lambda: run_suite_xrefs(scan_query_bin, index_path, repo_path)),
+        ]
+    else:
+        log(
+            f"[index] scan_version {found_ver} < {_SELF_CONSISTENCY_MIN_VER} — self-consistency suites "
+            f"(S/H/X) skipped (no compatible ground truth). Rebuild: scan-index --root {repo_path}"
+        )
 
     all_results = _run_all_suites(suites, use_progress=not json_only)
     verdict = compute_verdict(all_results)

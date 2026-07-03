@@ -35,46 +35,147 @@ import fire
 
 TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
 
-# Repo top-level package names, populated from tasks-bench.json ``repo.namespace`` in main().
-# Used to normalize AST-oracle module paths onto scan-query's namespace (strip ``src/`` layout
-# prefixes, review N1) so the AST and scan-query caller sets are directly comparable.
-_REPO_NAMESPACE: list[str] = ["lightning", "examples"]
-
 # Test-file / test-directory detection — mirrors scan-index ``_TEST_PATH_RE`` so the AST oracle
 # excludes the same test modules scan-query does (review N1). Matched against repo-relative paths.
 _TEST_PATH_RE = re.compile(r"(^|/)tests?/|/test_[^/]+\.py$|/[^/]+_test\.py$|/conftest\.py$")
 
 
-def _normalize_caller_module(rel: str, namespace: list[str]) -> str:
-    """Normalize an AST-derived dotted module path onto the repo's scan-query namespace (review N1).
+def _src_root_from_config(repo: Path) -> Path | None:
+    """Read an explicit package location from pyproject.toml / setup.cfg (scan-index Strategy 1).
 
-    Strips a ``src/`` (``src.``) layout prefix by returning the path from the first component that
-    is a known top-level package in *namespace*; when no namespace component is present, a bare
-    leading ``src`` is dropped. Leaves the path unchanged otherwise.
+    Mirrors scan-index ``_detect_src_root_from_config``: matches a ``where = ["<dir>", ...]`` array
+    (the ``[tool.setuptools.packages.find]`` location) and returns the first entry that resolves to a
+    real directory under *repo*. The regex handles single-line array syntax only.
 
     Args:
-        rel: Dotted module path derived from a repo-relative file path (e.g. ``src.lightning.pytorch.x``).
-        namespace: Known top-level package names (e.g. ``["lightning", "examples"]``).
+        repo: Repository root directory.
 
     Returns:
-        The namespace-relative dotted module path.
+        The configured source directory, or None when no readable config names one.
 
     Examples:
-        >>> _normalize_caller_module("src.lightning.pytorch.trainer", ["lightning", "examples"])
-        'lightning.pytorch.trainer'
-        >>> _normalize_caller_module("src.pkg.mod", ["pkg"])
-        'pkg.mod'
-        >>> _normalize_caller_module("example", ["lightning"])
-        'example'
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     r = Path(d)
+        ...     _ = (r / "lib").mkdir()
+        ...     _ = (r / "pyproject.toml").write_text('where = ["lib"]\\n')
+        ...     _src_root_from_config(r).name
+        'lib'
     """
-    parts = rel.split(".")
-    known = set(namespace or [])
-    for i, part in enumerate(parts):
-        if part in known:
-            return ".".join(parts[i:])
-    if parts and parts[0] == "src":
-        return ".".join(parts[1:])
-    return rel
+    for config in (repo / "pyproject.toml", repo / "setup.cfg"):
+        if not config.exists():
+            continue
+        m = re.search(r"where\s*=\s*\[([^\]]+)\]", config.read_text(errors="replace"))
+        if not m:
+            continue
+        for entry in re.findall(r'["\']([^"\']+)["\']', m.group(1)):
+            candidate = repo / entry
+            if candidate.is_dir():
+                return candidate
+    return None
+
+
+def _detect_src_root(repo: Path) -> Path:
+    """Detect the source root for *loose* (non-package) modules, mirroring scan-index.
+
+    Applies scan-index ``detect_src_root`` Strategy 1 (pyproject/setup.cfg ``where = [...]``) then
+    Strategy 3 (``<repo>/src`` when it exists without an ``__init__.py``); returns *repo* otherwise.
+    Strategy 2 (the ``__init__.py`` chain) is applied per file by :func:`_module_from_init_chain`, so
+    it is intentionally omitted here — a loose module has no package chain to walk.
+
+    Args:
+        repo: Repository root directory.
+
+    Returns:
+        Directory a loose module's path is made relative to when deriving its dotted name.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     r = Path(d)
+        ...     _ = (r / "src").mkdir()
+        ...     _detect_src_root(r).name
+        'src'
+    """
+    cfg = _src_root_from_config(repo)
+    if cfg is not None:
+        return cfg
+    src_dir = repo / "src"
+    if src_dir.is_dir() and not (src_dir / "__init__.py").exists():
+        return src_dir
+    return repo
+
+
+def _module_from_init_chain(fpath: Path) -> str:
+    """Derive a dotted module name by walking the file's ``__init__.py`` package chain (Strategy 2).
+
+    Ascends from *fpath* while each parent directory is a package (contains ``__init__.py``),
+    collecting package names; the walk stops at the first non-package ancestor — naturally the
+    ``src/`` directory in a src-layout repo or the repo root in a flat layout. Mirrors scan-index
+    ``detect_src_root`` Strategy 2, so the emitted name carries no ``src.`` prefix.
+
+    Args:
+        fpath: Absolute path to a ``.py`` file whose parent directory is a package.
+
+    Returns:
+        Dotted module name; an ``__init__.py`` file resolves to its package name.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     r = Path(d)
+        ...     _ = (r / "pkg").mkdir()
+        ...     _ = (r / "pkg" / "__init__.py").write_text("")
+        ...     _ = (r / "pkg" / "mod.py").write_text("")
+        ...     _module_from_init_chain(r / "pkg" / "mod.py")
+        'pkg.mod'
+    """
+    parts: list[str] = []
+    if fpath.stem != "__init__":
+        parts.append(fpath.stem)
+    directory = fpath.parent
+    while (directory / "__init__.py").exists() and directory != directory.parent:
+        parts.append(directory.name)
+        directory = directory.parent
+    parts.reverse()
+    return ".".join(parts)
+
+
+def _module_name_for(fpath: Path, repo: Path, src_root: Path) -> str:
+    """Derive the dotted module name of *fpath* in scan-query's namespace (review N1).
+
+    A file inside a package (its parent holds an ``__init__.py``) is named by its ``__init__.py``
+    chain (:func:`_module_from_init_chain`, scan-index Strategy 2); a loose module is named relative
+    to *src_root* (scan-index Strategy 1/3), which strips a ``src/`` layout prefix. Both branches emit
+    the repo namespace with no ``src.`` prefix, so callers are directly comparable to scan-query — for
+    any repo layout, with no hardcoded namespace list.
+
+    Args:
+        fpath: Absolute path to the ``.py`` file being named.
+        repo: Repository root directory (fallback base when *fpath* is outside *src_root*).
+        src_root: Loose-module source root from :func:`_detect_src_root`.
+
+    Returns:
+        Dotted module name (e.g. ``lightning.pytorch.trainer.trainer`` or ``flatpkg.mod``).
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     r = Path(d)
+        ...     _ = (r / "src" / "pkg").mkdir(parents=True)
+        ...     f = r / "src" / "pkg" / "mod.py"
+        ...     _ = f.write_text("")
+        ...     _module_name_for(f, r, _detect_src_root(r))
+        'pkg.mod'
+    """
+    if (fpath.parent / "__init__.py").exists():
+        return _module_from_init_chain(fpath)
+    base = src_root if fpath.is_relative_to(src_root) else repo
+    return ".".join(fpath.relative_to(base).with_suffix("").parts)
 
 
 # ---- BINARY RESOLUTION ----
@@ -256,9 +357,9 @@ class _QualifiedCallFinder(ast.NodeVisitor):
         target_class: Simple name of the class defining the target method, or None for a
             module-level function target.
         target_simple: Simple name of the target function or method.
-        target_module_tail: Last component of the TARGET's (namespace-normalized) module — used to
-            resolve a module-level-function attribute call ``mod.func()``. None when unknown.
-        rel_module: Namespace-normalized dotted module path of the file being walked.
+        target_module_tail: Last component of the TARGET's module — used to resolve a
+            module-level-function attribute call ``mod.func()``. None when unknown.
+        rel_module: Structurally derived dotted module path of the file being walked (no ``src.`` prefix).
         callers: Mutable set accumulating ``"<module>::<scope>"`` caller strings.
     """
 
@@ -330,21 +431,19 @@ class _QualifiedCallFinder(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _walk_caller_sets(
-    primary_fn: str, repo: Path, namespace: list[str] | None = None
-) -> tuple[set[str], set[str], str | None]:
+def _walk_caller_sets(primary_fn: str, repo: Path) -> tuple[set[str], set[str], str | None]:
     """Walk repo AST once, returning both the qualified (authoritative) and loose caller sets (review N1).
 
     The qualified set (:class:`_QualifiedCallFinder`) is the authoritative ground truth: it credits a
     caller only when the call receiver statically resolves to the target's class/module. The loose set
     (:class:`_CallFinder`) matches by simple name and is retained purely as a divergence diagnostic.
-    Test modules are excluded (matching scan-query) and module paths are namespace-normalized so the
-    emitted callers carry no ``src.`` prefix and are directly comparable to scan-query output.
+    Test modules are excluded (matching scan-query) and each caller's module name is derived structurally
+    by :func:`_module_name_for` (``__init__.py`` chain / detected src root), so emitted callers carry no
+    ``src.`` prefix and are directly comparable to scan-query output for any repo layout.
 
     Args:
         primary_fn: Qualified name like ``"mod::Class.method"`` or ``"mod::func"``.
         repo: Repository root directory.
-        namespace: Top-level package names for path normalization; defaults to :data:`_REPO_NAMESPACE`.
 
     Returns:
         (qualified_callers, loose_callers, error_reason).
@@ -355,20 +454,20 @@ def _walk_caller_sets(
         >>> with tempfile.TemporaryDirectory() as d:
         ...     repo = Path(d)
         ...     _ = (repo / "m.py").write_text("class Foo:\\n    def c(self):\\n        self.bar()\\n")
-        ...     q, loose, err = _walk_caller_sets("m::Foo.bar", repo, [])
+        ...     q, loose, err = _walk_caller_sets("m::Foo.bar", repo)
         >>> sorted(q), err
         (['m::Foo.c'], None)
     """
-    if namespace is None:
-        namespace = _REPO_NAMESPACE
     tail = primary_fn.split("::")[-1]
     parts = tail.split(".")
     target_simple = parts[-1]
     target_class = parts[-2] if len(parts) >= 2 else None
-    # Target module tail (namespace-normalized) resolves module-level `mod.func()` attribute calls.
-    target_module = _normalize_caller_module(primary_fn.split("::")[0], namespace)
+    # Target module tail resolves module-level `mod.func()` attribute calls. primary_fn's module is
+    # already scan-query-namespaced ground truth, so its last component is the receiver name to match.
+    target_module = primary_fn.split("::")[0]
     target_module_tail = target_module.split(".")[-1] if target_module else None
 
+    src_root = _detect_src_root(repo)
     qualified: set[str] = set()
     loose: set[str] = set()
     for root, dirs, files in os.walk(repo):
@@ -384,14 +483,14 @@ def _walk_caller_sets(
                 tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
             except SyntaxError:
                 continue
-            rel_module = _normalize_caller_module(rel_path[:-3].replace("/", "."), namespace)
+            rel_module = _module_name_for(fpath, repo, src_root)
             _CallFinder(target_simple, rel_module, loose).visit(tree)
             _QualifiedCallFinder(target_class, target_simple, target_module_tail, rel_module, qualified).visit(tree)
 
     return qualified, loose, None
 
 
-def _callers_via_ast(primary_fn: str, repo: Path, namespace: list[str] | None = None) -> tuple[set[str], str | None]:
+def _callers_via_ast(primary_fn: str, repo: Path) -> tuple[set[str], str | None]:
     """Return the authoritative (qualified) caller set of ``primary_fn`` independent of scan-query.
 
     Thin wrapper over :func:`_walk_caller_sets` exposing only the qualified set (review N1). The loose
@@ -400,7 +499,6 @@ def _callers_via_ast(primary_fn: str, repo: Path, namespace: list[str] | None = 
     Args:
         primary_fn: Qualified name like ``"mod::Class.method"`` or ``"mod::func"``.
         repo: Repository root directory.
-        namespace: Top-level package names for path normalization; defaults to :data:`_REPO_NAMESPACE`.
 
     Returns:
         (caller_set, error_reason) — ``"<module>::<scope>"`` strings for each statically-resolved
@@ -416,7 +514,7 @@ def _callers_via_ast(primary_fn: str, repo: Path, namespace: list[str] | None = 
         >>> sorted(callers), err
         (['m::caller'], None)
     """
-    qualified, _loose, error = _walk_caller_sets(primary_fn, repo, namespace)
+    qualified, _loose, error = _walk_caller_sets(primary_fn, repo)
     return qualified, error
 
 
@@ -751,8 +849,8 @@ def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
     # very tool the codemap arm invokes, so grading it against its own output is circular.
     # The QUALIFIED AST walk (receiver-resolved) is the ground truth — the loose simple-name walk
     # over-approximates (same-named methods in unrelated classes) and is kept only as a diagnostic
-    # (review N1). Module paths are namespace-normalized (no `src.` prefix) and test modules excluded.
-    ast_callers, ast_loose, _ast_err = _walk_caller_sets(primary_fn, repo, _REPO_NAMESPACE)
+    # (review N1). Module names are derived structurally (no `src.` prefix) and test modules excluded.
+    ast_callers, ast_loose, _ast_err = _walk_caller_sets(primary_fn, repo)
     callers = sorted(ast_callers)
     unique_count = len(callers)
 
@@ -1334,12 +1432,6 @@ def main(
         repo_meta = {}
         tasks = _raw
         _tasks_wrapper = None
-
-    # Namespace drives AST-oracle module-path normalization (review N1) — read from the repo header
-    # so `--update` writes FN/BR ground truth in the repo's real namespace, not a hardcoded one.
-    global _REPO_NAMESPACE
-    if repo_meta.get("namespace"):
-        _REPO_NAMESPACE = list(repo_meta["namespace"])
 
     # Resolve repo path
     if repo_path:

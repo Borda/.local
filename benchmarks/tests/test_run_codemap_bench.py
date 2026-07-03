@@ -698,6 +698,24 @@ class TestEvaluateRv:
         result = script_run_bench._evaluate_rv(task, "found 5 undocumented")
         assert result.evaluator_used == "_evaluate_rv"
 
+    def test_symbol_path_extraction_failed_when_no_symbol_found(self, script_run_bench: Any) -> None:
+        """Symbol path: no extractable symbol → extraction_failed=True (excluded from accuracy)."""
+        syms = [f"lightning.pytorch.mod::Cls.method{i}" for i in range(5)]
+        task = self._rv_task_symbols(syms)
+        result = script_run_bench._evaluate_rv(task, "## Symbols\nnothing recognisable here at all\n")
+        assert result.scored is True
+        assert result.metric_got == 0
+        assert result.extraction_failed is True
+        assert result.correct is False
+
+    def test_symbol_path_extraction_not_failed_when_symbol_found(self, script_run_bench: Any) -> None:
+        """Symbol path: at least one symbol found → extraction_failed stays False."""
+        syms = [f"lightning.pytorch.mod::Cls.method{i}" for i in range(5)]
+        task = self._rv_task_symbols(syms)
+        text = " ".join(s.split(".")[-1] for s in syms[:4])
+        result = script_run_bench._evaluate_rv(task, text)
+        assert result.extraction_failed is False
+
 
 # ===========================================================================
 # _evaluate_oss (code_quality)
@@ -1196,13 +1214,194 @@ class TestEvaluateDevelopBr:
         assert result.evaluator_used == "_evaluate_develop_br"
 
     def test_fuzzy_underscore_prefix_matched(self, script_run_bench: Any) -> None:
-        """Underscore-prefixed class names match when method is identical."""
+        """Underscore-prefixed class names match when method is identical (same module)."""
         callers = ["lightning.pytorch.loops.fit_loop::_FitLoop.advance"]
         task = self._br_task(callers)
         # Agent wrote without underscore prefix
         output = "lightning.pytorch.loops.fit_loop::FitLoop.advance"
         result = script_run_bench._evaluate_develop_br(task, output)
         assert result.recall == pytest.approx(1.0)
+
+    def test_abbreviated_module_underscore_variant_still_scores(self, script_run_bench: Any) -> None:
+        """review M-11: an abbreviated-module + dropped-underscore answer still scores (module suffix)."""
+        callers = ["lightning.pytorch.loops.evaluation_loop::_EvaluationLoop.advance"]
+        task = self._br_task(callers)
+        output = "loops.evaluation_loop::EvaluationLoop.advance"
+        result = script_run_bench._evaluate_develop_br(task, output)
+        assert result.recall == pytest.approx(1.0)
+
+    def test_wrong_module_same_tail_rejected(self, script_run_bench: Any) -> None:
+        """review M-11: a same Class.method tail in a DIFFERENT module must not credit the GT caller."""
+        callers = ["lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step"]
+        task = self._br_task(callers)
+        # Fully qualified but wrong module (and dropped underscore) — the tail matches, the module does not.
+        output = "lightning.pytorch.other.mod::EvaluationLoop._evaluation_step"
+        result = script_run_bench._evaluate_develop_br(task, output)
+        assert result.recall == pytest.approx(0.0)
+
+    def test_plausible_but_wrong_qname_rejected(self, script_run_bench: Any) -> None:
+        """review M-11: a fully-qualified but entirely wrong caller scores nothing."""
+        callers = ["lightning.pytorch.trainer.trainer::Trainer.fit"]
+        task = self._br_task(callers)
+        output = "lightning.pytorch.wrong.module::WrongClass.wrong_method"
+        result = script_run_bench._evaluate_develop_br(task, output)
+        assert result.recall == pytest.approx(0.0)
+
+    def test_bare_common_tail_fallback_rejected(self, script_run_bench: Any) -> None:
+        """review M-11: an unqualified bare `Class.common_method` tail is too weak to credit."""
+        callers = ["lightning.pytorch.trainer.trainer::Trainer.setup"]
+        task = self._br_task(callers)
+        # No module-qualified name anywhere → Form 11 fires, but `setup` is a common method tail.
+        output = "The relevant caller looks like Trainer.setup based on my search."
+        result = script_run_bench._evaluate_develop_br(task, output)
+        assert result.recall == pytest.approx(0.0)
+
+    def test_bare_distinctive_tail_fallback_still_scores(self, script_run_bench: Any) -> None:
+        """review M-11: a distinctive (non-common) bare Class.method tail still credits via Form 11."""
+        callers = ["lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step"]
+        task = self._br_task(callers)
+        output = "The caller is _EvaluationLoop._evaluation_step here."
+        result = script_run_bench._evaluate_develop_br(task, output)
+        assert result.recall == pytest.approx(1.0)
+
+    def test_md_pointer_does_not_read_file(self, script_run_bench: Any, tmp_path: Path) -> None:
+        """review M-10: a `→ foo.md` pointer is treated as inline text; the file is never read."""
+        caller = "lightning.pytorch.loops.evaluation_loop::_EvaluationLoop._evaluation_step"
+        dump = tmp_path / "reply-dump.md"
+        # The distinctive caller lives ONLY in the file — if it were read, recall would be 1.0.
+        dump.write_text(f"Callers:\n{caller}\n")
+        task = self._br_task([caller])
+        output = f"No callers identified inline.\n→ {dump}\n"
+        result = script_run_bench._evaluate_develop_br(task, output)
+        assert result.recall == pytest.approx(0.0)
+
+
+# ===========================================================================
+# _module_compatible (review M-11)
+# ===========================================================================
+
+
+class TestModuleCompatible:
+    """Module compatibility gate for the underscore-insensitive fuzzy tier."""
+
+    @pytest.mark.parametrize(
+        "gt_module,found_module,expected",
+        [
+            pytest.param("x.mod", "x.mod", True, id="equal"),
+            pytest.param("lightning.pytorch.loops.evaluation_loop", "loops.evaluation_loop", True, id="found-suffix"),
+            pytest.param("loops.evaluation_loop", "lightning.pytorch.loops.evaluation_loop", True, id="gt-suffix"),
+            pytest.param("a.right", "a.wrong", False, id="sibling-mismatch"),
+            pytest.param("lightning.pytorch.trainer", "lightning.pytorch.other", False, id="different-leaf"),
+        ],
+    )
+    def test_compatibility(self, script_run_bench: Any, gt_module: str, found_module: str, expected: bool) -> None:
+        """Equal or dotted-suffix modules are compatible; genuinely different modules are not."""
+        assert script_run_bench._module_compatible(gt_module, found_module) is expected
+
+
+# ===========================================================================
+# _max_turns_for_task (review M-6)
+# ===========================================================================
+
+
+class TestMaxTurnsForTask:
+    """Per-task turn cap must be identical for both arms."""
+
+    def test_non_caller_task_uses_flat_floor(self, script_run_bench: Any) -> None:
+        """A non-caller task type gets the flat 40-turn floor."""
+        assert script_run_bench._max_turns_for_task({"type": "symbol_extraction"}) == 40
+
+    @pytest.mark.parametrize(
+        "task_type,callers,expected",
+        [
+            pytest.param("develop_blast_radius", 30, 120, id="br-scales-with-callers"),
+            pytest.param("fn_call_graph", 5, 80, id="fn-hits-floor"),
+            pytest.param("develop_blast_radius", 0, 80, id="zero-callers-floor"),
+        ],
+    )
+    def test_caller_task_scales_with_count(
+        self, script_run_bench: Any, task_type: str, callers: int, expected: int
+    ) -> None:
+        """Caller tasks scale 4x with unique_caller_count, floored at 80."""
+        task = {"type": task_type, "ground_truth": {"unique_caller_count": callers}}
+        assert script_run_bench._max_turns_for_task(task) == expected
+
+    def test_cap_is_arm_independent(self, script_run_bench: Any) -> None:
+        """The cap depends only on the task, so both arms receive the identical value (review M-6)."""
+        task = {"type": "develop_blast_radius", "ground_truth": {"unique_caller_count": 37}}
+        # _max_turns_for_task takes no arm argument — one call is the cap for plain AND codemap.
+        assert script_run_bench._max_turns_for_task(task) == max(80, 37 * 4)
+
+
+# ===========================================================================
+# _paired_accuracy / _arm_extracted (review M-8)
+# ===========================================================================
+
+
+class TestPairedAccuracy:
+    """Paired accuracy is computed over the same both-extracted task set for both arms."""
+
+    def _run(self, script_run_bench: Any, arm: str, task_id: str, **quality: Any) -> Any:
+        """Build a scored BenchRun for one arm/task with the given quality overrides."""
+        incomplete = quality.pop("incomplete", False)
+        q = script_run_bench.BenchQuality(**quality)
+        return _make_run(
+            script_run_bench,
+            arm=arm,
+            task_id=task_id,
+            task_type="develop_blast_radius",
+            quality=q,
+            incomplete=incomplete,
+        )
+
+    def _both_scored(self, **kw: Any) -> dict:
+        """Default kwargs for a scored, extracted run."""
+        return dict(scored=True, extraction_failed=False, **kw)
+
+    @pytest.mark.parametrize(
+        "run,expected",
+        [
+            pytest.param(None, False, id="none"),
+            pytest.param(dict(scored=True, correct=True), True, id="extracted"),
+            pytest.param(dict(scored=True, extraction_failed=True), False, id="extraction-failed"),
+            pytest.param(dict(scored=False), False, id="unscored"),
+        ],
+    )
+    def test_arm_extracted(self, script_run_bench: Any, run: Any, expected: bool) -> None:
+        """_arm_extracted is True only for a scored, extracted, completed run."""
+        obj = None if run is None else _make_run(script_run_bench, quality=script_run_bench.BenchQuality(**run))
+        assert script_run_bench._arm_extracted(obj) is expected
+
+    def test_arm_extracted_false_for_incomplete(self, script_run_bench: Any) -> None:
+        """A turn-budget-exhausted (incomplete) run does not count as extracted."""
+        obj = _make_run(script_run_bench, quality=script_run_bench.BenchQuality(scored=True), incomplete=True)
+        assert script_run_bench._arm_extracted(obj) is False
+
+    def test_paired_uses_only_both_extracted_tasks(self, script_run_bench: Any) -> None:
+        """Paired-n and per-arm correct counts include only tasks where BOTH arms extracted."""
+        runs = [
+            # Task A: both extracted, both correct → paired
+            self._run(script_run_bench, "plain", "A", **self._both_scored(correct=True)),
+            self._run(script_run_bench, "codemap", "A", **self._both_scored(correct=True)),
+            # Task B: both extracted, plain wrong / codemap right → paired
+            self._run(script_run_bench, "plain", "B", **self._both_scored(correct=False)),
+            self._run(script_run_bench, "codemap", "B", **self._both_scored(correct=True)),
+            # Task C: plain extraction-failed → NOT paired
+            self._run(script_run_bench, "plain", "C", scored=True, extraction_failed=True),
+            self._run(script_run_bench, "codemap", "C", **self._both_scored(correct=True)),
+            # Task D: only codemap ran → NOT paired
+            self._run(script_run_bench, "codemap", "D", **self._both_scored(correct=True)),
+        ]
+        result = script_run_bench._paired_accuracy(runs)
+        assert result == {"n": 2, "plain_correct": 1, "codemap_correct": 2}
+
+    def test_paired_none_when_no_task_pairs(self, script_run_bench: Any) -> None:
+        """Returns None when no task has both arms extracted."""
+        runs = [
+            self._run(script_run_bench, "plain", "A", scored=True, extraction_failed=True),
+            self._run(script_run_bench, "codemap", "A", **self._both_scored(correct=True)),
+        ]
+        assert script_run_bench._paired_accuracy(runs) is None
 
 
 # ===========================================================================

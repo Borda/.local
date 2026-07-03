@@ -88,7 +88,7 @@ _EXTERNAL_TASK_TYPE = "develop_skill"
 MODELS: dict[str, str] = {
     "haiku": "claude-haiku-4-5-20251001",
     "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-6",
+    "opus": "claude-opus-4-8",
 }
 _MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
 
@@ -571,11 +571,55 @@ def _parse_scan_query_subcommand(command: str) -> Optional[str]:
     return None
 
 
+# Per-task turn cap (review M-6). Applied IDENTICALLY to both arms so the token_ratio headline is not
+# perturbed by an asymmetric ceiling. The former code gave the plain arm max(80, callers*4) turns but
+# the codemap arm only max(80, callers*2): the plain arm could then burn more turns — and thus more
+# input tokens — on exactly the high-caller tasks, deflating the codemap/plain ratio in codemap's
+# favour precisely where it matters most. The cap only BOUNDS the loop (each arm still consumes only
+# the turns it needs), so the generous 4x multiplier — matching the former plain budget — is chosen:
+# a tighter shared cap would push the plain arm to `incomplete` on the most-caller tasks and silently
+# drop them from the comparison. An asymmetric plain-needs-more-reads variant, if wanted, belongs in a
+# separately reported sensitivity run — the primary token_ratio must be measured under equal caps.
+_TURN_FLOOR_DEFAULT = 40
+_TURN_FLOOR_CALLER = 80
+_TURN_PER_CALLER = 4
+_CALLER_TASK_TYPES: frozenset[str] = frozenset({"develop_blast_radius", "fn_call_graph"})
+
+
+def _max_turns_for_task(task: dict) -> int:
+    """Return the per-task ``--max-turns`` cap, identical for both arms (review M-6).
+
+    Caller-enumeration tasks (``develop_blast_radius``, ``fn_call_graph``) scale the cap with the
+    ground-truth unique-caller count so a task with many callers gets more head-room; every other
+    task type uses a flat floor. The value does not depend on the arm — the plain and the codemap arm
+    receive the same cap for a given task, so neither is handed extra turns (and thus extra input
+    tokens) on the tasks that dominate the token-ratio headline.
+
+    Args:
+        task: Task dict from tasks-bench.json; reads ``type`` and ``ground_truth.unique_caller_count``.
+
+    Returns:
+        The max-turns cap for the task.
+
+    Examples:
+        >>> _max_turns_for_task({"type": "symbol_extraction"})
+        40
+        >>> _max_turns_for_task({"type": "develop_blast_radius", "ground_truth": {"unique_caller_count": 30}})
+        120
+        >>> _max_turns_for_task({"type": "fn_call_graph", "ground_truth": {"unique_caller_count": 5}})
+        80
+    """
+    if task.get("type") in _CALLER_TASK_TYPES:
+        caller_count = task.get("ground_truth", {}).get("unique_caller_count", 0)
+        return max(_TURN_FLOOR_CALLER, caller_count * _TURN_PER_CALLER)
+    return _TURN_FLOOR_DEFAULT
+
+
 # ---------------------------------------------------------------------------
 # Quality evaluators — extract key metric from model output text
 # ---------------------------------------------------------------------------
 
-_EVAL_VER_NAME_RECALL = "v4"  # _evaluate_develop_br (v4: Form 11 bare Class.method fallback)
+_EVAL_VER_NAME_RECALL = "v5"  # _evaluate_develop_br (v5: drop .md file-dump M-10; precision-tighten fuzzy tiers M-11)
 _EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
 _EVAL_VER_REVIEW = "v3"  # _evaluate_rv — v3: structured-block + stem-blocklist matching (review H-1)
 _EVAL_VER_OSS = "v1"  # _evaluate_oss
@@ -906,12 +950,17 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
         recall_val = found / max(len(syms), 1)
         got_count = _extract_int(output_text, _count_patterns) if expected_count is not None else None
         correct = recall_val >= 0.70
+        # Mirror the count branch (and the develop_br / real_issue evaluators): when no answer symbol
+        # could be extracted from the output at all, mark extraction_failed so the (recall=0) run is
+        # excluded from the accuracy denominator instead of counted as an incorrect answer — otherwise
+        # the symbol branch and the count branch treat extraction failure inconsistently.
         return BenchQuality(
             scored=True,
             correct=correct,
             metric_expected=len(syms),
             metric_got=found,
             recall=round(recall_val, 3),
+            extraction_failed=found == 0,
             extraction_degraded=degraded,
             evaluator_used="_evaluate_rv",
             evaluator_version=_EVAL_VER_REVIEW,
@@ -1071,6 +1120,67 @@ def _evaluate_oss(task: dict, output_text: str) -> BenchQuality:
     return BenchQuality(scored=False)
 
 
+# review M-11 — generic method names that recur across many unrelated classes/modules. A bare
+# Class.method tail ending in one of these is too weak a signal to credit a specific caller via the
+# no-module fallback (Form 11): the same "Trainer.setup" / "Loop.run" tail can name a different
+# caller in a different module. Distinctive names (e.g. `_evaluation_step`) are not blocklisted, so
+# legitimate unqualified codemap answers still score.
+_COMMON_METHOD_NAMES: frozenset[str] = frozenset(
+    {
+        "run",
+        "setup",
+        "teardown",
+        "main",
+        "forward",
+        "step",
+        "reset",
+        "close",
+        "open",
+        "start",
+        "stop",
+        "call",
+        "fit",
+        "test",
+        "validate",
+        "predict",
+        "update",
+        "configure",
+        "build",
+        "init",
+        "load",
+        "save",
+    }
+)
+
+
+def _module_compatible(gt_module: str, found_module: str) -> bool:
+    """Return True when *found_module* may denote the same module as *gt_module* (review M-11).
+
+    Modules match when they are equal or when one is a dotted suffix of the other — the latter allows
+    the legitimate abbreviated-path form (``loops.evaluation_loop`` for
+    ``lightning.pytorch.loops.evaluation_loop``) while still rejecting a genuinely different module
+    that merely shares a class/method tail (``a.wrong`` vs ``a.right``).
+
+    Args:
+        gt_module: Module component of a ground-truth caller (before ``::``).
+        found_module: Module component of a caller extracted from the agent output.
+
+    Returns:
+        True when the two module strings are compatible.
+
+    Examples:
+        >>> _module_compatible("lightning.pytorch.loops.evaluation_loop", "loops.evaluation_loop")
+        True
+        >>> _module_compatible("a.right", "a.wrong")
+        False
+        >>> _module_compatible("x.mod", "x.mod")
+        True
+    """
+    if gt_module == found_module:
+        return True
+    return gt_module.endswith("." + found_module) or found_module.endswith("." + gt_module)
+
+
 def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
     """Evaluate develop_blast_radius task: measure caller recall.
 
@@ -1091,15 +1201,11 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
 
     expected_set = set(expected_callers)
 
-    # Pre-process: if communication.md Long Reply File Dump was used, read actual file.
-    # Pattern: "→ .temp/reply-<slug>-YYYY-MM-DD.md" (plain or backtick-wrapped).
-    _dump_m = re.search(r"^→\s+`?([^`\s]+\.md)`?\s*$", output_text, re.MULTILINE)
-    if _dump_m:
-        try:
-            with open(_dump_m.group(1)) as _df:
-                output_text = output_text + "\n" + _df.read()
-        except OSError:
-            pass
+    # Score only the agent's inline output_text (review M-10). Earlier code regex-matched a
+    # "→ <file>.md" reply-dump pointer and open()d that file, appending its content before scoring —
+    # but Write/Edit are blocked on BOTH arms, so the agent can never freshly write that file: the
+    # path resolved to a stale/pre-existing file (injecting wrong content into the score) or was dead.
+    # No file is read here; a "→ foo.md" pointer in the output is treated as ordinary text.
 
     # Extract qualified names. Three forms, then normalize to module::Class.method.
 
@@ -1260,6 +1366,10 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
     # Fuzzy tier (always-on): same method name exact, class name underscore-insensitive.
     # Catches format variants like "EvaluationLoop.method" when GT is "_EvaluationLoop.method" —
     # agent clearly identified the caller, just dropped the access-modifier underscore convention.
+    # review M-11 — the module is now compared too (via _module_compatible): matching on the
+    # Class.method tail alone credited a wrong-module same-tail caller (a `Loop.run` in a different
+    # module scored the GT caller). Requiring module compatibility keeps the underscore tolerance
+    # while rejecting cross-module tail collisions.
     def _norm_cls(qn: str) -> str:
         tail = qn.split("::")[-1]
         if "." not in tail:
@@ -1271,12 +1381,16 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
     for canonical in expected_callers:
         if canonical not in already_exact and "." in canonical.split("::")[-1]:
             norm = _norm_cls(canonical)
-            if any(_norm_cls(qn) == norm for qn in found_qualnames):
+            gt_mod = canonical.split("::")[0]
+            if any(_norm_cls(qn) == norm and _module_compatible(gt_mod, qn.split("::")[0]) for qn in found_qualnames):
                 found_qualnames.add(canonical)
 
     # Form 11: bare Class.method fallback — fires ONLY when all other forms produced nothing.
     # Codemap arm sometimes outputs callers as "_EvaluationLoop._evaluation_step" without module
     # prefix; reverse-lookup against GT by matching the tail component of each expected caller.
+    # review M-11 — this tier carries NO module qualification, so a bare Class.method whose method is
+    # a generic name (`Loop.run`, `Trainer.setup`) is rejected: the same tail can name a different
+    # caller in a different module. Distinctive method tails (`_evaluation_step`) still credit.
     if not found_qualnames:
         for canonical in expected_callers:
             parts = canonical.split("::")
@@ -1285,6 +1399,8 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
             tail = parts[-1]  # e.g. "_EvaluationLoop._evaluation_step"
             if "." not in tail:
                 continue  # skip bare function names (too short, high FP risk)
+            if tail.rsplit(".", 1)[-1].lstrip("_") in _COMMON_METHOD_NAMES:
+                continue  # unqualified bare common tail — too weak to credit a specific caller
             pattern = r"(?<![.\w])" + re.escape(tail) + r"(?![.\w])"
             if re.search(pattern, output_text):
                 found_qualnames.add(canonical)
@@ -1695,14 +1811,8 @@ class BenchRunner:
         system = _build_system_prompt(arm, _REPO_NAME, str(self.repo_path), str(self.index_path))
         disallow_flags = _ARM_DISALLOWED.get(arm, [])
         allow_flags = _ARM_ALLOWED.get(arm, [])
-        # Scale max-turns for develop_blast_radius.
-        # Plain arm: no index, needs per-file grep → floor 80, 4× caller count.
-        # Codemap arm: fn-rdeps in 1-2 turns → floor 40, 2× caller count.
-        caller_count = task.get("ground_truth", {}).get("unique_caller_count", 0)
-        if task.get("type") in ("develop_blast_radius", "fn_call_graph"):
-            max_turns = max(80, caller_count * 4) if arm == "plain" else max(80, caller_count * 2)
-        else:
-            max_turns = 40
+        # Per-task max-turns cap — identical for both arms (review M-6); see _max_turns_for_task.
+        max_turns = _max_turns_for_task(task)
         cmd = [
             *_CMD,
             "--max-turns",
@@ -2176,6 +2286,70 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
         print(f"  {wf:<22}  {n_tasks:>7}  {ratio_str}  {acc_str}")
 
 
+def _arm_extracted(run: Optional[BenchRun]) -> bool:
+    """Return True when *run* produced a scored, extracted, completed metric (review M-8).
+
+    A run counts as "extracted" only when it was scored, did not fail extraction, and was not cut
+    off by the turn budget. Contaminated / answer-file-read runs carry ``scored=False`` and are
+    therefore excluded too.
+
+    Args:
+        run: A benchmark run for one arm, or None when that arm did not run.
+
+    Returns:
+        True when the run yielded a usable score for the paired comparison.
+    """
+    return bool(run and run.quality.scored and not run.quality.extraction_failed and not run.incomplete)
+
+
+def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
+    """Compute paired accuracy over tasks where BOTH arms extracted successfully (review M-8).
+
+    The per-arm accuracy printed elsewhere drops ``extraction_failed`` runs independently per arm, so
+    the plain and codemap figures are computed over different task subsets and different n — an
+    unpaired comparison. This view restricts both arms to the SAME task set: only tasks where the
+    plain AND the codemap run were each scored, extracted a metric, and completed. Both arm accuracies
+    then share one denominator, the paired-n, so the headline comparison is like-for-like.
+
+    Args:
+        runs: All benchmark runs (both arms, all tasks).
+
+    Returns:
+        Dict with ``n`` (paired task count), ``plain_correct``, and ``codemap_correct``; None when no
+        task has both arms extracted.
+    """
+    by_task: dict[str, dict[str, BenchRun]] = defaultdict(dict)
+    for r in runs:
+        by_task[r.task_id][r.arm] = r
+    paired = [
+        arms for arms in by_task.values() if _arm_extracted(arms.get("plain")) and _arm_extracted(arms.get("codemap"))
+    ]
+    if not paired:
+        return None
+    return {
+        "n": len(paired),
+        "plain_correct": sum(1 for a in paired if a["plain"].quality.correct),
+        "codemap_correct": sum(1 for a in paired if a["codemap"].quality.correct),
+    }
+
+
+def _print_paired_accuracy(runs: list[BenchRun]) -> None:
+    """Print the paired accuracy view (both arms extracted, shared denominator) — review M-8.
+
+    Args:
+        runs: All benchmark runs (both arms, all tasks).
+    """
+    paired = _paired_accuracy(runs)
+    if paired is None:
+        return
+    n = paired["n"]
+    pc = paired["plain_correct"]
+    cc = paired["codemap_correct"]
+    print(f"\n  Paired accuracy (both arms extracted, paired-n={n}):")
+    print(f"    plain   = {pc / n:.1%}  ({pc}/{n})")
+    print(f"    codemap = {cc / n:.1%}  ({cc}/{n})")
+
+
 def _print_summary(runs: list[BenchRun], model: str) -> None:
     """Print a summary table of token ratios and accuracy to stdout.
 
@@ -2291,6 +2465,11 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
             all_methods = sorted({m for r in runs if r.arm == "codemap" for m in r.codemap_methods})
             if all_methods:
                 print(f"  codemap query methods used: {', '.join(all_methods)}")
+
+    # Paired accuracy: both arms scored over the SAME both-extracted task set (review M-8). The
+    # per-arm figures above use different denominators (each arm drops its own extraction failures),
+    # so the paired view is the like-for-like headline comparison with its shared n stated.
+    _print_paired_accuracy(runs)
 
     # Tier E: patch pass rate (failing test → fix → test pass). Only shown when any
     # run carries a patch_pass signal; agents emitting prose without a diff score 0.
@@ -2579,11 +2758,7 @@ def main(
         total = len(combos)
         outer = progress.add_task("running", total=total)
         for done, (task, arm) in enumerate(combos, 1):
-            caller_count = task.get("ground_truth", {}).get("unique_caller_count", 0)
-            if task.get("type") in ("develop_blast_radius", "fn_call_graph"):
-                task_max_turns = max(80, caller_count * 4) if arm == "plain" else max(80, caller_count * 2)
-            else:
-                task_max_turns = 40
+            task_max_turns = _max_turns_for_task(task)
             sub = progress.add_task("  0s calls=0", total=task_max_turns)
             progress.update(outer, description=f"{task['id']} {arm}")
             _run_combo(

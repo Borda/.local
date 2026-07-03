@@ -80,7 +80,7 @@ reducing tool call count, elapsed time, and context consumption.
 
     delta = erec - rrec — information gap (agent saw it but did not report it)
     deff = erec_tp / max(tool_calls, 1) — discovery efficiency (rdeps found per tool call)
-    erec_top10 — erec restricted to top-10 most-central rdeps by dep_count (meaningful for tasks with ≥5 rdeps)
+    erec_top10 — erec restricted to top-10 most-central rdeps by in-degree (meaningful for tasks with ≥5 rdeps)
 
     sc (skill coverage, codemap only) — index completeness:
       Parsed from the codemap:query rdeps skill result; measures whether the index contained the answer.
@@ -114,7 +114,8 @@ reducing tool call count, elapsed time, and context consumption.
 ## Failure conditions
 
   A run is marked success=False when any of these occur:
-    timeout          — claude subprocess exceeded the 300 s wall-clock limit
+    timeout          — claude subprocess exceeded its per-model wall-clock limit
+                       (haiku 210 s / sonnet 420 s / opus 600 s; see _MODEL_TIMEOUT)
     non-zero exit    — claude returned a non-success subtype in the result event; stderr is captured as error
     codemap no-call  — codemap arm completed without ever invoking the Skill tool; this means the agent fell
                        back to grep/bash entirely, defeating the purpose of the codemap arm
@@ -178,7 +179,7 @@ reducing tool call count, elapsed time, and context consumption.
           "rrec": N.N,                  ← report recall: rdeps found in final answer text
           "rrec_tp": N, "rrec_fn": N,   ← multi-form true positives / false negatives on report corpus
           "delta": N.N,                 ← erec - rrec: information seen but not reported
-          "erec_top10": N.N,            ← erec on top-10 most-central rdeps by dep_count; equals erec when |rdeps|≤10
+          "erec_top10": N.N,            ← erec on top-10 most-central rdeps by in-degree; equals erec when |rdeps|≤10
           "erec_top10_k": N,            ← k used: min(10, |expected|)
           "deff": N.N,                  ← erec_tp / max(tool_calls, 1): discovery efficiency
           "skill_coverage": N.N | null, ← codemap arm: fraction of expected rdeps in skill result; null for plain
@@ -242,7 +243,7 @@ RESULTS_DIR = Path("benchmarks/results")
 MODELS: dict[str, str] = {
     "haiku": "claude-haiku-4-5-20251001",
     "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-6",
+    "opus": "claude-opus-4-8",
 }
 
 # Per-model wall-clock timeout (seconds). Opus needs more time for complex reasoning.
@@ -251,8 +252,10 @@ _MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
 # Fixed USD price table per million tokens, keyed by short tier (NOT exact model id) so a
 # 4.6 vs 4.8 swap does not perturb cross-run cost comparisons. List prices — edit here to
 # track Anthropic changes; cache_read = 0.1x input, cache_write = 1.25x input (standard ratios).
-# Cost is the fair cross-arm metric because arms run different models (codemap's skill layer
-# is cheaper haiku) — token counts alone hide that a codemap call may be billed at haiku rates.
+# Cost is the fair cross-arm metric because arms differ in how many tokens they burn to reach
+# the same answer. Under `claude -p` the codemap skill sub-model never spawns, so every token —
+# including skill/scan-query work — bills at the arm's own tier; there is no separate cheaper
+# haiku skill-model layer. Cost still separates arms by token volume, not by a per-layer rate mix.
 PRICES: dict[str, dict[str, float]] = {
     "haiku": {"input": 1.00, "output": 5.00, "cache_read": 0.10, "cache_write": 1.25},
     "sonnet": {"input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
@@ -329,7 +332,7 @@ class QualityScore:
     rrec_fn: int = 0
     delta: float = 0.0  # erec - rrec: information the agent saw but did not report
     deff: float = 0.0  # discovery efficiency: erec_tp / max(tool_calls, 1)
-    erec_top10: float = 0.0  # erec restricted to top-10 rdeps by dep_count centrality
+    erec_top10: float = 0.0  # erec restricted to top-10 rdeps by in-degree (reverse-dep) centrality
     erec_top10_k: int = 0  # actual k used (min(10, |expected|)); equals |expected| when ≤10
 
     # ── Skill result coverage (codemap arm only; None when not applicable) ──
@@ -341,6 +344,12 @@ class QualityScore:
     # search chunk the arm retrieved. A fair semantic-search axis that does not require semble to
     # emit an exhaustive dotted rdep list (review C-5); erec/rrec stay the codemap-native lens.
     chunk_hit_rate: Optional[float] = None
+
+    # ── Targeted-test correctness signal (fix tasks that declare a test_target; None otherwise) ──
+    # test_passed: outcome of running the task's declared pytest node on the post-edit sandbox.
+    # A stronger correctness signal than keyword recall — recorded alongside erec, never replacing
+    # it (review M-4). None when the task declares no test or the test could not be launched.
+    test_passed: Optional[bool] = None
 
     # ── Legacy fields (backward compat — leaf-name matching on output_text) ──
     precision: float = 0.0
@@ -412,6 +421,9 @@ class BenchmarkRun:
     quality: QualityScore = field(default_factory=QualityScore)
     # Internal — excluded from JSON (see _save_snapshot); populated for fix_single/fix_multicaller tasks
     agent_diff: str = field(default="", repr=False)  # unified diff of agent's edits vs original codebase
+    # Transient carrier for the declared targeted-test outcome (run in the sandbox, before cleanup);
+    # excluded from JSON — the persisted signal lives in quality.test_passed.
+    targeted_test_passed: Optional[bool] = field(default=None, repr=False)
     # Internal fields excluded from JSON serialisation (see _save_snapshot)
     skill_result_text: str = field(default="", repr=False)  # all codemap:query rdeps results joined (for sc)
     codemap_results: list[str] = field(default_factory=list, repr=False)  # ALL codemap skill results (for erec)
@@ -433,6 +445,7 @@ class Task:
     codebase_module: str = ""  # fix tasks: top-level module to snapshot (e.g. "lightning")
     expected_patch_keywords: list[str] = field(default_factory=list)  # fix tasks: strings expected in diff +lines
     expected_files: list[str] = field(default_factory=list)  # fix tasks: file-path fragments expected in diff
+    test_target: str = ""  # fix tasks: pytest node id/path run on the post-edit sandbox for a correctness signal
 
 
 # ---------------------------------------------------------------------------
@@ -730,8 +743,34 @@ class GroundTruth:
     invisible (see review C-5). Exposes a ``score()`` method for comparing agent output to truth.
     """
 
-    _MODULE_RE = re.compile(r"\blightning(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+")
-    _PATH_RE = re.compile(r"\bsrc/(lightning(?:/[a-zA-Z_][a-zA-Z0-9_]*)+)\.py\b")
+    @staticmethod
+    def _build_module_regexes(packages: set[str]) -> tuple[re.Pattern[str], re.Pattern[str]]:
+        """Build dotted-name and ``src/`` path regexes for the given top-level packages.
+
+        The package set is derived from the benchmark's tasks (each ``primary_module``'s
+        first dotted component), so the extractor stays repo-agnostic — no package name is
+        hardcoded. For ``pytorch-lightning`` (``packages={"lightning"}``) this reproduces the
+        legacy ``\\blightning(?:\\.…)+`` behaviour exactly.
+
+        Args:
+            packages: Top-level package names to match (e.g. ``{"lightning"}``).
+
+        Returns:
+            ``(module_re, path_re)`` — the dotted-name matcher and the ``src/<pkg>/…\\.py``
+            matcher. When ``packages`` is empty, both patterns match nothing.
+
+        Examples:
+            >>> mod_re, _ = GroundTruth._build_module_regexes({"lightning"})
+            >>> mod_re.findall("see lightning.pytorch.trainer.trainer here")
+            ['lightning.pytorch.trainer.trainer']
+        """
+        if not packages:
+            never = re.compile(r"(?!x)x")  # matches nothing
+            return never, never
+        alt = "|".join(re.escape(p) for p in sorted(packages))
+        module_re = re.compile(rf"\b(?:{alt})(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+")
+        path_re = re.compile(rf"\bsrc/((?:{alt})(?:/[a-zA-Z_][a-zA-Z0-9_]*)+)\.py\b")
+        return module_re, path_re
 
     def __init__(self, index_path: Path, tasks: list[Task], repo_path: Optional[Path] = None) -> None:
         """Load the index and pre-compute expected rdep sets for each task.
@@ -748,18 +787,33 @@ class GroundTruth:
         with index_path.open() as f:
             index = json.load(f)
         self.all_modules: set[str] = {m["name"] for m in index.get("modules", []) if m.get("status") == "ok"}
+        # Top-level package name(s) for the repo under test, derived from the tasks' primary
+        # modules (first dotted component) — keeps module extraction repo-agnostic (no hardcode).
+        self.packages: set[str] = {
+            getattr(t, "primary_module", "").split(".")[0] for t in tasks if getattr(t, "primary_module", "")
+        }
+        self._module_re, self._path_re = self._build_module_regexes(self.packages)
         self.index_expected: dict[str, set[str]] = self._index_rdeps(index, tasks)
         # Independent oracle: {imported_module: {importer, ...}}; empty when no repo path supplied.
         self.ast_importers: dict[str, set[str]] = _scan_repo_importers(repo_path) if repo_path else {}
         self.expected, self.divergences = self._resolve_expected(tasks, used_ast=bool(repo_path))
-        # dep_count = forward import count per module (proxy for centrality; always populated)
-        _dep_counts: dict[str, int] = {m["name"]: m.get("dep_count", 0) for m in index.get("modules", [])}
-        # Top-10 most-central rdeps per task (by dep_count descending); k=min(10, |rdeps|)
+        # in-degree = reverse-dependency count per module (how many modules import it), derived from
+        # the index import graph. Tasks define "central" as "imported by the most modules" — i.e.
+        # in-degree — so top-10 ranks by in-degree, NOT dep_count. dep_count is the forward import
+        # count (out-degree) and would rank on the opposite axis, measuring recall on the wrong
+        # modules (review M-3).
+        _in_degrees: dict[str, int] = defaultdict(int)
+        for m in index.get("modules", []):
+            if m.get("status") != "ok":
+                continue
+            for imported in m.get("direct_imports", []):
+                _in_degrees[imported] += 1
+        # Top-10 most-central rdeps per task (by in-degree descending); k=min(10, |rdeps|)
         self.top10_expected: dict[str, frozenset[str]] = {}
         for task in tasks:
             rdeps = self.expected.get(task.id, set())
             if rdeps:
-                ranked = sorted(rdeps, key=lambda m: _dep_counts.get(m, 0), reverse=True)[:10]
+                ranked = sorted(rdeps, key=lambda m: _in_degrees.get(m, 0), reverse=True)[:10]
                 self.top10_expected[task.id] = frozenset(ranked)
         self.all_leaf_names: set[str] = {m.split(".")[-1] for m in self.all_modules}
         # Match patterns cover the index inventory plus any AST-only expected rdep, so an arm that
@@ -994,16 +1048,18 @@ class GroundTruth:
             ambiguous_leaves=ambiguous,
         )
 
-    @classmethod
-    def _extract_modules(cls, text: str) -> set[str]:
-        """Extract dotted lightning.* module names from agent output.
+    def _extract_modules(self, text: str) -> set[str]:
+        """Extract dotted package-namespaced module names from agent output.
+
+        Matches only the repo's own top-level packages (``self.packages``, derived from the
+        tasks' primary modules), so a non-lightning repo works without editing code.
 
         Handles two forms agents use:
         - Dotted: ``lightning.pytorch.trainer.trainer``
         - File path: ``src/lightning/pytorch/trainer/trainer.py`` -> converted to dotted
         """
-        dotted = set(cls._MODULE_RE.findall(text))
-        from_paths = {m.replace("/", ".") for m in cls._PATH_RE.findall(text)}
+        dotted = set(self._module_re.findall(text))
+        from_paths = {m.replace("/", ".") for m in self._path_re.findall(text)}
         return dotted | from_paths
 
 
@@ -1333,17 +1389,18 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         ]
 
         _diff_capture: list[str] = []
+        _test_capture: list[Optional[bool]] = []
 
         @contextlib.contextmanager
         def _effective_cwd():
-            # plain arm always runs in an isolated copy (no index contamination)
-            # fix tasks run ALL arms in an isolated copy so edits never mutate self.repo_path
-            if arm not in ("plain",) and not task.requires_reset:
-                yield self.repo_path
-                return
+            # EVERY arm runs in an isolated copy of the repo so agent edits can never mutate
+            # self.repo_path. Blocking Edit/Write is not enough: the codemap and combined arms keep
+            # Bash, so an agent could still write through the shell — only a throwaway copy bounds
+            # the blast radius. Query (non-reset) arms previously ran in-place, letting a stray edit
+            # contaminate later runs (review M-5); they now copy like every other arm.
             import shutil
 
-            prefix = "bench-fix-" if task.requires_reset else "bench-plain-"
+            prefix = "bench-fix-" if task.requires_reset else "bench-copy-"
             with tempfile.TemporaryDirectory(prefix=prefix) as tmpdir:
                 tmp = Path(tmpdir)
                 cwd = tmp / self.repo_path.name
@@ -1372,6 +1429,11 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                         timeout=60,
                     )
                     _diff_capture.append(proc.stdout)
+                    # Opt-in correctness signal: run the task's declared pytest node on the sandbox
+                    # (post-edit, pre-cleanup) so a semantically wrong edit that merely emits the
+                    # right keywords does not score full recall unchecked (review M-4).
+                    if task.test_target:
+                        _test_capture.append(self._run_targeted_test(cwd, task.test_target))
 
         _MAX_API_RETRIES = 2
         with _effective_cwd() as cwd:
@@ -1395,7 +1457,35 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 break
         if _diff_capture:
             result.agent_diff = _diff_capture[0]
+        if _test_capture:
+            result.targeted_test_passed = _test_capture[0]
         return result
+
+    def _run_targeted_test(self, cwd: Path, test_target: str) -> Optional[bool]:
+        """Run a task's declared pytest target on the post-edit sandbox and report pass/fail.
+
+        Args:
+            cwd: Sandbox repository root containing the agent's applied edits.
+            test_target: pytest node id or path (e.g. ``tests/foo/test_bar.py::test_case``).
+
+        Returns:
+            ``True`` when pytest exits 0, ``False`` on any non-zero exit, and ``None`` when pytest
+            could not be launched at all (missing binary / environment error) so a launch failure
+            is never miscredited as a genuine test failure.
+        """
+        import subprocess as _sp
+
+        try:
+            proc = _sp.run(
+                [sys.executable, "-m", "pytest", test_target, "-q", "-p", "no:cacheprovider"],
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+        except (OSError, _sp.SubprocessError):
+            return None
+        return proc.returncode == 0
 
     def _seed_index_cache(self, cwd: Path) -> None:
         """Copy the prebuilt codemap index cache dirs into a sandbox copy of the repo.
@@ -1696,6 +1786,31 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
 # ---------------------------------------------------------------------------
 
 
+def _normalize_match_text(text: str) -> str:
+    """Normalise text for whitespace-tolerant keyword matching.
+
+    Drops whitespace flanking operators and punctuation so brittle literals like ``"< 1"`` match
+    ``"<1"`` (and ``"<  1"``), while preserving single spaces between word tokens so distinct
+    identifiers are never merged into false matches. Case is folded to lower.
+
+    Args:
+        text: Raw diff / answer text, or a single expected keyword.
+
+    Returns:
+        The normalised, lower-cased string ready for substring comparison.
+
+    Examples:
+        >>> _normalize_match_text("if patience < 1:")
+        'if patience<1:'
+        >>> _normalize_match_text("< 1") in _normalize_match_text("guard patience<1 here")
+        True
+        >>> _normalize_match_text("raise Error")  # word-word spaces are preserved
+        'raise error'
+    """
+    collapsed = re.sub(r"\s*([^\w\s])\s*", r"\1", text)
+    return re.sub(r"\s+", " ", collapsed).strip().lower()
+
+
 def score_read_crop(output_text: str, expected_keywords: list[str]) -> QualityScore:
     """Keyword-recall scorer for read_crop tasks (no rdeps ground truth).
 
@@ -1717,27 +1832,41 @@ def score_read_crop(output_text: str, expected_keywords: list[str]) -> QualitySc
     """
     if not expected_keywords:
         return QualityScore(scored=False)
-    low = output_text.lower()
-    hits = sum(1 for k in expected_keywords if k.lower() in low)
+    haystack = _normalize_match_text(output_text)
+    hits = sum(1 for k in expected_keywords if _normalize_match_text(k) in haystack)
     n = len(expected_keywords)
     rec = hits / n
     return QualityScore(scored=True, erec=rec, erec_tp=hits, erec_fn=n - hits, rrec=rec, rrec_tp=hits, rrec_fn=n - hits)
 
 
-def score_fix(diff_text: str, expected_patch_keywords: list[str], expected_files: list[str]) -> QualityScore:
+def score_fix(
+    diff_text: str,
+    expected_patch_keywords: list[str],
+    expected_files: list[str],
+    test_passed: Optional[bool] = None,
+) -> QualityScore:
     """Keyword-recall scorer for fix_single / fix_multicaller tasks.
 
     Checks the unified diff of agent edits for expected change markers. ``erec`` measures
     keyword recall in added lines; ``rrec`` measures file recall (were the right files changed).
+    Keyword matching is whitespace-tolerant (see ``_normalize_match_text``) so operator literals
+    like ``"< 1"`` are not defeated by an agent writing ``"<1"``.
+
+    ``test_passed`` carries a stronger, opt-in correctness signal recorded *alongside* erec (it
+    never replaces the recall column): when the task declares a targeted test, the caller runs it
+    on the post-edit sandbox and passes the outcome here. It stays ``None`` for tasks with no
+    declared test, so tasks without one are unaffected.
 
     Args:
         diff_text: Output of ``diff -ru original copy`` after agent run.
         expected_patch_keywords: Strings expected in diff added lines (``+`` prefix).
         expected_files: Relative file-path fragments expected in ``+++ b/...`` headers.
+        test_passed: Outcome of the task's declared targeted test (True/False), or ``None`` when
+            the task declares no test or the test could not be launched.
 
     Returns:
-        QualityScore with keyword recall in ``erec`` and file-change recall in ``rrec``.
-        Returns ``scored=False`` when no keywords given.
+        QualityScore with keyword recall in ``erec``, file-change recall in ``rrec``, and the
+        opt-in ``test_passed`` correctness signal. Returns ``scored=False`` when no keywords given.
 
     Examples:
         >>> d = "+        if patience < 1:\\n+            raise MisconfigurationException('patience')"
@@ -1752,8 +1881,8 @@ def score_fix(diff_text: str, expected_patch_keywords: list[str], expected_files
     added_lines = "\n".join(
         line[1:] for line in diff_text.splitlines() if line.startswith("+") and not line.startswith("+++")
     )
-    low = added_lines.lower()
-    hits = sum(1 for k in expected_patch_keywords if k.lower() in low)
+    haystack = _normalize_match_text(added_lines)
+    hits = sum(1 for k in expected_patch_keywords if _normalize_match_text(k) in haystack)
     erec = round(hits / len(expected_patch_keywords), 3)
     # diff -ru produces "+++ /full/path\t<timestamp>"; git diff produces "+++ b/path"
     changed_files = set(re.findall(r"^\+\+\+ (?:b/)?(.+?)(?:\t.*)?$", diff_text, re.MULTILINE))
@@ -1767,6 +1896,7 @@ def score_fix(diff_text: str, expected_patch_keywords: list[str], expected_files
         erec_tp=hits,
         erec_fn=len(expected_patch_keywords) - hits,
         rrec=rrec,
+        test_passed=test_passed,
     )
 
 
@@ -2228,9 +2358,31 @@ class Benchmark:
         if task.type == "read_crop":
             result.quality = score_read_crop(result.output_text, task.expected_keywords)
         if task.type in ("fix_single", "fix_multicaller"):
-            result.quality = score_fix(result.agent_diff, task.expected_patch_keywords, task.expected_files)
-        # Codemap arm that never invoked the Skill tool is a failure —
-        # it fell back to grep/bash entirely, defeating the purpose.
+            result.quality = score_fix(
+                result.agent_diff,
+                task.expected_patch_keywords,
+                task.expected_files,
+                test_passed=result.targeted_test_passed,
+            )
+        # Degenerate-loop detection MUST precede the no-skill-call guard below. A codemap arm that
+        # ignored the index and grepped its way through has skill == 0, which the no-call guard
+        # would otherwise claim first (labelling it "codemap skill never called") — leaving the
+        # ≥70% grep-ratio classification unreachable for blast-radius tasks (review M-2). Ordering
+        # it first lets a grep-heavy zero-skill run be labelled degenerate_grep_loop; a zero-skill
+        # run that is NOT grep-heavy still falls through to the no-call guard.
+        if result.arm == "codemap" and result.success:
+            total_calls = result.tools.total
+            grep_like = result.tools.grep + result.tools.bash_for_imports
+            if total_calls > 0 and result.tools.skill == 0 and grep_like / total_calls >= 0.70:
+                result.success = False
+                result.error_type = "degenerate_grep_loop"
+                result.error = (
+                    f"codemap arm used no codemap skill; fell back to grep "
+                    f"({grep_like}/{total_calls} grep-like calls = {grep_like / total_calls:.0%}); "
+                    f"index not used"
+                )
+        # Codemap arm that never invoked the Skill tool (and did not already fail the degenerate
+        # check above) is a failure — it fell back to grep/bash entirely, defeating the purpose.
         # fix tasks use Edit (not Skill), so exempt them from this guard.
         if (
             arm == "codemap"
@@ -2267,19 +2419,6 @@ class Benchmark:
                 "codemap skill returned <tool_use_error>; run fell back to grep — "
                 "not a valid codemap measurement; re-run after fixing skill invocation"
             )
-        # Degenerate-loop detection: codemap arm that spent ≥70% of calls on Grep
-        # ignored the index and fell into a grep loop — mark as failure.
-        if result.arm == "codemap" and result.success:
-            total_calls = result.tools.total
-            grep_like = result.tools.grep + result.tools.bash_for_imports
-            if total_calls > 0 and result.tools.skill == 0 and grep_like / total_calls >= 0.70:
-                result.success = False
-                result.error_type = "degenerate_grep_loop"
-                result.error = (
-                    f"codemap arm used no codemap skill; fell back to grep "
-                    f"({grep_like}/{total_calls} grep-like calls = {grep_like / total_calls:.0%}); "
-                    f"index not used"
-                )
         # Plain arm isolation check: flag any run that read the codemap index JSON via Bash.
         # Currently low-yield (agents usually guess the wrong home-dir path) but the vector is
         # real — a single correct path read hands the agent the full index for free.
@@ -2351,15 +2490,38 @@ class Benchmark:
             )
 
     def _save_snapshot(self, metadata: dict) -> None:
-        """Overwrite the results JSON with the current snapshot (called after every run)."""
+        """Atomically overwrite the results JSON with the current snapshot.
+
+        Called after every run onto a single rolling file. The payload is written to a temp file
+        in the output directory first, then ``os.replace`` swaps it into place — an atomic rename
+        on POSIX. A SIGINT/kill mid-write therefore leaves the results file either fully old or
+        fully new, never a truncated mix that would lose every accumulated run (review M-1). The
+        temp file is removed if serialisation fails so no ``.tmp`` residue accumulates.
+        """
+        import tempfile
+
         serialised = []
         for r in self.results:
             d = asdict(r)
-            for key in ("skill_result_text", "codemap_results", "semble_results", "last_tool_text_offset"):
+            for key in (
+                "skill_result_text",
+                "codemap_results",
+                "semble_results",
+                "last_tool_text_offset",
+                "targeted_test_passed",
+            ):
                 d.pop(key, None)
             serialised.append(d)
-        with self.output_path.open("w") as fh:
-            json.dump({"metadata": metadata, "results": serialised}, fh, indent=2)
+        payload = {"metadata": metadata, "results": serialised}
+        out = self.output_path
+        fd, tmp_name = tempfile.mkstemp(dir=str(out.parent), prefix=f".{out.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(payload, fh, indent=2)
+            os.replace(tmp_name, out)
+        except BaseException:
+            Path(tmp_name).unlink(missing_ok=True)
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -2426,6 +2588,7 @@ def main(
                 codebase_module=t.get("codebase_module", ""),
                 expected_patch_keywords=t.get("expected_patch_keywords", []),
                 expected_files=t.get("expected_files", []),
+                test_target=t.get("test_target", ""),
             )
             for t in task_list
         ]

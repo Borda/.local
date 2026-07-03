@@ -1300,7 +1300,7 @@ class TestQualifiedCallerOracle:
             "class Baz:\n    def other(self):\n        self.bar()\n"
         )
         (tmp_path / "m.py").write_text(src)
-        qualified, loose, err = script_gen_bench._walk_caller_sets("m::Foo.bar", tmp_path, [])
+        qualified, loose, err = script_gen_bench._walk_caller_sets("m::Foo.bar", tmp_path)
         assert err is None
         assert qualified == {"m::Foo.caller"}
         assert "m::Baz.other" in loose
@@ -1311,7 +1311,7 @@ class TestQualifiedCallerOracle:
         Scenario: a free function instantiates the class and calls the method directly.
         """
         (tmp_path / "m.py").write_text("def use():\n    Foo().bar()\n")
-        qualified, _loose, _ = script_gen_bench._walk_caller_sets("m::Foo.bar", tmp_path, [])
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("m::Foo.bar", tmp_path)
         assert qualified == {"m::use"}
 
     def test_module_function_attribute_call_uses_target_module(self, script_gen_bench: Any, tmp_path: Path) -> None:
@@ -1325,7 +1325,7 @@ class TestQualifiedCallerOracle:
         pkg.mkdir()
         (pkg / "foo.py").write_text("def func():\n    pass\n")
         (pkg / "bar.py").write_text("def use_target():\n    foo.func()\n\n\ndef use_other():\n    bar.func()\n")
-        qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg.foo::func", tmp_path, ["pkg"])
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg.foo::func", tmp_path)
         assert qualified == {"pkg.bar::use_target"}
 
     def test_emitted_module_paths_carry_no_src_prefix(self, script_gen_bench: Any, tmp_path: Path) -> None:
@@ -1336,7 +1336,7 @@ class TestQualifiedCallerOracle:
         f = tmp_path / "src" / "pkg" / "mod.py"
         f.parent.mkdir(parents=True)
         f.write_text("def caller():\n    target()\n")
-        qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg::target", tmp_path, ["pkg"])
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg::target", tmp_path)
         assert qualified == {"pkg.mod::caller"}
         assert all(not c.startswith("src.") for c in qualified)
 
@@ -1348,9 +1348,32 @@ class TestQualifiedCallerOracle:
         (tmp_path / "tests").mkdir()
         (tmp_path / "tests" / "test_mod.py").write_text("def test_x():\n    target()\n")
         (tmp_path / "prod.py").write_text("def caller():\n    target()\n")
-        qualified, _loose, _ = script_gen_bench._walk_caller_sets("mod::target", tmp_path, [])
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("mod::target", tmp_path)
         assert qualified == {"prod::caller"}
         assert all("test" not in c for c in qualified)
+
+    def test_src_and_flat_layouts_emit_repo_namespaces(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A repo mixing src-layout and flat-layout packages emits each in its repo namespace (no `src.`).
+
+        Scenario (parity): `src/pkg/sub/mod.py` (full __init__ chain under src/) and `flatpkg/mod.py`
+        (flat __init__) both call the module-level target; the src caller must be credited as
+        `pkg.sub.mod::src_caller` (structurally stripping the `src/` prefix) and the flat caller as
+        `flatpkg.mod::flat_caller` — matching what scan-query/scan-index emit for the same clone.
+        """
+        src_mod = tmp_path / "src" / "pkg" / "sub" / "mod.py"
+        src_mod.parent.mkdir(parents=True)
+        (tmp_path / "src" / "pkg" / "__init__.py").write_text("")
+        (tmp_path / "src" / "pkg" / "sub" / "__init__.py").write_text("")
+        src_mod.write_text("def src_caller():\n    target()\n")
+        flat_mod = tmp_path / "flatpkg" / "mod.py"
+        flat_mod.parent.mkdir(parents=True)
+        (tmp_path / "flatpkg" / "__init__.py").write_text("")
+        flat_mod.write_text("def flat_caller():\n    target()\n")
+
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg.sub.mod::target", tmp_path)
+
+        assert qualified == {"pkg.sub.mod::src_caller", "flatpkg.mod::flat_caller"}
+        assert all(not c.startswith("src.") for c in qualified)
 
 
 # ===========================================================================

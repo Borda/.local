@@ -772,33 +772,49 @@ class TestGroundTruthScore:
 
 
 class TestGroundTruthExtractModules:
-    """Tests for the static module extractor used as internal helper."""
+    """Tests for the module extractor whose package set is derived from the tasks."""
 
     @pytest.mark.parametrize(
         "text,expected_subset",
         [
-            (
+            pytest.param(
                 "lightning.pytorch.trainer.trainer",
                 {"lightning.pytorch.trainer.trainer"},
+                id="dotted",
             ),
-            (
+            pytest.param(
                 "src/lightning/pytorch/trainer/trainer.py",
                 {"lightning.pytorch.trainer.trainer"},
+                id="src-path",
             ),
-            (
+            pytest.param(
                 "unrelated text with no lightning modules",
                 set(),
+                id="no-match",
             ),
         ],
     )
-    def test_extracts_lightning_module_names(self, script_run_agentic: Any, text: str, expected_subset: set) -> None:
+    def test_extracts_lightning_module_names(self, ground_truth: Any, text: str, expected_subset: set) -> None:
         """_extract_modules extracts dotted lightning.* names and converts paths.
 
         Scenario: agent output contains dotted module names or file paths;
         the extractor must return the canonical dotted form in both cases.
         """
-        result = script_run_agentic.GroundTruth._extract_modules(text)
+        result = ground_truth._extract_modules(text)
         assert expected_subset <= result
+
+    def test_generalizes_to_non_lightning_package(self, tmp_index: Path, script_run_agentic: Any) -> None:
+        """_extract_modules derives its package from the task, not a hardcoded 'lightning'.
+
+        Scenario: a repo whose primary module is ``torch.*`` must be extracted, while
+        the legacy hardcoded ``lightning`` prefix must NOT leak in as a match.
+        """
+        task = _make_task(script_run_agentic, id="T-torch", primary_module="torch.nn.modules.conv")
+        gt = script_run_agentic.GroundTruth(tmp_index, [task])
+        text = "see torch.nn.functional and src/torch/optim/adam.py but lightning.pytorch.trainer is off-repo"
+        result = gt._extract_modules(text)
+        assert {"torch.nn.functional", "torch.optim.adam"} <= result
+        assert not any(m.startswith("lightning") for m in result)
 
 
 # ===========================================================================
@@ -1817,3 +1833,301 @@ class TestReportFixFamilySuppression:
         report = script_run_agentic.Report([], tasks, {"date": "2026-07-03"})
         cells = report._arm_cells("codemap", 10.0, 5.0, script_run_agentic.Report._fmt_s, savings_applicable=False)
         assert cells["Codemap savings"] == "n/a"
+
+
+# ===========================================================================
+# Atomic snapshot persistence (review M-1)
+# ===========================================================================
+
+
+class TestAtomicSnapshot:
+    """_save_snapshot writes via a temp file + os.replace so an interrupt cannot truncate it."""
+
+    @pytest.fixture()
+    def benchmark(self, script_run_agentic: Any, tmp_index: Path, tmp_path: Path) -> Any:
+        """Minimal Benchmark whose output path lives in a writable temp dir."""
+        task = script_run_agentic.Task(id="BA-01", type="blast_radius_analysis", prompt="p")
+        out = tmp_path / "results.json"
+        log = tmp_path / "tool-calls.jsonl"
+        return script_run_agentic.Benchmark(
+            tasks=[task],
+            arms=["codemap"],
+            models=[("haiku", script_run_agentic.MODELS["haiku"])],
+            repo_path=tmp_path,
+            index_path=tmp_index,
+            output_path=out,
+            log_path=log,
+        )
+
+    def test_snapshot_writes_valid_json_and_leaves_no_tmp(self, script_run_agentic: Any, benchmark: Any) -> None:
+        """The rolling snapshot is valid JSON and no .tmp residue remains after a successful write.
+
+        Scenario: a run has accumulated; _save_snapshot persists it and the file must round-trip
+        through json.load with no half-written temp file left in the directory.
+        """
+        benchmark.results.append(
+            script_run_agentic.BenchmarkRun(
+                arm="codemap", task_id="BA-01", task_type="fix", model="haiku", success=True
+            )
+        )
+        benchmark._save_snapshot({"date": "2026-07-03"})
+        loaded = json.loads(benchmark.output_path.read_text())
+        assert loaded["results"][0]["task_id"] == "BA-01"
+        assert not list(benchmark.output_path.parent.glob("*.tmp"))
+
+    def test_snapshot_uses_os_replace_from_a_temp_source(self, script_run_agentic: Any, benchmark: Any) -> None:
+        """The final file is produced by os.replace from a temp file, not written in place (M-1).
+
+        Scenario: an interrupt mid-write must never truncate the real file; the only way that holds
+        is if the payload lands via an atomic rename from a distinct temp path.
+        """
+        seen: dict[str, Any] = {}
+        real_replace = script_run_agentic.os.replace
+
+        def _spy_replace(src: Any, dst: Any) -> Any:
+            seen["src"], seen["dst"] = str(src), str(dst)
+            return real_replace(src, dst)
+
+        with patch.object(script_run_agentic.os, "replace", _spy_replace):
+            benchmark._save_snapshot({"date": "2026-07-03"})
+        assert seen["src"].endswith(".tmp")
+        assert seen["src"] != str(benchmark.output_path)
+        assert seen["dst"] == str(benchmark.output_path)
+
+    def test_snapshot_failure_cleans_temp_and_preserves_nothing_partial(
+        self, script_run_agentic: Any, benchmark: Any
+    ) -> None:
+        """A serialisation failure removes the temp file and never overwrites the target (M-1).
+
+        Scenario: json.dump raises mid-write; the pre-existing (or absent) results file must stay
+        untouched and no orphan .tmp file may be left behind.
+        """
+        with patch.object(script_run_agentic.json, "dump", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError):
+                benchmark._save_snapshot({"date": "2026-07-03"})
+        assert not benchmark.output_path.exists()
+        assert not list(benchmark.output_path.parent.glob("*.tmp"))
+
+
+# ===========================================================================
+# Degenerate-loop classification ordering (review M-2)
+# ===========================================================================
+
+
+class TestDegenerateLoopClassification:
+    """A grep-heavy zero-skill BA codemap run is degenerate_grep_loop, not a plain no-call."""
+
+    @pytest.fixture()
+    def benchmark(self, script_run_agentic: Any, tmp_index: Path, tmp_path: Path) -> Any:
+        """Benchmark whose only task is a blast-radius (non-fix) codemap task."""
+        task = script_run_agentic.Task(
+            id="BA-01",
+            type="blast_radius_analysis",
+            prompt="p",
+            primary_module="lightning.pytorch.callbacks.timer",
+        )
+        return (
+            script_run_agentic.Benchmark(
+                tasks=[task],
+                arms=["codemap"],
+                models=[("haiku", script_run_agentic.MODELS["haiku"])],
+                repo_path=tmp_path,
+                index_path=tmp_index,
+                output_path=tmp_path / "out.json",
+                log_path=tmp_path / "log.jsonl",
+            ),
+            task,
+        )
+
+    def _classify(self, script: Any, bench: Any, task: Any, crafted: Any) -> Any:
+        """Drive _run_single with ModelRunner.run patched to return a crafted result."""
+        with patch.object(script.ModelRunner, "run", return_value=crafted):
+            return bench._run_single(
+                task,
+                "haiku",
+                script.MODELS["haiku"],
+                "codemap",
+                run_n=1,
+                total_runs=1,
+                print_fn=lambda *a, **k: None,
+                metadata={"date": "2026-07-03"},
+            )
+
+    def test_grep_heavy_zero_skill_ba_run_is_degenerate(self, script_run_agentic: Any, benchmark: Any) -> None:
+        """BA codemap run with skill==0 and ≥70% grep-like calls is labelled degenerate_grep_loop.
+
+        Scenario: the no-skill-call guard used to claim this run first ("codemap skill never
+        called"), leaving the grep-ratio classification unreachable for BA tasks (M-2).
+        """
+        bench, task = benchmark
+        crafted = script_run_agentic.BenchmarkRun(
+            arm="codemap", task_id="BA-01", task_type="blast_radius_analysis", model="haiku", success=True
+        )
+        crafted.tools.grep = 8  # total 8, all grep-like, skill 0 → ratio 1.0
+        result = self._classify(script_run_agentic, bench, task, crafted)
+        assert result.error_type == "degenerate_grep_loop"
+        assert result.success is False
+
+    def test_zero_skill_but_not_grep_heavy_falls_through_to_no_call(
+        self, script_run_agentic: Any, benchmark: Any
+    ) -> None:
+        """A zero-skill BA run below the grep threshold still fails as 'codemap skill never called'.
+
+        Scenario: the reordering must not swallow the no-call guard — a skill==0 run that is NOT
+        grep-dominated keeps the original no-call label.
+        """
+        bench, task = benchmark
+        crafted = script_run_agentic.BenchmarkRun(
+            arm="codemap", task_id="BA-01", task_type="blast_radius_analysis", model="haiku", success=True
+        )
+        crafted.tools.grep = 1
+        crafted.tools.bash = 9  # total 10, grep-like 1 → ratio 0.1 < 0.70
+        result = self._classify(script_run_agentic, bench, task, crafted)
+        assert result.error_type != "degenerate_grep_loop"
+        assert result.error == "codemap skill never called"
+        assert result.success is False
+
+
+# ===========================================================================
+# top10 centrality axis — in-degree not out-degree (review M-3)
+# ===========================================================================
+
+
+class TestTop10InDegree:
+    """top10_expected ranks central rdeps by in-degree (reverse-dep count), not dep_count."""
+
+    @pytest.fixture()
+    def gt(self, script_run_agentic: Any, tmp_path: Path) -> Any:
+        """Index with 11 rdeps: r1..r10 imported once each, r11 imported by nobody but high dep_count."""
+        modules: list[dict] = [{"name": "app.target", "direct_imports": [], "dep_count": 0, "status": "ok"}]
+        for i in range(1, 11):
+            modules.append({"name": f"app.r{i}", "direct_imports": ["app.target"], "status": "ok"})
+            # one importer for app.r{i} → in-degree 1
+            modules.append({"name": f"imp.r{i}", "direct_imports": [f"app.r{i}"], "status": "ok"})
+        # r11 is a rdep with a huge out-degree (dep_count) but ZERO in-degree — nobody imports it.
+        modules.append(
+            {"name": "app.r11", "direct_imports": ["app.target", "x.a", "x.b"], "dep_count": 999, "status": "ok"}
+        )
+        index_file = tmp_path / "idx.json"
+        index_file.write_text(json.dumps(_minimal_index(modules)))
+        task = _make_task(script_run_agentic, id="X", primary_module="app.target")
+        return script_run_agentic.GroundTruth(index_file, [task])
+
+    def test_high_in_degree_kept_and_high_out_degree_dropped(self, gt: Any) -> None:
+        """The zero-in-degree / high-dep_count rdep is dropped; an in-degree≥1 rdep is kept.
+
+        Scenario: 11 rdeps trim to 10. Ranking by in-degree drops app.r11 (imported by nobody);
+        ranking by the old dep_count axis would have kept it and dropped a real central module.
+        """
+        top10 = gt.top10_expected["X"]
+        assert len(top10) == 10
+        assert "app.r1" in top10
+        assert "app.r11" not in top10
+
+
+# ===========================================================================
+# Keyword scoring — whitespace tolerance + opt-in test signal (review M-4)
+# ===========================================================================
+
+
+class TestFixKeywordNormalization:
+    """score_fix / score_read_crop tolerate operator whitespace and carry the test_passed signal."""
+
+    def test_score_fix_matches_operator_keyword_despite_whitespace(self, script_run_agentic: Any) -> None:
+        """A '< 1' keyword matches a '<1' diff line after whitespace normalisation (M-4a).
+
+        Scenario: the agent writes 'if patience<1:' while the ground-truth keyword is 'patience < 1';
+        the recall scorer must credit it rather than penalising the spacing variant.
+        """
+        diff = "--- a/x.py\n+++ b/x.py\n+    if patience<1:\n+        raise ValueError\n"
+        score = script_run_agentic.score_fix(diff, ["patience < 1"], [])
+        assert score.erec == pytest.approx(1.0)
+
+    def test_score_read_crop_matches_operator_keyword_despite_whitespace(self, script_run_agentic: Any) -> None:
+        """score_read_crop credits a '< 1' keyword when the answer writes '<1' (M-4a)."""
+        score = script_run_agentic.score_read_crop("guard returns <1 on misconfig", ["< 1"])
+        assert score.erec == pytest.approx(1.0)
+
+    def test_score_read_crop_preserves_word_boundaries(self, script_run_agentic: Any) -> None:
+        """Normalisation keeps word-word spaces so distinct identifiers are not merged (M-4a).
+
+        Scenario: an answer that never mentions 'raise Error' must not falsely match it just because
+        whitespace was collapsed elsewhere.
+        """
+        score = script_run_agentic.score_read_crop("this text has no such token here", ["raise Error"])
+        assert score.erec == pytest.approx(0.0)
+
+    @pytest.mark.parametrize(
+        "test_passed,expected",
+        [pytest.param(True, True, id="passed"), pytest.param(False, False, id="failed")],
+    )
+    def test_score_fix_records_test_passed_when_supplied(
+        self, script_run_agentic: Any, test_passed: bool, expected: bool
+    ) -> None:
+        """score_fix stores the supplied targeted-test outcome alongside erec (M-4b)."""
+        diff = "+++ b/x.py\n+    fixed = True\n"
+        score = script_run_agentic.score_fix(diff, ["fixed"], ["x.py"], test_passed=test_passed)
+        assert score.test_passed is expected
+        assert score.erec == pytest.approx(1.0)  # erec column is unchanged by the test signal
+
+    def test_score_fix_test_passed_defaults_to_none(self, script_run_agentic: Any) -> None:
+        """A task with no declared test leaves test_passed=None (M-4b)."""
+        score = script_run_agentic.score_fix("+++ b/x.py\n+ fixed\n", ["fixed"], ["x.py"])
+        assert score.test_passed is None
+
+
+class TestRunTargetedTest:
+    """_run_targeted_test runs pytest on the post-edit sandbox and reports pass/fail/None."""
+
+    def _runner(self, script: Any, repo: Path) -> Any:
+        """Build a ModelRunner rooted at the given repo path."""
+        return script.ModelRunner("haiku", script.MODELS["haiku"], repo, timeout=300)
+
+    def test_passing_target_returns_true(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """A passing pytest node yields True."""
+        (tmp_path / "test_ok.py").write_text("def test_ok():\n    assert 1 + 1 == 2\n")
+        runner = self._runner(script_run_agentic, tmp_path)
+        assert runner._run_targeted_test(tmp_path, "test_ok.py") is True
+
+    def test_failing_target_returns_false(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """A failing pytest node yields False (not None — the run launched fine)."""
+        (tmp_path / "test_bad.py").write_text("def test_bad():\n    assert False\n")
+        runner = self._runner(script_run_agentic, tmp_path)
+        assert runner._run_targeted_test(tmp_path, "test_bad.py") is False
+
+
+# ===========================================================================
+# BA query arms run in an isolated copy, not the real repo (review M-5)
+# ===========================================================================
+
+
+class TestQueryArmIsolation:
+    """Non-reset (query) codemap runs execute in a throwaway copy so they cannot mutate the repo."""
+
+    def test_ba_codemap_run_uses_a_copy_and_cannot_mutate_repo(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """A BA codemap run's cwd is a copy of the repo, and edits there never touch self.repo_path.
+
+        Scenario: query arms used to run in-place with Edit/Bash unblocked (M-5); the cwd handed to
+        the subprocess must be a distinct copy, and a write into it must not appear in the real repo.
+        """
+        repo = tmp_path / "myrepo"
+        repo.mkdir()
+        (repo / "mod.py").write_text("x = 1\n")
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], repo, timeout=300)
+        task = script_run_agentic.Task(id="BA-01", type="blast_radius_analysis", prompt="p", requires_reset=False)
+        seen: dict[str, Any] = {}
+
+        def _fake_stream(
+            self: Any, cmd: Any, result: Any, update_fn: Any = None, cwd: Any = None, arm: Any = None
+        ) -> None:
+            seen["cwd"] = cwd
+            (cwd / "MUTATED.txt").write_text("agent wrote this")  # simulate a stray edit in the sandbox
+            result.input_tokens = 10
+            result.output_tokens = 10
+
+        with patch.object(script_run_agentic.ModelRunner, "_stream_events", _fake_stream):
+            runner.run(task, "codemap")
+
+        assert seen["cwd"] != repo
+        assert seen["cwd"].name == repo.name
+        assert not (repo / "MUTATED.txt").exists()  # the stray edit stayed in the throwaway copy

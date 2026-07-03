@@ -1479,6 +1479,16 @@ class TestWriteReportFile:
         assert Path(second).exists()
         assert Path(second).name == f"code-{date.today().isoformat()}-2.md"
 
+    def test_resolve_report_path_has_no_filesystem_side_effect(
+        self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: resolve_report_path only computes a path — it never creates benchmarks/results/."""
+        monkeypatch.chdir(tmp_path)
+        path = script_run_cli.resolve_report_path()
+        assert path.name == f"code-{date.today().isoformat()}.md"
+        assert not (tmp_path / "benchmarks" / "results").exists()
+        assert not path.exists()
+
 
 # ===========================================================================
 # Error sentinel — run_scan_query_result distinguishes failure from empty (H-9)
@@ -1740,3 +1750,165 @@ class TestVerdictSplit:
         env = script_run_cli.build_summary_envelope(results, tmp_path, tmp_path / "i.json", "PASS")
         assert env["primary"] == {"passed": 1, "total": 1}
         assert env["self_consistency"] == {"verdict": "INCONSISTENT", "passed": 0, "total": 1}
+
+
+# ===========================================================================
+# Accuracy tier coverage — every task graded, none silently dropped (M-12)
+# ===========================================================================
+
+
+class TestAccuracyTierCoverage:
+    """Validate A1 and A2 partition every risk tier so no accuracy task is silently ungraded."""
+
+    def test_a1_and_a2_partition_all_tiers(self, script_run_cli: Any) -> None:
+        """Scenario: one row per known tier lands in exactly one of A1 or A2 (union all, no overlap)."""
+        tiers = ["high", "very-high", "moderate-high", "moderate", "low", "low-moderate"]
+        rows = [
+            {
+                "module": f"pkg.{t}",
+                "risk_tier": t,
+                "errored": False,
+                "codemap_count": 1,
+                "precision": 1.0,
+                "recall": 1.0,
+            }
+            for t in tiers
+        ]
+        a1_mods = {m["module"] for m in script_run_cli._a1_scenario(rows).result["per_module"]}
+        a2_mods = {m["module"] for m in script_run_cli._a2_scenario(rows).result["per_module"]}
+        assert a1_mods | a2_mods == {r["module"] for r in rows}
+        assert a1_mods & a2_mods == set()
+
+    def test_previously_ungraded_tiers_now_graded_by_a2(self, script_run_cli: Any) -> None:
+        """Scenario: moderate / low-moderate tiers (formerly ungraded) are now scored under A2."""
+        rows = [
+            {"module": "pkg.mod", "risk_tier": "moderate", "errored": False, "codemap_count": 1, "precision": 1.0},
+            {"module": "pkg.lm", "risk_tier": "low-moderate", "errored": False, "codemap_count": 1, "precision": 1.0},
+        ]
+        graded = {m["module"] for m in script_run_cli._a2_scenario(rows).result["per_module"]}
+        assert graded == {"pkg.mod", "pkg.lm"}
+
+
+# ===========================================================================
+# A1 per-module gating — a high group mean cannot mask a failing module (M-13)
+# ===========================================================================
+
+
+class TestA1PerModuleGating:
+    """Validate A1 PASS requires every module, not just a passing group mean."""
+
+    def test_one_module_below_threshold_fails_despite_passing_mean(self, script_run_cli: Any) -> None:
+        """Scenario: three perfect modules + one at recall 0.5 keep the mean above threshold, yet A1 fails."""
+        rows = [
+            {"module": "pkg.a", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 1.0},
+            {"module": "pkg.b", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 1.0},
+            {"module": "pkg.c", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 1.0},
+            {"module": "pkg.bad", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 0.5},
+        ]
+        a1 = script_run_cli._a1_scenario(rows)
+        assert a1.passed is False
+        assert a1.result["avg_recall"] >= script_run_cli.THRESHOLDS["A1"]["recall_min"]
+        assert "pkg.bad" in a1.result["failing_modules"]
+
+    def test_all_modules_meeting_threshold_pass(self, script_run_cli: Any) -> None:
+        """Scenario: every high-risk module at/above both thresholds → A1 passes with no failing modules."""
+        rows = [
+            {"module": "pkg.a", "risk_tier": "high", "errored": False, "precision": 1.0, "recall": 1.0},
+            {"module": "pkg.b", "risk_tier": "high", "errored": False, "precision": 0.95, "recall": 0.9},
+        ]
+        a1 = script_run_cli._a1_scenario(rows)
+        assert a1.passed is True
+        assert a1.result["failing_modules"] == []
+
+
+# ===========================================================================
+# Hardware capture — latency gates are hardware-bound, host must be recorded (M-14)
+# ===========================================================================
+
+
+class TestHardwareCapture:
+    """Validate the report header and JSON envelope record the host for the hardware-calibrated gates."""
+
+    def test_envelope_includes_platform_and_cpu_fields(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: the summary envelope carries a hardware dict with platform, cpu_count, and python."""
+        results = [script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {})]
+        env = script_run_cli.build_summary_envelope(results, tmp_path, tmp_path / "i.json", "PASS")
+        assert set(env["hardware"]) >= {"platform", "processor", "cpu_count", "python"}
+
+    def test_report_header_records_hardware(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: the rendered report header names the hardware host for the latency thresholds."""
+        results = [script_run_cli.ScenarioResult("L1", "central", "latency", True, {}, {})]
+        report = tmp_path / "r.md"
+        script_run_cli.render_report(results, tmp_path, tmp_path / "i.json", report)
+        assert "**Hardware**" in report.read_text()
+
+
+# ===========================================================================
+# Report reconciliation — S/H/X visible and header counts reconcile (M-15)
+# ===========================================================================
+
+
+class TestReportReconciliation:
+    """Validate every scenario counted in the header is visible in a rendered table (primary + S/H/X)."""
+
+    def test_shx_rendered_and_header_counts_reconcile(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: S/H/X render in the self-consistency table and header counts match each track's size."""
+        sr = script_run_cli.ScenarioResult
+        results = [
+            sr("C1", "cov", "calls", True, {}, {}),
+            sr("C2", "cov2", "calls", False, {}, {}),
+            sr("A1", "acc", "accuracy", True, {}, {}),
+            sr("L1", "lat", "latency", True, {}, {}),
+            sr("Q_fix", "qs", "query-shape", True, {}, {}),
+            sr("S2", "sym", "symbol", True, {}, {}),
+            sr("H1", "hea", "health", False, {}, {}),
+            sr("X1", "xrf", "xrefs", True, {}, {}),
+        ]
+        report = tmp_path / "r.md"
+        script_run_cli.render_report(results, tmp_path, tmp_path / "i.json", report)
+        text = report.read_text()
+        primary_total = len([r for r in results if r.suite in script_run_cli._PRIMARY_SUITES])
+        sc = [r for r in results if r.suite in script_run_cli._SELF_CONSISTENCY_SUITES]
+        sc_passed = len([r for r in sc if r.passed])
+        assert "Symbol (S)" in text and "Health (H)" in text and "Xrefs (X)" in text
+        assert f"/{primary_total} primary scenarios" in text
+        assert f"{sc_passed}/{len(sc)}" in text
+        assert primary_total + len(sc) == len(results)
+
+    def test_skipped_self_consistency_noted_not_silent(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: with no S/H/X results the report explicitly flags the skipped track, not silence."""
+        results = [script_run_cli.ScenarioResult("C1", "cov", "calls", True, {}, {})]
+        report = tmp_path / "r.md"
+        script_run_cli.render_report(results, tmp_path, tmp_path / "i.json", report)
+        text = report.read_text()
+        assert "skipped (no ground truth)" in text
+        assert "SKIPPED" in text
+
+
+# ===========================================================================
+# Stale-index guard — self-consistency suites skip on an old scan_version (L-C3)
+# ===========================================================================
+
+
+class TestIndexScanVersion:
+    """Validate the index scan_version reader that gates the self-consistency track."""
+
+    def test_reads_recorded_scan_version(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: the recorded integer scan_version is returned from the index JSON."""
+        index = tmp_path / "i.json"
+        index.write_text(json.dumps({"scan_version": 7, "modules": []}), encoding="utf-8")
+        assert script_run_cli._index_scan_version(index) == 7
+
+    def test_missing_field_returns_zero(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: an index without scan_version yields 0, gating the self-consistency suites off."""
+        index = tmp_path / "i.json"
+        index.write_text(json.dumps({"modules": []}), encoding="utf-8")
+        assert script_run_cli._index_scan_version(index) == 0
+
+    def test_unreadable_index_returns_zero(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: an absent or unparsable index returns 0 rather than raising."""
+        assert script_run_cli._index_scan_version(tmp_path / "nope.json") == 0
+
+    def test_min_ver_constant_is_positive(self, script_run_cli: Any) -> None:
+        """Scenario: the self-consistency minimum version is a positive gate value."""
+        assert script_run_cli._SELF_CONSISTENCY_MIN_VER >= 1

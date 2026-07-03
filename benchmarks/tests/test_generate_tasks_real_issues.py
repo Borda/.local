@@ -27,6 +27,7 @@ def _make_pr(
     source_files: list[str] | None = None,
     py_file_count: int = 1,
     closes_issue: bool = False,
+    source_changes: dict[str, int] | None = None,
 ) -> Any:
     """Build a minimal PullRequestInfo for tests.
 
@@ -36,6 +37,7 @@ def _make_pr(
         source_files: Source files list; defaults to a single placeholder path.
         py_file_count: Total Python file count (tests included).
         closes_issue: Whether the PR explicitly closes its parent issue.
+        source_changes: Per-path change size; ``None`` leaves it unset (no signal).
 
     Returns:
         A PullRequestInfo instance.
@@ -47,6 +49,7 @@ def _make_pr(
         source_files=source_files,
         py_file_count=py_file_count,
         closes_issue=closes_issue,
+        source_changes=source_changes,
     )
 
 
@@ -605,3 +608,121 @@ class TestBuildTask:
         """
         task = script_gen_real_issues.build_task(1, _make_record(script_gen_real_issues))
         assert task["workflow_subtype"] == "pre_implementation_research"
+
+    def test_build_task_primary_module_picks_most_changed_file(self, script_gen_real_issues: Any) -> None:
+        """Verify primary_module reflects the most-changed file, not the first one.
+
+        Scenario: a multi-file PR whose second file has the larger diff must not
+        yield the first file's module as primary — the bigger diff drives it.
+        """
+        source_files = [
+            "src/lightning/pytorch/trainer/trainer.py",
+            "src/lightning/pytorch/loops/fit_loop.py",
+        ]
+        changes = {source_files[0]: 3, source_files[1]: 90}
+        pr = _make_pr(script_gen_real_issues, source_files=source_files, source_changes=changes)
+        record = _make_record(script_gen_real_issues, pr=pr)
+        task = script_gen_real_issues.build_task(1, record)
+        assert task["primary_module"] == "lightning.pytorch.loops.fit_loop"
+        assert task["primary_module_basis"] == "most_changed"
+
+    def test_build_task_primary_module_basis_first_file_without_signal(self, script_gen_real_issues: Any) -> None:
+        """Verify basis is 'first_file' when no change-size data is available.
+
+        Scenario: a stub/hand-authored PR carries no additions/deletions, so the
+        selection falls back to the first file and flags the arbitrariness.
+        """
+        task = script_gen_real_issues.build_task(1, _make_record(script_gen_real_issues))
+        assert task["primary_module_basis"] == "first_file"
+
+
+# ===========================================================================
+# class TestSelectPrimaryModule
+# ===========================================================================
+
+
+class TestSelectPrimaryModule:
+    """Tests for select_primary_module(source_files, source_changes) -> (module, basis)."""
+
+    @pytest.mark.parametrize(
+        "source_files,source_changes,expected_module,expected_basis",
+        [
+            # most-changed wins even when it is not first
+            (["src/a.py", "src/b.py"], {"src/a.py": 3, "src/b.py": 40}, "b", "most_changed"),
+            # first-file tiebreak when change sizes are equal
+            (["src/a.py", "src/b.py"], {"src/a.py": 10, "src/b.py": 10}, "a", "most_changed"),
+            # no signal (None) -> first file
+            (["src/a.py", "src/b.py"], None, "a", "first_file"),
+            # all-zero changes -> treated as no signal -> first file
+            (["src/a.py", "src/b.py"], {"src/a.py": 0, "src/b.py": 0}, "a", "first_file"),
+            # single file -> that file regardless of basis
+            (["src/only.py"], {"src/only.py": 5}, "only", "most_changed"),
+        ],
+    )
+    def test_select_primary_module(
+        self,
+        script_gen_real_issues: Any,
+        source_files: list[str],
+        source_changes: dict[str, int] | None,
+        expected_module: str,
+        expected_basis: str,
+    ) -> None:
+        """Verify most-changed selection, tiebreak, and no-signal fallback.
+
+        Args:
+            source_files: Ordered source paths.
+            source_changes: Per-path change size, or None.
+            expected_module: Expected dotted module name.
+            expected_basis: Expected selection basis label.
+        """
+        module, basis = script_gen_real_issues.select_primary_module(source_files, source_changes)
+        assert module == expected_module
+        assert basis == expected_basis
+
+
+# ===========================================================================
+# class TestResolveMergedPrProvenance
+# ===========================================================================
+
+
+class TestResolveMergedPrProvenance:
+    """Tests for the weak-provenance warning emitted by resolve_merged_pr."""
+
+    def test_warns_when_falling_back_to_non_closing_pr(
+        self, script_gen_real_issues: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A fallback to a non-closing candidate emits a visible stderr warning.
+
+        Scenario: no cross-referenced PR carries a closes/fixes/resolves keyword,
+        so the weaker timeline-only linkage must not be accepted silently.
+        """
+        monkeypatch.setattr(
+            script_gen_real_issues,
+            "_inspect_pr",
+            lambda number, min_py, max_py, issue_number=None: _make_pr(
+                script_gen_real_issues, number=number, closes_issue=False
+            ),
+        )
+        result = script_gen_real_issues.resolve_merged_pr([101], 1, 5, issue_number=42)
+        assert result.number == 101
+        err = capsys.readouterr().err
+        assert "weak provenance" in err
+        assert "#42" in err
+
+    def test_no_warning_when_closing_pr_available(
+        self, script_gen_real_issues: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A candidate that explicitly closes the issue is chosen with no warning.
+
+        Scenario: strong provenance exists, so the fallback path is never taken.
+        """
+        monkeypatch.setattr(
+            script_gen_real_issues,
+            "_inspect_pr",
+            lambda number, min_py, max_py, issue_number=None: _make_pr(
+                script_gen_real_issues, number=number, closes_issue=True
+            ),
+        )
+        result = script_gen_real_issues.resolve_merged_pr([101], 1, 5, issue_number=42)
+        assert result.closes_issue is True
+        assert "weak provenance" not in capsys.readouterr().err

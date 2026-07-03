@@ -465,6 +465,37 @@ Each mode enforces a validation gate *before* writing implementation code:
 /session summary    # digest of what happened this session
 ```
 
+## 🧭 Native Claude Code skills
+
+Two capabilities below ship **natively with Claude Code** — they are not part of this repo's plugins (foundry / oss / develop / research / codemap). They work in any project, including this one, alongside the plugin skills above.
+
+### Skill auto-selection (the "skills advisor")
+
+Every skill — native or plugin — carries a `description` with `TRIGGER` / `SKIP` routing signals. Claude Code reads those descriptions and **auto-selects the matching skill** when your request lines up with one, so you don't have to remember the exact slash command. The `description` field is what does the advising: it is the routing signal that decides which skill (if any) fits the task. You can always override it by invoking a skill explicitly with `/<skill-name>`.
+
+**When to rely on it**
+
+- **Discovery / "which skill fits this?"** — describe the task in plain language and let auto-selection surface the right skill (e.g. "review this PR" -> `/oss:review`, "why is CI failing but local passes" -> `/investigate`). This is the intended path when you don't know the exact command.
+- **Explicit control** — when you already know which skill you want, type the slash command directly (`/develop:fix ...`); the explicit invocation always wins over auto-selection.
+- **Caveat** — auto-selection only fires when a description clearly matches; vague requests may match nothing (Claude answers inline) or the wrong skill. Sharpen the request, or invoke explicitly, if the wrong thing triggers. Auto-selection never runs a skill silently — the invocation is visible.
+
+### `/deep-research` — multi-source, fact-checked research report
+
+A native research harness for questions that need real sourcing rather than a single answer. It **fans out parallel web searches, fetches the sources, adversarially verifies each claim, and synthesizes a cited report** — the verification pass is what separates it from a plain search: claims that can't be corroborated are dropped or flagged rather than repeated.
+
+**Invocation**
+
+```text
+/deep-research <question>
+```
+
+**When to use it**
+
+- **Use it** for a deep, multi-source, fact-checked write-up on a topic — comparisons, state-of-the-art surveys, "what's actually true about X" where you want citations and cross-checking, not a quick recall.
+- **Don't use it** for a single-fact lookup (a normal web search or an inline answer is faster) or for anything answerable from the codebase (use `/codemap:query-code`, grep, or a direct read).
+- **Scope first** — if the question is underspecified (e.g. "what car should I buy" with no budget / use-case / region), it will ask 2-3 clarifying questions before spending the search budget. Giving those constraints up front produces a sharper report.
+
+
 ## 🗺️ Plugin dependency matrix
 
 <details>

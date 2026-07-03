@@ -76,12 +76,17 @@ class PullRequestInfo:
         py_file_count: Count of all ``.py`` files changed (tests included).
         closes_issue: True when the PR body contains an explicit closing keyword
             (``closes/fixes/resolves #N``) referencing the source issue.
+        source_changes: Per-source-file change size (``additions + deletions``), keyed by
+            repo-relative path. Populated from the ``gh pr view --json files`` payload; ``None``
+            when the payload carried no change-size data (e.g. a hand-authored stub PR). Drives the
+            most-changed primary-module heuristic in :func:`select_primary_module`.
     """
 
     number: int
     source_files: list[str]
     py_file_count: int
     closes_issue: bool = False
+    source_changes: dict[str, int] | None = None
 
 
 @dataclass
@@ -293,7 +298,17 @@ def resolve_merged_pr(
     for info in candidates:
         if info.closes_issue:
             return info
-    return candidates[0]
+    fallback = candidates[0]
+    if issue_number is not None:
+        # No candidate carried a closes/fixes/resolves keyword — the issue<->PR linkage rests only on a
+        # timeline cross-reference, which is weaker provenance. Surface it so the fallback is not silent
+        # (the closes_issue=False flag already rides through to the task's pr_closes_issue field).
+        print(
+            f"! weak provenance: issue #{issue_number} -> PR #{fallback.number} "
+            "(no closes/fixes/resolves keyword; linkage inferred from timeline cross-reference)",
+            file=sys.stderr,
+        )
+    return fallback
 
 
 def _inspect_pr(number: int, min_py: int, max_py: int, issue_number: int | None = None) -> PullRequestInfo | None:
@@ -317,13 +332,18 @@ def _inspect_pr(number: int, min_py: int, max_py: int, issue_number: int | None 
         return None
     if not data or data.get("state") != "MERGED" or not data.get("mergedAt"):
         return None
-    paths = [f["path"] for f in data.get("files", []) if isinstance(f, dict) and f.get("path")]
+    files = [f for f in data.get("files", []) if isinstance(f, dict) and f.get("path")]
+    paths = [f["path"] for f in files]
     py_paths = [p for p in paths if p.endswith(".py")]
     if not (min_py <= len(py_paths) <= max_py):
         return None
     source_files = [p for p in py_paths if not _is_test_path(p)]
     if not source_files:
         return None
+    source_set = set(source_files)
+    source_changes = {
+        f["path"]: int(f.get("additions") or 0) + int(f.get("deletions") or 0) for f in files if f["path"] in source_set
+    }
     closes = False
     if issue_number is not None:
         closes = _pr_closes_issue(data.get("body") or "", issue_number)
@@ -332,6 +352,7 @@ def _inspect_pr(number: int, min_py: int, max_py: int, issue_number: int | None 
         source_files=source_files,
         py_file_count=len(py_paths),
         closes_issue=closes,
+        source_changes=source_changes,
     )
 
 
@@ -385,6 +406,35 @@ def module_for(path: str) -> str:
     return cleaned.replace("/", ".")
 
 
+def select_primary_module(source_files: list[str], source_changes: dict[str, int] | None) -> tuple[str, str]:
+    """Pick the primary module for a multi-file issue and report how it was chosen.
+
+    Prefers the module of the *most-changed* source file (largest ``additions + deletions``),
+    breaking ties by original position in ``source_files`` so the choice is deterministic. When no
+    change-size signal is available (``source_changes`` is ``None``, empty, or all-zero) the first
+    file is used and the basis is reported as ``"first_file"`` so the arbitrariness is visible to a
+    downstream reviewer rather than silently baked in.
+
+    Args:
+        source_files: Ordered repo-relative source paths (non-empty).
+        source_changes: Per-path change size, or ``None`` when unavailable.
+
+    Returns:
+        A ``(dotted_module, basis)`` pair; ``basis`` is ``"most_changed"`` or ``"first_file"``.
+
+    Examples:
+        >>> select_primary_module(["src/a.py", "src/b.py"], {"src/a.py": 3, "src/b.py": 40})
+        ('b', 'most_changed')
+        >>> select_primary_module(["src/a.py", "src/b.py"], None)
+        ('a', 'first_file')
+    """
+    changes = source_changes or {}
+    if any(v > 0 for v in changes.values()):
+        primary = max(source_files, key=lambda p: (changes.get(p, 0), -source_files.index(p)))
+        return module_for(primary), "most_changed"
+    return module_for(source_files[0]), "first_file"
+
+
 def build_prompt(title: str, body: str) -> str:
     """Build the task prompt: title line plus a truncated body.
 
@@ -412,6 +462,7 @@ def build_task(index: int, record: IssueRecord) -> dict[str, Any]:
     """
     source_files = record.pr.source_files
     file_count = len(source_files)
+    primary_module, primary_module_basis = select_primary_module(source_files, record.pr.source_changes)
     return {
         "id": f"OSS-{index:02d}",
         "type": "real_issue",
@@ -427,7 +478,8 @@ def build_task(index: int, record: IssueRecord) -> dict[str, Any]:
             "files_changed": source_files,
             "file_count": file_count,
         },
-        "primary_module": module_for(source_files[0]),
+        "primary_module": primary_module,
+        "primary_module_basis": primary_module_basis,
         "scoreable": True,
         "pr_closes_issue": record.pr.closes_issue,
     }
