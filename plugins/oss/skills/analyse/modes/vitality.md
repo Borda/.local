@@ -2,7 +2,7 @@
 
 <workflow>
 
-**Task hygiene**: call TaskList first; close orphaned tasks from prior runs. **Task tracking**: TaskCreate tasks for each major phase before starting: "Step 1 Data Fetch", "Step 2 Axis Scoring (3 parallel)", "Step 3 Assemble Scores", "Step 4 Report", "Step 5 Codex Review", "Step 6 Adversarial Rework Loop", "Step 7 Terminal Output"; mark each in_progress/completed as you go.
+**Task hygiene**: call TaskList first; close orphaned tasks from prior runs. **Task tracking**: TaskCreate tasks for each major phase before starting: "Step 1 Data Fetch", "Step 2 Axis Scoring (3 parallel)", "Step 3 Assemble Scores", "Step 4 Report", "Step 5 Codex Review", "Step 6 Adversarial Rework Loop", "Step 7 Terminal Output"; mark each in_progress/completed as you go. **In `--quick` mode** (QUICK_MODE=true): omit the "Step 5 Codex Review" and "Step 6 Adversarial Rework Loop" tasks — they are skipped.
 
 ## Step 1 — Data Fetch
 
@@ -90,12 +90,21 @@ REPORT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")  # tim
 # Codex check here — agents list in frontmatter must be accurate at write time
 find ~/.claude/plugins -name "codex-rescue.md" 2>/dev/null | grep -q . && CODEX_AVAILABLE=1 || CODEX_AVAILABLE=0
 
+# --quick: reload from Step 1 flag parse (fresh shell). Quick mode skips Steps 5 + 6 (codex review + adversarial loop).
+QUICK_MODE=$(cat "${TMPDIR:-/tmp}/analyse-quick-mode" 2>/dev/null || echo false)
+
 # Build agents list for frontmatter — reflects actual contributors
-REPORT_AGENTS_YAML="  - oss:analyse (orchestrator)
+if [ "$QUICK_MODE" = "true" ]; then
+    REPORT_AGENTS_YAML="  - oss:analyse (orchestrator, --quick: core scoring only)"
+else
+    REPORT_AGENTS_YAML="  - oss:analyse (orchestrator)
   - foundry:challenger (adversarial review)"
-[ "$CODEX_AVAILABLE" = "1" ] && REPORT_AGENTS_YAML="$REPORT_AGENTS_YAML
+    [ "$CODEX_AVAILABLE" = "1" ] && REPORT_AGENTS_YAML="$REPORT_AGENTS_YAML
   - codex:codex-rescue (independent repo review + adversarial review)"
+fi
 ```
+
+> `--quick` note: in quick mode the single-pass scorecard is un-reviewed — confidence is capped lower and the report's Adversarial Review section records "skipped (--quick)". Rerun without `--quick` for a merge/release-grade assessment.
 
 Resolve template path (installed cache first, source tree fallback):
 
@@ -108,6 +117,8 @@ REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 Run `mkdir -p .reports/analyse/vitality` then **Read `$REPORT_TPL`** to get full report structure. Write `$REPORT_FILE` using that structure as scaffold — substitute all `{VARIABLE}` placeholders with bash variables set above (`REPORT_TIMESTAMP`, `GH_OWNER`, `GH_REPO`, `SKILL_VERSION`, `REPORT_COMMIT`, `TOTAL_PASSES`, `CONFIDENCE_HISTORY`, `REPORT_AGENTS_YAML`, etc.). Do not print full analysis to terminal.
 
 ## Step 5 — Codex Independent Repo Review
+
+**Skip entirely when `QUICK_MODE=true`** — quick mode is single-pass. Set the report's Independent Codex Review section to "skipped (--quick)" and jump to Step 7 (skip Step 6 too).
 
 When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 9 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation and divergence detection.
 
@@ -194,6 +205,8 @@ _(Only axes with delta ≥ 2.0. If none: "Main analysis and Codex agree within 2
 ```
 
 ## Step 6 — Adversarial Rework Loop
+
+**Skip entirely when `QUICK_MODE=true`** — no adversarial review in quick mode. Replace the report's `## Adversarial Review` placeholder (from Step 4) with "skipped (--quick) — single-pass scorecard, un-reviewed; rerun without --quick for a reviewed assessment", then proceed to Step 7.
 
 After Step 5 aggregation complete — report includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess **complete combined report** iteratively; rework applied between iterations.
 
@@ -368,7 +381,7 @@ Block must begin with `# Repo Vitality — {GH_OWNER}/{GH_REPO}` title and close
 - **Parallel scoring**: Group A (Axes 1,2,5,6), Group B (Axes 4,7,8), Group C (Axes 3→9) run simultaneously. Each reads DATA_FILE independently — no shared state between scorer agents. Assembler merges after all 3 complete.
 - **Rework loop**: max 2 iterations. Rework agents get MINIMAL context — only section content + raw data + rubric + reviewer issue. No full report history passed. Prevents anchoring on prior flawed reasoning.
 - **Fresh adversarial agents each iteration**: spawn new Agent() each rework cycle — prior iteration's reviewer findings must NOT be in new reviewer's context. Independent assessment is the point.
-- **Adversarial review is mandatory** — Step 6 always runs; `foundry:challenger` always spawned; `codex:codex-rescue` spawned when `CODEX_AVAILABLE=1`. No skip path exists.
+- **Adversarial review is mandatory in full mode** — Step 6 always runs; `foundry:challenger` always spawned; `codex:codex-rescue` spawned when `CODEX_AVAILABLE=1`. The only skip path is `--quick` (QUICK_MODE=true), which bypasses Steps 5 and 6 for a fast daily scorecard at lower confidence.
 - **Parallel group discipline**: Group 2 data fetches in gh-scraper only after Group 1 resolves (needs root file list and default_branch); scoring Groups A/B/C have no such dependency — all read from DATA_FILE independently
 - **Data reuse**: root-contents fetch shared by Axes 6 and 7; releases fetch shared by Axis 2 and security signals; contributor stats weeks[] shared by Axis 3 and sub-signal 9A — all written to DATA_FILE, each scorer reads what it needs
 - **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501` for open issues targeting 500); if response length == limit, truncation occurred — JSONL record has `"partial": true`; scorer degrades confidence accordingly

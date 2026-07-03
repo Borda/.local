@@ -173,6 +173,32 @@ Files auto-corrected by pre-commit hooks are clean before structural audit. Note
 
 If pre-commit not configured, skip silently.
 
+## Step 1b: Layer-1 deterministic static pass
+
+Run the zero-LLM checker driver — the same deterministic checkers pre-commit enforces, aggregated into one reproducible findings file. These results are **authoritative** for their check classes: Steps 3–4 (LLM curator + judgment checks) must NOT re-derive them in prose — treat them as already-verified and spend model tokens only on judgment.
+
+```bash
+LOCAL_MODE=$(cat "${TMPDIR:-/tmp}/audit-state/local-mode" 2>/dev/null || echo false)
+STATIC_SCOPE=$( [ "$LOCAL_MODE" = true ] && echo plugins || echo .claude )
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/audit_static.py" --scan-dir "$STATIC_SCOPE" \
+    --jsonl "${TMPDIR:-/tmp}/audit-state/static-findings.jsonl"  # timeout: 120000
+```
+
+Covered deterministically by the driver (map to legacy check IDs — do NOT re-run these as prose): **14a** tag symmetry · **14b** fence symmetry · **14c** README drift · **14d** mode-dispatch integrity · **14e** cross-plugin shared-file drift · **41** bash-variable persistence · **42** spawn-prompt `$VAR` · **32d** orphaned bin/ scripts · **R3** bin/computed-path reference integrity. The whole-repo checks (orphaned-bin, routing-links, shared-drift) always scope to `plugins/` regardless of `STATIC_SCOPE`; the driver is most complete in `--local` mode. Step 5 merges `static-findings.jsonl` into the aggregate.
+
+> **Layer-1 recall is benchmarked** — `tests/test_audit_static.py` plants a known defect per scope-aware class and asserts the driver catches every one (100% mechanical recall), so this pass is trusted, not assumed.
+
+## Step 1c: Layer-3 recurrence signal (attention weighting)
+
+Read a compact git-churn signal so audit attention follows *measured* churn — the files and change-classes that keep being re-fixed are where the next defect most likely hides. Report the dominant recurring-fix class, not only point findings.
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/audit_churn.py" --limit 300 --path plugins \
+    > "${TMPDIR:-/tmp}/audit-state/churn-signal.json" 2>/dev/null  # timeout: 20000
+```
+
+Use `churn-signal.json` (`commit_types`, `top_churn`, `recurring_hint`) to: (1) prioritize per-file audits toward the most-churned files first in Step 3 batching; (2) add a **Recurring fix class** line to the Step 7 report naming the dominant theme (e.g. "version-bump churn — candidate for automation"). Zero-LLM, best-effort; skip silently if git is unavailable.
+
 ## Step 2: Collect all config files
 
 Enumerate everything in scope with built-in tools. Run all Glob calls in parallel.
@@ -222,6 +248,8 @@ Merge into single flat inventory. When `LOCAL_MODE=true` and same logical name i
 **Batching rule**: Always apply the grouping algorithm. Compute `EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total_files / MAX_BATCHES))` before grouping — caps total batches at `MAX_BATCHES` while guaranteeing `BATCH_SIZE_MIN` files per batch for adequate curator context. Group files into batches of up to `EFFECTIVE_BATCH`. Never spawn one agent per file. Total files ≤ `EFFECTIVE_BATCH` → one batch containing all files.
 
 **Grouping algorithm**: (1) sort by plugin origin (`plugins/<name>/` prefix); (2) assign each plugin's files to batches, fill to `BATCH_SIZE` before next — keeps same-plugin files together; (3) remaining files (`.claude/` and mixed) fill open slots. Grouping plugin-first, not strictly ordered — unconnected files assigned randomly to reach `BATCH_SIZE`.
+
+**Layer-2 — judgment by domain, not by file (plugin scope)**: when the scope is `plugins`, `plugins <name>`, or a tier-2 plugin name, override the batch cap and group **all of a plugin's files into ONE holistic batch** (one `foundry:curator` per plugin), even if that exceeds `EFFECTIVE_BATCH`. Whole-plugin context is what lets the curator catch cross-file breaks that per-file batching structurally misses — tool-grant mismatches (agent frontmatter vs skill dispatch), inter-skill contract splits (a constant clamped differently in two files), dead dispatch paths, and version/description drift within the plugin. The curator prompt for a holistic batch must say: "You have this plugin's ENTIRE file set — review it as one system: check that every `Agent(subagent_type=...)` dispatch targets an agent whose frontmatter grants the needed tools, that shared constants/contracts agree across files, and that no skill references a removed mode/file." The mechanical checks are already done in Step 1b — spend this holistic pass on cross-file judgment only. (Very large plugins may still split, but keep agents+their dispatching skills in the same batch.)
 
 **Scope-restricted runs**: fewer than `EFFECTIVE_BATCH` files → one batch containing ALL files in scope (single foundry:curator spawn). Read only relevant template file(s) for active scope, not all 4.
 
@@ -325,7 +353,7 @@ After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/syst
 
 **Delegate aggregation** to consolidator agent to avoid flooding main context. Spawn **foundry:curator** consolidator:
 
-> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"critical|high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
+> "Read all finding files in `<RUN_DIR>/` (\*.md files from Steps 3–4, including `docs-freshness.md` if present) AND the deterministic Layer-1 results at `${TMPDIR:-/tmp}/audit-state/static-findings.jsonl` (Step 1b — one JSON object per check; each `\"status\":\"fail\"` object's `lines` array is a set of already-verified mechanical findings, severity per the check's known level: fence/mode-dispatch=high, tag/README-drift/bash-persistence/spawn-vars/shared-drift=medium, orphaned-bin/routing=medium). Apply the severity classification from `$AUDIT_TPL/../severity-table.md`. Antipatterns that indicate severity under-classification are also in that file. Group all findings by severity (critical, high, medium, low). Apply the one-finding-per-issue rule: when a single location has multiple distinct problems at different severities, emit one finding entry per problem. Write the aggregated severity table to `<RUN_DIR>/aggregate.md` using the Write tool. End your aggregate.md file with a `## Confidence` block per quality-gates.md format (Score, Gaps, Refinements). Also write `<RUN_DIR>/summary.jsonl` — one compact JSON object per line, one line per finding: `{"file":"<basename>","sev":"critical|high|medium|low","id":"H1","line":"<line number or null>","category":"<category>","one_line":"<finding description>"}`. This file is what the orchestrator will read; aggregate.md is for human review only. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<RUN_DIR>/aggregate.md\",\"findings\":N,\"severity\":{\"security\":N,\"critical\":N,\"high\":N,\"medium\":N,\"low\":N},\"confidence\":0.N,\"summary\":\"N findings total: S security, C critical, H high, M medium, L low\"}`"
 
 Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate.md` in full — 200–600 lines, overflows context on large audits. Use `$RUN_DIR/summary.jsonl` for all dispatch decisions in Steps 7 and 8.
 

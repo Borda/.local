@@ -12,8 +12,10 @@
 // dirs stay silent (zero output, ≤3 stat calls) — see handleMissingIndex().
 //
 // When stale (git HEAD differs from indexed sha, OR uncommitted .py files
-// exist): spawns scan-index --root in the background (non-blocking,
+// exist): spawns scan-index --incremental --root in the background (non-blocking,
 // lockfile-guarded) so the index silently refreshes while Claude answers.
+// --incremental re-parses only changed files (~75 ms vs ~60 s full rescan);
+// scan-index falls back to a full scan when the on-disk index predates v3.
 // Staleness definition matches Tier-1 of check-index-currency.
 //
 // Output written to stdout (Claude Code prepends it to conversation context):
@@ -175,13 +177,10 @@ function main() {
       // Accept only absolute paths (path.resolve always returns absolute; guard against edge cases).
       scanRoot = path.isAbsolute(resolved) ? resolved : cwd;
     }
-
-    // Module count: full parse only for reasonably-sized indexes
-    if (idxStat.size <= MAX_PARSE_BYTES) {
-      const raw = fs.readFileSync(idxPath, "utf8");
-      const idx = JSON.parse(raw);
-      moduleCount = Object.keys(idx.file_shas || {}).length;
-    }
+    // Module count is NOT computed here — the full JSON.parse of file_shas is
+    // deferred until just before emit (below), so the common current+recently-
+    // injected prompt short-circuits at the session-TTL check without ever
+    // parsing the ≤10 MB index. moduleCount stays "?" until then.
   } catch {
     process.exit(0);
   }
@@ -263,6 +262,18 @@ function main() {
     fs.writeFileSync(sessionFlag, String(Date.now()));
   } catch {
     /* best-effort; flag write failures never block */
+  }
+
+  // Module count: full parse deferred to here so the current+recently-injected
+  // early-exit above never pays for it. Only parse reasonably-sized indexes;
+  // a parse failure keeps "?" rather than blocking the emit.
+  if (idxStat.size <= MAX_PARSE_BYTES) {
+    try {
+      const idx = JSON.parse(fs.readFileSync(idxPath, "utf8"));
+      moduleCount = Object.keys(idx.file_shas || {}).length;
+    } catch {
+      /* keep "?" — never block the preamble on a parse error */
+    }
   }
 
   const relIdx = path.relative(cwd, idxPath);

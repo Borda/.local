@@ -139,15 +139,17 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 ```text
 /oss:analyse 123              # issue, PR, or discussion by number
 /oss:analyse vitality         # repo vitality: 9-axis health scorecard, duplicate clustering, raw data JSONL
+/oss:analyse vitality --quick # fast daily scorecard: core scoring only, skips codex + adversarial passes
 /oss:analyse ecosystem        # dependency health, upstream compatibility
 /oss:analyse path/to/report.md  # re-analyse a saved report
 ```
 
 **Flags:**
 
-| Flag      | Effect                                                                                                   |
-| --------- | -------------------------------------------------------------------------------------------------------- |
-| `--reply` | Draft a contributor-facing response after analysis (routed through `oss:shepherd` for voice consistency) |
+| Flag      | Effect                                                                                                                                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reply` | Draft a contributor-facing response after analysis (routed through `oss:shepherd` for voice consistency)                                                                                                      |
+| `--quick` | Vitality only: fast daily scorecard — skips the Codex independent review and adversarial rework loop, reducing to 4 spawns. Full (reviewed) mode stays the default; confidence is capped lower in quick mode. |
 
 **What it does:**
 

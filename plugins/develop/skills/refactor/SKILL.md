@@ -1,7 +1,7 @@
 ---
 name: refactor
 description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop. TRIGGER when: user wants to restructure existing Python code without changing behaviour; phrases: \"refactor X\", \"clean up Y\", \"extract Z\", \"restructure this module\", \"improve code quality\". SKIP when: bug fixes (use `/develop:fix`); new features (use `/develop:feature`); mixed refactor+feature — run `/develop:refactor` first, then `/develop:feature`; non-Python projects."
-argument-hint: '<target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: '<target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -88,7 +88,7 @@ CODEMAP_RAW=auto
 echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — run after flag parsing. Behaviour differs by mode: `strict` (user explicitly passed `--codemap`) hard-fails when codemap unavailable; `auto` and `off` soft-degrade to `false` (do not abort skill):
 
@@ -165,7 +165,13 @@ Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply usin
 
 ## Challenger gate
 
-**Skip if `CHALLENGE_ENABLED=false`.**
+**Decision — three states** (default is NOT "skip": it runs on substantial refactors and auto-skips only small contained ones):
+
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small change.
+3. else **default** → **run when the refactor is substantial** (spans multiple files, ≳50 lines, or changes public API / an exported symbol); **auto-skip when small** (single file, ≲50 lines, no API change) — a contained refactor has little design surface to challenge.
+
+The two flags are opposites for the two regimes, which is why both exist: `--no-challenge` suppresses the gate on the *substantial* changes where it would otherwise fire; `--challenge` forces it on the *small* changes where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with scope analysis from Step 1 (affected files, dependencies, coupling, risks):
 

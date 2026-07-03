@@ -759,11 +759,11 @@ For targeted check of only affected file, spawn **foundry:curator** directly:
 
 Include audit findings in final report. Do not proceed to sync if any `critical` findings remain.
 
-**Calibration** — for agent/skill create or non-trivial content-edit, invoke `Skill(skill="foundry:calibrate", args="<name>")` after audit passes — mandatory, not optional (requires `foundry` plugin).
+**Calibration** — invoke `Skill(skill="foundry:calibrate", args="<name>")` after audit passes (requires `foundry` plugin). **Mandatory only when the edit changes the routing surface** — an agent/skill `description:` field, or a `TRIGGER`/`SKIP`/`NOT-for` line. For pure body/prose edits that leave the routing surface untouched (workflow steps, examples, `<notes>`, wording polish), calibration is **optional** — suggest it, don't force it. Routing accuracy is unaffected by non-routing edits, so the 10–30 min run rarely pays off; skipping keeps small polishes cheap.
 
-Then invoke `Skill(skill="foundry:calibrate", args="routing --fast")` to confirm overall routing accuracy unaffected (requires `foundry` plugin).
+Then, **only when the routing surface changed**, invoke `Skill(skill="foundry:calibrate", args="routing --fast")` to confirm overall routing accuracy unaffected (requires `foundry` plugin). Skip this for pure body/prose edits.
 
-Skip calibration for: trivial edits, renames, deletes, rule operations, perm operations.
+Skip calibration entirely for: trivial edits, renames, deletes, rule operations, perm operations.
 
 ## Step 10: Summary report
 
@@ -773,7 +773,7 @@ Skip calibration for: trivial edits, renames, deletes, rule operations, perm ope
 - **Rename Occurrence Validation** (rename mode only): three buckets — **Fixed** (N genuine references updated, list files) · **False positives** (N skipped, list file + one-line reason each) · **User-resolved** (N ambiguous, list file + user decision); if any genuine references could not be cleanly resolved, flag explicitly as requiring manual review
 - **Current Roster**: agents (N) and skills (N) with comma-separated names (n/a for perm operations)
 - **Audit Result**: audit findings (pass / issues found) (n/a for perm operations)
-- **Calibration Result**: recall score and routing accuracy from Step 9 (n/a for trivial edits, renames, deletes, perms)
+- **Calibration Result**: recall score and routing accuracy from Step 9 (n/a for trivial edits, renames, deletes, perms, and pure body/prose edits that left the routing surface untouched — note calibration was suggested-but-skipped in that case)
 - **Follow-up**: perm ops → confirm both `settings.json` and `permissions-guide.md` updated; run `/foundry:setup` to sync `~/.claude/`
 
 End response with `## Confidence` block per CLAUDE.md output standards.

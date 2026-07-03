@@ -1,7 +1,7 @@
 ---
 name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop. TRIGGER when: user reports a bug, regression, or unexpected behaviour in Python code with a traceback, failing test, or issue number; phrases: \"fix this bug\", \"repair X\", \"broken since Y\", \"test failing\". SKIP when: CI-only failures without local traceback (use `/develop:debug` first); new features (use `/develop:feature`); `.claude/` config issues (use `/foundry:audit`); non-Python projects."
-argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -99,7 +99,7 @@ echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 
 Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -262,7 +262,13 @@ Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply usin
 
 ## Challenger gate
 
-**Skip if `CHALLENGE_ENABLED=false`.**
+**Decision — three states** (default is NOT "skip": it runs on substantial fixes and auto-skips only small ones):
+
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small fix.
+3. else **default** → **run when the fix is substantial** (multi-file, ≳50 lines, or touches public API); **auto-skip when small** (single file, ≲50 lines, no API change) — challenger adds little on trivial fixes.
+
+Both flags exist because they cover opposite regimes: `--no-challenge` suppresses the gate on the substantial fixes where it would otherwise fire; `--challenge` forces it on the small fixes where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with root cause analysis from Step 1 (root cause, blast radius, assumptions, approach):
 

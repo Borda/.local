@@ -4,7 +4,7 @@ description: |
   Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd (requires `oss` plugin). NOT for PR readiness assessment or code review (use oss:review).
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
   SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review); user phrasing is "review PR" meaning code quality assessment, not thread triage (route to oss:review).
-argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply]"
+argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply] [--quick]"
 allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
 model: sonnet
@@ -26,6 +26,7 @@ NOT for implementing PR action items (use oss:resolve). NOT for **code-quality a
   - `vitality [<owner>/<repo> | <github-url>]` — repo vitality overview with 9-axis health scorecard and duplicate detection. Optional repo argument accepts `owner/repo` shorthand or full `https://github.com/owner/repo` URL. When omitted, auto-detected from git upstream. Non-GitHub remotes (GitLab, Bitbucket, etc.) stop with warning.
   - `ecosystem` — downstream consumer impact analysis for library maintainers
   - `--reply` — only valid with `N`; spawns shepherd to draft contributor-facing reply after thread analysis. Silently ignored for `vitality` and `ecosystem`.
+  - `--quick` — only meaningful with `vitality`; fast daily-scorecard path that skips the Codex independent review (Step 5) and the mandatory adversarial rework loop (Step 6), and reduces spawns to the core 4 (gh-scraper + 3 axis scorers). Full mode (all quality passes) stays the default. Silently ignored for `N`, `ecosystem`, and report-path modes.
   - `path/to/report.md` — path to existing report file; only valid combined with `--reply`; skips all analysis, spawns shepherd directly using provided file
 
 </inputs>
@@ -69,15 +70,22 @@ echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared"
 
 ```bash
 REPLY_MODE=false
+QUICK_MODE=false
 CLEAN_ARGS=$ARGUMENTS
 # Anchored token match, not substring — substring falsely fires on `--reply-later`, repo names with `--reply-bot`.
 if [[ " $ARGUMENTS " == *" --reply "* ]]; then
     REPLY_MODE=true
-    CLEAN_ARGS=$(echo "$ARGUMENTS" | sed -E 's/(^| )--reply($| )/\1\2/')
-    CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
+    CLEAN_ARGS=$(echo "$CLEAN_ARGS" | sed -E 's/(^| )--reply($| )/\1\2/')
 fi
-# Persist REPLY_MODE + CLEAN_ARGS — fresh shell loses vars (Check 41)
+# --quick: vitality-only fast path — skips codex review + adversarial rework loop, fewer spawns. Silently ignored for N/ecosystem modes.
+if [[ " $ARGUMENTS " == *" --quick "* ]]; then
+    QUICK_MODE=true
+    CLEAN_ARGS=$(echo "$CLEAN_ARGS" | sed -E 's/(^| )--quick($| )/\1\2/')
+fi
+CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
+# Persist REPLY_MODE + QUICK_MODE + CLEAN_ARGS — fresh shell loses vars (Check 41)
 echo "$REPLY_MODE" > "${TMPDIR:-/tmp}/analyse-reply-mode"
+echo "$QUICK_MODE" > "${TMPDIR:-/tmp}/analyse-quick-mode"
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/analyse-clean-args" # timeout: 5000
 ```
 
@@ -172,7 +180,7 @@ echo "${CLEAN_ARGS:-}" > "${TMPDIR:-/tmp}/analyse-clean-args"
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: invoke `AskUserQuestion` with:
-- question: "Unknown flag(s): `--<token>`. Supported: `--reply`. How to proceed?"
+- question: "Unknown flag(s): `--<token>`. Supported: `--reply`, `--quick`. How to proceed?"
 - (a) Abort — re-invoke with correct flags
 - (b) Continue ignoring unknown flags
 

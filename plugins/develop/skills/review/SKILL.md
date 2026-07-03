@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope."
-argument-hint: "[python-file|dir] [--no-challenge] [--codemap] [--no-codemap] [--semble]"
+argument-hint: "[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 effort: high
@@ -22,6 +22,7 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
   - Omitted: review current git diff (`git diff HEAD` — staged + unstaged vs HEAD)
   - **Scope**: Python source only. Non-Python file (YAML, JSON, shell script, etc.) → state out of scope, suggest appropriate tool. No findings.
   - `--no-challenge`: skip adversarial review (challenger runs by default)
+  - `--challenge`: force the challenger (Agent 7) even on a small diff that the small-diff auto-skip would otherwise skip
   - `--codemap`: strict mode — stop and report if codemap not installed (on by default when installed; use `--no-codemap` to opt out)
   - `--semble`: enable semble semantic search companion (off by default)
 
@@ -55,6 +56,7 @@ If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you pas
 <constants>
 
 CHALLENGE_ENABLED=true  # set to false via --no-challenge
+CHALLENGE_FORCED=false  # set to true via --challenge — forces Agent 7 even on small diffs (overrides small-diff auto-skip)
 CODEMAP_ENABLED=auto    # on by default if codemap installed + index found; --no-codemap = off; --codemap = strict (stop if not installed)
 SEMBLE_ENABLED=false    # set to true via --semble
 
@@ -98,11 +100,12 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" --skill re
 # CLEAN_ARGS → ${TMPDIR:-/tmp}/dev-review-clean-args
 REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")
 CHALLENGE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-enabled" 2>/dev/null || echo "true")
+CHALLENGE_FORCED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-forced" 2>/dev/null || echo "false")  # --challenge: force Agent 7 even on small diffs
 SEMBLE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-semble-enabled" 2>/dev/null || echo "false")
 CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || echo "auto")
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # normalize CODEMAP_RAW → true/false; strict exits on unavailability  # timeout: 5000
@@ -194,7 +197,9 @@ Skip optional agents by classification:
 
 - FIX → skip Agent 3 (perf-optimizer) and Agent 6 (solution-architect)
 - REFACTOR → skip Agent 6 (solution-architect)
+- CHORE (config/deps, no logic) → skip Agent 2 (qa-specialist), Agent 3 (perf-optimizer), and Agent 6 (solution-architect); keep Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 5 (linting-expert). No logic means no test-gap, perf, or architecture surface — mirrors the DOCS/TESTS pre-classification saving.
 - FEATURE/MIXED → spawn all agents
+- **Small-diff challenger skip** (any classification) — unless `--challenge` was passed (`CHALLENGE_FORCED=true`): diff is single file, <50 lines changed, and introduces no new public API / exported symbol → also skip Agent 7 (challenger). Multi-file, ≥50 lines, or any new public API → challenger runs. `--no-challenge` (`CHALLENGE_ENABLED=false`) disables Agent 7 entirely regardless.
 
 ### Structural context + review pre-flight (codemap — only if `CODEMAP_ENABLED=true`)
 
@@ -411,7 +416,7 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Agent 6 — foundry:solution-architect (optional, for changes touching public API boundaries)**: Target touches `__init__.py` exports, adds/modifies Protocols or ABCs, changes module structure, or introduces new public classes → evaluate API design quality, coupling impact, backward compatibility. Skip for internal implementation changes.
 
-**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
+**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`, or per the Small-diff challenger skip in Scope pre-check when `CHALLENGE_FORCED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
 
 **Challenger severity propagation**: when consolidator (Step 5) reads `challenger.md`, map challenger severity labels to review severity labels before merging — CRITICAL → `critical`, HIGH → `high`, MEDIUM → `medium`, LOW → `low`. Do not drop severity; if challenger uses non-standard labels (e.g. "blocker", "concern"), apply the mapping: blockers → `high`, concerns → `medium`.
 

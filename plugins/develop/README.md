@@ -212,6 +212,7 @@ ______________________________________________________________________
 | `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                     |
 | `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust your own scoping)                                                                                                                |
 | `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                           |
+| `--challenge`         | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                                                                                             |
 
 **Workflow**:
 
@@ -261,6 +262,8 @@ ______________________________________________________________________
 | `--plan <path>`       | Read scope and approach from an existing plan file                                                                                              |
 | `--diagnosis <path>`  | Read confirmed root cause from a `/develop:debug` output file; skips Step 1 analysis entirely                                                   |
 | `--team`              | Spawn 2-3 `foundry:sw-engineer` teammates each investigating a distinct root-cause hypothesis independently                                     |
+| `--no-challenge`      | Skip the challenger adversarial gate entirely                                                                                                   |
+| `--challenge`         | Force the challenger gate even on a small change the auto-skip would otherwise skip                                                             |
 
 **Workflow**:
 
@@ -317,6 +320,7 @@ ______________________________________________________________________
 | `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                              |
 | `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                                                  |
 | `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                    |
+| `--challenge`         | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                                                                                                      |
 
 **Workflow**:
 
@@ -372,6 +376,8 @@ ______________________________________________________________________
 | `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures with no local repro. |
 | `--codemap`            | Strict codemap — fail if index missing (auto-enabled when installed)                                                                                                                                                                                |
 | `--no-codemap`         | Disable codemap even if available                                                                                                                                                                                                                   |
+| `--no-challenge`       | Skip the challenger adversarial gate entirely                                                                                                                                                                                                       |
+| `--challenge`          | Force the challenger gate even on a small change the auto-skip would otherwise skip                                                                                                                                                                 |
 
 **Workflow**:
 
@@ -413,16 +419,17 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag             | Description                            |
-| ---------------- | -------------------------------------- |
-| `--no-challenge` | Skip challenger adversarial gate       |
-| `--codemap`      | Strict codemap — fail if index missing |
-| `--no-codemap`   | Disable codemap even if available      |
-| `--semble`       | Enable semble semantic search context  |
+| Flag             | Description                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| `--no-challenge` | Skip challenger adversarial gate                                                               |
+| `--challenge`    | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip |
+| `--codemap`      | Strict codemap — fail if index missing                                                         |
+| `--no-codemap`   | Disable codemap even if available                                                              |
+| `--semble`       | Enable semble semantic search context                                                          |
 
 **Workflow**:
 
-1. **Identify scope**: collects Python files from the path or `git diff HEAD`. Classifies the diff as FIX / REFACTOR / FEATURE / MIXED — skips optional agents for smaller diffs (e.g., FIX skips `foundry:perf-optimizer` and `foundry:solution-architect`).
+1. **Identify scope**: collects Python files from the path or `git diff HEAD`. Classifies the diff as FIX / REFACTOR / FEATURE / CHORE / MIXED — skips optional agents for smaller diffs (e.g., FIX skips `foundry:perf-optimizer` and `foundry:solution-architect`; CHORE skips `foundry:qa-specialist`, `foundry:perf-optimizer`, and `foundry:solution-architect`). A small diff (single file, \<50 lines, no new public API) also auto-skips the `foundry:challenger` gate unless `--challenge` is passed.
 2. **Codex co-review** (if `codex` plugin installed): adversarial diff review to seed a pre-flagged issues list for the specialist agents.
 3. **Six parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`):
    - `foundry:sw-engineer`: architecture, SOLID adherence, type safety, error handling, Python anti-patterns, security for touched auth/input/data paths

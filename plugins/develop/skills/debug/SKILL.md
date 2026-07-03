@@ -1,7 +1,7 @@
 ---
 name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file. TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: \"debug this failure\", \"why is X broken\", \"find the root cause of <error>\", \"investigate this CI failure\". SKIP when: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project."
-argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap]"
+argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap]"
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -85,18 +85,18 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-debug-codemap-enabled
 
 Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
-Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled 2>/dev/null || echo true)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id 2>/dev/null || echo "")`.
+Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled 2>/dev/null || echo true)`, `CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id 2>/dev/null || echo "")`.
 
 Read `$_DEV_SHARED/ci-log-extract.md`. Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Mode selection** — debug runs in one of two mutually-exclusive modes; set explicitly before any Step:
 
 ```bash
 # timeout: 5000
 # strip flags first — "123 --no-challenge" would fail integer detection otherwise
-ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+|--no-codemap|--codemap//g' | xargs)
+ARGUMENTS_FOR_MODE_DETECT=$(echo "$ARGUMENTS" | sed -E 's/--no-challenge|--challenge|--team|--ci-run[= ]?[^ ]+|--issue|--repo[= ]?[^ ]+|--no-codemap|--codemap//g' | xargs)
 if [[ " $ARGUMENTS " == *" --issue "* ]] || [[ "$ARGUMENTS_FOR_MODE_DETECT" =~ ^#?[0-9]+$ ]]; then
     DEBUG_MODE="issue"
 else
@@ -290,7 +290,13 @@ Step catches non-obvious causes — ordering dependency, environment-specific st
 
 ## Challenger gate
 
-**Skip if `CHALLENGE_ENABLED=false`.**
+**Decision — three states** (default is NOT "skip": it runs on substantial root causes and auto-skips only narrow ones):
+
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a narrow root cause.
+3. else **default** → **run when the root cause is substantial** (spans multiple files, a larger change, or touches public API); **auto-skip when narrow** (single file, ≲50 lines, no API change) — the hypothesis is simple enough to proceed directly.
+
+Both flags exist because they cover opposite regimes: `--no-challenge` suppresses the gate on the substantial cases where it would otherwise fire; `--challenge` forces it on the narrow cases where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with pattern analysis from Step 2 (differences between working/broken paths, candidate causes):
 

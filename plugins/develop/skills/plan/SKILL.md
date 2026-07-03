@@ -234,7 +234,7 @@ Do not escalate: items resolvable from codebase, items that are risks (not block
 
 ## Step 4: Challenger gate
 
-**Skip if `CHALLENGE_ENABLED=false`.**
+**Two states** (plan has no diff yet, so there is no small-diff auto-skip and no `--challenge` flag — unlike fix/feature/refactor/debug): by **default** the challenger always reviews the plan design; `--no-challenge` (`CHALLENGE_ENABLED=false`) **skips the gate entirely**.
 
 ```bash
 # re-hydrate PLAN_FILE — bash state lost between Bash() calls  # timeout: 3000

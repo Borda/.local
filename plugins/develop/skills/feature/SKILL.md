@@ -1,7 +1,7 @@
 ---
 name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop. TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: \"add X\", \"implement Y\", \"build Z feature\", \"create a new module for\". SKIP when: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`)."
-argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
+argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -107,7 +107,7 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 2. Check local divergences: run `git log --oneline -10` and grep for symbols mentioned in issue; identify where local codebase differs structurally from what issue assumes
 3. Produce adaptation plan: upstream intent → local implementation using local conventions, existing abstractions, and current code structure — never assume upstream approach ports directly
 
-**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from the block above), scan `$ARGUMENTS` for remaining `--<token>` tokens that are not in the supported list. Do NOT include `--issue` in the "unknown" set — it is consumed in the second parse block above. Supported: `--plan`, `--team`, `--no-challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from the block above), scan `$ARGUMENTS` for remaining `--<token>` tokens that are not in the supported list. Do NOT include `--issue` in the "unknown" set — it is consumed in the second parse block above. Supported: `--plan`, `--team`, `--no-challenge`, `--challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — run after flag parsing; reads raw value, normalizes to `true`/`false`, writes normalized result so downstream blocks see post-normalization state:
 
@@ -336,7 +336,13 @@ Skip if feature calls no external library APIs — no new framework features, no
 
 ## Challenger gate
 
-**Skip if `CHALLENGE_ENABLED=false`.**
+**Decision — three states** (default is NOT "skip": it runs on substantial features and auto-skips only small ones):
+
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small feature.
+3. else **default** → **run when the feature is substantial** (multi-file, ≳50 lines, or adds any new public API — the common case for a feature); **auto-skip when small** (single file, ≲50 lines, no new public API).
+
+Both flags exist because they cover opposite regimes: `--no-challenge` suppresses the gate on the substantial features where it would otherwise fire; `--challenge` forces it on the small features where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with scope analysis from Step 1 (purpose, scope, risks, approach):
 

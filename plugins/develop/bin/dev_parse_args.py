@@ -297,6 +297,7 @@ def _spec(kind: SpecType, flag: str, var: str, default: str) -> FlagSpec:
 SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
     "feature": [
         (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
         (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
         (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
         (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
@@ -305,6 +306,7 @@ SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
     ],
     "fix": [
         (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
         (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
         (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
         (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
@@ -313,6 +315,7 @@ SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
     ],
     "debug": [
         (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
         (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
         (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-codemap-raw"),
         (_spec("str", "ci-run", "CI_RUN_ID", ""), "dev-ci-run-id"),
@@ -320,6 +323,7 @@ SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
     ],
     "refactor": [
         (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-challenge-enabled"),
+        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-challenge-forced"),
         (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-semble-enabled"),
         (_spec("bool", "team", "TEAM_MODE", "false"), "dev-team-mode"),
         (_spec("bool", "accept-no-plan", "ACCEPT_NO_PLAN", "false"), "dev-accept-no-plan"),
@@ -334,6 +338,7 @@ SKILL_SPECS: dict[str, list[tuple[FlagSpec, str | None]]] = {
     ],
     "review": [
         (_spec("neg-bool", "no-challenge", "CHALLENGE_ENABLED", "true"), "dev-review-challenge-enabled"),
+        (_spec("bool", "challenge", "CHALLENGE_FORCED", "false"), "dev-review-challenge-forced"),
         (_spec("bool", "semble", "SEMBLE_ENABLED", "false"), "dev-review-semble-enabled"),
         (_spec("codemap", "", "CODEMAP_RAW", "auto"), "dev-review-codemap-enabled"),
     ],
