@@ -206,23 +206,7 @@ Formatting rules (strict):
 [Continue with section template from $TEMPLATE_FILE]
 ```
 
-**Health monitoring** (CLAUDE.md §6 defaults: 5-min poll, 15-min cutoff, +5-min extension): After spawning foundry:sw-engineer:
-
-```bash
-KAGGLE_CHECKPOINT="${TMPDIR:-/tmp}/kaggle-check-$(date +%s)"
-touch "$KAGGLE_CHECKPOINT"  # timeout: 3000
-echo "$KAGGLE_CHECKPOINT" > "${TMPDIR:-/tmp}/kaggle-checkpoint-path"  # persist for poll block (Check 41: timestamped name not re-derivable)
-```
-
-Poll every 5 min:
-
-```bash
-KAGGLE_CHECKPOINT=$(cat "${TMPDIR:-/tmp}/kaggle-checkpoint-path" 2>/dev/null)  # re-hydrate (Check 41: fresh shell per poll)
-NEW_FILES=$(find ".experiments/kaggle" -newer "$KAGGLE_CHECKPOINT" -type f 2>/dev/null | wc -l)  # timeout: 5000
-echo "Activity check: $NEW_FILES new files since checkpoint"
-```
-
-On hard cutoff: read partial output, surface with ⏱ marker — do not silently omit.
+**Synchronous spawn note**: `foundry:sw-engineer` is spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 poll-based monitoring is unreachable mid-call. After Agent() returns, check the agent's output under `.experiments/kaggle/`; if missing or empty, treat as timed out and surface with ⏱ marker — do not silently omit.
 
 ## Step 4: Verify and report
 

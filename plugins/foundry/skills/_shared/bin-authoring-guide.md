@@ -163,10 +163,13 @@ RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script-name.py" arg1 arg2)
 | Shell command arg (`"$VAR"`) | `${TMPDIR:-/tmp}/<skill>-<name>` file | `VAR=$(cat "${TMPDIR:-/tmp}/<skill>-<name>")` |
 | Prose condition / display only | `${TMPDIR:-/tmp}/<skill>-<name>` file | Read tool or plain prose |
 | Single value, same bash block | stdout | `VAR=$(python script.py ...)` |
+| Several values across later blocks | `bin/state.py set <ns> K=V …` | `eval "$(python … bin/state.py load <ns>)"` |
 
 **Multi-value DATA output: write to TMPDIR files — never `eval` stdout.**
 
 Shell variables set in one Bash tool call do not persist to the next separate Bash tool call — they only survive within a single invocation. TMPDIR files survive across all invocations. Any script returning 2+ values (e.g. `PROJ` + `INDEX`) must write each to its own file and exit 0/1. The skill checks exit code; downstream steps `cat` what they need.
+
+**Preferred idiom for cross-block persistence: `bin/state.py`.** Instead of hand-rolling a per-skill temp file + reload, use the tested helper — `python "${CLAUDE_PLUGIN_ROOT}/bin/state.py" set <namespace> RUN_DIR="$RUN_DIR" SCOPE="$SCOPE"` in the producing block, then `eval "$(python "${CLAUDE_PLUGIN_ROOT}/bin/state.py" load <namespace>)"` at the top of each consuming block. Values are single-quote-escaped so `eval` is injection-safe. Include a run-unique component in `<namespace>` (timestamp / run-id) when concurrent sessions of the same skill could collide. This is what `check_bash_persistence` recognizes as a valid reload — the `eval "$(…)"` form suppresses the cross-block-loss finding.
 
 > **Scope**: this rule applies to DATA output (returning computed values to the skill). Shell-setup eval — e.g. `eval "$(python health_sentinel.py ...)"` that injects `SENTINEL=...` into the calling shell for health monitoring — is a different pattern and remains valid.
 

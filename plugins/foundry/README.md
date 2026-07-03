@@ -714,7 +714,7 @@ plugins/foundry/
 ├── agents/                      10 specialist agent files
 ├── skills/                      8 skill directories (audit, brainstorm, calibrate, create, distill, investigate, manage, session)
 ├── rules/                       10 rule files symlinked to ~/.claude/rules/ by /foundry:setup
-├── CLAUDE.src.md                workflow rules; /foundry:setup Step 9b copies → ~/.claude/CLAUDE.md
+├── CLAUDE.src.md                workflow rules; /foundry:setup Step 10 copies → ~/.claude/CLAUDE.md
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol
 ├── permissions-guide.md         annotated allow/deny reference (copied to .claude/ by /foundry:setup)
 └── hooks/
@@ -771,7 +771,7 @@ ______________________________________________________________________
 
 ## 🧪 Development / testing
 
-656 tests across 29 files; one runner (pytest) covers both Python `bin/` scripts and JS hooks.
+One runner (pytest) covers both Python `bin/` scripts and JS hooks. Current test count: `grep -rc 'def test_' plugins/foundry/tests/*.py | awk -F: '{s+=$2} END{print s}'`.
 
 **Run locally** (requires Python ≥ 3.10 and Node ≥ 18 — run from repo root):
 
@@ -827,7 +827,7 @@ Each test spawns `node <hook>.js` with a JSON payload on stdin and asserts files
 | `test_get_plugin_install_path.py` | `get_plugin_install_path.py` | 7     | Registry lookup, multiple-entry tie-breaking, missing plugin exit code                                  |
 | `test_c33_dir_resolution.py`      | _(C33 dir-resolution logic)_ | 4     | Latest-version selection, older-version exclusion, no-cache fallback                                    |
 
-CI runs all 656 tests on every push to `main` and on PRs touching `plugins/` (see `.github/workflows/ci-tests.yml`).
+CI runs the full test suite on every push to `main` and on PRs touching `plugins/` (see `.github/workflows/ci-tests.yml`).
 
 ______________________________________________________________________
 

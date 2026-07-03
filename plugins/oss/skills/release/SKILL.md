@@ -193,7 +193,6 @@ _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path
 # Check 41: persist across Bash blocks
 echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/release-oss-shared"
 # loads: oss-shared-resolver.md
-# Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 ```
 
 Extracted to `bin/release_setup.py` — resolves `SKILL_DIR`, `REPO_ROOT`, `BRANCH`, `DATE`, `LAST_TAG`, `CHERRY_PICK_SUBJECTS`, `SOURCE_TAG_REF`. Writes each var under `${TMPDIR:-/tmp}/release-setup/`; stable-branch banner and "no stable tag" warnings go to stderr.
@@ -512,7 +511,7 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 <notes>
 
 - **Doc artifacts ≠ released product**: CHANGELOG.md, DRAFT.md, MIGRATION.md, SUMMARY.md, demo.py = communication artifacts; released product published separately via `git tag`, `gh release create`, PyPI upload.
-- **AskUserQuestion usage**: 9–11 calls across `notes`/`prepare`/`audit`/`demo` modes; each is in a distinct branch-path (no single path has >4 sequential calls); confirmed compliant with sequential-call limit.
+- **AskUserQuestion usage**: spread across `notes`/`prepare`/`audit`/`demo` modes; each call is in a distinct branch-path (no single path has >4 sequential calls); compliant with sequential-call limit.
 - **Numbers reference**: numeric limits documented with rationale in `guidelines/numbers-reference.md`; update whenever limits change
 - Filter noise (CI config, dep bumps, typos) unless user-impacting
 - **Public-facing content policy**: user-visible changes only. Never include: internal staff names, internal maintenance, CI/tooling, internal dep bumps, housekeeping with no user impact.

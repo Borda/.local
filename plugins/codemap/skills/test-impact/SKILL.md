@@ -121,32 +121,7 @@ Parse JSON output from `$RESULT`:
 
 **haiku JSON parse guard**: `scan-query` JSON output may be prefixed or suffixed with log/warning lines when running under haiku model. Always extract JSON via `python3 -c "import sys,json; ..."` piping stdin — never assume raw output is valid JSON. If parsing fails (ValueError/JSONDecodeError), print `! scan-query returned non-JSON output — try /codemap:scan-codebase to rebuild index` and exit 1.
 
-## Step 3 — Gap logging
-
-When `index.not_covered` non-empty:
-
-```bash
-# timeout: 5000
-_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
-export _QNAME=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname" 2>/dev/null || echo "")
-export _NOT_COVERED=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-not-covered" 2>/dev/null || echo "[]")
-export _HINT=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-hint" 2>/dev/null || echo "")
-mkdir -p .cache/codemap
-python3 -c "
-import json, os
-rec = {
-    'ts': __import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
-    'cmd': 'test-impact',
-    'target': os.environ.get('_QNAME', ''),
-    'not_covered': json.loads(os.environ.get('_NOT_COVERED', '[]')),
-    'hint': os.environ.get('_HINT', ''),
-}
-with open('.cache/codemap/gaps.jsonl', 'a') as f:
-    f.write(json.dumps(rec) + '\n')
-" || true
-```
-
-## Step 4 — Output
+## Step 3 — Output
 
 **When `total == 0`**: report "No tests found via static analysis. Try full suite or check with `grep -rn <symbol_name> tests/`."
 

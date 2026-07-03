@@ -69,67 +69,7 @@ scan-query rdeps mypackage.auth    # what breaks if auth changes?
 
 That output is prepended to the agent spawn prompt as structural context. The agent starts the refactor already knowing full blast radius — no cold exploration, no mid-refactor surprise that `middleware.py` also imports `auth`. Across benchmark runs on pytorch-lightning, codemap consistently reduces tool calls by 50–80% while improving structural-recall metrics on import-graph tasks.
 
-**Agentic benchmark — plain vs codemap vs semble (2026-06-27, v0.13.2):**
-
-16 import-graph tasks × 3 models × 3 arms on pytorch-lightning-master. 143/144 runs (BA-16/opus/semble missing 1). erec = fraction of expected rdeps in agent output_text (tool results excluded, arm-fair). Tokens = avg input tokens per run.
-
-> **🚧 Under reconstruction** — numbers from a benchmark run that used v0.13.1 (skill failures affected haiku/codemap). Clean numbers pending after v0.13.2 fix rollout.
-
-| Segment     | Plain erec | Codemap erec | Semble erec | Δ cm−plain | Plain tok | Codemap tok |
-| ----------- | ---------- | ------------ | ----------- | ---------- | --------- | ----------- |
-| Haiku 4.5   | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-| Sonnet 4.6  | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-| Opus 4.6    | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-| **Overall** | 🚧         | 🚧           | 🚧          | 🚧         | 🚧        | 🚧          |
-| simple      | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
-| medium      | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
-| hard        | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
-| extreme     | 🚧         | 🚧           | 🚧          | 🚧         | —         | —           |
-
-**Recall metrics (agentic benchmark):**
-
-- **erec** — exposure recall: fraction of rdeps in agent output_text (tool results excluded, arm-fair)
-- **rrec** — report recall: fraction of rdeps present in the agent's final written answer
-
-**Token overhead analysis:**
-
-With v0.13.2, codemap arm uses 🚧 (pending clean re-run). Per-component breakdown:
-
-| Component     | Plain | Codemap (v0.13.2) | Semble | Δ cm−plain |
-| ------------- | ----- | ----------------- | ------ | ---------- |
-| input_tokens  | 🚧    | 🚧                | 🚧     | 🚧         |
-| output_tokens | 🚧    | 🚧                | 🚧     | 🚧         |
-| total         | 🚧    | 🚧                | 🚧     | 🚧         |
-
-🚧 Tool call/token-reduction claims pending clean re-run. The pre-v0.13.2 +342k input overhead came primarily from `query-code/SKILL.md` (~4.5k tokens loaded per skill invocation, persisting across all subsequent turns — not the static supplement). v0.13.2 fixes: lean SKILL.md (~1.5k tokens, 3× reduction) + session-once preamble. Validated −26% input tokens across BA-01–04, zero erec regression (haiku, codemap arm, 2026-06-27):
-
-| Task  | Difficulty | Input pre-v0.13.2 | Input v0.13.2 | Δ    | erec   |
-| ----- | ---------- | ----------------- | ------------- | ---- | ------ |
-| BA-01 | simple     | 754.8k            | 748.7k        | −1%  | 100% = |
-| BA-02 | medium     | 796.7k            | 258.1k        | −68% | 100% = |
-| BA-03 | hard       | 2 014.7k          | 1 354.8k      | −33% | 81% =  |
-| BA-04 | extreme    | 1 772.3k          | 1 594.4k      | −10% | 100% = |
-
-**Hard/extreme task analysis (v0.13.2):**
-
-Hard-tier regression from prior run is resolved. With fresh index and lean SKILL.md (v0.13.2), codemap outperforms plain on hard+extreme tasks for all models:
-
-| Model  | Plain hard+extreme erec | Codemap hard+extreme erec | Semble | Δ cm−plain |
-| ------ | ----------------------- | ------------------------- | ------ | ---------- |
-| Haiku  | 🚧                      | 🚧                        | 🚧     | 🚧         |
-| Sonnet | 🚧                      | 🚧                        | 🚧     | 🚧         |
-| Opus   | 🚧                      | 🚧                        | 🚧     | 🚧         |
-
-Pending clean re-run after bug fixes.
-
-**Token overhead — implemented mitigations (v0.13.2):**
-
-1. **Lean `query-code/SKILL.md`** — 324→130 lines (~4.5k→~1.5k tokens); retains Step 0 freshness check, direction table, exhaustive STOP rule, 3-call budget, full parse table, output routing. Validated −26% input overhead, zero erec loss across all difficulty tiers.
-2. **Session-once preamble** — `inject-preamble.js` skips re-injection when index is current and preamble was already injected within the last 30 min (TTL flag at `/tmp/codemap-preamble-<proj>`). Stale index always injects so the auto-refresh note reaches the agent. Saves ~900 tokens/session.
-
-**Open improvements (not yet implemented):**
-
-- **Benchmark re-run pending** — full agentic benchmark re-run needed after RC1 fix; haiku codemap regression cause now identified (PID temp-file mismatch in RC1). Results table above reflects the buggy run.
+**Agentic benchmark (import-graph tasks on pytorch-lightning):** clean v0.13.2 numbers are pending a full benchmark re-run after the RC1 fix and will be published here once available.
 
 **Real-codebase benchmark** — 44 developer tasks × 2 arms (plain vs codemap) × 3 model tiers on pytorch-lightning-master (646 modules, 8 task types). **Scope**: these are pre-implementation structural-query tasks (blast-radius enumeration, caller discovery) — end-to-end patch quality and test-pass rate are not yet measured. The benchmark is **repo-agnostic**: `tasks-bench.json` ships a `repo` header so the harness can be pointed at any Python codebase. Zero codemap timeouts; plain-arm agents hit the 300-second hard limit on several tasks.
 
@@ -862,7 +802,7 @@ Every command embeds an `index` object in its output — the coverage block — 
 | `exhaustive`      | bool      | `true` when every module parsed successfully                                           |
 | `stale`           | bool      | `true` when the index predates a recent file change                                    |
 
-When `not_covered` is non-empty, agents log the gap to `.cache/codemap/gaps.jsonl` and surface a caveat. When `confidence="exact"`, no grep re-verification is needed.
+When `not_covered` is non-empty, agents surface a caveat. When `confidence="exact"`, no grep re-verification is needed.
 
 ### The index file
 

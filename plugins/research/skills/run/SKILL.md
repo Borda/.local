@@ -270,9 +270,7 @@ else
     VERIFY_TIMEOUT_SEC="${VERIFY_TIMEOUT_SEC:-120}"
 fi
 VERIFY_TIMEOUT_MS=$((VERIFY_TIMEOUT_SEC * 1000))
-# Health-monitoring window per CLAUDE.md §6 — keep aligned with markdown constants in <constants>
-MONITOR_INTERVAL="${MONITOR_INTERVAL:-300}"   # 5 min poll cadence
-HARD_CUTOFF="${HARD_CUTOFF:-900}"             # 15 min hard cutoff
+# Ideation Agent() calls are synchronous — no mid-flight poll; after each returns, check its output file and mark timed_out (⏱) if empty.
 ```
 
 **Initialize `sandbox_mode`**:

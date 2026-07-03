@@ -241,21 +241,7 @@ Return ONLY: {\"status\":\"done\",\"components\":N,\"file\":\"${FORTIFY_DIR}/abl
 
 Pass `$F2_PROMPT` (fully expanded) as the `prompt=` argument to `Agent(...)`.
 
-**Health monitoring** (CLAUDE.md §6):
-
-```bash
-# audit-skip: resilience-replication
-# Per-phase checkpoint: F2 + F6 dispatch independent scientist agents; separate vars prevent cross-phase masking.
-_HM_F2=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "fortify-f2" 2>/dev/null)  # timeout: 5000
-LAUNCH_AT_F2=$(echo "$_HM_F2" | grep '^LAUNCH_AT=' | cut -d= -f2)
-CHECKPOINT_F2=$(echo "$_HM_F2" | grep '^SENTINEL=' | cut -d= -f2)
-```
-
-Poll every 5 min: `find "$FORTIFY_DIR" -newer "$CHECKPOINT_F2" -type f | wc -l` (`timeout: 5000`) — new files = alive; zero = stalled.
-
-- **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 "$FORTIFY_DIR"/candidates-analysis.md` shows active progress, grant one extension; second stall = hard cutoff
-- **On timeout**: stop with `"fortify: Scientist timed out. Check $FORTIFY_DIR/ for partial output."`; surface with ⏱
+**Synchronous spawn note**: the F2 scientist is spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. Timeout is handled post-hoc — after Agent() returns, check `$FORTIFY_DIR/ablation-candidates.jsonl`; if missing or empty, stop with `"fortify: Scientist timed out. Check $FORTIFY_DIR/ for partial output."` and surface with ⏱.
 
 Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations <M>` specified and component count + 1 (for full variant) exceeds M: sort by `expected_importance` (HIGH first, then MEDIUM, then LOW), keep top M-1 components plus always include `full` sanity-check variant. **Log dropped components**: print a warning listing each dropped component by `component_id` and `expected_importance` so users can verify the scientist's importance estimates before proceeding. Include this list in the F7 report under `## Dropped Variants`.
 
@@ -482,17 +468,7 @@ Include warning prominently in F7 report.
 
 Skip entirely if no `--venue` flag. Supported venues: `CVPR`, `NeurIPS`, `ICML`, `workshop`.
 
-**Health monitoring setup** (same pattern as F2 — create checkpoint before spawn):
-
-```bash
-# audit-skip: resilience-replication
-# Per-phase checkpoint required — F6 reviewer Q&A is an independent scientist dispatch from F2; shared variables would mask phase-specific stalls.
-_HM_F6=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "fortify-f6" 2>/dev/null)  # timeout: 5000
-LAUNCH_AT_F6=$(echo "$_HM_F6" | grep '^LAUNCH_AT=' | cut -d= -f2)
-CHECKPOINT_F6=$(echo "$_HM_F6" | grep '^SENTINEL=' | cut -d= -f2)
-```
-
-Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")` with health monitoring (same 15-min cutoff, one 5-min extension — poll `find "$FORTIFY_DIR" -name "reviewer-qa.md" -newer "$CHECKPOINT_F6" | wc -l`).
+Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`. **Synchronous spawn note**: spawned synchronously (not `run_in_background=true`) — CLAUDE.md §6 sentinel polling is unreachable mid-call. After Agent() returns, check `$FORTIFY_DIR/reviewer-qa.md`; if missing or empty, treat as timed out and surface with ⏱.
 
 Before building the prompt, substitute all bash variables into a single concrete string — never pass literal `<FORTIFY_DIR>`, `<path>`, or `<venue>` placeholders to the agent:
 

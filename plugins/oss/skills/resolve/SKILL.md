@@ -68,7 +68,6 @@ _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path
 _OSS_RESOLVE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/resolve 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
 ```
-Read `$_OSS_SHARED/oss-shared-resolver.md` and execute its contents.
 
 Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, `foundry:challenger`.
 
@@ -628,7 +627,7 @@ Non-calibratable — `disable-model-invocation: true` means skill dispatches to 
 - **Impl agent health + effort**: IMPL_AGENT defaults to `codex:codex-rescue` (CLAUDE.md §6 — 15-min cutoff, ⏱ on timeout). Effort: never `low`; minimum `medium`; typo/doc → `medium`; multi-file/new-feature → `xhigh`; default `high`. `--agent foundry:*`: foreground only, no health monitoring.
 - **Two-phase challenge**: evidence = problem exists?; suggestion = fix quality?; evidence reject → skip; suggestion reject → self-resolved via `alternative` field; all in `CHALLENGE_LOG` + Step 11 report.
 - **COMMIT_MODE**: `each` (default); `all`; `stage` (⚠ branch restore skipped); `grouped` (falls back to `each` when labels skipped). Set via a separate `AskUserQuestion` (Step 3d, "call 2 of 4") issued after Q4 resolves to (a), (b), (c), or unanswered — skipped only when Q4=(d) skip-all — distinct from Q4 (which sets item scope, not commit strategy). Item scope never implies a commit mode. Do not merge these two questions.
-- **AskUserQuestion usage**: 10 total calls across all paths. Normal path: 4 calls (Steps 3a, 3d, per-item challenge, Step 11); worst-case path: 5 calls when codex-cap fires (N>8 items + codex available adds 1 call). <!-- worst-case path: 5 calls (with codex-cap) -->
+- **AskUserQuestion usage**: calls spread across independent branch-paths — no single sequential path exceeds the 4-call limit (worst case: codex-cap adds one call when N>8 items and codex available). Compliant with the sequential-call limit.
 - **`--agent <name>`**: bare name auto-prefixed `foundry:`; must be implementation agent (not curator); omit Codex trailer when IMPL_AGENT ≠ `codex:codex-rescue`.
 - **Thread resolution via GraphQL** — `isResolved` on `PullRequestReviewThread` (GraphQL only); REST not expose it. `RESOLVED_THREAD_IDS` = root comment `databaseId`; GraphQL failure → `[]`.
 - **Discussion vs inline**: `gh pr view --comments` = discussion (`location: discussion`; no Resolve button); `gh api .../pulls/<N>/comments` = inline (`location: inline`; resolvable). `location: discussion` + `[report]` items: implement-only, no GitHub close action. Surface `Loc` column in Step 11 report.

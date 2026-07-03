@@ -51,7 +51,6 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 # loads: review-section-taxonomy.md
 # cold-start fallback (sets $_OSS_SHARED) — run first:
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
-# Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 # --reply requires $_OSS_SHARED (Step 8 reads shepherd-reply-protocol.md); non-reply flows degrade gracefully
 if [ ! -d "$_OSS_SHARED" ]; then
     if [[ "$ARGUMENTS" == *--reply* ]]; then
@@ -135,7 +134,7 @@ if [ "$DIRECT_PATH_MODE" = "false" ] && [[ "$CLEAN_ARGS" =~ ^[0-9]+$ ]]; then
     fi
     echo "→ PR_TYPE=$PR_TYPE (_py_logic=$_PY_LOGIC_COUNT, _all=$_ALL_COUNT)"
 fi
-# Persist PR_TYPE + mode flags — fresh shell loses vars (Check 41); A2 block + Steps 2/5 reload
+# Persist PR_TYPE + mode flags — fresh shell loses vars (Check 41); challenge-skip block + Steps 2/5 reload
 {
     echo "PR_TYPE=$PR_TYPE"
     echo "DOCS_TYPING_MODE=$DOCS_TYPING_MODE"
@@ -143,7 +142,7 @@ fi
 } > "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
 ```
 
-**A2** — challenger adds no value for non-logic PRs:
+**Challenge skip** — challenger adds no value for non-logic PRs:
 ```bash
 # Reload PR_TYPE — fresh shell (Check 41)
 [ -f "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}" ] && . "${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
@@ -236,7 +235,7 @@ Before spawning agents (Python mode only — all three mode flags false), classi
 - **Short-diff multi-concern refactors**: FIX heuristic classifies by diff size, not intent. Override FIX → REFACTOR when PR labels include `perf`, `performance`, `optimization`, `refactor`, `architecture`, `cleanup` OR commit message keywords `refactor:`, `perf:`, `rewrite` OR diff touches different modules. Detect via `gh pr view --json labels,title`. Small-diff perf refactors are exactly the case FIX would silently mishandle.
 - **Complexity smell**: 8+ files changed OR `PY_LOC_DELTA >400` → note in report header
 
-H6 — assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) can branch on it without comparing to an undefined value:
+Assign `SCOPE` shell variable so the `EXPECTED` array (Step 2 health monitor) can branch on it without comparing to an undefined value:
 
 ```bash
 # for classification heuristic
@@ -450,7 +449,7 @@ DATE=$(date -u +%Y-%m-%d)  # timeout: 5000
 
 **IMPORTANT**: expand `$RUN_DIR`, `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, `$DATE`, `$CI_RED`, and `$CI_FAILING_CHECKS` to literal values before inserting into the spawn prompt. Un-expanded variables create wrong paths. The `## Source Files` footnote `Glob(... path="<EXPANDED_RUN_DIR>")` path must also be expanded to the literal `$RUN_DIR` value.
 
-Select consolidator agent by `PR_TYPE` (B3 — lighter model for non-logic PRs):
+Select consolidator agent by `PR_TYPE` (lighter model for non-logic PRs):
 ```bash
 _REVIEW_MODE_FILE="${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}"
 [ -f "$_REVIEW_MODE_FILE" ] && . "$_REVIEW_MODE_FILE"
@@ -474,7 +473,7 @@ After parsing confidence: agent < 0.7 → prepend **⚠ LOW CONFIDENCE** to find
 
 Print terminal block: read the `---` header from top of `$REPORT_DIR/review-report.md` (all fields from opening `---` up to and including closing `---` — `Title:`, `Date:`, `PR Type:`, `Scope:`, `Focus:`, `Agents:`, `CI:`, `Outcome:`, `Summary:`, `Confidence:`, `Next steps:`, `Path:`), append `→ saved to $REPORT_DIR/review-report.md`, print to terminal.
 
-**This `---` block IS the reply header — hard rule** (universal: quality-gates.md §Report File Format): print it verbatim as the FIRST content of the reply, wrapped in a ` ```text ` … ` ``` ` fenced code block so the literal `---` delimiters survive markdown rendering — without the fence a chat renderer parses the leading `---` as YAML frontmatter and the closing `---` flush under `Path:` as a setext heading underline, mangling the header into a single `---Title:` line with no closing fence. The fenced block still IS the reply header — do NOT wrap the reply in a `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers — the box would shadow the YAML). Never emit both a box header and this `---` block. Print all 12 fields from the file verbatim — do NOT substitute the `·`-separated one-line fallback; that fallback is permitted ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails (file absent/unreadable). If the read fails, state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading.
+This `---` block IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule). **Review-specific rendering caveat**: wrap the printed block in a ` ```text ` fence so the literal `---` delimiters survive — bare, a renderer parses the leading `---` as YAML frontmatter and the closing `---` under `Path:` as a setext heading, mangling the header. Print all 12 fields verbatim; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading.
 
 ## Step 6: Delegate implementation follow-up (optional)
 
@@ -494,30 +493,13 @@ Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't
 
 ### 7a — Follow-up gate
 
-Check `oss:resolve` availability:
-
-```bash
-RESOLVE_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss resolve 2>/dev/null || echo "false")  # timeout: 5000
-# resolve is a skill — check_agent.py checks agent paths only, returns false; check skill path directly:
-if [ "$RESOLVE_AVAILABLE" = "false" ]; then
-    ls "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/resolve/SKILL.md" >/dev/null 2>&1 && RESOLVE_AVAILABLE=true || RESOLVE_AVAILABLE=false
-fi
-```
-
-! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text. Option set depends on `$RESOLVE_AVAILABLE`:
-
-**When `$RESOLVE_AVAILABLE = true`** (single call — all options in one):
+! IMPORTANT — invoke `AskUserQuestion` tool directly. Never write options as plain text. Single call — all options in one:
 - question: "What next?"
 - (a) label: `/oss:resolve $CLEAN_ARGS` — description: fix this PR (implement review findings, resolve conflicts, push)
 - (b) label: `/oss:resolve report` — description: resolve from full review report only (no GitHub re-fetch)
 - (c) label: `/oss:resolve $CLEAN_ARGS report` — description: fix PR + resolve from full review report in one pass
 - (d) label: `walk through findings` — description: go through each finding interactively
 - (e) label: `skip` — description: no action
-
-**When `$RESOLVE_AVAILABLE = false`**: omit the resolve options:
-- question: "What next?"
-- (a) label: `walk through findings` — description: go through each finding interactively
-- (b) label: `skip` — description: no action
 
 `oss:resolve` has `disable-model-invocation: true` — `Skill()` invocation blocked. After AskUserQuestion returns:
 - Resolve variant chosen (a/b/c when available): present chosen label as command user must run manually (e.g. `Run: /oss:resolve $CLEAN_ARGS`); no `Skill()` call
@@ -533,12 +515,7 @@ End with `## Confidence` block per CLAUDE.md output standards.
 
 `REPLY_MODE` not set → skip.
 
-```bash
-# Check oss:shepherd availability
-SHEPHERD_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss shepherd 2>/dev/null)  # timeout: 5000
-```
-
-`false`: print `⚠ oss:shepherd not available — skipping contributor reply draft. Install the oss plugin to enable --reply.` and skip. `true`: read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
+Read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
 
 Spawn with:
 - Report path: review output file from Step 5

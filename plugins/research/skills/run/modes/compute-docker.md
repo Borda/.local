@@ -11,12 +11,7 @@ Skip entirely if `sandbox_mode = "local"`.
 If Phase 2 returned non-empty `"scripts"`: run each in Docker sandbox with read-only project mount. Per script (use `${SANDBOX_NETWORK}` initialized at R2 — Phase 5 uses identical pattern):
 
 ```bash
-docker run --rm --network "${SANDBOX_NETWORK}" \
-    -v "$(pwd):/workspace:ro" \
-    --tmpfs /tmp:rw,size=256m \
-    -w /workspace \
-    python:3.11-slim \
-    python "/workspace/.experiments/state/${RUN_ID}/scripts/${script}"
+SANDBOX_NETWORK="${SANDBOX_NETWORK}" python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/docker_sandbox_run.py" --mode explore ".experiments/state/${RUN_ID}/scripts/${script}"
 ```
 
 Use Bash tool `timeout`: `timeout: $VERIFY_TIMEOUT_MS` (computed in R2 from `$VERIFY_TIMEOUT_SEC`). Not shell `timeout` command.

@@ -49,10 +49,6 @@ Full-sweep audit of `.claude/` config + all `plugins/*/` files: agents, skills, 
 
 <constants>
 
-<!-- Background agent health monitoring (CLAUDE.md §6) — applies to Step 3 foundry:curator spawns -->
-MONITOR_INTERVAL=300   # 5 minutes between polls
-HARD_CUTOFF=900        # 15 minutes of no file activity → declare timed out
-EXTENSION=300          # one +5 min extension if output file explains delay
 BATCH_SIZE_MIN=5       # minimum files per batch; ensures curator gets sufficient context per spawn
 MAX_BATCHES=10         # total batch cap; EFFECTIVE_BATCH = max(BATCH_SIZE_MIN, ceil(total / MAX_BATCHES))
 ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches for deeper per-file attention; override with --batch-size N
@@ -66,7 +62,6 @@ ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches 
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
-Read `$_FS/preflight-helpers.md` — defines `preflight_ok()` and `preflight_pass()` used in Pre-flight checks below.
 
 **Orchestration contract**: orchestrator is thin coordinator — issues Glob/Grep for inventory, spawns agents, reads JSON envelopes, aggregates findings. Must NOT read agent/skill/rule file bodies directly. Inline read of non-template file = protocol violation; causes context overflow at scale.
 
@@ -103,7 +98,7 @@ if [ "$UPGRADE_MODE" = "true" ] && { [ "$ADVERSARIAL_MODE" = "true" ] || [ "$EFF
     exit 1
 fi
 
-# Inlined from _shared/preflight-helpers.md — fresh shell per Bash() call; sourced functions unavailable
+# preflight helpers defined inline — fresh shell per Bash() call; sourced functions unavailable
 preflight_ok()   { local f=".claude/state/preflight/$1.ok"; [ -f "$f" ] && [ $(($(date +%s) - $(cat "$f"))) -lt 14400 ]; }
 preflight_pass() { mkdir -p .claude/state/preflight; date +%s >".claude/state/preflight/$1.ok"; }
 
@@ -258,14 +253,7 @@ Replace `<RUN_DIR>` with actual path, `<file-slug>` with plugin-prefixed unique 
 
 After spawns complete: short summaries in context; use to identify files with findings. Full content in run directory files.
 
-**Health monitoring** (CLAUDE.md §6): after spawning all batches, create a checkpoint:
-
-```bash
-AUDIT_CHECKPOINT="${TMPDIR:-/tmp}/audit-check-$(date +%s)" # timeout: 5000
-touch "$AUDIT_CHECKPOINT"                       # timeout: 5000
-```
-
-Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$AUDIT_CHECKPOINT" -type f | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` extension if output file tail explains delay. On timeout: read partial output from stalled agent's file; surface with ⏱ in final report. Never omit timed-out agents.
+**Health monitoring** (CLAUDE.md §6): apply the honest protocol in `$_FS/agent-spawn-protocol.md` — these curator batches return on completion; after each returns, read its `$RUN_DIR` output file. For a background probe, a single `find $RUN_DIR -newer "$SENTINEL" -type f | wc -l` per turn (`health_sentinel.py` §8b) — no sleep loop. On empty/missing output: mark `timed_out`, surface with ⏱ in final report. Never omit timed-out agents.
 
 ## Step 4: System-wide checks
 
@@ -345,14 +333,7 @@ Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate
 
 Parse confidence scores from each file's `## Confidence` block in `<RUN_DIR>/<slug>.md` output files (use Glob + Read — batch envelopes carry aggregate confidence, not per-file scores; individual file reports are the authoritative source). For each slug where `Score` < **0.80**, run three parallel passes:
 
-**Health monitoring** (CLAUDE.md §6): before spawning passes A–C, create a checkpoint:
-
-```bash
-STEP5B_CHECKPOINT="${TMPDIR:-/tmp}/audit-5b-check-$(date +%s)"  # timeout: 5000
-touch "$STEP5B_CHECKPOINT"                                        # timeout: 5000
-```
-
-Every `$MONITOR_INTERVAL` seconds: `find $RUN_DIR -newer "$STEP5B_CHECKPOINT" \( -name "*-rerun.md" -o -name "docs-recheck-*.md" -o -name "codex-recheck-*.md" \) | wc -l` — new files = alive; zero for `$HARD_CUTOFF` seconds = stalled. One `$EXTENSION` extension if output file tail explains delay. On timeout: read partial output from stalled agent's file; surface with ⏱ in final report.
+**Health monitoring** (CLAUDE.md §6): apply the honest protocol in `$_FS/agent-spawn-protocol.md` — passes A–C return on completion; read each pass's output file afterwards. For a background probe, a single `find $RUN_DIR -newer "$SENTINEL" \( -name "*-rerun.md" -o -name "docs-recheck-*.md" -o -name "codex-recheck-*.md" \) | wc -l` per turn (`health_sentinel.py` §8b) — no sleep loop. On empty/missing output: mark `timed_out`, surface with ⏱ in final report.
 
 > **Find precedence note**: parens around `-name` alternatives are mandatory — without them, `-newer` binds only to the first `-name`, and the others match every file regardless of mtime.
 

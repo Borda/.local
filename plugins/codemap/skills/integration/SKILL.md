@@ -37,7 +37,7 @@ Arguments: `check` (no flags) or `init [--approve]` — `--approve` auto-applies
 
 Parse `$ARGUMENTS` (case-insensitive):
 
-- Starts with `check` or empty → run **check mode** (Steps C1–C5)
+- Starts with `check` or empty → run **check mode** (Steps C1–C4)
 - Starts with `init` → run **init mode** (Steps I0–I6 (I5 has sub-steps I5a, I5b))
 - Starts with `demo` → run **demo mode**
 
@@ -45,7 +45,7 @@ Parse `$ARGUMENTS` (case-insensitive):
 
 - Anything else → use `AskUserQuestion`: "Unrecognized command `$ARGUMENTS`. Which operation did you want?" Options: (a) `check` — audit integration health, (b) `init` — onboard codemap interactively, (c) `init --approve` — onboard non-interactively (auto-applies all High+Medium recommendations without prompting), (d) `demo` — end-to-end validation with A/B gain proof
 
-## CHECK MODE (Steps C1–C5)
+## CHECK MODE (Steps C1–C4)
 
 ### C1 — Locate scan-query
 
@@ -96,23 +96,9 @@ else
 fi
 ```
 
-### C3 — Index freshness (calendar age)
+### C3 — Smoke test and currency check
 
-```bash
-# timeout: 10000
-_CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
-C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
-C2_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status" 2>/dev/null || echo "ok")
-[ "$C1_STATUS" = "failed" ] || [ "$C2_STATUS" = "failed" ] && { echo "C1/C2 failed — skipping this step."; exit 0; }
-INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-index")
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" "$INDEX"
-```
-
-`check_index_freshness.py` prints a human-readable age line (e.g. `  index age: 30h`) for informational context only; stale enforcement (threshold comparison + warning) is handled in C4.
-
-### C4 — Smoke test and currency check
-
-`check_index_smoke.py` validates the index is loadable JSON and reports mtime age. When valid, `check-index-currency` performs content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from the stored `file_shas` field (covers non-git projects and pulls/branch switches that bypass the post-commit hook).
+`check_index_smoke.py` validates the index is loadable JSON and reports mtime age (informational). When valid, `check-index-currency` performs content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from the stored `file_shas` field (covers non-git projects and pulls/branch switches that bypass the post-commit hook).
 
 ```bash
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
@@ -145,7 +131,7 @@ else
 fi
 ```
 
-### C5 — Skill injection and gate wiring audit
+### C4 — Skill injection and gate wiring audit
 
 `check_injection.py` audits three things: (1) the codemap injection block (`scan-query` marker) in installed SKILL.md files; (2) `fn-rdeps` wiring in review skills; (3) Gate A/B wiring — either via `codemap-gates.md` shared file load or inline gate text — in all wired skills.
 

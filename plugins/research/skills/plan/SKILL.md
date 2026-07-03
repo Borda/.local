@@ -23,7 +23,7 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 
 **Environment precondition** — `CLAUDE_PLUGIN_ROOT` is set automatically when this skill runs via the plugin manager. Fallback `plugins/research` resolves only from project root. If neither resolves (bare `.claude/` copy invoked from a subdirectory), bin/ scripts return empty strings silently.
 
-**bin/ scripts this skill depends on** (deployed inside `${CLAUDE_PLUGIN_ROOT}/bin/`): `resolve_shared.py`, `make_run_dir.py`, `health_monitor_start.py`. Each call below is followed by an explicit empty-result guard — silent failure surfaces as a fail-fast error, never as an empty-string path.
+**bin/ scripts this skill depends on** (deployed inside `${CLAUDE_PLUGIN_ROOT}/bin/`): `resolve_shared.py`, `make_run_dir.py`. Each call below is followed by an explicit empty-result guard — silent failure surfaces as a fail-fast error, never as an empty-string path.
 
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
@@ -155,34 +155,7 @@ PLAN_RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.
 [ -z "$PLAN_RUN_DIR" ] && { echo "! make_run_dir.py returned empty — research plugin path resolution failed"; exit 1; }
 ```
 
-**Health monitoring** (CLAUDE.md §6) — create one checkpoint per parallel agent so individual stalls are detectable (ADV-H16). Without per-agent checkpoints a single live agent masks two stalled ones:
-
-```bash
-# Plan-mode health constants — ADV-L19 (constants YAML not auto-exported to bash)
-PLAN_TIMEOUT_SEC="${PLAN_TIMEOUT_SEC:-600}"
-PLAN_MONITOR_INTERVAL="${PLAN_MONITOR_INTERVAL:-300}"
-PLAN_HARD_CUTOFF="${PLAN_HARD_CUTOFF:-900}"
-
-# Per-agent checkpoints — TMPDIR-relative, timestamp-suffixed to avoid collisions
-_TS=$(date +%s)
-ARCH_CHECK="${TMPDIR:-/tmp}/research-plan-arch-${_TS}"
-SCI_CHECK="${TMPDIR:-/tmp}/research-plan-sci-${_TS}"
-PERF_CHECK="${TMPDIR:-/tmp}/research-plan-perf-${_TS}"
-touch "$ARCH_CHECK" "$SCI_CHECK" "$PERF_CHECK"  # timeout: 3000
-
-# Helper checkpoints from health_monitor_start.py — retained for LAUNCH_AT bookkeeping
-_HM=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "plan" 2>/dev/null)  # timeout: 5000
-LAUNCH_AT=$(echo "$_HM" | grep '^LAUNCH_AT=' | cut -d= -f2)
-[ -z "$LAUNCH_AT" ] && { echo "⚠ health_monitor_start.py returned empty LAUNCH_AT — using current epoch as fallback"; LAUNCH_AT=$(date +%s); }
-```
-
-Poll each checkpoint independently every `$PLAN_MONITOR_INTERVAL` seconds:
-
-- Architect: `find "$PLAN_RUN_DIR" -name "plan-review-architect.md" -newer "$ARCH_CHECK" | wc -l`
-- Scientist: `find "$PLAN_RUN_DIR" -name "plan-review-scientist.md" -newer "$SCI_CHECK" | wc -l`
-- Perf: `find "$PLAN_RUN_DIR" -name "plan-review-perf.md" -newer "$PERF_CHECK" | wc -l`
-
-Zero hits for any agent = that agent stalled (independent of others). Hard cutoff: `$PLAN_HARD_CUTOFF` (15 min). One extension (+5 min) per agent if partial output visible in its own review file. On per-agent timeout: surface partial results with ⏱, continue to P-P3 with the remaining advisor output.
+**Synchronous spawn note**: P-P2 advisors (architect, scientist, perf) are spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 per-agent sentinel polling is unreachable mid-call. Timeout is handled post-hoc — after the Agent() calls return, check each advisor's review file under `$PLAN_RUN_DIR` (`plan-review-architect.md`, `plan-review-scientist.md`, `plan-review-perf.md`). Any file missing or empty = that advisor timed out: surface with ⏱ and continue to P-P3 with the remaining advisor output.
 
 **Architect gate** — spawn `foundry:solution-architect` only when `scope_files` contains >1 file OR `agent_strategy = arch`. Single-file optimization goals skip architect (no architectural surface to validate; saves ~5–10 min of opus-tier compute). Record skip reason in advisory block as `architect: skipped (single-file scope)`.
 

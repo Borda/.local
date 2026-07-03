@@ -62,17 +62,11 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 - SKILLS_DIR: `.claude/skills`
 - RULES_DIR: `.claude/rules`
 - HOOKS_DIR: `.claude/hooks`
-- USED_COLORS: blue, cyan, green, orange, pink, purple, yellow
 - AVAILABLE_COLORS: indigo, lime, magenta, teal, violet
 
-<!-- Background agent health monitoring (CLAUDE.md §6) — used by every spawn in Step 4 -->
-- MONITOR_INTERVAL: 300   (5 minutes between polls)
-- HARD_CUTOFF:      900   (15 minutes of no file activity → declare timed out)
-- EXTENSION:        300   (one +5 min extension if output file tail explains delay)
+Each Step 4 spawn applies the health monitoring in `_shared/agent-spawn-protocol.md` §8b — rely on the harness completion notification, then read the agent's output file; optional single `health_sentinel.py` probe per turn (no sleep loop). Substitute only its own `<ID>` suffix and output-file glob; do not re-paste the snippet per spawn.
 
-Each Step 4 spawn applies the canonical `health_sentinel.py` boilerplate from `_shared/agent-spawn-protocol.md` §8b — substituting only its own `<ID>` suffix and output-file glob. The full snippet (constants + `health_sentinel.py start` + missing-helper warning + sentinel/launch-at persistence) lives there; do not re-paste it per spawn.
-
-Maintain colors manually — add new agent colors here when creating agents; static list advisory only — live Grep in Step 3 authoritative for colors in use.
+Colors in use are read from the live Grep in Step 3 (authoritative) — no static used-color list to maintain. AVAILABLE_COLORS is the candidate pool for a new agent; pick the first entry not already in the Step-3 set.
 
 </constants>
 
@@ -511,7 +505,7 @@ jq --arg hook "$HOOK_NAME" '[.. | objects | select(.command? // "" | test($hook 
 ```bash
 # timeout: 5000
 HOOK_NAME=$(cat "${TMPDIR:-/tmp}/manage-hook-name-${CLAUDE_SESSION_ID:-$$}" 2>/dev/null)
-PLUGIN_HOOKS_JSON="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/.claude-plugin/hooks.json"
+PLUGIN_HOOKS_JSON="${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/hooks/hooks.json"
 if [ -f "$PLUGIN_HOOKS_JSON" ]; then
     python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/remove_hook_from_registry.py" \
         --json-file "$PLUGIN_HOOKS_JSON" \

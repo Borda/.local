@@ -116,16 +116,7 @@ RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/judge-run-dir"  # persist for J3 block (Check 41)
 ```
 
-**Health monitoring** (CLAUDE.md §6) — create both checkpoints BEFORE dispatching any agents:
-
-```bash
-_HM_ARCH=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "judge-architect" 2>/dev/null)  # timeout: 5000
-LAUNCH_AT=$(echo "$_HM_ARCH" | grep '^LAUNCH_AT=' | cut -d= -f2)
-CHECKPOINT=$(echo "$_HM_ARCH" | grep '^SENTINEL=' | cut -d= -f2)
-_HM_SCI=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "judge-scientist" 2>/dev/null)  # timeout: 5000
-LAUNCH_AT_SCI=$(echo "$_HM_SCI" | grep '^LAUNCH_AT=' | cut -d= -f2)
-CHECKPOINT_SCI=$(echo "$_HM_SCI" | grep '^SENTINEL=' | cut -d= -f2)
-```
+**Synchronous spawn note**: J3 agents are spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. Timeout is handled post-hoc — after each Agent() returns, check its output file; if missing/empty mark that agent timed out (⏱). See J3 post-call checks below.
 
 Dispatch agents in a single response — scientist always; architect only when complexity gate fires.
 
@@ -192,17 +183,9 @@ Return ONLY a compact JSON envelope on your final line — nothing else after it
 
 > **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in the template above MUST be replaced with the concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before the string is passed to `Agent(...)`. Passing the literal `${RUN_DIR}` to the agent will cause the agent to write to a directory named `${RUN_DIR}`. This applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation that the Agent runtime expands.
 
-When `SPAWN_ARCHITECT=true` — poll architect every 5 min: `find $RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
+When `SPAWN_ARCHITECT=true` — after the architect Agent() returns, check `$RUN_DIR/methodology.md`: if missing or empty, set `methodology_rating = "timed_out"`, continue to J6; surface with ⏱ in report.
 
-- **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 $RUN_DIR/methodology.md` shows active progress, grant one extension; second stall = hard cutoff
-- **On timeout**: read `tail -100 $RUN_DIR/methodology.md`; if file missing or empty, set `methodology_rating = "timed_out"`, continue to J6. Surface with ⏱ in report.
-
-Poll scientist every 5 min: `find $RUN_DIR -name "scientific-review.md" -newer "$CHECKPOINT_SCI" | wc -l` — file present = alive; zero = stalled.
-
-- **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: if `tail -20 $RUN_DIR/scientific-review.md` shows active progress, grant one extension; second stall = hard cutoff
-- **On timeout**: set `scientific_rating = "timed_out"`, continue to J6; surface with ⏱ in Scientific Rigor section.
+After the scientist Agent() returns, check `$RUN_DIR/scientific-review.md`: if missing or empty, set `scientific_rating = "timed_out"`, continue to J6; surface with ⏱ in Scientific Rigor section.
 
 Use `methodology_rating` from returned envelope for verdict computation in J6:
 

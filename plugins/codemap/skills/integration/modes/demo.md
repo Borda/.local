@@ -56,9 +56,9 @@ TARGET="$SANDBOX/$(basename "$CLONE_URL" .git)"
 
 Set `CLONED=true`. Cloned repos have no user skills installed → `DEMO_MODE` stays `synthetic`; skip D2a integration gate.
 
-## D2 — Plumbing check (C1–C5 inline)
+## D2 — Plumbing check (C1–C4 inline)
 
-Run bin scripts inline — demo controls cwd and parses C4 JSON directly. First resolve the index path so freshness and smoke scripts receive `--index-path`.
+Run bin scripts inline — demo controls cwd and parses C3 JSON directly. First resolve the index path so the smoke script receives `--index-path`.
 
 ```bash
 # timeout: 5000
@@ -70,20 +70,14 @@ _DEMO_INDEX=$(cat "${TMPDIR:-/tmp}/codemap-demo-${_DEMO_PROJ}-resolve-index" 2>/
 ```
 
 ```bash
-# timeout: 5000
-python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_freshness.py" \
-    "${_DEMO_INDEX}"
-```
-
-```bash
 # timeout: 15000
-C4_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" \
+C3_JSON=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_index_smoke.py" \
     --index-path "${_DEMO_INDEX}" 2>&1)
 ```
 
 ```bash
 # timeout: 10000
-C5_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" 2>&1)
+C4_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" 2>&1)
 ```
 
 Derive from outputs:
@@ -92,14 +86,13 @@ Derive from outputs:
 | --- | --- | --- |
 | C1 scan-query | exit 0 + non-empty `$SQ` | `scan_query_ok` |
 | C2 index path | exit 0 | `index_path_ok` |
-| C3 freshness | exit 0 | `index_fresh` |
-| C4 smoke | `"ok": true` in JSON | `smoke_ok`; extract `stale`, `age_hours`, `error` |
-| C5 injection | exit 0 | `injection_present`; parse stdout for list of wired file paths → `WIRED_FILES[]` |
+| C3 smoke | `"ok": true` in JSON | `smoke_ok`; extract `stale`, `age_hours`, `error` |
+| C4 injection | exit 0 | `injection_present`; parse stdout for list of wired file paths → `WIRED_FILES[]` |
 
-Parsing `WIRED_FILES[]` from C5 stdout — collect every line matching a `.md` path that contains the injection marker:
+Parsing `WIRED_FILES[]` from C4 stdout — collect every line matching a `.md` path that contains the injection marker:
 
 ```bash
-WIRED_FILES=$(echo "$C5_OUT" | grep -E '\.(md)' | grep -v "missing\|not found\|✗")
+WIRED_FILES=$(echo "$C4_OUT" | grep -E '\.(md)' | grep -v "missing\|not found\|✗")
 ```
 
 Build plumbing summary table (printed in D8):
@@ -108,8 +101,7 @@ Build plumbing summary table (printed in D8):
 | --- | --- | --- |
 | scan-query | ✓/✗ | path |
 | index | ✓/⚠/✗ | path or "missing" |
-| freshness | ✓/⚠ | age_hours |
-| smoke | ✓/✗ | error if any |
+| smoke | ✓/✗ | age_hours / error if any |
 | injection | ✓/⚠/✗ | N files wired / "none" |
 
 If `scan_query_ok=false`: print remediation hint (`claude plugin install codemap@borda-ai-rig`) and stop.
@@ -131,11 +123,11 @@ Options:
 - (b) Synthetic A/B only — skip real-skill probe, label results accordingly
 - (c) Cancel
 
-On (a): `Skill(skill="codemap:integration", args="init")`. After init, re-run C5:
+On (a): `Skill(skill="codemap:integration", args="init")`. After init, re-run C4:
 
 ```bash
 cd "$TARGET"
-C5_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" 2>&1)  # timeout: 10000
+C4_OUT=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" 2>&1)  # timeout: 10000
 ```
 
 Re-derive `injection_present` and `WIRED_FILES[]`. If `injection_present=true` → `DEMO_MODE=real`. If still false → `DEMO_MODE=synthetic`; record "init ran but no files were wired" as a finding.
@@ -151,7 +143,7 @@ If `smoke_ok=false` or index missing:
 Skill(skill="codemap:scan-codebase")
 ```
 
-Re-run C3+C4 to verify. Record `module_count`, `degraded_count` from C4 JSON.
+Re-run C3 to verify. Record `module_count`, `degraded_count` from C3 JSON.
 
 If still failing after build: warn, continue (A/B degrades gracefully — arms fall back to grep).
 

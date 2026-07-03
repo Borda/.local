@@ -102,7 +102,7 @@ Symbol staleness: `stale: true` + empty source → `Read(path)` fallback. `stale
 | `fn-blast` | `blast_radius` | `depth module::fn`, sorted by depth then name |
 
 `index.stale: true` → re-run `scan-index --incremental` and retry.
-`index.not_covered` non-empty → note scope caveat in response; append gap record to `.cache/codemap/gaps.jsonl`.
+`index.not_covered` non-empty → note scope caveat in response.
 `index.degraded > 0` → caveat some modules unparsable; `path` results may be incomplete.
 `index.confidence == "exact"` → skip verification caveats.
 

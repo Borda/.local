@@ -64,7 +64,6 @@ FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_p
 echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared"
 ```
 > loads: oss-shared-resolver.md
-> Then: Read $_OSS_SHARED/oss-shared-resolver.md and execute its contents
 
 ## Step 1: Flag parsing
 
@@ -401,13 +400,6 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared" 2>/dev/null || echo "")
 CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
 TODAY=$(cat "${TMPDIR:-/tmp}/analyse-today" 2>/dev/null || date +%Y-%m-%d)
-# Shepherd availability guard — oss plugin may not be installed
-# Must check installed cache path — bare _OSS_SHARED fallback always non-empty, invalid availability signal
-SHEPHERD_AVAILABLE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/check_agent.py" oss shepherd 2>/dev/null)  # timeout: 5000
-if [ "$SHEPHERD_AVAILABLE" = "false" ]; then
-    echo "⚠ oss:shepherd not available — --reply requires the oss plugin. Install: claude plugin install oss@borda-ai-rig"
-    exit 1
-fi # timeout: 5000
 ```
 
 Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (Step 2, `FAST_PATH=true`) or freshly written by Step 5.
@@ -415,7 +407,6 @@ Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (St
 ```bash
 # Reload _OSS_SHARED — fresh shell (Check 41)
 _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared" 2>/dev/null || echo "")
-[ -f "$_OSS_SHARED/shepherd-reply-protocol.md" ] || { echo "⚠ shepherd-reply-protocol.md not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
 ```
 
 Read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.

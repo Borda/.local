@@ -1,4 +1,4 @@
-<!-- source: plugins/foundry/CLAUDE.src.md → ~/.claude/CLAUDE.md via /foundry:setup Step 9b | NOT auto-loaded from cache (non-CLAUDE.md name intentional) -->
+<!-- source: plugins/foundry/CLAUDE.src.md → ~/.claude/CLAUDE.md via /foundry:setup Step 10 | NOT auto-loaded from cache (non-CLAUDE.md name intentional) -->
 
 ## Workflow Orchestration
 
@@ -35,17 +35,15 @@ Trivial/mechanical (typo, single-file): just fix it — logs, errors, failing te
 
 ### 6. Background Agent Health Monitoring
 
-Any orchestrator spawning background agents writing to run directory **must** monitor — `/foundry:calibrate` canonical; skills customize defaults via `<constants>` block.
+The harness runs one Bash call at a time (foreground `sleep` blocked, ~10 min per-call cap) — a skill **cannot** busy-wait in a poll loop for a background agent. Monitoring is event-driven and post-hoc.
 
 **Protocol**:
 
-1. Create per-agent checkpoint and record launch time: `LAUNCH_AT=$(date +%s); touch /tmp/<skill>-check-<id>`
-2. Every **5 min**: `find <run-dir> -newer /tmp/<checkpoint> -type f | wc -l` — new files = alive; zero = stalled
-3. **Hard cutoff: 15 min** no file activity → timed out
-4. **One extension (+5 min)** if `tail -20 <output_file>` explains delay — second unexplained stall = cutoff
-5. On timeout: read `tail -100 <output_file>` for partial results; if none use `{"verdict":"timed_out"}`; surface with ⏱ — never omit
+- **Background spawn** (`run_in_background=true`): rely on the harness **completion notification** as the primary liveness signal — act when it arrives, don't block. Optional between-turn liveness: the `Monitor` tool, or a single `find <run-dir> -newer <sentinel>` probe per turn (no sleep loop).
+- **Synchronous spawn** (blocking `Agent()`): returns only when done — read the output file afterwards.
+- **On completion / return**: read the agent's output file; empty or missing → mark `timed_out`, record `{"verdict":"timed_out"}`, surface with ⏱ — never omit a stalled agent.
 
-Skills may tighten (not loosen) defaults in own `<constants>` block.
+Canonical helper: `_FOUNDRY_SHARED/agent-spawn-protocol.md`. Skills may tighten timeouts in their own `<constants>` block.
 
 ## Pre-Authorized Operations
 

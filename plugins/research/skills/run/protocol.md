@@ -7,14 +7,21 @@ paths:
 
 ## Run Directory Layout
 
-Every `--researcher` run writes to `.experiments/<run-id>/`:
+Canonical layout — other run/mode files point here rather than re-explaining it. A run uses two sibling dirs under `.experiments/`, keyed by the same `<run-id>`:
 
 ```text
-.experiments/<run-id>/
+.experiments/state/<run-id>/     ← per-iteration state (all modes)
+  state.json         ← iteration count, best metric, status (resume anchor scanned by find_run_id.py)
+  experiments.jsonl  ← one line per iteration
+  diary.md           ← human-readable research diary
+
+.experiments/<run-id>/           ← hypothesis-pipeline artifacts (--researcher / --architect / --journal)
   hypotheses.jsonl   ← annotated hypothesis queue (oracle + feasibility)
   checkpoint.json    ← per-iteration state for --resume
   journal.md         ← structured learning log, appended after every iteration (when --journal is set)
 ```
+
+> **Planned unification (code alignment needed — not yet migrated)**: the two run-scoped dirs are a known duplication (re-explained across several files). Target = one dir per run — merge pipeline artifacts under `.experiments/state/<run-id>/`, leaving `state.json` in place so `find_run_id.py` / `read_state_field.py` resume discovery is untouched. Blocked on a coordinated change: producers (`run/SKILL.md` `RUN_DIR`, `hypothesis-pipeline.md`, `team.md`), every `<RUN_DIR>` substitution, and README/protocol docs must move together; team mode also derives its own `.experiments/run-team-<ts>/` via `make_run_dir` and stores that `run_dir` path in `state.json`, so the migration must not break team-mode resume.
 
 ## hypotheses.jsonl Schema
 

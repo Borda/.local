@@ -7,15 +7,10 @@ Loaded by the main iteration loop (Phase 5 step) in `run/SKILL.md`.
 **If `sandbox_mode = "docker"`**:
 
 ```bash
-docker run --rm --network "${SANDBOX_NETWORK}" \
-    -v "$(pwd):/workspace:ro" \
-    -v "$(pwd)/.experiments:/workspace/.experiments:rw" \
-    --tmpfs /tmp:rw,size=256m \
-    python:3.11-slim \
-    sh -c "$METRIC_CMD"
+SANDBOX_NETWORK="${SANDBOX_NETWORK}" python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/docker_sandbox_run.py" --mode verify "$METRIC_CMD"
 ```
 
-No resource limits. Use Bash tool `timeout` parameter (not shell `timeout`): `timeout: $VERIFY_TIMEOUT_MS`.
+The wrapper mounts the project read-only, `.experiments` read-write, runs under `python:3.11-slim` with read-only rootfs, dropped Linux caps, and `no-new-privileges` (network via `SANDBOX_NETWORK`, default `none`). No CPU/memory caps. Use Bash tool `timeout` parameter (not shell `timeout`): `timeout: $VERIFY_TIMEOUT_MS`.
 
 **If `sandbox_mode = "local"`**: Run `metric_cmd` via Bash (`timeout: $VERIFY_TIMEOUT_MS`). Not shell `timeout`. Different CWD → separate `cd <path>` call first. Complex metric parsing → write parser to `.experiments/state/<run-id>/scripts/parse-metric-<i>.py`, run with `python <path>` — no inline one-liner.
 

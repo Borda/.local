@@ -1,9 +1,11 @@
 # OSS Shared Dir Resolver
 
-Resolve oss plugin shared dir — installed first, local workspace fallback.
-`sort -V` orders semver correctly (0.9.0 < 0.10.0); `tail -1` picks newest.
+Pointer only — no bash to execute. The canonical resolver is the bin script
+`bin/resolve_shared_path.py`; consumers set `$_OSS_SHARED` by invoking it directly:
 
 ```bash
-_OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
-[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)
 ```
+
+It performs the tiered cascade (env root → registry → cache semver → source-tree fallback),
+superseding the old `ls | sort -V | tail -1` snippet this file used to carry.

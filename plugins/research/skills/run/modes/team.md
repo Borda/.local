@@ -12,7 +12,7 @@
 
 **Team Mode directory layout**:
 
-- `<RUN_DIR>` (`.experiments/<timestamp>/`) — hypothesis artifacts: `hypotheses-<axis-slug>.jsonl`, `hypothesis-analyst-<axis-slug>.md`, `team-queue.jsonl`, `team-results.jsonl`
+- `<RUN_DIR>` (`.experiments/run-team-<timestamp>/`, from `make_run_dir "run-team"`) — hypothesis artifacts: `hypotheses-<axis-slug>.jsonl`, `hypothesis-analyst-<axis-slug>.md`, `team-queue.jsonl`, `team-results.jsonl`
 - `.experiments/state/<run-id>/` — standard iteration artifacts: `ideation-team-<M>.md`, `diary.md`, `experiments.jsonl`
 
 **Workflow:**
@@ -79,23 +79,7 @@
    Call TaskUpdate(in_progress) when starting; TaskUpdate(completed) when done.
    ```
 
-**Health monitoring** (CLAUDE.md §6): after spawning all agents in step 4, create checkpoint via shared helper:
-
-```bash
-_HM=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/health_monitor_start.py" "optimize-team" 2>/dev/null)  # timeout: 5000
-LAUNCH_AT=$(echo "$_HM" | grep '^LAUNCH_AT=' | cut -d= -f2)
-CHECKPOINT=$(echo "$_HM" | grep '^SENTINEL=' | cut -d= -f2)
-```
-
-<!-- Note: single checkpoint covers all axes — a stalled individual agent is masked by peers still writing files.
-     For production use, create per-agent checkpoints (e.g., /tmp/optimize-check-<axis>-$LAUNCH_AT) to detect individual stalls.
-     Current single-checkpoint design trades stall-masking for simpler orchestration. -->
-
-Poll every 5 min: `find $RUN_DIR -newer "$CHECKPOINT" -type f | wc -l` — new files = alive; zero = stalled.
-
-- **Hard cutoff: 15 min** no file activity → timed out
-- **One extension (+5 min)**: `tail -20 <output_file>` shows active progress → grant one; second stall = hard cutoff
-- **On timeout**: read partial output from `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`; surface with ⏱ in Phase D report — never silently omit timed-out agent
+**Synchronous spawn note**: hypothesis agents are spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. After the Agent() calls return, check each `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`; if missing or empty, that agent timed out — read any partial output, surface with ⏱ in the Phase D report, never silently omit.
 
 5. Collect compact JSON envelopes from all hypothesis agents. Do not read `.md` analysis files into lead context — inputs to Phase B queue assembly only.
 
