@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import date
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -1064,19 +1065,25 @@ class TestIntegrationScanQuery:
 class TestIntegrationSuiteC:
     """Suite C: call-savings measurement against pytorch-lightning."""
 
-    def test_returns_three_results(self, script_run_cli: Any, pytorch_lightning_repo: Any) -> None:
+    def test_returns_three_results(
+        self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
+    ) -> None:
         """Scenario: run_measure_calls returns exactly 3 ScenarioResult objects."""
-        results = script_run_cli.run_measure_calls(pytorch_lightning_repo)
+        results = script_run_cli.run_measure_calls(pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index)
         assert len(results) == 3
 
-    def test_scenario_ids(self, script_run_cli: Any, pytorch_lightning_repo: Any) -> None:
+    def test_scenario_ids(
+        self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
+    ) -> None:
         """Scenario: the three results have scenario IDs C1, C2, C3."""
-        results = script_run_cli.run_measure_calls(pytorch_lightning_repo)
+        results = script_run_cli.run_measure_calls(pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index)
         assert {r.scenario for r in results} == {"C1", "C2", "C3"}
 
-    def test_results_are_scenario_result_instances(self, script_run_cli: Any, pytorch_lightning_repo: Any) -> None:
+    def test_results_are_scenario_result_instances(
+        self, script_run_cli: Any, pytorch_lightning_repo: Any, scan_query_binary: Any, pytorch_lightning_index: Any
+    ) -> None:
         """Scenario: every item returned is a ScenarioResult dataclass."""
-        results = script_run_cli.run_measure_calls(pytorch_lightning_repo)
+        results = script_run_cli.run_measure_calls(pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index)
         for r in results:
             assert isinstance(r, script_run_cli.ScenarioResult)
 
@@ -1166,3 +1173,308 @@ class TestIntegrationSuiteI:
             REPO_ROOT, pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index
         )
         assert {r.scenario for r in results} == {"I_fix", "I_feature", "I_refactor"}
+
+
+# ===========================================================================
+# Coverage-gap helpers — grep + AST importer verification (C-6)
+# ===========================================================================
+
+
+@pytest.fixture()
+def sample_pkg(tmp_path: Path) -> Path:
+    """Build a package exercising literal, aliased, relative, and decoy imports of ``pkg.target``.
+
+    Layout (all importers target ``pkg.target``):
+      pkg/imp_from.py   from pkg.target import Thing   (literal — grep-visible)
+      pkg/imp_plain.py  import pkg.target              (literal — grep-visible)
+      pkg/imp_alias.py  import pkg.target as t         (aliased — grep-visible)
+      pkg/imp_decoy.py  import pkg.target_helper       (decoy — must NOT match)
+      pkg/unrelated.py  import os                      (no relation)
+      pkg/bad.py        <syntax error>                 (unparsable)
+      pkg/rel/rel_from.py  from ..target import Thing  (relative — grep-invisible)
+      pkg/rel/rel_bare.py  from .. import target       (relative — grep-invisible)
+
+    Returns:
+        Path to the repository root containing the ``pkg`` package.
+    """
+    pkg = tmp_path / "pkg"
+    (pkg / "rel").mkdir(parents=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "target.py").write_text("", encoding="utf-8")
+    (pkg / "target_helper.py").write_text("", encoding="utf-8")
+    (pkg / "imp_from.py").write_text("from pkg.target import Thing\n", encoding="utf-8")
+    (pkg / "imp_plain.py").write_text("import pkg.target\n", encoding="utf-8")
+    (pkg / "imp_alias.py").write_text("import pkg.target as t\n", encoding="utf-8")
+    (pkg / "imp_decoy.py").write_text("import pkg.target_helper\n", encoding="utf-8")
+    (pkg / "unrelated.py").write_text("import os\n", encoding="utf-8")
+    (pkg / "bad.py").write_text("def (:\n", encoding="utf-8")
+    (pkg / "rel" / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "rel" / "rel_from.py").write_text("from ..target import Thing\n", encoding="utf-8")
+    (pkg / "rel" / "rel_bare.py").write_text("from .. import target\n", encoding="utf-8")
+    return tmp_path
+
+
+class TestGrepImportersBoundary:
+    """Validate grep_importers_boundary anchors to import statements only."""
+
+    def test_matches_literal_imports_only(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: only literal, boundary-anchored importers are returned; relatives/decoys excluded."""
+        result = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
+        assert result == {"pkg.imp_from", "pkg.imp_plain", "pkg.imp_alias"}
+
+    def test_excludes_substring_sibling(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: 'import pkg.target_helper' does not match a search for 'pkg.target'."""
+        result = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
+        assert "pkg.imp_decoy" not in result
+
+    def test_no_match_returns_empty_set(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a module with no importers yields an empty set."""
+        result = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.nonexistent")
+        assert result == set()
+
+
+class TestModuleToSourceFile:
+    """Validate module_to_source_file resolution."""
+
+    def test_resolves_regular_module(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a dotted module resolves to its .py file."""
+        assert script_run_cli.module_to_source_file("pkg.target", sample_pkg) == sample_pkg / "pkg" / "target.py"
+
+    def test_resolves_package_init(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a package resolves to its __init__.py."""
+        assert script_run_cli.module_to_source_file("pkg", sample_pkg) == sample_pkg / "pkg" / "__init__.py"
+
+    def test_missing_module_returns_none(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: an unknown module resolves to None."""
+        assert script_run_cli.module_to_source_file("pkg.nope.here", sample_pkg) is None
+
+
+class TestResolveRelative:
+    """Validate _resolve_relative dotted-base resolution."""
+
+    @pytest.mark.parametrize(
+        "base,level,module,expected",
+        [
+            pytest.param("pkg.rel", 2, "target", "pkg.target", id="up-one-with-module"),
+            pytest.param("pkg.rel", 1, None, "pkg.rel", id="current-package-bare"),
+            pytest.param("pkg.rel", 1, "x", "pkg.rel.x", id="current-package-with-module"),
+            pytest.param("pkg", 1, "target", "pkg.target", id="top-level-package"),
+            pytest.param("a.b.c", 3, "d", "a.d", id="up-two"),
+        ],
+    )
+    def test_resolution(self, script_run_cli: Any, base: str, level: int, module: str | None, expected: str) -> None:
+        """Scenario: relative import base resolves per level and module suffix.
+
+        Args:
+            base: Base package of the importing file.
+            level: Relative-import level (leading dots).
+            module: Dotted suffix after the dots, or None.
+            expected: Expected absolute dotted base.
+        """
+        assert script_run_cli._resolve_relative(base, level, module) == expected
+
+
+class TestFileImportsModule:
+    """Validate file_imports_module AST verification across import forms."""
+
+    @pytest.mark.parametrize(
+        "relpath",
+        [
+            pytest.param("pkg/imp_from.py", id="from-import"),
+            pytest.param("pkg/imp_plain.py", id="plain-import"),
+            pytest.param("pkg/imp_alias.py", id="aliased-import"),
+            pytest.param("pkg/rel/rel_from.py", id="relative-from-parent"),
+            pytest.param("pkg/rel/rel_bare.py", id="relative-bare"),
+        ],
+    )
+    def test_true_importers(self, script_run_cli: Any, sample_pkg: Path, relpath: str) -> None:
+        """Scenario: every genuine importer of pkg.target is confirmed by AST.
+
+        Args:
+            relpath: Path (relative to repo root) of the importing file.
+        """
+        assert script_run_cli.file_imports_module(sample_pkg / relpath, "pkg.target", sample_pkg) is True
+
+    @pytest.mark.parametrize(
+        "relpath",
+        [
+            pytest.param("pkg/imp_decoy.py", id="decoy-sibling"),
+            pytest.param("pkg/unrelated.py", id="unrelated"),
+            pytest.param("pkg/bad.py", id="syntax-error"),
+        ],
+    )
+    def test_non_importers(self, script_run_cli: Any, sample_pkg: Path, relpath: str) -> None:
+        """Scenario: non-importers, decoys, and unparsable files are rejected.
+
+        Args:
+            relpath: Path (relative to repo root) of the file that must not match.
+        """
+        assert script_run_cli.file_imports_module(sample_pkg / relpath, "pkg.target", sample_pkg) is False
+
+
+class TestVerifyImporter:
+    """Validate verify_importer end-to-end (module name → file → AST check)."""
+
+    def test_verifies_relative_extra(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a grep-missed relative importer is verified as a true importer."""
+        assert script_run_cli.verify_importer("pkg.rel.rel_from", "pkg.target", sample_pkg) is True
+
+    def test_rejects_decoy(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a decoy that imports a sibling module is not verified."""
+        assert script_run_cli.verify_importer("pkg.imp_decoy", "pkg.target", sample_pkg) is False
+
+    def test_missing_candidate_module_returns_false(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a candidate module with no source file is rejected."""
+        assert script_run_cli.verify_importer("pkg.ghost", "pkg.target", sample_pkg) is False
+
+
+# ===========================================================================
+# Infeasible-path measurement (C-7)
+# ===========================================================================
+
+
+class TestMeasureInfeasiblePaths:
+    """Validate _measure_infeasible_paths direct-edge detection."""
+
+    def _task(self, script_cli: Any, frm: str, to: str) -> Any:
+        """Build a single-path task.
+
+        Args:
+            script_cli: Loaded module fixture.
+            frm: Path source module.
+            to: Path destination module.
+
+        Returns:
+            Task with one path query.
+        """
+        return script_cli.Task.from_dict(
+            {
+                "id": "P-01",
+                "skill": "fix",
+                "prompt": "p",
+                "primary_module": frm,
+                "risk_tier": "high",
+                "queries": [{"cmd": "path", "args": [frm, to]}],
+                "ground_truth_keys": [],
+            }
+        )
+
+    def test_direct_edge_is_feasible(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: when the source is a direct importer of the target, the path is feasible."""
+        # pkg.imp_from imports pkg.target directly → direct edge → not infeasible.
+        task = self._task(script_run_cli, "pkg.imp_from", "pkg.target")
+        fraction, infeasible, total, detail = script_run_cli._measure_infeasible_paths([task], sample_pkg)
+        assert total == 1
+        assert infeasible == 0
+        assert fraction == 0.0
+        assert detail[0]["direct_edge"] is True
+
+    def test_missing_edge_is_infeasible(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: when the source does not directly import the target, the path is infeasible."""
+        # pkg.unrelated does not import pkg.target → no direct edge → infeasible.
+        task = self._task(script_run_cli, "pkg.unrelated", "pkg.target")
+        fraction, infeasible, total, detail = script_run_cli._measure_infeasible_paths([task], sample_pkg)
+        assert total == 1
+        assert infeasible == 1
+        assert fraction == 1.0
+        assert detail[0]["direct_edge"] is False
+
+
+# ===========================================================================
+# JSON output — emit + summary envelope (C-9)
+# ===========================================================================
+
+
+class TestEmit:
+    """Validate emit prints one compact JSON line with the dataclass fields."""
+
+    def test_emits_single_json_line_with_all_fields(self, script_run_cli: Any, capsys: pytest.CaptureFixture) -> None:
+        """Scenario: emit outputs one line whose keys mirror the ScenarioResult fields."""
+        r = script_run_cli.ScenarioResult(
+            scenario="C1",
+            name="coverage-gap",
+            suite="calls",
+            passed=True,
+            result={"coverage_gap": 0.5},
+            threshold={"coverage_gap_min": 0.1},
+            notes="n",
+        )
+        script_run_cli.emit(r)
+        out = capsys.readouterr().out
+        assert out.count("\n") == 1  # exactly one line
+        obj = json.loads(out)
+        assert set(obj) == {"scenario", "name", "suite", "passed", "result", "threshold", "notes"}
+        assert obj["scenario"] == "C1"
+        assert obj["suite"] == "calls"
+        assert obj["passed"] is True
+        assert obj["result"]["coverage_gap"] == 0.5
+
+
+class TestBuildSummaryEnvelope:
+    """Validate build_summary_envelope aggregation and fields."""
+
+    def test_aggregates_suites_and_totals(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: envelope reports per-suite pass/total and overall scenario counts."""
+        results = [
+            script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {}),
+            script_run_cli.ScenarioResult("C2", "x", "calls", False, {}, {}),
+            script_run_cli.ScenarioResult("A1", "x", "accuracy", True, {}, {}),
+        ]
+        env = script_run_cli.build_summary_envelope(results, tmp_path, tmp_path / "i.json", "PARTIAL")
+        assert env["verdict"] == "PARTIAL"
+        assert env["scenarios_passed"] == 2
+        assert env["scenarios_total"] == 3
+        assert env["suites"]["calls"] == {"passed": 1, "total": 2}
+        assert env["suites"]["accuracy"] == {"passed": 1, "total": 1}
+        assert env["repo"] == str(tmp_path)
+        assert env["index"] == str(tmp_path / "i.json")
+        assert env["date"] == date.today().isoformat()
+
+    def test_envelope_is_json_serializable(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: the envelope round-trips through json.dumps/loads unchanged in structure."""
+        results = [script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {})]
+        env = script_run_cli.build_summary_envelope(results, tmp_path, tmp_path / "i.json", "PASS")
+        assert json.loads(json.dumps(env))["suites"]["calls"]["passed"] == 1
+
+
+# ===========================================================================
+# Report path — single-resolve regression (C-8)
+# ===========================================================================
+
+
+class TestWriteReportFile:
+    """Validate that the printed report path equals the file actually written."""
+
+    def test_returned_path_is_the_written_file(
+        self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: write_report_file returns the exact path render_report wrote (no -2 drift)."""
+        monkeypatch.chdir(tmp_path)
+        rendered: dict[str, Path] = {}
+
+        def _fake_render(results: Any, repo: Path, index: Path, path: Path) -> None:
+            Path(path).write_text("report", encoding="utf-8")
+            rendered["path"] = Path(path)
+
+        monkeypatch.setattr(script_run_cli, "render_report", _fake_render)
+        returned = script_run_cli.write_report_file([], tmp_path, tmp_path / "i.json")
+        assert Path(returned) == rendered["path"]
+        assert Path(returned).exists()
+        assert Path(returned).name == f"code-{date.today().isoformat()}.md"
+
+    def test_second_call_uses_counter_suffix(
+        self, script_run_cli: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: a second run writes a distinct code-<date>-2.md that also exists."""
+        monkeypatch.chdir(tmp_path)
+
+        def _fake_render(results: Any, repo: Path, index: Path, path: Path) -> None:
+            Path(path).write_text("report", encoding="utf-8")
+
+        monkeypatch.setattr(script_run_cli, "render_report", _fake_render)
+        first = script_run_cli.write_report_file([], tmp_path, tmp_path / "i.json")
+        second = script_run_cli.write_report_file([], tmp_path, tmp_path / "i.json")
+        assert first != second
+        assert Path(first).exists()
+        assert Path(second).exists()
+        assert Path(second).name == f"code-{date.today().isoformat()}-2.md"

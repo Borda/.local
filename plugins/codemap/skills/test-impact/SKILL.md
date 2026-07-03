@@ -48,7 +48,11 @@ echo "$SQ" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq"
 [ ! -f "$INDEX" ] && echo "No index found — will build via codemap:scan-codebase"
 ```
 
-If `$INDEX` not found → `Skill(skill="codemap:scan-codebase")` then continue.
+Auto-build is opt-out via `SCAN_NO_AUTOBUILD=1` (use the index exactly as-is — no refresh, no full build); when a build runs, its wall-time is echoed so build cost stays separable from query cost.
+
+If `$INDEX` not found:
+- `SCAN_NO_AUTOBUILD=1` set → print `! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: /codemap:scan-codebase` and exit 1.
+- otherwise → `Skill(skill="codemap:scan-codebase")` then continue.
 
 If index already exists:
 
@@ -56,8 +60,15 @@ If index already exists:
 # timeout: 30000
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || basename "$PWD")
 _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-# forward CODEMAP_INDEX_DIR; ensures scan-index writes to same path as INDEX
-CODEMAP_INDEX_DIR="${_IDX}" "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental || printf "⚠ scan-index --incremental failed — index may be stale; continuing\n"
+if [ "${SCAN_NO_AUTOBUILD:-0}" = "1" ]; then
+    echo "[codemap] SCAN_NO_AUTOBUILD=1 — using existing index as-is (no refresh)"
+else
+    _CM_BUILD_T0=$(date +%s)
+    # forward CODEMAP_INDEX_DIR; ensures scan-index writes to same path as INDEX
+    CODEMAP_INDEX_DIR="${_IDX}" "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental \
+        && echo "[codemap] index built in $(( $(date +%s) - _CM_BUILD_T0 ))s" \
+        || printf "⚠ scan-index --incremental failed — index may be stale; continuing\n"
+fi
 ```
 
 After Skill() or incremental refresh, re-verify index still present:

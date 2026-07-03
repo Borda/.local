@@ -48,10 +48,14 @@ reducing tool call count, elapsed time, and context consumption.
   Purpose: assess whether the agent correctly identified the modules that import the task's primary_module
   (its "reverse dependencies", or rdeps). This is a proxy for blast-radius awareness — the core skill under test.
 
-  Ground truth (deterministic, index-derived):
-    expected = { m.name for m in index.modules if primary_module in m.direct_imports and not m.name.startswith("tests.") }
-    Test modules excluded — blast-radius analysis targets production callers only.
-    Reproducible across runs as long as the index does not change.
+  Ground truth (deterministic, tool-independent — review C-5):
+    Derived from an independent AST scan of the repo, NOT from the codemap index the codemap
+    arm queries. Every production .py file is parsed once; imports are inverted into an
+    {imported_module: {importers}} map handling absolute, `from X import submodule`, aliased,
+    and relative imports. Test modules (tests.*) excluded — blast-radius targets production
+    callers only. The index-derived list is kept as a diagnostic: when the two disagree a
+    per-task `[gt-divergence]` line is logged (missing_in_index = real importers the index lacks
+    = potential plugin blind spot). Falls back to the index-derived list when no repo is scanned.
 
   Matching strategy — multi-form surface matching (v2):
     For each expected rdep, generate surface forms with 2+ path components:
@@ -204,6 +208,7 @@ reducing tool call count, elapsed time, and context consumption.
       → captures final cumulative token usage (all cache partitions summed)
 """
 
+import ast
 import json
 import os
 import re
@@ -541,42 +546,203 @@ def _tool_key_arg(name: str, inp: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Quality scoring — deterministic, index-derived ground truth
+# Independent AST-based reverse-dependency scan (tool-independent ground truth)
+# ---------------------------------------------------------------------------
+
+_SKIP_DIR_PARTS = frozenset({"tests", "test"})  # top-level test trees excluded from production rdeps
+
+
+def _iter_py_files(root: Path) -> Iterator[Path]:
+    """Yield ``*.py`` files under ``root``, pruning hidden and test directories.
+
+    Directories whose name starts with ``.`` (``.git``, ``.cache``, ``.venv``) and any
+    directory named ``tests``/``test`` are skipped — the latter mirrors the index rule that
+    blast-radius analysis targets production callers only.
+
+    Args:
+        root: Repository root to walk.
+
+    Yields:
+        Absolute paths to candidate Python source files.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _SKIP_DIR_PARTS]
+        for name in filenames:
+            if name.endswith(".py"):
+                yield Path(dirpath) / name
+
+
+def _derive_module_name(py_path: Path, root: Path) -> Optional[str]:
+    """Derive the dotted module name of a file from its ``__init__.py`` package chain.
+
+    Walks parent directories upward while each contains an ``__init__.py`` to find the source
+    root, then joins the remaining path components. Works for both src-layout and flat layouts
+    without consulting the codemap index (fully independent ground-truth derivation).
+
+    Args:
+        py_path: Absolute path to a ``.py`` file inside ``root``.
+        root: Repository root (used only as a walk boundary).
+
+    Returns:
+        Dotted module name (e.g. ``lightning.pytorch.trainer.trainer``); ``__init__.py`` files
+        resolve to their package name. ``None`` when no name can be derived.
+
+    Examples:
+        >>> import tempfile, pathlib
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     r = pathlib.Path(d)
+        ...     _ = (r / "pkg").mkdir()
+        ...     _ = (r / "pkg" / "__init__.py").write_text("")
+        ...     _ = (r / "pkg" / "mod.py").write_text("")
+        ...     _derive_module_name(r / "pkg" / "mod.py", r)
+        'pkg.mod'
+    """
+    parts: list[str] = []
+    if py_path.stem != "__init__":
+        parts.append(py_path.stem)
+    directory = py_path.parent
+    while (directory / "__init__.py").exists() and directory != directory.parent:
+        parts.append(directory.name)
+        directory = directory.parent
+    if not parts:
+        return None
+    parts.reverse()
+    return ".".join(parts)
+
+
+def _resolve_relative_base(package: str, level: int, module: Optional[str]) -> Optional[str]:
+    """Resolve a relative ``from`` import to its absolute base module.
+
+    Args:
+        package: Dotted package containing the importing module (its ``__package__``).
+        level: Number of leading dots (1 = current package, 2 = parent, ...).
+        module: Text after the dots (``from ..a.b import x`` → ``"a.b"``); ``None`` for
+            ``from . import x``.
+
+    Returns:
+        Absolute dotted base module, or ``None`` when the level walks above the package root.
+
+    Examples:
+        >>> _resolve_relative_base("a.b", 1, "c")
+        'a.b.c'
+        >>> _resolve_relative_base("a.b.c", 2, "u") is None  # regular module's package is a.b
+        False
+    """
+    base_parts = package.split(".") if package else []
+    ascend = level - 1
+    if ascend > len(base_parts):
+        return None
+    kept = base_parts[: len(base_parts) - ascend] if ascend else base_parts
+    if module:
+        kept = kept + module.split(".")
+    return ".".join(kept) if kept else None
+
+
+def _extract_import_targets(tree: ast.Module, package: str, all_modules: set[str]) -> set[str]:
+    """Collect internal modules a parsed file imports (base and submodule forms).
+
+    Handles ``import a.b.c``, ``import a.b as z``, ``from a.b import c`` (crediting both the
+    package ``a.b`` and the submodule ``a.b.c`` when the latter is a real module), and relative
+    imports resolved against ``package``. Only targets present in ``all_modules`` are returned,
+    so external and symbol-only imports are dropped.
+
+    Args:
+        tree: Parsed module AST.
+        package: Dotted package of the importing module (for relative resolution).
+        all_modules: Set of internal dotted module names to filter targets against.
+
+    Returns:
+        Set of internal dotted module names the file depends on.
+    """
+    targets: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in all_modules:
+                    targets.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            base = node.module if node.level == 0 else _resolve_relative_base(package, node.level, node.module)
+            if not base:
+                continue
+            if base in all_modules:
+                targets.add(base)
+            for alias in node.names:
+                if alias.name != "*" and f"{base}.{alias.name}" in all_modules:
+                    targets.add(f"{base}.{alias.name}")
+    return targets
+
+
+def _scan_repo_importers(root: Path) -> dict[str, set[str]]:
+    """Build a tool-independent reverse-dependency map by AST-parsing every source file once.
+
+    The walk resolves each production module's imports and inverts them into
+    ``{imported_module: {importer_module, ...}}``. This is the ground-truth source for quality
+    scoring (review C-5): unlike the codemap index it is not the artefact the codemap arm queries,
+    so index blind spots (e.g. ``from pkg import submodule``) surface as divergences instead of
+    being invisible.
+
+    Args:
+        root: Repository root to scan.
+
+    Returns:
+        Mapping from each internal dotted module name to the set of production modules importing it.
+    """
+    file_module: dict[Path, str] = {}
+    for py_file in _iter_py_files(root):
+        name = _derive_module_name(py_file, root)
+        if name:
+            file_module[py_file] = name
+    all_modules = set(file_module.values())
+    importers: dict[str, set[str]] = defaultdict(set)
+    for py_file, module in file_module.items():
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8", errors="ignore"), filename=str(py_file))
+        except (SyntaxError, ValueError):
+            continue
+        package = module if py_file.stem == "__init__" else module.rpartition(".")[0]
+        for target in _extract_import_targets(tree, package, all_modules):
+            if target != module:
+                importers[target].add(module)
+    return importers
+
+
+# ---------------------------------------------------------------------------
+# Quality scoring — deterministic ground truth
 # ---------------------------------------------------------------------------
 
 
 class GroundTruth:
-    """Index-derived ground truth for quality scoring benchmark runs.
+    """Tool-independent ground truth for quality scoring benchmark runs.
 
-    Loads the codemap index once, pre-computes expected rdep sets per task, and exposes a
-    ``score()`` method for comparing agent output against truth.
+    Loads the codemap index once for centrality metadata, then (when a repo path is given)
+    derives the authoritative expected rdep sets from an independent AST scan of the repo —
+    not from the same index the codemap arm queries. The index-derived list is retained as a
+    diagnostic; per-task divergences are logged so index blind spots become visible instead of
+    invisible (see review C-5). Exposes a ``score()`` method for comparing agent output to truth.
     """
 
     _MODULE_RE = re.compile(r"\blightning(?:\.[a-zA-Z_][a-zA-Z0-9_]*)+")
     _PATH_RE = re.compile(r"\bsrc/(lightning(?:/[a-zA-Z_][a-zA-Z0-9_]*)+)\.py\b")
 
-    def __init__(self, index_path: Path, tasks: list[Task]) -> None:
-        """Load the codemap index and pre-compute expected rdep sets for each task.
+    def __init__(self, index_path: Path, tasks: list[Task], repo_path: Optional[Path] = None) -> None:
+        """Load the index and pre-compute expected rdep sets for each task.
 
         Args:
             index_path: Path to the pre-built codemap JSON index produced by ``scan-index``.
+                Used for module inventory and dep-count centrality only, never as the rdep oracle.
             tasks: Task definitions used to derive per-task ground-truth rdep sets. Tasks
                 without a ``primary_module`` are skipped silently.
+            repo_path: Repository root. When provided, expected rdeps come from an independent
+                AST scan and divergences from the index are logged. When ``None`` (unit tests that
+                supply only an index), the index-derived list is used as a fallback.
         """
         with index_path.open() as f:
             index = json.load(f)
         self.all_modules: set[str] = {m["name"] for m in index.get("modules", []) if m.get("status") == "ok"}
-        self.expected: dict[str, set[str]] = {}
-        for task in tasks:
-            pm = getattr(task, "primary_module", "")
-            if not pm:
-                continue
-            rdeps = {
-                m["name"]
-                for m in index.get("modules", [])
-                if pm in m.get("direct_imports", []) and m.get("status") == "ok" and not m["name"].startswith("tests.")
-            }
-            self.expected[task.id] = rdeps
+        self.index_expected: dict[str, set[str]] = self._index_rdeps(index, tasks)
+        # Independent oracle: {imported_module: {importer, ...}}; empty when no repo path supplied.
+        self.ast_importers: dict[str, set[str]] = _scan_repo_importers(repo_path) if repo_path else {}
+        self.expected, self.divergences = self._resolve_expected(tasks, used_ast=bool(repo_path))
         # dep_count = forward import count per module (proxy for centrality; always populated)
         _dep_counts: dict[str, int] = {m["name"]: m.get("dep_count", 0) for m in index.get("modules", [])}
         # Top-10 most-central rdeps per task (by dep_count descending); k=min(10, |rdeps|)
@@ -587,8 +753,74 @@ class GroundTruth:
                 ranked = sorted(rdeps, key=lambda m: _dep_counts.get(m, 0), reverse=True)[:10]
                 self.top10_expected[task.id] = frozenset(ranked)
         self.all_leaf_names: set[str] = {m.split(".")[-1] for m in self.all_modules}
-        # Precompute multi-form match patterns for every module in the index
-        self._match_patterns: dict[str, list[re.Pattern]] = {m: self._generate_match_set(m) for m in self.all_modules}
+        # Match patterns cover the index inventory plus any AST-only expected rdep, so an arm that
+        # finds a real importer the index missed can still be credited in the corpus.
+        pattern_targets = set(self.all_modules)
+        for rdeps in self.expected.values():
+            pattern_targets |= rdeps
+        self._match_patterns: dict[str, list[re.Pattern]] = {m: self._generate_match_set(m) for m in pattern_targets}
+        self._emit_divergences()
+
+    @staticmethod
+    def _index_rdeps(index: dict, tasks: list[Task]) -> dict[str, set[str]]:
+        """Derive the diagnostic index-based rdep set per task from ``direct_imports``."""
+        modules = index.get("modules", [])
+        out: dict[str, set[str]] = {}
+        for task in tasks:
+            pm = getattr(task, "primary_module", "")
+            if not pm:
+                continue
+            out[task.id] = {
+                m["name"]
+                for m in modules
+                if pm in m.get("direct_imports", []) and m.get("status") == "ok" and not m["name"].startswith("tests.")
+            }
+        return out
+
+    def _resolve_expected(self, tasks: list[Task], used_ast: bool) -> tuple[dict[str, set[str]], dict[str, dict]]:
+        """Select expected rdeps (AST when scanned, else index) and record index divergences.
+
+        Args:
+            tasks: Task definitions to resolve expected rdeps for.
+            used_ast: True when an AST scan ran; its result becomes authoritative.
+
+        Returns:
+            ``(expected, divergences)`` where divergences maps task_id to
+            ``{"ast", "index", "missing_in_index", "missing_in_ast"}`` for tasks that disagree.
+        """
+        if not used_ast:
+            return dict(self.index_expected), {}
+        expected: dict[str, set[str]] = {}
+        divergences: dict[str, dict] = {}
+        for task in tasks:
+            pm = getattr(task, "primary_module", "")
+            if not pm:
+                continue
+            ast_set = {m for m in self.ast_importers.get(pm, set()) if not m.startswith("tests.")}
+            expected[task.id] = ast_set
+            index_set = self.index_expected.get(task.id, set())
+            missing_in_index = ast_set - index_set
+            missing_in_ast = index_set - ast_set
+            if missing_in_index or missing_in_ast:
+                divergences[task.id] = {
+                    "ast": len(ast_set),
+                    "index": len(index_set),
+                    "missing_in_index": sorted(missing_in_index),
+                    "missing_in_ast": sorted(missing_in_ast),
+                }
+        return expected, divergences
+
+    def _emit_divergences(self) -> None:
+        """Print one visible line per task where the AST oracle and index disagree.
+
+        A non-empty ``missing_in_index`` means the AST scan found real importers the index lacks —
+        a potential plugin blind spot and the harness's added diagnostic value (review C-5).
+        """
+        for task_id, d in sorted(self.divergences.items()):
+            print(
+                f"[gt-divergence] {task_id}: ast={d['ast']} index={d['index']} "
+                f"missing_in_index={d['missing_in_index']} missing_in_ast={d['missing_in_ast']}"
+            )
 
     @staticmethod
     def _generate_match_set(module: str) -> list[re.Pattern]:
@@ -812,198 +1044,94 @@ class ModelRunner:
             "radius, and flag the highest regression risks."
         ),
     }
+    # Shared efficiency sentence — identical for every arm so tool-call count reflects the
+    # agent's own choices, not asymmetric steering (see benchmark review C-4).
+    _EFFICIENCY = "\n\nAnswer in as few tool calls as possible; do not re-verify results you already have."
+
+    # Shared, arm-neutral answer format. This is the erec/rrec extraction target and MUST be
+    # identical across all four arms — any per-arm wording here would bias the measured signal.
+    # Placeholders are generic (no hardcoded corpus paths) so no arm is primed with example modules.
+    _ANSWER_FORMAT = """
+
+## Required answer format
+
+Your final answer MUST end with this section:
+
+## Reverse Dependencies Found
+
+Count: <N> distinct modules found.
+
+- <full.dotted.module.path>
+- <full.dotted.module.path>
+- ... (one line per module)
+
+Rules:
+- Write "Count: N distinct modules found." where N = the exact number in your list
+- Full dotted paths only — no shortened names, no file paths, no aliases
+- List every module you found — no omissions
+- If nothing found: write "Count: 0" and "(none found)"
+- This section must be the LAST thing in your answer"""
+
+    # Per-arm supplements below carry tool availability + invocation syntax ONLY. No call caps,
+    # no "do not verify" rules, no step protocols — that steering is the measured signal and would
+    # manufacture the savings it claims to observe (benchmark review C-4).
     _PLAIN_SUPPLEMENT = """
 
-## Structural navigation with native tools
+## Tools available
 
-Use Grep and Glob for all import graph questions — avoid reading full files
-unless the import block alone is not enough:
-
-  What imports X?   Grep the dotted module name across **/*.py
-  What does X import?   Read only the import block at the top of X's file
-  Blast radius ranking:   Count Grep matches per module; more matches = wider blast
-  Import path A → B:   Follow deps of A and rdeps of B until they intersect"""
+Grep, Glob, Bash, and Read are available for exploring the codebase and its import graph."""
 
     _CODEMAP_SUPPLEMENT = """
 
-## codemap plugin installed — follow these steps exactly
+## Tools available
 
-You have /codemap:query-code. It answers import-graph questions from a pre-built index.
+You have the /codemap:query-code skill (via the Skill tool). It answers import-graph questions
+from a pre-built structural index.
 
-**SYNTAX — colon separator, never a space:**
-  Skill tool name: codemap:query-code      ← correct
-  NOT: codemap query-code                  ← wrong — will fail silently
+Syntax — colon separator, never a space:
+  codemap:query-code      (correct)
+  codemap query-code      (wrong — fails silently)
 
-### STEP 1 — One rdeps query (max 3 codemap calls total)
-
-Call:
+Invocation:
   /codemap:query-code rdeps <primary_module> [--exclude-tests]
 
-Read the result immediately:
-- If "exhaustive": true → list is complete and authoritative. Count the entries.
-  Your final list MUST contain exactly that many modules. Go to STEP 2 NOW.
-  Do NOT grep. Do NOT call codemap again. Do NOT read files to verify.
-  (A guard hook now DENIES import-greps for an exhausted module — re-grepping wastes a
-  turn and will be blocked. This applies on every model tier; trust the index.)
-- If NOT exhaustive → record the list as your working set. You may make 1-2 more
-  codemap calls (e.g. deps or central for context). Then go to STEP 2.
+Grep, Glob, Bash, and Read remain available.
 
-Maximum 3 /codemap:query-code calls total across all steps.
-
-If /codemap:query-code returns <tool_use_error>: do NOT call codemap again. Run one Grep/Bash fallback for that same rdeps query, then proceed to STEP 2.
-
-### STEP 2 — Write the report
-
-Once you have codemap results (or completed fallback), do NOT make additional tool calls. Write the answer immediately.
-
-**Hard rules — no exceptions:**
-1. NEVER use Grep, Glob, or Bash to verify or extend codemap results — the index is authoritative. Exception: rule 5 (tool error fallback).
-2. After seeing "exhaustive": true, your tool calls are complete. Write the report.
-3. Maximum 3 codemap:query-code calls — stop even if not exhaustive after 3 calls.
-4. NEVER spawn sub-agents for import-graph questions.
-5. If /codemap:query-code returns <tool_use_error>: do NOT call codemap:scan. Fall back to Grep for that query only.
-
-Grep/Glob/Bash are permitted only for reading source code (finding a literal string in files).
-
-## Required answer format
-
-Your final answer MUST end with this section:
-
-## Reverse Dependencies Found
-
-Count: <N> distinct modules found.
-
-- lightning.pytorch.trainer.trainer
-- lightning.pytorch.loops.fit_loop
-- ... (one line per module)
-
-Rules:
-- Write "Count: N distinct modules found." where N = exact number in your list
-- Full dotted paths only — no shortened names, no file paths, no aliases
-- Copy EVERY module from the codemap result — no omissions
-- If nothing found: write "Count: 0" and "(none found)"
-- This section must be the LAST thing in your answer"""
+If /codemap:query-code returns <tool_use_error>, run one Grep/Bash fallback for the same query."""
 
     _SEMBLE_SUPPLEMENT = """
 
-## semble MCP installed
+## Tools available
 
-You have the mcp__semble__search tool available. It performs hybrid semantic + lexical search
-across the codebase and returns ranked code chunks with file path and line range.
+You have the mcp__semble__search and mcp__semble__find_related tools. They perform hybrid
+semantic + lexical search across the codebase and return ranked code chunks with file path
+and line range.
 
-Tool parameters:
-  query (str)   — natural language or code query; pass the task prompt directly or rephrase it
+Parameters:
+  query (str)   — natural language or code query
   repo  (str)   — REQUIRED: absolute path to the repository: {repo_path}
-  top_k (int)   — number of results; use 20 for thorough coverage (default 5)
+  top_k (int)   — number of results (default 5; raise it for broader coverage)
 
-Use mcp__semble__search for ALL structural questions:
-  Which modules import X?      query="import X" or "from X import", top_k=20
-  Blast radius of X?           query="usage of X across the codebase", top_k=20
-  Dependency relationships?    pass the full task prompt as query, top_k=20
+Grep, Glob, and Read are available for reading source code; the Bash and Skill tools are not.
 
-**Hard rules — no exceptions:**
-1. NEVER use Grep, Glob, or Bash to investigate import relationships, including
-   running grep/rg/find via Bash shell commands.
-2. NEVER spawn sub-agents for import-graph questions.
-3. Always set repo="{repo_path}" in every mcp__semble__search call.
-4. Maximum 12 semble calls total. After your semble calls are complete, do NOT
-   make any additional Bash or Read calls before writing the report.
-
-Grep and Glob are permitted for reading source code. Bash is NOT available in this arm.
-
-## Required answer format
-
-After your tool calls, your final answer MUST end with this section:
-
-## Reverse Dependencies Found
-
-Count: <N> distinct modules found across all semble results.
-
-- lightning.pytorch.trainer.trainer
-- lightning.pytorch.loops.fit_loop
-- ... (one line per module)
-
-Rules:
-- Write "Count: N distinct modules found across all semble results." first, where N is the
-  exact number of unique dotted paths you collected across ALL semble calls (not just the last)
-- Full dotted paths only — no shortened names, no file paths, no aliases
-- Copy EVERY module path from ALL your tool results, even if already mentioned in prose above
-- Union all results: if call 1 found A,B,C and call 2 found B,D — list A, B, C, D (not just D)
-- If nothing found: write "Count: 0" and "(none found)"
-- This section must be the LAST thing in your answer"""
+If mcp__semble__search returns <tool_use_error>, run one Grep fallback for the same query."""
 
     _COMBINED_SUPPLEMENT = """
 
-## Two structural tools — follow this protocol exactly
+## Tools available
 
-You have /codemap:query-code (deterministic index) and mcp__semble__search (semantic search).
-Follow the three steps below in order. Do NOT reorder or skip steps.
+You have both /codemap:query-code (Skill tool, deterministic index) and mcp__semble__search /
+mcp__semble__find_related (semantic search). Choose whichever fits each question.
 
-### STEP 1 — Codemap anchor (always first; max 2 codemap calls)
+codemap syntax — colon separator, never a space:
+  /codemap:query-code rdeps <primary_module> [--exclude-tests]
 
-Call codemap:query-code rdeps on the primary module:
-  /codemap:query-code rdeps <module>
+semble parameters:
+  query (str), repo (str, REQUIRED: {repo_path}), top_k (int)
 
-Read the result:
-  - If it contains "exhaustive": true → the list is complete and authoritative.
-    Count the number of entries returned (e.g. "rdeps contains 14 entries").
-    Your final list MUST contain exactly that many modules.
-    Go directly to STEP 3. Do NOT call semble. Do NOT validate with grep or bash.
-  - If it does NOT contain "exhaustive": true → record the returned modules as your
-    anchor set and go to STEP 2.
+Grep, Glob, Bash, and Read remain available.
 
-If the result was non-exhaustive, you may make one additional codemap call (deps or central)
-for task context — skip this if codemap was exhaustive (you are going directly to STEP 3).
-Maximum 2 codemap calls in STEP 1.
-
-If /codemap:query-code returns <tool_use_error>: skip to STEP 2 with an empty anchor set.
-
-### STEP 2 — Semble gap-fill (only if codemap was non-exhaustive)
-
-Call mcp__semble__search to find modules NOT already in your codemap anchor set:
-  query: "<primary_module> import" or the task description rephrased, top_k=20
-  repo: "{repo_path}"  ← required on every call
-
-After each call, count how many NEW modules (not yet in your set) the result added.
-Keep calling semble with varied queries (e.g. "from <module> import", "<module> usage",
-"<module> caller", task description rephrased) — each query may surface different files.
-
-**Convergence rule — stop semble when**: two consecutive calls each add 0 new modules.
-That signals saturation; proceed to STEP 3 immediately.
-
-Do NOT alternate back to codemap. Merge after each call: running set = codemap anchor ∪ all semble finds so far.
-
-### STEP 3 — Write the report (no more tool calls)
-
-Once you reach STEP 3, do NOT call any tool. Write the answer immediately.
-
-**Hard rules — no exceptions:**
-1. NEVER use Grep, Glob, or Bash to investigate import relationships.
-2. NEVER spawn sub-agents for import-graph questions.
-3. Always set repo="{repo_path}" in every mcp__semble__search call.
-4. NEVER alternate between tools after STEP 1 completes (no codemap → semble → codemap loops).
-
-Grep/Glob/Bash are permitted only for reading source code (literal string search).
-
-## Required answer format
-
-Your final answer MUST end with this section:
-
-## Reverse Dependencies Found
-
-Count: <N> distinct modules found.
-
-- lightning.pytorch.trainer.trainer
-- lightning.pytorch.loops.fit_loop
-- ... (one line per module)
-
-Rules:
-- Write "Count: N distinct modules found." where N = exact number of unique dotted paths
-  in your list (must equal the codemap entry count if codemap was exhaustive)
-- Full dotted paths only — no shortened names, no file paths, no aliases
-- Copy EVERY module path from ALL tool results — union of codemap + all semble calls
-- If nothing found: write "Count: 0" and "(none found)"
-- This section must be the LAST thing in your answer"""
+If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for the same query."""
 
     # read_crop task family — measures READ cost: extract ONE symbol's contract using the
     # fewest tokens of file content. Headline metric is tool_result_tokens (codemap `symbol`
@@ -1111,7 +1239,8 @@ Rules:
             supplement = self._COMBINED_SUPPLEMENT.format(repo_path=self.repo_path)
         else:
             supplement = self._PLAIN_SUPPLEMENT
-        return base + supplement
+        # Efficiency sentence and answer format are shared across all four arms (review C-4).
+        return base + self._EFFICIENCY + supplement + self._ANSWER_FORMAT
 
     def __init__(
         self,
@@ -1877,7 +2006,7 @@ class Benchmark:
         self.output_path = output_path
         self.log_path = log_path
         self.repeat = max(1, repeat)
-        self.gt = GroundTruth(index_path, tasks)
+        self.gt = GroundTruth(index_path, tasks, repo_path=repo_path)
         self.results: list[BenchmarkRun] = []
 
     def _iter_combos(self) -> Iterator[tuple[Task, str, str, str, int]]:
@@ -1900,6 +2029,7 @@ class Benchmark:
         # Build corpora for v2 quality scoring.
         # erec uses agent-text only — tool outputs excluded so codemap arm erec measures
         # agent comprehension, not whether the skill echoed the list back.
+        # TODO(review C-5): semble-native chunk-hit metric pending; rdep-recall is codemap-native lens
         exposure_corpus = result.output_text
         report_corpus = result.output_text[result.last_tool_text_offset :]
         result.quality = self.gt.score(

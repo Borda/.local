@@ -43,14 +43,16 @@ Run **Query** first — validates the index before spending LLM tokens on agenti
 
 Runs the same 16 import-graph tasks under four arms:
 
-| Arm        | Tools available                                                                           | Protocol                                              |
-| ---------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| `plain`    | Grep / Glob / Bash only                                                                   | Freeform exploration                                  |
-| `codemap`  | + `/codemap:query` skill (structural AST index); semble blocked                           | Skill-first; no semble                                |
-| `semble`   | + `mcp__semble__search` MCP tool (hybrid semantic + lexical search); Skill + Bash blocked | Semble-only; iterate until convergence                |
-| `combined` | Both `/codemap:query` and `mcp__semble__search`; no restrictions                          | Sequential: codemap anchor → semble gap-fill → report |
+| Arm        | Tools available                                                                           |
+| ---------- | ----------------------------------------------------------------------------------------- |
+| `plain`    | Grep / Glob / Bash only                                                                   |
+| `codemap`  | + `/codemap:query` skill (structural AST index); semble blocked                           |
+| `semble`   | + `mcp__semble__search` MCP tool (hybrid semantic + lexical search); Skill + Bash blocked |
+| `combined` | Both `/codemap:query` and `mcp__semble__search`; no restrictions                          |
 
-**Combined arm protocol**: codemap runs first (deterministic anchor). If exhaustive, write report directly — count-anchoring enforces list completeness. If non-exhaustive, semble gap-fills with varied queries until two consecutive calls add zero new modules (convergence signal), then report. No interleaving between phases.
+**Prompt symmetry (2026-07-03)**: all four arms share one neutral base prompt — identical task framing, identical "Required answer format" block, and one shared efficiency sentence ("Answer in as few tool calls as possible; do not re-verify results you already have."). Arm supplements carry tool availability + invocation syntax only. Earlier versions steered arms asymmetrically (plain coached toward more grepping; codemap capped at 3 calls and forbidden to verify; semble/combined given prescriptive protocols) — that steering contaminated efficiency metrics, so results produced before this date are not comparable with new runs.
+
+**Ground truth (2026-07-03)**: expected rdeps come from an independent AST scan of the repo (absolute, aliased, `from`-import, and relative forms resolved), not from the codemap index. The index-derived list is kept as a diagnostic; divergence is printed per task as `[gt-divergence] BA-XX: ast=N index=M ...` — a divergence now signals a potential plugin bug instead of being invisible.
 
 **Metrics**: tool call count, elapsed time, input tokens, exposure recall (erec), top-10 exposure recall (e@10), report recall (rrec), discovery efficiency (deff).
 
@@ -283,8 +285,11 @@ python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir>
 # Validate single task
 python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --task SE-01
 
-# Refresh ground truth from live index (overwrites tasks-bench.json)
+# Refresh AST-oracle-backed ground truth (fn/br/rv; overwrites tasks-bench.json)
 python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update --verbose
+
+# Also refresh scan-query-derived fields (cq uncovered/xrefs) — circular; prints warning + oracle diff
+python benchmarks/generate-tasks-bench.py --repo-path ./<repo-dir> --update --update-from-tool --verbose
 ```
 
 ______________________________________________________________________
@@ -332,35 +337,35 @@ Index resolution checks `.cache/codemap/<name>.json` first, then `.cache/scan/<n
 <details>
 <summary><strong>CLI flags</strong></summary>
 
-| Flag                | Default | Description                                                  |
-| ------------------- | ------- | ------------------------------------------------------------ |
-| `--repo-path PATH`  | auto    | Path to repo clone                                           |
-| `--index-path PATH` | auto    | Override index; checks `.cache/codemap/` then `.cache/scan/` |
-| `--report`          | off     | Write markdown report to `results/code-YYYY-MM-DD[-N].md`    |
-| `--json-only`       | off     | Print JSON only; suppress markdown                           |
-| `--verify-tasks`    | off     | Verify task primary_modules exist in index before running    |
+| Flag                | Default | Description                                                                      |
+| ------------------- | ------- | -------------------------------------------------------------------------------- |
+| `--repo-path PATH`  | auto    | Path to repo clone                                                               |
+| `--index-path PATH` | auto    | Override index; checks `.cache/codemap/` then `.cache/scan/`                     |
+| `--report`          | off     | Write markdown report to `results/code-YYYY-MM-DD[-N].md`                        |
+| `--json-only`       | off     | Emit per-scenario JSONL + summary envelope only; suppress human logs + md report |
+| `--verify-tasks`    | off     | Verify task primary_modules exist in index before running                        |
 
 </details>
 
 ### Pass thresholds
 
-| Code          | Threshold                                                 |
-| ------------- | --------------------------------------------------------- |
-| C1            | coverage gap >= 10%                                       |
-| C2            | infeasible path fraction >= 50%                           |
-| C3            | leverage ratio >= 2.0x                                    |
-| A1            | precision >= 0.90, recall >= 0.85 (high-risk tasks)       |
-| A2            | precision = 1.00 (low-risk tasks)                         |
-| A3            | FP rate < 5%                                              |
-| L1            | `central` median < 200 ms                                 |
-| L2            | `rdeps` median < 100 ms                                   |
-| L3            | amortised index build < 500 ms                            |
-| L4            | speedup >= 2x                                             |
-| I_fix/feature | JSON valid block present                                  |
-| I_refactor    | JSON valid + has_rdeps + has_deps                         |
-| S\_\* / S2    | symbol found + start_line within +-3 of ground truth      |
-| H1 / H2       | undocumented / uncovered total == ground truth (exact)    |
-| X1            | xrefs --broken count + target set == ground truth (exact) |
+| Code          | Threshold                                                                                                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1            | coverage gap >= 10% — AST-verified importers codemap finds beyond boundary-anchored grep, as fraction of codemap importers (real set comparison since 2026-07-03; was a hardcoded constant) |
+| C2            | infeasible path fraction >= 50% — fraction of A→B path queries where A is not a direct importer of B (one boundary grep cannot surface the path; real test since 2026-07-03)                |
+| C3            | leverage ratio >= 2.0x                                                                                                                                                                      |
+| A1            | precision >= 0.90, recall >= 0.85 (high-risk tasks)                                                                                                                                         |
+| A2            | precision = 1.00 (low-risk tasks)                                                                                                                                                           |
+| A3            | FP rate < 5%                                                                                                                                                                                |
+| L1            | `central` median < 200 ms                                                                                                                                                                   |
+| L2            | `rdeps` median < 100 ms                                                                                                                                                                     |
+| L3            | amortised index build < 500 ms                                                                                                                                                              |
+| L4            | speedup >= 2x                                                                                                                                                                               |
+| I_fix/feature | JSON valid block present                                                                                                                                                                    |
+| I_refactor    | JSON valid + has_rdeps + has_deps                                                                                                                                                           |
+| S\_\* / S2    | symbol found + start_line within +-3 of ground truth                                                                                                                                        |
+| H1 / H2       | undocumented / uncovered total == ground truth (exact)                                                                                                                                      |
+| X1            | xrefs --broken count + target set == ground truth (exact)                                                                                                                                   |
 
 ______________________________________________________________________
 
@@ -393,10 +398,10 @@ Scoring is independent per arm. Token ratio = `codemap_input_tokens / plain_inpu
 ### Ground truth establishment
 
 - **Symbol tasks (SE)**: GT from reading source directly (file path + AST line range).
-- **Call-graph tasks (FN, BR)**: GT from running `scan-query fn-rdeps "<module::function>" --exclude-tests` on the indexed repo, then deduplicating caller qnames (`set()` dedup — multiple call-sites to same function counted once). `unique_caller_count` = len after dedup.
-- **Review-assist (RV)**: Same `fn-rdeps` output but framed as a code-review question.
-- **Quality tasks (CQ)**: GT from running `scan-query undocumented` / `scan-query uncovered` directly against the repo.
-- **Circularity note (FN / BR / RV / CQ)**: GT for these series is derived from `scan-query` output. The codemap arm is instructed to trust `scan-query` as authoritative. Results for these series measure index-assisted agreement, not independent correctness against an external oracle. SE-series GT is source-file derived and is not circular.
+- **Call-graph tasks (FN, BR, RV) — 2026-07-03**: authoritative `fn_callers` GT is validated against an independent AST oracle (`_callers_via_ast` in `generate-tasks-bench.py`); the `scan-query fn-rdeps` result is kept as `fn_callers_scan` diagnostic. Oracle-vs-tool divergence prints a loud warning listing divergent qnames — divergence signals a potential plugin bug and is never auto-overwritten. fn-rdeps `count` == unique deduped callers (the plugin also emits an explicit `unique_caller_count` alias since codemap 0.15.0).
+- **Quality tasks (CQ)**: `undocumented` GT validated against an independent AST docstring walker; `uncovered` and `xrefs` GT remain scan-query-derived (circular) pending independent oracles — refreshing them requires the explicit `--update-from-tool` flag.
+- **`--update` semantics (2026-07-03)**: default `--update` refreshes GT from the AST oracle only; scan-query-derived fields refresh only behind `--update-from-tool`, which prints a circularity warning + oracle diff before writing. Known gap: the AST oracle emits `src.`-prefixed module paths that diverge from the scan-query namespace on a real clone — normalize before regenerating GT against pytorch-lightning (see `.plans/active/todo_benchmarks-review-fixes.md`).
+- **Residual circularity note (CQ uncovered / xrefs)**: those two metrics still measure index-assisted agreement, not independent correctness. SE-series GT is source-file derived and was never circular; FN/BR/RV are now oracle-anchored.
 
 ### Known limitations
 
@@ -471,6 +476,8 @@ python benchmarks/run-codemap-agentic.py \
 | `code-YYYY-MM-DD[-N].md`                | Query benchmark markdown report       |
 
 ### Multi-model results: real-codebase benchmark
+
+> **⚠ Stale (2026-07-03)**: all results below predate the fairness overhaul (symmetric arm prompts, AST-oracle ground truth, real C1/C2 metrics). Token ratios and FN/BR/RV/CQ accuracy were measured under codemap-favoring prompt steering and partially circular GT — treat as upper bounds; re-run pending.
 
 Results — June 22 2026 — 44 tasks × 2 arms × 3 models, pytorch-lightning-master.
 

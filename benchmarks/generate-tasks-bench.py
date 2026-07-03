@@ -249,6 +249,148 @@ def _callers_via_ast(primary_fn: str, repo) -> tuple[set[str], str | None]:
     return callers, error
 
 
+def _undocumented_via_ast(repo: Path, module: str | None = None) -> tuple[set[str], str | None]:
+    """Independent AST oracle for the ``undocumented`` check: public symbols with no docstring.
+
+    Mirrors scan-query ``cmd_undocumented`` / ``_is_public_symbol`` (plugins/codemap/bin/
+    scan-query): a symbol is *public* when no dotted component of its qualified name starts
+    with ``_`` (excludes dunders, private helpers, private classes); test modules are skipped.
+    A symbol is *undocumented* when :func:`ast.get_docstring` returns falsy. Qualified names
+    are module-relative (``Class.method`` / ``func`` / ``Class``), matching scan-query's
+    ``qualified_name`` field so the two sets are directly comparable.
+
+    Args:
+        repo: Repository root directory.
+        module: Optional dotted module name to restrict the scan to (resolved against
+            ``<repo>/<parts>.py`` then ``<repo>/src/<parts>.py``). When None, every
+            non-test Python file under ``repo`` is scanned.
+
+    Returns:
+        (undocumented_qualnames, error_reason) — error is None on success, a short message
+        when a requested ``module`` cannot be resolved to a file.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "m.py").write_text("def pub():\\n    pass\\n")
+        ...     syms, err = _undocumented_via_ast(repo)
+        >>> sorted(syms), err
+        (['pub'], None)
+    """
+    files, error = _resolve_module_files(repo, module)
+    if error:
+        return set(), error
+    undocumented: set[str] = set()
+    for fpath in files:
+        try:
+            tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
+        except SyntaxError:
+            continue
+        _UndocFinder(undocumented).visit(tree)
+    return undocumented, None
+
+
+def _resolve_module_files(repo: Path, module: str | None) -> tuple[list[Path], str | None]:
+    """Resolve which Python files a docstring scan should cover.
+
+    Args:
+        repo: Repository root directory.
+        module: Optional dotted module name; when given, resolved to a single file.
+
+    Returns:
+        (files, error_reason). When ``module`` is None, all non-test ``.py`` files under
+        ``repo`` (skipping hidden / cache / virtualenv dirs). When ``module`` is set but no
+        matching file exists, ``([], "<reason>")``.
+    """
+    if module:
+        parts = module.split(".")
+        for base in (repo, repo / "src"):
+            cand = base.joinpath(*parts).with_suffix(".py")
+            if cand.is_file():
+                return [cand], None
+        return [], f"module {module!r} not resolvable under {repo}/ or {repo}/src/"
+    files: list[Path] = []
+    for root, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
+        for name in names:
+            if name.endswith(".py") and not name.startswith("test_") and not name.endswith("_test.py"):
+                files.append(Path(root) / name)
+    return files, None
+
+
+class _UndocFinder(ast.NodeVisitor):
+    """AST visitor recording public symbols (functions, classes, methods) lacking a docstring.
+
+    Qualified names are the dotted scope within the module (``Class.method``); a symbol is
+    public when no component starts with ``_`` (matches scan-query ``_is_public_symbol``).
+
+    Args:
+        undocumented: Mutable set accumulating undocumented public qualified names.
+    """
+
+    def __init__(self, undocumented: set[str]) -> None:
+        self._undoc = undocumented
+        self._scope: list[str] = []
+
+    def _record(self, name: str, node: ast.AST) -> None:
+        qname = ".".join([*self._scope, name])
+        if _is_public_qualname(qname) and not ast.get_docstring(node):
+            self._undoc.add(qname)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._record(node.name, node)
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._record(node.name, node)
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+
+def _is_public_qualname(name: str) -> bool:
+    """Return True when no dotted component of *name* starts with ``_`` (scan-query rule).
+
+    Examples:
+        >>> _is_public_qualname("Trainer.fit")
+        True
+        >>> _is_public_qualname("_Cache.get")
+        False
+        >>> _is_public_qualname("Trainer.__init__")
+        False
+    """
+    if not name:
+        return False
+    return all(part and not part.startswith("_") for part in name.split("."))
+
+
+def _warn_ast_divergence(task_id: str, kind: str, ast_only: list[str], scan_only: list[str]) -> None:
+    """Print a loud warning when the AST oracle and scan-query disagree (potential plugin bug).
+
+    Args:
+        task_id: Task identifier for the banner.
+        kind: What diverged (e.g. ``"fn-rdeps callers"``).
+        ast_only: Items the AST oracle found that scan-query missed.
+        scan_only: Items scan-query reported that the AST oracle did not find.
+    """
+    if not ast_only and not scan_only:
+        return
+    bar = "!" * 72
+    print(bar)
+    print(f"! AST/scan-query DIVERGENCE [{task_id}] {kind} — potential scan-query (plugin) bug")
+    if ast_only:
+        print(f"!   only AST oracle ({len(ast_only)}): {ast_only[:10]}{'...' if len(ast_only) > 10 else ''}")
+    if scan_only:
+        print(f"!   only scan-query ({len(scan_only)}): {scan_only[:10]}{'...' if len(scan_only) > 10 else ''}")
+    print(bar)
+
+
 def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
     """Validate fn_call_graph task ground truth.
 
@@ -275,33 +417,43 @@ def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
     called_by = data.get("called_by", [])
     raw_count = data.get("count", len(called_by))
     # caller field already contains "module::QualifiedName" — use directly; dedup first
-    callers = sorted(set(e["caller"] for e in called_by))
+    scan_callers = sorted(set(e["caller"] for e in called_by))
+
+    # AST oracle is AUTHORITATIVE for caller lists (review C-2): scan-query fn-rdeps is the
+    # very tool the codemap arm invokes, so grading it against its own output is circular.
+    # The independent AST walk is the ground truth; scan-query is demoted to a diagnostic.
+    ast_callers, _ast_err = _callers_via_ast(primary_fn, repo)
+    callers = sorted(ast_callers)
     unique_count = len(callers)
 
-    # Independent AST oracle — over-approximates but catches scan-query blind spots
-    ast_callers, _ast_err = _callers_via_ast(primary_fn, repo)
+    # AST/scan-query divergence now signals a POTENTIAL scan-query (plugin) bug — surface it
+    # loudly; never silently overwrite the authoritative oracle with the tool's output.
+    ast_only = sorted(ast_callers - set(scan_callers))
+    scan_only = sorted(set(scan_callers) - ast_callers)
+    _warn_ast_divergence(task.get("id", "?"), "fn-rdeps callers", ast_only, scan_only)
 
     live_gt: dict[str, Any] = {
-        "fn_callers": callers,
+        "fn_callers": callers,  # AUTHORITATIVE — AST oracle
         "unique_caller_count": unique_count,
-        "raw_caller_count": raw_count,
         "exclude_tests": gt.get("exclude_tests", False),
         "note": gt.get("note", "static edges only (import/local/self-resolved); dynamic dispatch excluded by design"),
-        "fn_callers_ast": sorted(ast_callers),
+        "fn_callers_scan": scan_callers,  # diagnostic — output of the tool under test
+        "scan_caller_count": len(scan_callers),
+        "raw_caller_count": raw_count,  # diagnostic — scan-query `count` field
         "ast_divergence": {
-            "ast_only": sorted(ast_callers - set(callers)),
-            "sq_only": sorted(set(callers) - ast_callers),
-            "ast_caller_count": len(ast_callers),
+            "ast_only": ast_only,
+            "scan_only": scan_only,
+            "scan_caller_count": len(scan_callers),
         },
     }
 
     problems: list[str] = []
-    if unique_count != gt["unique_caller_count"]:
-        problems.append(f"unique_caller_count: expected {gt['unique_caller_count']}, got {unique_count}")
-    if raw_count != gt["raw_caller_count"]:
-        problems.append(f"raw_caller_count: expected {gt['raw_caller_count']}, got {raw_count}")
+    if unique_count != gt.get("unique_caller_count"):
+        problems.append(
+            f"unique_caller_count (AST oracle): expected {gt.get('unique_caller_count')}, got {unique_count}"
+        )
 
-    expected_set = set(gt["fn_callers"])
+    expected_set = set(gt.get("fn_callers", []))
     live_set = set(callers)
     extra = sorted(live_set - expected_set)
     missing = sorted(expected_set - live_set)
@@ -406,6 +558,60 @@ def _validate_rv(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
     return (not problems), live_gt, "; ".join(problems)
 
 
+def _validate_undocumented_ast(
+    task: dict,
+    gt: dict,
+    module: str | None,
+    scan_count: int,
+    scan_syms: list[str],
+    repo: Path,
+    live_gt: dict[str, Any],
+) -> tuple[list[str], str]:
+    """Validate a pure ``undocumented`` check against the independent AST oracle.
+
+    The AST oracle (:func:`_undocumented_via_ast`) is authoritative; scan-query output is
+    stored under ``*_scan`` diagnostic keys only (review C-2). Mutates ``live_gt`` in place
+    with both authoritative and diagnostic values, and warns loudly on divergence.
+
+    Args:
+        task: Task dict (used for its id in divergence warnings).
+        gt: Existing ground_truth to compare against.
+        module: Dotted module name to scope the AST scan to, or None for repo-wide.
+        scan_count: ``total`` reported by scan-query (diagnostic).
+        scan_syms: Symbol list reported by scan-query (diagnostic).
+        repo: Repository root directory.
+        live_gt: Live ground-truth dict, mutated in place.
+
+    Returns:
+        (problems, error_reason). ``error_reason`` is non-empty only when the AST oracle
+        could not resolve the requested module (caller returns a hard failure).
+    """
+    ast_syms, ast_err = _undocumented_via_ast(repo, module)
+    if ast_err:
+        return [], f"undocumented AST oracle failed: {ast_err}"
+    live_syms = sorted(ast_syms)
+    live_gt["undocumented_count"] = len(live_syms)
+    live_gt["undocumented_symbols"] = live_syms
+    live_gt["undocumented_count_scan"] = scan_count
+    live_gt["undocumented_symbols_scan"] = scan_syms
+    scan_set = set(scan_syms)
+    _warn_ast_divergence(
+        task.get("id", "?"), "undocumented symbols", sorted(ast_syms - scan_set), sorted(scan_set - ast_syms)
+    )
+
+    problems: list[str] = []
+    expected_count = gt.get("undocumented_count", 0)
+    expected_syms = set(gt.get("undocumented_symbols", []))
+    if len(live_syms) != expected_count:
+        problems.append(f"undocumented_count (AST oracle): expected {expected_count}, got {len(live_syms)}")
+    if ast_syms != expected_syms:
+        problems.append(
+            f"undocumented_symbols (AST oracle) mismatch: missing={sorted(expected_syms - ast_syms)[:3]}, "
+            f"extra={sorted(ast_syms - expected_syms)[:3]}"
+        )
+    return problems, ""
+
+
 def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
     """Validate code_quality task ground truth.
 
@@ -435,24 +641,26 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         data = run_scan_query(sq, ["undocumented"] + q.get("args", []), index, repo)
         if data is None:
             return False, None, "scan-query undocumented returned None"
-        live_count = data.get("total", 0)
-        live_syms = [e.get("qualified_name", "") for e in data.get("undocumented", [])]
-        live_gt["undocumented_count"] = live_count
-        live_gt["undocumented_symbols"] = live_syms
-        if check != "combined_health":
-            expected_count = gt.get("undocumented_count", 0)
-            expected_syms = gt.get("undocumented_symbols", [])
-            if live_count != expected_count:
-                problems.append(f"undocumented_count: expected {expected_count}, got {live_count}")
-            live_set = set(live_syms)
-            exp_set = set(expected_syms)
-            if live_set != exp_set:
-                problems.append(
-                    f"undocumented_symbols mismatch: missing={sorted(exp_set - live_set)[:3]}, "
-                    f"extra={sorted(live_set - exp_set)[:3]}"
-                )
+        scan_count = data.get("total", 0)
+        scan_syms = [e.get("qualified_name", "") for e in data.get("undocumented", [])]
+        if check == "undocumented":
+            # AST oracle is authoritative (review C-2) — scan-query is the tool under test.
+            module = next((a for a in q.get("args", []) if not str(a).startswith("-")), None)
+            undoc_problems, undoc_err = _validate_undocumented_ast(
+                task, gt, module, scan_count, scan_syms, repo, live_gt
+            )
+            if undoc_err:
+                return False, None, undoc_err
+            problems.extend(undoc_problems)
+        else:
+            # TODO(review C-2): combined_health undocumented/uncovered GT still scan-query-derived
+            # (circular) — needs the independent AST oracle wired the same way as the pure
+            # `undocumented` check above.
+            live_gt["undocumented_count"] = scan_count
+            live_gt["undocumented_symbols"] = scan_syms
 
     if check in ("uncovered", "combined_health"):
+        # TODO(review C-2): uncovered GT still scan-query-derived (circular) — needs independent oracle.
         q = next((q for q in expected_queries if q["cmd"] == "uncovered"), None)
         if q is None:
             return False, None, "no uncovered query found"
@@ -517,6 +725,7 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             )
 
     if check == "xrefs_broken":
+        # TODO(review C-2): xrefs GT still scan-query-derived (circular) — needs independent oracle.
         q = expected_queries[0]
         data = run_scan_query(sq, ["xrefs"] + q.get("args", []), index, repo)
         if data is None:
@@ -579,6 +788,102 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
     return existing_gt
 
 
+# Task types whose refreshed ground truth comes from an INDEPENDENT oracle (AST), not from
+# scan-query (the tool under test). Only these may be refreshed under a plain --update; every
+# other type is scan-query-derived (circular) and requires --update-from-tool (review C-3).
+_ORACLE_BACKED_TYPES: frozenset[str] = frozenset({"fn_call_graph", "develop_blast_radius"})
+
+
+def _update_is_oracle_backed(task: dict) -> bool:
+    """Return True when this task's refreshed ground truth is AST-oracle-derived, not circular.
+
+    Oracle-backed: fn_call_graph / develop_blast_radius (AST caller oracle) and the pure
+    ``undocumented`` code_quality check (AST docstring oracle). Everything else — symbol
+    line ranges, review_assistance, coupled / uncovered / xrefs / combined_health — is
+    refreshed from scan-query output and is therefore circular (review C-3).
+
+    Examples:
+        >>> _update_is_oracle_backed({"type": "fn_call_graph"})
+        True
+        >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "undocumented"}})
+        True
+        >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "uncovered"}})
+        False
+        >>> _update_is_oracle_backed({"type": "review_assistance"})
+        False
+    """
+    ttype = task.get("type", "")
+    if ttype in _ORACLE_BACKED_TYPES:
+        return True
+    return ttype == "code_quality" and task.get("ground_truth", {}).get("check") == "undocumented"
+
+
+def _warn_circular_update(task_id: str, existing_gt: dict, live_gt: dict) -> None:
+    """Print a loud circularity warning and the existing→live diff before a tool-derived write.
+
+    Args:
+        task_id: Task identifier for the banner.
+        existing_gt: Ground truth currently stored in the task file.
+        live_gt: Scan-query-derived values about to overwrite it.
+    """
+    bar = "!" * 72
+    print(bar)
+    print(f"! CIRCULAR UPDATE [{task_id}] — refreshing ground truth from scan-query (the tool under test)")
+    for key in sorted(set(existing_gt) | set(live_gt)):
+        if existing_gt.get(key) != live_gt.get(key):
+            print(f"!   {key}: {existing_gt.get(key)!r} -> {live_gt.get(key)!r}")
+    print(bar)
+
+
+def _merge_rv_sub_questions(task: dict, live_gt: dict) -> list[dict]:
+    """Return review_assistance sub_questions with ground_truth refreshed from ``live_gt``.
+
+    Args:
+        task: The review_assistance task dict.
+        live_gt: Mapping of sub-question id → refreshed ground_truth dict.
+
+    Returns:
+        New sub_questions list; unchanged entries preserved, matched entries refreshed.
+    """
+    new_sqs: list[dict] = []
+    for sq_item in task.get("sub_questions", []):
+        sq_id = sq_item["id"]
+        if sq_id in live_gt:
+            new_sqs.append({**sq_item, "ground_truth": live_gt[sq_id]})
+        else:
+            new_sqs.append(sq_item)
+    return new_sqs
+
+
+def _refresh_task_gt(task: dict, live_gt: dict, update_from_tool: bool) -> tuple[dict, str]:
+    """Build the updated task dict for --update, gating scan-query-derived (circular) refresh.
+
+    Oracle-backed types (:func:`_update_is_oracle_backed`) refresh under a plain --update.
+    Scan-query-derived types refresh only when ``update_from_tool`` is True, after a loud
+    circularity warning and an existing→live diff (review C-3).
+
+    Args:
+        task: Task dict being refreshed.
+        live_gt: Live computed ground truth from the validator.
+        update_from_tool: When True, allow refreshing scan-query-derived (circular) fields.
+
+    Returns:
+        (task_to_store, status_message) — when a circular refresh is skipped, the original
+        task is returned unchanged with a SKIP status.
+    """
+    task_type = task.get("type", "")
+    if not _update_is_oracle_backed(task):
+        if not update_from_tool:
+            return task, "SKIP UPDATE (scan-query-derived; circular — pass --update-from-tool to force)"
+        _warn_circular_update(task.get("id", "?"), task.get("ground_truth", {}), live_gt)
+    updated_task = dict(task)
+    if task_type == "review_assistance":
+        updated_task["sub_questions"] = _merge_rv_sub_questions(task, live_gt)
+    else:
+        updated_task["ground_truth"] = _build_updated_ground_truth(task_type, live_gt, task.get("ground_truth", {}))
+    return updated_task, "UPDATED"
+
+
 # ---- MAIN ----
 
 
@@ -587,6 +892,7 @@ def main(
     index_path: str = None,
     task: str = None,
     update: bool = False,
+    update_from_tool: bool = False,
     verbose: bool = False,
 ) -> None:
     """Entry point: validate or update tasks-bench.json ground truth.
@@ -595,7 +901,13 @@ def main(
         repo_path: Path to the target repository clone.
         index_path: Path to pre-built index JSON.
         task: Validate only this task ID (e.g. SE-01).
-        update: Write refreshed ground truth back to tasks-bench.json.
+        update: Refresh ground truth from independent (AST) oracles only. fn_call_graph /
+            develop_blast_radius and the pure ``undocumented`` code_quality check refresh;
+            scan-query-derived types (symbol lines, review_assistance, coupled / uncovered /
+            xrefs / combined_health) are skipped unless ``update_from_tool`` is also set.
+        update_from_tool: Also refresh scan-query-derived ground truth (circular — the tool
+            under test grades itself). Prints a loud circularity warning and an existing→live
+            diff per task before writing. Use only for deliberate re-baselining (review C-3).
         verbose: Print live ground truth on failure.
     """
 
@@ -663,21 +975,24 @@ def main(
     failed: list[str] = []
     updated_tasks: list[dict] = []
 
-    for task in tasks:
-        task_id = task.get("id", "?")
-        task_type = task.get("type", "")
+    # Loop variable is `entry`, NOT `task` — `task` holds the --task filter (a str | None) and
+    # must survive the loop for the write-back guard below (`if task is None`). Rebinding it here
+    # would leave it pointing at the last task dict, making the full-file write-back unreachable.
+    for entry in tasks:
+        task_id = entry.get("id", "?")
+        task_type = entry.get("type", "")
         validator = VALIDATORS.get(task_type)
 
         if validator is None:
             print(f"  SKIP  {task_id}: unknown type {task_type!r}")
-            updated_tasks.append(task)
+            updated_tasks.append(entry)
             continue
 
-        ok, live_gt, reason = validator(task, sq, index_path, repo_path)
+        ok, live_gt, reason = validator(entry, sq, index_path, repo_path)
 
         if ok:
             print(f"  PASS  {task_id}")
-            updated_tasks.append(task)
+            updated_tasks.append(entry)
         else:
             print(f"  FAIL  {task_id}: {reason}")
             failed.append(task_id)
@@ -685,29 +1000,15 @@ def main(
                 print(f"         live_gt = {json.dumps(live_gt, indent=2)}")
 
             if update and live_gt is not None:
-                # Update ground_truth in the task dict
-                updated_task = dict(task)
-                if task_type == "review_assistance":
-                    # Update per-sub_question ground_truth values
-                    new_sqs = []
-                    for sq_item in task.get("sub_questions", []):
-                        sq_id = sq_item["id"]
-                        if sq_id in live_gt:
-                            new_sqs.append({**sq_item, "ground_truth": live_gt[sq_id]})
-                        else:
-                            new_sqs.append(sq_item)
-                    updated_task["sub_questions"] = new_sqs
-                else:
-                    updated_task["ground_truth"] = _build_updated_ground_truth(
-                        task_type, live_gt, task.get("ground_truth", {})
-                    )
-                updated_tasks.append(updated_task)
-                print("         UPDATED")
+                # Circular refresh (scan-query-derived GT) is gated behind --update-from-tool (review C-3).
+                stored_task, status = _refresh_task_gt(entry, live_gt, update_from_tool)
+                updated_tasks.append(stored_task)
+                print(f"         {status}")
             else:
-                updated_tasks.append(task)
+                updated_tasks.append(entry)
 
     if update:
-        # Only update if the task list matches the full file (no --task filter)
+        # Only write the full file when no --task filter was given (`task` is the filter, str | None).
         if task is None:
             with TASKS_FILE.open("w") as f:
                 if _tasks_wrapper is not None:

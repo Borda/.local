@@ -1030,6 +1030,102 @@ class TestModelRunnerSystemPrompt:
 
 
 # ===========================================================================
+# ModelRunner._system_prompt — arm symmetry (review C-4)
+# ===========================================================================
+
+
+class TestPromptSymmetry:
+    """The measured signal must come from tool availability, not asymmetric steering.
+
+    Every arm must share the same answer format and efficiency instruction, and none may
+    carry call caps, verification bans, or step protocols — that prescriptive steering is what
+    manufactured the deff/tool-call gap the benchmark claims to observe.
+    """
+
+    _ARMS = ("plain", "codemap", "semble", "combined")
+
+    # Phrases that biased tool-call count in the old prompts; none may survive in any arm.
+    _FORBIDDEN = (
+        "Do NOT grep",
+        "do NOT grep",
+        "Maximum 3",
+        "max 2 codemap",
+        "guard hook",
+        "DENIES",
+        "STEP 1",
+        "STEP 2",
+        "STEP 3",
+        "Convergence rule",
+        "Count Grep matches per module",
+        "do NOT call any tool",
+        "Copy EVERY module from the codemap result",
+    )
+
+    @pytest.fixture()
+    def runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
+        """Minimal ModelRunner for prompt assembly."""
+        return script_run_agentic.ModelRunner(
+            model_short="haiku",
+            model_id=script_run_agentic.MODELS["haiku"],
+            repo_path=tmp_path,
+            timeout=300,
+        )
+
+    @pytest.mark.parametrize("arm", _ARMS)
+    def test_answer_format_block_present_for_every_arm(self, script_run_agentic: Any, runner: Any, arm: str) -> None:
+        """The shared 'Reverse Dependencies Found' answer format appears in every arm prompt.
+
+        Scenario: erec/rrec are extracted from this block; it is the measurement target and
+        must be identical across arms, so each arm's prompt must contain it.
+        """
+        prompt = runner._system_prompt("fix", arm)
+        assert "## Required answer format" in prompt
+        assert "## Reverse Dependencies Found" in prompt
+
+    @pytest.mark.parametrize("arm", _ARMS)
+    def test_efficiency_sentence_present_for_every_arm(self, script_run_agentic: Any, runner: Any, arm: str) -> None:
+        """The single shared efficiency instruction appears in every arm prompt.
+
+        Scenario: all arms get the same 'as few tool calls as possible' nudge so no arm is
+        uniquely steered toward more or fewer calls.
+        """
+        prompt = runner._system_prompt("fix", arm)
+        assert "as few tool calls as possible" in prompt
+
+    @pytest.mark.parametrize("arm", _ARMS)
+    def test_answer_format_is_arm_neutral(self, script_run_agentic: Any, runner: Any, arm: str) -> None:
+        """The answer format hardcodes no corpus-specific example module paths.
+
+        Scenario: hardcoded 'lightning.*' example lines would prime some arms with real rdep
+        names; the shared block must use generic placeholders only.
+        """
+        prompt = runner._system_prompt("fix", arm)
+        answer_block = prompt[prompt.index("## Required answer format") :]
+        assert "lightning.pytorch.trainer.trainer" not in answer_block
+
+    @pytest.mark.parametrize("arm", _ARMS)
+    def test_no_forbidden_steering_in_any_arm(self, script_run_agentic: Any, runner: Any, arm: str) -> None:
+        """No arm prompt contains call caps, verification bans, or step-protocol steering.
+
+        Scenario: the deff gap was a denominator artifact of instructing the codemap arm to
+        stop calling tools; none of the prescriptive phrases may remain in any arm.
+        """
+        prompt = runner._system_prompt("fix", arm)
+        present = [p for p in self._FORBIDDEN if p in prompt]
+        assert not present, f"arm={arm!r} still contains steering phrases: {present}"
+
+    def test_all_arms_share_identical_answer_format(self, script_run_agentic: Any, runner: Any) -> None:
+        """The answer-format block is byte-identical across all four arms.
+
+        Scenario: any per-arm wording in the extraction target would bias erec/rrec; the shared
+        constant must appear verbatim in every arm prompt.
+        """
+        blocks = {arm: runner._system_prompt("fix", arm) for arm in self._ARMS}
+        shared = script_run_agentic.ModelRunner._ANSWER_FORMAT
+        assert all(shared in prompt for prompt in blocks.values())
+
+
+# ===========================================================================
 # _tool_key_arg (internal utility tested via documented docstring examples)
 # ===========================================================================
 
@@ -1283,3 +1379,166 @@ class TestGroundTruthIntegration:
         task_no_pm = script_run_agentic.Task(id="NOPRIMARY", type="fix", prompt="x")
         gt = script_run_agentic.GroundTruth(tmp_index, [task_no_pm])
         assert "NOPRIMARY" not in gt.expected
+
+
+# ===========================================================================
+# AST import scan helpers (review C-5)
+# ===========================================================================
+
+
+class TestDeriveModuleName:
+    def test_regular_module_uses_package_chain(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """_derive_module_name joins the __init__.py package chain for a regular module.
+
+        Scenario: src-layout file pkg/sub/mod.py with __init__.py at each level resolves to
+        the dotted name 'pkg.sub.mod'.
+        """
+        (tmp_path / "pkg" / "sub").mkdir(parents=True)
+        (tmp_path / "pkg" / "__init__.py").write_text("")
+        (tmp_path / "pkg" / "sub" / "__init__.py").write_text("")
+        mod = tmp_path / "pkg" / "sub" / "mod.py"
+        mod.write_text("")
+        assert script_run_agentic._derive_module_name(mod, tmp_path) == "pkg.sub.mod"
+
+    def test_init_file_resolves_to_package_name(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """_derive_module_name maps an __init__.py to its package's dotted name.
+
+        Scenario: pkg/sub/__init__.py resolves to 'pkg.sub', not 'pkg.sub.__init__'.
+        """
+        (tmp_path / "pkg" / "sub").mkdir(parents=True)
+        (tmp_path / "pkg" / "__init__.py").write_text("")
+        init = tmp_path / "pkg" / "sub" / "__init__.py"
+        init.write_text("")
+        assert script_run_agentic._derive_module_name(init, tmp_path) == "pkg.sub"
+
+
+class TestResolveRelativeBase:
+    @pytest.mark.parametrize(
+        "package,level,module,expected",
+        [
+            pytest.param("a.b", 1, "c", "a.b.c", id="level1-with-module"),
+            pytest.param("a.b", 1, None, "a.b", id="level1-bare"),
+            pytest.param("a.b.c", 2, "u", "a.b.u", id="level2-parent"),
+            pytest.param("a", 3, "x", None, id="level-above-root"),
+        ],
+    )
+    def test_relative_resolution(
+        self, script_run_agentic: Any, package: str, level: int, module: Any, expected: Any
+    ) -> None:
+        """_resolve_relative_base resolves dotted relative imports against the package.
+
+        Scenario: each documented relative form (current package, parent, over-ascend) must
+        map to the correct absolute base or None when it walks above the root.
+        """
+        assert script_run_agentic._resolve_relative_base(package, level, module) == expected
+
+
+class TestScanRepoImporters:
+    """AST scan builds a tool-independent {module: importers} map across import forms."""
+
+    @pytest.fixture()
+    def scanned_repo(self, tmp_path: Path) -> Path:
+        """Create a src-layout package exercising every import form plus a test file."""
+        pkg = tmp_path / "src" / "app"
+        (pkg / "sub").mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        (pkg / "sub" / "__init__.py").write_text("")
+        (pkg / "target.py").write_text("X = 1\n")
+        (pkg / "caller_submodule.py").write_text("from app import target\n")  # index-blind form
+        (pkg / "caller_base.py").write_text("from app.target import X\n")
+        (pkg / "caller_relative.py").write_text("from . import target\n")
+        (pkg / "caller_plain.py").write_text("import app.target\n")
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_app.py").write_text("from app.target import X\n")
+        return tmp_path
+
+    def test_scan_captures_all_import_forms(self, script_run_agentic: Any, scanned_repo: Path) -> None:
+        """_scan_repo_importers finds importers via plain, from-base, from-submodule, and relative forms.
+
+        Scenario: four production callers import app.target through different syntaxes; all four
+        must appear as importers, and the test-tree caller must be excluded.
+        """
+        importers = script_run_agentic._scan_repo_importers(scanned_repo)
+        assert importers.get("app.target") == {
+            "app.caller_submodule",
+            "app.caller_base",
+            "app.caller_relative",
+            "app.caller_plain",
+        }
+
+    def test_test_tree_files_excluded(self, script_run_agentic: Any, scanned_repo: Path) -> None:
+        """_scan_repo_importers omits importers under a top-level tests/ directory.
+
+        Scenario: tests/test_app.py imports app.target but must not count as a production rdep.
+        """
+        importers = script_run_agentic._scan_repo_importers(scanned_repo)
+        assert not any(name.startswith("tests") or "test_app" in name for name in importers.get("app.target", set()))
+
+
+class TestGroundTruthAstOracle:
+    """GroundTruth uses the AST scan (not the index) as the rdep oracle and logs divergences."""
+
+    @pytest.fixture()
+    def ast_gt(self, tmp_path: Path, script_run_agentic: Any) -> Any:
+        """Build a package where the index under-records rdeps vs the AST scan."""
+        pkg = tmp_path / "src" / "app"
+        pkg.mkdir(parents=True)
+        (pkg / "__init__.py").write_text("")
+        (pkg / "target.py").write_text("X = 1\n")
+        (pkg / "caller_submodule.py").write_text("from app import target\n")  # index records 'app'
+        (pkg / "caller_base.py").write_text("from app.target import X\n")  # index records 'app.target'
+        index = _minimal_index(
+            [
+                {"name": "app.target", "direct_imports": [], "dep_count": 0, "status": "ok"},
+                {"name": "app.caller_submodule", "direct_imports": ["app"], "dep_count": 1, "status": "ok"},
+                {"name": "app.caller_base", "direct_imports": ["app.target"], "dep_count": 1, "status": "ok"},
+                {"name": "app", "direct_imports": [], "dep_count": 0, "status": "ok"},
+            ]
+        )
+        index_file = tmp_path / "idx.json"
+        index_file.write_text(json.dumps(index))
+        task = script_run_agentic.Task(
+            id="BA-01", type="blast_radius_analysis", prompt="p", primary_module="app.target"
+        )
+        return script_run_agentic.GroundTruth(index_file, [task], repo_path=tmp_path)
+
+    def test_expected_uses_ast_superset(self, script_run_agentic: Any, ast_gt: Any) -> None:
+        """GroundTruth.expected includes the submodule-import caller the index misses.
+
+        Scenario: 'from app import target' makes caller_submodule a real rdep; the AST oracle
+        must credit it even though the index only recorded a dependency on 'app'.
+        """
+        assert ast_gt.expected["BA-01"] == {"app.caller_submodule", "app.caller_base"}
+
+    def test_index_expected_retained_as_diagnostic(self, script_run_agentic: Any, ast_gt: Any) -> None:
+        """The index-derived list is kept separately and is a strict subset here.
+
+        Scenario: index_expected must still be available for diagnostics and must omit the
+        submodule-form caller that only the AST scan catches.
+        """
+        assert ast_gt.index_expected["BA-01"] == {"app.caller_base"}
+
+    def test_divergence_recorded_with_missing_in_index(self, script_run_agentic: Any, ast_gt: Any) -> None:
+        """A divergence entry flags real importers absent from the index.
+
+        Scenario: caller_submodule is in the AST set but not the index set, so it must appear
+        under missing_in_index — the harness's C-5 blind-spot signal.
+        """
+        div = ast_gt.divergences["BA-01"]
+        assert div["missing_in_index"] == ["app.caller_submodule"]
+        assert div["ast"] == 2 and div["index"] == 1
+
+    def test_ast_only_rdep_is_matchable_in_corpus(self, script_run_agentic: Any, ast_gt: Any) -> None:
+        """An AST-only expected rdep can still be credited when found in agent output.
+
+        Scenario: match patterns must cover AST-only expected modules so an arm that reports
+        the index-missed caller scores recall for it rather than being silently penalized.
+        """
+        corpus = "app.caller_submodule app.caller_base"
+        score = ast_gt.score(
+            task_id="BA-01",
+            output_text=corpus,
+            exposure_corpus=corpus,
+            report_corpus=corpus,
+        )
+        assert score.erec == pytest.approx(1.0)

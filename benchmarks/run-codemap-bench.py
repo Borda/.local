@@ -229,29 +229,35 @@ class BenchRun:
 # System prompts
 # ---------------------------------------------------------------------------
 
-_PLAIN_SYSTEM = """You are a developer investigating the {repo_name} codebase.
+# Shared neutral wrapper used by BOTH arms. Everything here is identical across arms —
+# repo framing, cwd note, the single efficiency instruction, and the output-format
+# requirements per task type — so the token metric is not confounded by prompt asymmetry
+# (only one arm being told to stop early). The arm-specific `{tools_section}` differs solely
+# in tool availability and syntax; it carries no answering strategy.
+_SHARED_SYSTEM_TEMPLATE = """You are a developer investigating the {repo_name} codebase.
 Your current working directory IS the repository root ({repo_path}) — use relative paths (e.g. `find . -name "*.py"`) or absolute paths starting with {repo_path}.
-Answer the question using Grep, Bash, Glob, and Read. Do NOT use the Skill tool.
-Do NOT use scan-query or any codemap binary — not via bare command, not via python/python3 path.
-Rely on standard filesystem and grep operations only.
-Be concise and precise.
 
+{tools_section}
+
+Answer in as few tool calls as possible; do not re-verify results you already have.
+
+Output format requirements:
 For symbol location tasks: report exactly in this format:
   file_path: <path>  start_line: <N>  end_line: <M>
 For caller count tasks: report the integer count of unique production callers.
-For caller list tasks: report all callers as a list of qualified names (module::function)."""
+For caller list tasks: report all callers as a list of qualified names (module::function).
 
-_CODEMAP_SYSTEM_TEMPLATE = """You are a developer investigating the {repo_name} codebase.
-Your current working directory IS the repository root ({repo_path}) — use relative paths (e.g. `find . -name "*.py"`) or absolute paths starting with {repo_path}.
-You have the scan-query structural index tool available.
+Be concise and precise. State the exact values you found (counts, line numbers, module names)."""
 
-For ALL structural questions (symbol lookup, call graph, coverage, coupling, xrefs),
-scan-query MUST be your first tool call. Do NOT use find/grep/cat/Read for structural
-questions unless scan-query reports symbol not found.
-Trust scan-query output as authoritative. Do not re-verify counts or symbol lists with
-grep or additional scan-query calls after receiving a result — re-verification burns tokens
-and introduces errors. stale=true means source changed since scan, but counts and call
-graphs are still accurate enough to answer; it does NOT mean you should re-query.
+# Plain arm — tool availability only; scan-query prohibition preserved verbatim.
+_PLAIN_TOOLS = """Answer the question using Grep, Bash, Glob, and Read. Do NOT use the Skill tool.
+Do NOT use scan-query or any codemap binary — not via bare command, not via python/python3 path.
+Rely on standard filesystem and grep operations only."""
+
+# Codemap arm — tool availability plus scan-query invocation syntax and subcommand
+# reference. This is tool documentation only; it prescribes no answering strategy
+# (no "call scan-query first", "stop after one call", "trust as authoritative", etc.).
+_CODEMAP_TOOLS = """You have the scan-query structural index tool available, in addition to Grep, Bash, Glob, and Read.
 
 scan-query is a Python script on your PATH. Invoke it via Bash:
   scan-query --index {index_path} <subcommand> [args]
@@ -260,38 +266,41 @@ Subcommands:
   symbol <name> [--with-imports]         — get source + line range of a symbol by name
   find-symbol <pattern>                  — regex search across all symbol qualified names
   symbols <module>                       — list all symbols in a module
-  fn-rdeps <qname> [--exclude-tests]    — callers of a function
+  fn-rdeps <qname> [--exclude-tests]    — callers of a function (`count` = unique callers)
   rdeps <module>                         — modules that import a module
   undocumented [module] [--all]          — symbols lacking docstrings
   uncovered [module] [--top N]           — symbols lacking test coverage
   coupled [--top N]                      — most-coupled modules
-  xrefs <module> [--broken]             — Sphinx cross-references
+  xrefs <module> [--broken]             — Sphinx cross-references"""
 
-For symbol_extraction tasks:
-  Use: symbol "<name>" --with-imports, then find-symbol "<pattern>" if ambiguous.
-  Report exactly: file_path: <path>  start_line: <N>  end_line: <M>
 
-For develop_blast_radius tasks:
-  Use: fn-rdeps "<qualified_name>" --exclude-tests
-  Report the returned caller list directly. Do NOT grep for additional callers.
+def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: str) -> str:
+    """Assemble the system prompt for one arm from the shared neutral wrapper.
 
-For fn_call_graph tasks:
-  Use: fn-rdeps "<qualified_name>" --exclude-tests
-  Report all callers as a list of qualified names; state the unique caller count.
+    Both arms receive identical repo framing, the single efficiency instruction, and the
+    output-format requirements; only the tool-availability section differs. The plain arm's
+    section forbids scan-query; the codemap arm's section documents scan-query syntax and
+    subcommands. Keeping every non-tool sentence identical prevents prompt asymmetry from
+    confounding the token-ratio headline (review C-1).
 
-For review_assistance tasks (PR review, blast radius, coverage metrics):
-  Select the subcommand based on the task question:
-  - Callers of a function    → fn-rdeps "<module>::<function>" --exclude-tests
-    Note: the `count` field counts call-site EDGES, not unique callers. To report
-    unique callers, count distinct `caller` values in the `called_by` list yourself.
-  - Modules importing module → rdeps "<module>"
-  - Symbols lacking docstrings → undocumented "<module>" [--all]
-  - Symbols lacking test coverage → uncovered "<module>" [--top N]
-  Run ONE scan-query call. For caller-count questions: count distinct names in
-  `called_by` — do NOT use the `count` field directly. List all qualified names.
-  STOP after one call.
+    Args:
+        arm: "plain" or "codemap".
+        repo_name: Human-readable repository name for framing.
+        repo_path: Absolute path to the repository root (the agent cwd).
+        index_path: Path to the pre-built codemap index (codemap arm only; ignored for plain).
 
-Be concise and precise. State the exact values you found (counts, line numbers, module names)."""
+    Returns:
+        The fully formatted ``--system-prompt`` string for the given arm.
+
+    Examples:
+        >>> p = _build_system_prompt("plain", "demo", "/repo", "/x.json")
+        >>> "do not re-verify results you already have" in p
+        True
+        >>> "scan-query" in _build_system_prompt("codemap", "demo", "/repo", "/x.json")
+        True
+    """
+    tools_section = _PLAIN_TOOLS if arm == "plain" else _CODEMAP_TOOLS.format(index_path=index_path)
+    return _SHARED_SYSTEM_TEMPLATE.format(repo_name=repo_name, repo_path=repo_path, tools_section=tools_section)
 
 
 # ---------------------------------------------------------------------------
@@ -461,7 +470,7 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
     return env
 
 
-# Subcommands recognised by scan-query (mirrors the _CODEMAP_SYSTEM_TEMPLATE help block).
+# Subcommands recognised by scan-query (mirrors the _CODEMAP_TOOLS help block).
 _SCAN_QUERY_SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "symbol",
@@ -1526,13 +1535,7 @@ class BenchRunner:
         Returns:
             BenchRun with all metrics filled.
         """
-        system = (
-            _PLAIN_SYSTEM.format(repo_name=_REPO_NAME, repo_path=str(self.repo_path))
-            if arm == "plain"
-            else _CODEMAP_SYSTEM_TEMPLATE.format(
-                repo_name=_REPO_NAME, index_path=str(self.index_path), repo_path=str(self.repo_path)
-            )
-        )
+        system = _build_system_prompt(arm, _REPO_NAME, str(self.repo_path), str(self.index_path))
         disallow_flags = _ARM_DISALLOWED.get(arm, [])
         allow_flags = _ARM_ALLOWED.get(arm, [])
         # Scale max-turns for develop_blast_radius.

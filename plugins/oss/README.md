@@ -137,10 +137,10 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 **Invocation:**
 
 ```text
-/oss:analyse 123              # issue, PR, or discussion by number
-/oss:analyse vitality         # repo vitality: 9-axis health scorecard, duplicate clustering, raw data JSONL
-/oss:analyse vitality --quick # fast daily scorecard: core scoring only, skips codex + adversarial passes
-/oss:analyse ecosystem        # dependency health, upstream compatibility
+/oss:analyse 123                # issue, PR, or discussion by number
+/oss:analyse vitality           # repo vitality: 9-axis health scorecard, duplicate clustering, raw data JSONL
+/oss:analyse vitality --quick   # fast daily scorecard: core scoring only, skips codex + adversarial passes
+/oss:analyse ecosystem          # dependency health, upstream compatibility
 /oss:analyse path/to/report.md  # re-analyse a saved report
 ```
 

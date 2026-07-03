@@ -34,9 +34,34 @@ INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || e
 [ -n "$INDEX" ] && { [ -f "$INDEX" ] && STATE="present" || STATE="missing"; } || STATE="unresolved"
 ```
 
-Branch on `$STATE`:
-- `present` → `"${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental  # timeout: 5000`
-- `missing` → `Skill(skill="codemap:scan-codebase")`, then re-read INDEX from tmpfile
+Branch on `$STATE`. Auto-build is opt-out via `SCAN_NO_AUTOBUILD=1` (set it to run queries against the index exactly as-is — no refresh, no full build); when a build does run, its wall-time is echoed so build cost stays separable from query cost.
+
+- `present` → refresh in place (honors the opt-out, echoes build time):
+
+```bash
+# timeout: 8000
+if [ "${SCAN_NO_AUTOBUILD:-0}" = "1" ]; then
+    echo "[codemap] SCAN_NO_AUTOBUILD=1 — using existing index as-is (no refresh)"
+else
+    _CM_BUILD_T0=$(date +%s)
+    "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index" --incremental
+    echo "[codemap] index built in $(( $(date +%s) - _CM_BUILD_T0 ))s"
+fi
+```
+
+- `missing` → no index to query yet; auto-build is refused when opted out:
+
+```bash
+# timeout: 5000
+if [ "${SCAN_NO_AUTOBUILD:-0}" = "1" ]; then
+    echo "! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build."
+    echo "  Build it manually first: /codemap:scan-codebase"
+    exit 1
+fi
+```
+
+If not refused → `Skill(skill="codemap:scan-codebase")`, then re-read INDEX from tmpfile.
+
 - `unresolved` → surface error, stop
 
 ## Step 1: Query
@@ -93,7 +118,7 @@ Symbol staleness: `stale: true` + empty source → `Read(path)` fallback. `stale
 | --- | --- | --- |
 | `rdeps`/`deps` | `imported_by`/`direct_imports` | list modules, one per line |
 | `central`/`coupled` | `central`/`coupled` array | `name — N importers`, one per line |
-| `path` | `path` array or null | `A → B → C`; null → "No import path found." |
+| `path` | `path` array or null | `A → B → C`; null (with `reason: "no-import-path"`, exit 0) → "No import path found." |
 | `symbol` | `symbols[].source` | fenced code block; caption = module + line range |
 | `symbols` | `symbols` array | `type name (lines start–end)`, one per line |
 | `find-symbol` | `matches` array | `module:qualified_name (type)`, one per line |

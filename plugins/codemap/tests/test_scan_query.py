@@ -104,6 +104,12 @@ class TestModuleQueries:
         data = query("path", "gamma", "alpha")
         assert data["path"] is None
 
+    def test_path_not_found_uses_reason_not_error(self, query):
+        """A legitimate no-path result reports ``reason`` (exit 0), never the ``error`` failure key."""
+        data = query("path", "gamma", "alpha")
+        assert data["reason"] == "no-import-path"
+        assert "error" not in data
+
     def test_list_contains_all_modules(self, query):
         """list command returns all 5 modules."""
         data = query("list")
@@ -413,6 +419,13 @@ class TestFunctionCallGraph:
         data = query("fn-rdeps", "gamma::func_gamma")
         callers = {e["caller"] for e in data.get("called_by", [])}
         assert any("func_beta" in t for t in callers)
+
+    def test_fn_rdeps_unique_caller_count_matches_deduped_callers(self, query):
+        """``unique_caller_count`` equals the deduped caller-list length and mirrors ``count``."""
+        data = query("fn-rdeps", "gamma::func_gamma")
+        distinct_callers = {e["caller"] for e in data["called_by"]}
+        assert data["unique_caller_count"] == len(distinct_callers)
+        assert data["unique_caller_count"] == data["count"]
 
     def test_fn_central_includes_func_gamma(self, query):
         """func_gamma called by multiple functions → appears in fn-central."""

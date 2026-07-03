@@ -487,16 +487,35 @@ class TestValidateFn:
             result["count"] = count
         return result
 
-    def test_passes_when_callers_match_exactly(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, live_gt, '') when callers and counts match ground truth.
+    def _write_callers(self, repo: Path, callers: list[str], target: str) -> None:
+        """Write Python files so the AST oracle discovers exactly ``callers`` of ``target``.
 
-        Scenario: unchanged codebase; scan-query output matches stored GT.
+        Each caller string is ``<module>::<scope>`` where scope is ``func`` or ``Class.method``.
+        A file at ``<module-as-path>.py`` is created whose scope body calls ``target()`` — the
+        AST oracle then attributes that call to ``<module>::<scope>``.
+        """
+        for caller in callers:
+            module, scope = caller.split("::")
+            fpath = repo / (module.replace(".", "/") + ".py")
+            fpath.parent.mkdir(parents=True, exist_ok=True)
+            if "." in scope:
+                cls, meth = scope.split(".", 1)
+                src = f"class {cls}:\n    def {meth}(self):\n        {target}()\n"
+            else:
+                src = f"def {scope}():\n    {target}()\n"
+            fpath.write_text(src)
+
+    def test_passes_when_callers_match_exactly(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Returns (True, live_gt, '') when the AST oracle's callers match ground truth.
+
+        Scenario: unchanged codebase; the independent AST oracle (now authoritative) agrees
+        with the stored caller set.
         """
         callers = ["mod.a::fn_a", "mod.b::fn_b"]
         task = self._task("mod::target", callers, 2, 2)
         payload = self._sq_response(callers, 2)
+        self._write_callers(tmp_path, callers, "target")
 
-        # AST walk would traverse tmp_path with no .py files — returns empty set
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, live_gt, reason = script_gen_bench._validate_fn(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
@@ -504,14 +523,15 @@ class TestValidateFn:
         assert reason == ""
 
     def test_fails_on_extra_caller(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when scan-query returns callers not in ground truth.
+        """Returns failure when the AST oracle finds a caller not in ground truth.
 
-        Scenario: new function added that calls target; GT is stale.
+        Scenario: new function added that calls target; GT is stale relative to the oracle.
         """
         gt_callers = ["mod.a::fn_a"]
         task = self._task("mod::target", gt_callers, 1, 1)
-        live_callers = ["mod.a::fn_a", "mod.b::fn_b"]  # extra caller
-        payload = self._sq_response(live_callers, 2)
+        oracle_callers = ["mod.a::fn_a", "mod.b::fn_b"]  # extra caller present in source
+        payload = self._sq_response(oracle_callers, 2)
+        self._write_callers(tmp_path, oracle_callers, "target")
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_fn(task, MagicMock(), tmp_path / "idx.json", tmp_path)
@@ -520,14 +540,15 @@ class TestValidateFn:
         assert "extra" in reason
 
     def test_fails_on_missing_caller(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when ground truth caller is absent from live output.
+        """Returns failure when a ground-truth caller is absent from the AST oracle.
 
-        Scenario: caller refactored away; scan-query no longer reports it.
+        Scenario: caller refactored away; the oracle no longer sees it in source.
         """
         gt_callers = ["mod.a::fn_a", "mod.b::fn_b"]
         task = self._task("mod::target", gt_callers, 2, 2)
-        live_callers = ["mod.a::fn_a"]  # missing mod.b::fn_b
-        payload = self._sq_response(live_callers, 1)
+        oracle_callers = ["mod.a::fn_a"]  # missing mod.b::fn_b in source
+        payload = self._sq_response(oracle_callers, 1)
+        self._write_callers(tmp_path, oracle_callers, "target")
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_fn(task, MagicMock(), tmp_path / "idx.json", tmp_path)
@@ -583,20 +604,23 @@ class TestValidateFn:
         assert captured_args, "run_scan_query must be called at least once"
         assert "--exclude-tests" in captured_args[0]
 
-    def test_deduplicates_callers_before_comparison(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Deduplicates repeated callers in scan-query output before count check.
+    def test_deduplicates_scan_callers_in_diagnostic(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Deduplicates repeated scan-query callers in the diagnostic scan_caller_count.
 
-        Scenario: scan-query returns same caller twice (raw > unique); unique
-        count comparison must use deduplicated set.
+        Scenario: scan-query returns the same caller twice (raw > unique). The authoritative
+        unique_caller_count comes from the AST oracle; the scan_caller_count diagnostic must
+        still deduplicate the tool's output.
         """
-        callers = ["mod.a::fn_a", "mod.a::fn_a"]  # duplicate
+        callers = ["mod.a::fn_a", "mod.a::fn_a"]  # duplicate scan output
         task = self._task("mod::target", ["mod.a::fn_a"], 1, 2)
         payload = self._sq_response(callers, 2)
+        self._write_callers(tmp_path, ["mod.a::fn_a"], "target")
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, live_gt, _ = script_gen_bench._validate_fn(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
-        assert live_gt["unique_caller_count"] == 1
+        assert live_gt["unique_caller_count"] == 1  # AST oracle (authoritative)
+        assert live_gt["scan_caller_count"] == 1  # scan output deduplicated
 
 
 # ===========================================================================
@@ -843,13 +867,23 @@ class TestValidateOss:
             },
         }
 
-    def test_undocumented_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, ...) when undocumented count and symbols match GT.
+    def _write_undoc(self, repo: Path, names: list[str]) -> None:
+        """Write a module whose public classes ``names`` all lack docstrings.
 
-        Scenario: check='undocumented'; scan-query returns same symbols as GT.
+        The AST undocumented oracle (now authoritative) then reports exactly ``names`` as the
+        undocumented public symbol set.
+        """
+        body = "\n\n".join(f"class {n}:\n    pass" for n in names) + "\n"
+        (repo / "m.py").write_text(body)
+
+    def test_undocumented_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Returns (True, ...) when the AST oracle's undocumented set matches GT.
+
+        Scenario: check='undocumented'; the authoritative AST oracle agrees with stored GT.
         """
         task = self._task_undocumented(2, ["A", "B"])
         payload = {"total": 2, "undocumented": [{"qualified_name": "A"}, {"qualified_name": "B"}]}
+        self._write_undoc(tmp_path, ["A", "B"])
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
@@ -858,15 +892,16 @@ class TestValidateOss:
         assert reason == ""
 
     def test_undocumented_fails_on_count_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure when undocumented_count differs from GT.
+        """Returns failure when the AST oracle's undocumented count differs from GT.
 
-        Scenario: symbol documented after GT was captured; count drops.
+        Scenario: symbols documented after GT was captured; the oracle now sees fewer.
         """
         task = self._task_undocumented(5, ["A", "B", "C", "D", "E"])
         payload = {
             "total": 3,
             "undocumented": [{"qualified_name": "A"}, {"qualified_name": "B"}, {"qualified_name": "C"}],
         }
+        self._write_undoc(tmp_path, ["A", "B", "C"])
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
@@ -1235,6 +1270,169 @@ class TestCallFinderAst:
 # ===========================================================================
 
 
+class TestIsPublicQualname:
+    """Contract: public qualified name = no dotted component starts with underscore (C-2)."""
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("Trainer.fit", True),
+            ("func", True),
+            ("_helper", False),
+            ("_Cache.get", False),
+            ("Trainer.__init__", False),
+            ("", False),
+        ],
+    )
+    def test_public_rule(self, script_gen_bench: Any, name: str, expected: bool) -> None:
+        """Mirrors scan-query _is_public_symbol: any leading-underscore component is private."""
+        assert script_gen_bench._is_public_qualname(name) is expected
+
+
+class TestUndocumentedViaAst:
+    """Contract: independent AST oracle lists public symbols lacking a docstring (C-2)."""
+
+    def test_finds_public_undocumented(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Public class/function without a docstring is reported."""
+        (tmp_path / "m.py").write_text("class A:\n    pass\n\n\ndef pub():\n    pass\n")
+        syms, err = script_gen_bench._undocumented_via_ast(tmp_path)
+        assert err is None
+        assert syms == {"A", "pub"}
+
+    def test_documented_symbol_excluded(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A symbol with a docstring is not reported as undocumented."""
+        (tmp_path / "m.py").write_text('def pub():\n    """Doc."""\n    return 1\n')
+        syms, _ = script_gen_bench._undocumented_via_ast(tmp_path)
+        assert "pub" not in syms
+
+    def test_private_symbol_excluded(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Private (leading-underscore) symbols are excluded even without a docstring."""
+        (tmp_path / "m.py").write_text("def _helper():\n    pass\n")
+        syms, _ = script_gen_bench._undocumented_via_ast(tmp_path)
+        assert syms == set()
+
+    def test_nested_method_qualified_name(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Methods are reported as Class.method module-relative qualified names."""
+        (tmp_path / "m.py").write_text("class Cls:\n    def meth(self):\n        pass\n")
+        syms, _ = script_gen_bench._undocumented_via_ast(tmp_path)
+        assert "Cls.meth" in syms
+
+    def test_test_modules_skipped(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Files named test_*.py are skipped (scan-query skips test modules)."""
+        (tmp_path / "test_x.py").write_text("def pub():\n    pass\n")
+        syms, _ = script_gen_bench._undocumented_via_ast(tmp_path)
+        assert syms == set()
+
+    def test_module_filter_unresolvable_returns_error(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A module name that maps to no file yields an error reason, empty set."""
+        syms, err = script_gen_bench._undocumented_via_ast(tmp_path, module="pkg.missing")
+        assert syms == set()
+        assert err is not None and "not resolvable" in err
+
+    def test_module_filter_resolves_src_layout(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A dotted module resolves against <repo>/src/<parts>.py."""
+        f = tmp_path / "src" / "pkg" / "mod.py"
+        f.parent.mkdir(parents=True)
+        f.write_text("def pub():\n    pass\n")
+        syms, err = script_gen_bench._undocumented_via_ast(tmp_path, module="pkg.mod")
+        assert err is None
+        assert syms == {"pub"}
+
+
+class TestValidateFnAstAuthoritative:
+    """Contract: _validate_fn treats the AST oracle as authoritative, scan as diagnostic (C-2)."""
+
+    def _task(self, primary_fn: str, callers: list[str]) -> dict:
+        """Build an fn_call_graph task with the given expected callers."""
+        return {
+            "type": "fn_call_graph",
+            "primary_fn": primary_fn,
+            "ground_truth": {"fn_callers": callers, "unique_caller_count": len(callers), "raw_caller_count": 0},
+        }
+
+    def test_scan_output_stored_as_diagnostic(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """scan-query callers are preserved under fn_callers_scan, not as the authoritative set."""
+        (tmp_path / "mod" / "a.py").parent.mkdir(parents=True)
+        (tmp_path / "mod" / "a.py").write_text("def fn_a():\n    target()\n")
+        task = self._task("mod::target", ["mod.a::fn_a"])
+        payload = {"called_by": [{"caller": "other::ghost"}], "count": 1}
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+            _, live_gt, _ = script_gen_bench._validate_fn(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert live_gt["fn_callers"] == ["mod.a::fn_a"]  # AST oracle authoritative
+        assert live_gt["fn_callers_scan"] == ["other::ghost"]  # scan diagnostic
+        assert live_gt["ast_divergence"]["scan_only"] == ["other::ghost"]
+        assert live_gt["ast_divergence"]["ast_only"] == ["mod.a::fn_a"]
+
+    def test_divergence_warning_printed(self, script_gen_bench: Any, tmp_path: Path, capsys: Any) -> None:
+        """A loud divergence banner is printed when AST and scan disagree."""
+        task = self._task("mod::target", [])
+        payload = {"called_by": [{"caller": "other::ghost"}], "count": 1}
+
+        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+            script_gen_bench._validate_fn(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        out = capsys.readouterr().out
+        assert "DIVERGENCE" in out
+
+
+class TestUpdateGating:
+    """Contract: circular (scan-derived) refresh is gated behind --update-from-tool (C-3)."""
+
+    @pytest.mark.parametrize(
+        "task,expected",
+        [
+            ({"type": "fn_call_graph"}, True),
+            ({"type": "develop_blast_radius"}, True),
+            ({"type": "code_quality", "ground_truth": {"check": "undocumented"}}, True),
+            ({"type": "code_quality", "ground_truth": {"check": "uncovered"}}, False),
+            ({"type": "code_quality", "ground_truth": {"check": "coupled"}}, False),
+            ({"type": "review_assistance"}, False),
+            ({"type": "symbol_extraction"}, False),
+        ],
+    )
+    def test_oracle_backed_classification(self, script_gen_bench: Any, task: dict, expected: bool) -> None:
+        """Only AST-oracle-backed types are safe to refresh under a plain --update."""
+        assert script_gen_bench._update_is_oracle_backed(task) is expected
+
+    def test_oracle_backed_type_refreshes_by_default(self, script_gen_bench: Any) -> None:
+        """An fn_call_graph task refreshes under plain --update (update_from_tool=False)."""
+        task = {"type": "fn_call_graph", "ground_truth": {"fn_callers": []}}
+        live = {"fn_callers": ["m::a"], "unique_caller_count": 1}
+        stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=False)
+        assert status == "UPDATED"
+        assert stored["ground_truth"]["fn_callers"] == ["m::a"]
+
+    def test_tool_derived_type_skipped_without_flag(self, script_gen_bench: Any) -> None:
+        """A scan-derived task is NOT refreshed under plain --update; original preserved."""
+        task = {"type": "code_quality", "ground_truth": {"check": "uncovered", "uncovered_count": 1}}
+        live = {"check": "uncovered", "uncovered_count": 99}
+        stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=False)
+        assert "SKIP UPDATE" in status
+        assert stored["ground_truth"]["uncovered_count"] == 1  # unchanged
+
+    def test_tool_derived_type_refreshes_with_flag_and_warns(self, script_gen_bench: Any, capsys: Any) -> None:
+        """--update-from-tool refreshes scan-derived GT after a loud circularity warning."""
+        task = {"type": "code_quality", "ground_truth": {"check": "uncovered", "uncovered_count": 1}}
+        live = {"check": "uncovered", "uncovered_count": 99}
+        stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=True)
+        assert status == "UPDATED"
+        assert stored["ground_truth"]["uncovered_count"] == 99
+        assert "CIRCULAR UPDATE" in capsys.readouterr().out
+
+    def test_review_assistance_merges_sub_questions_with_flag(self, script_gen_bench: Any) -> None:
+        """review_assistance refresh (tool-derived) merges per-sub_question GT under the flag."""
+        task = {
+            "type": "review_assistance",
+            "sub_questions": [{"id": "sq1", "ground_truth": {"count": 1}}],
+        }
+        live = {"sq1": {"count": 5}}
+        stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=True)
+        assert status == "UPDATED"
+        assert stored["sub_questions"][0]["ground_truth"] == {"count": 5}
+
+
 class TestMainUnitBehavior:
     """Unit-level tests for main() error paths using mocked dependencies."""
 
@@ -1430,3 +1628,47 @@ class TestMainUnitBehavior:
             with pytest.raises(SystemExit) as exc_info:
                 script_gen_bench.main(repo_path=str(tmp_path), task="NO-SUCH")
         assert exc_info.value.code == 1
+
+    def test_main_full_file_update_writes_back(
+        self, script_gen_bench: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Regression: full-file --update (no --task) processes every task and writes GT back.
+
+        The loop variable must not shadow the ``task`` filter parameter; if it did, the
+        write-back guard ``if task is None`` would never fire and the file would never be
+        written despite --update.
+        """
+        tasks_file = tmp_path / "tasks.json"
+        tasks_file.write_text(
+            json.dumps(
+                {
+                    "repo": {},
+                    "tasks": [
+                        {"id": "A-01", "type": "t", "ground_truth": {}},
+                        {"id": "A-02", "type": "t", "ground_truth": {}},
+                    ],
+                }
+            )
+        )
+        monkeypatch.setattr(script_gen_bench, "TASKS_FILE", tasks_file)
+
+        fake_sq = tmp_path / "scan-query"
+        fake_sq.write_text("#!/bin/sh")
+        fake_index = tmp_path / "index.json"
+        fake_index.write_text("{}")
+
+        processed: list[str] = []
+
+        def tracking_validator(task: dict, sq: Any, index: Any, repo: Any) -> tuple:
+            processed.append(task["id"])
+            return True, {}, ""
+
+        with (
+            patch.object(script_gen_bench, "find_codemap_bin", return_value=fake_sq),
+            patch.object(script_gen_bench, "resolve_index_path", return_value=fake_index),
+            patch.object(script_gen_bench, "VALIDATORS", {"t": tracking_validator}),
+        ):
+            script_gen_bench.main(repo_path=str(tmp_path), update=True)
+
+        assert processed == ["A-01", "A-02"]  # loop iterated all tasks
+        assert "Wrote updated ground truth" in capsys.readouterr().out  # write-back guard fired

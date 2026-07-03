@@ -172,13 +172,16 @@ the default output location of scan-index --root.
       path(a,b):   3 calls  (grep a, grep a's parent package, grep b; assumes 2-hop)
     Warm baseline: 1 scan-query call per query regardless of question type.
 
-    C1  coverage-gap = (codemap_rdep_count − grep_rdep_count) / codemap_rdep_count
-        Measures importers that grep misses because they use aliased or relative imports.
-        Pass when gap ≥ 10% on at least one high-risk task.
+    C1  coverage-gap = Σ verified_extras / Σ codemap_importers  (aggregated over high-risk tasks)
+        For each high-risk task the codemap rdeps importer set is compared with a boundary-anchored
+        grep importer set. Every extra importer codemap found but grep missed is AST-verified as a
+        genuine importer (resolving aliased / relative / __init__ re-export forms grep cannot see);
+        only verified extras count. Pass when gap ≥ 10%.
 
-    C2  infeasible-path-fraction — for every import path of length ≥ 2 hops returned by scan-query path, check whether
-        a single grep for the intermediate module name would surface the path. Fraction = paths not surfaceable in one
-        grep / total 2+ hop paths. Pass when fraction ≥ 50%.
+    C2  infeasible-path-fraction — for each path query A→B, run one boundary-anchored grep for the
+        importers of B. The path is 1-grep-feasible only when A is a direct importer of B (a direct
+        edge surfaces in that single grep); otherwise it needs a multi-hop walk and is infeasible.
+        Fraction = infeasible paths / total path queries. Pass when fraction ≥ 50%.
 
     C3  leverage-ratio = Σ cold_calls / Σ warm_calls across all 15 tasks. Answers "how many grep calls does
         codemap replace on average?" Pass when ratio ≥ 2.0×.
@@ -235,35 +238,42 @@ the default output location of scan-index --root.
 
 ## Output
 
-  stdout — one JSON object per completed scenario (JSONL); final line is the
-           summary envelope with overall verdict: PASS / PARTIAL / FAIL
-  stderr — progress narration via rich Progress bar
-  file   — benchmarks/results/code-YYYY-MM-DD.md when --report is passed
+  Default mode (no --json-only):
+    stdout — human verdict line, then the one-line summary envelope (JSON), then
+             the report path when --report is passed
+    stderr — progress narration via rich Progress bar / log()
+    file   — benchmarks/results/code-YYYY-MM-DD.md when --report is passed
+
+  --json-only mode (machine consumption): stdout carries ONLY one compact JSON
+  object per scenario (JSONL), followed by the summary envelope as the final
+  line. Human logs, the progress bar, and the markdown report are suppressed.
 
 ## JSON output schema (per-scenario lines + summary envelope)
 
-  Each scenario line (one per test case within a suite):
+  Each scenario line mirrors the ScenarioResult dataclass fields exactly:
   {
-    "suite": "C" | "A" | "L" | "I" | "S" | "H" | "X",
-    "code": "C1" | "A1" | "L1" | "I_fix" | "S2" | "H1" | "X1" | ...,
-    "module": "lightning.pytorch.trainer.trainer",   ← task module, where applicable
+    "scenario": "C1" | "A1" | "L1" | "I_fix" | "S2" | "H1" | "X_CQ-04" | ...,
+    "name": "coverage-gap" | "latency-central" | ...,   ← human label
+    "suite": "calls" | "accuracy" | "latency" | "injection" | "symbol" | "health" | "xrefs",
     "passed": true | false,
-    "value": N.NN,            ← the numeric outcome (gap fraction, precision, ms, etc.)
-    "threshold": N.NN,        ← the pass threshold for this scenario
-    "detail": { ... }         ← suite-specific breakdown (tp/fp/fn, timings, query list, etc.)
+    "result": { ... },        ← suite-specific measurement values (gap, tp/fp/fn, timings, ...)
+    "threshold": { ... },     ← the threshold dict applied for this scenario
+    "notes": "..."            ← short human-readable summary of the outcome
   }
 
   Final summary envelope (last line of stdout):
   {
     "verdict": "PASS" | "PARTIAL" | "FAIL",
-    "suites": {
-      "C": true|false,    ← coverage gap suite
-      "A": true|false,    ← accuracy suite
-      "L": true|false,    ← latency suite
-      "I": true|false,    ← injection suite
-      "S": true|false,    ← symbol lookup suite
-      "H": true|false,    ← health (undocumented/uncovered) suite
-      "X": true|false     ← xrefs broken suite
+    "scenarios_passed": N,
+    "scenarios_total": M,
+    "suites": {               ← keyed by the scenario "suite" field
+      "calls":     {"passed": n, "total": m},
+      "accuracy":  {"passed": n, "total": m},
+      "latency":   {"passed": n, "total": m},
+      "injection": {"passed": n, "total": m},
+      "symbol":    {"passed": n, "total": m},
+      "health":    {"passed": n, "total": m},
+      "xrefs":     {"passed": n, "total": m}
     },
     "date": "YYYY-MM-DD",
     "repo": "/abs/path",
@@ -281,8 +291,10 @@ Full scenario definitions and pass criteria: .plans/blueprint/2026-04-15-codemap
 
 from __future__ import annotations
 
+import ast
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -813,6 +825,216 @@ def codemap_rdeps(scan_query_bin: Path, index_path: Path, repo_path: Path, modul
     return set(data.get("imported_by", []))
 
 
+# ---- COVERAGE GAP (real importer-set comparison) ----
+
+
+def grep_importers_boundary(repo_path: Path, module: str) -> set[str]:
+    """Find importers of ``module`` with a boundary-anchored, import-statement grep.
+
+    Unlike :func:`grep_rdeps`, the pattern is anchored to the start of the line
+    (allowing leading whitespace) and requires ``module`` to be followed by
+    whitespace, a dot, or end-of-line.  This avoids substring false matches such
+    as ``import pkg.target_helper`` matching a search for ``pkg.target``.  It
+    still misses relative (``from . import x``) and aliased-package imports that
+    do not spell the dotted name literally — those are recovered by
+    :func:`verify_importer` during coverage-gap analysis.
+
+    Args:
+        repo_path: Root of the repository to search.
+        module: Dotted module name whose importers are to be found.
+
+    Returns:
+        Set of dotted module names that textually import ``module``.  Excludes
+        ``module`` itself.  Returns an empty set on timeout or no matches.
+    """
+    escaped = re.escape(module)
+    # ^<ws>(from|import)<ws><module>(<ws> | . | EOL) — POSIX ERE for portability (BSD/GNU grep).
+    pattern = rf"^[[:space:]]*(from|import)[[:space:]]+{escaped}([[:space:].]|$)"
+    try:
+        result = _run(
+            [
+                "grep",
+                "-rlE",
+                pattern,
+                str(repo_path),
+                "--include=*.py",
+                "--exclude-dir=.git",
+                "--exclude-dir=__pycache__",
+            ]
+        )
+    except subprocess.TimeoutExpired:
+        return set()
+
+    modules: set[str] = set()
+    repo_root = str(repo_path)
+    for line in result.stdout.strip().splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        mod = path_to_module(stripped, repo_root)
+        if mod and mod != module:
+            modules.add(mod)
+    return modules
+
+
+def module_to_source_file(module: str, repo_root: Path) -> Path | None:
+    """Resolve a dotted module name to its source ``.py`` file on disk.
+
+    Checks ``src/`` layout and ``__init__.py`` package variants, mirroring the
+    candidate order used by :func:`count_cold_calls_deps`.
+
+    Args:
+        module: Dotted module name (e.g. ``"pkg.sub.mod"``).
+        repo_root: Repository root to resolve the module against.
+
+    Returns:
+        The first existing candidate path, or ``None`` when no source file is
+        found.
+
+    Examples:
+        >>> module_to_source_file("nope.not.here", Path("/tmp")) is None
+        True
+    """
+    parts = module.replace(".", "/")
+    candidates = [
+        repo_root / "src" / f"{parts}.py",
+        repo_root / f"{parts}.py",
+        repo_root / "src" / parts / "__init__.py",
+        repo_root / parts / "__init__.py",
+    ]
+    return next((c for c in candidates if c.exists()), None)
+
+
+def _file_base_package(file_path: Path, repo_root: Path) -> str:
+    """Return the dotted package that contains ``file_path`` (for relative-import resolution).
+
+    Args:
+        file_path: Path to a ``.py`` source file.
+        repo_root: Repository root used as the relative base.
+
+    Returns:
+        Dotted name of the directory containing the file (empty string when the
+        file sits at the repository root or under a bare ``src/`` layout root).
+    """
+    rel = os.path.relpath(str(file_path), str(repo_root))
+    if rel.startswith("src/"):
+        rel = rel[4:]
+    directory = os.path.dirname(rel)
+    return directory.replace("/", ".").strip(".")
+
+
+def _resolve_relative(base_package: str, level: int, module: str | None) -> str:
+    """Resolve a relative import target to its absolute dotted module base.
+
+    Args:
+        base_package: Dotted package containing the importing file (``level`` 1
+            resolves against this package).
+        level: Relative-import level (number of leading dots).
+        module: The dotted suffix after the dots, or ``None`` for ``from . import x``.
+
+    Returns:
+        Absolute dotted base for the import (may be an empty string when the
+        relative reference escapes the resolvable root).
+
+    Examples:
+        >>> _resolve_relative("pkg.rel", 2, "target")
+        'pkg.target'
+        >>> _resolve_relative("pkg.rel", 1, None)
+        'pkg.rel'
+    """
+    parts = base_package.split(".") if base_package else []
+    if level > 1:
+        parts = parts[: len(parts) - (level - 1)]
+    base = ".".join(parts)
+    if module:
+        return f"{base}.{module}" if base else module
+    return base
+
+
+def _imported_names_from_source(source: str, base_package: str) -> set[str]:
+    """Collect every absolute dotted name referenced by the import statements in ``source``.
+
+    Handles ``import a.b``, ``import a.b as c``, ``from a.b import c`` (recording
+    both ``a.b`` and ``a.b.c``), and relative imports resolved against
+    ``base_package``.
+
+    Args:
+        source: Python source text to parse.
+        base_package: Dotted package of the source file, for relative imports.
+
+    Returns:
+        Set of absolute dotted names introduced by import statements.
+
+    Raises:
+        SyntaxError: If ``source`` cannot be parsed.
+    """
+    tree = ast.parse(source)
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            base = _resolve_relative(base_package, node.level, node.module) if node.level else (node.module or "")
+            if base:
+                names.add(base)
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                names.add(f"{base}.{alias.name}" if base else alias.name)
+    return names
+
+
+def file_imports_module(file_path: Path, target_module: str, repo_root: Path) -> bool:
+    """Verify by AST that ``file_path`` truly imports ``target_module``.
+
+    A file imports the target when any import statement resolves to the target
+    module itself or to a descendant of it (importing ``a.b.c`` imports the
+    package ``a.b``).  Relative and aliased imports are resolved correctly.
+
+    Args:
+        file_path: Path to the importing source file.
+        target_module: Dotted module name whose import is being verified.
+        repo_root: Repository root, used to resolve relative imports.
+
+    Returns:
+        ``True`` when the file imports the target module; ``False`` on read
+        error, syntax error, or when no matching import is found.
+    """
+    try:
+        source = file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    try:
+        names = _imported_names_from_source(source, _file_base_package(file_path, repo_root))
+    except SyntaxError:
+        return False
+    prefix = f"{target_module}."
+    return any(name == target_module or name.startswith(prefix) for name in names)
+
+
+def verify_importer(candidate_module: str, target_module: str, repo_root: Path) -> bool:
+    """Confirm that ``candidate_module``'s source file actually imports ``target_module``.
+
+    Resolves the candidate to a source file and delegates to
+    :func:`file_imports_module`.  Used to filter grep-missed extras down to true
+    importers when computing the coverage gap.
+
+    Args:
+        candidate_module: Dotted module claimed (by the index) to import the target.
+        target_module: Dotted module whose import is being verified.
+        repo_root: Repository root for file resolution.
+
+    Returns:
+        ``True`` only when the candidate resolves to a file that genuinely
+        imports the target module.
+    """
+    source_file = module_to_source_file(candidate_module, repo_root)
+    if source_file is None:
+        return False
+    return file_imports_module(source_file, target_module, repo_root)
+
+
 def compute_precision_recall(codemap_set: set[str], grep_set: set[str]) -> AccuracyStats:
     """Compute precision and recall of codemap rdeps relative to a grep baseline.
 
@@ -1146,7 +1368,7 @@ def render_report(
                     {
                         "Scenario": f"{scen} {r_item.name}",
                         "Value": f"{val:.1%}",
-                        "Notes": f"{res.get('cold_calls', '?')} cold → 1 warm call",
+                        "Notes": f"{res.get('verified_extras_total', '?')} verified extras / {res.get('codemap_set_total', '?')} importers",
                     }
                 )
             elif scen == "C2":
@@ -1332,17 +1554,123 @@ def compute_verdict(results: list[ScenarioResult]) -> str:
 # ---- OUTPUT HELPERS ----
 
 
-def emit(obj: ScenarioResult | dict) -> None:
-    """No-op stub — placeholder for optional result accumulation; not currently implemented."""
-    pass  # individual scenario JSON suppressed; summary printed in main()
+class _OutputState:
+    """Module-level output-verbosity flag (mirrors the module-level ``_console``).
+
+    ``quiet`` is set to ``True`` by :func:`main` in ``--json-only`` mode so that
+    human progress narration via :func:`log` is suppressed and stdout carries
+    only the scenario JSONL and the final summary envelope.
+    """
+
+    quiet: bool = False
+
+
+_OUT = _OutputState()
+
+
+def emit(result: ScenarioResult) -> None:
+    """Print one compact JSON line describing a single scenario result to stdout.
+
+    Emits the dataclass fields directly: ``scenario``, ``name``, ``suite``,
+    ``passed``, ``result``, ``threshold``, and ``notes``.  Intended for machine
+    consumption in ``--json-only`` mode (one JSON object per line).
+
+    Args:
+        result: The :class:`ScenarioResult` to serialize.
+
+    Examples:
+        >>> import io, json, contextlib
+        >>> r = ScenarioResult("C1", "coverage-gap", "calls", True, {"coverage_gap": 0.5}, {})
+        >>> buf = io.StringIO()
+        >>> with contextlib.redirect_stdout(buf):
+        ...     emit(r)
+        >>> json.loads(buf.getvalue())["scenario"]
+        'C1'
+    """
+    line = {
+        "scenario": result.scenario,
+        "name": result.name,
+        "suite": result.suite,
+        "passed": result.passed,
+        "result": result.result,
+        "threshold": result.threshold,
+        "notes": result.notes,
+    }
+    print(json.dumps(line, separators=(",", ":"), default=str))
+
+
+def build_summary_envelope(results: list[ScenarioResult], repo_path: Path, index_path: Path, verdict: str) -> dict:
+    """Build the final one-line summary envelope for machine consumption.
+
+    Aggregates per-suite pass/total counts keyed by the scenario ``suite`` field
+    (``calls``, ``accuracy``, ``latency``, ``injection``, ``symbol``, ``health``,
+    ``xrefs``) and records the overall verdict, scenario totals, date, repo, and
+    index path.
+
+    Args:
+        results: All scenario results produced by the benchmark run.
+        repo_path: Path to the repository under test.
+        index_path: Path to the codemap index used.
+        verdict: Overall verdict string (``PASS`` / ``PARTIAL`` / ``FAIL``).
+
+    Returns:
+        A JSON-serializable summary envelope dict.
+
+    Examples:
+        >>> r = ScenarioResult("C1", "x", "calls", True, {}, {})
+        >>> env = build_summary_envelope([r], Path("/repo"), Path("/i.json"), "PASS")
+        >>> env["scenarios_passed"], env["suites"]["calls"]
+        (1, {'passed': 1, 'total': 1})
+    """
+    suites: dict[str, dict[str, int]] = {}
+    for r in results:
+        bucket = suites.setdefault(r.suite, {"passed": 0, "total": 0})
+        bucket["total"] += 1
+        if r.passed:
+            bucket["passed"] += 1
+    return {
+        "verdict": verdict,
+        "scenarios_passed": sum(1 for r in results if r.passed),
+        "scenarios_total": len(results),
+        "suites": suites,
+        "date": date.today().isoformat(),
+        "repo": str(repo_path),
+        "index": str(index_path),
+    }
+
+
+def write_report_file(results: list[ScenarioResult], repo_path: Path, index_path: Path) -> str:
+    """Resolve the report path once, render the report to it, and return that path.
+
+    Resolving the destination a single time (rather than calling
+    :func:`resolve_report_path` again after the file already exists) guarantees
+    the returned path is exactly the file that was written — not a ``-2`` sibling
+    that does not exist.
+
+    Args:
+        results: Scenario results to render.
+        repo_path: Path to the repository under test.
+        index_path: Path to the codemap index used.
+
+    Returns:
+        String path of the markdown report actually written.
+    """
+    report_path = resolve_report_path()
+    render_report(results, repo_path, index_path, report_path)
+    return str(report_path)
 
 
 def log(msg: str) -> None:
     """Print a progress message to the rich console or stderr.
 
+    Suppressed entirely when :data:`_OUT` is in quiet (``--json-only``) mode so
+    that stdout is not polluted for machine consumers.
+
     Args:
         msg: Message string to display.
     """
+    if _OUT.quiet:
+        return
     if _IS_RICH_AVAILABLE and _console is not None:
         _console.print(msg)
     else:
@@ -1351,15 +1679,108 @@ def log(msg: str) -> None:
 
 # ---- SUITE: CALLS ----
 
+_HIGH_RISK_TIERS = {"high", "very-high", "moderate-high"}
 
-def run_measure_calls(repo_path: Path) -> list[ScenarioResult]:
-    """Run Suite C — measure cold grep call counts vs warm scan-query call counts.
 
-    Evaluates three scenarios: C1 (coverage gap), C2 (infeasible path fraction),
-    and C3 (leverage ratio).  All subprocess calls are counted, not timed.
+def _measure_coverage_gap(
+    tasks: list[Task], repo_path: Path, scan_query_bin: Path, index_path: Path
+) -> tuple[float, int, int, list[dict]]:
+    """Measure the real importer coverage gap of codemap over boundary-anchored grep.
+
+    For each high-risk task the codemap ``rdeps`` importer set is compared with a
+    boundary-anchored grep importer set.  Every extra importer that codemap found
+    but grep missed is AST-verified (:func:`verify_importer`) to confirm it is a
+    genuine importer — resolving aliased, relative, and ``__init__`` re-export
+    forms that grep's literal pattern cannot see.  The gap is the total verified
+    extras divided by the total codemap importer count, aggregated across tasks.
+
+    Args:
+        tasks: All benchmark tasks (only high-risk tiers with an rdeps query count).
+        repo_path: Root of the repository under test.
+        scan_query_bin: Path to the scan-query executable.
+        index_path: Path to the pre-built codemap index.
+
+    Returns:
+        Tuple ``(coverage_gap, verified_extras_total, codemap_set_total, per_task)``
+        where ``per_task`` is a JSON-serializable list of per-task breakdowns.
+    """
+    per_task: list[dict] = []
+    verified_extras_total = 0
+    codemap_set_total = 0
+    for task in tasks:
+        if task.risk_tier not in _HIGH_RISK_TIERS:
+            continue
+        rdeps_q = next((q for q in task.queries if q.cmd == "rdeps" and q.args), None)
+        if rdeps_q is None:
+            continue
+        module = rdeps_q.args[0]
+        cm_set = codemap_rdeps(scan_query_bin, index_path, repo_path, module)
+        grep_set = grep_importers_boundary(repo_path, module)
+        extras = cm_set - grep_set
+        verified = sorted(e for e in extras if verify_importer(e, module, repo_path))
+        verified_extras_total += len(verified)
+        codemap_set_total += len(cm_set)
+        per_task.append(
+            {
+                "task_id": task.id,
+                "module": module,
+                "codemap_count": len(cm_set),
+                "grep_count": len(grep_set),
+                "extras": sorted(extras),
+                "verified_extras": verified,
+                "verified_count": len(verified),
+            }
+        )
+    coverage_gap = verified_extras_total / max(codemap_set_total, 1)
+    return coverage_gap, verified_extras_total, codemap_set_total, per_task
+
+
+def _measure_infeasible_paths(tasks: list[Task], repo_path: Path) -> tuple[float, int, int, list[dict]]:
+    """Measure the fraction of import paths that are not discoverable in a single grep.
+
+    A path query ``A -> B`` is *1-grep-feasible* only when ``A`` is a direct
+    importer of ``B`` — i.e. a single boundary-anchored grep for importers of
+    ``B`` surfaces ``A`` directly (a direct edge).  When ``A`` is absent from
+    ``B``'s direct importers the path requires at least one intermediate hop and
+    is counted as infeasible.  The fraction is infeasible paths over all path
+    queries.
+
+    Args:
+        tasks: All benchmark tasks (only those carrying ``path`` queries contribute).
+        repo_path: Root of the repository under test.
+
+    Returns:
+        Tuple ``(fraction, infeasible_count, total_path_queries, per_path)`` where
+        ``per_path`` is a JSON-serializable list of per-query direct-edge results.
+    """
+    per_path: list[dict] = []
+    infeasible_count = 0
+    total_path_queries = 0
+    for task in tasks:
+        for q in task.queries:
+            if q.cmd != "path" or len(q.args) < 2:
+                continue
+            total_path_queries += 1
+            frm, to = q.args[0], q.args[1]
+            direct_edge = frm in grep_importers_boundary(repo_path, to)
+            if not direct_edge:
+                infeasible_count += 1
+            per_path.append({"from": frm, "to": to, "direct_edge": direct_edge})
+    fraction = infeasible_count / max(total_path_queries, 1)
+    return fraction, infeasible_count, total_path_queries, per_path
+
+
+def run_measure_calls(repo_path: Path, scan_query_bin: Path, index_path: Path) -> list[ScenarioResult]:
+    """Run Suite C — coverage gap, infeasible-path fraction, and leverage ratio.
+
+    Evaluates three scenarios: C1 (real importer coverage gap of codemap vs a
+    boundary-anchored grep, AST-verified), C2 (fraction of import paths that need
+    more than one grep hop), and C3 (leverage ratio of cold vs warm call counts).
 
     Args:
         repo_path: Root of the pytorch-lightning repository to search.
+        scan_query_bin: Path to the scan-query executable (used for C1 rdeps).
+        index_path: Path to the pre-built codemap index (used for C1 rdeps).
 
     Returns:
         List of three :class:`ScenarioResult` objects (C1, C2, C3).
@@ -1368,11 +1789,11 @@ def run_measure_calls(repo_path: Path) -> list[ScenarioResult]:
     tasks = load_tasks()
     log("[calls] Starting call-savings measurement...")
 
-    # C1: coverage gap — codemap finds >=10% more importers than cold grep
+    # C1: coverage gap — verified importers codemap finds that a boundary grep misses
     log("[calls] C1: coverage-gap")
-    cold_calls = count_cold_calls_centrality(repo_path)
-    delta = cold_calls - 1
-    coverage_gap = delta / max(cold_calls, 1)
+    coverage_gap, verified_extras_total, codemap_set_total, cov_per_task = _measure_coverage_gap(
+        tasks, repo_path, scan_query_bin, index_path
+    )
     passed = coverage_gap >= THRESHOLDS["C1"]["coverage_gap_min"]
     r = ScenarioResult(
         scenario="C1",
@@ -1380,29 +1801,19 @@ def run_measure_calls(repo_path: Path) -> list[ScenarioResult]:
         suite="calls",
         passed=passed,
         result={
-            "cold_calls": cold_calls,
-            "warm_calls": 1,
-            "delta_absolute": delta,
             "coverage_gap": round(coverage_gap, 4),
+            "verified_extras_total": verified_extras_total,
+            "codemap_set_total": codemap_set_total,
+            "per_task": cov_per_task,
         },
         threshold=THRESHOLDS["C1"],
-        notes=f"cold={cold_calls} calls; warm=1; gap={coverage_gap:.2%}",
+        notes=f"{verified_extras_total} verified extras / {codemap_set_total} codemap importers; gap={coverage_gap:.2%}",
     )
-    emit(r)
     results.append(r)
 
-    # C2: infeasible path fraction — 2+ hop paths not grep-discoverable in 1 call
+    # C2: infeasible path fraction — paths where the source is not a direct importer of the target
     log("[calls] C2: infeasible-path-fraction")
-    path_tasks = [t for t in tasks if any(q.cmd == "path" for q in t.queries)]
-    infeasible_count = 0
-    total_path_queries = 0
-    for task in path_tasks:
-        for q in task.queries:
-            if q.cmd == "path" and len(q.args) >= 2:
-                total_path_queries += 1
-                if count_cold_calls_path(repo_path, q.args[0], q.args[1]) > 1:
-                    infeasible_count += 1
-    fraction = infeasible_count / max(total_path_queries, 1)
+    fraction, infeasible_count, total_path_queries, path_detail = _measure_infeasible_paths(tasks, repo_path)
     passed = fraction >= THRESHOLDS["C2"]["infeasible_path_fraction_min"]
     r = ScenarioResult(
         scenario="C2",
@@ -1413,11 +1824,11 @@ def run_measure_calls(repo_path: Path) -> list[ScenarioResult]:
             "total_path_queries": total_path_queries,
             "infeasible_count": infeasible_count,
             "fraction": round(fraction, 4),
+            "per_path": path_detail,
         },
         threshold=THRESHOLDS["C2"],
-        notes=f"{infeasible_count}/{total_path_queries} paths need >1 grep call",
+        notes=f"{infeasible_count}/{total_path_queries} paths need >1 grep hop",
     )
-    emit(r)
     results.append(r)
 
     # C3: leverage ratio — structural context tokens / cold exploration tokens
@@ -1444,7 +1855,6 @@ def run_measure_calls(repo_path: Path) -> list[ScenarioResult]:
         threshold=THRESHOLDS["C3"],
         notes=f"cold={total_cold} calls; warm={total_warm}; ratio={leverage_ratio:.1f}x",
     )
-    emit(r)
     results.append(r)
 
     return results
@@ -1530,7 +1940,6 @@ def run_measure_accuracy(repo_path: Path, scan_query_bin: Path, index_path: Path
         r = ScenarioResult(
             "A1", "rdeps-accuracy-high", "accuracy", False, {"error": "no high-risk tasks found"}, THRESHOLDS["A1"]
         )
-    emit(r)
     results.append(r)
 
     # A2: low-risk tasks precision = 1.0
@@ -1553,7 +1962,6 @@ def run_measure_accuracy(repo_path: Path, scan_query_bin: Path, index_path: Path
         r = ScenarioResult(
             "A2", "rdeps-accuracy-low", "accuracy", False, {"error": "no low-risk tasks found"}, THRESHOLDS["A2"]
         )
-    emit(r)
     results.append(r)
 
     # A3: overall FP rate across all 15 tasks
@@ -1575,7 +1983,6 @@ def run_measure_accuracy(repo_path: Path, scan_query_bin: Path, index_path: Path
         threshold=THRESHOLDS["A3"],
         notes=f"overall FP rate: {fp_rate:.2%} across {len(all_task_results)} tasks",
     )
-    emit(r)
     results.append(r)
 
     return results
@@ -1626,7 +2033,6 @@ def run_measure_latency(
         threshold=THRESHOLDS["L1"],
         notes=f"5 runs; median={l1_timing.median_ms:.1f}ms",
     )
-    emit(r)
     results.append(r)
 
     # L2: rdeps query latency (sample 3 high-risk modules, 5 runs each)
@@ -1660,7 +2066,6 @@ def run_measure_latency(
         threshold=THRESHOLDS["L2"],
         notes=f"median across {len(high_risk_mods)} modules = {overall_median:.1f}ms",
     )
-    emit(r)
     results.append(r)
 
     # L3: index build time (amortized over 10)
@@ -1701,7 +2106,6 @@ def run_measure_latency(
             threshold=THRESHOLDS["L3"],
             notes="scan-index binary not found; cannot measure build time",
         )
-    emit(r)
     results.append(r)
 
     # L4: cold grep baseline vs codemap
@@ -1748,7 +2152,6 @@ def run_measure_latency(
         threshold=THRESHOLDS["L4"],
         notes=f"cold grep total = {cold_total_median:.0f}ms; codemap = {warm_total:.0f}ms; speedup = {speedup:.1f}x",
     )
-    emit(r)
     results.append(r)
 
     return results
@@ -1869,7 +2272,6 @@ def run_measure_injection(
 
     for skill, key in [("fix", "I_fix"), ("feature", "I_feature"), ("refactor", "I_refactor")]:
         r = _validate_skill_group(skill, load_tasks(skill_filter=skill), scan_query_bin, index_path, repo_path, key)
-        emit(r)
         results.append(r)
 
     return results
@@ -2355,6 +2757,83 @@ def run_suite_xrefs(
     return results
 
 
+def _resolve_plugin_root() -> Path | None:
+    """Return the git top-level directory as the plugin root, or None when unavailable."""
+    try:
+        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return Path(r.stdout.strip()) if r.returncode == 0 else None
+
+
+def _ensure_index(index_path: Path, repo_path: Path, scan_index_bin: Path | None) -> Path:
+    """Return an existing index path, building it once via scan-index when missing.
+
+    Exits the process with a clear message when the index cannot be located or
+    built (scan-index absent, build failure, or still-missing index after build).
+
+    Args:
+        index_path: Resolved (possibly non-existent) candidate index path.
+        repo_path: Repository root passed to scan-index --root.
+        scan_index_bin: Path to scan-index, or None when it could not be found.
+
+    Returns:
+        Path to an index file that exists on disk.
+    """
+    if index_path.exists():
+        return index_path
+    log(f"[index] not found at {index_path}")
+    if scan_index_bin is None:
+        log("ERROR: scan-index not found — cannot auto-build the index.")
+        log(f"Run manually:  python3 plugins/codemap/bin/scan-index --root {repo_path}")
+        log("Then retry, or pass --index-path <path-to-index.json>.")
+        sys.exit(1)
+    log(f"[index] building now via {scan_index_bin} --root {repo_path} ...")
+    result = subprocess.run(
+        [sys.executable, str(scan_index_bin), "--root", str(repo_path)], capture_output=True, text=True, timeout=360
+    )
+    if result.returncode != 0:
+        log(f"ERROR: scan-index failed:\n{result.stderr}")
+        sys.exit(1)
+    log(result.stdout.strip())
+    rebuilt = resolve_index_path(None, repo_path)
+    if not rebuilt.exists():
+        log(f"ERROR: index still not found at {rebuilt} after build.")
+        log("Try: --index-path <path-to-index.json>")
+        sys.exit(1)
+    return rebuilt
+
+
+def _run_all_suites(suites: list[tuple[str, object]], use_progress: bool) -> list[ScenarioResult]:
+    """Run every suite callable, optionally under a rich progress bar.
+
+    Args:
+        suites: List of ``(label, zero-arg callable returning list[ScenarioResult])``.
+        use_progress: When True and rich is available, render a progress bar.
+
+    Returns:
+        Flattened list of all scenario results across every suite.
+    """
+    all_results: list[ScenarioResult] = []
+    if use_progress and _IS_RICH_AVAILABLE and _console is not None:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=_console,
+        ) as progress:
+            bar = progress.add_task("Benchmark", total=len(suites))
+            for label, run_fn in suites:
+                progress.update(bar, description=label)
+                all_results.extend(run_fn())  # type: ignore[operator]
+                progress.advance(bar)
+    else:
+        for _label, run_fn in suites:
+            all_results.extend(run_fn())  # type: ignore[operator]
+    return all_results
+
+
 def main(
     repo_path: str = None,
     index_path: str = None,
@@ -2401,63 +2880,27 @@ def main(
             --report
     """
     write_report = report and not json_only
+    _OUT.quiet = json_only  # suppress human progress narration for machine consumers
 
-    # Resolve plugin root
-    plugin_root = None
-    try:
-        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=5)
-        if r.returncode == 0:
-            plugin_root = Path(r.stdout.strip())
-    except (subprocess.TimeoutExpired, OSError):
-        pass
-
+    plugin_root = _resolve_plugin_root()
     repo_path = resolve_repo_path(repo_path)
-
     if repo_path is None:
         sys.exit(1)
 
     scan_query_bin = find_codemap_bin("scan-query", plugin_root)
     scan_index_bin = find_codemap_bin("scan-index", plugin_root)
-
     if scan_query_bin is None:
         log("ERROR: scan-query not found in PATH or plugin directory")
         sys.exit(1)
 
-    # Resolve index path
-    index_path = resolve_index_path(index_path, repo_path)
-    if not index_path.exists():
-        log(f"[index] not found at {index_path}")
-        if scan_index_bin:
-            log(f"[index] building now via {scan_index_bin} --root {repo_path} ...")
-            result = subprocess.run(
-                [sys.executable, str(scan_index_bin), "--root", str(repo_path)],
-                capture_output=True,
-                text=True,
-                timeout=360,
-            )
-            if result.returncode != 0:
-                log(f"ERROR: scan-index failed:\n{result.stderr}")
-                sys.exit(1)
-            log(result.stdout.strip())
-            index_path = resolve_index_path(index_path, repo_path)
-            if not index_path.exists():
-                log(f"ERROR: index still not found at {index_path} after build.")
-                log("Try: --index-path <path-to-index.json>")
-                sys.exit(1)
-        else:
-            log("ERROR: scan-index not found — cannot auto-build the index.")
-            log(f"Run manually:  python3 plugins/codemap/bin/scan-index --root {repo_path}")
-            log("Then retry, or pass --index-path <path-to-index.json>.")
-            sys.exit(1)
+    index_path = _ensure_index(resolve_index_path(index_path, repo_path), repo_path, scan_index_bin)
 
     # Verify tasks if requested (runs before suites, does not skip them)
     if verify_tasks:
         run_verify_tasks(scan_query_bin, index_path, repo_path)
 
-    all_results: list[ScenarioResult] = []
-
-    suites = [
-        ("C — Coverage gap", lambda: run_measure_calls(repo_path)),
+    suites: list[tuple[str, object]] = [
+        ("C — Coverage gap", lambda: run_measure_calls(repo_path, scan_query_bin, index_path)),
         ("A — Accuracy", lambda: run_measure_accuracy(repo_path, scan_query_bin, index_path)),
         ("L — Latency", lambda: run_measure_latency(repo_path, scan_query_bin, index_path, scan_index_bin)),
         (
@@ -2469,43 +2912,24 @@ def main(
         ("X — Xrefs broken", lambda: run_suite_xrefs(scan_query_bin, index_path, repo_path)),
     ]
 
-    if _IS_RICH_AVAILABLE and _console is not None:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=_console,
-        ) as progress:
-            bar = progress.add_task("Benchmark", total=len(suites))
-            for label, run_fn in suites:
-                progress.update(bar, description=label)
-                all_results.extend(run_fn())
-                progress.advance(bar)
-    else:
-        try:
-            from tqdm import tqdm
+    all_results = _run_all_suites(suites, use_progress=not json_only)
+    verdict = compute_verdict(all_results)
+    envelope = build_summary_envelope(all_results, repo_path, index_path, verdict)
 
-            _tqdm_iter = tqdm(suites, desc="Benchmark", unit="suite", file=sys.stderr)
-            for _label, run_fn in _tqdm_iter:
-                all_results.extend(run_fn())
-        except ImportError:
-            for _label, run_fn in suites:
-                all_results.extend(run_fn())
+    # --json-only: emit scenario JSONL + summary envelope on stdout, nothing else.
+    if json_only:
+        for r in all_results:
+            emit(r)
+        print(json.dumps(envelope, separators=(",", ":"), default=str))
+        return
 
-    # Write report if requested
+    # Default mode: human verdict line, summary envelope, optional markdown report.
     report_path_str: str | None = None
     if write_report and all_results:
-        assert repo_path is not None
-        assert index_path is not None
-        render_report(all_results, repo_path, index_path, resolve_report_path())
-        report_path_str = str(resolve_report_path())
+        report_path_str = write_report_file(all_results, repo_path, index_path)
 
-    # Final summary
-    total = len(all_results)
-    passed = sum(1 for r in all_results if r.passed)
-    verdict = compute_verdict(all_results)
-    print(f"\n{verdict}  {passed}/{total} scenarios passed")
+    print(f"\n{verdict}  {envelope['scenarios_passed']}/{envelope['scenarios_total']} scenarios passed")
+    print(json.dumps(envelope, separators=(",", ":"), default=str))
     if report_path_str:
         print(f"→ {report_path_str}")
 

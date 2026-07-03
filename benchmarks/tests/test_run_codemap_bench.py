@@ -1155,6 +1155,74 @@ class TestWorkflowTypeOf:
 # ===========================================================================
 
 
+class TestBuildSystemPrompt:
+    """System-prompt assembly must keep every non-tool sentence identical across arms (C-1)."""
+
+    _EFFICIENCY = "Answer in as few tool calls as possible; do not re-verify results you already have."
+    _OUTPUT_HDR = "For symbol location tasks: report exactly in this format:"
+
+    def _plain(self, script_run_bench: Any) -> str:
+        """Build the plain-arm system prompt with fixed framing arguments."""
+        return script_run_bench._build_system_prompt("plain", "demo", "/repo", "/idx.json")
+
+    def _codemap(self, script_run_bench: Any) -> str:
+        """Build the codemap-arm system prompt with fixed framing arguments."""
+        return script_run_bench._build_system_prompt("codemap", "demo", "/repo", "/idx.json")
+
+    def test_efficiency_sentence_present_in_both_arms(self, script_run_bench: Any) -> None:
+        """The single efficiency instruction appears verbatim in both arms."""
+        assert self._EFFICIENCY in self._plain(script_run_bench)
+        assert self._EFFICIENCY in self._codemap(script_run_bench)
+
+    def test_output_format_block_identical_across_arms(self, script_run_bench: Any) -> None:
+        """The output-format requirements block is byte-identical in both arms."""
+        plain = self._plain(script_run_bench)
+        codemap = self._codemap(script_run_bench)
+        marker = self._OUTPUT_HDR
+        plain_block = plain[plain.index(marker) :]
+        codemap_block = codemap[codemap.index(marker) :]
+        assert plain_block == codemap_block
+
+    def test_plain_forbids_scan_query(self, script_run_bench: Any) -> None:
+        """Plain arm keeps the scan-query prohibition; codemap arm does not forbid it."""
+        plain = self._plain(script_run_bench)
+        assert "Do NOT use scan-query" in plain
+        assert "Do NOT use the Skill tool" in plain
+
+    def test_codemap_documents_subcommands(self, script_run_bench: Any) -> None:
+        """Codemap arm documents scan-query syntax and the subcommand reference list."""
+        codemap = self._codemap(script_run_bench)
+        assert "scan-query --index /idx.json <subcommand>" in codemap
+        assert "fn-rdeps" in codemap
+        assert "coupled" in codemap
+
+    def test_index_path_substituted_into_codemap(self, script_run_bench: Any) -> None:
+        """The concrete index path is interpolated into the codemap tool section."""
+        assert "/custom/index.json" in script_run_bench._build_system_prompt(
+            "codemap", "demo", "/repo", "/custom/index.json"
+        )
+
+    @pytest.mark.parametrize(
+        "removed",
+        [
+            "STOP after one call",
+            "Trust scan-query output as authoritative",
+            "burns tokens",
+            "MUST be your first tool call",
+            "Do NOT grep",
+        ],
+    )
+    def test_strategy_coaching_removed_from_codemap(self, script_run_bench: Any, removed: str) -> None:
+        """Efficiency-steering / per-task strategy coaching is gone from the codemap prompt."""
+        assert removed not in self._codemap(script_run_bench)
+
+    def test_count_semantics_state_unique_callers(self, script_run_bench: Any) -> None:
+        """Any retained fn-rdeps count note states unique callers, not call-site edges."""
+        codemap = self._codemap(script_run_bench)
+        assert "call-site EDGES" not in codemap
+        assert "`count` = unique callers" in codemap
+
+
 class TestEffectiveRecall:
     """Recall accessor with metric_got/expected fallback for count-based evaluators."""
 

@@ -529,18 +529,20 @@ ______________________________________________________________________
 
 Queries the index. Step 0 keeps it fresh (full build via `/codemap:scan-codebase` if missing, `scan-index --incremental` if present), so queries run against a current index. If Python files change mid-task a stale warning may still appear on stderr; results are still returned so the agent can refresh and retry.
 
+When Step 0 does build, it prints one line — `[codemap] index built in <N>s` — so the build cost is visible and separable from query time. Set `SCAN_NO_AUTOBUILD=1` to opt out of auto-building entirely: a present index is queried as-is with no refresh, and a missing index makes Step 0 stop with a clear message pointing at `/codemap:scan-codebase` rather than building silently.
+
 #### Module-level queries
 
 These work with any v2 or v3 index.
 
-| Subcommand          | What it answers                                                       |
-| ------------------- | --------------------------------------------------------------------- |
-| `rdeps <module>`    | What imports this module? (blast radius)                              |
-| `deps <module>`     | What does this module import?                                         |
-| `central [--top N]` | Which modules are imported by the most others? Default N=10           |
-| `coupled [--top N]` | Which modules import the most others? Default N=10                    |
-| `path <from> <to>`  | Shortest import chain between two modules; `null` means not connected |
-| `list`              | All indexed modules with their file paths                             |
+| Subcommand          | What it answers                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `rdeps <module>`    | What imports this module? (blast radius)                                                                        |
+| `deps <module>`     | What does this module import?                                                                                   |
+| `central [--top N]` | Which modules are imported by the most others? Default N=10                                                     |
+| `coupled [--top N]` | Which modules import the most others? Default N=10                                                              |
+| `path <from> <to>`  | Shortest import chain between two modules; `null` (with `reason: "no-import-path"`, exit 0) means not connected |
+| `list`              | All indexed modules with their file paths                                                                       |
 
 #### Symbol-level queries
 
@@ -556,6 +558,8 @@ Retrieve function or class source by name instead of reading the full file — d
 
 Every `symbol` result includes `"stale": bool` and `"stale_reason": string | null`. When `stale: true`, the index line range no longer matches the current file — fall back to `Read(<path>)` instead. Common reasons: `"file deleted"`, `"line range past EOF"`, `"symbol name not in slice header"` (function moved or renamed since last scan). The `path` field is always valid even when `stale: true`.
 
+> **! BREAKING (path output)**: a legitimate "no path exists" result now returns `{"path": null, "reason": "no-import-path"}` at exit 0 — the former `"error": "No import path found."` key is gone. Genuine failures (unknown module) still use the non-zero `"error"` contract, so consumers can finally distinguish "no path" from "query failed". Anything that branched on the old `error` key for the no-path case must read `reason` (or simply test `path === null`) instead.
+
 #### Function-level call graph queries (v3 index)
 
 These require a v3 index built by `/codemap:scan-codebase`. If your index is older (v2), the commands return a clear upgrade message.
@@ -568,6 +572,8 @@ These require a v3 index built by `/codemap:scan-codebase`. If your index is old
 | `fn-blast <qname>`     | Transitive reverse-call BFS with depth levels          |
 
 Use `module::function` format for qualified names, for example `mypackage.auth::validate_token` or `mypackage.auth::AuthMiddleware.process`.
+
+`fn-rdeps` reports **`unique_caller_count`** alongside `count`. Both are the number of *distinct* calling symbols — the caller list is deduplicated, so a caller that invokes the target from several call sites is counted once. The explicit field name exists so consumers do not misread the value as a call-site edge total; `count` is retained for backward compatibility and always equals `unique_caller_count`.
 
 **Call edge resolution types**: `import` = cross-module call with confirmed import scope; `local` = same-file call; `self` = `self.method()` call where the target class is known; `star` = call to a name from a star import where the source module could not be determined; `unresolved` = call target could not be matched.
 
@@ -845,6 +851,8 @@ export CODEMAP_INDEX_DIR="$HOME/.codemap-cache"
 ```
 
 With `CODEMAP_INDEX_DIR` set, the index lands at `$CODEMAP_INDEX_DIR/<project>.json`. All skills and bin scripts respect this variable automatically.
+
+Set `SCAN_NO_AUTOBUILD=1` to disable the query-time auto-build: `/codemap:query-code` and `/codemap:test-impact` then use the existing index exactly as-is (no incremental refresh) and refuse to build a missing one, failing with a message that names the variable and the manual `/codemap:scan-codebase` command. Useful in CI or benchmarks where build cost must stay out of the measured query path.
 
 This directory is gitignored by default in the borda-ai-rig artifact layout. The project name is derived from `basename $(git rev-parse --show-toplevel)` — the directory name of your git root.
 
