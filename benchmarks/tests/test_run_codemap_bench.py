@@ -966,11 +966,145 @@ class TestEvaluateRealIssue:
         result = script_run_bench._evaluate_real_issue(task, "trainer.py")
         assert result.evaluator_used == "_evaluate_real_issue"
 
-    def test_file_matched_by_basename_not_full_path(self, script_run_bench: Any) -> None:
-        """File matching uses the basename (after last '/'), not the full path."""
+    def test_bare_basename_does_not_match_deep_path(self, script_run_bench: Any) -> None:
+        """review H-1: a bare basename no longer scores a deeply-nested GT file — path-with-parent required."""
         task = self._ri_task(["deeply/nested/path/trainer.py"])
         result = script_run_bench._evaluate_real_issue(task, "edit trainer.py to fix the bug")
+        assert result.correct is False
+
+    def test_path_with_parent_matches(self, script_run_bench: Any) -> None:
+        """review H-1: a path-with-parent form (parent/stem) scores the GT file."""
+        task = self._ri_task(["deeply/nested/path/trainer.py"])
+        result = script_run_bench._evaluate_real_issue(task, "## Files\npath/trainer.py\n")
         assert result.correct is True
+
+    def test_verbose_prose_mentioning_common_stem_does_not_score(self, script_run_bench: Any) -> None:
+        """review H-1: a verbose answer that only name-drops `trainer` in prose scores nothing."""
+        task = self._ri_task(["src/lightning/pytorch/trainer/trainer.py"])
+        prose = "The trainer orchestrates training; the trainer loop runs many trainer callbacks."
+        result = script_run_bench._evaluate_real_issue(task, prose)
+        assert result.correct is False
+
+    def test_structured_answer_with_path_scores(self, script_run_bench: Any) -> None:
+        """review H-1: the same task scores when the answer names the file by its path in a block."""
+        task = self._ri_task(["src/lightning/pytorch/trainer/trainer.py"])
+        answer = "## Files\nlightning/pytorch/trainer/trainer.py\n"
+        result = script_run_bench._evaluate_real_issue(task, answer)
+        assert result.correct is True
+
+
+# ===========================================================================
+# Structured-block scoring helpers (review H-1)
+# ===========================================================================
+
+
+class TestStructuredBlockScoring:
+    """review H-1: answer-block extraction, stem blocklist, and RI path matching helpers."""
+
+    def test_answer_region_returns_block_after_heading(self, script_run_bench: Any) -> None:
+        """Region starts at the answer heading, dropping the exploration prose before it."""
+        text = "exploring trainer everywhere\n## Files\npkg/trainer.py\n"
+        region, degraded = script_run_bench._answer_region(text, ("files",))
+        assert degraded is False
+        assert "exploring" not in region
+        assert "pkg/trainer.py" in region
+
+    def test_answer_region_degraded_without_heading(self, script_run_bench: Any) -> None:
+        """No heading → degraded=True and the full text is returned as fallback."""
+        region, degraded = script_run_bench._answer_region("just prose about trainer", ("files",))
+        assert degraded is True
+        assert region == "just prose about trainer"
+
+    def test_answer_region_matches_labelled_line(self, script_run_bench: Any) -> None:
+        """A bold/plain `Files:` label line is recognised as a heading."""
+        _, degraded = script_run_bench._answer_region("**Files:**\npkg/x.py\n", ("files",))
+        assert degraded is False
+
+    @pytest.mark.parametrize(
+        "stem,text,expected",
+        [
+            ("trainer", "the trainer runs the loop", False),  # bare blocklisted word
+            ("trainer", "see trainer.py for details", True),  # .py-qualified
+            ("trainer", "in pkg.trainer here", True),  # dotted-qualified
+            ("utils", "utility helpers live in utils somewhere", False),  # bare blocklisted word
+            ("fit_loop", "the fit_loop advances the epoch", True),  # non-blocklisted plain word
+        ],
+    )
+    def test_stem_matches(self, script_run_bench: Any, stem: str, text: str, expected: bool) -> None:
+        """Blocklisted stems need a qualified reference; other stems match on a word boundary."""
+        assert script_run_bench._stem_matches(stem, text) is expected
+
+    @pytest.mark.parametrize(
+        "file_path,text,expected",
+        [
+            ("a/b/logger_connector.py", "edit b/logger_connector to fix", True),  # path-with-parent
+            ("a/b/logger_connector.py", "just logger_connector alone", False),  # bare stem
+            ("src/pkg/trainer.py", "pkg/trainer.py has the bug", True),  # full relative path
+        ],
+    )
+    def test_ri_file_matches(self, script_run_bench: Any, file_path: str, text: str, expected: bool) -> None:
+        """A real_issue file counts only via a full path or a path-with-parent form."""
+        assert script_run_bench._ri_file_matches(file_path, text) is expected
+
+
+# ===========================================================================
+# Contamination detection (review H-2)
+# ===========================================================================
+
+
+class TestContaminationDetection:
+    """review H-2: plain-arm access to the prebuilt index or codemap binary is flagged."""
+
+    def _runner(self, script_run_bench: Any, tmp_path: Path) -> Any:
+        """Build a BenchRunner with dummy paths (no subprocess is launched by these tests)."""
+        return script_run_bench.BenchRunner("haiku", "claude-haiku", tmp_path, tmp_path / "idx.json", timeout=1)
+
+    def _read_event(self, tmp_path: Path) -> dict:
+        """Assistant event with a single Read of the prebuilt codemap index."""
+        return {
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "name": "Read",
+                        "id": "t1",
+                        "input": {"file_path": str(tmp_path / ".cache" / "codemap" / "proj.json")},
+                    }
+                ]
+            },
+        }
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("cat /repo/.cache/codemap/proj.json", True),
+            ("less .cache/scan/x.json", True),
+            ("python3 plugins/codemap/bin/scan-query symbol X", True),
+            ("grep -rn Trainer src/", False),
+        ],
+    )
+    def test_is_contaminating_access(self, script_run_bench: Any, text: str, expected: bool) -> None:
+        """Full-string index/binary access is detected; ordinary grep is not."""
+        assert script_run_bench._is_contaminating_access(text) is expected
+
+    def test_plain_arm_index_read_flags_contamination(self, script_run_bench: Any, tmp_path: Path) -> None:
+        """A plain-arm Read of .cache/codemap/*.json increments contamination_hits."""
+        runner = self._runner(script_run_bench, tmp_path)
+        result = script_run_bench.BenchRun(
+            arm="plain", task_id="RI-01", task_type="real_issue", model="haiku", success=False
+        )
+        runner._handle(self._read_event(tmp_path), result, {}, 0.0)
+        assert result.contamination_hits == 1
+
+    def test_codemap_arm_index_read_not_flagged(self, script_run_bench: Any, tmp_path: Path) -> None:
+        """The codemap arm legitimately touches the index — no contamination is recorded for it."""
+        runner = self._runner(script_run_bench, tmp_path)
+        result = script_run_bench.BenchRun(
+            arm="codemap", task_id="RI-01", task_type="real_issue", model="haiku", success=False
+        )
+        runner._handle(self._read_event(tmp_path), result, {}, 0.0)
+        assert result.contamination_hits == 0
 
 
 # ===========================================================================

@@ -24,6 +24,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,47 @@ from typing import Any
 import fire
 
 TASKS_FILE = Path(__file__).parent / "suites" / "tasks-bench.json"
+
+# Repo top-level package names, populated from tasks-bench.json ``repo.namespace`` in main().
+# Used to normalize AST-oracle module paths onto scan-query's namespace (strip ``src/`` layout
+# prefixes, review N1) so the AST and scan-query caller sets are directly comparable.
+_REPO_NAMESPACE: list[str] = ["lightning", "examples"]
+
+# Test-file / test-directory detection — mirrors scan-index ``_TEST_PATH_RE`` so the AST oracle
+# excludes the same test modules scan-query does (review N1). Matched against repo-relative paths.
+_TEST_PATH_RE = re.compile(r"(^|/)tests?/|/test_[^/]+\.py$|/[^/]+_test\.py$|/conftest\.py$")
+
+
+def _normalize_caller_module(rel: str, namespace: list[str]) -> str:
+    """Normalize an AST-derived dotted module path onto the repo's scan-query namespace (review N1).
+
+    Strips a ``src/`` (``src.``) layout prefix by returning the path from the first component that
+    is a known top-level package in *namespace*; when no namespace component is present, a bare
+    leading ``src`` is dropped. Leaves the path unchanged otherwise.
+
+    Args:
+        rel: Dotted module path derived from a repo-relative file path (e.g. ``src.lightning.pytorch.x``).
+        namespace: Known top-level package names (e.g. ``["lightning", "examples"]``).
+
+    Returns:
+        The namespace-relative dotted module path.
+
+    Examples:
+        >>> _normalize_caller_module("src.lightning.pytorch.trainer", ["lightning", "examples"])
+        'lightning.pytorch.trainer'
+        >>> _normalize_caller_module("src.pkg.mod", ["pkg"])
+        'pkg.mod'
+        >>> _normalize_caller_module("example", ["lightning"])
+        'example'
+    """
+    parts = rel.split(".")
+    known = set(namespace or [])
+    for i, part in enumerate(parts):
+        if part in known:
+            return ".".join(parts[i:])
+    if parts and parts[0] == "src":
+        return ".".join(parts[1:])
+    return rel
 
 
 # ---- BINARY RESOLUTION ----
@@ -199,22 +241,170 @@ class _CallFinder(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _callers_via_ast(primary_fn: str, repo) -> tuple[set[str], str | None]:
-    """Walk repo Python AST to find callers of ``primary_fn`` independent of scan-query.
+class _QualifiedCallFinder(ast.NodeVisitor):
+    """AST visitor crediting only callers whose call receiver statically resolves to the target.
+
+    Conservative (precision-first) qualified caller oracle for ground truth (review N1). Unlike
+    :class:`_CallFinder` (simple-name match, which over-approximates), an attribute call
+    ``recv.method()`` is credited only when *recv* resolves to the target's class — ``self`` / ``cls``
+    inside that class, or a direct ``Class.method()`` / ``Class().method()`` reference — so a
+    same-named method on an unrelated class is never counted. Bare ``name()`` calls carry no class
+    ambiguity and are credited. Receivers that cannot be resolved statically are skipped rather than
+    guessed, so the emitted set is a subset of the true caller set (precision over recall for GT).
+
+    Args:
+        target_class: Simple name of the class defining the target method, or None for a
+            module-level function target.
+        target_simple: Simple name of the target function or method.
+        target_module_tail: Last component of the TARGET's (namespace-normalized) module — used to
+            resolve a module-level-function attribute call ``mod.func()``. None when unknown.
+        rel_module: Namespace-normalized dotted module path of the file being walked.
+        callers: Mutable set accumulating ``"<module>::<scope>"`` caller strings.
+    """
+
+    def __init__(
+        self,
+        target_class: str | None,
+        target_simple: str,
+        target_module_tail: str | None,
+        rel_module: str,
+        callers: set[str],
+    ) -> None:
+        self._target_class = target_class
+        self._target_simple = target_simple
+        self._target_module_tail = target_module_tail
+        self._rel_module = rel_module
+        self._callers = callers
+        self._scope_stack: list[str] = []
+        self._class_stack: list[str] = []
+
+    def _scope(self) -> str:
+        return ".".join(self._scope_stack) if self._scope_stack else "<module>"
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._scope_stack.append(node.name)
+        self.generic_visit(node)
+        self._scope_stack.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._scope_stack.append(node.name)
+        self._class_stack.append(node.name)
+        self.generic_visit(node)
+        self._class_stack.pop()
+        self._scope_stack.pop()
+
+    def _receiver_class(self, recv: ast.expr) -> str | None:
+        """Resolve the class simple name of an attribute-call receiver, or None when ambiguous."""
+        if isinstance(recv, ast.Name):
+            if recv.id in ("self", "cls"):
+                return self._class_stack[-1] if self._class_stack else None
+            return recv.id if recv.id[:1].isupper() else None
+        if isinstance(recv, ast.Call):
+            fn = recv.func
+            if isinstance(fn, ast.Name) and fn.id[:1].isupper():
+                return fn.id
+            if isinstance(fn, ast.Attribute) and fn.attr[:1].isupper():
+                return fn.attr
+        return None
+
+    def _credits(self, node: ast.Call) -> bool:
+        """Return True when *node* is a call to the target that resolves to the target's qualname."""
+        func = node.func
+        if isinstance(func, ast.Name):
+            return func.id == self._target_simple
+        if isinstance(func, ast.Attribute) and func.attr == self._target_simple:
+            if self._target_class is None:
+                # Module-level function accessed as `<module>.func()`: credit only when the receiver
+                # names the TARGET module (its last component), not the caller's own module.
+                recv = func.value
+                tail = recv.attr if isinstance(recv, ast.Attribute) else getattr(recv, "id", None)
+                return tail is not None and tail == self._target_module_tail
+            return self._receiver_class(func.value) == self._target_class
+        return False
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if self._scope_stack and self._credits(node):
+            self._callers.add(f"{self._rel_module}::{self._scope()}")
+        self.generic_visit(node)
+
+
+def _walk_caller_sets(
+    primary_fn: str, repo: Path, namespace: list[str] | None = None
+) -> tuple[set[str], set[str], str | None]:
+    """Walk repo AST once, returning both the qualified (authoritative) and loose caller sets (review N1).
+
+    The qualified set (:class:`_QualifiedCallFinder`) is the authoritative ground truth: it credits a
+    caller only when the call receiver statically resolves to the target's class/module. The loose set
+    (:class:`_CallFinder`) matches by simple name and is retained purely as a divergence diagnostic.
+    Test modules are excluded (matching scan-query) and module paths are namespace-normalized so the
+    emitted callers carry no ``src.`` prefix and are directly comparable to scan-query output.
 
     Args:
         primary_fn: Qualified name like ``"mod::Class.method"`` or ``"mod::func"``.
         repo: Repository root directory.
+        namespace: Top-level package names for path normalization; defaults to :data:`_REPO_NAMESPACE`.
 
     Returns:
-        (caller_set, error_reason) — caller_set contains ``"<module>::<scope>"`` strings
-        for each enclosing function/method that contains a call matching the target's simple
-        name. error_reason is None on success, a short message on failure.
+        (qualified_callers, loose_callers, error_reason).
 
-    Notes:
-        Approximate oracle: matches by simple name of target, so over-approximates when
-        same-named functions exist in unrelated classes, and under-approximates for
-        aliased calls. Use to detect *divergence* from scan-query, not as standalone GT.
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "m.py").write_text("class Foo:\\n    def c(self):\\n        self.bar()\\n")
+        ...     q, loose, err = _walk_caller_sets("m::Foo.bar", repo, [])
+        >>> sorted(q), err
+        (['m::Foo.c'], None)
+    """
+    if namespace is None:
+        namespace = _REPO_NAMESPACE
+    tail = primary_fn.split("::")[-1]
+    parts = tail.split(".")
+    target_simple = parts[-1]
+    target_class = parts[-2] if len(parts) >= 2 else None
+    # Target module tail (namespace-normalized) resolves module-level `mod.func()` attribute calls.
+    target_module = _normalize_caller_module(primary_fn.split("::")[0], namespace)
+    target_module_tail = target_module.split(".")[-1] if target_module else None
+
+    qualified: set[str] = set()
+    loose: set[str] = set()
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
+        for fname in files:
+            if not fname.endswith(".py"):
+                continue
+            fpath = Path(root) / fname
+            rel_path = str(fpath.relative_to(repo)).replace(os.sep, "/")
+            if _TEST_PATH_RE.search(rel_path):
+                continue
+            try:
+                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
+            except SyntaxError:
+                continue
+            rel_module = _normalize_caller_module(rel_path[:-3].replace("/", "."), namespace)
+            _CallFinder(target_simple, rel_module, loose).visit(tree)
+            _QualifiedCallFinder(target_class, target_simple, target_module_tail, rel_module, qualified).visit(tree)
+
+    return qualified, loose, None
+
+
+def _callers_via_ast(primary_fn: str, repo: Path, namespace: list[str] | None = None) -> tuple[set[str], str | None]:
+    """Return the authoritative (qualified) caller set of ``primary_fn`` independent of scan-query.
+
+    Thin wrapper over :func:`_walk_caller_sets` exposing only the qualified set (review N1). The loose
+    simple-name set is available via :func:`_walk_caller_sets` for divergence diagnostics.
+
+    Args:
+        primary_fn: Qualified name like ``"mod::Class.method"`` or ``"mod::func"``.
+        repo: Repository root directory.
+        namespace: Top-level package names for path normalization; defaults to :data:`_REPO_NAMESPACE`.
+
+    Returns:
+        (caller_set, error_reason) — ``"<module>::<scope>"`` strings for each statically-resolved
+        caller; error_reason is None on success.
 
     Examples:
         >>> import tempfile
@@ -226,27 +416,8 @@ def _callers_via_ast(primary_fn: str, repo) -> tuple[set[str], str | None]:
         >>> sorted(callers), err
         (['m::caller'], None)
     """
-    tail = primary_fn.split("::")[-1]
-    simple_name = tail.split(".")[-1]
-
-    callers: set[str] = set()
-    error: str | None = None
-
-    for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
-        for fname in files:
-            if not fname.endswith(".py"):
-                continue
-            fpath = Path(root) / fname
-            try:
-                source = fpath.read_text(encoding="utf-8", errors="ignore")
-                tree = ast.parse(source, filename=str(fpath))
-            except SyntaxError:
-                continue
-            rel = str(fpath.relative_to(repo)).replace(os.sep, "/").replace(".py", "").replace("/", ".")
-            _CallFinder(simple_name, rel, callers).visit(tree)
-
-    return callers, error
+    qualified, _loose, error = _walk_caller_sets(primary_fn, repo, namespace)
+    return qualified, error
 
 
 def _undocumented_via_ast(repo: Path, module: str | None = None) -> tuple[set[str], str | None]:
@@ -370,6 +541,163 @@ def _is_public_qualname(name: str) -> bool:
     return all(part and not part.startswith("_") for part in name.split("."))
 
 
+class _PublicSymbolFinder(ast.NodeVisitor):
+    """AST visitor recording every public symbol (function, class, method), documented or not.
+
+    Qualified names are the dotted scope within the module (``Class.method``); a symbol is public
+    when no component starts with ``_`` (matches scan-query ``_is_public_symbol``). Unlike
+    :class:`_UndocFinder`, docstring presence is irrelevant — this enumerates the full public surface
+    so the uncovered oracle (review C-2) can subtract test-referenced symbols from it.
+
+    Args:
+        symbols: Mutable set accumulating public qualified names.
+    """
+
+    def __init__(self, symbols: set[str]) -> None:
+        self._symbols = symbols
+        self._scope: list[str] = []
+
+    def _record(self, name: str) -> None:
+        qname = ".".join([*self._scope, name])
+        if _is_public_qualname(qname):
+            self._symbols.add(qname)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._record(node.name)
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._record(node.name)
+        self._scope.append(node.name)
+        self.generic_visit(node)
+        self._scope.pop()
+
+
+def _is_patch_call(func: ast.expr) -> bool:
+    """Return True when *func* is a ``patch(...)`` / ``patch.object(...)`` / ``mock.patch(...)`` callee."""
+    if isinstance(func, ast.Name):
+        return func.id == "patch"
+    if isinstance(func, ast.Attribute):
+        return func.attr in ("patch", "object")
+    return False
+
+
+class _TestRefFinder(ast.NodeVisitor):
+    """AST visitor collecting the simple names a test module references (review C-2).
+
+    Mirrors scan-query's coverage definition independently: a public symbol is *covered* when a test
+    reaches it either through a call/attribute reference (its ``fn_rdep_test_count`` analogue) or
+    through a ``patch("pkg.mod.Symbol")`` string target (its ``mock_rdep_count`` analogue). Every
+    ``Name``/``Attribute`` identifier is recorded, plus the last dotted component of each string
+    argument to a patch call.
+
+    Args:
+        refs: Mutable set accumulating referenced simple names.
+    """
+
+    def __init__(self, refs: set[str]) -> None:
+        self._refs = refs
+
+    def visit_Name(self, node: ast.Name) -> None:
+        self._refs.add(node.id)
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        self._refs.add(node.attr)
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if _is_patch_call(node.func):
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    self._refs.add(arg.value.split(".")[-1])
+        self.generic_visit(node)
+
+
+def _collect_test_references(repo: Path) -> set[str]:
+    """Return the set of simple names referenced by any test module under *repo* (review C-2).
+
+    Args:
+        repo: Repository root directory.
+
+    Returns:
+        Referenced simple names (call/attribute identifiers and patch-string tails) from every test
+        file (matched by :data:`_TEST_PATH_RE`).
+    """
+    refs: set[str] = set()
+    for root, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
+        for name in names:
+            if not name.endswith(".py"):
+                continue
+            fpath = Path(root) / name
+            rel = str(fpath.relative_to(repo)).replace(os.sep, "/")
+            if not _TEST_PATH_RE.search(rel):
+                continue
+            try:
+                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
+            except SyntaxError:
+                continue
+            _TestRefFinder(refs).visit(tree)
+    return refs
+
+
+def _uncovered_via_ast(repo: Path, module: str | None = None) -> tuple[set[str], str | None]:
+    """Independent AST oracle for the ``uncovered`` check: public symbols no test references (review C-2).
+
+    Mirrors scan-query ``cmd_uncovered`` independently: a public symbol (per :func:`_is_public_qualname`,
+    no leading-underscore component) in a non-test module is *uncovered* when its simple name is not
+    referenced by any test module — neither called/accessed (``fn_rdep_test_count`` analogue) nor named
+    in a ``patch(...)`` string target (``mock_rdep_count`` analogue). Qualified names are module-relative
+    (``Class.method`` / ``func`` / ``Class``), matching scan-query's ``qualified_name`` field.
+
+    Approximate like the caller oracle: coverage is matched by the symbol's simple name, so it
+    over-approximates *coverage* (a same-named symbol referenced anywhere by a test marks all of them
+    covered) — i.e. it may under-report uncovered symbols. Divergence from scan-query is surfaced
+    loudly by the caller; scan-query is never used as the ground truth.
+
+    Args:
+        repo: Repository root directory.
+        module: Optional dotted module name to restrict the scan to; None scans every non-test module.
+
+    Returns:
+        (uncovered_qualnames, error_reason) — error is None on success, a short message when a
+        requested ``module`` cannot be resolved to a file.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "m.py").write_text("def orphan():\\n    pass\\n\\n\\ndef used():\\n    pass\\n")
+        ...     tests = repo / "tests"; tests.mkdir()
+        ...     _ = (tests / "test_m.py").write_text("def test_it():\\n    used()\\n")
+        ...     syms, err = _uncovered_via_ast(repo)
+        >>> sorted(syms), err
+        (['orphan'], None)
+    """
+    referenced = _collect_test_references(repo)
+    files, error = _resolve_module_files(repo, module)
+    if error:
+        return set(), error
+    public: set[str] = set()
+    for fpath in files:
+        rel = str(fpath.relative_to(repo)).replace(os.sep, "/")
+        if _TEST_PATH_RE.search(rel):
+            continue
+        try:
+            tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
+        except SyntaxError:
+            continue
+        _PublicSymbolFinder(public).visit(tree)
+    uncovered = {qname for qname in public if qname.split(".")[-1] not in referenced}
+    return uncovered, None
+
+
 def _warn_ast_divergence(task_id: str, kind: str, ast_only: list[str], scan_only: list[str]) -> None:
     """Print a loud warning when the AST oracle and scan-query disagree (potential plugin bug).
 
@@ -421,8 +749,10 @@ def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
 
     # AST oracle is AUTHORITATIVE for caller lists (review C-2): scan-query fn-rdeps is the
     # very tool the codemap arm invokes, so grading it against its own output is circular.
-    # The independent AST walk is the ground truth; scan-query is demoted to a diagnostic.
-    ast_callers, _ast_err = _callers_via_ast(primary_fn, repo)
+    # The QUALIFIED AST walk (receiver-resolved) is the ground truth — the loose simple-name walk
+    # over-approximates (same-named methods in unrelated classes) and is kept only as a diagnostic
+    # (review N1). Module paths are namespace-normalized (no `src.` prefix) and test modules excluded.
+    ast_callers, ast_loose, _ast_err = _walk_caller_sets(primary_fn, repo, _REPO_NAMESPACE)
     callers = sorted(ast_callers)
     unique_count = len(callers)
 
@@ -433,11 +763,12 @@ def _validate_fn(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, d
     _warn_ast_divergence(task.get("id", "?"), "fn-rdeps callers", ast_only, scan_only)
 
     live_gt: dict[str, Any] = {
-        "fn_callers": callers,  # AUTHORITATIVE — AST oracle
+        "fn_callers": callers,  # AUTHORITATIVE — qualified AST oracle (receiver-resolved)
         "unique_caller_count": unique_count,
         "exclude_tests": gt.get("exclude_tests", False),
         "note": gt.get("note", "static edges only (import/local/self-resolved); dynamic dispatch excluded by design"),
         "fn_callers_scan": scan_callers,  # diagnostic — output of the tool under test
+        "fn_callers_ast_loose": sorted(ast_loose),  # diagnostic — simple-name over-approximation (review N1)
         "scan_caller_count": len(scan_callers),
         "raw_caller_count": raw_count,  # diagnostic — scan-query `count` field
         "ast_divergence": {
@@ -612,6 +943,60 @@ def _validate_undocumented_ast(
     return problems, ""
 
 
+def _validate_uncovered_ast(
+    task: dict,
+    gt: dict,
+    module: str | None,
+    scan_count: int,
+    scan_syms: list[str],
+    repo: Path,
+    live_gt: dict[str, Any],
+) -> tuple[list[str], str]:
+    """Validate a pure ``uncovered`` check against the independent AST oracle (review C-2 remainder).
+
+    The AST oracle (:func:`_uncovered_via_ast`) is authoritative; scan-query output is stored under
+    ``*_scan`` diagnostic keys only. Mutates ``live_gt`` in place with both authoritative and
+    diagnostic values, and warns loudly on divergence. Mirrors :func:`_validate_undocumented_ast`.
+
+    Args:
+        task: Task dict (used for its id in divergence warnings).
+        gt: Existing ground_truth to compare against.
+        module: Dotted module name to scope the AST scan to, or None for repo-wide.
+        scan_count: ``total`` reported by scan-query (diagnostic).
+        scan_syms: Symbol list reported by scan-query (diagnostic).
+        repo: Repository root directory.
+        live_gt: Live ground-truth dict, mutated in place.
+
+    Returns:
+        (problems, error_reason). ``error_reason`` is non-empty only when the AST oracle could not
+        resolve the requested module (caller returns a hard failure).
+    """
+    ast_syms, ast_err = _uncovered_via_ast(repo, module)
+    if ast_err:
+        return [], f"uncovered AST oracle failed: {ast_err}"
+    live_syms = sorted(ast_syms)
+    live_gt["uncovered_count"] = len(live_syms)
+    live_gt["uncovered_symbols"] = live_syms
+    live_gt["uncovered_count_scan"] = scan_count
+    live_gt["uncovered_symbols_scan"] = scan_syms
+    scan_set = set(scan_syms)
+    _warn_ast_divergence(
+        task.get("id", "?"), "uncovered symbols", sorted(ast_syms - scan_set), sorted(scan_set - ast_syms)
+    )
+
+    problems: list[str] = []
+    expected_count = gt.get("uncovered_count", 0)
+    expected_syms = set(gt.get("uncovered_symbols", []))
+    if len(live_syms) != expected_count:
+        problems.append(f"uncovered_count (AST oracle): expected {expected_count}, got {len(live_syms)}")
+    if ast_syms != expected_syms:
+        problems.append(
+            f"uncovered_symbols (AST oracle) mismatch: missing={sorted(expected_syms - ast_syms)[:3]}, "
+            f"extra={sorted(ast_syms - expected_syms)[:3]}"
+        )
+    return problems, ""
+
+
 def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
     """Validate code_quality task ground truth.
 
@@ -660,29 +1045,27 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             live_gt["undocumented_symbols"] = scan_syms
 
     if check in ("uncovered", "combined_health"):
-        # TODO(review C-2): uncovered GT still scan-query-derived (circular) — needs independent oracle.
         q = next((q for q in expected_queries if q["cmd"] == "uncovered"), None)
         if q is None:
             return False, None, "no uncovered query found"
         data = run_scan_query(sq, ["uncovered"] + q.get("args", []), index, repo)
         if data is None:
             return False, None, "scan-query uncovered returned None"
-        live_count = data.get("total", 0)
-        live_syms = [e.get("qualified_name", "") for e in data.get("uncovered", [])]
-        live_gt["uncovered_count"] = live_count
-        live_gt["uncovered_symbols"] = live_syms
-        if check != "combined_health":
-            expected_count = gt.get("uncovered_count", 0)
-            expected_syms = gt.get("uncovered_symbols", [])
-            if live_count != expected_count:
-                problems.append(f"uncovered_count: expected {expected_count}, got {live_count}")
-            if set(live_syms) != set(expected_syms):
-                exp_set = set(expected_syms)
-                live_set = set(live_syms)
-                problems.append(
-                    f"uncovered_symbols mismatch: missing={sorted(exp_set - live_set)[:3]}, "
-                    f"extra={sorted(live_set - exp_set)[:3]}"
-                )
+        scan_count = data.get("total", 0)
+        scan_syms = [e.get("qualified_name", "") for e in data.get("uncovered", [])]
+        if check == "uncovered":
+            # AST oracle is authoritative (review C-2 remainder) — scan-query is the tool under test.
+            module = next((a for a in q.get("args", []) if not str(a).startswith("-")), None)
+            uncov_problems, uncov_err = _validate_uncovered_ast(task, gt, module, scan_count, scan_syms, repo, live_gt)
+            if uncov_err:
+                return False, None, uncov_err
+            problems.extend(uncov_problems)
+        else:
+            # TODO(review C-2 remainder): combined_health bundles undocumented+uncovered and its
+            # uncovered slice is still scan-query-derived (circular). The pure `uncovered` check
+            # above is now oracle-backed; combined_health refreshes only via --update-from-tool.
+            live_gt["uncovered_count"] = scan_count
+            live_gt["uncovered_symbols"] = scan_syms
 
     if check == "combined_health":
         # Validate both counts and symbol sets together
@@ -725,7 +1108,17 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
             )
 
     if check == "xrefs_broken":
-        # TODO(review C-2): xrefs GT still scan-query-derived (circular) — needs independent oracle.
+        # TODO(review C-2 remainder): xrefs_broken GT remains scan-query-derived (circular). A faithful
+        # independent oracle is out of scope here because scan-query reads `sphinx_xrefs[*].target`
+        # values that scan-index ALREADY resolved to `module::name` keys at index-build time (parsing
+        # `:func:`/`:class:`/`:meth:`/`:exc:`/`mkdocs` roles, stripping `~`, resolving relative/current-
+        # module refs). Reproducing that normalization independently means re-implementing scan-index's
+        # `_SPHINX_RESOLVABLE_ROLES` extraction + target resolution against an AST-built symbol map — a
+        # different (likely divergent) normalization would make the oracle non-comparable rather than
+        # independent. What is missing precisely: (1) an AST docstring-role parser emitting raw targets;
+        # (2) a faithful re-implementation of scan-index's raw-target → `module::name` normalization;
+        # (3) an AST symbol-map builder to resolve `broken = target not in symbol_map`. Until (1)-(3)
+        # exist, xrefs_broken stays behind --update-from-tool (see _update_is_oracle_backed).
         q = expected_queries[0]
         data = run_scan_query(sq, ["xrefs"] + q.get("args", []), index, repo)
         if data is None:
@@ -793,14 +1186,17 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
 # other type is scan-query-derived (circular) and requires --update-from-tool (review C-3).
 _ORACLE_BACKED_TYPES: frozenset[str] = frozenset({"fn_call_graph", "develop_blast_radius"})
 
+# code_quality checks with a dedicated independent AST oracle (review C-2 / C-2 remainder).
+_ORACLE_BACKED_CQ_CHECKS: frozenset[str] = frozenset({"undocumented", "uncovered"})
+
 
 def _update_is_oracle_backed(task: dict) -> bool:
     """Return True when this task's refreshed ground truth is AST-oracle-derived, not circular.
 
-    Oracle-backed: fn_call_graph / develop_blast_radius (AST caller oracle) and the pure
-    ``undocumented`` code_quality check (AST docstring oracle). Everything else — symbol
-    line ranges, review_assistance, coupled / uncovered / xrefs / combined_health — is
-    refreshed from scan-query output and is therefore circular (review C-3).
+    Oracle-backed: fn_call_graph / develop_blast_radius (qualified AST caller oracle) and the
+    ``undocumented`` (AST docstring oracle) and ``uncovered`` (AST test-reference oracle) code_quality
+    checks. Everything else — symbol line ranges, review_assistance, coupled / xrefs_broken /
+    combined_health — is refreshed from scan-query output and is therefore circular (review C-3).
 
     Examples:
         >>> _update_is_oracle_backed({"type": "fn_call_graph"})
@@ -808,6 +1204,8 @@ def _update_is_oracle_backed(task: dict) -> bool:
         >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "undocumented"}})
         True
         >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "uncovered"}})
+        True
+        >>> _update_is_oracle_backed({"type": "code_quality", "ground_truth": {"check": "xrefs_broken"}})
         False
         >>> _update_is_oracle_backed({"type": "review_assistance"})
         False
@@ -815,7 +1213,7 @@ def _update_is_oracle_backed(task: dict) -> bool:
     ttype = task.get("type", "")
     if ttype in _ORACLE_BACKED_TYPES:
         return True
-    return ttype == "code_quality" and task.get("ground_truth", {}).get("check") == "undocumented"
+    return ttype == "code_quality" and task.get("ground_truth", {}).get("check") in _ORACLE_BACKED_CQ_CHECKS
 
 
 def _warn_circular_update(task_id: str, existing_gt: dict, live_gt: dict) -> None:
@@ -902,9 +1300,9 @@ def main(
         index_path: Path to pre-built index JSON.
         task: Validate only this task ID (e.g. SE-01).
         update: Refresh ground truth from independent (AST) oracles only. fn_call_graph /
-            develop_blast_radius and the pure ``undocumented`` code_quality check refresh;
-            scan-query-derived types (symbol lines, review_assistance, coupled / uncovered /
-            xrefs / combined_health) are skipped unless ``update_from_tool`` is also set.
+            develop_blast_radius and the ``undocumented`` / ``uncovered`` code_quality checks refresh;
+            scan-query-derived types (symbol lines, review_assistance, coupled / xrefs_broken /
+            combined_health) are skipped unless ``update_from_tool`` is also set.
         update_from_tool: Also refresh scan-query-derived ground truth (circular — the tool
             under test grades itself). Prints a loud circularity warning and an existing→live
             diff per task before writing. Use only for deliberate re-baselining (review C-3).
@@ -936,6 +1334,12 @@ def main(
         repo_meta = {}
         tasks = _raw
         _tasks_wrapper = None
+
+    # Namespace drives AST-oracle module-path normalization (review N1) — read from the repo header
+    # so `--update` writes FN/BR ground truth in the repo's real namespace, not a hardcoded one.
+    global _REPO_NAMESPACE
+    if repo_meta.get("namespace"):
+        _REPO_NAMESPACE = list(repo_meta["namespace"])
 
     # Resolve repo path
     if repo_path:

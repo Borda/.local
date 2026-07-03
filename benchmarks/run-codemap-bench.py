@@ -148,6 +148,10 @@ class BenchQuality:
         metric_got: Value extracted from model output; None when extraction failed.
         recall: Optional evaluator-specific recall metric; set by develop_br, rv (symbol tasks), debug, feature, and real_issue evaluators. None for count-based evaluators (symbol_extraction, code_quality).
         caller_count_gt: Ground-truth unique caller count; used by caller-list evaluators for both fn_call_graph and develop_blast_radius.
+        extraction_degraded: True when structured-block scoring (review H-1) could not find a
+            labeled answer block (e.g. ``## Files`` / ``## Callers``) and fell back to matching
+            against the full output text. Diagnostic only — a degraded match still counts, but the
+            flag surfaces that the stricter block-scoped match was unavailable for the run.
         evaluator_used: Name of the evaluator function that produced this score
             (diagnostic; None when no evaluator ran).
         extracted_metric: Raw value pulled from output_text before comparison — an
@@ -165,6 +169,7 @@ class BenchQuality:
     recall: float | None = None
     caller_count_gt: int | None = None
     extraction_failed: bool = False
+    extraction_degraded: bool = False
     evaluator_used: str | None = None
     evaluator_version: str | None = None
     extracted_metric: Any = None
@@ -217,6 +222,9 @@ class BenchRun:
     bash_calls: int = 0
     read_calls: int = 0
     scan_query_calls: int = 0
+    contamination_hits: int = (
+        0  # plain arm only: full-string reads/execs touching the codemap index or binary (review H-2)
+    )
     scan_query_subcommands: dict[str, int] = field(default_factory=dict)
     turn_count: int = 0
     incomplete: bool = False  # budget exhausted before final answer; excluded from accuracy
@@ -246,6 +254,8 @@ For symbol location tasks: report exactly in this format:
   file_path: <path>  start_line: <N>  end_line: <M>
 For caller count tasks: report the integer count of unique production callers.
 For caller list tasks: report all callers as a list of qualified names (module::function).
+For file-identification tasks (debugging, feature scaffolding, issue triage): put the relevant files under a `## Files` heading, one repository-relative path per line (e.g. `pkg/sub/module.py`), not a bare filename.
+For symbol-review tasks (undocumented / uncovered symbols): put the symbols under a `## Symbols` heading, one qualified name per line.
 
 Be concise and precise. State the exact values you found (counts, line numbers, module names)."""
 
@@ -470,6 +480,31 @@ def _subprocess_env(index_path: Path) -> dict[str, str]:
     return env
 
 
+# review H-2 — markers that betray plain-arm access to the codemap index or binary. Matched against
+# the FULL untruncated tool input (Bash command / Read path) in _handle, not the truncated tool_log:
+# the prebuilt index at .cache/{codemap,scan}/*.json holds every structural answer, so a raw Read/cat
+# of it lets the control arm self-serve answers without ever calling scan-query.
+_CONTAMINATION_MARKERS: tuple[str, ...] = ("scan-query", "codemap/bin", ".cache/codemap", ".cache/scan")
+
+
+def _is_contaminating_access(text: str) -> bool:
+    """Return True when *text* touches the codemap index or binary (review H-2).
+
+    Args:
+        text: A full Bash command string or a Read ``file_path`` (untruncated).
+
+    Returns:
+        True when any :data:`_CONTAMINATION_MARKERS` substring is present.
+
+    Examples:
+        >>> _is_contaminating_access("cat /repo/.cache/codemap/proj.json")
+        True
+        >>> _is_contaminating_access("grep -rn Trainer src/")
+        False
+    """
+    return any(marker in text for marker in _CONTAMINATION_MARKERS)
+
+
 # Subcommands recognised by scan-query (mirrors the _CODEMAP_TOOLS help block).
 _SCAN_QUERY_SUBCOMMANDS: frozenset[str] = frozenset(
     {
@@ -542,11 +577,122 @@ def _parse_scan_query_subcommand(command: str) -> Optional[str]:
 
 _EVAL_VER_NAME_RECALL = "v4"  # _evaluate_develop_br (v4: Form 11 bare Class.method fallback)
 _EVAL_VER_SYMBOL = "v1"  # _evaluate_symbol
-_EVAL_VER_REVIEW = "v2"  # _evaluate_rv — recall-only for symbol-bearing tasks
+_EVAL_VER_REVIEW = "v3"  # _evaluate_rv — v3: structured-block + stem-blocklist matching (review H-1)
 _EVAL_VER_OSS = "v1"  # _evaluate_oss
-_EVAL_VER_DEBUG = "v1"  # _evaluate_debug
-_EVAL_VER_FEATURE = "v1"  # _evaluate_feature
-_EVAL_VER_REAL_ISSUE = "v1"  # _evaluate_real_issue
+_EVAL_VER_DEBUG = "v2"  # _evaluate_debug — v2: structured-block + stem-blocklist matching (review H-1)
+_EVAL_VER_FEATURE = "v2"  # _evaluate_feature — v2: structured-block + stem-blocklist matching (review H-1)
+_EVAL_VER_REAL_ISSUE = "v2"  # _evaluate_real_issue — v2: path-with-parent matching in answer block (review H-1)
+
+# review H-1 — substring-inflation guard. Common single-token file/symbol stems that saturate any
+# discussion of the target repo (a bare mention of `trainer` in prose is a free hit). These must
+# appear as a QUALIFIED reference — pathed (`.../trainer`), dotted (`x.trainer`), or with a `.py`
+# suffix — to count; a bare word never does. Applied symmetrically to both arms (scoring is arm-agnostic).
+_STEM_BLOCKLIST: frozenset[str] = frozenset({"trainer", "utils", "core", "types", "base"})
+
+# Section headings that mark the start of a structured answer block. Matching is restricted to text
+# AT OR AFTER the earliest such heading so exploration prose before the final answer cannot score.
+_ANSWER_LABELS_FILES: tuple[str, ...] = ("files", "root cause", "root-cause", "answer")
+_ANSWER_LABELS_SYMBOLS: tuple[str, ...] = ("symbols", "undocumented", "uncovered", "answer")
+
+
+def _answer_region(output_text: str, labels: tuple[str, ...]) -> tuple[str, bool]:
+    """Return the structured answer block of *output_text*, or the full text when none is present.
+
+    Locates the earliest line that is a bare answer heading — a markdown header (``## Files``) or a
+    labelled line (``Files:`` / ``**Files**``) whose only content is one of *labels* — and returns
+    everything from there to the end. When no such heading exists the full text is returned with a
+    ``degraded`` flag so callers can record that block-scoped matching was unavailable (review H-1).
+
+    Args:
+        output_text: The agent's full response text.
+        labels: Candidate heading labels for this evaluator family (case-insensitive).
+
+    Returns:
+        ``(region, degraded)`` — ``region`` is the answer block (or full text); ``degraded`` is True
+        only when no heading matched and the full text was used as a fallback.
+
+    Examples:
+        >>> _answer_region("exploring trainer\\n## Files\\npkg/mod.py\\n", ("files",))
+        ('## Files\\npkg/mod.py\\n', False)
+        >>> region, degraded = _answer_region("just prose about trainer", ("files",))
+        >>> degraded
+        True
+    """
+    earliest: Optional[int] = None
+    for label in labels:
+        pat = rf"(?im)^[ \t]*(?:#{{1,6}}[ \t]*)?\*{{0,2}}[ \t]*{re.escape(label)}[ \t]*:?[ \t]*\*{{0,2}}[ \t]*$"
+        m = re.search(pat, output_text)
+        if m and (earliest is None or m.start() < earliest):
+            earliest = m.start()
+    if earliest is None:
+        return output_text, True
+    return output_text[earliest:], False
+
+
+def _stem_matches(stem: str, region: str) -> bool:
+    """Return True when *stem* is present in *region* as a countable reference (review H-1).
+
+    Blocklisted ultra-common stems (:data:`_STEM_BLOCKLIST`) count only as a qualified reference —
+    preceded by ``/`` or ``.`` (a path or dotted name) or carrying a ``.py`` suffix — never as a bare
+    word. All other stems count on a plain word-boundary match.
+
+    Args:
+        stem: File stem or symbol short name to look for.
+        region: Text to search (typically the structured answer block).
+
+    Returns:
+        True when a countable reference to *stem* is found.
+
+    Examples:
+        >>> _stem_matches("trainer", "the trainer orchestrates the loop")
+        False
+        >>> _stem_matches("trainer", "see trainer.py for details")
+        True
+        >>> _stem_matches("fit_loop", "the fit_loop advances")
+        True
+    """
+    esc = re.escape(stem)
+    if stem in _STEM_BLOCKLIST:
+        return bool(
+            re.search(r"[/.]" + esc + r"\b", region, re.IGNORECASE)
+            or re.search(r"\b" + esc + r"\.py\b", region, re.IGNORECASE)
+        )
+    return bool(re.search(r"\b" + esc + r"\b", region, re.IGNORECASE))
+
+
+def _ri_file_matches(file_path: str, region: str) -> bool:
+    """Return True when *file_path* is referenced in *region* by a pathed form (review H-1).
+
+    A real_issue file counts only via its full repository-relative path or a path-with-parent form
+    (``connectors/logger_connector``) — never a bare basename stem, which for common names (``trainer``)
+    is a near-free hit. Leading ``src/`` layout prefixes and the ``.py`` suffix are treated as optional.
+
+    Args:
+        file_path: Repository-relative ground-truth path (e.g. ``src/pkg/connectors/logger_connector.py``).
+        region: Text to search (typically the structured answer block).
+
+    Returns:
+        True when any pathed candidate for *file_path* appears in *region*.
+
+    Examples:
+        >>> _ri_file_matches("src/pkg/connectors/logger_connector.py", "edit connectors/logger_connector")
+        True
+        >>> _ri_file_matches("src/pkg/trainer.py", "the trainer handles this")
+        False
+    """
+    parts = file_path.split("/")
+    stem = parts[-1][:-3] if parts[-1].endswith(".py") else parts[-1]
+    candidates: set[str] = {file_path}
+    if file_path.endswith(".py"):
+        candidates.add(file_path[:-3])
+    if file_path.startswith("src/"):
+        candidates.add(file_path[4:])
+        if file_path.endswith(".py"):
+            candidates.add(file_path[4:-3])
+    if len(parts) >= 2:
+        candidates.add(f"{parts[-2]}/{parts[-1]}")
+        candidates.add(f"{parts[-2]}/{stem}")
+    return any(cand in region for cand in candidates)
 
 
 def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
@@ -753,7 +899,10 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
         # Symbol-bearing tasks (RV-01, RV-05): recall is the primary gate.
         # Count check removed: non-anchored regex grabs stray numbers from verbose
         # codemap output, causing false fails when recall is perfect.
-        found = sum(1 for s in syms if re.search(r"\b" + re.escape(s.split(".")[-1]) + r"\b", output_text))
+        # review H-1: match symbol short names inside the structured answer block only, and require
+        # blocklisted stems to appear as a qualified reference — a bare `trainer` in prose never counts.
+        region, degraded = _answer_region(output_text, _ANSWER_LABELS_SYMBOLS)
+        found = sum(1 for s in syms if _stem_matches(s.split(".")[-1], region))
         recall_val = found / max(len(syms), 1)
         got_count = _extract_int(output_text, _count_patterns) if expected_count is not None else None
         correct = recall_val >= 0.70
@@ -763,6 +912,7 @@ def _evaluate_rv(task: dict, output_text: str) -> BenchQuality:
             metric_expected=len(syms),
             metric_got=found,
             recall=round(recall_val, 3),
+            extraction_degraded=degraded,
             evaluator_used="_evaluate_rv",
             evaluator_version=_EVAL_VER_REVIEW,
             extracted_metric={"symbols_found": found, "count_got": got_count},
@@ -1190,8 +1340,11 @@ def _evaluate_debug(task: dict, output_text: str) -> BenchQuality:
     file_path: str = gt.get("file", "")
     file_stem = file_path.split("/")[-1].replace(".py", "")
 
-    fn_found = bool(fn_name) and bool(re.search(r"\b" + re.escape(fn_name) + r"\b", output_text, re.IGNORECASE))
-    file_found = bool(file_stem) and bool(re.search(r"\b" + re.escape(file_stem) + r"\b", output_text, re.IGNORECASE))
+    # review H-1: score inside the structured answer block; require blocklisted file stems to appear
+    # as a qualified reference (`x.py` or a path), never as a bare prose word.
+    region, degraded = _answer_region(output_text, _ANSWER_LABELS_FILES)
+    fn_found = bool(fn_name) and bool(re.search(r"\b" + re.escape(fn_name) + r"\b", region, re.IGNORECASE))
+    file_found = bool(file_stem) and _stem_matches(file_stem, region)
 
     total = sum([bool(fn_name), bool(file_stem)])
     hits = sum([fn_found, file_found])
@@ -1202,6 +1355,7 @@ def _evaluate_debug(task: dict, output_text: str) -> BenchQuality:
         correct=fn_found and file_found,
         recall=round(recall, 3),
         extraction_failed=not fn_found and not file_found,
+        extraction_degraded=degraded,
         evaluator_used="_evaluate_debug",
         evaluator_version=_EVAL_VER_DEBUG,
         scoring_detail={
@@ -1210,7 +1364,7 @@ def _evaluate_debug(task: dict, output_text: str) -> BenchQuality:
             "file": file_path,
             "file_found": file_found,
             "recall": recall,
-            "method": "word_boundary_match",
+            "method": "answer_block_stem_match",
         },
     )
 
@@ -1234,8 +1388,10 @@ def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
     method = entry_point.split(".")[-1] if "." in entry_point else entry_point
     file_stem = primary_file.split("/")[-1].replace(".py", "")
 
-    ep_found = bool(method) and bool(re.search(r"\b" + re.escape(method) + r"\b", output_text, re.IGNORECASE))
-    file_found = bool(file_stem) and bool(re.search(r"\b" + re.escape(file_stem) + r"\b", output_text, re.IGNORECASE))
+    # review H-1: score inside the structured answer block; blocklisted file stems must be qualified.
+    region, degraded = _answer_region(output_text, _ANSWER_LABELS_FILES)
+    ep_found = bool(method) and bool(re.search(r"\b" + re.escape(method) + r"\b", region, re.IGNORECASE))
+    file_found = bool(file_stem) and _stem_matches(file_stem, region)
 
     total = sum([bool(entry_point), bool(primary_file)])
     hits = sum([ep_found, file_found])
@@ -1246,6 +1402,7 @@ def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
         correct=ep_found and file_found,
         recall=round(recall, 3),
         extraction_failed=not ep_found and not file_found,
+        extraction_degraded=degraded,
         evaluator_used="_evaluate_feature",
         evaluator_version=_EVAL_VER_FEATURE,
         scoring_detail={
@@ -1254,7 +1411,7 @@ def _evaluate_feature(task: dict, output_text: str) -> BenchQuality:
             "primary_file": primary_file,
             "file_found": file_found,
             "recall": recall,
-            "method": "word_boundary_match",
+            "method": "answer_block_stem_match",
         },
     )
 
@@ -1265,8 +1422,9 @@ _RI_RECALL_THRESHOLD = 0.70
 def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
     """Evaluate real_issue task: file-set recall over ground_truth.files_changed.
 
-    Recall = |GT file basenames found as whole words in output| / |GT files|.
-    Correct when recall >= 0.70.
+    Recall = |GT files referenced by a pathed form in the answer block| / |GT files|.
+    A file counts only via its full relative path or a path-with-parent form (review H-1) — a bare
+    basename stem no longer scores. Correct when recall >= 0.70.
 
     Args:
         task: Task dict with ground_truth.files_changed list.
@@ -1280,12 +1438,10 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
     if not gt_files:
         return BenchQuality(scored=False)
 
-    found = sum(
-        1
-        for fp in gt_files
-        if (stem := fp.split("/")[-1].replace(".py", ""))
-        and re.search(r"\b" + re.escape(stem) + r"\b", output_text, re.IGNORECASE)
-    )
+    # review H-1: require a full relative path or path-with-parent inside the structured answer block —
+    # a bare basename stem (`trainer`) is a near-free hit and no longer counts.
+    region, degraded = _answer_region(output_text, _ANSWER_LABELS_FILES)
+    found = sum(1 for fp in gt_files if _ri_file_matches(fp, region))
     recall = found / len(gt_files)
 
     return BenchQuality(
@@ -1295,6 +1451,7 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
         metric_expected=len(gt_files),
         metric_got=found,
         extraction_failed=found == 0,
+        extraction_degraded=degraded,
         evaluator_used="_evaluate_real_issue",
         evaluator_version=_EVAL_VER_REAL_ISSUE,
         scoring_detail={
@@ -1302,7 +1459,7 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
             "files_found": found,
             "recall": recall,
             "threshold": _RI_RECALL_THRESHOLD,
-            "method": "word_boundary_match",
+            "method": "answer_block_path_match",
         },
     )
 
@@ -1601,13 +1758,16 @@ class BenchRunner:
             if evaluator is not None:
                 result.quality = evaluator(task, result.output_text)
             # Contamination guards:
-            #  - plain arm: detect codemap binary access that bypassed the disallow list
-            #    (e.g. invoked via python3 path instead of bare scan-query).
+            #  - plain arm: detect codemap binary OR prebuilt-index access that bypassed the disallow
+            #    list — either invoked via python3 path instead of bare scan-query, or a raw
+            #    Read/cat of .cache/{codemap,scan}/*.json (the full structural answer). The primary
+            #    signal is result.contamination_hits, counted in _handle against the FULL untruncated
+            #    tool input (review H-2); the truncated tool_log scan is kept as a fallback.
             #  - either arm: detect reads of ground-truth answer files (tasks-bench.json,
             #    benchmark results) which would let the agent copy the expected answer.
-            _CODEMAP_MARKERS = ("scan-query", "codemap/bin")
             _ANSWER_MARKERS = ("tasks-bench", "benchmarks/results", "/benchmarks/")
-            if arm == "plain" and any(marker in entry for entry in result.tool_log for marker in _CODEMAP_MARKERS):
+            _log_contaminated = any(marker in entry for entry in result.tool_log for marker in _CONTAMINATION_MARKERS)
+            if arm == "plain" and (result.contamination_hits > 0 or _log_contaminated):
                 result.error = "contaminated"
                 result.quality = BenchQuality(scored=False)
             elif any(marker in entry for entry in result.tool_log for marker in _ANSWER_MARKERS):
@@ -1728,6 +1888,48 @@ class BenchRunner:
             except (json.JSONDecodeError, AttributeError):
                 pass
 
+    @staticmethod
+    def _record_tool_use(name: str, inp: dict, result: BenchRun) -> None:
+        """Record one tool_use block into *result*: per-tool counters, contamination, and tool_log.
+
+        Args:
+            name: Tool name (e.g. "Grep", "Bash", "Read", "Skill").
+            inp: The tool_use ``input`` dict.
+            result: BenchRun to update in-place.
+        """
+        if name == "Grep":
+            result.grep_calls += 1
+            result.tool_log.append(f"Grep: {inp.get('pattern', '')[:60]!r}")
+        elif name == "Bash":
+            result.bash_calls += 1
+            cmd = inp.get("command", "")
+            if "scan-query" in cmd or "codemap/bin" in cmd:
+                result.scan_query_calls += 1
+                sub = _parse_scan_query_subcommand(cmd)
+                if sub is not None:
+                    result.scan_query_subcommands[sub] = result.scan_query_subcommands.get(sub, 0) + 1
+            # review H-2: count index/binary access on the FULL command (plain arm only).
+            if result.arm == "plain" and _is_contaminating_access(cmd):
+                result.contamination_hits += 1
+            result.tool_log.append(f"Bash: {cmd[:80]}")
+        elif name == "Read":
+            result.read_calls += 1
+            file_path = inp.get("file_path", "")
+            # review H-2: a plain-arm Read of the prebuilt index is contamination; check the FULL
+            # untruncated path before it is clipped for the display log.
+            if result.arm == "plain" and _is_contaminating_access(file_path):
+                result.contamination_hits += 1
+            result.tool_log.append(f"Read: {file_path[:60]}")
+        elif name == "Skill":
+            result.skill_calls += 1
+            _sk = inp.get("skill", "") or ""
+            _sk_short = _sk.split(":")[-1] if ":" in _sk else _sk
+            result.skill_counts[_sk_short] = result.skill_counts.get(_sk_short, 0) + 1
+            result.tool_log.append(f"Skill: {_sk} {inp.get('args', '')}".strip())
+        else:
+            first_val = next((v for v in inp.values() if isinstance(v, str)), "") if inp else ""
+            result.tool_log.append(f"{name}: {first_val[:50]}" if first_val else name)
+
     def _handle(self, event: dict, result: BenchRun, pending: dict[str, float], ts: float) -> None:
         """Route a single stream-json event to the appropriate handler.
 
@@ -1745,35 +1947,8 @@ class BenchRunner:
                 if block.get("type") == "text":
                     result.output_text += block.get("text", "")
                 elif block.get("type") == "tool_use":
-                    name = block.get("name", "")
-                    inp = block.get("input", {})
-                    tool_id = block.get("id", "")
-                    pending[tool_id] = ts
-                    if name == "Grep":
-                        result.grep_calls += 1
-                        key = inp.get("pattern", "")[:60]
-                        result.tool_log.append(f"Grep: {key!r}")
-                    elif name == "Bash":
-                        result.bash_calls += 1
-                        cmd = inp.get("command", "")
-                        if "scan-query" in cmd or "codemap/bin" in cmd:
-                            result.scan_query_calls += 1
-                            sub = _parse_scan_query_subcommand(cmd)
-                            if sub is not None:
-                                result.scan_query_subcommands[sub] = result.scan_query_subcommands.get(sub, 0) + 1
-                        result.tool_log.append(f"Bash: {cmd[:80]}")
-                    elif name == "Read":
-                        result.read_calls += 1
-                        result.tool_log.append(f"Read: {inp.get('file_path', '')[:60]}")
-                    elif name == "Skill":
-                        result.skill_calls += 1
-                        _sk = inp.get("skill", "") or ""
-                        _sk_short = _sk.split(":")[-1] if ":" in _sk else _sk
-                        result.skill_counts[_sk_short] = result.skill_counts.get(_sk_short, 0) + 1
-                        result.tool_log.append(f"Skill: {_sk} {inp.get('args', '')}".strip())
-                    else:
-                        first_val = next((v for v in inp.values() if isinstance(v, str)), "") if inp else ""
-                        result.tool_log.append(f"{name}: {first_val[:50]}" if first_val else name)
+                    pending[block.get("id", "")] = ts
+                    self._record_tool_use(block.get("name", ""), block.get("input", {}) or {}, result)
 
         elif etype == "user":
             for block in event.get("message", {}).get("content", []):

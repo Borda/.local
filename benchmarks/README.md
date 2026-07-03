@@ -298,14 +298,14 @@ ______________________________________________________________________
 
 Validates `scan-query` directly — no LLM involved. Requires a pre-built index.
 
-Seven suites always run together:
+Seven suites run together, split into two tracks. **Primary** suites (C / A / L / Q) decide the verdict. **Self-consistency** suites (S / H / X) validate scan-query against ground truth that is itself partly scan-query-derived — they check determinism, not independent correctness, and are reported separately (excluded from the verdict).
 
 | Suite           | Codes                      | What it measures                                                                    |
 | --------------- | -------------------------- | ----------------------------------------------------------------------------------- |
-| **C** Coverage  | C1 C2 C3                   | Fraction of known importers found by codemap vs cold grep                           |
-| **A** Accuracy  | A1 A2 A3                   | Precision / recall / F1 on rdeps queries against grep ground truth                  |
+| **C** Coverage | C1 C2 C3 | AST-verified importers codemap finds beyond boundary-anchored grep (real set comparison since 2026-07-03) |
+| **A** Accuracy | A1 A2 A3 | Precision (vs AST-verified importer oracle) + recall floor (vs boundary-anchored grep) on rdeps queries — codemap is not penalized for importers grep cannot see |
 | **L** Latency   | L1 L2 L3 L4                | Wall-clock time for `central`, `rdeps`, index build, vs cold grep baseline          |
-| **I** Injection | I_fix I_feature I_refactor | Verifies that develop/oss skills inject `has_rdeps` + `has_deps` fields             |
+| **Q** Query-shape | Q_fix Q_feature Q_refactor | scan-query returns well-formed JSON with the fields develop/oss skills expect (`has_rdeps`+`has_deps`) — shape validation only; does NOT exercise the SKILL.md injection path |
 | **S** Symbol    | S_SE-01..SE-05 S2          | `symbol` command returns correct start/end lines (ground truth: `tasks-bench.json`) |
 | **H** Health    | H_CQ-\* H1 H2              | `undocumented`/`uncovered` totals match `tasks-bench.json` ground truth             |
 | **X** Xrefs     | X_CQ-04 X1                 | `xrefs --broken` count + target set match `tasks-bench.json` ground truth           |
@@ -359,13 +359,15 @@ Index resolution checks `.cache/codemap/<name>.json` first, then `.cache/scan/<n
 | A3            | FP rate < 5%                                                                                                                                                                                |
 | L1            | `central` median < 200 ms                                                                                                                                                                   |
 | L2            | `rdeps` median < 100 ms                                                                                                                                                                     |
-| L3            | amortised index build < 500 ms                                                                                                                                                              |
-| L4            | speedup >= 2x                                                                                                                                                                               |
-| I_fix/feature | JSON valid block present                                                                                                                                                                    |
-| I_refactor    | JSON valid + has_rdeps + has_deps                                                                                                                                                           |
+| L3 | amortised index build < 500 ms — build_ms / QUERIES_PER_SESSION (=10); expected to FAIL on large repos under this honest divisor, and the verdict owns that |
+| L4 | speedup >= 2x (warm-index vs cold grep; gate is warm-only, a build-inclusive variant is reported alongside for honesty) |
+| Q_fix/feature | JSON valid block present |
+| Q_refactor | JSON valid + has_rdeps + has_deps |
 | S\_\* / S2    | symbol found + start_line within +-3 of ground truth                                                                                                                                        |
 | H1 / H2       | undocumented / uncovered total == ground truth (exact)                                                                                                                                      |
 | X1            | xrefs --broken count + target set == ground truth (exact)                                                                                                                                   |
+
+**Scoring honesty (2026-07-03)**: a scan-query error (crash / timeout / missing module) now fails its scenario instead of scoring a false precision=1.0. Accuracy precision is judged against an independent AST importer oracle, not raw grep. S/H/X are a self-consistency track and do not count toward the verdict; the primary verdict has genuine room to fail.
 
 ______________________________________________________________________
 

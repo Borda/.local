@@ -909,32 +909,48 @@ class TestValidateOss:
         assert ok is False
         assert "undocumented_count" in reason
 
-    def test_uncovered_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns (True, ...) when uncovered count and symbols match GT.
+    def _write_uncovered(self, repo: Path, uncovered: list[str], covered: list[str]) -> None:
+        """Write a source module of public functions; a test file references only ``covered``.
 
-        Scenario: check='uncovered'; live result equals stored GT exactly.
+        The AST uncovered oracle (now authoritative) then reports exactly ``uncovered`` — the public
+        functions no test module calls.
         """
-        task = self._task_uncovered(1, ["pkg::orphan"])
-        payload = {"total": 1, "uncovered": [{"qualified_name": "pkg::orphan"}]}
+        body = "\n\n".join(f"def {n}():\n    pass" for n in [*uncovered, *covered]) + "\n"
+        (repo / "m.py").write_text(body)
+        tests = repo / "tests"
+        tests.mkdir(exist_ok=True)
+        calls = "\n".join(f"    {n}()" for n in covered) or "    pass"
+        (tests / "test_m.py").write_text(f"def test_all():\n{calls}\n")
+
+    def test_uncovered_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Returns (True, ...) when the AST oracle's uncovered set matches GT.
+
+        Scenario: check='uncovered'; the authoritative AST test-reference oracle agrees with stored GT.
+        """
+        task = self._task_uncovered(1, ["orphan"])
+        payload = {"total": 1, "uncovered": [{"qualified_name": "orphan"}]}
+        self._write_uncovered(tmp_path, ["orphan"], ["used"])
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is True
+        assert reason == ""
 
     def test_uncovered_fails_on_symbol_mismatch(self, script_gen_bench: Any, tmp_path: Path) -> None:
-        """Returns failure message when uncovered symbol set differs from GT.
+        """Returns failure when the AST oracle's uncovered set differs from GT.
 
-        Scenario: check='uncovered'; live symbols differ from stored set.
+        Scenario: check='uncovered'; a symbol GT expected as uncovered is actually referenced by a test.
         """
-        task = self._task_uncovered(2, ["pkg::a", "pkg::b"])
-        payload = {"total": 2, "uncovered": [{"qualified_name": "pkg::a"}, {"qualified_name": "pkg::c"}]}
+        task = self._task_uncovered(2, ["a", "b"])
+        payload = {"total": 2, "uncovered": [{"qualified_name": "a"}, {"qualified_name": "c"}]}
+        self._write_uncovered(tmp_path, ["a"], ["b"])  # only 'a' is uncovered; 'b' is test-referenced
 
         with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
             ok, _, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
 
         assert ok is False
-        assert "uncovered_symbols" in reason
+        assert "uncovered" in reason
 
     def test_coupled_passes_on_match(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Returns (True, ...) when top coupled module fields match GT.
@@ -1266,6 +1282,78 @@ class TestCallFinderAst:
 
 
 # ===========================================================================
+# _QualifiedCallFinder / _walk_caller_sets (review N1)
+# ===========================================================================
+
+
+class TestQualifiedCallerOracle:
+    """Contract: authoritative caller set resolves receivers; loose set over-approximates (N1)."""
+
+    def test_same_named_method_in_unrelated_class_not_credited(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A `self.bar()` call in an unrelated class is NOT credited as a caller of Foo.bar.
+
+        Scenario: two classes define a `bar` method call; only the one whose enclosing class is the
+        target class resolves. The loose (simple-name) set still contains both — kept as diagnostic.
+        """
+        src = (
+            "class Foo:\n    def caller(self):\n        self.bar()\n\n"
+            "class Baz:\n    def other(self):\n        self.bar()\n"
+        )
+        (tmp_path / "m.py").write_text(src)
+        qualified, loose, err = script_gen_bench._walk_caller_sets("m::Foo.bar", tmp_path, [])
+        assert err is None
+        assert qualified == {"m::Foo.caller"}
+        assert "m::Baz.other" in loose
+
+    def test_direct_class_instantiation_credited(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A `Foo().bar()` reference resolves to the target class and is credited.
+
+        Scenario: a free function instantiates the class and calls the method directly.
+        """
+        (tmp_path / "m.py").write_text("def use():\n    Foo().bar()\n")
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("m::Foo.bar", tmp_path, [])
+        assert qualified == {"m::use"}
+
+    def test_module_function_attribute_call_uses_target_module(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A cross-module `foo.func()` is credited only when `foo` is the TARGET module, not the caller.
+
+        Scenario (N1 challenger fix): the module-level-function branch compares the receiver tail
+        against the target module (`pkg.foo`), never the caller file's own module — so `foo.func()`
+        from pkg.bar IS credited while a same-named `bar.func()` is NOT.
+        """
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "foo.py").write_text("def func():\n    pass\n")
+        (pkg / "bar.py").write_text("def use_target():\n    foo.func()\n\n\ndef use_other():\n    bar.func()\n")
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg.foo::func", tmp_path, ["pkg"])
+        assert qualified == {"pkg.bar::use_target"}
+
+    def test_emitted_module_paths_carry_no_src_prefix(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A caller under a `src/` layout is emitted in the repo namespace, not with a `src.` prefix.
+
+        Scenario: `--update` on a real src-layout clone must write GT in the repo's real namespace.
+        """
+        f = tmp_path / "src" / "pkg" / "mod.py"
+        f.parent.mkdir(parents=True)
+        f.write_text("def caller():\n    target()\n")
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("pkg::target", tmp_path, ["pkg"])
+        assert qualified == {"pkg.mod::caller"}
+        assert all(not c.startswith("src.") for c in qualified)
+
+    def test_test_modules_excluded_from_callers(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Callers inside a `tests/` directory are excluded from the emitted namespace.
+
+        Scenario: a test file calls the target; only the production caller is credited.
+        """
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_mod.py").write_text("def test_x():\n    target()\n")
+        (tmp_path / "prod.py").write_text("def caller():\n    target()\n")
+        qualified, _loose, _ = script_gen_bench._walk_caller_sets("mod::target", tmp_path, [])
+        assert qualified == {"prod::caller"}
+        assert all("test" not in c for c in qualified)
+
+
+# ===========================================================================
 # main() unit + error paths
 # ===========================================================================
 
@@ -1339,6 +1427,56 @@ class TestUndocumentedViaAst:
         assert syms == {"pub"}
 
 
+class TestUncoveredViaAst:
+    """Contract: independent AST oracle lists public symbols no test references (C-2 remainder)."""
+
+    def test_symbol_with_no_test_reference_is_uncovered(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A public symbol that no test file calls is reported as uncovered."""
+        (tmp_path / "m.py").write_text("def orphan():\n    pass\n")
+        syms, err = script_gen_bench._uncovered_via_ast(tmp_path)
+        assert err is None
+        assert syms == {"orphan"}
+
+    def test_test_called_symbol_is_covered(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A public symbol a test file calls is NOT reported as uncovered."""
+        (tmp_path / "m.py").write_text("def used():\n    pass\n")
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_m.py").write_text("def test_it():\n    used()\n")
+        syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
+        assert "used" not in syms
+
+    def test_mock_patched_symbol_is_covered(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A symbol referenced only through a patch() string target counts as covered."""
+        (tmp_path / "m.py").write_text("def mocked():\n    pass\n")
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_m.py").write_text(
+            "from unittest.mock import patch\n\n\n@patch('m.mocked')\ndef test_it():\n    pass\n"
+        )
+        syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
+        assert "mocked" not in syms
+
+    def test_private_symbol_excluded(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Private (leading-underscore) symbols are never reported (scan-query public-only rule)."""
+        (tmp_path / "m.py").write_text("def _helper():\n    pass\n")
+        syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
+        assert syms == set()
+
+    def test_nested_method_qualified_name(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """Uncovered methods are reported as module-relative Class.method qualified names."""
+        (tmp_path / "m.py").write_text("class Cls:\n    def orphan(self):\n        pass\n")
+        syms, _ = script_gen_bench._uncovered_via_ast(tmp_path)
+        assert "Cls.orphan" in syms
+
+    def test_module_filter_scopes_scan(self, script_gen_bench: Any, tmp_path: Path) -> None:
+        """A module filter restricts the source scan to that module."""
+        f = tmp_path / "src" / "pkg" / "mod.py"
+        f.parent.mkdir(parents=True)
+        f.write_text("def solo():\n    pass\n")
+        syms, err = script_gen_bench._uncovered_via_ast(tmp_path, module="pkg.mod")
+        assert err is None
+        assert syms == {"solo"}
+
+
 class TestValidateFnAstAuthoritative:
     """Contract: _validate_fn treats the AST oracle as authoritative, scan as diagnostic (C-2)."""
 
@@ -1386,7 +1524,8 @@ class TestUpdateGating:
             ({"type": "fn_call_graph"}, True),
             ({"type": "develop_blast_radius"}, True),
             ({"type": "code_quality", "ground_truth": {"check": "undocumented"}}, True),
-            ({"type": "code_quality", "ground_truth": {"check": "uncovered"}}, False),
+            ({"type": "code_quality", "ground_truth": {"check": "uncovered"}}, True),
+            ({"type": "code_quality", "ground_truth": {"check": "xrefs_broken"}}, False),
             ({"type": "code_quality", "ground_truth": {"check": "coupled"}}, False),
             ({"type": "review_assistance"}, False),
             ({"type": "symbol_extraction"}, False),
@@ -1405,20 +1544,20 @@ class TestUpdateGating:
         assert stored["ground_truth"]["fn_callers"] == ["m::a"]
 
     def test_tool_derived_type_skipped_without_flag(self, script_gen_bench: Any) -> None:
-        """A scan-derived task is NOT refreshed under plain --update; original preserved."""
-        task = {"type": "code_quality", "ground_truth": {"check": "uncovered", "uncovered_count": 1}}
-        live = {"check": "uncovered", "uncovered_count": 99}
+        """A scan-derived task (coupled) is NOT refreshed under plain --update; original preserved."""
+        task = {"type": "code_quality", "ground_truth": {"check": "coupled", "top_dep_count": 1}}
+        live = {"check": "coupled", "top_dep_count": 99}
         stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=False)
         assert "SKIP UPDATE" in status
-        assert stored["ground_truth"]["uncovered_count"] == 1  # unchanged
+        assert stored["ground_truth"]["top_dep_count"] == 1  # unchanged
 
     def test_tool_derived_type_refreshes_with_flag_and_warns(self, script_gen_bench: Any, capsys: Any) -> None:
-        """--update-from-tool refreshes scan-derived GT after a loud circularity warning."""
-        task = {"type": "code_quality", "ground_truth": {"check": "uncovered", "uncovered_count": 1}}
-        live = {"check": "uncovered", "uncovered_count": 99}
+        """--update-from-tool refreshes scan-derived (coupled) GT after a loud circularity warning."""
+        task = {"type": "code_quality", "ground_truth": {"check": "coupled", "top_dep_count": 1}}
+        live = {"check": "coupled", "top_dep_count": 99}
         stored, status = script_gen_bench._refresh_task_gt(task, live, update_from_tool=True)
         assert status == "UPDATED"
-        assert stored["ground_truth"]["uncovered_count"] == 99
+        assert stored["ground_truth"]["top_dep_count"] == 99
         assert "CIRCULAR UPDATE" in capsys.readouterr().out
 
     def test_review_assistance_merges_sub_questions_with_flag(self, script_gen_bench: Any) -> None:

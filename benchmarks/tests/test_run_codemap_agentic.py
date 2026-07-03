@@ -1542,3 +1542,278 @@ class TestGroundTruthAstOracle:
             report_corpus=corpus,
         )
         assert score.erec == pytest.approx(1.0)
+
+
+# ===========================================================================
+# Fix-family prompt symmetry (review N3)
+# ===========================================================================
+
+
+class TestFixFamilyPromptSymmetry:
+    """Fix / read_crop prompts must share the efficiency nudge and carry no anti-grep steering."""
+
+    _ARMS = ("plain", "codemap", "semble", "combined")
+    _FIX_TYPES = ("fix_single", "fix_multicaller", "read_crop")
+
+    @pytest.fixture()
+    def runner(self, script_run_agentic: Any, tmp_path: Path) -> Any:
+        """Minimal ModelRunner for prompt assembly."""
+        return script_run_agentic.ModelRunner(
+            model_short="haiku",
+            model_id=script_run_agentic.MODELS["haiku"],
+            repo_path=tmp_path,
+            timeout=300,
+        )
+
+    @pytest.mark.parametrize("task_type", _FIX_TYPES)
+    @pytest.mark.parametrize("arm", _ARMS)
+    def test_efficiency_sentence_present_in_fix_family(
+        self, script_run_agentic: Any, runner: Any, task_type: str, arm: str
+    ) -> None:
+        """The shared efficiency sentence appears in every fix-family arm prompt.
+
+        Scenario: fix / read_crop prompts previously returned before the shared efficiency
+        instruction, so only rdep tasks were symmetric; N3 appends it to every arm here too.
+        """
+        prompt = runner._system_prompt(task_type, arm)
+        assert "as few tool calls as possible" in prompt
+
+    def test_fixmulti_codemap_has_no_anti_grep_steering(self, script_run_agentic: Any, runner: Any) -> None:
+        """The fix_multicaller codemap supplement carries only tool availability + syntax.
+
+        Scenario: the old supplement told the codemap arm 'do NOT grep for more' and framed
+        codemap as a 'decisive advantage' — that steering was the measured signal (N3).
+        """
+        prompt = runner._system_prompt("fix_multicaller", "codemap")
+        for phrase in ("do NOT grep", "decisive advantage", "plain grep misses"):
+            assert phrase not in prompt
+
+    @pytest.mark.parametrize("task_type", _FIX_TYPES)
+    @pytest.mark.parametrize("arm", _ARMS)
+    def test_rdep_answer_format_absent_from_fix_family(
+        self, script_run_agentic: Any, runner: Any, task_type: str, arm: str
+    ) -> None:
+        """Fix / read_crop prompts do not append the rdep-only 'Reverse Dependencies Found' block.
+
+        Scenario: fix tasks are scored by diff / keyword recall, so the reverse-dependency answer
+        format is irrelevant and must not be injected.
+        """
+        prompt = runner._system_prompt(task_type, arm)
+        assert "## Reverse Dependencies Found" not in prompt
+
+
+# ===========================================================================
+# Arm tool policy — semble Bash symmetry (review H-5)
+# ===========================================================================
+
+
+class TestArmToolPolicy:
+    """Semble must keep a shell fallback like every other arm; only its primary tool differs."""
+
+    def test_semble_arm_no_longer_blocks_bash(self, script_run_agentic: Any) -> None:
+        """The semble disallowed list no longer contains Bash (H-5 handicap removed)."""
+        disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["semble"]
+        joined = ",".join(disallowed)
+        assert "Bash" not in joined
+
+    def test_semble_arm_still_blocks_skill(self, script_run_agentic: Any) -> None:
+        """The semble arm still blocks the Skill tool so codemap is not its discriminator."""
+        disallowed = script_run_agentic.ModelRunner._ARM_DISALLOWED["semble"]
+        assert "Skill" in ",".join(disallowed)
+
+    def test_semble_supplement_advertises_bash_fallback(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """The semble supplement mirrors codemap's Grep/Bash error fallback clause."""
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], tmp_path, timeout=300)
+        prompt = runner._system_prompt("fix", "semble")
+        assert "Grep/Bash fallback" in prompt
+
+
+# ===========================================================================
+# Subprocess env — SCAN_NO_AUTOBUILD opt-out (review N2 / H-3)
+# ===========================================================================
+
+
+class TestSubprocessEnv:
+    """codemap / combined arms opt out of in-task index builds; other arms are untouched."""
+
+    @pytest.mark.parametrize("arm", ["codemap", "combined"])
+    def test_scan_no_autobuild_set_for_structural_arms(self, script_run_agentic: Any, arm: str) -> None:
+        """SCAN_NO_AUTOBUILD=1 is injected for arms that invoke /codemap:query-code (N2)."""
+        env = script_run_agentic.ModelRunner._subprocess_env(arm)
+        assert env.get("SCAN_NO_AUTOBUILD") == "1"
+
+    @pytest.mark.parametrize("arm", ["plain", "semble", ""])
+    def test_scan_no_autobuild_absent_for_other_arms(self, script_run_agentic: Any, arm: str) -> None:
+        """Non-structural arms do not receive the build opt-out (they never call the skill)."""
+        env = script_run_agentic.ModelRunner._subprocess_env(arm)
+        assert "SCAN_NO_AUTOBUILD" not in env
+
+
+# ===========================================================================
+# _seed_index_cache — index present in fix-task sandbox (review H-3)
+# ===========================================================================
+
+
+class TestSeedIndexCache:
+    """The prebuilt index cache dirs are copied into a sandbox for non-plain arms."""
+
+    def test_copies_codemap_and_scan_cache(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """_seed_index_cache seeds .cache/codemap and .cache/scan from the original repo.
+
+        Scenario: fix tasks run in a copy that excludes .cache; without the prebuilt index the
+        codemap arm would build it inside the measured window (H-3), so it is seeded in.
+        """
+        repo = tmp_path / "myrepo"
+        (repo / ".cache" / "codemap").mkdir(parents=True)
+        (repo / ".cache" / "scan").mkdir(parents=True)
+        (repo / ".cache" / "codemap" / "myrepo.json").write_text("{}")
+        (repo / ".cache" / "scan" / "myrepo.json").write_text("{}")
+        sandbox = tmp_path / "sandbox" / "myrepo"
+        sandbox.mkdir(parents=True)
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], repo, timeout=300)
+        runner._seed_index_cache(sandbox)
+        assert (sandbox / ".cache" / "codemap" / "myrepo.json").is_file()
+        assert (sandbox / ".cache" / "scan" / "myrepo.json").is_file()
+
+    def test_missing_source_cache_is_skipped_silently(self, script_run_agentic: Any, tmp_path: Path) -> None:
+        """_seed_index_cache does not raise when the source cache dirs are absent."""
+        repo = tmp_path / "myrepo"
+        repo.mkdir()
+        sandbox = tmp_path / "sandbox" / "myrepo"
+        sandbox.mkdir(parents=True)
+        runner = script_run_agentic.ModelRunner("haiku", script_run_agentic.MODELS["haiku"], repo, timeout=300)
+        runner._seed_index_cache(sandbox)
+        assert not (sandbox / ".cache").exists()
+
+
+# ===========================================================================
+# Semble chunk-hit rate lens (review C-5)
+# ===========================================================================
+
+
+class TestSembleChunkHitRate:
+    """chunk_hit_rate credits expected rdeps whose module/file appears in any semble chunk."""
+
+    def test_chunk_hit_rate_partial_when_one_of_two_in_chunks(self, script_run_agentic: Any, ground_truth: Any) -> None:
+        """One of two expected rdeps appears in the semble chunks → chunk_hit_rate = 0.5.
+
+        Scenario: BA-01 has two expected rdeps; a semble result mentioning only one file must
+        yield 0.5 without requiring the exhaustive dotted rdep list.
+        """
+        chunks = "File: src/lightning/pytorch/trainer/trainer.py\nLine 10: import timer"
+        result = ground_truth.score(
+            task_id="BA-01",
+            output_text="",
+            exposure_corpus="",
+            report_corpus="",
+            semble_result_text=chunks,
+        )
+        assert result.chunk_hit_rate == pytest.approx(0.5)
+
+    def test_chunk_hit_rate_none_when_no_semble_corpus(self, script_run_agentic: Any, ground_truth: Any) -> None:
+        """chunk_hit_rate stays None for arms that carry no semble corpus (plain / codemap)."""
+        result = ground_truth.score(
+            task_id="BA-01",
+            output_text="x",
+            exposure_corpus="x",
+            report_corpus="x",
+            semble_result_text=None,
+        )
+        assert result.chunk_hit_rate is None
+
+
+# ===========================================================================
+# Report rendering — success rate, quality, savings n, failures (review H-4)
+# ===========================================================================
+
+
+class TestReportRendering:
+    """The report surfaces success rate, quality medians, savings denominators, and failures."""
+
+    def _run(
+        self,
+        script: Any,
+        task_id: str,
+        arm: str,
+        success: bool,
+        erec: float = 0.0,
+        chunk: float | None = None,
+    ) -> Any:
+        """Build a BenchmarkRun with minimal metrics and a scored QualityScore."""
+        run = script.BenchmarkRun(arm=arm, task_id=task_id, task_type="fix", model="haiku", success=success)
+        run.tools.grep = 4
+        run.input_tokens = 1000
+        run.elapsed_s = 10.0
+        run.quality = script.QualityScore(scored=True, erec=erec, rrec=erec, chunk_hit_rate=chunk)
+        return run
+
+    @pytest.fixture()
+    def report(self, script_run_agentic: Any) -> Any:
+        """Report with a plain+codemap success pair and one codemap failure."""
+        tasks = [script_run_agentic.Task(id="BA-01", type="blast_radius_analysis", prompt="p")]
+        results = [
+            self._run(script_run_agentic, "BA-01", "plain", success=True, erec=0.5),
+            self._run(script_run_agentic, "BA-01", "codemap", success=True, erec=0.75),
+            self._run(script_run_agentic, "BA-01", "codemap", success=False),
+        ]
+        return script_run_agentic.Report(results, tasks, {"date": "2026-07-03"})
+
+    def test_render_includes_success_rate_table(self, script_run_agentic: Any, report: Any) -> None:
+        """The rendered report contains a success-rate table (H-4)."""
+        assert "Success rate (successful / total runs)" in report.render()
+
+    def test_render_includes_quality_tables(self, script_run_agentic: Any, report: Any) -> None:
+        """The rendered report contains erec / rrec / chunk-hit quality tables (H-4)."""
+        md = report.render()
+        assert "Exposure recall (erec)" in md
+        assert "Chunk hit rate (semble lens)" in md
+
+    def test_render_includes_failed_runs_section(self, script_run_agentic: Any, report: Any) -> None:
+        """Failed runs are listed explicitly, not silently dropped (H-4)."""
+        assert "### Failed runs" in report.render()
+
+    def test_savings_summary_has_pair_count_n(self, script_run_agentic: Any, report: Any) -> None:
+        """Every savings row carries an 'n' pair-count denominator (H-4)."""
+        agg = script_run_agentic.aggregate(report.results, report.task_ids, model_short="haiku")
+        rows = report._savings_summary(agg)
+        assert rows and all("n" in row for row in rows)
+
+    def test_success_table_counts_failures(self, script_run_agentic: Any, report: Any) -> None:
+        """The success table reports 1/2 for the codemap cell (one success, one failure)."""
+        counts = report._cell_counts("haiku")
+        assert counts["BA-01"]["codemap"] == [2, 1]
+
+
+class TestReportFixFamilySuppression:
+    """Fix-family suites emit no biased efficiency savings row (review N3)."""
+
+    def _fix_run(self, script: Any, arm: str) -> Any:
+        """Build a successful fix_multicaller BenchmarkRun."""
+        run = script.BenchmarkRun(arm=arm, task_id="FM-01", task_type="fix_multicaller", model="haiku", success=True)
+        run.tools.grep = 4
+        run.input_tokens = 1000
+        run.elapsed_s = 10.0
+        run.quality = script.QualityScore(scored=True, erec=1.0, rrec=1.0)
+        return run
+
+    def test_efficiency_savings_suppressed_for_fix_suite(self, script_run_agentic: Any) -> None:
+        """A pure fix_multicaller suite yields no efficiency savings rows (N3).
+
+        Scenario: fix tasks differ in edit workload, so token / tool-call savings would be biased;
+        _savings_summary must exclude them, leaving no rows for an all-fix suite.
+        """
+        tasks = [script_run_agentic.Task(id="FM-01", type="fix_multicaller", prompt="p")]
+        results = [
+            self._fix_run(script_run_agentic, "plain"),
+            self._fix_run(script_run_agentic, "codemap"),
+        ]
+        report = script_run_agentic.Report(results, tasks, {"date": "2026-07-03"})
+        agg = script_run_agentic.aggregate(results, ["FM-01"], model_short="haiku")
+        assert report._savings_summary(agg) == []
+
+    def test_arm_cells_savings_not_applicable_shows_na(self, script_run_agentic: Any) -> None:
+        """_arm_cells renders 'n/a' savings when savings_applicable is False."""
+        tasks = [script_run_agentic.Task(id="FM-01", type="fix_multicaller", prompt="p")]
+        report = script_run_agentic.Report([], tasks, {"date": "2026-07-03"})
+        cells = report._arm_cells("codemap", 10.0, 5.0, script_run_agentic.Report._fmt_s, savings_applicable=False)
+        assert cells["Codemap savings"] == "n/a"

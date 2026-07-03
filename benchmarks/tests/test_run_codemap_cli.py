@@ -986,9 +986,9 @@ class TestThresholdsConfig:
         assert isinstance(value, (int, float)), f"THRESHOLDS[{key!r}][{sub_key!r}] is not numeric"
         assert lo <= value <= hi, f"THRESHOLDS[{key!r}][{sub_key!r}]={value} not in [{lo}, {hi}]"
 
-    def test_injection_thresholds_have_boolean_flags(self, script_run_cli: Any) -> None:
-        """Scenario: injection thresholds have block_present and json_valid booleans."""
-        for key in ("I_fix", "I_feature", "I_refactor"):
+    def test_query_shape_thresholds_have_boolean_flags(self, script_run_cli: Any) -> None:
+        """Scenario: query-shape thresholds have block_present and json_valid booleans."""
+        for key in ("Q_fix", "Q_feature", "Q_refactor"):
             assert script_run_cli.THRESHOLDS[key]["block_present"] is True
             assert script_run_cli.THRESHOLDS[key]["json_valid"] is True
 
@@ -1145,8 +1145,8 @@ class TestIntegrationSuiteL:
 
 
 @pytest.mark.integration
-class TestIntegrationSuiteI:
-    """Suite I: injection verification against pytorch-lightning."""
+class TestIntegrationSuiteQ:
+    """Suite Q: query-shape validation against pytorch-lightning."""
 
     def test_returns_three_results(
         self,
@@ -1155,8 +1155,8 @@ class TestIntegrationSuiteI:
         scan_query_binary: Any,
         pytorch_lightning_index: Any,
     ) -> None:
-        """Scenario: run_measure_injection returns exactly 3 ScenarioResult objects."""
-        results = script_run_cli.run_measure_injection(
+        """Scenario: run_measure_query_shape returns exactly 3 ScenarioResult objects."""
+        results = script_run_cli.run_measure_query_shape(
             REPO_ROOT, pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index
         )
         assert len(results) == 3
@@ -1168,11 +1168,11 @@ class TestIntegrationSuiteI:
         scan_query_binary: Any,
         pytorch_lightning_index: Any,
     ) -> None:
-        """Scenario: the three results have scenario IDs I_fix, I_feature, I_refactor."""
-        results = script_run_cli.run_measure_injection(
+        """Scenario: the three results have scenario IDs Q_fix, Q_feature, Q_refactor."""
+        results = script_run_cli.run_measure_query_shape(
             REPO_ROOT, pytorch_lightning_repo, scan_query_binary, pytorch_lightning_index
         )
-        assert {r.scenario for r in results} == {"I_fix", "I_feature", "I_refactor"}
+        assert {r.scenario for r in results} == {"Q_fix", "Q_feature", "Q_refactor"}
 
 
 # ===========================================================================
@@ -1478,3 +1478,265 @@ class TestWriteReportFile:
         assert Path(first).exists()
         assert Path(second).exists()
         assert Path(second).name == f"code-{date.today().isoformat()}-2.md"
+
+
+# ===========================================================================
+# Error sentinel — run_scan_query_result distinguishes failure from empty (H-9)
+# ===========================================================================
+
+
+class TestRunScanQueryResult:
+    """Validate run_scan_query_result reports errors distinctly from empty results."""
+
+    def _fake_bin(self, tmp_path: Path) -> Path:
+        """Create a placeholder scan-query binary file.
+
+        Args:
+            tmp_path: Pytest temporary directory.
+
+        Returns:
+            Path to a file named 'scan-query'.
+        """
+        p = tmp_path / "scan-query"
+        p.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+        return p
+
+    def test_success_sets_data_and_ok(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: a zero-exit JSON response yields ok=True with parsed data and no error."""
+        fake = MagicMock()
+        fake.returncode = 0
+        fake.stdout = json.dumps({"imported_by": []})
+        with patch.object(script_run_cli, "_run", return_value=fake):
+            res = script_run_cli.run_scan_query_result(
+                self._fake_bin(tmp_path), ["rdeps", "x"], tmp_path / "i.json", tmp_path
+            )
+        assert res.ok is True
+        assert res.error is None
+        assert res.data == {"imported_by": []}
+
+    def test_nonzero_exit_carries_error(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: a non-zero exit yields ok=False with a stderr-derived error reason."""
+        fake = MagicMock()
+        fake.returncode = 2
+        fake.stdout = ""
+        fake.stderr = "module not found: foo\n"
+        with patch.object(script_run_cli, "_run", return_value=fake):
+            res = script_run_cli.run_scan_query_result(
+                self._fake_bin(tmp_path), ["rdeps", "foo"], tmp_path / "i.json", tmp_path
+            )
+        assert res.ok is False
+        assert res.data is None
+        assert "module not found" in res.error
+
+    def test_timeout_carries_error(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: a subprocess timeout yields ok=False with a timeout error reason."""
+        with patch.object(script_run_cli, "_run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=30)):
+            res = script_run_cli.run_scan_query_result(
+                self._fake_bin(tmp_path), ["central"], tmp_path / "i.json", tmp_path
+            )
+        assert res.ok is False
+        assert "timeout" in res.error
+
+    def test_wrapper_returns_none_on_error(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: the run_scan_query wrapper still returns None on failure (back-compat)."""
+        fake = MagicMock()
+        fake.returncode = 1
+        fake.stdout = ""
+        fake.stderr = "boom"
+        with patch.object(script_run_cli, "_run", return_value=fake):
+            data = script_run_cli.run_scan_query(
+                self._fake_bin(tmp_path), ["rdeps", "x"], tmp_path / "i.json", tmp_path
+            )
+        assert data is None
+
+    def test_codemap_rdeps_result_reports_error(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: codemap_rdeps_result returns an error reason instead of a silent empty set."""
+        fake = MagicMock()
+        fake.returncode = 1
+        fake.stdout = ""
+        fake.stderr = "no such module"
+        with patch.object(script_run_cli, "_run", return_value=fake):
+            importers, err = script_run_cli.codemap_rdeps_result(
+                self._fake_bin(tmp_path), tmp_path / "i.json", tmp_path, "foo"
+            )
+        assert importers == set()
+        assert err is not None and "no such module" in err
+
+
+# ===========================================================================
+# AST-oracle accuracy scoring — precision oracle + grep recall floor (H-8)
+# ===========================================================================
+
+
+class TestScoreRdepsAccuracy:
+    """Validate score_rdeps_accuracy uses AST precision and a grep recall floor."""
+
+    def test_grep_invisible_true_importer_not_penalised(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: an AST-verified relative importer grep cannot see counts as precise, not a FP."""
+        grep_floor = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
+        codemap = grep_floor | {"pkg.rel.rel_from"}  # relative importer grep misses
+        stats = script_run_cli.score_rdeps_accuracy(codemap, grep_floor, "pkg.target", sample_pkg)
+        assert stats.precision == pytest.approx(1.0)
+        assert stats.fp == 0
+        assert stats.recall == pytest.approx(1.0)
+
+    def test_ast_rejected_member_is_false_positive(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a codemap member the AST oracle rejects is scored as a false positive."""
+        grep_floor = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
+        codemap = {"pkg.imp_from", "pkg.imp_decoy"}  # decoy imports pkg.target_helper, not pkg.target
+        stats = script_run_cli.score_rdeps_accuracy(codemap, grep_floor, "pkg.target", sample_pkg)
+        assert stats.precision == pytest.approx(0.5)
+        assert stats.fp == 1
+        assert stats.fp_modules == ["pkg.imp_decoy"]
+
+    def test_recall_floor_penalises_missed_grep_importer(self, script_run_cli: Any, sample_pkg: Path) -> None:
+        """Scenario: a boundary-grep importer codemap omits lowers the recall floor and is a FN."""
+        grep_floor = script_run_cli.grep_importers_boundary(sample_pkg, "pkg.target")
+        codemap = grep_floor - {"pkg.imp_plain"}  # codemap missed one grep-visible importer
+        stats = script_run_cli.score_rdeps_accuracy(codemap, grep_floor, "pkg.target", sample_pkg)
+        assert stats.recall < 1.0
+        assert "pkg.imp_plain" in stats.fn_modules
+
+
+# ===========================================================================
+# Accuracy error handling — a scan-query failure never scores precision 1.0 (H-9)
+# ===========================================================================
+
+
+class TestAccuracyErrorHandling:
+    """Validate accuracy scoring fails (not passes) when scan-query errors."""
+
+    def _task(self, script_cli: Any) -> Any:
+        """Build a single high-risk rdeps task.
+
+        Args:
+            script_cli: Loaded module fixture.
+
+        Returns:
+            Task with one rdeps query at high risk tier.
+        """
+        return script_cli.Task.from_dict(
+            {
+                "id": "B-01",
+                "skill": "fix",
+                "prompt": "p",
+                "primary_module": "pkg.mod",
+                "risk_tier": "high",
+                "queries": [{"cmd": "rdeps", "args": ["pkg.mod"]}],
+                "ground_truth_keys": [],
+            }
+        )
+
+    def test_errored_task_not_scored_as_pass(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: a scan-query error marks the task errored and fails A1 (no precision=1.0 pass)."""
+        task = self._task(script_run_cli)
+        with patch.object(script_run_cli, "codemap_rdeps_result", return_value=(set(), "exit 1: boom")):
+            rows = script_run_cli._score_accuracy_tasks([task], tmp_path / "sq", tmp_path / "i.json", tmp_path)
+        assert rows[0]["errored"] is True
+        a1 = script_run_cli._a1_scenario(rows)
+        assert a1.passed is False
+        assert "pkg.mod" in a1.result["errored"]
+
+
+# ===========================================================================
+# A2 vacuous empty result — precision-only scenario must not free-pass on empty (H-9 residual)
+# ===========================================================================
+
+
+class TestA2VacuousEmpty:
+    """Validate a non-errored EMPTY low-risk codemap result is N/A for A2, never a precision=1.0 pass."""
+
+    def test_empty_codemap_is_not_a_free_a2_pass(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: an empty non-errored low-risk result is excluded as vacuous and fails A2 alone."""
+        task = script_run_cli.Task.from_dict(
+            {
+                "id": "B-04",
+                "skill": "fix",
+                "prompt": "p",
+                "primary_module": "pkg.mod",
+                "risk_tier": "low",
+                "queries": [{"cmd": "rdeps", "args": ["pkg.mod"]}],
+                "ground_truth_keys": [],
+            }
+        )
+        with (
+            patch.object(script_run_cli, "codemap_rdeps_result", return_value=(set(), None)),
+            patch.object(script_run_cli, "grep_importers_boundary", return_value=set()),
+        ):
+            rows = script_run_cli._score_accuracy_tasks([task], tmp_path / "sq", tmp_path / "i.json", tmp_path)
+        assert rows[0]["codemap_count"] == 0
+        assert rows[0]["errored"] is False
+        a2 = script_run_cli._a2_scenario(rows)
+        assert a2.passed is False
+        assert a2.result["vacuous"] == ["pkg.mod"]
+
+    def test_a2_passes_on_real_module_despite_empty_sibling(self, script_run_cli: Any) -> None:
+        """Scenario: A2 passes on a real precision=1.0 module while an empty sibling is N/A, not a fail."""
+        rows = [
+            {"module": "pkg.real", "risk_tier": "low", "errored": False, "codemap_count": 2, "precision": 1.0},
+            {"module": "pkg.empty", "risk_tier": "low", "errored": False, "codemap_count": 0, "precision": 1.0},
+        ]
+        a2 = script_run_cli._a2_scenario(rows)
+        assert a2.passed is True
+        assert a2.result["vacuous"] == ["pkg.empty"]
+
+
+# ===========================================================================
+# Verdict split — primary correctness vs self-consistency track (H-6, H-13)
+# ===========================================================================
+
+
+class TestVerdictSplit:
+    """Validate self-consistency suites are excluded from the primary verdict."""
+
+    def test_self_consistency_excluded_from_verdict(self, script_run_cli: Any) -> None:
+        """Scenario: a failing self-consistency scenario does not drag the primary verdict."""
+        results = [
+            script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {}),
+            script_run_cli.ScenarioResult("S2", "x", "symbol", False, {}, {}),
+        ]
+        assert script_run_cli.compute_verdict(results) == "PASS"
+
+    def test_verdict_fails_on_primary_failure(self, script_run_cli: Any) -> None:
+        """Scenario: a failing primary scenario below 50% yields FAIL regardless of self-consistency."""
+        results = [
+            script_run_cli.ScenarioResult("C1", "x", "calls", False, {}, {}),
+            script_run_cli.ScenarioResult("A1", "x", "accuracy", False, {}, {}),
+            script_run_cli.ScenarioResult("S2", "x", "symbol", True, {}, {}),
+        ]
+        assert script_run_cli.compute_verdict(results) == "FAIL"
+
+    @pytest.mark.parametrize(
+        "passed_flags,expected",
+        [
+            pytest.param([True, True, True], "CONSISTENT", id="all-pass"),
+            pytest.param([True, False], "PARTIAL", id="half"),
+            pytest.param([False, False], "INCONSISTENT", id="all-fail"),
+        ],
+    )
+    def test_self_consistency_verdict(self, script_run_cli: Any, passed_flags: list, expected: str) -> None:
+        """Scenario: self-consistency verdict reflects the pass ratio of symbol/health/xrefs.
+
+        Args:
+            passed_flags: Pass/fail flags for the self-consistency scenarios.
+            expected: Expected self-consistency verdict string.
+        """
+        results = [
+            script_run_cli.ScenarioResult(f"S_{i}", "x", "symbol", flag, {}, {}) for i, flag in enumerate(passed_flags)
+        ]
+        assert script_run_cli.compute_self_consistency(results)["verdict"] == expected
+
+    def test_self_consistency_skipped_when_absent(self, script_run_cli: Any) -> None:
+        """Scenario: with no self-consistency scenarios the track verdict is SKIPPED."""
+        results = [script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {})]
+        assert script_run_cli.compute_self_consistency(results)["verdict"] == "SKIPPED"
+
+    def test_envelope_reports_primary_and_self_consistency(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: the summary envelope carries separate primary and self_consistency breakdowns."""
+        results = [
+            script_run_cli.ScenarioResult("C1", "x", "calls", True, {}, {}),
+            script_run_cli.ScenarioResult("S2", "x", "symbol", False, {}, {}),
+        ]
+        env = script_run_cli.build_summary_envelope(results, tmp_path, tmp_path / "i.json", "PASS")
+        assert env["primary"] == {"passed": 1, "total": 1}
+        assert env["self_consistency"] == {"verdict": "INCONSISTENT", "passed": 0, "total": 1}

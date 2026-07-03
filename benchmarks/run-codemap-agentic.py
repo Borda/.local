@@ -311,6 +311,9 @@ class QualityScore:
     Supplementary (codemap arm only):
         ``skill_coverage``, ``skill_returned``
 
+    Semble-native lens (semble / combined arms only):
+        ``chunk_hit_rate`` — expected rdeps whose module/file appears in any retrieved semble chunk
+
     Legacy fields (``leaf_recall``, ``precision``, ``recall``, ``f1``, ``tp``, ``fp``, ``fn``)
     are retained for backward compatibility; computed via leaf-name matching on output_text.
     """
@@ -332,6 +335,12 @@ class QualityScore:
     # ── Skill result coverage (codemap arm only; None when not applicable) ──
     skill_coverage: Optional[float] = None
     skill_returned: Optional[int] = None
+
+    # ── Semble-native lens (semble / combined arms only; None when not applicable) ──
+    # chunk_hit_rate: fraction of expected rdep modules whose module/file appears in ANY semble
+    # search chunk the arm retrieved. A fair semantic-search axis that does not require semble to
+    # emit an exhaustive dotted rdep list (review C-5); erec/rrec stay the codemap-native lens.
+    chunk_hit_rate: Optional[float] = None
 
     # ── Legacy fields (backward compat — leaf-name matching on output_text) ──
     precision: float = 0.0
@@ -863,8 +872,9 @@ class GroundTruth:
         report_corpus: str,
         tool_calls: int = 0,
         skill_result_text: str | None = None,
+        semble_result_text: str | None = None,
     ) -> QualityScore:
-        """Compute quality score using multi-form matching and optional skill coverage.
+        """Compute quality score using multi-form matching and optional coverage lenses.
 
         Primary metrics (v2):
             ``erec`` — exposure recall on ``exposure_corpus`` (agent output_text only; tool outputs excluded)
@@ -874,6 +884,8 @@ class GroundTruth:
 
         Supplementary:
             ``skill_coverage`` — fraction of expected rdeps in the skill result (codemap only)
+            ``chunk_hit_rate`` — fraction of expected rdeps whose module/file appears in any
+                retrieved semble chunk (semble / combined only); ``None`` when no semble corpus
 
         Legacy:
             ``leaf_recall`` etc. — leaf-name matching on ``output_text`` for backward compat
@@ -926,6 +938,15 @@ class GroundTruth:
                 skill_returned = len(returned)
                 skill_coverage = len(returned & exp) / n_exp
 
+        # ── Semble chunk-hit rate (semble / combined arm only) ──
+        # Module-file granularity: an expected rdep counts as hit if any of its surface forms
+        # appears in the concatenated semble search chunks — semantic search need not enumerate
+        # exact dotted rdeps to get credit (review C-5).
+        chunk_hit_rate: Optional[float] = None
+        if semble_result_text:
+            chunk_hits = sum(1 for r in exp if self._rdep_found(r, semble_result_text))
+            chunk_hit_rate = chunk_hits / n_exp
+
         # ── Legacy: leaf-name matching on output_text ──
         expected_leaves = {m.split(".")[-1] for m in exp}
         ambiguous = sum(1 for leaf in expected_leaves if len(leaf) < 6)
@@ -958,6 +979,8 @@ class GroundTruth:
             # Skill coverage
             skill_coverage=skill_coverage,
             skill_returned=skill_returned,
+            # Semble-native lens
+            chunk_hit_rate=chunk_hit_rate,
             # Legacy
             precision=prec,
             recall=leaf_recall,
@@ -1004,9 +1027,13 @@ class ModelRunner:
     # Tools counted as exploration overhead
     EXPLORATION_TOOLS = {"Grep", "Glob", "Bash", "Skill", "mcp__semble__search", "mcp__semble__find_related"}
     # Tools blocked per arm via --disallowed-tools to enforce mutual exclusion
+    # Bash is kept available for every non-plain arm (and plain) so each has the same read-only
+    # shell fallback on a primary-tool error; blocking it for semble alone was an asymmetric
+    # handicap (review H-5). Only the primary discriminator differs: codemap blocks semble MCP,
+    # semble blocks the Skill tool, plain blocks both structural entry points.
     _ARM_DISALLOWED: dict[str, list[str]] = {
         "codemap": ["--disallowed-tools", "mcp__semble__search,mcp__semble__find_related"],
-        "semble": ["--disallowed-tools", "Skill,Bash"],
+        "semble": ["--disallowed-tools", "Skill"],
         "plain": ["--disallowed-tools", "Skill,mcp__semble__search,mcp__semble__find_related"],
         "combined": [],
     }
@@ -1112,9 +1139,9 @@ Parameters:
   repo  (str)   — REQUIRED: absolute path to the repository: {repo_path}
   top_k (int)   — number of results (default 5; raise it for broader coverage)
 
-Grep, Glob, and Read are available for reading source code; the Bash and Skill tools are not.
+Grep, Glob, Bash, and Read are available for reading source code; the Skill tool is not.
 
-If mcp__semble__search returns <tool_use_error>, run one Grep fallback for the same query."""
+If mcp__semble__search returns <tool_use_error>, run one Grep/Bash fallback for the same query."""
 
     _COMBINED_SUPPLEMENT = """
 
@@ -1196,13 +1223,16 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         "Use grep/bash to find all callers of the function (search for the function name as a string). "
         "Edit the definition first, then each caller."
     )
+    # Tool availability + syntax ONLY — no "do this FIRST", no "do NOT grep", no "decisive
+    # advantage" framing. That steering was the measured signal and manufactured the tool-call
+    # gap (review N3, mirroring C-4 for the rdep supplements).
     _FIXMULTI_CODEMAP = (
-        "\n\n## codemap installed — use rdeps to find all callers before touching code\n"
-        "Run `/codemap:query-code rdeps <primary_module>` FIRST to get the complete caller list. "
-        "If the result is exhaustive, that IS the full caller set — do NOT grep for more. "
-        "Then edit the function definition and every caller in the list. "
-        "codemap's caller list is the decisive advantage here: plain grep misses callers "
-        "that import via alias or re-export; codemap's import graph is complete."
+        "\n\n## codemap installed\n"
+        "The /codemap:query-code skill (via the Skill tool) answers caller / import-graph "
+        "questions from a pre-built structural index.\n"
+        "Syntax — colon separator, never a space:\n"
+        "  /codemap:query-code rdeps <primary_module> [--exclude-tests]\n"
+        "Grep, Glob, Bash, and Read remain available."
     )
     _FIXMULTI_SEMBLE = (
         "\n\n## semble installed\n"
@@ -1211,25 +1241,31 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
     )
 
     def _system_prompt(self, task_type: str, arm: str) -> str:
-        """Build the system prompt for one arm × task-type combination."""
+        """Build the system prompt for one arm × task-type combination.
+
+        The shared ``_EFFICIENCY`` sentence is appended for every task family (fix, read_crop,
+        and rdep) so no arm is uniquely nudged toward more or fewer tool calls (review N3). The
+        rdep-only ``_ANSWER_FORMAT`` block is not appended to fix / read_crop prompts — those are
+        scored by diff / keyword recall, not by a reverse-dependency list.
+        """
         if task_type == "fix_single":
             supplement = {
                 "codemap": self._FIXSINGLE_CODEMAP,
                 "semble": self._FIXSINGLE_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._FIXSINGLE_PLAIN)
-            return self._FIXSINGLE_BASE + supplement
+            return self._FIXSINGLE_BASE + supplement + self._EFFICIENCY
         if task_type == "fix_multicaller":
             supplement = {
                 "codemap": self._FIXMULTI_CODEMAP,
                 "semble": self._FIXMULTI_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._FIXMULTI_PLAIN)
-            return self._FIXMULTI_BASE + supplement
+            return self._FIXMULTI_BASE + supplement + self._EFFICIENCY
         if task_type == "read_crop":
             supplement = {
                 "codemap": self._READCROP_CODEMAP,
                 "semble": self._READCROP_SEMBLE.format(repo_path=self.repo_path),
             }.get(arm, self._READCROP_PLAIN)
-            return self._READCROP_BASE + supplement
+            return self._READCROP_BASE + supplement + self._EFFICIENCY
         base = self._PLAIN_SKILLS.get(task_type, self._PLAIN_SKILLS["fix"])
         if arm == "codemap":
             supplement = self._CODEMAP_SUPPLEMENT
@@ -1317,6 +1353,14 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                     ignore=shutil.ignore_patterns(".cache", ".git"),
                     symlinks=True,
                 )
+                # codemap / combined arms need the prebuilt index present in the sandbox;
+                # otherwise the /codemap:query-code Step 0 would build it inside the measured
+                # window (review H-3). The sandbox dir keeps the original repo name, so the
+                # repo-name-derived index file (<repo>.json) resolves unchanged (git is absent →
+                # resolve_proj_index falls back to the CWD basename). Plain and semble arms are
+                # left index-free — plain for isolation, semble because it never queries the index.
+                if arm in ("codemap", "combined"):
+                    self._seed_index_cache(cwd)
                 yield cwd
                 if task.requires_reset:
                     import subprocess as _sp
@@ -1341,7 +1385,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 result = BenchmarkRun(
                     arm=arm, task_id=task.id, task_type=task.type, model=self.model_short, success=False
                 )
-                self._stream_events(cmd, result, update_fn=update_fn, cwd=cwd)
+                self._stream_events(cmd, result, update_fn=update_fn, cwd=cwd, arm=arm)
                 # 0-token result = API connectivity failure (ConnectionRefused / FailedToOpenSocket);
                 # retry up to 2 times before surfacing as error.
                 if result.input_tokens == 0 and result.output_tokens == 0 and attempt < _MAX_API_RETRIES:
@@ -1353,19 +1397,47 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
             result.agent_diff = _diff_capture[0]
         return result
 
-    @staticmethod
-    def _subprocess_env() -> dict[str, str]:
-        """Return os.environ augmented with the codemap plugin bin directory on PATH.
+    def _seed_index_cache(self, cwd: Path) -> None:
+        """Copy the prebuilt codemap index cache dirs into a sandbox copy of the repo.
 
-        Plugin bin/ directories are not reliably added to PATH in ``claude -p`` mode,
-        so we inject it explicitly here. This ensures ``scan-query`` is always reachable
-        inside skill Bash calls regardless of how the shell or Claude Code manage PATH.
+        Only ``.cache/codemap`` and ``.cache/scan`` are copied from the original repo (never the
+        whole ``.cache``), so the structural index is present in the sandbox without dragging in
+        unrelated cache trees. Missing source dirs are skipped silently.
+
+        Args:
+            cwd: Sandbox repository root the index should be seeded into.
+        """
+        import shutil
+
+        for sub in ("codemap", "scan"):
+            source = self.repo_path / ".cache" / sub
+            if source.is_dir():
+                shutil.copytree(source, cwd / ".cache" / sub, symlinks=True)
+
+    @staticmethod
+    def _subprocess_env(arm: str = "") -> dict[str, str]:
+        """Return os.environ augmented with codemap PATH and the benchmark's build opt-out.
+
+        Plugin bin/ directories are not reliably added to PATH in ``claude -p`` mode, so the
+        codemap ``bin/`` dir is injected explicitly to keep ``scan-query`` reachable inside skill
+        Bash calls. For the codemap and combined arms ``SCAN_NO_AUTOBUILD=1`` is set so the
+        /codemap:query-code Step 0 never runs ``scan-index --incremental`` inside the measured
+        window — the benchmark builds the index out of band (review N2 / H-3). A genuinely
+        missing index then fails loudly instead of being silently rebuilt mid-task.
+
+        Args:
+            arm: Benchmark arm; only ``codemap`` / ``combined`` receive the build opt-out.
+
+        Returns:
+            A copy of the process environment with PATH (and, for structural arms, the opt-out).
         """
         env = os.environ.copy()
         plugin_cache = Path.home() / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "codemap"
         bin_dirs = sorted(plugin_cache.glob("*/bin"), reverse=True)  # latest version first
         if bin_dirs:
             env["PATH"] = str(bin_dirs[0]) + os.pathsep + env.get("PATH", "")
+        if arm in ("codemap", "combined"):
+            env["SCAN_NO_AUTOBUILD"] = "1"
         return env
 
     def _stream_events(
@@ -1374,6 +1446,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
         result: BenchmarkRun,
         update_fn: Optional[Callable[[float, "BenchmarkRun"], None]] = None,
         cwd: Optional[Path] = None,
+        arm: str = "",
     ) -> None:
         """Launch the claude subprocess, enforce wall-clock timeout, and parse stream-json events.
 
@@ -1390,6 +1463,8 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 Invoked at most every 0.5 s. Pass ``None`` to disable.
             cwd: Working directory for the subprocess. Defaults to ``self.repo_path``.
                 Plain-arm runs pass a symlink-based stripped copy without ``.cache/``.
+            arm: Benchmark arm; forwarded to ``_subprocess_env`` so the codemap / combined
+                arms receive the ``SCAN_NO_AUTOBUILD`` opt-out.
         """
         pending: dict[str, float] = {}
         pending_codemap_ids: set[str] = set()  # all codemap skill calls (for erec corpus)
@@ -1404,7 +1479,7 @@ If a structural tool returns <tool_use_error>, run one Grep/Bash fallback for th
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=str(cwd if cwd is not None else self.repo_path),
-                env=self._subprocess_env(),
+                env=self._subprocess_env(arm),
             )
             kill_timer = threading.Timer(self.timeout, proc.kill)
             kill_timer.start()
@@ -1695,10 +1770,11 @@ def score_fix(diff_text: str, expected_patch_keywords: list[str], expected_files
     )
 
 
-def _median_metrics(rlist: list[BenchmarkRun]) -> dict[str, float]:
+def _median_metrics(rlist: list[BenchmarkRun]) -> dict[str, float | None]:
     ok = [r for r in rlist if r.success]
     if not ok:
         return {}
+    chunk_vals = [r.quality.chunk_hit_rate for r in ok if r.quality.chunk_hit_rate is not None]
     return {
         "tool_calls": statistics.median([r.tools.total for r in ok]),
         "input_tokens": statistics.median([r.input_tokens for r in ok]),
@@ -1709,6 +1785,8 @@ def _median_metrics(rlist: list[BenchmarkRun]) -> dict[str, float]:
         "rrec": statistics.median([r.quality.rrec for r in ok]),
         "erec": statistics.median([r.quality.erec for r in ok]),
         "delta": statistics.median([r.quality.delta for r in ok]),
+        # None when no run in the cell carried a semble corpus (plain / codemap arms).
+        "chunk_hit_rate": statistics.median(chunk_vals) if chunk_vals else None,
         "success_rate": len(ok) / len(rlist),
     }
 
@@ -1777,6 +1855,16 @@ class Report:
     def _fmt_usd(v: float) -> str:
         return f"${v:.3f}"
 
+    @staticmethod
+    def _fmt_pct(v: float) -> str:
+        return f"{v:.0%}"
+
+    # Task types scored by diff/keyword recall, not by a reverse-dependency list. Their
+    # efficiency (token / tool-call) savings are suppressed because the arms differ in edit
+    # workload, not in structural-discovery cost — a savings figure there would be biased
+    # (review N3). Quality (erec/rrec keyword recall) is still rendered for them.
+    _FIX_TYPES = ("fix_single", "fix_multicaller")
+
     # Key metrics first — these are the headline savings signal.
     # Diagnostic metrics follow (tool breakdown, tool-only time).
     # cost_usd is the fair cross-arm metric (arms run different-priced models).
@@ -1787,6 +1875,14 @@ class Report:
         ("tool_calls", "Tool calls", _fmt_int),
         ("tool_result_tokens", "Tool result tokens (k)", _fmt_tokens),
         ("tool_elapsed_s", "Tool time (s)", _fmt_s),
+    ]
+
+    # Quality lenses rendered as absolute per-arm medians (never as savings — higher is better).
+    # chunk_hit_rate is the semble-native lens and is None (rendered "—") for plain / codemap.
+    _QUALITY_METRICS = [
+        ("erec", "Exposure recall (erec)", _fmt_pct),
+        ("rrec", "Report recall (rrec)", _fmt_pct),
+        ("chunk_hit_rate", "Chunk hit rate (semble lens)", _fmt_pct),
     ]
 
     def __init__(self, results: list[BenchmarkRun], tasks: list[Task], metadata: dict) -> None:
@@ -1848,31 +1944,48 @@ class Report:
             lines.append(f"## Detail — {m.capitalize()}")
             lines.append("")
             lines += self._per_task_tables(agg)
+            lines += [f"## Quality & reliability — {m.capitalize()}", ""]
+            lines += self._per_task_quality_tables(agg)
+            lines += self._success_table(m)
+            lines += self._failures_section(m)
 
         lines += self._LIMITATIONS_MD
 
         return "\n".join(lines)
 
-    def _arm_cells(self, arm: str, bv, iv, fmt) -> dict[str, str]:
-        have_pair = bv is not None and iv is not None and bv > 0
-        saved = f"{1.0 - iv / bv:.0%}" if have_pair else "—"
-        arrow = ("↓" if iv < bv else "↑") if have_pair else ""
+    def _arm_cells(self, arm: str, bv, iv, fmt, savings_applicable: bool = True) -> dict[str, str]:
+        have_pair = savings_applicable and bv is not None and iv is not None and bv > 0
+        if not savings_applicable:
+            saved, arrow = "n/a", ""
+        else:
+            saved = f"{1.0 - iv / bv:.0%}" if have_pair else "—"
+            arrow = ("↓" if iv < bv else "↑") if have_pair else ""
         return {
             arm.capitalize(): fmt(iv) if iv is not None else "—",
             f"{arm.capitalize()} savings": f"{saved} {arrow}".strip(),
         }
 
+    def _efficiency_task_ids(self) -> list[str]:
+        """Task ids eligible for efficiency savings — fix-family tasks are excluded (review N3)."""
+        return [tid for tid in self.task_ids if (t := self.task_meta.get(tid)) and t.type not in self._FIX_TYPES]
+
     def _savings_summary(self, agg: dict) -> list[dict]:
-        """Build savings rows for one model's aggregated results, one row per arm × metric."""
+        """Build savings rows for one model's aggregated results, one row per arm × metric.
+
+        Each row carries ``n`` — the number of tasks where BOTH the plain baseline and the arm
+        succeeded — so the denominator behind every savings figure is visible (review H-4).
+        Fix-family tasks are excluded from the efficiency denominators (review N3).
+        """
         baseline = self._BASELINE
         present_arms = {r.arm for r in self.results}
         injected_arms = [a for a in self._INJECTED_ARMS if a in present_arms]
+        eligible = self._efficiency_task_ids()
         rows = []
         for arm in injected_arms:
             for key, label, _ in self._METRICS:
                 savings_per_task = [
                     1.0 - iv / bv
-                    for tid in self.task_ids
+                    for tid in eligible
                     for bv in [agg.get(tid, {}).get(baseline, {}).get(key)]
                     for iv in [agg.get(tid, {}).get(arm, {}).get(key)]
                     if bv and iv and bv > 0
@@ -1883,6 +1996,7 @@ class Report:
                     {
                         "Arm": arm,
                         "Metric": label,
+                        "n": len(savings_per_task),
                         "Median savings": f"{statistics.median(savings_per_task):.0%}",
                         "Mean savings": f"{statistics.mean(savings_per_task):.0%}",
                         "Min savings": f"{min(savings_per_task):.0%}",
@@ -1901,14 +2015,78 @@ class Report:
             rows = []
             for tid in self.task_ids:
                 t = self.task_meta.get(tid)
+                savings_ok = not (t and t.type in self._FIX_TYPES)
                 bv = agg.get(tid, {}).get(baseline, {}).get(key)
                 row = {"Task": tid, "Type": t.type if t else "?", "Plain": fmt(bv) if bv is not None else "—"}
                 for arm in injected_arms:
                     iv = agg.get(tid, {}).get(arm, {}).get(key)
-                    row.update(self._arm_cells(arm, bv, iv, fmt))
+                    row.update(self._arm_cells(arm, bv, iv, fmt, savings_applicable=savings_ok))
                 rows.append(row)
             lines += [f"### {label}", "", pd.DataFrame(rows).to_markdown(index=False), ""]
         return lines
+
+    def _rendered_arms(self) -> list[str]:
+        """Baseline plus every injected arm that produced at least one run, in canonical order."""
+        present_arms = {r.arm for r in self.results}
+        return [self._BASELINE] + [a for a in self._INJECTED_ARMS if a in present_arms]
+
+    def _per_task_quality_tables(self, agg: dict) -> list[str]:
+        """Render absolute per-arm quality medians (erec / rrec / chunk hit rate) — no savings.
+
+        Quality is a correctness lens where higher is better, so it is shown as absolute
+        percentages for every arm (review H-4). ``chunk_hit_rate`` is the semble-native lens and
+        renders "—" for arms that carry no semble corpus.
+        """
+        arms = self._rendered_arms()
+        lines: list[str] = []
+        for key, label, fmt in self._QUALITY_METRICS:
+            rows = []
+            for tid in self.task_ids:
+                t = self.task_meta.get(tid)
+                row = {"Task": tid, "Type": t.type if t else "?"}
+                for arm in arms:
+                    v = agg.get(tid, {}).get(arm, {}).get(key)
+                    row[arm.capitalize()] = fmt(v) if v is not None else "—"
+                rows.append(row)
+            lines += [f"### {label}", "", pd.DataFrame(rows).to_markdown(index=False), ""]
+        return lines
+
+    def _cell_counts(self, model: str) -> dict[str, dict[str, list[int]]]:
+        """Return ``{task_id: {arm: [n_total, n_success]}}`` for one model tier.
+
+        Unlike ``aggregate`` (which drops all-failed cells), this keeps every cell so failures are
+        countable — a cell where every run failed still reports ``[n_total, 0]`` (review H-4).
+        """
+        counts: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
+        for r in self.results:
+            if r.model != model:
+                continue
+            cell = counts[r.task_id][r.arm]
+            cell[0] += 1
+            if r.success:
+                cell[1] += 1
+        return counts
+
+    def _success_table(self, model: str) -> list[str]:
+        """Render a per-task success-rate table (successful / total runs) for every arm."""
+        counts = self._cell_counts(model)
+        arms = self._rendered_arms()
+        rows = []
+        for tid in self.task_ids:
+            row = {"Task": tid}
+            for arm in arms:
+                n_total, n_ok = counts.get(tid, {}).get(arm, [0, 0])
+                row[arm.capitalize()] = f"{n_ok}/{n_total}" if n_total else "—"
+            rows.append(row)
+        return ["### Success rate (successful / total runs)", "", pd.DataFrame(rows).to_markdown(index=False), ""]
+
+    def _failures_section(self, model: str) -> list[str]:
+        """List every failed run for one model tier so drops are visible, not silently omitted."""
+        fails = [r for r in self.results if r.model == model and not r.success]
+        if not fails:
+            return ["### Failed runs", "", "_No failed runs._", ""]
+        rows = [{"Task": r.task_id, "Arm": r.arm, "Error": (r.error_type or r.error or "failed")[:80]} for r in fails]
+        return ["### Failed runs", "", pd.DataFrame(rows).to_markdown(index=False), ""]
 
 
 # ---------------------------------------------------------------------------
@@ -1944,8 +2122,9 @@ def _run_line(run_n: int, total_runs: int, task: Task, model_short: str, arm: st
     if q.scored:
         erec_part = f"erec={q.erec:4.0%} rrec={q.rrec:4.0%}"
         sc_part = f"  sc={q.skill_coverage:4.0%}" if q.skill_coverage is not None else ""
+        chr_part = f"  chr={q.chunk_hit_rate:4.0%}" if q.chunk_hit_rate is not None else ""
         top10_part = f"  e@10={q.erec_top10:4.0%}" if q.erec_top10_k >= 5 else ""
-        quality_suffix = f" | {erec_part}{sc_part}{top10_part}"
+        quality_suffix = f" | {erec_part}{sc_part}{chr_part}{top10_part}"
     else:
         quality_suffix = "\t| quality=n/a"
     # Flag possibly-degenerate codemap runs (very few total calls with 0% quality)
@@ -2028,10 +2207,12 @@ class Benchmark:
         result = runner.run(task, arm, update_fn=update_fn)
         # Build corpora for v2 quality scoring.
         # erec uses agent-text only — tool outputs excluded so codemap arm erec measures
-        # agent comprehension, not whether the skill echoed the list back.
-        # TODO(review C-5): semble-native chunk-hit metric pending; rdep-recall is codemap-native lens
+        # agent comprehension, not whether the skill echoed the list back. The semble chunk
+        # corpus feeds the semble-native chunk_hit_rate lens (review C-5); erec/rrec stay the
+        # codemap-native rdep-recall lens.
         exposure_corpus = result.output_text
         report_corpus = result.output_text[result.last_tool_text_offset :]
+        semble_corpus = "\n".join(result.semble_results) or None
         result.quality = self.gt.score(
             task_id=task.id,
             output_text=result.output_text,
@@ -2039,6 +2220,7 @@ class Benchmark:
             report_corpus=report_corpus,
             tool_calls=result.tools.total,
             skill_result_text=result.skill_result_text or None,
+            semble_result_text=semble_corpus,
         )
         # read_crop tasks have no rdeps ground truth — score by keyword recall instead,
         # and exempt them from the codemap-skill-required guard (they use scan-query symbol
