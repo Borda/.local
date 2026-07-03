@@ -99,24 +99,48 @@ class TestSentinelFlag:
             for stale in sentinel_base.glob(f"{sentinel_name}-*"):
                 stale.unlink(missing_ok=True)
 
+    @pytest.mark.parametrize(
+        "raw_name,expected_sanitized",
+        [
+            ("../evil-{pid}", "evil-{pid}"),
+            (r"..\evil-{pid}", "evil-{pid}"),
+            ("name with spaces-{pid}", "namewithspaces-{pid}"),
+            ("safe_MIX-123-{pid}", "safe_MIX-123-{pid}"),
+        ],
+    )
     def test_sentinel_name_sanitized(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        raw_name: str,
+        expected_sanitized: str,
     ) -> None:
-        """``../evil`` stripped to ``evil`` — no path traversal via sentinel name."""
+        """Unsafe sentinel characters are stripped before touching the sentinel file."""
         monkeypatch.chdir(tmp_path)
         pid = os.getpid()
-        raw_name = f"../evil-{pid}"
-        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "", raw_name)
+        raw_name = raw_name.format(pid=pid)
+        sanitized = expected_sanitized.format(pid=pid)
         sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
         try:
             rc = dev_run_dir.main(["--sentinel", raw_name])
             assert rc == 0
             ts = capsys.readouterr().out.strip().split("/")[-1]
             assert (sentinel_base / f"{sanitized}-{ts}").exists()
-            assert not (sentinel_base / f"{raw_name}-{ts}").exists()
+            if raw_name != sanitized:
+                assert not (sentinel_base / f"{raw_name}-{ts}").exists()
         finally:
             for stale in sentinel_base.glob(f"{sanitized}-*"):
                 stale.unlink(missing_ok=True)
+
+    def test_all_unsafe_sentinel_name_skipped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A sentinel name that sanitizes to empty does not create a broad timestamp file."""
+        monkeypatch.chdir(tmp_path)
+        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
+        before = set(sentinel_base.glob("*"))
+        dev_run_dir.main(["--sentinel", "!!!"])
+        after = set(sentinel_base.glob("*"))
+        assert before == after
 
     def test_sentinel_without_name_skipped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """``--sentinel`` alone (no name arg) creates no sentinel file."""

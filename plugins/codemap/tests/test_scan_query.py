@@ -407,18 +407,86 @@ class TestScanRoot:
 class TestFunctionCallGraph:
     """Function-level call-graph queries (v3 index): fn-deps, fn-rdeps, fn-central, fn-blast."""
 
-    def test_fn_deps(self, query):
-        """func_alpha calls func_beta and func_gamma."""
+    @pytest.mark.parametrize(
+        "expected_target",
+        [
+            "beta::func_beta",
+            "gamma::func_gamma",
+        ],
+    )
+    def test_fn_deps_includes_exact_direct_callees(self, query, expected_target):
+        """func_alpha calls the exact beta/gamma targets, not only similarly named functions."""
         data = query("fn-deps", "alpha::func_alpha")
         callees = {e["target"] for e in data.get("calls", [])}
-        assert any("func_beta" in t for t in callees)
-        assert any("func_gamma" in t for t in callees)
+        assert expected_target in callees
 
-    def test_fn_rdeps(self, query):
-        """func_gamma is called by func_beta (and transitively func_alpha)."""
+    @pytest.mark.parametrize(
+        "unexpected_target",
+        [
+            "pkg.delta::func_delta",
+            "alpha::func_alpha",
+            "beta::not_func_beta",
+        ],
+    )
+    def test_fn_deps_excludes_unrelated_or_misqualified_callees(self, query, unexpected_target):
+        """func_alpha's edge list excludes unrelated and wrongly qualified callees."""
+        data = query("fn-deps", "alpha::func_alpha")
+        callees = {e["target"] for e in data.get("calls", [])}
+        assert unexpected_target not in callees
+
+    @pytest.mark.parametrize(
+        "expected_caller",
+        [
+            "alpha::func_alpha",
+            "beta::func_beta",
+        ],
+    )
+    def test_fn_rdeps_includes_exact_direct_callers(self, query, expected_caller):
+        """func_gamma is called directly by alpha.func_alpha and beta.func_beta."""
         data = query("fn-rdeps", "gamma::func_gamma")
         callers = {e["caller"] for e in data.get("called_by", [])}
-        assert any("func_beta" in t for t in callers)
+        assert expected_caller in callers
+
+    def test_fn_rdeps_reports_no_callers_for_leaf_driver(self, query):
+        """pkg.delta::func_delta has no caller in the fixture project."""
+        data = query("fn-rdeps", "pkg.delta::func_delta")
+        assert data["called_by"] == []
+        assert data["count"] == 0
+
+    def test_fn_rdeps_dedupes_repeated_calls_from_same_caller(self, tmp_path, scan_index, scan_query):
+        """A caller that invokes the same target twice is reported once."""
+        root = tmp_path / "repeat_calls"
+        root.mkdir()
+        (root / "target.py").write_text("def callee():\n    return 1\n")
+        (root / "caller.py").write_text(
+            "import target\n\ndef caller():\n    target.callee()\n    return target.callee()\n"
+        )
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        query_result = subprocess.run(
+            [
+                sys.executable,
+                str(scan_query),
+                "--index",
+                str(index_path),
+                "fn-rdeps",
+                "target::callee",
+            ],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert query_result.returncode == 0, query_result.stderr
+        data = json.loads(query_result.stdout)
+        assert [e["caller"] for e in data["called_by"]] == ["caller::caller"]
+        assert data["count"] == 1
+        assert data["unique_caller_count"] == 1
 
     def test_fn_rdeps_unique_caller_count_matches_deduped_callers(self, query):
         """``unique_caller_count`` equals the deduped caller-list length and mirrors ``count``."""
@@ -492,6 +560,40 @@ class TestRdepsNewFields:
         """config_refs is a list (may be empty when no config files reference the module)."""
         data = query("rdeps", "gamma")
         assert isinstance(data["config_refs"], list)
+
+    def test_rdeps_populates_dynamic_imported_by_and_config_refs(self, tmp_path, scan_index, scan_query):
+        """Dynamic import literals and root config references are exposed for rdeps."""
+        root = tmp_path / "rdeps_fields"
+        root.mkdir()
+        pkg = root / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "gamma.py").write_text("VALUE = 1\n")
+        (root / "dyn_importlib.py").write_text(
+            "import importlib\n\ndef load():\n    return importlib.import_module('pkg.gamma')\n"
+        )
+        (root / "dyn_dunder.py").write_text("def load():\n    return __import__('pkg.gamma')\n")
+        (root / "pyproject.toml").write_text("[tool.codemap]\nplugins = ['pkg.gamma']\n")
+        scan_result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert scan_result.returncode == 0, scan_result.stderr
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        query_result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "pkg.gamma"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert query_result.returncode == 0, query_result.stderr
+        data = json.loads(query_result.stdout)
+        dynamic_importers = {entry["importer"] for entry in data["dynamic_imported_by"]}
+        assert dynamic_importers == {"dyn_dunder", "dyn_importlib"}
+        assert {entry["literal"] for entry in data["dynamic_imported_by"]} == {"pkg.gamma"}
+        assert data["config_refs"] == [{"file": "pyproject.toml", "line": 2, "context": "plugins = ['pkg.gamma']"}]
 
 
 class TestRequireFeature:
@@ -793,6 +895,39 @@ class TestImportClassification:
             f"expected 'mypackage' to resolve internal via src.* prefix, got groups={data}"
         )
 
+    @pytest.mark.parametrize(
+        "group, import_name",
+        [
+            ("stdlib", "os"),
+            ("stdlib", "collections"),
+            ("third_party", "requests.sessions"),
+            ("internal", "pkg"),
+            ("internal", "pkg.core"),
+        ],
+    )
+    def test_import_shapes_are_classified(self, tmp_path, scan_index, scan_query, group, import_name):
+        """Aliases, ImportFrom, submodules, and local packages classify into the expected group."""
+        root = tmp_path / f"import_shape_{group}_{import_name.replace('.', '_')}"
+        root.mkdir()
+        pkg = root / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "core.py").write_text("VALUE = 1\n")
+        (root / "consumer.py").write_text(
+            "import os as operating_system\n"
+            "from collections import deque\n"
+            "import requests.sessions as sessions\n"
+            "import pkg.core\n"
+            "from pkg import core\n\n"
+            "def use():\n"
+            "    return operating_system.getcwd(), deque(), sessions, pkg.core.VALUE, core.VALUE\n"
+        )
+        rc, data, _ = self._scan_and_query(root, scan_index, scan_query, ["import-types", "consumer"])
+        assert rc == 0, data
+        assert import_name in data[group]
+        for other_group in {"stdlib", "third_party", "internal"} - {group}:
+            assert import_name not in data[other_group]
+
 
 class TestDocstringCoverage:
     """v4.4 — ``has_docstring`` / ``docstring_first_line`` per symbol and the ``undocumented`` query.
@@ -876,8 +1011,8 @@ class TestDocstringCoverage:
         assert "documented" not in names
         assert data["total"] == 0
 
-    def test_undocumented_function_returned(self, tmp_path, scan_index, scan_query):
-        """A function without a docstring is flagged ``has_docstring=False`` and surfaces in the query."""
+    def test_undocumented_function_index_fields(self, tmp_path, scan_index):
+        """A function without a docstring is indexed with explicit false/None docstring fields."""
         root = tmp_path / "doc_missing"
         root.mkdir()
         (root / "mymod.py").write_text("def undocumented(x):\n    return x + 1\n")
@@ -888,11 +1023,74 @@ class TestDocstringCoverage:
         assert sym["has_docstring"] is False
         assert sym["docstring_first_line"] is None
 
+    def test_undocumented_function_returned(self, tmp_path, scan_index, scan_query):
+        """A public function without a docstring surfaces in the undocumented query."""
+        root = tmp_path / "doc_missing_query"
+        root.mkdir()
+        (root / "mymod.py").write_text("def undocumented(x):\n    return x + 1\n")
+        index_path = self._scan(root, scan_index)
         rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "mymod"])
         assert rc == 0, data
         names = {f["name"] for f in data["undocumented"]}
         assert "undocumented" in names
         assert data["total"] == 1
+
+    def test_async_decorated_class_and_blank_first_line_docstrings_indexed(self, tmp_path, scan_index):
+        """Docstring fields are populated for async, decorated, class, and blank-first-line cases."""
+        root = tmp_path / "doc_shapes"
+        root.mkdir()
+        (root / "mymod.py").write_text(
+            "def decorator(obj):\n"
+            "    return obj\n"
+            "\n"
+            "@decorator\n"
+            "async def async_documented():\n"
+            '    """\n'
+            "    Async summary.\n"
+            '    """\n'
+            "    return 1\n"
+            "\n"
+            "@decorator\n"
+            "class Documented:\n"
+            '    """\n'
+            "    Class summary.\n"
+            '    """\n'
+            "\n"
+            "    @decorator\n"
+            "    def method(self):\n"
+            '        """\n'
+            "        Method summary.\n"
+            '        """\n'
+            "        return 2\n"
+        )
+        index = self._load_index(self._scan(root, scan_index))
+        mod = next(m for m in index["modules"] if m["name"] == "mymod")
+        by_qname = {s["qualified_name"]: s for s in mod["symbols"]}
+        assert by_qname["async_documented"]["has_docstring"] is True
+        assert by_qname["async_documented"]["docstring_first_line"] == "Async summary."
+        assert by_qname["Documented"]["has_docstring"] is True
+        assert by_qname["Documented"]["docstring_first_line"] == "Class summary."
+        assert by_qname["Documented.method"]["has_docstring"] is True
+        assert by_qname["Documented.method"]["docstring_first_line"] == "Method summary."
+
+    def test_undocumented_query_reports_async_functions_and_classes(self, tmp_path, scan_index, scan_query):
+        """Public async functions and classes without docstrings are included in undocumented results."""
+        root = tmp_path / "doc_public_shapes"
+        root.mkdir()
+        (root / "mymod.py").write_text(
+            "async def missing_async():\n"
+            "    return 1\n"
+            "\n"
+            "class MissingClass:\n"
+            "    def documented_method(self):\n"
+            '        """Method docs do not document the class itself."""\n'
+            "        return 2\n"
+        )
+        index_path = self._scan(root, scan_index)
+        rc, data, _ = self._query(root, index_path, scan_query, ["undocumented", "mymod"])
+        assert rc == 0, data
+        qnames = {f["qualified_name"] for f in data["undocumented"]}
+        assert {"missing_async", "MissingClass"}.issubset(qnames)
 
     def test_undocumented_class_method_returned(self, tmp_path, scan_index, scan_query):
         """A class method without a docstring is reported as undocumented under its qualified_name."""
@@ -1902,12 +2100,13 @@ class TestDeadSymbols:
         captured = capsys.readouterr()
         assert "dead-symbol" in captured.out
 
-    def test_end_to_end_via_subprocess(self, tmp_path, scan_index, scan_query):
-        """End-to-end: scan-index produces a v6 index; scan-query dead-symbols isolates the orphan.
+    def test_dead_symbols_suppresses_imported_module_symbols(self, tmp_path, scan_index, scan_query):
+        """Imported-module symbols are suppressed while an unimported module's symbol is reported.
 
         Layout:
           mylib.py — ``used_fn`` (called by user.py) + ``orphan_fn`` (no caller, no docs, no test)
           user.py  — imports mylib, calls used_fn
+          lonely.py — never imported, so its public function is dead
         Both ``used_fn`` and ``orphan_fn`` are at least 5 LOC so the default
         ``--min-loc`` threshold keeps both candidates.
         """
@@ -1930,6 +2129,9 @@ class TestDeadSymbols:
             "    return x * (a + b + c + d)\n"
         )
         (root / "user.py").write_text("import mylib\n\n\ndef driver():\n    return mylib.used_fn(1)\n")
+        (root / "lonely.py").write_text(
+            "def forgotten_fn(x):\n    a = 1\n    b = 2\n    c = 3\n    d = 4\n    return x + a + b + c + d\n"
+        )
         scan_result = subprocess.run(
             [sys.executable, str(scan_index), "--root", str(root)],
             capture_output=True,
@@ -1947,12 +2149,9 @@ class TestDeadSymbols:
         assert query_result.returncode == 0, query_result.stderr
         data = json.loads(query_result.stdout)
         names = {(f["module"], f["name"]) for f in data["dead"]}
-        # mylib.used_fn is called by user.driver → alive.
-        # mylib.orphan_fn has no caller and mylib.rdep_count == 1 (imported by user.py) — orphan_fn
-        # is therefore NOT dead under the strict definition (module must have rdep_count == 0).
-        # Re-test: build a module that is NEVER imported; its public fn should land in dead-symbols.
-        # The current layout proves the conservative "module rdep == 0" gate works as designed.
+        assert ("lonely", "forgotten_fn") in names
         assert ("mylib", "used_fn") not in names
+        assert ("mylib", "orphan_fn") not in names
 
     def test_end_to_end_orphan_module(self, tmp_path, scan_index, scan_query):
         """End-to-end: a module nobody imports is reported in both dead-modules and dead-symbols.
@@ -2672,8 +2871,8 @@ class TestCoverageQueryCommands:
         names = {row["qualified_name"] for row in data["symbols"]}
         assert {"full", "partial", "empty"}.issubset(names)
 
-    def test_coverage_gap_below_threshold(self, covered_project, scan_query):
-        """`coverage-gap --all --threshold 0.5` surfaces `empty` (0.0 pct) but not `full` (1.0)."""
+    def _coverage_gap_names(self, covered_project, scan_query, threshold: float) -> set[str]:
+        """Run coverage-gap for *threshold* and return reported qualified names."""
         root, index_path = covered_project
         result = subprocess.run(
             [
@@ -2684,7 +2883,7 @@ class TestCoverageQueryCommands:
                 "coverage-gap",
                 "--all",
                 "--threshold",
-                "0.5",
+                str(threshold),
             ],
             capture_output=True,
             text=True,
@@ -2692,9 +2891,51 @@ class TestCoverageQueryCommands:
         )
         assert result.returncode == 0, result.stderr
         data = json.loads(result.stdout)
-        qnames = {row["qualified_name"] for row in data["coverage_gap"]}
-        assert "empty" in qnames
-        assert "full" not in qnames
+        return {row["qualified_name"] for row in data["coverage_gap"]}
+
+    @pytest.mark.parametrize(
+        "threshold, expected_names",
+        [
+            pytest.param(0.0, set(), id="zero-threshold-excludes-zero-coverage"),
+            pytest.param(0.75, {"empty"}, id="exact-threshold-excludes-equal-partial"),
+            pytest.param(0.7501, {"empty", "partial"}, id="just-above-partial-includes-partial"),
+            pytest.param(1.0, {"empty", "partial"}, id="full-threshold-excludes-full-coverage"),
+        ],
+    )
+    def test_coverage_gap_threshold_boundaries(self, covered_project, scan_query, threshold, expected_names):
+        """`coverage-gap` uses strict coverage_pct < threshold semantics."""
+        assert self._coverage_gap_names(covered_project, scan_query, threshold) == expected_names
+
+    def test_coverage_gap_ignores_symbols_with_missing_coverage(self, capsys):
+        """Symbols lacking coverage_pct are skipped instead of treated as zero coverage."""
+        index = {
+            "scan_version": _scan_query_mod.COVERAGE_MIN_VER,
+            "modules": [
+                {
+                    "name": "mymod",
+                    "status": "ok",
+                    "is_test": False,
+                    "symbols": [
+                        {
+                            "qualified_name": "missing",
+                            "type": "function",
+                            "start_line": 1,
+                            "end_line": 2,
+                        },
+                        {
+                            "qualified_name": "empty",
+                            "type": "function",
+                            "coverage_pct": 0.0,
+                            "start_line": 4,
+                            "end_line": 5,
+                        },
+                    ],
+                }
+            ],
+        }
+        _scan_query_mod.cmd_coverage_gap(index, module=None, all_modules=True, threshold=0.5)
+        data = json.loads(capsys.readouterr().out)
+        assert {row["qualified_name"] for row in data["coverage_gap"]} == {"empty"}
 
     def test_coverage_gap_sorted_by_gap_desc(self, covered_project, scan_query):
         """The largest gap is reported first (gap = threshold − coverage_pct)."""

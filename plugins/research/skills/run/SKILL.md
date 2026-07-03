@@ -1,7 +1,7 @@
 ---
 name: run
 description: "Sustained metric-improvement loop with atomic commits, auto-rollback, and experiment logging. Iterates with specialist agents, commits atomically, auto-rolls back on regression. Accepts a program.md file path. Supports --resume, --team, --colab, --codex, --researcher, --architect, --journal, --hypothesis."
-argument-hint: "<program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>]"
+argument-hint: "<program.md> [clarification] [--resume <program.md>] [--team] [--compute=local|colab|docker] [--colab[=H100|L4|T4|A100]] [--codex] [--researcher] [--architect] [--journal] [--hypothesis <path>] [--keep \"<items>\"]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -89,6 +89,14 @@ Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml`
 
 </constants>
 
+<compaction>
+
+Key boundary: end of each Phase 8 in R5 iteration loop — JSONL record appended and `state.json` updated. Overwrite each iteration; contract always reflects latest in-progress state. Long metric-improvement loops are the primary auto-compact risk.
+Preserve at each boundary: RUN_ID (TMPDIR key), STATE_DIR path, program.md path, current iteration#, best metric, best-commit SHA, experiments.jsonl path.
+Clear at R1 start (stale prior run) and after R6/R7 campaign completion.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
@@ -96,6 +104,7 @@ Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml`
 ## Agent Resolution
 
 ```bash
+# loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
@@ -154,7 +163,18 @@ After clarification extraction, remaining non-flag tokens (not starting `--`) ar
   If you meant to set a clarification hint, pass it as a quoted string: "/research:run program.md \"sort improvements\" --codex"
 ```
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`.
+```bash
+# Extract --keep quoted value (compaction-contract.md §keep semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/research-run-keep-items"  # persist for Phase 8 contract write
+```
+
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`, `--keep`.
 
 **Codemap auto-detection** — structural blast-radius context for the modules the experiment edits; on by default when codemap installed + index found. `--no-codemap` opts out; `--codemap` is strict (fail if unavailable).
 
@@ -199,6 +219,7 @@ RUN_ID=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 RUN_DIR=".experiments/${RUN_ID}"  # hypothesis pipeline + journal outputs (per <constants> note)
 STATE_DIR=".experiments/state/${RUN_ID}"  # per-iteration artifacts (state.json, experiments.jsonl, diary.md)
 mkdir -p "$RUN_DIR" "$STATE_DIR"  # timeout: 5000 — both dirs created before any Write to either
+echo "$RUN_ID" > "${TMPDIR:-/tmp}/research-run-id"  # persist for Phase 8 contract write (Check 41: fresh shell)
 ```
 
 Note: `STATE_DIR` (`.experiments/state/${RUN_ID}/`) is per-iteration artifact dir — distinct from `RUN_DIR`. Both coexist; see `<constants>` block.
@@ -576,6 +597,25 @@ Print iteration summary:
 
 TaskUpdate R5 subject: `R5: Iter N/max — last: <status>, best: <best_metric>`
 
+```bash
+# Compaction contract — overwrite each iteration; always reflects latest in-progress state (compaction-contract.md §Lifecycle)
+_RUN_ID=$(cat "${TMPDIR:-/tmp}/research-run-id" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/research-run-keep-items" 2>/dev/null || echo "")
+_STATE_JSON=".experiments/state/${_RUN_ID}/state.json"
+_ITER=$(jq -r '.iteration // 0' "$_STATE_JSON" 2>/dev/null || echo "?")
+_BEST=$(jq -r '.best_metric // "?"' "$_STATE_JSON" 2>/dev/null || echo "?")
+_PROG=$(jq -r '.program_file // ""' "$_STATE_JSON" 2>/dev/null || echo "")
+_KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: research:run · phase: iteration-loop (after iter ${_ITER})"
+    echo "- run-dir: .experiments/${_RUN_ID}"
+    echo "- preserve: state-json=${_STATE_JSON}, program=${_PROG}, iter=${_ITER}, best-metric=${_BEST}${_KEEP_APPEND}"
+    echo "- next: continue R5 from iter $(( _ITER + 1 )) or proceed to R6 when loop done"
+} > .claude/state/skill-contract.md  # timeout: 5000
+```
+
 #### Phase 9 — Progress checks
 
 - **Summary every SUMMARY_INTERVAL iterations**: print compact table (iteration, metric, delta, status) for last N iterations.
@@ -617,6 +657,10 @@ Call `AskUserQuestion` tool after R7 output — do NOT write options as plain te
 - (a) label: `/research:retro` — description: run post-run retrospective analysis
 - (b) label: `/research:verify <paper>` — description: verify implementation matches paper claims
 - (c) label: `skip` — description: no further action
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — campaign complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 ## Resume Mode
 

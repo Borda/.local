@@ -91,6 +91,23 @@ def test_changed_files_staged(monkeypatch: pytest.MonkeyPatch) -> None:
     assert any("src/foo.py" in c for c in add_cmds)
 
 
+def test_changed_files_include_nested_spaces_deleted_and_extensionless(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tracked diff output is staged exactly, regardless of path shape or extension."""
+    changed = "src/pkg/foo.py\ndocs/file with spaces.md\ndeleted.txt\nMakefile\n"
+    recorded = _patch_git(monkeypatch, diff_out=changed)
+    sic.main(["item1"])
+    add_cmds = [c for c in recorded if c[1] == "add"]
+    assert [
+        "/fake/git",
+        "add",
+        "--",
+        "src/pkg/foo.py",
+        "docs/file with spaces.md",
+        "deleted.txt",
+        "Makefile",
+    ] in add_cmds
+
+
 def test_untracked_source_files_staged(monkeypatch: pytest.MonkeyPatch) -> None:
     """Untracked files with source extension are passed to ``git add``."""
     recorded = _patch_git(monkeypatch, ls_out="new_script.py\n")
@@ -107,6 +124,26 @@ def test_untracked_nonsource_files_not_staged(monkeypatch: pytest.MonkeyPatch) -
     staged = [f for cmd in add_cmds for f in cmd[3:]]
     assert "image.png" not in staged
     assert "notes.pdf" not in staged
+
+
+def test_untracked_filter_stages_source_doc_config_and_dotfiles(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only recognised source/config extensions from untracked output are staged."""
+    untracked = "\n".join(
+        [
+            "nested/module.py",
+            "docs/file with spaces.md",
+            "config/settings.toml",
+            ".pre-commit-config.yaml",
+            "Makefile",
+            "build/output.pyc",
+            "image.png",
+        ]
+    )
+    recorded = _patch_git(monkeypatch, ls_out=untracked)
+    sic.main(["item1"])
+    add_cmds = [c for c in recorded if c[1] == "add"]
+    staged = [f for cmd in add_cmds for f in cmd[3:]]
+    assert staged == ["nested/module.py", "docs/file with spaces.md", "config/settings.toml", ".pre-commit-config.yaml"]
 
 
 def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -256,6 +256,51 @@ def test_aggregate_session_filter(synthetic_logs):
     assert set(sessions.keys()) == {"s2"}
 
 
+def test_aggregate_cutoff_includes_boundary_after_and_future_rows(tmp_path: Path):
+    cutoff = ta.parse_ts("2030-01-01T00:00:00Z")
+    timings = _write_jsonl(
+        tmp_path / "timings.jsonl",
+        [
+            {
+                "ts": "2029-12-31T23:59:59Z",
+                "tool": "Read",
+                "duration_ms": 100,
+                "session_id": "before",
+                "args": "",
+            },
+            {
+                "ts": "2030-01-01T00:00:00Z",
+                "tool": "Read",
+                "duration_ms": 200,
+                "session_id": "boundary",
+                "args": "",
+            },
+            {
+                "ts": "2030-01-01T00:00:01Z",
+                "tool": "Read",
+                "duration_ms": 300,
+                "session_id": "after",
+                "args": "",
+            },
+            {
+                "ts": "2035-01-01T00:00:00Z",
+                "tool": "Read",
+                "duration_ms": 400,
+                "session_id": "future",
+                "args": "",
+            },
+        ],
+    )
+    invocations = _write_jsonl(tmp_path / "invocations.jsonl", [])
+
+    sessions, _, _ = ta.aggregate_sessions(timings, invocations, cutoff=cutoff)
+
+    assert set(sessions) == {"boundary", "after", "future"}
+    assert sessions["boundary"].local_ms == 200
+    assert sessions["after"].local_ms == 300
+    assert sessions["future"].local_ms == 400
+
+
 def test_aggregate_top_n_kept_sorted(synthetic_logs):
     timings, inv = synthetic_logs
     sessions, _, _ = ta.aggregate_sessions(timings, inv, cutoff=0.0, top_n=2)

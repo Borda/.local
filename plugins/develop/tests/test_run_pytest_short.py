@@ -74,13 +74,15 @@ def test_custom_tail_n(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFi
     assert len(out_lines) == 5
 
 
+@pytest.mark.parametrize("tail_n", ["abc", "-1"])
 def test_bad_tail_n_falls_back_to_20(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    tail_n: str,
 ) -> None:
-    """``tail_n="abc"`` → silently uses default 20."""
+    """Bad ``tail_n`` values silently use default 20."""
     _patch_subprocess(monkeypatch, returncode=0, stdout=_make_lines(25))
-    rc = run_pytest_short.main(["pytest", ".", "abc"])
+    rc = run_pytest_short.main(["pytest", ".", tail_n])
     assert rc == 0
     out_lines = capsys.readouterr().out.splitlines()
     assert len(out_lines) == 20
@@ -99,19 +101,50 @@ def test_tail_n_larger_than_output(
     assert out_lines == ["line-1", "line-2", "line-3"]
 
 
+@pytest.mark.parametrize(
+    "tail_n,expected",
+    [
+        ("0", []),
+        ("1", ["line-3"]),
+    ],
+)
+def test_numeric_tail_n_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tail_n: str,
+    expected: list[str],
+) -> None:
+    """Numeric tail values at boundaries behave explicitly."""
+    _patch_subprocess(monkeypatch, returncode=0, stdout=_make_lines(3))
+    rc = run_pytest_short.main(["pytest", ".", tail_n])
+    assert rc == 0
+    assert capsys.readouterr().out.splitlines() == expected
+
+
 def test_passes_through_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pytest exits 4 → ``main`` returns 4 unchanged."""
     _patch_subprocess(monkeypatch, returncode=4, stdout=_make_lines(5))
     assert run_pytest_short.main(["pytest"]) == 4
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rm -rf /",
+        "pytest; rm -rf /",
+        "pytest && echo x",
+        "uv run pytest; echo x",
+        "python -m pytest -q",
+    ],
+)
 def test_rejects_unsafe_cmd(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    command: str,
 ) -> None:
     """Non-allowlisted cmd → exit 2; subprocess never invoked; stderr contains "rejected"."""
     recorded = _patch_subprocess(monkeypatch, returncode=0, stdout="")
-    rc = run_pytest_short.main(["rm -rf /", "."])
+    rc = run_pytest_short.main([command, "."])
     assert rc == 2
     assert recorded == []
     assert "rejected" in capsys.readouterr().err
@@ -149,6 +182,46 @@ def test_rejects_target_outside_cwd(
     assert "outside project directory" in capsys.readouterr().err
 
 
+def test_rejects_relative_parent_target_outside_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Relative traversal targets are rejected after resolution."""
+    recorded = _patch_subprocess(monkeypatch, returncode=0, stdout="")
+    cwd_dir = tmp_path / "project"
+    cwd_dir.mkdir()
+    monkeypatch.chdir(cwd_dir)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    with pytest.raises(SystemExit) as exc:
+        run_pytest_short.main(["pytest", "../outside"])
+    assert exc.value.code == 1
+    assert recorded == []
+    assert "outside project directory" in capsys.readouterr().err
+
+
+def test_rejects_symlink_target_outside_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Symlink targets are rejected based on their resolved location."""
+    recorded = _patch_subprocess(monkeypatch, returncode=0, stdout="")
+    cwd_dir = tmp_path / "project"
+    cwd_dir.mkdir()
+    monkeypatch.chdir(cwd_dir)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = cwd_dir / "linked"
+    link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SystemExit) as exc:
+        run_pytest_short.main(["pytest", "linked"])
+    assert exc.value.code == 1
+    assert recorded == []
+    assert "outside project directory" in capsys.readouterr().err
+
+
 def test_resolves_first_token_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """``"uv run pytest"`` → only ``uv`` is path-resolved; other tokens kept literal."""
     recorded = _patch_subprocess(monkeypatch, returncode=0, stdout="")
@@ -157,3 +230,14 @@ def test_resolves_first_token_only(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cmd[0] == "/fake/uv"
     assert cmd[1] == "run"
     assert cmd[2] == "pytest"
+
+
+def test_output_byte_cap_truncates_buffer(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """Oversized output is capped and annotated before tailing."""
+    monkeypatch.setattr(run_pytest_short, "_MAX_OUTPUT_BYTES", 10)
+    _patch_subprocess(monkeypatch, returncode=0, stdout="0123456789ABCDEFGHIJ")
+    rc = run_pytest_short.main(["pytest", ".", "20"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "0123456789" in out
+    assert "output truncated at 10 bytes" in out

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,7 @@ from pathlib import Path
 # Guard against pathological inputs that would exhaust heap memory when read
 # in one shot. 10 MB is well above any realistic Markdown / agent file.
 _MAX_FILE_SIZE = 10 * 1024 * 1024
+_SCRIPT_BOUNDARY_CHARS = r"A-Za-z0-9_.-"
 
 
 @dataclass
@@ -114,6 +116,9 @@ def is_referenced(script_name: str, search_dir: Path) -> bool:
         ...     is_referenced("foo.py", p)
         False
     """
+    script_ref_re = re.compile(
+        rf"(?<![{_SCRIPT_BOUNDARY_CHARS}]){re.escape(script_name)}(?![{_SCRIPT_BOUNDARY_CHARS}])"
+    )
     for dirpath, dirs, filenames in os.walk(search_dir):
         depth = len(Path(dirpath).relative_to(search_dir).parts)
         if depth >= 10:
@@ -128,7 +133,7 @@ def is_referenced(script_name: str, search_dir: Path) -> bool:
                 text = md_path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            if script_name in text:
+            if script_ref_re.search(text):
                 return True
     return False
 

@@ -1,7 +1,7 @@
 ---
 name: fix
 description: "Reproduce-first bug resolution — capture bug in failing regression test, apply minimal fix, run quality stack and review loop. TRIGGER when: user reports a bug, regression, or unexpected behaviour in Python code with a traceback, failing test, or issue number; phrases: \"fix this bug\", \"repair X\", \"broken since Y\", \"test failing\". SKIP when: CI-only failures without local traceback (use `/develop:debug` first); new features (use `/develop:feature`); `.claude/` config issues (use `/foundry:audit`); non-Python projects."
-argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: '<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--plan <path>] [--diagnosis <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team] [--keep "<items>"]'
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -20,6 +20,15 @@ NOT for:
 
 </objective>
 
+<compaction>
+
+Key boundary: end of Step 2 — reproduction test written and failing, before Step 3 code edits.
+Second boundary: end of Step 3 — fix applied and regression test passing, before Step 4 review stack.
+Preserve at boundary 1: dev-dir, regression test path, root cause summary, plan-file, --keep items.
+Preserve at boundary 2: dev-dir, changed files list, test outcomes, regression test path.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at plugins/develop/skills/_shared/agent-resolution.md -->
@@ -30,6 +39,7 @@ NOT for:
 _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+# loads: compaction-contract.md
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
@@ -57,6 +67,11 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 
 **Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
+```bash
+# persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
+echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-fix-dev-dir"
+```
+
 ## Fix Mode
 
 **Optional `--diagnosis <path>`**: if provided (from preceding `/develop:debug` session), read diagnosis file first. Skip Step 1 codebase analysis — root cause, suspect files, and evidence pre-populated from diagnosis file. The Challenger gate still applies: proceed from pre-populated root cause through challenger gate, then to Step 2. Do NOT skip the challenger gate — it reviews the fix approach, not just root cause discovery.
@@ -70,6 +85,15 @@ Diagnosis file format: see `/develop:debug` Final Report section for canonical f
 ## Flag parsing
 
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
+
+```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-fix-keep-items"
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+```
 
 ```bash
 # timeout: 10000
@@ -99,7 +123,7 @@ echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 
 Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
@@ -384,6 +408,24 @@ Before applying fix, critically evaluate reproduction test(s):
 
 If issue found: revise test(s) before applying fix. Flawed reproduction = fix validated against wrong criteria.
 
+```bash
+# Compaction contract — boundary 1: after reproduction, before edit (compaction-contract.md §Lifecycle)
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-fix-dev-dir" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-fix-keep-items" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+_PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:fix · phase: edit (after reproduction test written)"
+    echo "- run-dir: $_DEV_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: apply minimal fix (Step 3) → review+quality stack (Step 4)"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 3: Apply the fix
 
 **Breaking change gate**: before applying fix, assess whether fix introduces a breaking change.
@@ -421,6 +463,21 @@ Make minimal change to fix root cause:
    **If `<test_dir>` does not exist or has no tests beyond regression test**: run only regression test (already verified in Step 2). Note in Final Report: "No pre-existing test suite found — regression test is sole verification."
 
 4. If existing tests break: fix has side effects — reconsider approach
+
+```bash
+# Compaction contract — boundary 2: after fix applied, before review stack (compaction-contract.md §Lifecycle)
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-fix-dev-dir" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+_CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:fix · phase: review+quality (after fix applied)"
+    echo "- run-dir: $_DEV_DIR"
+    echo "- preserve: dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD"
+    echo "- next: review and close gaps (Step 4) → Final Report"
+} > .claude/state/skill-contract.md
+```
 
 ## Step 4: Review and close gaps
 
@@ -499,6 +556,10 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 - [e.g., could not reproduce locally, partial traceback only, fix not runtime-tested]
 
 **Refinements**: N passes.
+```
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 <!-- Team branching logic is inline above at ## Team Mode Branch — executed immediately when TEAM_MODE=true, before Step 1. When to use: root cause unclear after initial triage, OR bug spans 3+ modules AND user accepted "Proceed anyway" at scope gate. Set via --team flag. -->

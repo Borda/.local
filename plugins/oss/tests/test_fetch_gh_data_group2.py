@@ -158,6 +158,12 @@ def test_validate_args_slash_in_branch_allowed() -> None:
     assert fgd._validate_args("o", "r", "release/1.x", "/tmp/x.jsonl") is None
 
 
+def _records(data_file: Path) -> list[dict]:
+    if not data_file.exists():
+        return []
+    return [json.loads(line) for line in data_file.read_text(encoding="utf-8").splitlines() if line]
+
+
 # --- happy-path with mocked subprocess --------------------------------------
 
 
@@ -244,6 +250,78 @@ def test_happy_path_writes_jsonl_records(monkeypatch: pytest.MonkeyPatch, tmp_pa
     wf = next(rec for rec in records if rec["type"] == "workflow_files")
     assert "--- workflow: ci.yml ---" in wf["data"]
     assert "name: ci" in wf["data"]
+
+
+@pytest.mark.parametrize(
+    ("payloads", "unexpected_types"),
+    [
+        pytest.param({"/contents/.github": "not-json"}, {"github_dir"}, id="invalid-github-dir-json"),
+        pytest.param(
+            {"/contents/.github/workflows": "not-json"},
+            {"workflows_list", "workflow_files"},
+            id="invalid-workflows-json",
+        ),
+        pytest.param({"/contents/.github/workflows": "[]"}, {"workflows_list", "workflow_files"}, id="empty-workflows"),
+        pytest.param({"/readme": "!!!not-base64!!!"}, {"readme_content"}, id="invalid-readme-base64"),
+    ],
+)
+def test_malformed_success_payloads_are_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    payloads: dict[str, str],
+    unexpected_types: set[str],
+) -> None:
+    monkeypatch.setattr(fgd.subprocess, "run", _stub_gh_run(payloads))
+    monkeypatch.setattr(fgd, "which", lambda _: "/fake/gh")
+    data_file = tmp_path / "out.jsonl"
+    rc = fgd.main(
+        [
+            "--owner",
+            "owner",
+            "--repo",
+            "repo",
+            "--default-branch",
+            "release/1.x",
+            "--data-file",
+            str(data_file),
+        ]
+    )
+    assert rc == 0
+    assert {rec["type"] for rec in _records(data_file)}.isdisjoint(unexpected_types)
+
+
+def test_branch_names_containing_slash_are_encoded_in_protection_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured_paths: list[str] = []
+
+    def _run(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+        api_path = cmd[2] if len(cmd) >= 3 else ""
+        captured_paths.append(api_path)
+        if api_path.endswith("/branches/release/1.x/protection"):
+            return _FakeCompleted(returncode=0, stdout=json.dumps({"required_status_checks": {"strict": True}}))
+        return _FakeCompleted(returncode=1, stdout="")
+
+    monkeypatch.setattr(fgd.subprocess, "run", _run)
+    monkeypatch.setattr(fgd, "which", lambda _: "/fake/gh")
+    data_file = tmp_path / "out.jsonl"
+    rc = fgd.main(
+        [
+            "--owner",
+            "owner",
+            "--repo",
+            "repo",
+            "--default-branch",
+            "release/1.x",
+            "--data-file",
+            str(data_file),
+        ]
+    )
+    assert rc == 0
+    assert "repos/owner/repo/branches/release/1.x/protection" in captured_paths
+    bp = next(rec for rec in _records(data_file) if rec["type"] == "branch_protection")
+    assert bp["branch"] == "release/1.x"
 
 
 def test_all_404s_writes_no_records(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

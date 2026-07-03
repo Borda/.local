@@ -281,26 +281,29 @@ def main(argv: list[str] | None = None) -> int:
     sentinel.touch()
     atexit.register(lambda: sentinel.unlink(missing_ok=True))
 
-    # --- Stage files ----------------------------------------------------------
-    add_proc = subprocess.run([git, "add", "--", *files], check=False)  # noqa: S603
-    if add_proc.returncode != 0:
-        print(f"commit_action_item: git add failed (exit {add_proc.returncode})", file=sys.stderr)
-        return add_proc.returncode
+    try:
+        # --- Stage files ------------------------------------------------------
+        add_proc = subprocess.run([git, "add", "--", *files], check=False)  # noqa: S603
+        if add_proc.returncode != 0:
+            print(f"commit_action_item: git add failed (exit {add_proc.returncode})", file=sys.stderr)
+            return add_proc.returncode
 
-    # Empty staging area → nothing to commit.
-    cached_proc = subprocess.run(  # noqa: S603
-        [git, "diff", "--cached", "--quiet"],
-        check=False,
-    )
-    if cached_proc.returncode == 0:
-        print(
-            "commit_action_item: staging area empty after add — no commit created",
-            file=sys.stderr,
+        # Empty staging area → nothing to commit.
+        cached_proc = subprocess.run(  # noqa: S603
+            [git, "diff", "--cached", "--quiet"],
+            check=False,
         )
-        return 0
+        if cached_proc.returncode == 0:
+            print(
+                "commit_action_item: staging area empty after add — no commit created",
+                file=sys.stderr,
+            )
+            return 0
 
-    result = subprocess.run([git, "commit", "-F", msg_file], check=False)  # noqa: S603
-    return result.returncode
+        result = subprocess.run([git, "commit", "-F", msg_file], check=False)  # noqa: S603
+        return result.returncode
+    finally:
+        sentinel.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

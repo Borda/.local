@@ -105,15 +105,42 @@ class TestAgentDisplay:
         rendered = _strip_ansi(result.stdout)
         assert "🤖 none" in rendered
 
-    def test_active_agent_shows_not_none(self, sid: str, tmp_home: Path, run_hook) -> None:
-        """One fresh agent entry produces a 🤖 segment without the 'none' label."""
-        _write_agent(sid, "a1", since=datetime.now(timezone.utc).isoformat())
+    @pytest.mark.parametrize(
+        ("agent_id", "agent_type", "expected_label"),
+        [
+            ("a1", "foundry:sw-engineer", "sw-engineer"),
+            ("audit-17", "oss:shepherd", "shepherd"),
+            ("tu-cdx-1", "codex:rescue", "rescue"),
+        ],
+    )
+    def test_active_agent_shows_type_label(
+        self, sid: str, tmp_home: Path, run_hook, agent_id: str, agent_type: str, expected_label: str
+    ) -> None:
+        """One fresh agent entry renders its short type label in the 🤖 segment."""
+        _write_agent(sid, agent_id, since=datetime.now(timezone.utc).isoformat(), agent_type=agent_type)
 
         result = run_hook("statusline.js", _payload(sid), home=tmp_home)
 
         assert result.returncode == 0, result.stderr
         rendered = _strip_ansi(result.stdout)
         assert "🤖" in rendered
+        assert expected_label in rendered
+        assert "🤖 none" not in rendered
+
+    def test_multiple_active_agents_show_total_and_group_counts(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """Multiple fresh agents render total count and per-label grouped counts."""
+        now = datetime.now(timezone.utc).isoformat()
+        _write_agent(sid, "a1", since=now, agent_type="foundry:sw-engineer")
+        _write_agent(sid, "a2", since=now, agent_type="foundry:sw-engineer")
+        _write_agent(sid, "a3", since=now, agent_type="codex:rescue")
+
+        result = run_hook("statusline.js", _payload(sid), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rendered = _strip_ansi(result.stdout)
+        assert "🤖 3" in rendered
+        assert "sw-engineer(2)" in rendered
+        assert "rescue" in rendered
         assert "🤖 none" not in rendered
 
     def test_stale_agent_shows_none(self, sid: str, tmp_home: Path, run_hook) -> None:

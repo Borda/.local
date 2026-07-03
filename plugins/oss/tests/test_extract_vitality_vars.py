@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
+
+import pytest
 
 
 from extract_vitality_vars import emit, extract_vars, main
@@ -87,6 +90,24 @@ class TestEmit:
     def test_multiple_vars_newline_separated(self) -> None:
         out = emit({"A": "1", "B": "2"})
         assert out == "A=1\nB=2"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            pytest.param("has 'single quotes'", id="single-quotes"),
+            pytest.param('has "double quotes"', id="double-quotes"),
+            pytest.param("semi;colon", id="semicolon"),
+            pytest.param("$(touch pwned)", id="command-substitution"),
+            pytest.param("", id="empty"),
+            pytest.param("line1\nline2", id="newline"),
+            pytest.param("🟡 review needed", id="status-label"),
+        ],
+    )
+    def test_shell_sensitive_values_round_trip(self, value: str) -> None:
+        assignment = shlex.split(emit({"MSG": value}))[0]
+        key, decoded = assignment.split("=", 1)
+        assert key == "MSG"
+        assert decoded == value
 
 
 class TestMain:

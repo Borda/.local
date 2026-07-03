@@ -11,6 +11,7 @@ from check_routing_links import (
     CheckResults,
     R1Finding,
     R2Finding,
+    R3Finding,
     _resolve_computed_abs,
     _resolve_computed_rel,
     extract_bin_refs,
@@ -493,23 +494,31 @@ class TestFormatResults:
         assert "✓: Check R2" in report
         assert "✓: Check R3" in report
 
-    def test_r1_fail_sets_exit_1(self) -> None:
+    @pytest.mark.parametrize(
+        ("severity", "expected_exit", "expected_fragment"),
+        [
+            ("FAIL", 1, "R1-FAIL"),
+            ("WARN", 0, "R1-WARN"),
+            ("INFO", 0, "reference(s) skipped"),
+        ],
+    )
+    def test_r1_exit_code_by_severity(self, severity: str, expected_exit: int, expected_fragment: str) -> None:
         results = CheckResults()
         results.r1 = [
             R1Finding(
-                severity="FAIL",
+                severity=severity,
                 source_file="plugins/foundry/skills/audit/SKILL.md",
                 raw_expr="$AUDIT_TPL/../modes/upgrade.md",
                 resolved_local="plugins/foundry/skills/audit/modes/upgrade.md",
-                exists_locally=True,
+                exists_locally=severity != "WARN",
                 installed_versions=["~/.claude/plugins/cache/borda-ai-rig/foundry/0.17.0"],
-                exists_installed=False,
-                message="R1-FAIL: test",
+                exists_installed=severity != "FAIL",
+                message=f"R1-{severity}: test",
             )
         ]
         report, exit_code = format_results(results, {"R1", "R2", "R3"})
-        assert exit_code == 1
-        assert "R1-FAIL" in report
+        assert exit_code == expected_exit
+        assert expected_fragment in report
 
     def test_r2_orphan_no_exit_1(self) -> None:
         # R2 findings are warnings, not hard failures
@@ -524,7 +533,33 @@ class TestFormatResults:
         ]
         report, exit_code = format_results(results, {"R1", "R2", "R3"})
         # R2 alone does not set exit code to 1 (R3 FAIL does; R2 is informational)
+        assert exit_code == 0
         assert "R2-ORPHAN-RISK" in report
+
+    @pytest.mark.parametrize(
+        ("severity", "expected_exit"),
+        [
+            ("FAIL", 1),
+            ("WARN", 0),
+        ],
+    )
+    def test_r3_exit_code_by_severity(self, severity: str, expected_exit: int) -> None:
+        results = CheckResults()
+        results.r3 = [
+            R3Finding(
+                severity=severity,
+                source_file="plugins/foundry/skills/audit/SKILL.md",
+                script_name="missing.py",
+                plugin="foundry",
+                local_path="plugins/foundry/bin/missing.py",
+                exists_locally=severity != "FAIL",
+                exists_installed=severity != "WARN",
+                message=f"R3-{severity}: test",
+            )
+        ]
+        report, exit_code = format_results(results, {"R1", "R2", "R3"})
+        assert exit_code == expected_exit
+        assert f"R3-{severity}" in report
 
     def test_selective_checks_respected(self) -> None:
         results = CheckResults()

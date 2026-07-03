@@ -67,6 +67,68 @@ class TestLoadWeights:
         w = load_weights(p)
         assert len(w) == 9  # fallback — only 1 entry parsed
 
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            pytest.param(
+                "\n".join(
+                    [
+                        "| 1 axis-1 | 0.11 |",
+                        "| 1 duplicate-axis-1 | 0.99 |",
+                        "| 2 axis-2 | 0.12 |",
+                        "| 3 axis-3 | 0.13 |",
+                        "| 4 axis-4 | 0.14 |",
+                        "| 5 axis-5 | 0.15 |",
+                        "| 6 axis-6 | 0.16 |",
+                        "| 7 axis-7 | 0.17 |",
+                        "| 8 axis-8 | 0.18 |",
+                        "| 9 axis-9 | 0.19 |",
+                    ]
+                ),
+                "duplicate axis rows",
+                id="duplicate-axis",
+            ),
+            pytest.param(
+                "\n".join(
+                    [
+                        "| 1 axis-1 | nope |",
+                        "| 2 axis-2 | 0.12 |",
+                        "| 3 axis-3 | 0.13 |",
+                        "| 4 axis-4 | 0.14 |",
+                        "| 5 axis-5 | 0.15 |",
+                        "| 6 axis-6 | 0.16 |",
+                        "| 7 axis-7 | 0.17 |",
+                        "| 8 axis-8 | 0.18 |",
+                        "| 9 axis-9 | 0.19 |",
+                    ]
+                ),
+                "non-numeric weight",
+                id="non-numeric-weight",
+            ),
+            pytest.param(
+                "\n".join(
+                    [
+                        "| 1 axis-1 | 0.11 |",
+                        "| 2 axis-2 | 0.12 |",
+                        "| 3 axis-3 | 0.13 |",
+                        "| 4 axis-4 | 0.14 |",
+                        "| 5 axis-5 | 0.15 |",
+                        "| 6 axis-6 | 0.16 |",
+                        "| 7 axis-7 | 0.17 |",
+                        "| 8 axis-8 | 0.18 |",
+                        "| 10 axis-10 | 0.19 |",
+                    ]
+                ),
+                "invalid axis",
+                id="invalid-axis",
+            ),
+        ],
+    )
+    def test_malformed_files_return_defaults(self, tmp_path: Path, content: str, reason: str) -> None:
+        p = tmp_path / f"{reason}.md"
+        p.write_text(content)
+        assert load_weights(p) == load_weights(tmp_path / "missing.md")
+
 
 class TestAssembleScores:
     def test_basic_assembly(self, partials: tuple, scoring_file: Path, tmp_path: Path) -> None:
@@ -115,6 +177,54 @@ class TestAssembleScores:
         pa, pb, pc = partials
         result = assemble_scores(pa, pb, pc, scoring_file)
         assert result["axis3_weeks"] == 52
+
+    def test_exact_weighted_score_renormalizes_available_axes(self, tmp_path: Path) -> None:
+        scoring = tmp_path / "scoring.md"
+        scoring.write_text(
+            "\n".join(
+                f"| {n} axis-{n} | {weight} |"
+                for n, weight in [
+                    (1, "0.20"),
+                    (2, "0.20"),
+                    (3, "0.10"),
+                    (4, "0.10"),
+                    (5, "0.10"),
+                    (6, "0.10"),
+                    (7, "0.10"),
+                    (8, "0.05"),
+                    (9, "0.05"),
+                ]
+            )
+        )
+        unavailable = {"score": None, "conf": 0.0, "label": "⚪", "signal": ""}
+        pa = _write_partial(tmp_path, "a.json", {"1": _axis(score=10.0), "2": _axis(score=0.0)})
+        pb = _write_partial(tmp_path, "b.json", {str(k): unavailable for k in [4, 7, 8]})
+        pc = _write_partial(tmp_path, "c.json", {str(k): unavailable for k in [3, 5, 6, 9]})
+
+        result = assemble_scores(pa, pb, pc, scoring)
+
+        assert result["health_score_pct"] == 50.0
+        assert result["overall_confidence"] == 0.9
+
+    def test_score_none_axis_is_excluded_from_weighted_score(self, tmp_path: Path, scoring_file: Path) -> None:
+        pa = _write_partial(tmp_path, "a.json", {"1": _axis(score=10.0), "2": _axis(score=None)})
+        pb = _write_partial(tmp_path, "b.json", {})
+        pc = _write_partial(tmp_path, "c.json", {})
+
+        result = assemble_scores(pa, pb, pc, scoring_file)
+
+        assert result["health_score_pct"] == 100.0
+
+    def test_all_axes_unavailable_returns_zero_score_and_confidence(self, tmp_path: Path, scoring_file: Path) -> None:
+        unavailable = {"score": None, "conf": 0.0, "label": "⚪", "signal": ""}
+        pa = _write_partial(tmp_path, "a.json", {"1": unavailable})
+        pb = _write_partial(tmp_path, "b.json", {})
+        pc = _write_partial(tmp_path, "c.json", {})
+
+        result = assemble_scores(pa, pb, pc, scoring_file)
+
+        assert result["health_score_pct"] == 0.0
+        assert result["overall_confidence"] == 0.0
 
 
 class TestMain:

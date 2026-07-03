@@ -1,7 +1,7 @@
 ---
 name: brainstorm
 description: "Iterative brainstorming skill for turning fuzzy ideas into approved tree documents. Diverges into branches, deepens and prunes them over many rounds, saves a tree doc. Run breakdown on the tree to distill it into a spec via guided questions."
-argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] | breakdown <tree-or-spec-file>"
+argument-hint: "<fuzzy idea or feature goal> [--tight|--deep] [--type <type>] [--keep \"<items>\"] | breakdown <tree-or-spec-file>"
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: medium
@@ -33,10 +33,17 @@ NOT for implementation or code-gen — see `develop` plugin (requires `develop` 
 
 </inputs>
 
+<compaction>
+Key boundary 1: end of Step 4 (tree doc saved to .plans/blueprint/), before Step 5 tree review.
+Preserve at boundary 1: tree file path (.plans/blueprint/YYYY-MM-DD-<slug>.md), sidecar path (if viewer active).
+Terminal path: Step 6 option (a) approval — suggest breakdown and stop.
+</compaction>
+
 <workflow>
 
 **Task hygiene**:
 ```bash
+# loads: compaction-contract.md
 # audit-skip: resilience-replication
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
@@ -46,9 +53,21 @@ Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 > **Brainstorming: \<goal from $ARGUMENTS>** Plan: context scan → clarifying questions → build tree → save tree doc → review → approval gate. Starting with a codebase scan...
 
+## Step 0: Parse flags
+
+```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
+rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/brainstorm-state-keep-items"
+```
+
 ## Step 1: Context scan
 
-**Unsupported flag check** — after all supported flags extracted (`--tight`, `--deep`, `--type`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--tight\`, \`--deep\`, \`--type\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted (`--tight`, `--deep`, `--type`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--tight\`, \`--deep\`, \`--type\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 Gather project context before asking anything:
 
@@ -300,6 +319,23 @@ Assemble tree state and write to `.plans/blueprint/YYYY-MM-DD-<slug>.md` using W
 
 **Gate**: do not proceed to Step 5 until file written and path confirmed.
 
+```bash
+_TREE_FILE=$(find .plans/blueprint -name "*.md" -maxdepth 1 -not -name "*-spec.md" 2>/dev/null | sort -r | head -1)
+_SIDECAR=$(cat "${TMPDIR:-/tmp}/brainstorm-state-sidecar" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/brainstorm-state-keep-items" 2>/dev/null || echo "")
+_PRESERVE="tree-file=$_TREE_FILE"
+[ -n "$_SIDECAR" ] && _PRESERVE="$_PRESERVE, sidecar=$_SIDECAR"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:brainstorm · phase: tree-review (after tree saved to disk)"
+    echo "- run-dir: n/a"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: curator tree review (Step 5) → approval gate (Step 6)"
+} > .claude/state/skill-contract.md
+```
+
 **Sidecar finalise** (skip if `$SIDECAR` is empty — viewer opt-out): using Write tool, write full current JSON content (same as `$SIDECAR`) with `session_status: "complete"` to `.plans/blueprint/<final-slug>.json` (same slug as `.md` file, `.json` extension). Then also overwrite `$SIDECAR` with `session_status: "complete"`. Do NOT move or rename `$SIDECAR` — open browser tabs keep polling original timestamp-slug path.
 
 ## Step 5: Tree review
@@ -357,6 +393,10 @@ Show tree file path and compact tree summary (same format as Step 3). Then call 
 On (b): return to Step 3 with existing tree state — add requested branches or close specified ones, then loop back to Step 5. Use reduced cap of **3 additional operations** for this re-entry (not fresh full budget reset); cap resets only at start of Step 3, not on re-entry. On (c): loop back to Step 2. (Max 3 approval cycles as guideline — track in context; if 3 cycles pass without convergence, surface unresolved concerns to user.)
 
 On approval, suggest: `/brainstorm breakdown .plans/blueprint/<file>` to distill tree into spec.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 > Tree file is durable record of exploration. Share with teammates or use as context for future `/brainstorm` sessions on related ideas.
 

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -64,13 +65,13 @@ def _argv(check: dict[str, object], scope: Path) -> list[str] | None:
     script = str(BIN / str(check["script"]))
     kind = check["kind"]
     if kind == "scan":
-        return ["python3", script, "--scan-dir", str(scope)]
+        return [sys.executable, script, "--scan-dir", str(scope)]
     if kind == "whole":
-        return ["python3", script]
+        return [sys.executable, script]
     files: list[str] = []
     for pattern in check["globs"]:  # type: ignore[union-attr]
         files.extend(str(p) for p in sorted(scope.glob(str(pattern))))
-    return ["python3", script, *files] if files else None
+    return [sys.executable, script, *files] if files else None
 
 
 def _findings(stdout: str) -> list[str]:
@@ -104,7 +105,8 @@ def run_checks(scope: Path) -> list[dict[str, object]]:
         if argv is None:
             results.append({"check": check["id"], "status": "skipped", "findings": 0, "lines": []})
             continue
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
         # Findings come from stdout only; a passing check has none by definition
         # (stderr carries benign runtime warnings, not audit findings).
         lines = _findings(proc.stdout) if proc.returncode != 0 else []

@@ -84,14 +84,20 @@ def load_weights(scoring_file: Path) -> dict[int, float]:
         >>> tmp.unlink()
     """
     weights: dict[int, float] = {}
+    seen: set[int] = set()
+    malformed = False
     try:
         for line in _read_text_guarded(scoring_file).splitlines():
             m = re.match(r"\|\s*(\d+)\s+[^|]+\|\s*(0\.\d+)\s*\|", line)
             if m:
-                weights[int(m.group(1))] = float(m.group(2))
+                axis = int(m.group(1))
+                if axis in seen:
+                    malformed = True
+                seen.add(axis)
+                weights[axis] = float(m.group(2))
     except (OSError, ValueError):
         pass
-    return weights if len(weights) == 9 else _DEFAULT_WEIGHTS.copy()
+    return weights if not malformed and set(weights) == set(_DEFAULT_WEIGHTS) else _DEFAULT_WEIGHTS.copy()
 
 
 def assemble_scores(

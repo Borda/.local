@@ -1,7 +1,7 @@
 ---
 name: audit
 description: "Full-sweep quality audit of .claude/ config — cross-references, permissions, inventory drift, model tiers, docs freshness. Scope tokens select what to audit; --upgrade applies docs-sourced improvements; --adversarial runs foundry:challenger + Codex adversarial review; --efficiency sweeps model tiers, token bloat, spawn patterns, boilerplate duplication, and bin/ extraction candidates (extraction performed separately via /distill executables). Fix level chosen via always-fire follow-up gate after report."
-argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate]"
+argument-hint: "[<scope>...] [--local] [--upgrade | --adversarial | --efficiency] [--skip-gate] [--keep \"<items>\"]"
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebFetch, Skill, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
 effort: high
@@ -55,10 +55,20 @@ ADVERSARIAL_BATCH_SIZE=2  # adversarial phases (A, A-prime) use smaller batches 
 
 </constants>
 
+<compaction>
+
+Key boundary 1: after Steps 3+4 fan-out (curator spawns + system-wide checks complete), before Step 5 aggregate.
+Key boundary 2: after Step 5 aggregate (aggregate.md + summary.jsonl written), before Step 7 report.
+Preserve at boundary 1: RUN_DIR, per-batch finding file paths, static-findings.jsonl path.
+Preserve at boundary 2: RUN_DIR, aggregate.md path, summary.jsonl path, finding counts.
+
+</compaction>
+
 <workflow>
 
 **Task hygiene**:
 ```bash
+# loads: compaction-contract.md
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
@@ -82,6 +92,12 @@ Surface progress at milestones: after system-wide checks ("✓ Checks 1-21 compl
 **Context budget**: full audit (12+ agents, 14+ skills, 12 system checks) runs close to context limits. File-based handoff mandatory — every sub-agent writes full output to file, returns only compact JSON envelope. Sub-agent echoing findings to context = compaction before audit completes.
 
 ```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
+rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
 LOCAL_MODE=false;       [[ " $ARGUMENTS " == *" --local "* ]]       && LOCAL_MODE=true
 ADVERSARIAL_MODE=false; [[ " $ARGUMENTS " == *" --adversarial "* ]] && ADVERSARIAL_MODE=true; [[ " $ARGUMENTS " == *" --challenge "* ]] && ADVERSARIAL_MODE=true
 EFFICIENCY_MODE=false;  [[ " $ARGUMENTS " == *" --efficiency "* ]]  && EFFICIENCY_MODE=true
@@ -142,6 +158,7 @@ AUDIT_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_sub
 mkdir -p "${TMPDIR:-/tmp}/audit-state"
 echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/audit-state/local-mode"
 echo "$AUDIT_TPL"  > "${TMPDIR:-/tmp}/audit-state/audit-tpl"
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/audit-state/keep-items"
 ```
 
 If `.claude/` missing, abort immediately. Missing `jq` is warning — audit continues with Check 4 skipped.
@@ -155,7 +172,7 @@ AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "$
 
 Place these two lines at the top of every Bash block in Steps 2–11 that references either variable.
 
-**Unsupported flag check** — after extracting supported flags (`--local`, `--upgrade`, `--adversarial`, `--efficiency`, `--skip-gate`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--local\`, \`--upgrade\`, \`--adversarial\`, \`--efficiency\`, \`--skip-gate\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after extracting supported flags (`--local`, `--upgrade`, `--adversarial`, `--efficiency`, `--skip-gate`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--local\`, \`--upgrade\`, \`--adversarial\`, \`--efficiency\`, \`--skip-gate\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 1: Run pre-commit (if configured)
 
@@ -349,6 +366,21 @@ Severity: deprecated/invalid = **high**; deprecated frontmatter field = **medium
 
 After checks complete: collect `⚠` lines, write full details to `$RUN_DIR/system-checks.md`, include only summary table in context.
 
+```bash
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state/run-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state/keep-items" 2>/dev/null || echo "")
+_PRESERVE="run-dir=$_RUN_DIR, static-findings=${TMPDIR:-/tmp}/audit-state/static-findings.jsonl, finding-files=$_RUN_DIR/*.md"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:audit · phase: aggregate (after parallel curator+system-checks fan-out)"
+    echo "- run-dir: $_RUN_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: consolidate findings → aggregate.md + summary.jsonl → Step 7 report"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 5: Aggregate and classify findings
 
 **Delegate aggregation** to consolidator agent to avoid flooding main context. Spawn **foundry:curator** consolidator:
@@ -407,6 +439,21 @@ If `$SKIP_CROSS_VAL` = false: Read and follow cross-validation protocol from `$_
 
 ## Step 7: Report findings
 
+```bash
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/audit-state/run-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/audit-state/keep-items" 2>/dev/null || echo "")
+_PRESERVE="run-dir=$_RUN_DIR, aggregate=$_RUN_DIR/aggregate.md, summary=$_RUN_DIR/summary.jsonl"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:audit · phase: report (after aggregate complete)"
+    echo "- run-dir: $_RUN_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: emit report → follow-up gate → optional fix mode (Steps 8-10) → Step 11"
+} > .claude/state/skill-contract.md
+```
+
 Before emitting, read current `$RUN_DIR/summary.jsonl` (may have been updated by Step 5b with net-new promoted findings) and recompute severity totals. Then emit report (omit Upgrade Proposals if none passed genuine-value filter):
 
 ```markdown
@@ -448,6 +495,10 @@ Read `$AUDIT_TPL/report-template.md` and emit the complete audit report followin
 **Terminal output** — per quality-gates.md universal rule: read the `---` header block from the top of the report file (all fields from opening `---` up to and including closing `---`) and print verbatim as the FIRST content of the reply. Then print `→ <report path>`. Then executive summary. Omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers).
 
 **Completion marker** — on successful completion, write `$RUN_DIR/result.jsonl` with one JSONL line summarising the run (severity totals, scope, pass count). On any abort/error path before completion, leave `result.jsonl` absent — the TTL cleanup hook (artifact-lifecycle.md) intentionally skips run directories without `result.jsonl`, preserving incomplete runs for post-mortem debugging. To force cleanup of a known-bad incomplete run, write `{"status":"incomplete","reason":"<one-line>"}` to `result.jsonl` so TTL can age it out.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 ## Mode: upgrade
 

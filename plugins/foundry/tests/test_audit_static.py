@@ -13,6 +13,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 _MOD_PATH = Path(__file__).resolve().parent.parent / "bin" / "audit_static.py"
 _spec = importlib.util.spec_from_file_location("audit_static", _MOD_PATH)
 assert _spec and _spec.loader
@@ -55,13 +57,28 @@ def _seed_defective_plugin(root: Path) -> Path:
     return plugins
 
 
-def test_layer1_catches_every_seeded_defect(tmp_path: Path) -> None:
-    """Each scope-aware checker flags its planted defect (100% mechanical recall)."""
+@pytest.mark.parametrize(
+    ("check", "expected_file", "expected_text"),
+    [
+        ("tag-symmetry", "agents/bad.md", "unbalanced <role>"),
+        ("fence-symmetry", "skills/fencebad/SKILL.md", "unclosed fence"),
+        ("readme-drift", "README.md", "0.0.1"),
+        ("mode-dispatch", "skills/persist/SKILL.md", "Mode: Ghost"),
+        ("bash-persistence", "skills/persist/SKILL.md", "$RUN_ID assigned"),
+    ],
+)
+def test_layer1_catches_seeded_defect(tmp_path: Path, check: str, expected_file: str, expected_text: str) -> None:
+    """Each scope-aware checker flags its own planted defect."""
     plugins = _seed_defective_plugin(tmp_path)
     results = {r["check"]: r for r in aud.run_checks(plugins)}
 
-    for check in SCOPE_AWARE:
-        assert results[check]["status"] == "fail", f"{check} missed its seeded defect: {results[check]}"
+    result = results[check]
+    lines = "\n".join(result["lines"])
+    normalized_lines = lines.replace("\\", "/")
+    assert result["status"] == "fail", f"{check} missed its seeded defect: {result}"
+    assert result["findings"] >= 1
+    assert expected_file in normalized_lines
+    assert expected_text in lines
 
 
 def test_clean_scope_passes_scope_aware_checks(tmp_path: Path) -> None:

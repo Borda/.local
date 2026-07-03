@@ -1,7 +1,7 @@
 ---
 name: investigate
 description: 'Systematic diagnosis for unknown failures — local environment, tool setup, CI vs local divergence, hook misbehavior, and runtime anomalies. Gathers signals broadly, ranks hypotheses, uses adversarial review (Codex or foundry:challenger) for ambiguous cases, probes each, and reports root cause with a recommended next action. NOT for known code bugs (/develop:debug (requires `develop` plugin)) or config quality (/foundry:audit). TRIGGER when: unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, background agent stalled, behavior inconsistent with config; phrases: "not working but config looks right", "hook not triggering", "why isn''t X running". SKIP: Python traceback present (use develop:debug (requires `develop` plugin)); known code bug with repro (use develop:fix (requires `develop` plugin)); pure config quality check (use foundry:audit).'
-argument-hint: "<symptom, question, or failing command> [--fast]"
+argument-hint: "<symptom, question, or failing command> [--fast] [--keep \"<items>\"]"
 allowed-tools: Read, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: opus
 effort: high
@@ -30,10 +30,18 @@ If $ARGUMENTS empty or too vague, use AskUserQuestion: "What exactly is failing 
 
 </inputs>
 
+<compaction>
+Key boundary 1: end of Step 2 (signals.md written to run-dir), before Step 3 rank hypotheses.
+Key boundary 2: end of Step 3 (hypotheses.md written), refreshed again after each Step 5 probe verdict — so a mid-loop compaction does NOT re-rank or re-probe.
+Preserve: INVESTIGATE_RUN, symptom.txt, signals.md, hypotheses.md paths; adversarial-review path (codex/challenger) if Step 4 ran; probe ledger (hypothesis → Confirmed/Ruled-out/Inconclusive).
+Terminal path: end of Step 6 (report + follow-up gate complete).
+</compaction>
+
 <workflow>
 
 **Task hygiene**:
 ```bash
+# loads: compaction-contract.md
 # audit-skip: resilience-replication
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
@@ -43,13 +51,23 @@ Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 ## Step 1: Parse symptom and scope
 
+```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
+rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/investigate-verdicts  # clear stale contract + probe ledger (compaction-contract.md §Lifecycle)  # timeout: 5000
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/investigate-keep-items"
+```
+
 From $ARGUMENTS extract:
 
 - **What**: specific failure or anomaly
 - **Where**: local / CI / both; which tool or command; which skill or hook if applicable
 - **When**: started recently (after change) or always broken; intermittent or consistent
 
-**Unsupported flag check** — after all supported flags extracted (`--fast`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted (`--fast`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ## Step 2: Gather signals
 
@@ -111,6 +129,21 @@ Use the Write tool (NOT a `echo > $INVESTIGATE_RUN/...` heredoc, which loses bas
 
 Step 4 spawn prompts must instruct the subagent to Read these files (not rely on inline `${SYMPTOM_DESCRIPTION}` interpolation, which the LLM can paraphrase or truncate under context pressure).
 
+```bash
+_INVESTIGATE_RUN=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items" 2>/dev/null || echo "")
+_PRESERVE="run-dir=$_INVESTIGATE_RUN, symptom=$_INVESTIGATE_RUN/symptom.txt, signals=$_INVESTIGATE_RUN/signals.md"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:investigate · phase: hypothesise+probe (after signal gather)"
+    echo "- run-dir: $_INVESTIGATE_RUN"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: rank hypotheses (Step 3) → adversarial review (Step 4) → probe (Step 5) → report (Step 6)"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 3: Rank hypotheses
 
 List candidate root causes ranked by probability, drawing only from gathered evidence:
@@ -126,6 +159,24 @@ Capture the ranked hypothesis table as `HYPOTHESIS_TABLE` and persist it to disk
 - `Write(file_path="<INVESTIGATE_RUN>/hypotheses.md", content=<HYPOTHESIS_TABLE>)`
 
 This avoids LLM-paraphrase risk when inlining a long table into a spawn prompt. Step 4 spawn prompts will instruct the subagent to Read this file.
+
+Refresh the compaction contract now that ranking is done — the boundary moves into the Step 4–5 loop so a mid-loop compaction resumes from `hypotheses.md` instead of re-ranking:
+
+```bash
+# Compaction contract — boundary 2: ranking done, entering adversarial+probe loop (compaction-contract.md §Lifecycle)
+_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/investigate-keep-items" 2>/dev/null || echo "")
+_PRESERVE="run-dir=$_IR, symptom=$_IR/symptom.txt, signals=$_IR/signals.md, hypotheses=$_IR/hypotheses.md"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:investigate · phase: adversarial+probe (after hypotheses ranked)"
+    echo "- run-dir: $_IR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: adversarial review (Step 4, unless --fast) → probe hypotheses (Step 5) → report (Step 6). Resume from hypotheses.md — do NOT re-rank."
+} > .claude/state/skill-contract.md
+```
 
 Common categories:
 
@@ -210,7 +261,27 @@ ls -la ~/.claude/hooks/
 diff <(jq -S . .claude/settings.json) <(jq -S . ~/.claude/settings.json) | head -40
 ```
 
-Per probe: mark **Confirmed**, **Ruled out**, or **Inconclusive**.
+Per probe: mark **Confirmed**, **Ruled out**, or **Inconclusive**. Append each verdict to the probe ledger and refresh the contract — so a mid-loop compaction does not re-probe an already-decided hypothesis:
+
+```bash
+# WHY: probe verdicts live only in-context; a post-compact resume without this would re-probe ruled-out hypotheses (loop)
+echo "<hypothesis> :: <Confirmed|Ruled-out|Inconclusive>" >> ${TMPDIR:-/tmp}/investigate-verdicts
+_IR=$(cat "${TMPDIR:-/tmp}/investigate-run-path" 2>/dev/null || echo "")
+_VERDICTS=$(tail -8 "${TMPDIR:-/tmp}/investigate-verdicts" 2>/dev/null)  # cap keeps contract compact; tail keeps most-recent verdicts
+_REVIEW=""; [ -f "$_IR/codex-review.md" ] && _REVIEW="$_IR/codex-review.md"; [ -f "$_IR/challenger-review.md" ] && _REVIEW="$_IR/challenger-review.md"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:investigate · phase: probe (Step 5)"
+    echo "- run-dir: $_IR"
+    echo "- preserve: hypotheses=$_IR/hypotheses.md${_REVIEW:+, review=$_REVIEW}"
+    if [ -n "$_VERDICTS" ]; then
+        echo "- probed (do NOT re-probe):"
+        echo "$_VERDICTS" | sed 's/^/    - /'
+    fi
+    echo "- next: probe remaining pending hypotheses → confirm root cause → report (Step 6). Skip Confirmed/Ruled-out above."
+} > .claude/state/skill-contract.md
+```
 
 Stop when one hypothesis confirmed with clear evidence, or top-3 all ruled out (expand to lower-ranked candidates).
 
@@ -254,6 +325,10 @@ Invoke `AskUserQuestion` as follow-up gate:
 (a) Invoke recommended next action (from Recommended next action field above)
 (b) Run additional investigation with narrowed hypothesis
 (c) Skip — diagnosis complete
+
+```bash
+rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/investigate-verdicts  # clear contract + probe ledger — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 </workflow>
 

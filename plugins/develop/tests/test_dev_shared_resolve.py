@@ -48,6 +48,22 @@ class TestDevelopOnly:
         paths = dev_shared_resolve.resolve_paths(include_foundry=False, home=tmp_path)
         assert paths == [str(newer)]
 
+    @pytest.mark.parametrize(
+        "older_version,newer_version",
+        [
+            ("0.9.0", "0.10.0"),
+            ("0.99.0", "1.0.0"),
+        ],
+    )
+    def test_cache_hit_uses_semver_ordering(self, tmp_path: Path, older_version: str, newer_version: str) -> None:
+        """Newest cached develop version is selected semantically, not lexicographically."""
+        base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "develop"
+        (base / older_version / "skills" / "_shared").mkdir(parents=True)
+        newer = base / newer_version / "skills" / "_shared"
+        newer.mkdir(parents=True)
+        paths = dev_shared_resolve.resolve_paths(include_foundry=False, home=tmp_path)
+        assert paths == [str(newer)]
+
     def test_orphaned_develop_version_skipped(self, tmp_path: Path) -> None:
         """``.orphaned_at`` on newest develop version → older one wins."""
         base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "develop"
@@ -88,6 +104,19 @@ class TestWithFoundry:
         foundry.mkdir(parents=True)
         paths = dev_shared_resolve.resolve_paths(include_foundry=True, home=tmp_path)
         assert paths == [str(dev), str(foundry)]
+
+    def test_foundry_orphaned_newest_version_skipped(self, tmp_path: Path) -> None:
+        """Foundry cache selection skips orphaned newest versions just like develop."""
+        cache = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig"
+        dev = cache / "develop" / "0.6.2" / "skills" / "_shared"
+        dev.mkdir(parents=True)
+        orphaned = cache / "foundry" / "0.20.0"
+        (orphaned / "skills" / "_shared").mkdir(parents=True)
+        (orphaned / ".orphaned_at").write_text("2026-01-01T00:00:00Z\n", encoding="utf-8")
+        older = cache / "foundry" / "0.10.0" / "skills" / "_shared"
+        older.mkdir(parents=True)
+        paths = dev_shared_resolve.resolve_paths(include_foundry=True, home=tmp_path)
+        assert paths == [str(dev), str(older)]
 
     def test_foundry_missing_warns_and_falls_back(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

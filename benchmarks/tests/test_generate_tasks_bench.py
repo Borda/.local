@@ -1050,6 +1050,57 @@ class TestValidateOss:
         assert ok is False
         assert live_gt is None
 
+    @pytest.mark.parametrize(
+        "task,payload,reason_fragment",
+        [
+            (
+                _task_undocumented(None, 0, []),
+                {"undocumented": []},
+                "total",
+            ),
+            (
+                _task_uncovered(None, 0, []),
+                {"total": 0, "uncovered": "not a list"},
+                "list",
+            ),
+            (
+                _task_undocumented(None, 2, ["A", "B"]),
+                {"total": 2, "undocumented": [{"qualified_name": "A"}]},
+                "conflicts",
+            ),
+            (
+                _task_coupled(None, "mod", 1, 0),
+                {"coupled": "not a list"},
+                "not a list",
+            ),
+            (
+                _task_coupled(None, "mod", 1, 0),
+                {"coupled": [1]},
+                "not an object",
+            ),
+            (
+                _task_xrefs(None, 2, [{"target": "mod::Fn", "line": 1}, {"target": "mod::Other", "line": 2}]),
+                {"count": 2, "broken": [{"target": "mod::Fn", "line": 1}]},
+                "conflicts",
+            ),
+        ],
+    )
+    def test_malformed_scan_query_payloads_fail_cleanly(
+        self,
+        script_gen_bench: Any,
+        tmp_path: Path,
+        task: dict,
+        payload: dict,
+        reason_fragment: str,
+    ) -> None:
+        """Missing keys, wrong types, and count/list conflicts return failures, not crashes."""
+        with patch.object(script_gen_bench, "run_scan_query", return_value=payload):
+            ok, live_gt, reason = script_gen_bench._validate_oss(task, MagicMock(), tmp_path / "idx.json", tmp_path)
+
+        assert ok is False
+        assert live_gt is None
+        assert reason_fragment in reason
+
     def test_combined_health_validates_both_counts(self, script_gen_bench: Any, tmp_path: Path) -> None:
         """Validates both undocumented and uncovered fields for combined_health check.
 

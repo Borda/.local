@@ -75,6 +75,7 @@ def recover_json_object(text: str) -> dict[str, Any] | None:
         {'ok': True}
     """
     open_positions = [i for i, ch in enumerate(text) if ch == "{"]
+    valid_objects: list[tuple[int, int, dict[str, Any]]] = []
     for start in open_positions:
         candidate = text[start:]
         # json.loads only accepts trailing whitespace; truncate from the right
@@ -87,9 +88,19 @@ def recover_json_object(text: str) -> dict[str, Any] | None:
             except json.JSONDecodeError:
                 continue
             if isinstance(parsed, dict):
-                return parsed
+                valid_objects.append((start, start + end, parsed))
+                break
             break  # parsed but wasn't an object — try the next '{'
-    return None
+    outermost_objects = [
+        current
+        for current in valid_objects
+        if not any(
+            other_start < current[0] and current[1] <= other_end for other_start, other_end, _other in valid_objects
+        )
+    ]
+    if not outermost_objects:
+        return None
+    return max(outermost_objects, key=lambda item: item[0])[2]
 
 
 def format_field(value: Any) -> str:

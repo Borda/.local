@@ -1,4 +1,4 @@
-"""Tests for ``bin/find-polluter.py`` — binary-search test-isolation finder.
+"""Core unit tests for ``bin/find-polluter.py`` binary-search helpers.
 
 Covers:
 * ``_is_safe_node_id`` SEC-F-1 security fix: shell metacharacter rejection
@@ -10,6 +10,9 @@ Covers:
 * ``binary_search`` convergence, single-candidate shortcut, empty-list rejection
 * ``main()`` end-to-end: polluter found, no-args usage, isolation failure,
   no candidates, pytest missing, unsafe failing-test-id rejected
+
+The companion ``test_find-polluter.py`` keeps CLI/security edge cases that are
+specific to pytest's hyphenated filename collection path.
 """
 
 from __future__ import annotations
@@ -283,6 +286,22 @@ class TestBinarySearch:
         log = StringIO()
         find_polluter.binary_search(candidates, "FAIL", ["pytest"], log=log)
         assert "Round" in log.getvalue()
+
+    def test_finds_polluter_in_second_half(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Polluter after the first midpoint is retained when the first half passes."""
+        candidates = [f"tests/test_x.py::t{i}" for i in range(8)]
+        polluter = candidates[6]
+
+        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            batch = [a for a in argv[1:] if a.startswith("tests/test_x.py::t")]
+            if polluter in batch:
+                return _FakeResult(stdout="FAILED\n", returncode=1)
+            return _FakeResult(stdout="ok\n")
+
+        _patch_run(monkeypatch, fake_run)
+        found, rounds = find_polluter.binary_search(candidates, "FAIL_TARGET", ["pytest"])
+        assert found == polluter
+        assert 1 <= rounds <= 4
 
 
 # ---------------------------------------------------------------------------

@@ -142,6 +142,59 @@ def test_commit_failure_forwards_returncode(monkeypatch: pytest.MonkeyPatch, tmp
     assert rc == 1
 
 
+def test_multiple_files_with_spaces_are_added_as_separate_args(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Every --files path is passed to git add after -- without shell splitting."""
+    msg = tmp_path / "msg.txt"
+    msg.write_text("msg\n")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
+    monkeypatch.setattr(cai.subprocess, "run", _make_git_mock(calls=calls))
+    rc = cai.main(["--message-file", str(msg), "--files", "src/a.py", "docs/file with spaces.md"])
+    assert rc == 0
+    add_calls = [c for c in calls if c[1] == "add"]
+    assert add_calls == [["/fake/git", "add", "--", "src/a.py", "docs/file with spaces.md"]]
+
+
+@pytest.mark.parametrize("commit_rc", [0, 1])
+def test_sentinel_cleaned_up_after_commit_path(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    commit_rc: int,
+) -> None:
+    """Sentinel exists for git commit but is removed before main returns on success and failure."""
+    msg = tmp_path / "msg.txt"
+    msg.write_text("msg\n")
+    fake_tmpdir = tmp_path / "tmp"
+    fake_tmpdir.mkdir()
+    sentinel_seen: list[bool] = []
+
+    def _fake_run(cmd: list[str], **_: Any) -> _FakeCompleted:
+        binary = Path(cmd[0]).name
+        subcmd = cmd[1] if len(cmd) > 1 else ""
+        if binary == "git" and subcmd == "rev-parse":
+            return _FakeCompleted(returncode=0, stdout="/repo/my-project\n")
+        if binary == "git" and subcmd == "branch":
+            return _FakeCompleted(returncode=0, stdout="main\n")
+        if binary == "git" and subcmd == "diff":
+            return _FakeCompleted(returncode=1)
+        if binary == "git" and subcmd == "commit":
+            sentinel_seen.append(any(f.name.startswith("claude-commit-auth-") for f in fake_tmpdir.iterdir()))
+            return _FakeCompleted(returncode=commit_rc)
+        return _FakeCompleted(returncode=0)
+
+    monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
+    monkeypatch.setattr(cai.subprocess, "run", _fake_run)
+    monkeypatch.setenv("TMPDIR", str(fake_tmpdir))
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(fake_tmpdir))
+
+    rc = cai.main(["--message-file", str(msg), "--files", str(tmp_path / "f.py")])
+
+    assert rc == commit_rc
+    assert sentinel_seen == [True]
+    assert list(fake_tmpdir.iterdir()) == []
+
+
 def test_commit_called_with_message_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Commit invoked with ``-F <msg_file>``."""
     msg = tmp_path / "msg.txt"

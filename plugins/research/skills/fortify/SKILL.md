@@ -1,7 +1,7 @@
 ---
 name: fortify
 description: "Systematic ablation study runner. After research:run finds improvements, fortify identifies component candidates from git diff + diary, creates isolated git worktrees per ablation (main repo never modified), runs metric+guard in each worktree, ranks component importance, and optionally generates reviewer Q&A calibrated to a target venue."
-argument-hint: "[<run-id>|<program.md>] [--venue <CVPR|NeurIPS|ICML|workshop>] [--max-ablations <N>] [--skip-run]"
+argument-hint: "[<run-id>|<program.md>] [--venue <CVPR|NeurIPS|ICML|workshop>] [--max-ablations <N>] [--skip-run] [--keep \"<items>\"]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -42,6 +42,16 @@ GUARD_CMD_SOURCE:         state.json .config.guard_cmd (campaign's real guard �
 
 The constants block defaults above are YAML-only — bash blocks read environment variables (with `${VAR:-default}` fallback) and never source values directly from YAML.
 
+<compaction>
+
+Key boundaries: end of F2 — ablation candidates identified by scientist; end of F4 — all ablation variant worktrees completed.
+Preserve at F2: FORTIFY_DIR (TMPDIR key), RUN_ID (TMPDIR key), ablation-candidates.jsonl path, best_metric from source run.
+Preserve at F4: FORTIFY_DIR, RUN_ID, results.jsonl path — ready for F5 importance ranking.
+F4 loop is resume-safe: 4a-guard skips variants already terminal (non-timeout) in results.jsonl, so a mid-loop compaction resumes at the first pending variant — never re-runs a completed ablation; a timed-out variant still retries.
+Clear at F1 start (stale prior run) and at start of F8 terminal summary.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
@@ -49,6 +59,7 @@ The constants block defaults above are YAML-only — bash blocks read environmen
 ## Agent Resolution
 
 ```bash
+# loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:fortify from project root."; exit 1; }
 ```
@@ -71,10 +82,21 @@ Triggered by `fortify` or `fortify <run-id|program.md>`.
 
 ## Step F1: Locate source run, parse flags, and validate judge approval
 
-Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`.
+Extract flags: `--venue <VENUE>`, `--max-ablations <N>`, `--skip-run`, `--keep "<items>"`.
+
+```bash
+# Extract --keep quoted value (compaction-contract.md §keep semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/fortify-keep-items"  # persist for F2/F4 contract writes
+```
 
 <!-- loads: unsupported-flag-protocol.md -->
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--venue`, `--max-ablations`, `--skip-run`.
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--venue`, `--max-ablations`, `--skip-run`, `--keep`.
 
 **Input resolution** (priority order):
 
@@ -245,6 +267,22 @@ Pass `$F2_PROMPT` (fully expanded) as the `prompt=` argument to `Agent(...)`.
 
 Read `ablation-candidates.jsonl` after scientist completes. If `--max-ablations <M>` specified and component count + 1 (for full variant) exceeds M: sort by `expected_importance` (HIGH first, then MEDIUM, then LOW), keep top M-1 components plus always include `full` sanity-check variant. **Log dropped components**: print a warning listing each dropped component by `component_id` and `expected_importance` so users can verify the scientist's importance estimates before proceeding. Include this list in the F7 report under `## Dropped Variants`.
 
+```bash
+# Compaction contract — boundary 1: after F2 scientist completes, candidates ready (compaction-contract.md §Lifecycle)
+_RUN_ID=$(cat "${TMPDIR:-/tmp}/fortify-run-id" 2>/dev/null || echo "")
+_FORTIFY_DIR=$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/fortify-keep-items" 2>/dev/null || echo "")
+_KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: research:fortify · phase: ablation-execution (after F2 candidates identified)"
+    echo "- run-dir: ${_FORTIFY_DIR}"
+    echo "- preserve: run-id=${_RUN_ID}, fortify-dir=${_FORTIFY_DIR}, candidates=${_FORTIFY_DIR}/ablation-candidates.jsonl, variants=${_FORTIFY_DIR}/variants.jsonl${_KEEP_APPEND}"
+    echo "- next: F3 generate variants → F4 run worktrees sequentially"
+} > .claude/state/skill-contract.md  # timeout: 5000
+```
+
 **`--skip-run` early exit**: if `--skip-run` flag present, print candidate table (component_id, name, description, files, expected_importance) and exit. No ablation execution. Mark tasks F3, F4, F5, F6, F7 as `skipped` via TaskUpdate. Print all three lines (no `.reports/research/fortify-*.md` is written in `--skip-run` mode — only `ablation-candidates.jsonl` lives under `$FORTIFY_DIR`; surface `$FORTIFY_DIR` explicitly so the user can locate the candidate list):
 
 ```text
@@ -307,6 +345,22 @@ if [ "$VARIANT_NAME" = "variant-" ] || [ -z "$VARIANT_NAME" ]; then
     continue
 fi
 echo "$VARIANT_NAME" > "${TMPDIR:-/tmp}/fortify-variant-name"  # persist for 4a–4f blocks this iteration (Check 41: fresh shell)
+```
+
+**4a-guard. Resume guard — skip variants already recorded terminal in `results.jsonl`:**
+
+```bash
+# WHY: on mid-loop auto-compact + resume the F4 loop restarts from variant 1; without this guard each
+# already-completed ablation (a full training run) re-executes. results.jsonl is the resume ledger.
+# Match the un-prefixed name (4g/delta convention) tolerant of an optional "variant-" prefix; skip only
+# NON-timeout terminal statuses so a transient timeout still retries on resume.
+VARIANT_NAME=$(cat "${TMPDIR:-/tmp}/fortify-variant-name" 2>/dev/null)  # re-hydrate (Check 41: fresh shell)
+_VN_RAW="${VARIANT_NAME#variant-}"
+_RESULTS="$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null)/results.jsonl"
+if [ -f "$_RESULTS" ] && grep -E "\"variant\":\"(variant-)?$_VN_RAW\"" "$_RESULTS" 2>/dev/null | grep -qE '"status":"(completed|revert-conflict|revert-missing|metric-failed)"'; then
+    echo "→ $_VN_RAW already terminal (non-timeout) in results.jsonl — skipping (resume)"
+    continue
+fi
 ```
 
 **4a. Create isolated worktree at best_commit:**
@@ -413,6 +467,22 @@ After all variants processed:
 
 ```bash
 git worktree prune  # timeout: 15000
+```
+
+```bash
+# Compaction contract — boundary 2: after F4 all variants complete (compaction-contract.md §Lifecycle)
+_RUN_ID=$(cat "${TMPDIR:-/tmp}/fortify-run-id" 2>/dev/null || echo "")
+_FORTIFY_DIR=$(cat "${TMPDIR:-/tmp}/fortify-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/fortify-keep-items" 2>/dev/null || echo "")
+_KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: research:fortify · phase: post-ablation (after F4 worktrees complete)"
+    echo "- run-dir: ${_FORTIFY_DIR}"
+    echo "- preserve: run-id=${_RUN_ID}, fortify-dir=${_FORTIFY_DIR}, results=${_FORTIFY_DIR}/results.jsonl${_KEEP_APPEND}"
+    echo "- next: F5 rank importance → F6 reviewer Q&A → F7 report"
+} > .claude/state/skill-contract.md  # timeout: 5000
 ```
 
 **Post-loop delta computation**: read `results.jsonl`, find `full` variant metric. For each completed `no-<component>` variant:
@@ -580,6 +650,10 @@ Full artifacts: <FORTIFY_DIR>/
 ```
 
 ## Step F8: Terminal summary
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — fortify complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 Print compact terminal summary:
 

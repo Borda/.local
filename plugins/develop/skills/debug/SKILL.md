@@ -1,7 +1,7 @@
 ---
 name: debug
 description: "Investigation-first debugging — gather evidence, form confirmed root-cause hypothesis, hand off to fix mode with diagnosis file. TRIGGER when: user reports a symptom or failing test with Python traceback, or asks to investigate a runtime/CI failure with reproducible evidence; phrases: \"debug this failure\", \"why is X broken\", \"find the root cause of <error>\", \"investigate this CI failure\". SKIP when: pure config quality issues (use `/foundry:audit`); broad system-wide diagnosis without traceback (use `/foundry:investigate`); user already knows the fix (use `/develop:fix`); non-Python project."
-argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap]"
+argument-hint: "<symptom or issue # (plain 123 or #123)> [--repo <owner/repo>] [--no-challenge] [--challenge] [--team] [--ci-run <run-id-or-url>] [--codemap] [--no-codemap] [--keep \"<items>\"]"
 effort: high
 allowed-tools: Read, Write, Bash, Grep, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -17,6 +17,14 @@ NOT for: production incidents without any CI run ID or local traceback (use `/fo
 
 </objective>
 
+<compaction>
+
+Key boundary: after Steps 1+2 — evidence gathered and pattern analysis complete, before hypothesis gate (Step 3).
+Preserve: debug mode, CI run ID if set, evidence signals (issue body, test path), tried-hypotheses ledger (candidate causes + verdicts — refuted/ruled-out/open), --keep items.
+Refresh also after any Step 3 probe that rules out a hypothesis — so post-compact the gate does not re-test refuted causes (loop guard).
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
@@ -25,6 +33,7 @@ NOT for: production incidents without any CI run ID or local traceback (use `/fo
 
 ```bash
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+# loads: compaction-contract.md
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:challenger`.
@@ -55,6 +64,15 @@ If `LANG_HINT` not `python`: invoke `AskUserQuestion` — "Non-Python project de
 ## Flag parsing
 
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values:
+
+```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-debug-keep-items"
+rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/dev-debug-hypotheses  # timeout: 5000
+```
 
 ```bash
 # timeout: 10000
@@ -89,7 +107,7 @@ Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challe
 
 Read `$_DEV_SHARED/ci-log-extract.md`. Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Mode selection** — debug runs in one of two mutually-exclusive modes; set explicitly before any Step:
 
@@ -288,6 +306,13 @@ Find nearest similar working code path, compare exhaustively:
 
 Step catches non-obvious causes — ordering dependency, environment-specific state, type coercion silently changing behaviour.
 
+**Record candidates (loop guard)** — as each candidate cause is identified, append it to the hypothesis ledger with verdict `open`. The ledger is inlined into the compaction contract at the boundary below, so a mid-investigation compaction never loses which causes were already weighed. Verdict values: `open` · `refuted (challenger)` · `ruled-out (probe)`.
+
+```bash
+# WHY: ledger survives compaction via contract; prevents re-testing refuted causes after a mid-investigation compact
+echo "<candidate cause> :: open" >> ${TMPDIR:-/tmp}/dev-debug-hypotheses
+```
+
 ## Challenger gate
 
 **Decision — three states** (default is NOT "skip": it runs on substantial root causes and auto-skips only narrow ones):
@@ -302,10 +327,32 @@ Spawn `foundry:challenger` with pattern analysis from Step 2 (differences betwee
 
 > "Review pattern analysis and candidate root causes. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
-Parse result:
-- **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into hypothesis list before Step 3 gate.
-- **Concerns only** → add as alternative hypotheses in Step 3; continue.
+Parse result — update the hypothesis ledger (`${TMPDIR:-/tmp}/dev-debug-hypotheses`) with each candidate's verdict as you parse:
+- **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into hypothesis list before Step 3 gate. Mark any candidate the challenger refuted `:: refuted (challenger)` in the ledger.
+- **Concerns only** → add as alternative hypotheses in Step 3; append each new concern to the ledger as `:: open (alt)`; continue.
 - **No findings / all refuted** → proceed.
+
+```bash
+# Compaction contract — boundary: after evidence+challenge, before hypothesis gate (compaction-contract.md §Lifecycle)
+_DEBUG_MODE=$(cat "${TMPDIR:-/tmp}/dev-debug-mode" 2>/dev/null || echo "symptom")
+_CI_RUN=$(cat "${TMPDIR:-/tmp}/dev-ci-run-id" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-debug-keep-items" 2>/dev/null || echo "")
+_TRIED=$(head -6 "${TMPDIR:-/tmp}/dev-debug-hypotheses" 2>/dev/null)  # cap keeps contract ≤12 lines
+_PRESERVE="mode=$_DEBUG_MODE, ci-run=${_CI_RUN:-none}"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:debug · phase: hypothesis+handoff (after evidence gathered and pattern analysis)"
+    echo "- run-dir: .plans/active/"
+    echo "- preserve: $_PRESERVE"
+    if [ -n "$_TRIED" ]; then
+        echo "- tried (do NOT re-test refuted/ruled-out):"
+        echo "$_TRIED" | sed 's/^/    - /'
+    fi
+    echo "- next: state hypothesis with evidence (Step 3) → confirm root cause → write diagnosis → handoff to /develop:fix. Skip any candidate marked refuted/ruled-out above."
+} > .claude/state/skill-contract.md
+```
 
 ## Step 3: Hypothesis and gate
 
@@ -322,7 +369,7 @@ Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using *
 
 **Gate**: present hypothesis to user, wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
 
-If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix.
+If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out the current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses` and re-run the boundary contract block above before re-hypothesizing — keeps the loop guard current so the ruled-out cause is not revisited.
 
 ## Step 4: Hand off to fix
 
@@ -394,6 +441,10 @@ Evidence: <key signals>
 - question: "Proceed with fix?"
 - (a) label: `/develop:fix --diagnosis <DIAG_FILE>` (substitute resolved path, e.g. `/develop:fix --diagnosis .plans/active/debug_<slug>.md`) — description: proceed with fix using confirmed diagnosis
 - (b) label: `skip` — description: no action
+
+```bash
+rm -f .claude/state/skill-contract.md ${TMPDIR:-/tmp}/dev-debug-hypotheses  # clear contract + ledger — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 </workflow>
 

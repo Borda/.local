@@ -1,4 +1,4 @@
-"""Tests for ``bin/find-polluter.py`` — binary-search test-isolation finder.
+"""CLI/security tests for hyphenated ``test_find-polluter.py`` collection.
 
 Covers:
 * ``_is_safe_node_id`` — shell metacharacter rejection (SEC-F-1 security)
@@ -12,6 +12,10 @@ Covers:
 * ``main()`` — no-args usage, unsafe node ID, pytest missing, isolation failure,
   no candidates, path traversal rejection, polluter found (happy path),
   default test-dir
+
+The companion ``test_find_polluter.py`` owns the core helper/unit matrix. This
+file intentionally preserves coverage for the historical hyphenated test module
+path plus CLI/security regressions such as traversal rejection.
 """
 
 from __future__ import annotations

@@ -15,29 +15,35 @@ import pytest
 import diagnosis_parse  # type: ignore[import-not-found]
 
 
-def test_equals_form(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """``--diagnosis=<path>`` form: file exists under cwd → prints path, exits 0.
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        "--diagnosis={path}",
+        "--diagnosis {path}",
+        "--diagnosis=relative/diag.md",
+        "--diagnosis 'relative path/diag.md'",
+    ],
+)
+def test_valid_diagnosis_forms(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    arguments: str,
+) -> None:
+    """Supported diagnosis forms under cwd print the parsed path and exit 0.
 
     Cwd is pointed at ``tmp_path`` so the containment check passes (the script
     rejects paths outside ``Path.cwd()`` to close the path-existence oracle).
     """
     monkeypatch.chdir(tmp_path)
-    diag = tmp_path / "diag.md"
+    diag = tmp_path / ("relative path/diag.md" if "relative path" in arguments else "relative/diag.md")
+    diag.parent.mkdir(parents=True, exist_ok=True)
     diag.write_text("# diagnosis\n")
-    rc = diagnosis_parse.main([f"--diagnosis={diag.as_posix()}"])
+    rendered = arguments.format(path=diag.as_posix())
+    rc = diagnosis_parse.main([rendered])
     assert rc == 0
     out = capsys.readouterr().out.strip()
-    assert Path(out) == diag
-
-
-def test_space_form(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """``--diagnosis <path>`` form: file exists under cwd → prints path, exits 0."""
-    monkeypatch.chdir(tmp_path)
-    diag = tmp_path / "diag.md"
-    diag.write_text("# diagnosis\n")
-    rc = diagnosis_parse.main([f"--diagnosis {diag.as_posix()}"])
-    assert rc == 0
-    assert Path(capsys.readouterr().out.strip()) == diag
+    assert Path(out).resolve() == diag
 
 
 def test_no_diagnosis(capsys: pytest.CaptureFixture[str]) -> None:
@@ -91,8 +97,9 @@ def test_combined_with_other_flags(
     assert Path(capsys.readouterr().out.strip()) == diag
 
 
+@pytest.mark.parametrize("form", ["absolute", "relative_parent"])
 def test_rejects_path_outside_cwd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], form: str
 ) -> None:
     """Existing file outside cwd → exit 1 with ``! BREAKING`` (closes path-existence oracle).
 
@@ -108,10 +115,29 @@ def test_rejects_path_outside_cwd(
     outside.mkdir()
     diag = outside / "leak.md"
     diag.write_text("# outside\n")
-    rc = diagnosis_parse.main([f"--diagnosis={diag.as_posix()}"])
+    arg = f"--diagnosis={diag.as_posix()}" if form == "absolute" else "--diagnosis=../outside/leak.md"
+    rc = diagnosis_parse.main([arg])
     assert rc == 1
     err = capsys.readouterr().err
     assert "outside project root" in err
+
+
+def test_rejects_symlink_inside_cwd_pointing_outside(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A symlink under cwd that resolves outside cwd is rejected."""
+    cwd_dir = tmp_path / "project"
+    cwd_dir.mkdir()
+    monkeypatch.chdir(cwd_dir)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "leak.md"
+    target.write_text("# outside\n")
+    link = cwd_dir / "link.md"
+    link.symlink_to(target)
+    rc = diagnosis_parse.main(["--diagnosis=link.md"])
+    assert rc == 1
+    assert "outside project root" in capsys.readouterr().err
 
 
 def test_equals_form_missing_file_exits_1(capsys: pytest.CaptureFixture[str]) -> None:

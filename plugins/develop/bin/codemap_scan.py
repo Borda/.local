@@ -129,7 +129,7 @@ def derive_modules_from_diff(diff_files: Iterable[str], limit: int) -> list[str]
             primary.append(mod)
 
     if primary:
-        return primary
+        return list(dict.fromkeys(primary))[:limit]
 
     # Flat-layout fallback: containing directory (sort -u | head -N).
     dirs: set[str] = set()

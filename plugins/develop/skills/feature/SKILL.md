@@ -1,7 +1,7 @@
 ---
 name: feature
 description: "TDD-first feature development — crystallise API as a demo test, drive implementation to pass it, run quality stack and progressive review loop. TRIGGER when: user asks to build new functionality, add a capability, or implement a feature in a Python project; phrases: \"add X\", \"implement Y\", \"build Z feature\", \"create a new module for\". SKIP when: bug fixes (use `/develop:fix`); refactoring without new behaviour (use `/develop:refactor`); non-Python projects; `.claude/` config changes (use `/foundry:manage`)."
-argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan]"
+argument-hint: "<goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--no-codemap] [--codemap] [--semble] [--team] [--accept-no-plan] [--keep \"<items>\"]"
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion, WebFetch
 disable-model-invocation: true
@@ -19,6 +19,16 @@ NOT for:
 
 </objective>
 
+<compaction>
+
+Key boundary: end of Step 1 — scope analysis and plan complete, before Step 2 demo test writing.
+Second boundary: end of Step 3 — TDD loop complete, before Step 4 review/close gaps.
+Preserve at boundary 1: dev-dir (checkpoint.md), plan-file, scope from sw-engineer analysis, PYTEST_CMD, --keep items.
+Mid-loop refresh: after each Step 3 TDD cycle the contract is rewritten with changed-files + checkpoint.md path — so a mid-loop compaction resumes the loop (re-run suite for green state) instead of restarting the Step 2 demo.
+Preserve at boundary 2: dev-dir, changed files list, test outcomes, PYTEST_CMD.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _DEV_SHARED/agent-resolution.md (mounted by develop plugin init) -->
@@ -29,6 +39,7 @@ NOT for:
 _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+# loads: compaction-contract.md
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
@@ -73,9 +84,23 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 
 **Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
 
+```bash
+# persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
+echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-feature-dev-dir"
+```
+
 ## Flag parsing
 
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
+
+```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-feature-keep-items"
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+```
 
 ```bash
 # timeout: 10000
@@ -107,7 +132,7 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 2. Check local divergences: run `git log --oneline -10` and grep for symbols mentioned in issue; identify where local codebase differs structurally from what issue assumes
 3. Produce adaptation plan: upstream intent → local implementation using local conventions, existing abstractions, and current code structure — never assume upstream approach ports directly
 
-**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from the block above), scan `$ARGUMENTS` for remaining `--<token>` tokens that are not in the supported list. Do NOT include `--issue` in the "unknown" set — it is consumed in the second parse block above. Supported: `--plan`, `--team`, `--no-challenge`, `--challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from the block above), scan `$ARGUMENTS` for remaining `--<token>` tokens that are not in the supported list. Do NOT include `--issue` in the "unknown" set — it is consumed in the second parse block above. Supported: `--plan`, `--team`, `--no-challenge`, `--challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`, `--keep`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — run after flag parsing; reads raw value, normalizes to `true`/`false`, writes normalized result so downstream blocks see post-normalization state:
 
@@ -353,6 +378,24 @@ Parse result:
 - **Concerns only** → surface as advisory section before demo test; continue.
 - **No findings / all refuted** → proceed.
 
+```bash
+# Compaction contract — boundary 1: after scope analysis, before demo/edit (compaction-contract.md §Lifecycle)
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+_PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:feature · phase: demo+edit (after scope analysis and plan)"
+    echo "- run-dir: $_DEV_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: write demo test (Step 2) → TDD loop (Step 3) → review (Step 4)"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 2: Write a demo use-case
 
 Before crystallising API, surface non-obvious design decisions:
@@ -484,9 +527,46 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
    ```
 7. If regressions appear: fix before moving on — never carry forward broken suite
 
+After each cycle, refresh the compaction contract so a mid-loop compaction resumes the TDD loop instead of restarting the Step 2 demo:
+
+```bash
+# WHY: boundary-1 contract (Step 1) says "next: Step 2 demo"; without this a mid-Step-3 compaction restarts the demo. Redo is idempotent but wastes agent spawns + test runs. checkpoint.md already lists completed steps for resume.
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-feature-keep-items" 2>/dev/null || echo "")
+# tracked mods AND untracked new files — new TDD test/module files are untracked until staged; git diff alone drops them
+_CHANGED=$( { git diff --name-only HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null; } | sort -u | tr '\n' ' ' | sed 's/ *$//')
+_PRESERVE="dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD, plan-file=${_PLAN_FILE:-none}, checkpoint=$_DEV_DIR/checkpoint.md"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:feature · phase: TDD loop in progress (Step 3)"
+    echo "- run-dir: $_DEV_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: re-run suite to see current green state, then continue TDD for remaining behaviour — do NOT restart the Step 2 demo. checkpoint.md lists completed steps."
+} > .claude/state/skill-contract.md
+```
+
 Repeat until all feature tests pass and Step 2 demo passes.
 
 If Step 2 produced example script: promote into formal pytest test now that API is stable. Delete script once test in place.
+
+```bash
+# Compaction contract — boundary 2: after TDD loop, before review stack (compaction-contract.md §Lifecycle)
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-feature-dev-dir" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+_CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:feature · phase: review+quality (after TDD loop complete)"
+    echo "- run-dir: $_DEV_DIR"
+    echo "- preserve: dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD"
+    echo "- next: review and close gaps (Step 4) → docs (Step 5) → Final Report"
+} > .claude/state/skill-contract.md
+```
 
 ## Step 4: Review and close gaps
 
@@ -564,6 +644,10 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality sta
 
 <!-- loads: report-templates.md -->
 Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/report-templates.md` §Standard Final Report and use as output structure.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 <!-- Team spawn logic: see ## Team Mode Branch above -->
 

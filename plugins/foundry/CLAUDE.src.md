@@ -109,7 +109,7 @@ When context compacted, preserve in summary:
 3. File modification history — which files changed and why
 4. Pending follow-ups — deferred items, open questions, next steps
 
-After compaction, re-read `.claude/state/session-context.md` if exists.
+After compaction, re-read `.claude/state/session-context.md` if exists. If a `## Skill Compaction Contract` section is present in that file, it is a verbatim skill hand-off from the PreCompact hook — treat its `preserve:`, `run-dir`, and `next` fields as authoritative for resuming the active skill, not to be paraphrased or summarized away.
 
 ## Core Principles
 

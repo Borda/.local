@@ -461,7 +461,7 @@ claude plugin install research@borda-ai-rig
 claude plugin install codemap@borda-ai-rig
 ```
 
-Re-run `/foundry:setup` only if permissions or `enabledPlugins` changed. Re-run `/foundry:setup` if you previously used the link mode — symlinks point to the old plugin cache after an upgrade.
+Re-run `/foundry:setup` only if permissions, `enabledPlugins`, or `advisorModel` changed. Re-run `/foundry:setup` if you previously used the link mode — symlinks point to the old plugin cache after an upgrade.
 
 ### Session-only (no install, for development)
 

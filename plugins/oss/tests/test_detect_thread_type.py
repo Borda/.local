@@ -102,6 +102,11 @@ def test_compute_drift_thread_older_than_report() -> None:
     assert dtt.compute_drift("2024-01-01T00:00:00Z", 1704067300) is False
 
 
+def test_compute_drift_equal_timestamp_is_not_drifted() -> None:
+    """Updated-at exactly equal to report mtime is still fresh."""
+    assert dtt.compute_drift("2024-01-01T00:00:00Z", 1704067200) is False
+
+
 @pytest.mark.parametrize(
     "iso",
     [
@@ -226,6 +231,42 @@ def test_unknown_when_both_endpoints_empty(tmp_path: Path, monkeypatch: pytest.M
     assert (tmp_path / "oss-detect-type").read_text() == "unknown"
     assert (tmp_path / "oss-detect-updated-at").exists()
     assert (tmp_path / "oss-detect-drift").read_text() == "false"
+
+
+@pytest.mark.parametrize(
+    ("issue_stdout", "graphql_stdout", "expected_type"),
+    [
+        pytest.param("not-json", "", "unknown", id="invalid-issue-json"),
+        pytest.param(json.dumps({"number": 1}), "", "issue", id="missing-updated-at"),
+        pytest.param(
+            json.dumps({"number": 1, "updated_at": "2024-01-01T00:00:00Z", "pull_request": {}}),
+            "",
+            "issue",
+            id="empty-pull-request",
+        ),
+        pytest.param("", json.dumps({"data": {"repository": {}}}), "unknown", id="graphql-without-discussion"),
+    ],
+)
+def test_malformed_success_payloads_emit_conservative_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    issue_stdout: str,
+    graphql_stdout: str,
+    expected_type: str,
+) -> None:
+    def fake_run(cmd: list[str], **_: object) -> _FakeCompleted:
+        if "graphql" in cmd:
+            return _FakeCompleted(returncode=0, stdout=graphql_stdout)
+        return _FakeCompleted(returncode=0, stdout=issue_stdout)
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(dtt, "which", lambda _: "/fake/gh")
+    monkeypatch.setattr(dtt.subprocess, "run", fake_run)
+    rc = dtt.main(["--number", "1", "--report-mtime", "1704067200"])
+
+    assert rc == 0
+    assert (tmp_path / "oss-detect-type").read_text() == expected_type
+    assert (tmp_path / "oss-detect-drift").read_text() in {"false", "true"}
 
 
 def test_drift_true_when_thread_newer_than_report(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

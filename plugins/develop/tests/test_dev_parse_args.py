@@ -115,6 +115,20 @@ class TestBoolFlags:
         assert vals["CHALLENGE"] == "true"
         assert clean == "fix auth.py"
 
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            "--sembleton fix auth.py",
+            "fix --sembleton auth.py",
+        ],
+    )
+    def test_bool_near_miss_not_consumed(self, arguments: str):
+        """Flag extraction requires a full token, not a substring prefix."""
+        specs = parse_specs(["--bool", "semble", "S", "false"])
+        vals, clean = extract_flags(arguments, specs)
+        assert vals["S"] == "false"
+        assert clean == arguments
+
 
 # ---------------------------------------------------------------------------
 # extract_flags — codemap
@@ -214,6 +228,28 @@ class TestValueFlags:
         assert vals["CI_RUN_ID"] == "12345678"
         assert clean == "fix auth.py"
 
+    @pytest.mark.parametrize(
+        "arguments,expected_value,expected_clean",
+        [
+            ("fix --max-depths 5 auth.py", "3", "fix --max-depths 5 auth.py"),
+            ("fix --max-depth 5 auth.py", "5", "fix auth.py"),
+            ("fix --max-depth=7 auth.py", "7", "fix auth.py"),
+        ],
+    )
+    def test_int_token_boundaries(self, arguments: str, expected_value: str, expected_clean: str):
+        """Value flags require exact flag names and preserve near-miss flags."""
+        specs = parse_specs(["--int", "max-depth", "MAX_DEPTH", "3"])
+        vals, clean = extract_flags(arguments, specs)
+        assert vals["MAX_DEPTH"] == expected_value
+        assert clean == expected_clean
+
+    def test_value_flag_followed_by_another_flag_uses_default(self):
+        """A following flag token is not consumed as the value."""
+        specs = parse_specs(["--str", "plan", "PLAN_FILE", ""])
+        vals, clean = extract_flags("--plan --team fix auth.py", specs)
+        assert vals["PLAN_FILE"] == ""
+        assert clean == "--plan --team fix auth.py"
+
 
 # ---------------------------------------------------------------------------
 # run — output format
@@ -240,10 +276,18 @@ class TestRunOutput:
         out = run("  --semble   fix   auth.py  ", ["--bool", "semble", "S", "false"])
         assert "CLEAN_ARGS='fix auth.py'" in out
 
-    def test_shell_single_quote_escaping(self):
-        """Single quotes in values are escaped for shell safety."""
-        out = run("it's a test", [])
-        assert r"CLEAN_ARGS='it'\''" in out or "CLEAN_ARGS='it'\\''s a test'" in out
+    @pytest.mark.parametrize(
+        "arguments,expected",
+        [
+            ("it's a test", "CLEAN_ARGS='it'\\''s a test'"),
+            ('say "hello"', "CLEAN_ARGS='say \"hello\"'"),
+            ("semi; colon", "CLEAN_ARGS='semi; colon'"),
+            ("", "CLEAN_ARGS=''"),
+        ],
+    )
+    def test_shell_quoting_exact(self, arguments: str, expected: str):
+        """Shell-sensitive values are emitted with exact single-quote escaping."""
+        assert run(arguments, []).strip() == expected
 
     def test_combined_flags(self):
         """Multiple flags parsed together; clean args contains remainder."""

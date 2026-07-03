@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -119,19 +120,44 @@ class TestParseScannedAt:
     """Tests for ``_parse_scanned_at``."""
 
     @pytest.mark.parametrize(
-        "value,expected_nonzero",
+        "value,expected",
         [
-            pytest.param("2026-01-15T12:30:00Z", True, id="valid-z-suffix"),
-            pytest.param("2026-01-15T12:30:00", True, id="valid-no-suffix"),
-            pytest.param("2026-01-15T12:30:00.123456Z", True, id="valid-microseconds"),
-            pytest.param("", False, id="empty-string"),
-            pytest.param("not-a-date", False, id="garbage"),
+            pytest.param(
+                "2026-01-15T12:30:00Z",
+                datetime(2026, 1, 15, 12, 30, tzinfo=timezone.utc).timestamp(),
+                id="valid-z-suffix",
+            ),
+            pytest.param(
+                "2026-01-15T12:30:00",
+                datetime(2026, 1, 15, 12, 30, tzinfo=timezone.utc).timestamp(),
+                id="valid-no-suffix-assumes-utc",
+            ),
+            pytest.param(
+                "2026-01-15T12:30:00.123456Z",
+                datetime(2026, 1, 15, 12, 30, 0, 123456, tzinfo=timezone.utc).timestamp(),
+                id="valid-microseconds",
+            ),
+            pytest.param(
+                "2026-01-15T12:30:00+02:00",
+                datetime(2026, 1, 15, 10, 30, tzinfo=timezone.utc).timestamp(),
+                id="valid-timezone-offset",
+            ),
+            pytest.param(
+                " 2026-01-15T12:30:00Z \n",
+                datetime(2026, 1, 15, 12, 30, tzinfo=timezone.utc).timestamp(),
+                id="valid-with-whitespace",
+            ),
+            pytest.param("2026-01-15", 0.0, id="date-only-rejected"),
+            pytest.param(None, 0.0, id="null"),
+            pytest.param(123, 0.0, id="invalid-type"),
+            pytest.param("", 0.0, id="empty-string"),
+            pytest.param("not-a-date", 0.0, id="garbage"),
         ],
     )
-    def test_parse(self, value: str, expected_nonzero: bool) -> None:
-        """Non-zero returned for valid timestamps; zero for unparsable."""
+    def test_parse(self, value: object, expected: float) -> None:
+        """Timestamps parse to the expected POSIX value; invalid values return zero."""
         result = cic._parse_scanned_at(value)
-        assert (result > 0) == expected_nonzero
+        assert result == pytest.approx(expected)
 
 
 # ---------------------------------------------------------------------------
@@ -331,11 +357,12 @@ class TestCheckCurrencyTier2:
         assert r["changed_count"] >= 1
 
     def test_current_mtime_prefilter(self, tmp_path: Path) -> None:
-        """File whose mtime predates scan is not content-checked → current."""
+        """File whose mtime predates scan is not content-checked even when content differs."""
 
         py = tmp_path / "old.py"
         py.write_text("content A")
         old_sha = cic._md5_file(py)
+        py.write_text("content B")
         # Set mtime to distant past
         past = 0.0  # epoch
         import os

@@ -36,7 +36,8 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not o
 def _run(command: str, response: str, session: str, tmp_path: Path) -> None:
     """Feed one PostToolUse(Bash) event through the hook with TMPDIR isolated to tmp_path."""
     payload = {"tool_input": {"command": command}, "tool_response": response, "session_id": session}
-    env = {**os.environ, "TMPDIR": str(tmp_path)}
+    # Node's os.tmpdir() uses TMPDIR on POSIX and TEMP/TMP on Windows.
+    env = {**os.environ, "TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
     result = subprocess.run(
         ["node", str(_HOOK)],
         input=json.dumps(payload),
@@ -79,3 +80,12 @@ def test_unrelated_command_ignored(tmp_path: Path) -> None:
     """A command that is not a scan-query rdeps/fn-rdeps must be ignored."""
     _run('grep -r "import mypackage.auth" .', _EXHAUSTIVE_RESPONSE, "sess-grep", tmp_path)
     assert not (tmp_path / "codemap-exhausted-sess-grep").exists()
+
+
+def test_codemap_hooks_read_stdin_by_fd_for_windows() -> None:
+    """Codemap hooks must not use POSIX-only /dev/stdin."""
+    hooks_dir = _HOOK.parent
+    offenders = [
+        path.name for path in sorted(hooks_dir.glob("*.js")) if "/dev/stdin" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []

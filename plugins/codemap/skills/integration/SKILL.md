@@ -96,9 +96,11 @@ else
 fi
 ```
 
+`resolve_index_env.py` delegates project/index-path derivation to `resolve_proj_index.py`.
+
 ### C3 — Smoke test and currency check
 
-`check_index_smoke.py` validates the index is loadable JSON and reports mtime age (informational). When valid, `check-index-currency` performs content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from the stored `file_shas` field (covers non-git projects and pulls/branch switches that bypass the post-commit hook).
+`check_index_smoke.py` validates the index is loadable JSON and reports mtime age by wrapping `smoke_test_index.py` (informational). When valid, `check-index-currency` performs content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from the stored `file_shas` field (covers non-git projects and pulls/branch switches that bypass the post-commit hook).
 
 ```bash
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")

@@ -50,6 +50,17 @@ def test_derive_modules_from_diff_strips_src_and_init() -> None:
     assert cs.derive_modules_from_diff(files, limit=10) == ["pkg.a", "other.b"]
 
 
+def test_derive_modules_from_diff_dedupes_and_limits_primary_modules() -> None:
+    """Primary diff module derivation dedupes in order and applies the same limit as fallback."""
+    files = [
+        "src/pkg/a.py",
+        "src/pkg/a.py",
+        "src/pkg/b.py",
+        "src/pkg/c.py",
+    ]
+    assert cs.derive_modules_from_diff(files, limit=2) == ["pkg.a", "pkg.b"]
+
+
 def test_derive_modules_from_diff_filters_non_py() -> None:
     files = ["docs.md", "config.yaml", "src/a.py"]
     assert cs.derive_modules_from_diff(files, limit=10) == ["a"]

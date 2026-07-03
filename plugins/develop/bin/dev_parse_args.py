@@ -155,14 +155,15 @@ def _extract_value_flag(flag: str, args: str) -> tuple[str | None, str]:
         >>> _extract_value_flag("plan", "fix issue")
         (None, 'fix issue')
     """
-    # --flag=VALUE form
-    eq_pattern = re.compile(r"--" + re.escape(flag) + r"=(\S+)")
+    # --flag=VALUE form. Require a full flag-token match so --planets does not
+    # satisfy --plan, and preserve the historical non-whitespace value contract.
+    eq_pattern = re.compile(r"(?<!\S)--" + re.escape(flag) + r"=(\S+)")
     m = eq_pattern.search(args)
     if m:
         return m.group(1), eq_pattern.sub("", args).strip()
 
-    # --flag VALUE form (value = next non-whitespace token after the flag)
-    space_pattern = re.compile(r"--" + re.escape(flag) + r"\s+(\S+)")
+    # --flag VALUE form (value = next non-flag, non-whitespace token).
+    space_pattern = re.compile(r"(?<!\S)--" + re.escape(flag) + r"\s+(?!--)(\S+)")
     m = space_pattern.search(args)
     if m:
         full_match = m.group(0)
@@ -194,32 +195,36 @@ def extract_flags(arguments: str, specs: list[FlagSpec]) -> tuple[dict[str, str]
     for spec in specs:
         if spec.kind == "bool":
             token = f"--{spec.flag}"
-            if token in clean:
+            token_pattern = re.compile(r"(?<!\S)" + re.escape(token) + r"(?![A-Za-z0-9_-])")
+            if token_pattern.search(clean):
                 result[spec.var] = "true"
-                clean = clean.replace(token, "")
+                clean = token_pattern.sub("", clean)
             else:
                 result[spec.var] = spec.default
 
         elif spec.kind == "neg-bool":
             token = f"--{spec.flag}"
-            if token in clean:
+            token_pattern = re.compile(r"(?<!\S)" + re.escape(token) + r"(?![A-Za-z0-9_-])")
+            if token_pattern.search(clean):
                 result[spec.var] = "false"
-                clean = clean.replace(token, "")
+                clean = token_pattern.sub("", clean)
             else:
                 result[spec.var] = spec.default
 
         elif spec.kind == "codemap":
             # Double-condition guard: --no-codemap wins; --codemap only sets strict
             # when --no-codemap absent.
-            has_no = "--no-codemap" in clean
-            has_yes = "--codemap" in clean
+            no_pattern = re.compile(r"(?<!\S)--no-codemap(?![A-Za-z0-9_-])")
+            yes_pattern = re.compile(r"(?<!\S)--codemap(?![A-Za-z0-9_-])")
+            has_no = no_pattern.search(clean) is not None
+            has_yes = yes_pattern.search(clean) is not None
             if has_no:
                 result[spec.var] = "off"
-                clean = clean.replace("--no-codemap", "")
-                clean = clean.replace("--codemap", "")
+                clean = no_pattern.sub("", clean)
+                clean = yes_pattern.sub("", clean)
             elif has_yes:
                 result[spec.var] = "strict"
-                clean = clean.replace("--codemap", "")
+                clean = yes_pattern.sub("", clean)
             else:
                 result[spec.var] = spec.default
 

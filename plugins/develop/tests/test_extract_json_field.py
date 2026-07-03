@@ -48,6 +48,18 @@ class TestRecoverJsonObject:
         result = recover_json_object('{"nested":{"k":1}} trailing')
         assert result == {"nested": {"k": 1}}
 
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ('prefix {"message":"literal { brace }"} suffix', {"message": "literal { brace }"}),
+            ('bad {"broken": true trailing {"ok": true}', {"ok": True}),
+            ('first {"a":1} second {"b":[{"c":2}]}', {"b": [{"c": 2}]}),
+        ],
+    )
+    def test_brace_heavy_recovery(self, text: str, expected: dict[str, object]) -> None:
+        """Recovery handles braces in strings, invalid leading objects, and nested arrays."""
+        assert recover_json_object(text) == expected
+
     def test_no_json_returns_none(self) -> None:
         """Returns None when no JSON object is present."""
         assert recover_json_object("no json here at all") is None
@@ -143,12 +155,18 @@ class TestMain:
         rc = extract_json_field.main([])
         assert rc == 3
 
-    def test_stdin_input(self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize("argv", [["verdict", "-"], ["verdict"]])
+    def test_stdin_input(
+        self,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+        argv: list[str],
+    ) -> None:
         """Reads JSON from stdin when second arg is '-' or omitted."""
         import io
 
         monkeypatch.setattr(sys, "stdin", io.StringIO('{"verdict":"approved"}'))
-        rc = extract_json_field.main(["verdict", "-"])
+        rc = extract_json_field.main(argv)
         out, _ = capsys.readouterr()
         assert rc == 0
         assert out.strip() == "approved"

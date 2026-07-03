@@ -239,7 +239,7 @@ def _git_dirty_py_count(root: Path) -> int:
         return 0
 
 
-def _parse_scanned_at(value: str) -> float:
+def _parse_scanned_at(value: object) -> float:
     """Parse scanned_at ISO-8601 string to POSIX timestamp; return 0.0 on failure.
 
     Args:
@@ -248,14 +248,18 @@ def _parse_scanned_at(value: str) -> float:
     Returns:
         POSIX float timestamp, or 0.0 when unparsable.
     """
-    if not value:
+    if not isinstance(value, str):
+        return 0.0
+    text = value.strip()
+    if not text or "T" not in text:
         return 0.0
     try:
-        cleaned = value[:19]
-        naive = datetime.strptime(cleaned, "%Y-%m-%dT%H:%M:%S")
-        return naive.replace(tzinfo=timezone.utc).timestamp()
+        parsed = datetime.fromisoformat(text.removesuffix("Z") + "+00:00" if text.endswith("Z") else text)
     except ValueError:
         return 0.0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).timestamp()
 
 
 def _read_index(index_path: Path) -> dict | None:

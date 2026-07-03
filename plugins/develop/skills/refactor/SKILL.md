@@ -1,7 +1,7 @@
 ---
 name: refactor
 description: "Test-first refactoring — audit coverage, add characterization tests, apply changes with safety net, run quality stack and review loop. TRIGGER when: user wants to restructure existing Python code without changing behaviour; phrases: \"refactor X\", \"clean up Y\", \"extract Z\", \"restructure this module\", \"improve code quality\". SKIP when: bug fixes (use `/develop:fix`); new features (use `/develop:feature`); mixed refactor+feature — run `/develop:refactor` first, then `/develop:feature`; non-Python projects."
-argument-hint: '<target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team]'
+argument-hint: '<target file or directory> <goal> [--repo <owner/repo>] [--plan <path>] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--accept-no-plan] [--semble] [--team] [--keep "<items>"]'
 effort: high
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -28,6 +28,15 @@ Quality stack (Branch Safety Guard, Codex Pre-pass, Progressive Review) requires
 
 </constants>
 
+<compaction>
+
+Key boundary: end of Step 2 — coverage audit complete, before characterization test writing in Step 3.
+Second boundary: end of Step 4 — refactor edits applied, before review stack in Step 5.
+Preserve at boundary 1: dev-dir, target path, coverage audit summary, plan-file, --keep items.
+Preserve at boundary 2: dev-dir, changed files list, test outcomes.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent Resolution: resolved at runtime via $_DEV_SHARED; source at develop/skills/_shared/agent-resolution.md (installed path) -->
@@ -39,6 +48,7 @@ _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.p
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 [ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+# loads: compaction-contract.md
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
@@ -66,9 +76,23 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; set
 
 **Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
+```bash
+# persist DEV_DIR for compaction recovery — bash state lost between Bash() calls  # timeout: 5000
+echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-refactor-dev-dir"
+```
+
 ## Flag parsing
 
 Parse flags into actual shell variables (not prose) so downstream blocks see correct values. Persist to temp files for cross-block access (bash state lost between Bash() calls):
+
+```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-refactor-keep-items"
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+```
 
 ```bash
 # timeout: 10000
@@ -88,7 +112,7 @@ CODEMAP_RAW=auto
 echo "$CODEMAP_RAW" > ${TMPDIR:-/tmp}/dev-refactor-codemap-raw
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — run after flag parsing. Behaviour differs by mode: `strict` (user explicitly passed `--codemap`) hard-fails when codemap unavailable; `auto` and `off` soft-degrade to `false` (do not abort skill):
 
@@ -270,6 +294,24 @@ After both complete: read their output files from `$RUN_DIR/`, synthesize output
 
 Continue to Step 3 only when `TEAM_MODE=false`.
 
+```bash
+# Compaction contract — boundary 1: after coverage audit, before characterization tests (compaction-contract.md §Lifecycle)
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir" 2>/dev/null || echo "")
+_PLAN_FILE=$(cat "${TMPDIR:-/tmp}/dev-plan-file" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-refactor-keep-items" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+_PRESERVE="dev-dir=$_DEV_DIR, plan-file=${_PLAN_FILE:-none}, pytest-cmd=$_PYTEST_CMD"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:refactor · phase: characterize+edit (after coverage audit)"
+    echo "- run-dir: $_DEV_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: add characterization tests (Step 3) → refactor with safety net (Step 4)"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 3: Add characterization tests (if needed)
 
 For every **uncovered** or **partially covered** public API, spawn **foundry:qa-specialist** to generate characterization tests:
@@ -362,6 +404,21 @@ After each change-test pair: re-read counter from temp file, increment, write ba
 - **Performance**: replace loops with vectorized ops, reduce allocations, batch I/O
 - **Dead code removal**: remove unused imports, unreachable branches, commented-out code; scan `_`-prefixed functions with no call sites; flag public methods absent from `__init__.py` exports
 
+```bash
+# Compaction contract — boundary 2: after refactor edits, before review stack (compaction-contract.md §Lifecycle)
+_DEV_DIR=$(cat "${TMPDIR:-/tmp}/dev-refactor-dev-dir" 2>/dev/null || echo "")
+_PYTEST_CMD=$(cat "${TMPDIR:-/tmp}/dev-pytest-cmd" 2>/dev/null || echo "")
+_CHANGED=$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:refactor · phase: review+quality (after refactor edits applied)"
+    echo "- run-dir: $_DEV_DIR"
+    echo "- preserve: dev-dir=$_DEV_DIR, changed-files=$_CHANGED, pytest-cmd=$_PYTEST_CMD"
+    echo "- next: review and close gaps (Step 5) → Final Report"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 5: Review and close gaps
 
 Full review of refactored code. **Loop** — review -> targeted refactoring (return to Step 4) -> re-review until only nits remain. Max 3 outer cycles. (Step 4's "max 5 change-test cycles" bound applies within each pass through Step 4, independent of outer loop.)
@@ -435,6 +492,10 @@ Read `$_FOUNDRY_SHARED/quality-stack.md` (if not found → skip quality stack en
 - [e.g., coverage tool unavailable, some tests skipped]
 
 **Refinements**: N passes.
+```
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

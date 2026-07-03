@@ -1055,14 +1055,20 @@ def validate_central_json(data: dict) -> ValidationResult:
         :class:`ValidationResult` with ``ok=True`` on success, or ``ok=False``
         and a reason string describing the first structural violation found.
     """
+    if not isinstance(data, dict):
+        return ValidationResult(ok=False, reason="response is not an object")
     if "central" not in data:
         return ValidationResult(ok=False, reason="missing 'central' key")
     central = data["central"]
     if not isinstance(central, list) or len(central) == 0:
         return ValidationResult(ok=False, reason="'central' is empty or not a list")
     for item in central:
+        if not isinstance(item, dict):
+            return ValidationResult(ok=False, reason="central item is not an object")
         if "rdep_count" not in item:
             return ValidationResult(ok=False, reason="central item missing 'rdep_count'")
+        if not isinstance(item["rdep_count"], int):
+            return ValidationResult(ok=False, reason="central item 'rdep_count' is not an int")
     return ValidationResult(ok=True, reason="")
 
 
@@ -1078,10 +1084,16 @@ def validate_rdeps_json(data: dict) -> ValidationResult:
         :class:`ValidationResult` with ``ok=True`` on success, or ``ok=False``
         and a reason string describing the missing key.
     """
+    if not isinstance(data, dict):
+        return ValidationResult(ok=False, reason="response is not an object")
     if "imported_by" not in data:
         return ValidationResult(ok=False, reason="missing 'imported_by' key")
     if "module" not in data:
         return ValidationResult(ok=False, reason="missing 'module' key")
+    if not isinstance(data["imported_by"], list):
+        return ValidationResult(ok=False, reason="'imported_by' is not a list")
+    if not isinstance(data["module"], str):
+        return ValidationResult(ok=False, reason="'module' is not a string")
     return ValidationResult(ok=True, reason="")
 
 
@@ -1097,10 +1109,16 @@ def validate_deps_json(data: dict) -> ValidationResult:
         :class:`ValidationResult` with ``ok=True`` on success, or ``ok=False``
         and a reason string describing the missing key.
     """
+    if not isinstance(data, dict):
+        return ValidationResult(ok=False, reason="response is not an object")
     if "direct_imports" not in data:
         return ValidationResult(ok=False, reason="missing 'direct_imports' key")
     if "module" not in data:
         return ValidationResult(ok=False, reason="missing 'module' key")
+    if not isinstance(data["direct_imports"], list):
+        return ValidationResult(ok=False, reason="'direct_imports' is not a list")
+    if not isinstance(data["module"], str):
+        return ValidationResult(ok=False, reason="'module' is not a string")
     return ValidationResult(ok=True, reason="")
 
 

@@ -13,6 +13,7 @@ Covered scenarios:
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -163,8 +164,8 @@ def _read_state(state_file: Path) -> dict[str, str]:
 class TestHappyPath:
     """Normal invocation produces a sourceable state file and per-slug tmpfiles."""
 
-    def test_minimal_invocation(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
-        """No flags — PROJ_NAME derives from repo basename; no sentinel created."""
+    def _run_minimal(self, fake_repo: Path, isolated_tmpdir: Path) -> dict[str, str]:
+        """Run the minimal setup invocation and return the sourced state."""
         r = sh(
             "--arguments",
             "",
@@ -174,8 +175,11 @@ class TestHappyPath:
         assert r.returncode == 0, r.stderr
         state_path = Path(r.stdout.strip())
         assert state_path.is_file(), f"state file not created at {state_path}"
+        return _read_state(state_path)
 
-        state = _read_state(state_path)
+    def test_minimal_invocation_writes_sourceable_state(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """No flags writes a sourceable state file with project identity and scan command fields."""
+        state = self._run_minimal(fake_repo, isolated_tmpdir)
         assert state["PROJ_NAME"] == fake_repo.name
         # PROJ_SLUG ends in the sanitised repo basename — the script's `tr -cd '[:alnum:]-'`
         # strips underscores and other punctuation, so compare on the sanitised form.
@@ -184,13 +188,21 @@ class TestHappyPath:
         assert state["SCAN_BIN"].endswith("/bin/scan-index")
         assert state["SCAN_ARGS_RAW"] == ""
 
-        # Per-PROJ_SLUG tmpfiles exist with matching content.
+    def test_minimal_invocation_writes_per_slug_tmpfiles(self, fake_repo: Path, isolated_tmpdir: Path) -> None:
+        """Per-PROJ_SLUG tmpfiles exist with content matching the sourceable state."""
+        state = self._run_minimal(fake_repo, isolated_tmpdir)
         slug = state["PROJ_SLUG"]
         assert (isolated_tmpdir / "codemap-proj-slug").read_text() == slug
         assert (isolated_tmpdir / f"codemap-proj-name-{slug}").read_text() == fake_repo.name
         assert (isolated_tmpdir / f"codemap-scan-bin-{slug}").read_text() == state["SCAN_BIN"]
         assert (isolated_tmpdir / f"codemap-scan-args-{slug}").read_text() == ""
-        # No --incremental requested ⇒ no sentinel.
+
+    def test_minimal_invocation_does_not_create_incremental_sentinel(
+        self, fake_repo: Path, isolated_tmpdir: Path
+    ) -> None:
+        """No --incremental request leaves the fallback sentinel absent."""
+        state = self._run_minimal(fake_repo, isolated_tmpdir)
+        slug = state["PROJ_SLUG"]
         assert not (isolated_tmpdir / f"codemap-incremental-noop-{slug}").exists()
 
     def test_root_flag_overrides_proj_name(self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path) -> None:
@@ -207,6 +219,24 @@ class TestHappyPath:
         state = _read_state(Path(r.stdout.strip()))
         assert state["PROJ_NAME"] == "alt-project"
         assert state["SCAN_ARGS_RAW"] == f"--root {other}"
+
+    def test_root_flag_with_spaces_overrides_proj_name(
+        self, fake_repo: Path, isolated_tmpdir: Path, tmp_path: Path
+    ) -> None:
+        """A quoted ``--root`` path containing spaces still drives project identity."""
+        other = tmp_path / "alt project with spaces"
+        other.mkdir()
+        raw_args = f"--root {shlex.quote(str(other))}"
+        r = sh(
+            "--arguments",
+            raw_args,
+            env={"CLAUDE_PLUGIN_ROOT": str(PLUGIN_ROOT), "TMPDIR": str(isolated_tmpdir)},
+            cwd=str(fake_repo),
+        )
+        assert r.returncode == 0, r.stderr
+        state = _read_state(Path(r.stdout.strip()))
+        assert state["PROJ_NAME"] == other.name
+        assert str(other) in state["SCAN_ARGS_RAW"]
 
 
 # ---------------------------------------------------------------------------

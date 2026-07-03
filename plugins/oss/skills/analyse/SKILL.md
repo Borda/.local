@@ -4,7 +4,7 @@ description: |
   Analyze GitHub issues, Pull Requests (PRs), Discussions, and repo vitality for an Open Source Software (OSS) project. For any specific item, casts a wide net — finds and lists all related open and closed issues/PRs/discussions, explicitly flags duplicates. Summarizes long threads, extracts reproduction steps, and generates repo vitality stats. Uses gh Command Line Interface (CLI) for GitHub Application Programming Interface (API) access. Complements oss:shepherd (requires `oss` plugin). NOT for PR readiness assessment or code review (use oss:review).
   TRIGGER when: user provides GitHub issue number (#N), PR number, or github.com URL with issue/PR/discussion path AND asks to analyze, summarize, understand, or triage it; user asks for repo vitality stats or "is this repo healthy".
   SKIP: user already pasted full thread text inline; oss:resolve already active on same PR; user wants code review (use oss:review); user phrasing is "review PR" meaning code quality assessment, not thread triage (route to oss:review).
-argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply] [--quick]"
+argument-hint: "<N|vitality [<owner>/<repo>|github-url]|ecosystem|path/to/report.md> [--reply] [--quick] [--keep \"<items>\"]"
 allowed-tools: Read, Bash, Write, Edit, Agent, AskUserQuestion, TaskList, TaskCreate, TaskUpdate
 context: fork
 model: sonnet
@@ -40,6 +40,14 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 </constants>
 
+<compaction>
+
+> loads: compaction-contract.md
+Key boundary: end of Step 5 — gather/fetch complete, before Step 6 synthesis gate.
+Preserve: cache-dir (.cache/gh), target # (CLEAN_ARGS), synthesized report path, reply-mode flag.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _OSS_SHARED/agent-resolution.md -->
@@ -47,6 +55,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 ## Agent Resolution
 
 ```bash
+# loads: compaction-contract.md
 # Cold-start fallback:
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # Empty _OSS_SHARED → resolve_shared_path.py failed (missing python/script or oss plugin);
@@ -69,6 +78,14 @@ echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared"
 ## Step 1: Flag parsing
 
 ```bash
+# Extract --keep value before CLEAN_ARGS cleaning (compaction-contract.md §keep: semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/analyse-keep-items"  # timeout: 5000
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
 REPLY_MODE=false
 QUICK_MODE=false
 CLEAN_ARGS=$ARGUMENTS
@@ -82,6 +99,8 @@ if [[ " $ARGUMENTS " == *" --quick "* ]]; then
     QUICK_MODE=true
     CLEAN_ARGS=$(echo "$CLEAN_ARGS" | sed -E 's/(^| )--quick($| )/\1\2/')
 fi
+# Strip --keep and its quoted value — consumed above
+CLEAN_ARGS=$(echo "$CLEAN_ARGS" | sed 's/ --keep "[^"]*"//g')
 CLEAN_ARGS="${CLEAN_ARGS#"${CLEAN_ARGS%%[![:space:]]*}"}"
 # Persist REPLY_MODE + QUICK_MODE + CLEAN_ARGS — fresh shell loses vars (Check 41)
 echo "$REPLY_MODE" > "${TMPDIR:-/tmp}/analyse-reply-mode"
@@ -180,7 +199,7 @@ echo "${CLEAN_ARGS:-}" > "${TMPDIR:-/tmp}/analyse-clean-args"
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: invoke `AskUserQuestion` with:
-- question: "Unknown flag(s): `--<token>`. Supported: `--reply`, `--quick`. How to proceed?"
+- question: "Unknown flag(s): `--<token>`. Supported: `--reply`, `--quick`, `--keep`. How to proceed?"
 - (a) Abort — re-invoke with correct flags
 - (b) Continue ignoring unknown flags
 
@@ -372,6 +391,24 @@ Read and execute the mode file from `${CLAUDE_PLUGIN_ROOT:-plugins/oss}/skills/a
 
 > loads: vitality-report.md (used by modes/vitality.md as REPORT_TPL)
 
+```bash
+# Compaction contract — boundary: after gather/fetch (Step 5), before synthesis gate (compaction-contract.md §Lifecycle)
+_CLEAN_ARGS=$(cat "${TMPDIR:-/tmp}/analyse-clean-args" 2>/dev/null || echo "")
+_REPORT_FILE=$(cat "${TMPDIR:-/tmp}/analyse-report-file" 2>/dev/null || echo "pending")
+_REPLY_MODE=$(cat "${TMPDIR:-/tmp}/analyse-reply-mode" 2>/dev/null || echo "false")
+_KEEP=$(cat "${TMPDIR:-/tmp}/analyse-keep-items" 2>/dev/null || echo "")
+_PRESERVE="target=#${_CLEAN_ARGS}, cache-dir=.cache/gh, report=${_REPORT_FILE}, reply-mode=${_REPLY_MODE}"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: oss:analyse · phase: synthesis (after gather/fetch)"
+    echo "- run-dir: .cache/gh"
+    echo "- preserve: ${_PRESERVE}"
+    echo "- next: reply gate (Step 6) or shepherd reply (Step 7)"
+} > .claude/state/skill-contract.md  # timeout: 5000
+```
+
 ## Step 6: Reply gate — STOP CHECK
 
 **Run before Confidence block regardless of `--reply` mode.**
@@ -400,6 +437,10 @@ Invoke `AskUserQuestion`. Options depend on mode:
 ### 6b — Confidence block (REPLY_MODE=false only)
 
 End response with `## Confidence` block per CLAUDE.md output standards.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 ## Step 7: Draft contributor reply (only when --reply, thread mode only)
 
@@ -436,6 +477,10 @@ If `DRIFT=true`: append `[analysis refreshed — new activity since last report]
 **Health monitoring** (CLAUDE.md §6): Agent spawns synchronous — Claude awaits natively. On timeout (`$HARD_CUTOFF` seconds): read `tail -100` of expected reply path; if none, use `{"verdict":"timed_out"}`; surface with ⏱. Never silently omit.
 
 End response with `## Confidence` block per CLAUDE.md — always **absolute last thing**.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 </workflow>
 

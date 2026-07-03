@@ -93,12 +93,23 @@ def test_allowlisted_python_m_pytest(captured_argv: list[list[str]]) -> None:
     assert captured_argv[0] == ["/fake/bin/python", "-m", "pytest", "--tb=short", "tests/foo.py", "-v"]
 
 
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rm -rf /",
+        "pytest; rm -rf /",
+        "pytest && echo x",
+        "uv run pytest; echo x",
+        "python -m pytest -q",
+    ],
+)
 def test_rejects_unsafe_cmd(
     captured_argv: list[list[str]],
     capsys: pytest.CaptureFixture[str],
+    command: str,
 ) -> None:
     """Non-allowlisted cmd → exit 2; subprocess never invoked; stderr contains "rejected"."""
-    rc = pytest_gate.main(["rm -rf /", "."])
+    rc = pytest_gate.main([command, "."])
     assert rc == 2
     assert captured_argv == []
     assert "rejected" in capsys.readouterr().err
@@ -153,6 +164,46 @@ def test_rejects_target_outside_cwd(
     rogue.mkdir()
     with pytest.raises(SystemExit) as exc:
         pytest_gate.main(["pytest", str(rogue)])
+    assert exc.value.code == 1
+    assert captured_argv == []
+    assert "outside project directory" in capsys.readouterr().err
+
+
+def test_rejects_relative_parent_target_outside_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    captured_argv: list[list[str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Relative traversal targets are rejected after resolution."""
+    cwd_dir = tmp_path / "project"
+    cwd_dir.mkdir()
+    monkeypatch.chdir(cwd_dir)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    with pytest.raises(SystemExit) as exc:
+        pytest_gate.main(["pytest", "../outside"])
+    assert exc.value.code == 1
+    assert captured_argv == []
+    assert "outside project directory" in capsys.readouterr().err
+
+
+def test_rejects_symlink_target_outside_cwd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    captured_argv: list[list[str]],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Symlink targets are rejected based on their resolved location."""
+    cwd_dir = tmp_path / "project"
+    cwd_dir.mkdir()
+    monkeypatch.chdir(cwd_dir)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = cwd_dir / "linked"
+    link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SystemExit) as exc:
+        pytest_gate.main(["pytest", "linked"])
     assert exc.value.code == 1
     assert captured_argv == []
     assert "outside project directory" in capsys.readouterr().err

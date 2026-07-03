@@ -1,7 +1,7 @@
 ---
 name: distill
 description: "One-time snapshot extracting patterns from work history and accumulated lessons, distills into concrete improvements — new agent/skill suggestions, memory pruning, consolidating lessons into rules/agent updates, or performing bin/ extraction from /audit --efficiency candidates. Roster boundary analysis → /foundry:audit agents (Check 34)."
-argument-hint: '[prune | memory | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager]'
+argument-hint: '[prune | memory | executables [<run-dir-or-report-path>] | "external <url-or-path>" | "<recurring task description>"] [--project] [--eager] [--keep "<items>"]'
 disable-model-invocation: true
 allowed-tools: Read, Edit, Bash, Glob, Grep, Write, AskUserQuestion, Agent, WebFetch, TaskCreate, TaskUpdate, TaskList
 effort: low
@@ -29,16 +29,31 @@ NOT for audit-only scan for extraction candidates (use `/foundry:audit --efficie
 
 </inputs>
 
+<compaction>
+Key boundary 1: end of Step 2 frequency heuristics (default mode only — prune/memory/external/executables exit early), before Step 3 gap analysis.
+Preserve at boundary 1: EAGER flag, ARGUMENTS (stripped), no run-dir (default mode is stateless).
+Terminal paths: end of Step 5 report (default mode); end of Memory Pruning mode (both eager and standard branches).
+</compaction>
+
 <workflow>
 
 **Task hygiene**:
 ```bash
+# loads: compaction-contract.md
 # audit-skip: resilience-replication
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
 Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 ```bash
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
+rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
+mkdir -p "${TMPDIR:-/tmp}/distill-state"
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/distill-state/keep-items"
 EAGER=false
 [[ "$ARGUMENTS" == *"--eager"* ]] && EAGER=true
 ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--eager//g' | xargs)  # timeout: 3000
@@ -110,6 +125,20 @@ With `--eager` (lower thresholds):
 - **1 occurrence** with significant manual effort → qualifies as high-value candidate
 - Domain-specific threshold unchanged
 
+```bash
+_KEEP=$(cat "${TMPDIR:-/tmp}/distill-state/keep-items" 2>/dev/null || echo "")
+_PRESERVE="run-dir=n/a"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:distill · phase: gap-analysis (after work-pattern scan)"
+    echo "- run-dir: n/a"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: gap analysis (Step 3) → duplication check (Step 4) → report (Step 5)"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 3: Gap analysis
 
 For each identified pattern, check:
@@ -175,6 +204,10 @@ Anti-pattern checklist — reject candidate if any apply:
 **Gaps**: [e.g., git history too shallow, task files not present, descriptions too generic to compare]
 
 **Refinements**: N passes. [Pass 1: <what improved>. Pass 2: <what improved>.] — omit if 0 passes
+```
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 ## Mode: Memory Pruning — only when `$ARGUMENTS == "prune"`
@@ -306,6 +339,10 @@ Pruned MEMORY.md — <date>
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
+
 **Otherwise** (`$EAGER == false`) — standard read-only advisory flow:
 
 **Evaluate each section against these criteria:**
@@ -351,6 +388,10 @@ Pruned MEMORY.md — <date>
 ```
 
 End response with `## Confidence` block per CLAUDE.md output standards.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 ## Mode: Memory Distillation — only when first token is `memory`
 

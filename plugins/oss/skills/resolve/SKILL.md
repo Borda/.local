@@ -1,7 +1,7 @@
 ---
 name: resolve
 description: "OSS maintainer fast-close workflow for GitHub PRs. Three phases: (1) PR intelligence — reads full thread, linked issues, PR body to synthesize contribution motivation and classify every comment into action items; (2) conflict resolution — checks out PR branch (fork-aware via gh pr checkout), merges BASE into it, resolves conflicts semantically using contributor's intent as priority lens; (3) implements each action item as separate attributed commit via Codex, pushes back to contributor's fork. Supports three source modes: pr (live GitHub comments only), report (latest /review report findings as action items, no GitHub re-fetch), and pr + report (both sources aggregated and deduplicated in one pass). Also accepts bare comment text for single-comment dispatch. NOT for reply drafting to /oss:analyse findings (use /oss:analyse --reply (requires `oss` plugin)). NOT for code diff review of PR changes (use /oss:review). NOT for release preparation (use /oss:release). NOT for fixing local bugs unrelated to a PR (use /develop:fix; requires develop plugin). TRIGGER when: PR is ready to close and has open comments, conflicts, or review findings to address; user says 'close this PR', 'resolve comments on PR #N', or 'implement review findings'."
-argument-hint: "<PR number or URL> [report] | report | <review comment text>"
+argument-hint: "<PR number or URL> [report] | report | <review comment text> [--keep \"<items>\"]"
 disable-model-invocation: true
 model: sonnet
 allowed-tools: Read, Edit, Write, Bash, Agent, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
@@ -53,6 +53,16 @@ CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §6 default 300s
 > in direct-shell execution (git push, gh pr checkout).
 </constants>
 
+<compaction>
+
+> loads: compaction-contract.md
+Key boundary: end of Step 8 — per-item implementation loop complete, before Step 9 lint gate. Contract overwrites on each iteration (latest state wins).
+Second boundary: start of Step 11 — before final report write, after push.
+Preserve at boundary 1: PR#, implemented/remaining item state.
+Preserve at boundary 2: final report path, PR#.
+
+</compaction>
+
 <workflow>
 
 <!-- Symbol legend: ⚠ = warning/skipped (non-blocking, proceed with caution) · ⛔ = blocked/stop (halt workflow, do not proceed) -->
@@ -64,6 +74,7 @@ CHALLENGE_POLL_S=90      # tightened from CLAUDE.md §6 default 300s
 ```bash
 # loads: oss-shared-resolver.md
 # loads: review-section-taxonomy.md
+# loads: compaction-contract.md
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 _OSS_RESOLVE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/resolve 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
@@ -99,6 +110,17 @@ GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true"
 ```
 
 gh missing or not authenticated → script exits 1 (error printed above; eval skipped when exit code non-zero).
+
+```bash
+# Extract --keep value before parse-resolve-args.py runs (compaction-contract.md §keep: semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/resolve-keep-items"  # timeout: 5000
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+```
 
 ```bash
 # Codemap auto-detect: on by default if installed; --no-codemap to opt out; --codemap = strict (stop if not installed)
@@ -150,8 +172,8 @@ Parse $ARGUMENTS:
 ```bash
 [ -n "$CLAUDE_PLUGIN_ROOT" ] || { echo "Error: CLAUDE_PLUGIN_ROOT is unset — verify oss plugin installation and that skill is invoked via Claude Code plugin system"; exit 1; }  # timeout: 5000
 [ -f "${CLAUDE_PLUGIN_ROOT}/bin/parse-resolve-args.py" ] || { echo "Error: parse-resolve-args.py not found — verify oss plugin installation"; exit 1; }  # timeout: 5000
-# parse-resolve-args.py does not handle codemap flags — strip before passing (flags already parsed in the codemap-detect block above)  # timeout: 3000
-ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--no-codemap//g; s/ --codemap / /g' | xargs)
+# parse-resolve-args.py does not handle codemap/keep flags — strip before passing (flags already parsed above)  # timeout: 3000
+ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--no-codemap//g; s/ --codemap / /g' | sed 's/--keep "[^"]*"//g' | xargs)
 # Defence-in-depth: validate every output line is plain VAR=value (no metacharacters) before sourcing.
 # parse-resolve-args.py uses shlex.quote but this guards against future regressions or a tampered binary.
 tmpenv=$(mktemp)  # timeout: 3000
@@ -164,6 +186,7 @@ if grep -qvE "^[A-Z_][A-Z0-9_]*=([A-Za-z0-9_./:#@+-]*|'[^']*')$" "$tmpenv"; then
 fi
 . "$tmpenv"
 # sets: PR_NUMBER, PR_URL, MODE, ARGUMENTS (leading '#' stripped only for comment-dispatch)
+echo "${PR_NUMBER:-n/a}" > "${TMPDIR:-/tmp}/resolve-pr-number"  # timeout: 3000
 ```
 
 <!-- branch: unsupported-flags — isolated; ≤1 call; fires only when unknown flags present -->
@@ -494,6 +517,22 @@ Read `$_OSS_RESOLVE/modes/action-item-dispatch.md`; execute its prelude (IMPL_AG
 TaskUpdate(task_id=TASK_IMPL, status="completed")
 ```
 
+```bash
+# Compaction contract — boundary 1: after implementation loop, before lint gate (compaction-contract.md §Lifecycle)
+_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number" 2>/dev/null || echo "n/a")
+_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items" 2>/dev/null || echo "")
+_PRESERVE="pr=${_PR_NUMBER}, items-implemented; next: lint/push/report"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: oss:resolve · phase: lint-qa (after implementation loop)"
+    echo "- run-dir: n/a"
+    echo "- preserve: ${_PRESERVE}"
+    echo "- next: lint/QA gate (Step 9) → push (Step 10) → final report (Step 11)"
+} > .claude/state/skill-contract.md  # timeout: 5000
+```
+
 ## Step 9: Lint and QA gate
 
 ```text
@@ -571,6 +610,21 @@ gh pr view <PR_NUMBER> --json headRefOid,commits --jq '.commits[-3:] | .[].messa
 
 ## Step 11: Final report
 
+```bash
+# Compaction contract — boundary 2: before final report write (compaction-contract.md §Lifecycle)
+_PR_NUMBER=$(cat "${TMPDIR:-/tmp}/resolve-pr-number" 2>/dev/null || echo "n/a")
+_KEEP=$(cat "${TMPDIR:-/tmp}/resolve-keep-items" 2>/dev/null || echo "")
+_PRESERVE="pr=${_PR_NUMBER}, final-report=pending-write"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+{
+    echo "## Active Skill Contract"
+    echo "- skill: oss:resolve · phase: final-report (after push)"
+    echo "- run-dir: n/a"
+    echo "- preserve: ${_PRESERVE}"
+    echo "- next: write final report → post-PR action gate"
+} > .claude/state/skill-contract.md  # timeout: 5000
+```
+
 Read report template from `$_OSS_RESOLVE/templates/resolve-report.md` for section structure.
 
 **Action Items table** — one row per selected item, columns: `#` | `Type` | `Change` | `Status` | `Resolution` | `Commit`:
@@ -600,9 +654,17 @@ TaskUpdate(task_id=TASK_CLOSE, status="completed")
 
 Invoke `AskUserQuestion` — options: (a) Open PR in browser (`gh pr view <PR_NUMBER> --web`) · (b) Merge now (`gh pr merge <PR_NUMBER> --merge`) · (c) Skip.
 
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
+
 ## Step 12: Comment dispatch + Codex review loop
 
 Read and execute `$_OSS_RESOLVE/modes/comment-dispatch.md`.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 </workflow>
 

@@ -51,6 +51,38 @@ class TestCheckFile:
         assert len(violations) >= 1
         assert any("unclosed" in v for v in violations)
 
+    @pytest.mark.parametrize(
+        ("name", "text", "expected_count", "expected_fragments"),
+        [
+            ("clean_close", "```bash\necho hi\n```\n", 0, ()),
+            ("trailing_spaces", "```bash\necho hi\n```   \n", 0, ()),
+            (
+                "trailing_comment",
+                "```bash\necho hi\n```  # timeout: 3000\n",
+                3,
+                ("nesting violation", "line 1", "line 3"),
+            ),
+            ("longer_close_count", "```bash\necho hi\n````\n", 3, ("nesting violation", "line 1", "line 3")),
+            ("mismatched_close_count", "````bash\necho hi\n```\n", 2, ("line 1", "line 3")),
+        ],
+    )
+    def test_closing_fence_variants(
+        self,
+        tmp_path: Path,
+        name: str,
+        text: str,
+        expected_count: int,
+        expected_fragments: tuple[str, ...],
+    ) -> None:
+        """Closing delimiters only close with matching count and no info string."""
+        f = tmp_path / f"{name}.md"
+        f.write_text(text, encoding="utf-8")
+        violations = cfs.check_file(f)
+        joined = "\n".join(violations)
+        assert len(violations) == expected_count
+        for fragment in expected_fragments:
+            assert fragment in joined
+
     def test_valid_nesting_outer_four_inner_three(self, tmp_path: Path) -> None:
         """Outer ```` wrapping inner ``` is valid nesting — no violations."""
         f = tmp_path / "nested_ok.md"

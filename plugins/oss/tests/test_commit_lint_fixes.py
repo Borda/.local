@@ -8,6 +8,7 @@ stage-and-commit path, including commit-failure forwarding.
 from __future__ import annotations
 
 from typing import Any
+import subprocess
 
 import pytest
 
@@ -67,6 +68,48 @@ def test_changed_files_stages_and_commits(monkeypatch: pytest.MonkeyPatch) -> No
     subcmds = [c[1] for c in calls]
     assert "add" in subcmds
     assert "commit" in subcmds
+
+
+def test_changed_files_are_added_before_commit_with_exact_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Multiple changed files, including spaces, are passed as separate git-add args before commit."""
+    call_n = [0]
+    calls: list[list[str]] = []
+
+    def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        calls.append(list(cmd))
+        call_n[0] += 1
+        stdout = "src/a.py\ndocs/file with spaces.md\n" if call_n[0] == 1 else ""
+        return _FakeCompleted(returncode=0, stdout=stdout)
+
+    monkeypatch.setattr(clf.subprocess, "run", _fake_run)
+    monkeypatch.setattr(clf, "which", lambda _: "/fake/git")
+    rc = clf.main()
+
+    assert rc == 0
+    add_index = next(i for i, cmd in enumerate(calls) if cmd[1] == "add")
+    commit_index = next(i for i, cmd in enumerate(calls) if cmd[1] == "commit")
+    assert add_index < commit_index
+    assert calls[add_index] == ["/fake/git", "add", "--", "src/a.py", "docs/file with spaces.md"]
+    assert calls[commit_index][:3] == ["/fake/git", "commit", "-m"]
+
+
+def test_git_add_failure_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """git add check=True failures are not converted into a misleading successful commit."""
+    call_n = [0]
+
+    def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        call_n[0] += 1
+        if call_n[0] == 1:
+            return _FakeCompleted(returncode=0, stdout="src/a.py\n")
+        if cmd[1] == "add":
+            raise subprocess.CalledProcessError(returncode=2, cmd=cmd)
+        return _FakeCompleted(returncode=0, stdout="")
+
+    monkeypatch.setattr(clf.subprocess, "run", _fake_run)
+    monkeypatch.setattr(clf, "which", lambda _: "/fake/git")
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        clf.main()
+    assert exc_info.value.returncode == 2
 
 
 def test_changed_files_commit_message_contains_lint(monkeypatch: pytest.MonkeyPatch) -> None:

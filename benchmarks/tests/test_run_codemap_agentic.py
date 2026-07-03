@@ -598,6 +598,41 @@ class TestGroundTruthScore:
         assert result.scored is True
         assert result.erec == pytest.approx(0.5)
 
+    @pytest.mark.parametrize(
+        "found_count,expected_recall",
+        [
+            (7, 0.7),
+            (6, 0.6),
+            (10, 1.0),
+        ],
+    )
+    def test_recall_boundary_values_are_exact(
+        self, script_run_agentic: Any, tmp_path: Path, found_count: int, expected_recall: float
+    ) -> None:
+        """score() reports exact recall fractions around the downstream 70% boundary."""
+        primary = "pkg.primary"
+        callers = [f"pkg.caller{i}" for i in range(10)]
+        data = _minimal_index(
+            [{"name": primary, "direct_imports": [], "dep_count": 0, "status": "ok"}]
+            + [{"name": caller, "direct_imports": [primary], "dep_count": 0, "status": "ok"} for caller in callers]
+        )
+        index_file = tmp_path / "index.json"
+        index_file.write_text(json.dumps(data))
+        task = _make_task(script_run_agentic, id="BND-01", primary_module=primary)
+        ground_truth = script_run_agentic.GroundTruth(index_file, [task])
+        corpus = " ".join(callers[:found_count])
+
+        result = ground_truth.score(
+            task_id="BND-01",
+            output_text=corpus,
+            exposure_corpus=corpus,
+            report_corpus=corpus,
+        )
+
+        assert result.scored is True
+        assert result.erec == pytest.approx(expected_recall)
+        assert result.rrec == pytest.approx(expected_recall)
+
     def test_delta_equals_erec_minus_rrec(self, script_run_agentic: Any, ground_truth: Any) -> None:
         """score() delta field equals erec - rrec (information gap).
 

@@ -1,4 +1,5 @@
 {
+  "advisorModel": "fable",
   "autoUpdatesChannel": "stable",
   "effortLevel": "high",
   "env": {

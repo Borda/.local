@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Multi-agent code review of local Python files, directories, or the current git diff covering architecture, tests, performance, docs, lint, security, and API design. Scope: Python source files in local working tree. Python-file-free targets (pure JS/TS/Go/Rust projects) are out of scope."
-argument-hint: "[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble]"
+argument-hint: "[python-file|dir] [--no-challenge] [--challenge] [--codemap] [--no-codemap] [--semble] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
 effort: high
@@ -62,6 +62,15 @@ SEMBLE_ENABLED=false    # set to true via --semble
 
 </constants>
 
+<compaction>
+
+Key boundary: end of Step 3 — parallel review-agent fan-out outputs collected, before Step 5 consolidation.
+Second boundary: end of Step 5 — consolidated report written, before Step 6 follow-up.
+Preserve at boundary 1: RUN_DIR, REPORT_DIR, target, per-agent finding file paths, --keep items.
+Preserve at boundary 2: final report path.
+
+</compaction>
+
 <workflow>
 
 <!-- Shared pattern with oss:review — coordinate on agent spawn logic, file-handoff, consolidation changes -->
@@ -76,6 +85,7 @@ _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
 [ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+# loads: compaction-contract.md
 ```
 
 Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
@@ -95,17 +105,30 @@ After Step 1 completes (scope and `TARGET` known), create these tasks **before a
 Strip flags from `$ARGUMENTS` before using as path:
 
 ```bash
+# Extract --keep quoted value (compaction-contract.md §keep: semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/dev-review-keep-items"
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+```
+
+```bash
 python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" --skill review --write-files "$ARGUMENTS"
 # values → ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap} + legacy paths
 # CLEAN_ARGS → ${TMPDIR:-/tmp}/dev-review-clean-args
 REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")
+# Strip --keep "<items>" so it does not leak into the target path used by find/git diff
+REVIEW_ARGS=$(echo "$REVIEW_ARGS" | sed -E 's/ *--keep +"[^"]+"//' | xargs 2>/dev/null || echo "$REVIEW_ARGS")
 CHALLENGE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-enabled" 2>/dev/null || echo "true")
 CHALLENGE_FORCED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-forced" 2>/dev/null || echo "false")  # --challenge: force Agent 7 even on small diffs
 SEMBLE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-semble-enabled" 2>/dev/null || echo "false")
 CODEMAP_RAW=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-enabled" 2>/dev/null || echo "auto")
 ```
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 # normalize CODEMAP_RAW → true/false; strict exits on unavailability  # timeout: 5000
@@ -272,6 +295,7 @@ mkdir -p "$RUN_DIR"  # timeout: 5000
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/dev-review-run-dir"
 REPORT_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR"  # timeout: 5000
+echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/dev-review-report-dir"  # persist for contract-write
 REPORT_DIR_LITERAL="$REPORT_DIR"
 ```
 
@@ -422,6 +446,25 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. If an agent returns partial results or errors, use Read tool on `$RUN_DIR/<agent-name>.md` for details. Mark agents that returned empty or error with ⏱ in final report. Never silently omit agents that **failed** (returned error/partial) — they must appear with ⏱ marker. Agents that are **not spawned** (skipped due to mode flags, docs-only, CHORE mode) may be absent from RUN_DIR; consolidator "skip missing" applies only to legitimately-not-spawned agents.
 
+```bash
+# Compaction contract — boundary 1: after fan-out, before consolidation (compaction-contract.md §Lifecycle)
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir" 2>/dev/null || echo "")
+_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-report-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/dev-review-keep-items" 2>/dev/null || echo "")
+_TARGET=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "working-tree diff")
+_FINDING_FILES=$(ls "$_RUN_DIR/"*.md 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+_PRESERVE="run-dir=$_RUN_DIR, report-dir=$_REPORT_DIR, target=$_TARGET, finding-files=$_FINDING_FILES"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:review · phase: consolidation (after parallel review-agent fan-out)"
+    echo "- run-dir: $_RUN_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: cross-validate critical findings (Step 4) → consolidate → final report"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 4: Cross-validate critical/blocking findings
 
 ```bash
@@ -465,6 +508,19 @@ After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CO
 
 Print terminal block (universal rule — quality-gates.md §Report File Format): read `---` header from top of `$REPORT_DIR/review-report.md` (lines 1–15, up to and including closing `---`) and print verbatim as FIRST content of reply. Append `→ saved to $REPORT_DIR/review-report.md`. Report file already contains block — no separate prepend needed. Omit `╔═╗` Re:Anchor box.
 
+```bash
+# Compaction contract — boundary 2: after consolidation, before follow-up (compaction-contract.md §Lifecycle)
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir" 2>/dev/null || echo "")
+_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-report-dir" 2>/dev/null || echo "")
+{
+    echo "## Active Skill Contract"
+    echo "- skill: develop:review · phase: follow-up (after consolidation)"
+    echo "- run-dir: $_RUN_DIR"
+    echo "- preserve: final-report=$_REPORT_DIR/review-report.md"
+    echo "- next: optional Codex delegation → follow-up gate"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 6: Delegate implementation follow-up (optional)
 
 Re-hydrate `CODEX_OUT` from persisted temp file (Bash() state does not survive between calls): `CODEX_OUT=$(cat ${TMPDIR:-/tmp}/dev-review-codex-out 2>/dev/null || echo "")`. Skip Step 6 if `$CODEX_OUT` is empty or the file at that path does not exist.
@@ -494,6 +550,10 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
 - (d) label: `skip` — description: no action
 
 **Confidence block** — emitted by the consolidator agent in `$REPORT_DIR/review-report.md`, not at skill level (DMI skill: top-level model invocation is disabled, so any skill-level instruction would be unreachable).
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 </workflow>
 

@@ -152,6 +152,7 @@ Searches the AI/ML literature for a topic, builds a comparison table of methods,
 **Flags**:
 
 - `--team`: spawn 2–3 researcher instances on competing method families in parallel. Use when 3+ distinct method families exist and there is no clear SOTA consensus. Expect roughly 7x token cost versus single-agent mode.
+- `--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract so they survive auto-compaction during the Step 2 literature gather.
 
 **Output**: full report written to `.temp/output-research-<branch>-<date>.md`; compact summary printed to terminal.
 
@@ -222,12 +223,15 @@ Validates `program.md` before the expensive run. Acts as a research supervisor r
 **Invocation**:
 
 ```text
-/research:judge                    # auto-detect program.md at project root
-/research:judge path/to/plan.md    # review a specific file
-/research:judge --skip-validation  # skip dry-run of metric/guard commands
+/research:judge                            # auto-detect program.md at project root
+/research:judge path/to/plan.md            # review a specific file
+/research:judge --skip-validation          # skip dry-run of metric/guard commands
+/research:judge --keep "<items>"           # persist named items through compaction
 ```
 
 Use `--skip-validation` when writing `program.md` on one machine but planning to run on a remote GPU where the commands are not locally executable.
+
+`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract so they survive auto-compaction during the J3 parallel review agent fan-out.
 
 **What it checks**:
 
@@ -283,6 +287,7 @@ The core loop. Reads `program.md`, establishes a baseline, then iterates: spawn 
 /research:run program.md --codemap                     # strict: fail if codemap index missing
 /research:run --resume                                 # resume latest interrupted run
 /research:run program.md --resume                      # resume a specific run
+/research:run program.md --keep "<items>"              # persist named items through compaction
 ```
 
 **Agent strategy** (set via `agent_strategy` in `program.md` or auto-detected from goal/metric keywords):
@@ -318,6 +323,8 @@ The core loop. Reads `program.md`, establishes a baseline, then iterates: spawn 
 
 **Limits**: default 20 iterations; maximum 50 (never exceeded without explicit override in `program.md`).
 
+`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract written after each Phase 8 iteration, so they survive auto-compaction during long loops.
+
 **Example**:
 
 ```text
@@ -349,6 +356,7 @@ Chains plan, judge (with auto-refinement), and run into a single non-interactive
 
 - `--skip-validation`: skip dry-run in judge step (useful for cross-machine workflows)
 - `--out <path>`: write `program.md` to a specific path instead of project root
+- `--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contracts written after S2 (plan written) and S3 (judge verdict), so they survive auto-compaction during unattended runs.
 
 **Judge refinement loop**: sweep runs judge up to 3 times, applying Required Changes between iterations. If the plan reaches `APPROVED`, the run starts automatically. If it hits `BLOCKED`, sweep stops and shows you the critical findings. If it cannot resolve `NEEDS-REVISION` after 3 iterations, it asks whether to proceed anyway or abort.
 
@@ -433,6 +441,7 @@ After `/research:run` finds improvements, fortify identifies which components ac
 /research:fortify --max-ablations 5             # cap at N ablation variants
 /research:fortify --skip-run                    # identify candidates only, no execution
 /research:fortify --compute=colab               # run metric/guard via Colab
+/research:fortify --keep "<items>"              # persist named items through compaction
 ```
 
 **Prerequisites**: requires a completed `/research:run` AND an APPROVED `/research:judge` verdict for the same `program.md`. Fortify will refuse to run without both.
@@ -444,6 +453,8 @@ After `/research:run` finds improvements, fortify identifies which components ac
 | CRITICAL    | Removing this component costs > 50% of full metric |
 | SIGNIFICANT | 10–50% of full metric                              |
 | MARGINAL    | < 10% of full metric                               |
+
+`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contracts written after F2 (candidates identified) and F4 (worktrees complete), so they survive auto-compaction during the parallel worktree loop.
 
 Each ablation runs in its own git worktree created from `best_commit`. The main working tree is never modified. If `git revert` conflicts arise (two components touched the same lines), the variant is recorded as `revert-conflict` and reported — not treated as an error.
 
@@ -516,6 +527,7 @@ Generates a Kaggle competition notebook as a Jupytext `# %%` Python script (comp
 /research:kaggle <competition-name> --eda-only
 /research:kaggle <competition-name> --inference-only
 /research:kaggle <competition-name> --resume <existing.py>
+/research:kaggle <competition-name> --keep "<items>"     # persist named items through compaction
 ```
 
 **What it generates** (depends on mode):
@@ -539,6 +551,8 @@ Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + Dat
 **Competitor context**: if `resources/competitors/` contains any `.ipynb` or `.py` files, the skill reads each and summarises the approach (model choice, preprocessing, augmentation strategy) before profiling the problem. Findings inform detection method and domain-specific preprocessing decisions.
 
 **Package distillation gate**: after the notebook is verified, the skill offers to extract reusable helpers (data loading, submission builder, metric utilities) into `src/<package>/` with Google-style docstrings and tests. The refactored notebook is written as a new file (`notebooks/01_<name>_pkg.py`) — the validated baseline is never modified.
+
+`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract written after Step 3 (notebook generated), so they survive auto-compaction if the `foundry:sw-engineer` spawn takes a long time.
 
 **Requires**: `foundry` plugin (`foundry:sw-engineer`).
 
@@ -825,7 +839,7 @@ This plugin is part of the Borda-AI-Rig project. The skills and agents are in `p
 
 The skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) are the canonical source of truth — this README must stay in sync with them. Any change to a skill's behavior (flags, NOT-for scope, trigger conditions) requires an update here.
 
-Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.9.5`.
+Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.10.0`.
 
 **Mode-dispatch layout**: large conditional sections are externalised under `skills/<skill>/modes/*.md` and loaded on demand. Run's hypothesis pipeline, team, and report modes live under `skills/run/modes/`. The ML-concepts reference for `research:scientist` lives under `agents/scientist/ml-concepts.md` — loaded only when the task is ML-domain.
 

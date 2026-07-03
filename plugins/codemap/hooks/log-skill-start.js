@@ -18,7 +18,7 @@ function isoNow() {
 function main() {
   let input;
   try {
-    const raw = fs.readFileSync("/dev/stdin", "utf8");
+    const raw = fs.readFileSync(0, "utf8");
     input = JSON.parse(raw);
   } catch {
     process.exit(0);

@@ -34,7 +34,7 @@ function projName(cwd) {
 function main() {
   let input;
   try {
-    input = JSON.parse(fs.readFileSync("/dev/stdin", "utf8"));
+    input = JSON.parse(fs.readFileSync(0, "utf8"));
   } catch {
     process.exit(0);
   }

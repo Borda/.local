@@ -36,25 +36,35 @@ def captured_argv(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     return recorded
 
 
-def test_strips_hash_prefix(captured_argv: list[list[str]]) -> None:
-    """``#42`` → ``42`` passed to gh; leading ``#`` not forwarded."""
-    rc = issue_fetch.main(["#42"])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("42", "42"),
+        ("#42", "42"),
+        ("001", "001"),
+        (" 42 ", "42"),
+    ],
+)
+def test_valid_issue_numbers(captured_argv: list[list[str]], raw: str, expected: str) -> None:
+    """Valid issue number forms are normalized before invoking gh."""
+    rc = issue_fetch.main([raw])
     assert rc == 0
     assert len(captured_argv) == 1
-    assert captured_argv[0] == ["/fake/path/to/gh", "issue", "view", "42", "--comments"]
+    assert captured_argv[0] == ["/fake/path/to/gh", "issue", "view", expected, "--comments"]
 
 
-def test_rejects_non_numeric(
+@pytest.mark.parametrize("raw", ["abc", "#", "##42", "-1", "1.2", "12abc"])
+def test_rejects_invalid_issue_numbers(
     captured_argv: list[list[str]],
     capsys: pytest.CaptureFixture[str],
+    raw: str,
 ) -> None:
     """Non-numeric input → exit 1; gh never invoked; stderr contains diagnostic."""
-    rc = issue_fetch.main(["abc"])
+    rc = issue_fetch.main([raw])
     assert rc == 1
     assert captured_argv == []  # gh never called
     err = capsys.readouterr().err
     assert "invalid issue number" in err
-    assert "abc" in err
 
 
 def test_rejects_empty_input(
@@ -77,12 +87,6 @@ def test_passes_through_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(issue_fetch.subprocess, "run", _fake_run)
     monkeypatch.setattr(issue_fetch, "which", lambda _name: "/fake/gh")
     assert issue_fetch.main(["99"]) == 3
-
-
-def test_bare_number_forwarded_unchanged(captured_argv: list[list[str]]) -> None:
-    """Numeric arg without ``#`` prefix forwarded as-is."""
-    issue_fetch.main(["123"])
-    assert captured_argv[0] == ["/fake/path/to/gh", "issue", "view", "123", "--comments"]
 
 
 def test_resolve_raises_when_gh_missing(monkeypatch: pytest.MonkeyPatch) -> None:

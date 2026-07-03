@@ -1,34 +1,40 @@
 """Tests for check_output_within_root.py"""
 
+import os
 import subprocess
 import sys
-import tempfile
-import os
+from pathlib import Path
+
+import pytest
 
 BIN = os.path.join(os.path.dirname(__file__), "..", "bin", "check_output_within_root.py")
 
 
-def test_within_root():
-    with tempfile.TemporaryDirectory() as td:
-        sub = os.path.join(td, "sub", "dir")
-        result = subprocess.run([sys.executable, BIN, sub, td])
-        assert result.returncode == 0
+def test_within_root(tmp_path: Path):
+    sub = tmp_path / "sub" / "dir"
+    result = subprocess.run([sys.executable, BIN, str(sub), str(tmp_path)])
+    assert result.returncode == 0
 
 
-def test_equal_to_root():
-    with tempfile.TemporaryDirectory() as td:
-        result = subprocess.run([sys.executable, BIN, td, td])
-        assert result.returncode == 0
+def test_equal_to_root(tmp_path: Path):
+    result = subprocess.run([sys.executable, BIN, str(tmp_path), str(tmp_path)])
+    assert result.returncode == 0
 
 
-def test_outside_root():
-    with tempfile.TemporaryDirectory() as td:
-        result = subprocess.run([sys.executable, BIN, "/tmp/evil", td])
-        assert result.returncode == 1
+@pytest.mark.parametrize("case", ["absolute_tmp", "sibling_prefix", "relative_parent"])
+def test_outside_root(case: str, tmp_path: Path):
+    if case == "absolute_tmp":
+        candidate = "/tmp/evil"
+    elif case == "sibling_prefix":
+        candidate = f"{tmp_path}-evil"
+    else:
+        sibling = tmp_path.parent / "sibling"
+        candidate = tmp_path / ".." / sibling.name
+    result = subprocess.run([sys.executable, BIN, str(candidate), str(tmp_path)])
+    assert result.returncode == 1
 
 
-def test_path_traversal_blocked():
-    with tempfile.TemporaryDirectory() as td:
-        traversal = os.path.join(td, "..", "..", "etc")
-        result = subprocess.run([sys.executable, BIN, traversal, td])
-        assert result.returncode == 1
+def test_path_traversal_blocked(tmp_path: Path):
+    traversal = tmp_path / ".." / ".." / "etc"
+    result = subprocess.run([sys.executable, BIN, str(traversal), str(tmp_path)])
+    assert result.returncode == 1

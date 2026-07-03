@@ -1,7 +1,7 @@
 ---
 name: topic
 description: "Research State of the Art (SOTA) literature for an Artificial Intelligence / Machine Learning (AI/ML) topic, method, or architecture. Finds relevant papers, builds a comparison table, recommends the best implementation strategy for the current codebase, and optionally produces a phased implementation plan mapped to the codebase. Owns broad SOTA search end-to-end via foundry:web-explorer; delegates codebase mapping to foundry:solution-architect."
-argument-hint: "<topic> [--team] | plan [<output.md>]"
+argument-hint: "<topic> [--team] | plan [<output.md>] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, WebSearch, WebFetch, TaskCreate, TaskUpdate, AskUserQuestion, TaskList
 disable-model-invocation: true
 effort: medium
@@ -25,6 +25,14 @@ NOT for deep single-paper analysis or experiment design — use `research:scient
 
 </inputs>
 
+<compaction>
+
+Key boundary: end of Step 2 — SOTA literature gathered and written to AGENT_OUT; before Step 3 report synthesis.
+Preserve: AGENT_OUT path (TMPDIR key), BRANCH (TMPDIR key), DATE (TMPDIR key), REPORT_OUT target path, topic string from ARGUMENTS.
+Clear at Step 1 start (stale prior run) and at follow-up gate (terminal action).
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
@@ -32,6 +40,7 @@ NOT for deep single-paper analysis or experiment design — use `research:scient
 ## Agent Resolution
 
 ```bash
+# loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
@@ -56,7 +65,18 @@ Read current project before searching, extract constraints:
 
 **Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. are accepted. Each Bash tool call runs in a fresh shell, so a lowercased copy does NOT persist across blocks — re-derive it inline from `$ARGUMENTS` (harness-substituted every block) wherever a dispatch check needs it, e.g. `echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | …`. Preserve original `$ARGUMENTS` only where literal substitution into prompts is required (e.g. topic string).
 
-**Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`.
+**Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`, `--keep`.
+
+```bash
+# Extract --keep quoted value (compaction-contract.md §keep semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/topic-keep-items"  # persist for Step 2 contract write
+```
 
 ```bash
 UNKNOWN_FLAGS=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | grep -oE -- '--[a-z][a-z0-9-]+' | grep -v -- '--team' || true)  # timeout: 5000
@@ -109,6 +129,24 @@ Use Grep tool to search codebase for existing related code:
 - Glob: `**/*.py`
 - Output mode: `files_with_matches`
 - Limit to 1000 results (per external-data.md — never cap at default 10)
+
+```bash
+# Compaction contract — boundary: after Step 2 literature gathered (compaction-contract.md §Lifecycle)
+_AGENT_OUT=$(cat "${TMPDIR:-/tmp}/topic-agent-out" 2>/dev/null || echo "")
+_BRANCH=$(cat "${TMPDIR:-/tmp}/topic-branch" 2>/dev/null || echo "")
+_DATE=$(cat "${TMPDIR:-/tmp}/topic-date" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/topic-keep-items" 2>/dev/null || echo "")
+_REPORT_OUT=".reports/research/topic-${_BRANCH}-${_DATE}.md"
+_KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: research:topic · phase: synthesis (after Step 2 literature gathered)"
+    echo "- run-dir: n/a"
+    echo "- preserve: agent-out=${_AGENT_OUT}, report-out=${_REPORT_OUT}, branch=${_BRANCH}${_KEEP_APPEND}"
+    echo "- next: Step 3 synthesize agent findings into report → follow-up gate"
+} > .claude/state/skill-contract.md  # timeout: 5000
+```
 
 ## Step 3: Report
 
@@ -233,6 +271,10 @@ Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"` and 
 **Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written), continue to the `## Follow-up gate` section below — do NOT exit early. The `AskUserQuestion` call in `## Follow-up gate` is the only authorized terminal action for plan mode; reaching the end of the plan workflow without invoking it is a protocol violation.
 
 ## Follow-up gate
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — topic research complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 Call `AskUserQuestion` tool — do NOT write options as plain text first. Map options directly into tool call arguments:
 - question: "What next?"

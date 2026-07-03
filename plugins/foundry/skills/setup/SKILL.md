@@ -1,6 +1,6 @@
 ---
 name: setup
-description: "Post-install setup for foundry plugin. Run once after installing on a new machine, or after a plugin version upgrade to sync settings and symlinks. Merges statusLine, permissions.allow, and enabledPlugins into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
+description: "Post-install setup for foundry plugin. Run once after installing on a new machine, or after a plugin version upgrade to sync settings and symlinks. Merges statusLine, permissions.allow, enabledPlugins, and advisorModel into ~/.claude/settings.json; symlinks rules, TEAM_PROTOCOL.md, and skills into ~/.claude/."
 argument-hint: "[--approve]"
 allowed-tools: Read, Write, Bash, AskUserQuestion
 effort: low
@@ -14,7 +14,7 @@ Set up foundry on new machine:
 | Action | What happens |
 | --- | --- |
 | Detect Python 3.10+ (`python` / `py -3` / `python3`); install `~/.local/bin/python` shim if needed | ✓ |
-| Merge `statusLine`, `permissions.allow`, `enabledPlugins` → `~/.claude/settings.json` | ✓ |
+| Merge `statusLine`, `permissions.allow`, `enabledPlugins`, `advisorModel` → `~/.claude/settings.json` | ✓ |
 | `rules/*.md` → `~/.claude/rules/` | symlink |
 | `TEAM_PROTOCOL.md` → `~/.claude/` | symlink |
 | `skills/*` → `~/.claude/skills/` | symlink |
@@ -29,7 +29,7 @@ Set up foundry on new machine:
 
 **Why hooks need no action?** `hooks/hooks.json` inside plugin registers automatically when plugin enabled. Setup's only hook-adjacent step: write `statusLine.command` path (Step 4) — `statusLine` is top-level settings key, not part of `hooks.json`.
 
-NOT for: editing project `.claude/settings.json`.
+NOT for: editing project `.claude/settings.json` (Step 8 READS it to propagate advisorModel, never writes it).
 
 </objective>
 
@@ -119,7 +119,7 @@ If `~/.claude/settings.json` does not exist, create it using the Write tool with
 ```bash
 SETUP_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
 cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"  # timeout: 5000
-echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts"  # persist for restore in Step 8
+echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts"  # persist for restore in Step 9
 ```
 
 Report: "Backed up ~/.claude/settings.json → ~/.claude/settings.json.bak-<timestamp>"
@@ -232,7 +232,35 @@ _jq_result=$(jq '.enabledPlugins["codex@openai-codex"] = true' \
 
 Write back with Write tool.
 
-## Step 8: Validate
+## Step 8: Merge advisorModel (from project settings)
+
+```bash
+ADV=""
+if [ -f ".claude/settings.json" ]; then
+    ADV=$(jq -r '.advisorModel // empty' .claude/settings.json 2>/dev/null)  # timeout: 5000
+fi
+```
+
+If `$ADV` empty: report `  advisorModel: skipped (not pinned in project .claude/settings.json)` and continue.
+
+Check if global already equals it:
+
+```bash
+jq --arg m "$ADV" -e '.advisorModel == $m' ~/.claude/settings.json >/dev/null 2>&1  # timeout: 5000
+```
+
+If already equal: report `  advisorModel already set to <value> — skipping.`
+
+Otherwise:
+
+```bash
+_jq_result=$(jq --arg m "$ADV" '.advisorModel = $m' ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed updating advisorModel — settings.json unchanged\n"; exit 1; }
+```
+
+Write `${TMPDIR:-/tmp}/foundry_setup_tmp.json` back to `~/.claude/settings.json` using Write tool. Report `  advisorModel: set to <value>`.
+
+## Step 9: Validate
 
 After all writes, confirm file parses as valid JSON:
 
@@ -242,7 +270,7 @@ jq empty ~/.claude/settings.json  # timeout: 5000
 
 If `jq` exits non-zero: restore from backup: `SETUP_BAK_TS=$(cat "${TMPDIR:-/tmp}/foundry-setup-bak-ts" 2>/dev/null || ls -t "$HOME/.claude/settings.json.bak-"* 2>/dev/null | head -1 | sed 's/.*\.bak-//'); cp "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}" ~/.claude/settings.json`, report error, stop. If valid: continue.
 
-## Step 9: Symlink rules and TEAM_PROTOCOL.md
+## Step 10: Symlink rules and TEAM_PROTOCOL.md
 
 Ensure target dir exists:
 
@@ -362,7 +390,7 @@ for src_dir in "$PLUGIN_ROOT/skills/"*/; do
 done  # timeout: 10000
 ```
 
-## Step 10: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
+## Step 11: Write CLAUDE.src.md → ~/.claude/CLAUDE.md
 
 ```bash
 PLUGIN_ROOT=$(cat "${TMPDIR:-/tmp}/setup-plugin-root" 2>/dev/null)  # reload: fresh shell (Check 41)
@@ -371,7 +399,7 @@ cp "$PLUGIN_ROOT/CLAUDE.src.md" "$HOME/.claude/CLAUDE.md"  # timeout: 5000
 printf "  wrote: CLAUDE.src.md → ~/.claude/CLAUDE.md\n"
 ```
 
-## Step 11: Final report
+## Step 12: Final report
 
 Print summary:
 
@@ -379,6 +407,7 @@ Print summary:
 - statusLine: set / skipped
 - permissions.allow: N entries added
 - enabledPlugins: set / skipped
+- advisorModel: set / skipped
 - Rules removed obsolete: N (files no longer in current plugin version)
 - Skills removed obsolete: N (skill dirs no longer in current plugin version)
 - Agent symlinks removed from ~/.claude/agents/: N (stale foundry-managed symlinks purged)
@@ -392,8 +421,8 @@ Print summary:
 
 <notes>
 
-**Follow-up gate omitted** — setup is a one-shot setup skill; no iterative follow-up action applies. Step 10 summary is the terminal output; no `AskUserQuestion` gate required.
+**Follow-up gate omitted** — setup is a one-shot setup skill; no iterative follow-up action applies. Step 12 Final report is the terminal output; no `AskUserQuestion` gate required.
 
-**Testing setup changes**: Setup skill has no `.claude/skills/setup` entry — only reachable as `/foundry:setup` after plugin installed. To test: bump `version` in `plugins/foundry/.claude-plugin/plugin.json`, run `claude plugin install foundry@borda-ai-rig` from repo root to refresh cache, invoke `/foundry:setup`. **Upgrade path**: After `claude plugin install foundry@borda-ai-rig` upgrades version, re-run `/foundry:setup` — Step 9 Phase 1 removes rules and skill symlinks that no longer exist in new version; Phase 2–4 auto-replaces stale foundry symlinks (rules + skills) without prompting; real-file and non-foundry-path conflicts still surfaced for user review. Note: `bash sync.sh` calls `/foundry:setup` headlessly at end — skill symlinks are updated automatically on every sync run.
+**Testing setup changes**: Setup skill has no `.claude/skills/setup` entry — only reachable as `/foundry:setup` after plugin installed. To test: bump `version` in `plugins/foundry/.claude-plugin/plugin.json`, run `claude plugin install foundry@borda-ai-rig` from repo root to refresh cache, invoke `/foundry:setup`. **Upgrade path**: After `claude plugin install foundry@borda-ai-rig` upgrades version, re-run `/foundry:setup` — Step 10 Phase 1 removes rules and skill symlinks that no longer exist in new version; Phase 2–4 auto-replaces stale foundry symlinks (rules + skills) without prompting; real-file and non-foundry-path conflicts still surfaced for user review. Note: `bash sync.sh` calls `/foundry:setup` headlessly at end — skill symlinks are updated automatically on every sync run.
 
 </notes>

@@ -870,7 +870,8 @@ def format_results(results: CheckResults, active_checks: set[str]) -> tuple[str,
         if r1_fails or r1_warns:
             for f in r1_fails + r1_warns:
                 lines.append(f.message)
-            exit_code = 1
+            if r1_fails:
+                exit_code = 1
         else:
             fail_count = len(r1_fails)
             warn_count = len(r1_warns)

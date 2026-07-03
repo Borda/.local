@@ -1,7 +1,7 @@
 ---
 name: calibrate
 description: "Calibration testing for agents and skills. Generates synthetic problems with known outcomes (quasi-ground-truth), runs targets against them, measures recall, precision, confidence calibration — reveals whether self-reported confidence scores track actual quality."
-argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate] [--local]"
+argument-hint: "[<scope>...] [--fast | --full] [--ab-test | --apply] [--skip-gate] [--local] [--keep \"<items>\"]"
 effort: high
 disable-model-invocation: true
 allowed-tools: Read, Write, Bash, Agent, Glob, TaskCreate, TaskUpdate, TaskList, AskUserQuestion
@@ -34,7 +34,7 @@ NOT for: static routing overlap analysis (use /foundry:audit); manually reviewin
   - `--fast` + `--full` together → hard error: "Pass `--fast` or `--full`, not both."
   - `--ab-test` without pace flag → default `--fast` silently (no error)
 
-  **Unsupported flag check** — after all supported flags extracted (`--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`, \`--full\`, \`--ab-test\`, \`--apply\`, \`--skip-gate\`, \`--local\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+  **Unsupported flag check** — after all supported flags extracted (`--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local`, `--keep`), scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--fast\`, \`--full\`, \`--ab-test\`, \`--apply\`, \`--skip-gate\`, \`--local\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
   **Legacy positional tokens** (`ab`, `apply`, `fast`, `full`) — **hard error**: print migration hint and stop. Example: "`ab` removed — use `--ab-test` flag: `/calibrate curator --ab-test`."
 
@@ -83,10 +83,17 @@ Domain tables per mode: see `modes/agents.md`, `modes/skills.md`, `modes/routing
 
 </constants>
 
+<compaction>
+Key boundary 1: after Step 2 pipeline fan-out (all mode pipelines spawned), before Step 3 collect+synthesize.
+Preserve at boundary 1: TIMESTAMP, run-dir (.reports/calibrate/<TIMESTAMP>/), target list, LOCAL_MODE.
+Terminal paths: end of Step 5 (no-apply path) and end of Step 6 (apply path).
+</compaction>
+
 <workflow>
 
 **Task hygiene**:
 ```bash
+# loads: compaction-contract.md
 # audit-skip: resilience-replication — duplicated; plugin cannot self-locate
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 ```
@@ -108,8 +115,14 @@ Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 From `$ARGUMENTS`, determine:
 
-- **Strip flags first**: extract `--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local` before scope resolution; validate mutual exclusion (error and stop on conflict). Strip all flags from ARGUMENTS before scope token resolution:
+- **Strip flags first**: extract `--fast`, `--full`, `--ab-test`, `--apply`, `--skip-gate`, `--local`, `--keep` before scope resolution; validate mutual exclusion (error and stop on conflict). Strip all flags from ARGUMENTS before scope token resolution:
   ```bash
+  KEEP_ITEMS=""
+  if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+      KEEP_ITEMS="${BASH_REMATCH[1]}"
+  fi
+  ARGUMENTS=$(echo "$ARGUMENTS" | sed 's/--keep "[^"]*"//g')
+  rm -f .claude/state/skill-contract.md  # clear stale contract (compaction-contract.md §Lifecycle)  # timeout: 5000
   LOCAL_MODE=false; [[ "$ARGUMENTS" == *"--local"* ]] && LOCAL_MODE=true
   ARGUMENTS="${ARGUMENTS//--fast/}"; ARGUMENTS="${ARGUMENTS//--full/}"
   ARGUMENTS="${ARGUMENTS//--ab-test/}"; ARGUMENTS="${ARGUMENTS//--apply/}"
@@ -117,6 +130,7 @@ From `$ARGUMENTS`, determine:
   ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"
   mkdir -p "${TMPDIR:-/tmp}/calibrate-state"
   echo "$LOCAL_MODE" > "${TMPDIR:-/tmp}/calibrate-state/local-mode"
+  echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/calibrate-state/keep-items"
   ```
 - **Target list** — remaining tokens after flag-strip; union of resolved targets:
   - `all` or omitted → all agents + `/audit` + routing + communication + all rules
@@ -224,6 +238,22 @@ Fallback role descriptions for cross-plugin agents (if ever substituted with `ge
 
 Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instructions for pipeline subagent. Pipeline template lives at `$CALIB_MODES_DIR/../templates/pipeline-prompt.md`. **N override**: `communication` caps at fast=3 / full=5 (not global FULL_N=10) to prevent pipeline context overflow — read `$CALIB_MODES_DIR/communication.md` for details. **`rules` mode** spawns one `general-purpose` subagent per rule file (not standard pipeline template) — read `$CALIB_MODES_DIR/rules.md` for direct-spawn approach.
 
+```bash
+_TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/calibrate-state/keep-items" 2>/dev/null || echo "")
+_RUN_DIR=".reports/calibrate/$_TIMESTAMP"
+_PRESERVE="run-dir=$_RUN_DIR, timestamp=$_TIMESTAMP"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: foundry:calibrate · phase: collect+synthesize (after pipeline fan-out)"
+    echo "- run-dir: $_RUN_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: collect pipeline results → combined report → follow-up gate (Step 3) → log (Step 4) → signals (Step 5)"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 3: Collect results and print combined report
 
 **Health monitoring** — follow CLAUDE.md §6 protocol. Run dir for liveness checks: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`. Skill-specific constants (tighter than global defaults — see `<constants>` block): `PIPELINE_TIMEOUT_MIN`, `PIPELINE_TIMEOUT_MIN_DUAL` (when Codex active in CODEX_MODES), `HEALTH_CHECK_INTERVAL_MIN`, `EXTENSION_MIN`.
@@ -304,6 +334,10 @@ For each flagged target (recall < 0.70 or |bias| > 0.15):
 - **Bias < −0.15**: `→ <target> is conservative; threshold can stay at default`
 
 Proposals shown in Step 3 already surface actionable signals. Follow-up gate fires in Step 3 (unless `--skip-gate`). Mark "Analyse and report" completed. If `--apply` was set: proceed to Step 6.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 ## Step 6: Apply proposals (apply mode)
 
@@ -390,6 +424,10 @@ After all subagents complete, collect JSON results and print final summary:
 ```
 
 Mark "Apply findings" completed.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 End response with `## Confidence` block per CLAUDE.md output standards.
 

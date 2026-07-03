@@ -146,10 +146,11 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 
 **Flags:**
 
-| Flag      | Effect                                                                                                                                                                                                        |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--reply` | Draft a contributor-facing response after analysis (routed through `oss:shepherd` for voice consistency)                                                                                                      |
-| `--quick` | Vitality only: fast daily scorecard — skips the Codex independent review and adversarial rework loop, reducing to 4 spawns. Full (reviewed) mode stays the default; confidence is capped lower in quick mode. |
+| Flag               | Effect                                                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reply`          | Draft a contributor-facing response after analysis (routed through `oss:shepherd` for voice consistency)                                                                                                      |
+| `--quick`          | Vitality only: fast daily scorecard — skips the Codex independent review and adversarial rework loop, reducing to 4 spawns. Full (reviewed) mode stays the default; confidence is capped lower in quick mode. |
+| `--keep "<items>"` | Append quoted string to the compaction contract's `preserve:` line — ensures those items survive auto-compact mid-run (advanced; useful for long multi-agent sessions)                                        |
 
 **What it does:**
 
@@ -270,9 +271,10 @@ Without `foundry`, Tier 2 falls back to general-purpose agents with role descrip
 
 **Flags:**
 
-| Flag      | Effect                                                                                                                             |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `--reply` | After consolidation, `oss:shepherd` drafts a welcoming two-part PR comment (positive framing first, then specific actionable asks) |
+| Flag               | Effect                                                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reply`          | After consolidation, `oss:shepherd` drafts a welcoming two-part PR comment (positive framing first, then specific actionable asks)                                     |
+| `--keep "<items>"` | Append quoted string to the compaction contract's `preserve:` line — ensures those items survive auto-compact mid-run (advanced; useful for long multi-agent sessions) |
 
 ______________________________________________________________________
 
@@ -328,6 +330,12 @@ Resolve runs in three phases:
 - Core invariant: uses `git merge`, never `git rebase` — preserves history
 
 Every resolve cycle closes with parallel `foundry:linting-expert` + `foundry:qa-specialist` passes before the final report.
+
+**Flags:**
+
+| Flag               | Effect                                                                                                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--keep "<items>"` | Append quoted string to the compaction contract's `preserve:` line — ensures those items survive auto-compact mid-run (advanced; useful for long multi-agent sessions) |
 
 **Output location:** `.reports/resolve/<timestamp>/`
 

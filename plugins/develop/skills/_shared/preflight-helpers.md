@@ -26,6 +26,8 @@ if [ -n "$PLAN_FILE" ] && [ ! -f "$PLAN_FILE" ]; then
   echo "Fix: pass an existing plan path via --plan <path> or --plan=<path>"
   exit 1
 fi
+# persist so later cross-Bash-call reads (compaction-contract boundaries in feature/fix/refactor) resolve it — shell var is lost between Bash() calls
+echo "$PLAN_FILE" > "${TMPDIR:-/tmp}/dev-plan-file"
 ```
 
 ## Team Spawn Template

@@ -1124,8 +1124,16 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         data = run_scan_query(sq, ["undocumented"] + q.get("args", []), index, repo)
         if data is None:
             return False, None, "scan-query undocumented returned None"
+        if not isinstance(data.get("total"), int):
+            return False, None, "undocumented total is missing or not an int"
+        if not isinstance(data.get("undocumented"), list):
+            return False, None, "undocumented result is missing or not a list"
+        if any(not isinstance(e, dict) for e in data["undocumented"]):
+            return False, None, "undocumented result contains non-object entries"
         scan_count = data.get("total", 0)
         scan_syms = [e.get("qualified_name", "") for e in data.get("undocumented", [])]
+        if scan_count != len(scan_syms):
+            return False, None, "undocumented total conflicts with symbol count"
         if check == "undocumented":
             # AST oracle is authoritative (review C-2) — scan-query is the tool under test.
             module = next((a for a in q.get("args", []) if not str(a).startswith("-")), None)
@@ -1149,8 +1157,16 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         data = run_scan_query(sq, ["uncovered"] + q.get("args", []), index, repo)
         if data is None:
             return False, None, "scan-query uncovered returned None"
+        if not isinstance(data.get("total"), int):
+            return False, None, "uncovered total is missing or not an int"
+        if not isinstance(data.get("uncovered"), list):
+            return False, None, "uncovered result is missing or not a list"
+        if any(not isinstance(e, dict) for e in data["uncovered"]):
+            return False, None, "uncovered result contains non-object entries"
         scan_count = data.get("total", 0)
         scan_syms = [e.get("qualified_name", "") for e in data.get("uncovered", [])]
+        if scan_count != len(scan_syms):
+            return False, None, "uncovered total conflicts with symbol count"
         if check == "uncovered":
             # AST oracle is authoritative (review C-2 remainder) — scan-query is the tool under test.
             module = next((a for a in q.get("args", []) if not str(a).startswith("-")), None)
@@ -1189,9 +1205,13 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         if data is None:
             return False, None, "scan-query coupled returned None"
         coupled = data.get("coupled", [])
+        if not isinstance(coupled, list):
+            return False, None, "coupled result is not a list"
         if not coupled:
             return False, None, "coupled result is empty"
         top = coupled[0]
+        if not isinstance(top, dict):
+            return False, None, "coupled top result is not an object"
         live_gt["top_module"] = top.get("name", "")
         live_gt["top_dep_count"] = top.get("dep_count", 0)
         live_gt["top_internal_dep_count"] = top.get("internal_dep_count", 0)
@@ -1222,7 +1242,15 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
         if data is None:
             return False, None, "scan-query xrefs returned None"
         broken = data.get("broken", [])
+        if not isinstance(broken, list):
+            return False, None, "xrefs broken result is not a list"
+        if any(not isinstance(b, dict) for b in broken):
+            return False, None, "xrefs broken result contains non-object entries"
         live_count = data.get("count", len(broken))
+        if not isinstance(live_count, int):
+            return False, None, "xrefs broken count is not an int"
+        if live_count != len(broken):
+            return False, None, "xrefs broken count conflicts with target count"
         live_targets = [{"target": b.get("target", ""), "line": b.get("line", 0)} for b in broken]
         live_gt["broken_count"] = live_count
         live_gt["broken_targets"] = live_targets

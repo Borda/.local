@@ -180,6 +180,9 @@ Full-sweep quality audit of `.claude/` configuration and all `plugins/*/` agent 
 # Combine scope + flags
 /foundry:audit oss --adversarial           # oss plugin, adversarial review
 /foundry:audit agents --adversarial        # all agents, adversarial review
+
+# Preserve key context across session compaction
+/foundry:audit --keep "task-123, .reports/audit/2026-07-03T10-00-00Z"
 ```
 
 `fix` and `upgrade` are mutually exclusive — never combine them.
@@ -225,6 +228,9 @@ Benchmarks agents and skills against synthetic problems with defined ground trut
 
 # Multiple targets
 /foundry:calibrate agents skills --fast    # agents + skills in one run
+
+# Preserve key context across session compaction
+/foundry:calibrate --keep "task-456, .reports/calibrate/2026-07-03T10-00-00Z"
 ```
 
 **Thresholds**:
@@ -293,6 +299,9 @@ Turns a fuzzy idea into an approved exploration tree, then into a spec, then int
 
 /foundry:brainstorm breakdown .plans/blueprint/2026-04-01-caching-layer.md       # tree -> spec
 /foundry:brainstorm breakdown .plans/blueprint/2026-04-01-caching-layer-spec.md  # spec -> action plan
+
+# Preserve key context across session compaction
+/foundry:brainstorm "add caching layer to the data pipeline" --keep "task-789, .plans/blueprint/2026-04-01-caching-layer.md"
 ```
 
 **Idea mode** (default):
@@ -322,6 +331,7 @@ Systematic diagnosis for unknown failures. Gathers signals, ranks hypotheses, pr
 /foundry:investigate "CI fails but passes locally"
 /foundry:investigate "codex agent exits 127 on this machine"
 /foundry:investigate "/calibrate times out every run"
+/foundry:investigate "hooks not firing" --keep "task-999"  # preserve across compaction
 ```
 
 **What it covers**: broken local setup, environment mismatches, tool misconfigurations, hook misbehavior, CI vs local divergence, permission errors, runtime anomalies.
@@ -371,6 +381,7 @@ Extracts patterns from work history and corrections, then distills them into dur
 /foundry:distill "external https://..."              # analyse external plugin/skill/agent resource, produce adoption proposal
 /foundry:distill "external ./path/to/plugin"         # same — local path or directory
 /foundry:distill "I keep doing X manually"           # use description as context for suggestions
+/foundry:distill --keep "task-111"                       # preserve key context across compaction
 ```
 
 `--project` triggers an interactive project picker — lists all slugs found under `~/.claude/projects/*/memory/` with their MEMORY.md size in tokens; select one or more to operate on. Without `--project`, both modes run across **all** projects automatically. Both `prune` and `memory` operate in parallel across selected projects (one agent per project), then consolidate into a single confirmation step. `memory` mode also enriches each project's feedback with project-level context (CLAUDE.md, recent git log, active plans) to improve classification accuracy.

@@ -603,6 +603,20 @@ class TestValidateCentralJson:
         result = script_run_cli.validate_central_json(data)
         assert result.ok is True
 
+    @pytest.mark.parametrize(
+        "data,reason_fragment",
+        [
+            ([], "object"),
+            ({"central": [42]}, "object"),
+            ({"central": [{"rdep_count": "5"}]}, "int"),
+        ],
+    )
+    def test_wrong_type_payloads_return_not_ok(self, script_run_cli: Any, data: Any, reason_fragment: str) -> None:
+        """Scenario: wrong JSON shapes fail validation instead of passing structurally."""
+        result = script_run_cli.validate_central_json(data)
+        assert result.ok is False
+        assert reason_fragment in result.reason
+
 
 class TestValidateRdepsJson:
     """Validate validate_rdeps_json contract."""
@@ -632,6 +646,22 @@ class TestValidateRdepsJson:
         assert result.ok is False
         assert expected_reason_fragment in result.reason
 
+    @pytest.mark.parametrize(
+        "data,expected_reason_fragment",
+        [
+            ([], "object"),
+            ({"imported_by": "a.b", "module": "foo"}, "list"),
+            ({"imported_by": [], "module": 42}, "string"),
+        ],
+    )
+    def test_wrong_type_payloads_return_not_ok(
+        self, script_run_cli: Any, data: Any, expected_reason_fragment: str
+    ) -> None:
+        """Scenario: wrong JSON value types produce ok=False with a concrete reason."""
+        result = script_run_cli.validate_rdeps_json(data)
+        assert result.ok is False
+        assert expected_reason_fragment in result.reason
+
 
 class TestValidateDepsJson:
     """Validate validate_deps_json contract."""
@@ -657,6 +687,22 @@ class TestValidateDepsJson:
             data: Incomplete response dict.
             expected_reason_fragment: Substring expected in the reason string.
         """
+        result = script_run_cli.validate_deps_json(data)
+        assert result.ok is False
+        assert expected_reason_fragment in result.reason
+
+    @pytest.mark.parametrize(
+        "data,expected_reason_fragment",
+        [
+            ([], "object"),
+            ({"direct_imports": "x.y", "module": "foo"}, "list"),
+            ({"direct_imports": [], "module": 42}, "string"),
+        ],
+    )
+    def test_wrong_type_payloads_return_not_ok(
+        self, script_run_cli: Any, data: Any, expected_reason_fragment: str
+    ) -> None:
+        """Scenario: wrong JSON value types produce ok=False with a concrete reason."""
         result = script_run_cli.validate_deps_json(data)
         assert result.ok is False
         assert expected_reason_fragment in result.reason
@@ -800,6 +846,52 @@ class TestRunScanQuery:
         cmd = captured[0]
         assert "deps" in cmd
         assert "some.module" in cmd
+
+    def test_exact_command_order_and_cwd_propagated(self, script_run_cli: Any, tmp_path: Path) -> None:
+        """Scenario: subprocess command order and cwd are stable for scan-query invocations."""
+        scan_query_bin = self._fake_bin(tmp_path)
+        index_path = tmp_path / "idx.json"
+        fake_result = MagicMock()
+        fake_result.returncode = 0
+        fake_result.stdout = json.dumps({})
+        captured: list[tuple[list[str], dict[str, Any]]] = []
+
+        def _capture(cmd: list[str], **kwargs: Any) -> MagicMock:
+            captured.append((cmd, kwargs))
+            return fake_result
+
+        with patch.object(script_run_cli, "_run", side_effect=_capture):
+            script_run_cli.run_scan_query(scan_query_bin, ["rdeps", "pkg.mod"], index_path, tmp_path)
+
+        assert captured == [
+            (
+                ["python3", str(scan_query_bin.resolve()), "--index", str(index_path.resolve()), "rdeps", "pkg.mod"],
+                {"cwd": str(tmp_path)},
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        "side_effect,expected_error",
+        [
+            (subprocess.TimeoutExpired(cmd=[], timeout=30), "timeout"),
+            (OSError("missing executable"), "os error"),
+        ],
+    )
+    def test_result_wrapper_reports_timeout_and_os_error(
+        self, script_run_cli: Any, tmp_path: Path, side_effect: Exception, expected_error: str
+    ) -> None:
+        """Scenario: result wrapper preserves failure reasons that run_scan_query collapses to None."""
+        with patch.object(script_run_cli, "_run", side_effect=side_effect):
+            result = script_run_cli.run_scan_query_result(
+                self._fake_bin(tmp_path),
+                ["rdeps", "foo"],
+                tmp_path / "index.json",
+                tmp_path,
+            )
+
+        assert result.data is None
+        assert result.error is not None
+        assert expected_error in result.error
 
 
 # ===========================================================================

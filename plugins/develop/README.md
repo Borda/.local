@@ -213,6 +213,7 @@ ______________________________________________________________________
 | `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust your own scoping)                                                                                                                |
 | `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                           |
 | `--challenge`         | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                                                                                             |
+| `--keep "<items>"`    | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                              |
 
 **Workflow**:
 
@@ -264,6 +265,7 @@ ______________________________________________________________________
 | `--team`              | Spawn 2-3 `foundry:sw-engineer` teammates each investigating a distinct root-cause hypothesis independently                                     |
 | `--no-challenge`      | Skip the challenger adversarial gate entirely                                                                                                   |
 | `--challenge`         | Force the challenger gate even on a small change the auto-skip would otherwise skip                                                             |
+| `--keep "<items>"`    | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                   |
 
 **Workflow**:
 
@@ -321,6 +323,7 @@ ______________________________________________________________________
 | `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                                                  |
 | `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                    |
 | `--challenge`         | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                                                                                                      |
+| `--keep "<items>"`    | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                       |
 
 **Workflow**:
 
@@ -378,6 +381,7 @@ ______________________________________________________________________
 | `--no-codemap`         | Disable codemap even if available                                                                                                                                                                                                                   |
 | `--no-challenge`       | Skip the challenger adversarial gate entirely                                                                                                                                                                                                       |
 | `--challenge`          | Force the challenger gate even on a small change the auto-skip would otherwise skip                                                                                                                                                                 |
+| `--keep "<items>"`     | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                                                                       |
 
 **Workflow**:
 
@@ -419,13 +423,14 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag             | Description                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| `--no-challenge` | Skip challenger adversarial gate                                                               |
-| `--challenge`    | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip |
-| `--codemap`      | Strict codemap — fail if index missing                                                         |
-| `--no-codemap`   | Disable codemap even if available                                                              |
-| `--semble`       | Enable semble semantic search context                                                          |
+| Flag               | Description                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `--no-challenge`   | Skip challenger adversarial gate                                                                              |
+| `--challenge`      | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                |
+| `--codemap`        | Strict codemap — fail if index missing                                                                        |
+| `--no-codemap`     | Disable codemap even if available                                                                             |
+| `--semble`         | Enable semble semantic search context                                                                         |
+| `--keep "<items>"` | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill |
 
 **Workflow**:
 

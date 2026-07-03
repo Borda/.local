@@ -67,7 +67,7 @@ def read_field(data: dict[str, Any], dotted_path: str, default: str = "") -> str
         >>> read_field({}, "any", default="")
         ''
     """
-    if not dotted_path:
+    if not dotted_path or any(segment == "" for segment in dotted_path.split(".")):
         raise ValueError("dotted_path must be a non-empty string")
     cursor: Any = data
     for segment in dotted_path.split("."):

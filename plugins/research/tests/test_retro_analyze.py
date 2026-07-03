@@ -48,6 +48,23 @@ class TestRunWilcoxon:
         assert result["n"] == 3
         assert "insufficient data" in result["reason"]
 
+    @pytest.mark.parametrize(
+        "baseline,candidate,direction",
+        [
+            ([1.0] * 8, [1.0] * 8, "higher"),
+            ([1.0] * 8, [0.8, 1.2, 0.9, 1.1, 0.95, 1.05, 1.0, 1.0], "higher"),
+            ([1.0] * 8, [0.5] * 8, "higher"),
+            ([1.0] * 8, [1.5] * 8, "lower"),
+        ],
+    )
+    def test_adequate_sample_non_significant_cases(
+        self, baseline: list[float], candidate: list[float], direction: str
+    ) -> None:
+        """Adequate sample size alone does not imply significance."""
+        result = ra.run_wilcoxon(baseline, candidate, alpha=0.05, direction=direction)
+        assert result["n"] == 8
+        assert result["significant"] is False
+
     def test_invalid_direction_raises_value_error(self) -> None:
         """Direction must be 'higher' or 'lower' — anything else raises."""
         with pytest.raises(ValueError, match="direction must be 'higher' or 'lower'"):
@@ -130,6 +147,21 @@ class TestMainCLI:
         # care about here is that parsing did NOT raise and N reflects only the good lines.
         assert exit_code in (0, 1)
         assert out["n"] == 7
+
+    def test_malformed_middle_line_exits_two(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """Malformed JSON before later records is a data error, not a tolerated trailing truncation."""
+        jsonl = tmp_path / "experiments.jsonl"
+        jsonl.write_text(
+            json.dumps({"status": "baseline", "metric": 1.0})
+            + '\n{"status": "kept", bad}\n'
+            + json.dumps({"status": "kept", "metric": 1.2})
+            + "\n",
+            encoding="utf-8",
+        )
+        exit_code = ra.main(["--jsonl", str(jsonl)])
+        out = json.loads(capsys.readouterr().out.strip())
+        assert exit_code == 2
+        assert "malformed JSON" in out["error"]
 
     def test_custom_baseline_label(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         """--baseline flag selects which status string marks the baseline record."""

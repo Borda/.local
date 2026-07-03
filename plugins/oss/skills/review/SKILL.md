@@ -1,7 +1,7 @@
 ---
 name: review
 description: "Multi-agent code review of GitHub Pull Requests (Python source, documentation (Markdown/RST), and CI/CD config PRs) covering architecture, tests, performance, docs, lint, security, and API design. TRIGGER when: user provides a GitHub PR number (e.g. 42, #42) and asks to review/audit/check it, or provides a saved review-report path with --reply to draft a contributor-facing comment; phrases: 'review PR 123', 'audit this pull request', 'look at PR #42', 'draft a reply for this review report'. SKIP: local file or current git diff review (use /develop:review (requires 'develop' plugin)); non-Python source PRs without Python files (TypeScript-only, Go-only, Rust-only); standalone issue/discussion thread analysis (use /oss:analyse)."
-argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble]"
+argument-hint: "[PR number|path/to/report.md] [--reply] [--no-challenge] [--codemap] [--semble] [--keep \"<items>\"]"
 allowed-tools: Read, Write, Edit, Bash, Agent, Skill, TaskList, TaskCreate, TaskUpdate, AskUserQuestion
 model: sonnet
 effort: high
@@ -40,6 +40,15 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 
 </constants>
 
+<compaction>
+
+Key boundary: end of Step 2 — parallel review-agent fan-out outputs collected, before Step 5 consolidation.
+Second boundary: end of Step 5 — consolidated report written, before Step 8 --reply.
+Preserve at boundary 1: RUN_DIR, REPORT_DIR, PR# (CLEAN_ARGS), per-agent finding file paths.
+Preserve at boundary 2: final report path, PR#, reply-mode flag.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _OSS_SHARED/agent-resolution.md -->
@@ -49,6 +58,7 @@ EXTENSION=300          # one +5 min extension if output file explains delay
 ```bash
 # loads: oss-shared-resolver.md
 # loads: review-section-taxonomy.md
+# loads: compaction-contract.md
 # cold-start fallback (sets $_OSS_SHARED) — run first:
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 # --reply requires $_OSS_SHARED (Step 8 reads shepherd-reply-protocol.md); non-reply flows degrade gracefully
@@ -88,8 +98,19 @@ Parse `$ARGUMENTS` flags first (applied directly — no subprocess) — this set
 | `--no-codemap` | `CODEMAP_FORCE_OFF` | `true` | `false` |
 | `--codemap` | `CODEMAP_STRICT` | `true` | `false` |
 | `--semble` | `SEMBLE_ENABLED` | `true` | `false` |
+| `--keep "<items>"` | `KEEP_ITEMS` | value string | `""` |
 
-`CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed, leading whitespace stripped, leading `#` stripped.
+`CLEAN_ARGS`: `$ARGUMENTS` with matched flags removed (including `--keep "<items>"` and its quoted value), leading whitespace stripped, leading `#` stripped.
+
+```bash
+# Extract --keep quoted value before unknown-flag scan in Step 1 (compaction-contract.md §keep: semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+```
 
 Then set direct-report fast-path mode (a review-report `.md` path passed instead of a PR number):
 
@@ -154,6 +175,7 @@ fi
 Persist PR tag for Step 2:
 ```bash
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag"
+echo "$KEEP_ITEMS" > "${TMPDIR:-/tmp}/oss-review-keep-items"  # timeout: 5000
 ```
 
 Agent lineup — `PR_TYPE != CODE` overrides scope-based rules in Step 1:
@@ -185,7 +207,7 @@ CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/review-codemap-currency" 2>/dev/null || 
 
 If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
 
-**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. Found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--reply\`, \`--no-challenge\`, \`--codemap\`, \`--no-codemap\`, \`--semble\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ```bash
 FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000
@@ -306,6 +328,7 @@ mkdir -p "$RUN_DIR" # timeout: 5000
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/oss-review-run-dir"
 REPORT_DIR=".reports/review/$TIMESTAMP"
 mkdir -p "$REPORT_DIR" # timeout: 5000
+echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/oss-review-report-dir"  # persist for contract-write
 ```
 
 **File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn and continue without it.
@@ -387,6 +410,25 @@ After all outputs collected (or timed out):
 
 ```bash
 ls "$RUN_DIR/"*.md 2>/dev/null || echo "⚠ No agent output files found in $RUN_DIR — check that $RUN_DIR was expanded correctly in spawn prompts"
+```
+
+```bash
+# Compaction contract — boundary 1: after fan-out, before consolidation (compaction-contract.md §Lifecycle)
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/oss-review-run-dir" 2>/dev/null || echo "")
+_PR_TAG=$(cat "${TMPDIR:-/tmp}/oss-review-pr-tag" 2>/dev/null || echo "unknown")
+_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/oss-review-report-dir" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/oss-review-keep-items" 2>/dev/null || echo "")
+_FINDING_FILES=$(ls "$_RUN_DIR/"*.md 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')
+_PRESERVE="run-dir=$_RUN_DIR, report-dir=$_REPORT_DIR, pr=$_PR_TAG, finding-files=$_FINDING_FILES"
+[ -n "$_KEEP" ] && _PRESERVE="$_PRESERVE; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: oss:review · phase: consolidation (after parallel review-agent fan-out)"
+    echo "- run-dir: $_RUN_DIR"
+    echo "- preserve: $_PRESERVE"
+    echo "- next: consolidate findings → final report (→ draft --reply if reply-mode)"
+} > .claude/state/skill-contract.md
 ```
 
 ## Step 3: Post-agent checks (concurrent with Step 2 — after PR_BASE available)
@@ -475,6 +517,20 @@ Print terminal block: read the `---` header from top of `$REPORT_DIR/review-repo
 
 This `---` block IS the reply header — print/omit-box handling per quality-gates.md §Report File Format (universal rule). **Review-specific rendering caveat**: wrap the printed block in a ` ```text ` fence so the literal `---` delimiters survive — bare, a renderer parses the leading `---` as YAML frontmatter and the closing `---` under `Path:` as a setext heading, mangling the header. Print all 12 fields verbatim; use the `·`-separated one-line fallback ONLY when the `$REPORT_DIR/review-report.md` read genuinely fails — then state `⚠ could not read report header — verify $REPORT_DIR` before the fallback line rather than silently degrading.
 
+```bash
+# Compaction contract — boundary 2: after consolidation, before --reply (compaction-contract.md §Lifecycle)
+_PR_TAG=$(cat "${TMPDIR:-/tmp}/oss-review-pr-tag" 2>/dev/null || echo "unknown")
+_REPORT_DIR=$(cat "${TMPDIR:-/tmp}/oss-review-report-dir" 2>/dev/null || echo "")
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/oss-review-run-dir" 2>/dev/null || echo "")
+{
+    echo "## Active Skill Contract"
+    echo "- skill: oss:review · phase: reply (after consolidation)"
+    echo "- run-dir: $_RUN_DIR"
+    echo "- preserve: final-report=$_REPORT_DIR/review-report.md, pr=$_PR_TAG"
+    echo "- next: draft contributor reply (--reply) or stop at Step 7"
+} > .claude/state/skill-contract.md
+```
+
 ## Step 6: Delegate implementation follow-up (optional)
 
 Identify tasks Codex can implement — meaningful code/doc work grounded in actual implementation.
@@ -509,6 +565,10 @@ Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't
 
 End with `## Confidence` block per CLAUDE.md output standards.
 
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
+
 <!-- Steps 5–7 defined in Step 5 (consolidate), Step 6 (Codex delegation), Step 7 (reply gate) blocks above — numbered sequentially from Step 1; Step 4 (cross-validate) precedes them; no gap: 4→5→6→7→8 -->
 
 ## Step 8: Draft contributor reply (only when --reply)
@@ -533,6 +593,10 @@ grep -qE '^\| *Importance *\| *Confidence *\| *File *\| *Line' "$REPLY_OUT" && e
 `PART2_PRESENT=false` while the Step 5 report has ≥1 file:line finding → reply is non-compliant (findings folded into prose). Re-spawn `oss:shepherd` once with the same inputs plus: `"Part 2 table is MANDATORY — every file:line finding from the report must be its own row in the | Importance | Confidence | File | Line | Comment | table; do not fold file:line findings into Part 1 prose."` Re-check; if still absent, surface `⚠ Part 2 table missing — findings remain in prose` in the terminal summary.
 
 End with `## Confidence` block per CLAUDE.md. Always last thing, regardless of `--reply`.
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
+```
 
 </workflow>
 

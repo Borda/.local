@@ -726,3 +726,72 @@ class TestResolveMergedPrProvenance:
         result = script_gen_real_issues.resolve_merged_pr([101], 1, 5, issue_number=42)
         assert result.closes_issue is True
         assert "weak provenance" not in capsys.readouterr().err
+
+
+# ===========================================================================
+# class TestInspectPrSourceFiltering
+# ===========================================================================
+
+
+class TestInspectPrSourceFiltering:
+    """Tests for _inspect_pr source-file filtering using mocked GitHub data."""
+
+    def test_filters_test_files_and_records_source_change_sizes(
+        self, script_gen_real_issues: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only non-test Python files become source ground truth; change sizes are retained."""
+
+        def _fake_gh_json(args: list[str], timeout: int = 60) -> dict:
+            return {
+                "state": "MERGED",
+                "mergedAt": "2026-01-01T00:00:00Z",
+                "body": "Fixes #42",
+                "files": [
+                    {"path": "src/pkg/core.py", "additions": 3, "deletions": 2},
+                    {"path": "tests/test_core.py", "additions": 100, "deletions": 0},
+                    {"path": "docs/guide.md", "additions": 9, "deletions": 1},
+                ],
+            }
+
+        monkeypatch.setattr(script_gen_real_issues, "_gh_json", _fake_gh_json)
+
+        result = script_gen_real_issues._inspect_pr(123, min_py=1, max_py=5, issue_number=42)
+
+        assert result is not None
+        assert result.source_files == ["src/pkg/core.py"]
+        assert result.py_file_count == 2
+        assert result.source_changes == {"src/pkg/core.py": 5}
+        assert result.closes_issue is True
+
+    def test_all_test_files_returns_none(self, script_gen_real_issues: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A PR with Python changes only in tests is not a source-backed task."""
+
+        def _fake_gh_json(args: list[str], timeout: int = 60) -> dict:
+            return {
+                "state": "MERGED",
+                "mergedAt": "2026-01-01T00:00:00Z",
+                "body": "Fixes #42",
+                "files": [
+                    {"path": "tests/test_core.py", "additions": 10, "deletions": 0},
+                    {"path": "src/pkg/core_test.py", "additions": 1, "deletions": 1},
+                ],
+            }
+
+        monkeypatch.setattr(script_gen_real_issues, "_gh_json", _fake_gh_json)
+
+        assert script_gen_real_issues._inspect_pr(123, min_py=1, max_py=5, issue_number=42) is None
+
+    def test_no_python_files_returns_none(self, script_gen_real_issues: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A PR without Python files cannot produce Python source ground truth."""
+
+        def _fake_gh_json(args: list[str], timeout: int = 60) -> dict:
+            return {
+                "state": "MERGED",
+                "mergedAt": "2026-01-01T00:00:00Z",
+                "body": "Fixes #42",
+                "files": [{"path": "README.md", "additions": 10, "deletions": 0}],
+            }
+
+        monkeypatch.setattr(script_gen_real_issues, "_gh_json", _fake_gh_json)
+
+        assert script_gen_real_issues._inspect_pr(123, min_py=1, max_py=5, issue_number=42) is None

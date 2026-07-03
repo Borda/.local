@@ -120,7 +120,7 @@ function handleMissingIndex(projRoot, proj) {
 function main() {
   // Drain stdin (UserPromptSubmit sends event JSON we don't need here)
   try {
-    fs.readFileSync("/dev/stdin");
+    fs.readFileSync(0);
   } catch {
     /* ok */
   }

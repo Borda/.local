@@ -549,10 +549,13 @@ def _parse_scan_query_subcommand(command: str) -> Optional[str]:
         tokens = shlex.split(command)
     except ValueError:
         tokens = command.split()
-    # Locate the scan-query token (may be a path like .../bin/scan-query).
+    # Locate the scan-query executable token (may be a path like .../bin/scan-query).
     start = None
+    allowed_prefix = {"env", "command", "time"}
     for i, tok in enumerate(tokens):
         if tok == "scan-query" or tok.endswith("/scan-query"):
+            if any(prev not in allowed_prefix and "=" not in prev for prev in tokens[:i]):
+                continue
             start = i + 1
             break
     if start is None:
@@ -561,11 +564,12 @@ def _parse_scan_query_subcommand(command: str) -> Optional[str]:
     while i < len(tokens):
         tok = tokens[i]
         if tok.startswith("-"):
-            # Skip a flag; if its value is a separate token (not another flag), skip it too.
-            if "=" not in tok and i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
+            if tok == "--index" and i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
                 i += 2
-            else:
+            elif tok.startswith("--index="):
                 i += 1
+            else:
+                return None
             continue
         return tok if tok in _SCAN_QUERY_SUBCOMMANDS else None
     return None
@@ -736,7 +740,7 @@ def _ri_file_matches(file_path: str, region: str) -> bool:
     if len(parts) >= 2:
         candidates.add(f"{parts[-2]}/{parts[-1]}")
         candidates.add(f"{parts[-2]}/{stem}")
-    return any(cand in region for cand in candidates)
+    return any(re.search(r"(?<![\w/.-])" + re.escape(cand) + r"(?![\w/.-])", region) for cand in candidates)
 
 
 def _extract_int(text: str, patterns: list[str]) -> Optional[int]:
@@ -802,7 +806,7 @@ def _int_close(got: Optional[int], expected: int, tolerance: float = 0.10) -> bo
         >>> _int_close(None, 40)
         False
     """
-    if got is None:
+    if got is None or not isinstance(expected, (int, float)):
         return False
     return abs(got - expected) / max(expected, 1) <= tolerance
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import shlex
 from pathlib import Path
 
 import pytest
@@ -156,6 +157,22 @@ def test_emit_hostile_value_is_quoted() -> None:
     assignments = dict(line.split("=", 1) for line in output.strip().splitlines())
     value = assignments["ARGUMENTS"]
     assert value.startswith("'"), f"value should be single-quoted, got: {value!r}"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param("plain text", id="spaces"),
+        pytest.param("'; touch /tmp/pwned; echo 'x", id="single-quotes-semicolons"),
+        pytest.param("", id="empty"),
+        pytest.param("line1\nline2", id="newline"),
+        pytest.param("$(touch /tmp/pwned)", id="command-substitution"),
+    ],
+)
+def test_emit_shell_round_trip_for_hostile_values(value: str) -> None:
+    parsed = {"PR_NUMBER": "", "PR_URL": "", "MODE": "comment-dispatch", "ARGUMENTS": value}
+    assignments = dict(token.split("=", 1) for token in shlex.split(_emit(parsed)))
+    assert assignments["ARGUMENTS"] == value
 
 
 # ---------------------------------------------------------------------------

@@ -414,6 +414,31 @@ class TestParseScanQuerySubcommand:
         cmd = "scan-query --index=/some/path.json symbol Trainer"
         assert script_run_bench._parse_scan_query_subcommand(cmd) == "symbol"
 
+    @pytest.mark.parametrize(
+        "command,expected",
+        [
+            ('scan-query --index "/tmp/index with spaces.json" symbol Trainer', "symbol"),
+            ("scan-query --index /tmp/one.json --index /tmp/two.json rdeps pkg.mod", "rdeps"),
+            ("env CODEMAP=1 scan-query --index /tmp/index.json xrefs pkg.mod", "xrefs"),
+        ],
+    )
+    def test_shell_token_edge_cases(self, script_run_bench: Any, command: str, expected: str) -> None:
+        """Quoted paths, repeated index flags, and env prefixes still expose the subcommand."""
+        assert script_run_bench._parse_scan_query_subcommand(command) == expected
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo scan-query symbol Trainer",
+            "python -c 'print(\"scan-query symbol Trainer\")'",
+            "scan-query --unknown value symbol Trainer",
+            "scan-query --unknown=value symbol Trainer",
+        ],
+    )
+    def test_non_invocations_and_unknown_global_flags_return_none(self, script_run_bench: Any, command: str) -> None:
+        """scan-query mentioned as data or with unknown global flags is not credited as a query."""
+        assert script_run_bench._parse_scan_query_subcommand(command) is None
+
 
 # ===========================================================================
 # _normalize_external_task
@@ -800,6 +825,26 @@ class TestEvaluateOss:
         result = script_run_bench._evaluate_oss(task, "dep_count: 10")
         assert result.evaluator_used == "_evaluate_oss"
 
+    @pytest.mark.parametrize(
+        "check,gt_fields",
+        [
+            ("coupled", {}),
+            ("undocumented", {}),
+            ("uncovered", {}),
+            ("undocumented", {"undocumented_count": "many"}),
+            ("uncovered", {"uncovered_count": None}),
+        ],
+    )
+    def test_missing_or_malformed_count_fields_keep_no_metric_as_extraction_failed(
+        self, script_run_bench: Any, check: str, gt_fields: dict[str, Any]
+    ) -> None:
+        """Malformed GT count fields must not hide failure when no count is extractable."""
+        task = self._oss_task(check, **gt_fields)
+        result = script_run_bench._evaluate_oss(task, "No numeric metric is present.")
+        assert result.scored is True
+        assert result.extraction_failed is True
+        assert result.metric_got is None
+
 
 # ===========================================================================
 # _evaluate_debug
@@ -867,6 +912,19 @@ class TestEvaluateDebug:
         result = script_run_bench._evaluate_debug(task, "MYFUNCTION in utils.py")
         assert result.correct is True
 
+    @pytest.mark.parametrize(
+        "output",
+        [
+            "The issue is in my_function_extra inside utils_extra.py",
+            "my_functionality moved to old_utils.py",
+        ],
+    )
+    def test_longer_identifiers_and_unrelated_filenames_do_not_match(self, script_run_bench: Any, output: str) -> None:
+        """Function/file substrings embedded in longer names are not enough to score."""
+        task = self._debug_task(fn="my_function", filepath="src/mod/utils.py")
+        result = script_run_bench._evaluate_debug(task, output)
+        assert result.correct is False
+
 
 # ===========================================================================
 # _evaluate_feature
@@ -922,6 +980,19 @@ class TestEvaluateFeature:
         task = self._feature_task()
         result = script_run_bench._evaluate_feature(task, "validate inside trainer.py")
         assert result.evaluator_used == "_evaluate_feature"
+
+    @pytest.mark.parametrize(
+        "output",
+        [
+            "Add invalidate logic in trainer_extra.py",
+            "validation belongs in pretrainer.py",
+        ],
+    )
+    def test_longer_identifiers_and_unrelated_filenames_do_not_match(self, script_run_bench: Any, output: str) -> None:
+        """Method/file substrings embedded in longer names are not enough to score."""
+        task = self._feature_task(entry_point="Trainer.validate", primary_file="src/lightning/trainer/trainer.py")
+        result = script_run_bench._evaluate_feature(task, output)
+        assert result.correct is False
 
 
 # ===========================================================================
@@ -1009,6 +1080,12 @@ class TestEvaluateRealIssue:
         answer = "## Files\nlightning/pytorch/trainer/trainer.py\n"
         result = script_run_bench._evaluate_real_issue(task, answer)
         assert result.correct is True
+
+    def test_path_substring_inside_unrelated_filename_does_not_score(self, script_run_bench: Any) -> None:
+        """A path candidate embedded in a longer filename must not count as a file hit."""
+        task = self._ri_task(["src/pkg/foo.py"])
+        result = script_run_bench._evaluate_real_issue(task, "## Files\npkg/foobar.py\n")
+        assert result.correct is False
 
 
 # ===========================================================================

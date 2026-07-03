@@ -59,10 +59,11 @@ class TestReadFieldPure:
         """Non-string terminal value is converted via ``str()``."""
         assert read_field({"n": 42}, "n") == "42"
 
-    def test_empty_dotted_path_raises(self) -> None:
-        """Empty dotted path is rejected explicitly."""
+    @pytest.mark.parametrize("dotted_path", ["", ".", "a.", ".a", "a..b"])
+    def test_invalid_dotted_path_raises(self, dotted_path: str) -> None:
+        """Empty dotted paths and empty path segments are rejected explicitly."""
         with pytest.raises(ValueError, match="non-empty"):
-            read_field({"a": 1}, "")
+            read_field({"a": 1}, dotted_path)
 
 
 class TestMainCli:

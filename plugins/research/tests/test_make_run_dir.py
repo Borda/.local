@@ -111,7 +111,7 @@ class TestMainValidation:
 
     @pytest.mark.parametrize(
         "base",
-        ["../evil", "bad base", "bad!base"],
+        ["../evil", "bad base", "bad!base", "/abs/path"],
     )
     def test_invalid_base_dir_exit_two(self, tmp_path: Path, base: str, capsys: pytest.CaptureFixture[str]) -> None:
         """Invalid base-dir → exit 2 with BASE_DIR error on stderr."""

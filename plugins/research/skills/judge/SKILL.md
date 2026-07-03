@@ -1,7 +1,7 @@
 ---
 name: judge
 description: "Research-supervisor review of program.md — validates experimental methodology (hypothesis clarity, measurement validity, control adequacy, scope, strategy fit), emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop."
-argument-hint: "[<program.md>] [--skip-validation]"
+argument-hint: "[<program.md>] [--skip-validation] [--keep \"<items>\"]"
 effort: medium
 allowed-tools: Read, Write, Bash, Grep, Glob, Agent, TaskCreate, TaskUpdate, AskUserQuestion
 disable-model-invocation: true
@@ -15,6 +15,14 @@ NOT for: running experiments (use `/research:run`); designing hypotheses (use `r
 
 </objective>
 
+<compaction>
+
+Key boundary: end of J3 — methodology and scientific review agents complete, output files written; before J4 validation and J6 verdict.
+Preserve: RUN_DIR (TMPDIR key), PROGRAM_PATH (TMPDIR key), methodology.md path, scientific-review.md path, SKIP_VALIDATION flag, BRANCH.
+Clear at J1 start (stale prior run) and at end of J6 after terminal summary printed.
+
+</compaction>
+
 <workflow>
 
 <!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
@@ -22,6 +30,7 @@ NOT for: running experiments (use `/research:run`); designing hypotheses (use `r
 ## Agent Resolution
 
 ```bash
+# loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
@@ -50,7 +59,18 @@ ARGUMENTS="${ARGUMENTS/--skip-validation/}"
 ARGUMENTS="${ARGUMENTS#"${ARGUMENTS%%[![:space:]]*}"}"  # trim leading whitespace
 ```
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--skip-validation`.
+```bash
+# Extract --keep quoted value (compaction-contract.md §keep semantics)
+KEEP_ITEMS=""
+if [[ "$ARGUMENTS" =~ --keep[[:space:]]\"([^\"]+)\" ]]; then
+    KEEP_ITEMS="${BASH_REMATCH[1]}"
+fi
+# Clear stale contract from any prior incomplete run (compaction-contract.md §Lifecycle)
+rm -f .claude/state/skill-contract.md  # timeout: 5000
+echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/judge-keep-items"  # persist for J3 contract write
+```
+
+**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--skip-validation`, `--keep`.
 
 **Input resolution** (priority order):
 
@@ -218,6 +238,22 @@ Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** 
 2. **Health-monitor / envelope value** from the agent's returned JSON — advisory only
 
 File-parsed value takes priority over the health monitor value; use the file-parsed value when both are present. Same precedence applies to `methodology_rating` parsed from `$RUN_DIR/methodology.md` vs the envelope value. Use envelope value only when the file is missing or unparsable (e.g., timeout with no output).
+
+```bash
+# Compaction contract — boundary: after J3 agents complete, before J4 validation (compaction-contract.md §Lifecycle)
+_RUN_DIR=$(cat "${TMPDIR:-/tmp}/judge-run-dir" 2>/dev/null || echo "")
+_PROG_PATH=$(cat "${TMPDIR:-/tmp}/judge-program-path" 2>/dev/null || echo "")
+_KEEP=$(cat "${TMPDIR:-/tmp}/judge-keep-items" 2>/dev/null || echo "")
+_KEEP_APPEND=""; [ -n "$_KEEP" ] && _KEEP_APPEND="; user-keep: $_KEEP"
+mkdir -p .claude/state  # timeout: 5000
+{
+    echo "## Active Skill Contract"
+    echo "- skill: research:judge · phase: validation-verdict (after J3 review agents complete)"
+    echo "- run-dir: ${_RUN_DIR}"
+    echo "- preserve: run-dir=${_RUN_DIR}, program=${_PROG_PATH}, methodology=${_RUN_DIR}/methodology.md, scientific-review=${_RUN_DIR}/scientific-review.md${_KEEP_APPEND}"
+    echo "- next: J4 local validation → J5 Codex review → J6 verdict and report"
+} > .claude/state/skill-contract.md  # timeout: 5000
+```
 
 ## Step J4: Local validation
 
@@ -430,6 +466,10 @@ Codex:        reviewed | skipped
 ---
 Next: /research:run <path>                         [APPROVED]
 Next: fix protocol, re-run /research:judge <path>      [NEEDS-REVISION or BLOCKED]
+```
+
+```bash
+rm -f .claude/state/skill-contract.md  # clear contract — judge verdict complete (compaction-contract.md §Lifecycle)  # timeout: 5000
 ```
 
 </workflow>

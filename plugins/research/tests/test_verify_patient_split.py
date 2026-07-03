@@ -65,6 +65,14 @@ class TestComputeOverlap:
         test.write_text("patient_id,label\n2,a\n4,b\n")
         assert vps.compute_overlap(train, test) == 1
 
+    def test_empty_splits_return_zero(self, tmp_path: Path) -> None:
+        """CSV files with headers and no rows have zero overlap."""
+        train = tmp_path / "train.csv"
+        test = tmp_path / "test.csv"
+        train.write_text("patient_id,label\n")
+        test.write_text("patient_id,label\n")
+        assert vps.compute_overlap(train, test) == 0
+
     def test_multiple_overlapping_patients(self, tmp_path: Path) -> None:
         """Two distinct patients shared → count is 2."""
         train = tmp_path / "train.csv"
@@ -102,6 +110,15 @@ class TestComputeOverlap:
         train.write_text("id,label\n1,a\n")
         test.write_text("patient_id\n1\n")
         with pytest.raises(KeyError, match="train CSV missing required column 'patient_id'"):
+            vps.compute_overlap(train, test)
+
+    def test_missing_test_column_raises_keyerror(self, tmp_path: Path) -> None:
+        """The test CSV is validated symmetrically for the required column."""
+        train = tmp_path / "train.csv"
+        test = tmp_path / "test.csv"
+        train.write_text("patient_id\n1\n")
+        test.write_text("id,label\n1,a\n")
+        with pytest.raises(KeyError, match="test CSV missing required column 'patient_id'"):
             vps.compute_overlap(train, test)
 
 

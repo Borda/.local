@@ -67,7 +67,7 @@ claude plugin install codemap@borda-ai-rig
 /foundry:setup
 ```
 
-This merges `statusLine`, `permissions.allow`, and `enabledPlugins` (codex plugin) into `~/.claude/settings.json`; symlinks `rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Agents, skills, and hooks are exposed natively by the Claude Code plugin system — no symlinks needed.
+This merges `statusLine`, `permissions.allow`, `enabledPlugins` (codex plugin), and `advisorModel` into `~/.claude/settings.json`; symlinks `rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Agents, skills, and hooks are exposed natively by the Claude Code plugin system — no symlinks needed.
 
 **What is restored:** `~/.claude/rules/*.md` and `~/.claude/TEAM_PROTOCOL.md` become symlinks into the installed foundry plugin. `~/.claude/settings.json` is updated in-place. All other plugin files (agents, skills, hooks, CLAUDE.md) are served directly by the plugin system. The only local-machine files are `settings.local.json` and `settings.json` (project prefs + permissions).
 
@@ -92,7 +92,7 @@ plugins/foundry/           ← source of truth
 
 ```text
 /foundry:setup   # symlink rules/*.md + TEAM_PROTOCOL.md → ~/.claude/;
-                # merge statusLine, permissions.allow, enabledPlugins → ~/.claude/settings.json
+                # merge statusLine, permissions.allow, enabledPlugins, advisorModel → ~/.claude/settings.json
                 # (re-run after plugin upgrade to refresh stale rule symlinks)
 ```
 
@@ -494,7 +494,6 @@ A native research harness for questions that need real sourcing rather than a si
 - **Use it** for a deep, multi-source, fact-checked write-up on a topic — comparisons, state-of-the-art surveys, "what's actually true about X" where you want citations and cross-checking, not a quick recall.
 - **Don't use it** for a single-fact lookup (a normal web search or an inline answer is faster) or for anything answerable from the codebase (use `/codemap:query-code`, grep, or a direct read).
 - **Scope first** — if the question is underspecified (e.g. "what car should I buy" with no budget / use-case / region), it will ask 2-3 clarifying questions before spending the search budget. Giving those constraints up front produces a sharper report.
-
 
 ## 🗺️ Plugin dependency matrix
 

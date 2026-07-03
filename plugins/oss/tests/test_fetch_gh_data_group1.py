@@ -59,6 +59,48 @@ def test_build_datasets_returns_21_entries() -> None:
     assert "commits_50" in names
 
 
+@pytest.mark.parametrize(
+    "expected_name",
+    [
+        "open_issues",
+        "closed_issues",
+        "open_prs",
+        "closed_prs",
+        "commits",
+        "releases",
+        "contributor_stats",
+        "root_contents",
+        "repo_metadata",
+        "dependabot_alerts",
+        "secret_scanning_alerts",
+        "fork_dates",
+        "all_issues",
+        "all_prs",
+        "discussions",
+        "responsiveness_gql",
+        "review_coverage_gql",
+        "ci_workflows",
+        "ci_runs",
+        "merged_prs_90d",
+        "commits_50",
+    ],
+)
+def test_build_datasets_includes_expected_dataset_names(expected_name: str) -> None:
+    datasets = fgd._build_datasets("owner/repo", "2023-01-01", "2024-06-01T00:00:00Z", "2024-03-01T00:00:00Z")
+    assert expected_name in {name for name, _ in datasets}
+
+
+def test_build_datasets_commands_include_repo_and_cutoffs() -> None:
+    datasets = dict(fgd._build_datasets("owner/repo", "2023-01-01", "2024-06-01T00:00:00Z", "2024-03-01T00:00:00Z"))
+    assert datasets["open_issues"][2:4] == ["-R", "owner/repo"]
+    assert "closed:>=2023-01-01" in datasets["closed_issues"]
+    assert "merged:>=2024-06-01T00:00:00Z" in datasets["merged_prs_90d"]
+    assert "repos/owner/repo/commits?per_page=100" in datasets["commits"]
+    assert "-f" in datasets["discussions"]
+    assert "owner=owner" in datasets["discussions"]
+    assert "repo=repo" in datasets["discussions"]
+
+
 def test_successful_fetch_writes_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

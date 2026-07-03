@@ -45,6 +45,24 @@ def test_cache_hit_returns_newest_version(tmp_path: Path) -> None:
     assert Path(path) == newer
 
 
+@pytest.mark.parametrize(
+    "older_version,newer_version",
+    [
+        ("0.9.0", "0.10.0"),
+        ("0.20.0", "1.0.0"),
+    ],
+)
+def test_cache_hit_uses_semver_ordering(tmp_path: Path, older_version: str, newer_version: str) -> None:
+    """Newest cached research version is selected semantically, not lexicographically."""
+    base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research"
+    (base / older_version / "skills" / "_shared").mkdir(parents=True)
+    newer = base / newer_version / "skills" / "_shared"
+    newer.mkdir(parents=True)
+    path, from_cache = resolve_shared.resolve(home=tmp_path)
+    assert from_cache is True
+    assert Path(path) == newer
+
+
 def test_orphaned_version_skipped(tmp_path: Path) -> None:
     """``.orphaned_at`` marker on newest version → next-best wins."""
     base = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "research"

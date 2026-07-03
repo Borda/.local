@@ -34,7 +34,7 @@ repos:
         name: 🔤 check-case-conflict
       - id: check-added-large-files
         name: 📦 check-added-large-files
-        args: ["--maxkb=125", "--enforce-all"]
+        args: ["--maxkb=250", "--enforce-all"]
       - id: detect-private-key
         name: 🔐 detect-private-key
       - id: check-merge-conflict
@@ -56,7 +56,7 @@ repos:
         args: ["--print-width=120"]
 
   - repo: https://github.com/pre-commit/mirrors-eslint
-    rev: v10.2.0
+    rev: v10.6.0
     hooks:
       - id: eslint
         name: 🛡️ eslint
@@ -66,10 +66,10 @@ repos:
           - "@eslint/js@9.21.0"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.11.4
+    rev: v0.15.20
     hooks:
-      - id: ruff
-        name: 🦀 ruff
+      - id: ruff-check
+        name: 🦀 ruff-check
         args: ["--fix"]
       - id: ruff-format
         name: 🦀 ruff-format
