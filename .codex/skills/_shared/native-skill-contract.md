@@ -17,6 +17,9 @@ Every native `SKILL.md` should keep these sections or clear equivalents:
 
 - Keep `.reports/codex/<skill>/<timestamp>/result.json` as the canonical artifact.
 - Use `.codex/skills/_shared/run-gates.sh` and `write-result.sh` when the skill changes files or runs code checks.
+- Use `.codex/skills/_shared/collect-diff.sh` for scope-aware `working-tree`, `path`, or `commit` diff collection instead of duplicating git plumbing.
+- Use `.codex/skills/_shared/collect-pr.sh` for PR diff, metadata, comments, reviews, review threads, and unresolved review-thread collection instead of ad hoc `gh` calls.
+- Use `.codex/skills/_shared/validate-artifacts.py` for common skill artifact shape checks when a skill has durable notes, ledgers, or JSONL evidence.
 - Prefer local files, `git`, `rg`, project commands, and explicit source citations.
 - Treat external services and browser access as optional aids that require an explicit caveat when unavailable.
 - Do not require external runner metadata, hidden cache paths, interactive widgets, slash-command syntax, or non-Codex path variables for native operation.

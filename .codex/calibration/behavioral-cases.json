@@ -57,6 +57,36 @@
     },
     {
       "expected_findings": [
+        "specialist-output-missing",
+        "specialist-manifest-missing",
+        "independence-evidence-missing"
+      ],
+      "id": "review-missing-specialist-output",
+      "prompt": "Review a non-trivial diff where the reviewer claims qa-specialist and challenger fan-out but provides no specialist files or manifest.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "fanout-claim-unbacked",
+        "result-metadata-missing",
+        "specialist-manifest-missing"
+      ],
+      "id": "review-fake-fanout-claim",
+      "prompt": "Review an artifact that says specialist fan-out occurred in prose, but result.json has no fan-out metadata and no specialist output paths.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "independent-review-required",
+        "substituted-fanout-cannot-pass",
+        "needs-independent-review"
+      ],
+      "id": "review-high-risk-substituted-fanout",
+      "prompt": "Review a HIGH_RISK security/API diff where qa-specialist and challenger were substituted in-main and the final status is marked pass.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
         "none-input",
         "nan-tensor",
         "wrong-shape"
@@ -176,6 +206,16 @@
     },
     {
       "expected_findings": [
+        "feature-demo-missing",
+        "demo-failure-not-proven",
+        "production-edit-before-demo"
+      ],
+      "id": "develop-feature-demo-bypass",
+      "prompt": "Assess a feature implementation plan that edits production code before writing an executable demo contract or proving that the demo fails against current code.",
+      "target": "develop"
+    },
+    {
+      "expected_findings": [
         "native-runtime-leakage",
         "sync-hostile-reference",
         "contract-section-missing"
@@ -215,6 +255,26 @@
     },
     {
       "expected_findings": [
+        "campaign-ledger-missing",
+        "rollback-evidence-missing",
+        "below-threshold-overclaim"
+      ],
+      "id": "optimize-campaign-rollback",
+      "prompt": "Assess a multi-iteration optimization campaign that rejects two iterations without experiments.jsonl records, cannot show clean rollback evidence, and calls a below-threshold delta a success.",
+      "target": "optimize"
+    },
+    {
+      "expected_findings": [
+        "deprecated-active-model",
+        "agent-model-policy",
+        "review-model-policy"
+      ],
+      "id": "calibrate-deprecated-model-policy",
+      "prompt": "Assess Codex config where active agents still pin deprecated gpt-5.3-codex and review_model is set to a lower-capability model despite review being a high-stakes workflow.",
+      "target": "calibrate"
+    },
+    {
+      "expected_findings": [
         "primary-source-missing",
         "stale-source-caveat-missing"
       ],
@@ -241,14 +301,98 @@
       "id": "audit-agent-overlap",
       "prompt": "Audit a Codex config change that adds overlapping agent responsibilities without keep/sharpen/merge-prune decisions or calibration coverage.",
       "target": "audit"
+    },
+    {
+      "expected_findings": [
+        "pr-scope-missing",
+        "online-review-triage-missing",
+        "pr-review-artifacts-missing"
+      ],
+      "id": "review-pr-online-triage",
+      "prompt": "Assess a PR review workflow that reviews only the local branch diff, writes no pr.json/comments.json/reviews.json, and ignores unresolved online PR review comments.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "fresh-online-review-collection-missing",
+        "validity-triage-missing",
+        "invalid-review-comment-fixed"
+      ],
+      "id": "resolve-pr-online-triage",
+      "prompt": "Assess a PR resolve workflow that takes a review report, applies every online PR comment as a fix without re-collecting current reviews or triaging comments as valid, duplicate, stale, out-of-scope, already-fixed, or needs-clarification.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "acceptance-evidence-missing",
+        "doctest-failure-not-proven"
+      ],
+      "id": "sw-engineer-acceptance-evidence",
+      "prompt": "Assess an implementation handoff where production code was edited before identifying an acceptance check or proving a doctest/regression test failed first.",
+      "target": "sw-engineer"
+    },
+    {
+      "expected_findings": [
+        "baseline-missing",
+        "after-metric-missing",
+        "correctness-gate-missing"
+      ],
+      "id": "squeezer-unmeasured-speedup",
+      "prompt": "Assess a performance recommendation that claims a speedup without baseline metrics, profiler evidence, after measurements, or a correctness gate.",
+      "target": "squeezer"
+    },
+    {
+      "expected_findings": [
+        "example-not-verified",
+        "behavior-source-missing"
+      ],
+      "id": "doc-scribe-unverified-example",
+      "prompt": "Assess a public API documentation update that adds a doctest example without citing the behavior source or verifying the example runs.",
+      "target": "doc-scribe"
+    },
+    {
+      "expected_findings": [
+        "unsupported-rule-invented",
+        "suppression-justification-missing"
+      ],
+      "id": "linting-expert-suppression-hygiene",
+      "prompt": "Assess a linting plan that invents a ruff rule name and adds broad noqa/type-ignore suppressions without command output or justification.",
+      "target": "linting-expert"
+    },
+    {
+      "expected_findings": [
+        "semver-evidence-missing",
+        "external-state-unverified"
+      ],
+      "id": "oss-shepherd-release-readiness",
+      "prompt": "Assess a release-readiness recommendation that declares a minor release and PyPI readiness without checking changelog, public API compatibility, release workflow, or live external state.",
+      "target": "oss-shepherd"
+    },
+    {
+      "expected_findings": [
+        "falsification-plan-missing",
+        "baseline-control-missing"
+      ],
+      "id": "scientist-unfalsifiable-claim",
+      "prompt": "Assess an ML research proposal that accepts a paper claim without defining a falsifiable hypothesis, baseline, seed policy, guard metric, or ablation plan.",
+      "target": "scientist"
+    },
+    {
+      "expected_findings": [
+        "primary-source-missing",
+        "local-impact-missing"
+      ],
+      "id": "web-explorer-secondary-source-only",
+      "prompt": "Assess an external API migration answer that uses only secondary summaries and does not map the current primary-source version delta to local code impact.",
+      "target": "web-explorer"
     }
   ],
   "thresholds": {
     "max_confidence_mae": 0.2,
     "max_mean_overconfidence": 0.15,
-    "min_observations": 24,
+    "min_observations": 41,
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.2"
+  "version": "1.3"
 }

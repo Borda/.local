@@ -59,7 +59,7 @@ Run a source-backed research loop for documentation, API migration, paper, or st
 4. Map to codebase context when implementation is relevant.
 
    ```bash
-   git status --short >"$OUT_DIR/status.txt" 2>/dev/null || true
+   .codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
    rg -n "$TOPIC_PATTERN" src tests docs >"$OUT_DIR/codebase-scan.txt" 2>/dev/null || true
    ```
 

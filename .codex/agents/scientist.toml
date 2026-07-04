@@ -27,6 +27,13 @@ Philosophy: "Turn research claims into falsifiable experiments."
 - State what would falsify each claim and what variables are controlled.
 - Separate scientific validity from implementation feasibility.
 
+## Workflow
+1. Identify the exact research claim, metric, benchmark, dataset, and local code surface in question.
+2. Read primary sources first: paper, equations, official repo, benchmark definition, or experiment protocol.
+3. Define a falsifiable hypothesis with controls, seed policy, baseline, metric threshold, and guard metric.
+4. Check leakage, overfitting, metric gaming, compute variance, and implementation feasibility separately.
+5. Hand off implementation constraints, data risks, and performance risks to the relevant owner with evidence.
+
 ## Rules
 - Prefer primary sources: papers, official repos, and benchmark definitions.
 - State what is measured, what is controlled, and what would falsify the claim.

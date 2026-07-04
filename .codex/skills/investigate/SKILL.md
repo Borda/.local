@@ -41,9 +41,8 @@ Run a diagnosis-first loop for unclear failures. This skill produces a root-caus
 3. Gather signals before forming hypotheses.
 
    ```bash
-   git status --short >"$OUT_DIR/status.txt" 2>/dev/null || true
+   .codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
    git log --oneline -10 >"$OUT_DIR/recent-commits.txt" 2>/dev/null || true
-   git diff --stat >"$OUT_DIR/diffstat.txt" 2>/dev/null || true
    python --version >"$OUT_DIR/python-version.txt" 2>&1 || true
    ```
 
@@ -81,19 +80,39 @@ Run a diagnosis-first loop for unclear failures. This skill produces a root-caus
 
    If confidence is low, continue probing instead of proposing a fix.
 
+   Write `$OUT_DIR/root-cause.md` with:
+
+   - `Evidence`
+   - `Falsification`
+   - `Rejected Alternatives`
+   - `Confidence`
+
 7. Run shared quality gates or targeted checks relevant to the failure.
 
    ```bash
-   .codex/skills/_shared/run-gates.sh \
-       --out "$OUT_DIR" \
-       --lint "${LINT_CMD:-uv run --no-sync ruff check .}" \
-       --format "${FORMAT_CMD:-uv run --no-sync ruff format --check .}" \
-       --types "${TYPES_CMD:-uv run --no-sync mypy src/}" \
-       --tests "${TESTS_CMD:-uv run --no-sync pytest -q}" \
-       --review "${REVIEW_CMD:-git diff --check}"
+   .codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
    ```
 
-8. Decide gate result and write `.reports/codex/investigate/<timestamp>/result.json`.
+8. Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`.
+
+   ```bash
+   .codex/skills/_shared/write-result.sh \
+       --out "$OUT_DIR/result.candidate.json" \
+       --status "$STATUS" \
+       --checks-run "lint,format,types,tests,review" \
+       --checks-failed "$CHECKS_FAILED" \
+       --critical "$CRITICAL" \
+       --high "$HIGH" \
+       --medium "$MEDIUM" \
+       --low "$LOW" \
+       --confidence "$CONFIDENCE" \
+       --artifact-path "$OUT_DIR/result.json"
+   python3 .codex/skills/_shared/validate-artifacts.py \
+       --skill investigate \
+       --out "$OUT_DIR" \
+       --result "$OUT_DIR/result.candidate.json"
+   mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
+   ```
 
 ## Fail-Fast Rules
 
@@ -101,13 +120,16 @@ Run a diagnosis-first loop for unclear failures. This skill produces a root-caus
 2. No evidence collected before hypotheses => fail.
 3. Root cause stated without falsification check => fail.
 4. Workaround presented as root cause => fail.
-5. Result artifact missing => fail.
+5. Missing `root-cause.md` evidence, falsification, rejected alternatives, confidence => fail.
+6. Result artifact validator failure => fail.
+7. Result artifact missing => fail.
 
 ## Quality Gates
 
 Required checks:
 
 - `review`: hypothesis table, probe outcomes, rejected alternatives, and `git diff --check`.
+- `artifact`: shared validator confirms investigation artifacts, gate logs, and result JSON shape.
 
 Conditional checks:
 
@@ -118,7 +140,7 @@ Conditional checks:
 
 Update calibration when root-cause routing or workaround rejection changes:
 
-- behavioral cases: symptom-first routing, rejected alternatives, low-confidence probe escalation
+- behavioral cases: symptom-first routing, rejected alternatives, low-confidence probe escalation, artifact validator bypass
 - benchmark patterns: `investigate`
 
 ## Output Contract

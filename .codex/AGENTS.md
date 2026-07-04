@@ -177,6 +177,11 @@ Parent agent responsibilities:
 - Release readiness: `oss-shepherd` + `cicd-steward` + `doc-scribe` + `qa-specialist`
 - Research-paper implementation: `scientist` + `solution-architect` + `sw-engineer` + `qa-specialist`
 - High-risk plan validation: `challenger` + the relevant domain specialist before implementation
+- PR review-to-resolution: `review` with `scope=pr` writes the report, then `resolve` with `mode=pr` re-collects online PR reviews, triages each comment, and fixes only valid findings.
+
+### Model escalation policy
+
+Support roles may handle bounded evidence gathering, documentation, curation, OSS triage, and static-analysis cleanup. Pair or escalate to a high-capability implementation, architecture, security, QA, CI, or challenge role when the decision becomes release-blocking, API-breaking, security-sensitive, architecture-heavy, or materially changes runtime behavior.
 
 ### Spawn `sw-engineer` when:
 

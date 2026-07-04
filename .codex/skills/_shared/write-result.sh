@@ -13,6 +13,7 @@ CONFIDENCE=""
 ARTIFACT_PATH=""
 RECOMMENDATIONS=""
 FOLLOW_UP=""
+METADATA=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +65,10 @@ while [[ $# -gt 0 ]]; do
       FOLLOW_UP="$2"
       shift 2
       ;;
+    --metadata)
+      METADATA="$2"
+      shift 2
+      ;;
     *)
       echo "unknown-arg:$1" >&2
       exit 2
@@ -83,7 +88,7 @@ fi
 
 mkdir -p "$(dirname "$OUT_FILE")"
 
-python3 - "$OUT_FILE" "$STATUS" "$CHECKS_RUN" "$CHECKS_FAILED" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$CONFIDENCE" "$ARTIFACT_PATH" "$RECOMMENDATIONS" "$FOLLOW_UP" <<'PY'
+python3 - "$OUT_FILE" "$STATUS" "$CHECKS_RUN" "$CHECKS_FAILED" "$CRITICAL" "$HIGH" "$MEDIUM" "$LOW" "$CONFIDENCE" "$ARTIFACT_PATH" "$RECOMMENDATIONS" "$FOLLOW_UP" "$METADATA" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -100,6 +105,7 @@ confidence = float(sys.argv[9])
 artifact_path = sys.argv[10]
 recommendations_raw = sys.argv[11]
 follow_up_raw = sys.argv[12]
+metadata_raw = sys.argv[13]
 
 def parse_items(raw: str) -> list[str]:
     # Accept JSON array first; fallback to "item1||item2||item3" format.
@@ -113,6 +119,18 @@ def parse_items(raw: str) -> list[str]:
     except Exception:
         pass
     return [x.strip() for x in raw.split("||") if x.strip()]
+
+def parse_metadata(raw: str) -> dict[str, object]:
+    raw = raw.strip()
+    if not raw:
+        return {}
+    try:
+        loaded = json.loads(raw)
+    except Exception as exc:
+        raise SystemExit(f"invalid-metadata-json:{exc}") from exc
+    if not isinstance(loaded, dict):
+        raise SystemExit("invalid-metadata-json:not-object")
+    return loaded
 
 payload = {
     "status": status,
@@ -129,6 +147,9 @@ payload = {
     "recommendations": parse_items(recommendations_raw),
     "follow_up": parse_items(follow_up_raw),
 }
+metadata = parse_metadata(metadata_raw)
+if metadata:
+    payload["metadata"] = metadata
 out.write_text(json.dumps(payload, indent=2) + "\n")
 PY
 

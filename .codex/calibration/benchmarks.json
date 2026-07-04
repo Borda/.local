@@ -5,7 +5,9 @@
       "SKIP when",
       "NOT for",
       "Evidence Standard",
-      "Refuted Concerns",
+      "Root Cause",
+      "Refuted Challenges",
+      "Motivated skepticism",
       "Output Contract"
     ],
     "cicd-steward": [
@@ -14,6 +16,8 @@
       "NOT for",
       "Evidence Standard",
       "trusted publishing",
+      "pull_request_target",
+      "concurrency",
       "Output Contract"
     ],
     "curator": [
@@ -142,17 +146,23 @@
     "calibrate": [
       "## Input Schema",
       "Native Contract Checks",
+      "model",
+      "deprecated model",
       "Runtime leakage",
       "behavioral-cases.json",
       "confidence_accuracy",
+      "collect-pr.sh",
+      "validate-artifacts.py",
       "## Quality Gates",
       "## Calibration Hooks"
     ],
     "develop": [
       "## Input Schema",
       "anti-rationalization gate",
+      "feature demo contract",
       "root-cause evidence",
       "specialist policy",
+      "validate-artifacts.py",
       "## Quality Gates",
       "## Calibration Hooks"
     ],
@@ -161,6 +171,7 @@
       "anti-rationalization gate",
       "rejected alternative",
       "targeted probe",
+      "validate-artifacts.py",
       "## Quality Gates",
       "## Calibration Hooks"
     ],
@@ -175,6 +186,10 @@
       "## Input Schema",
       "baseline",
       "baseline and after",
+      "experiments.jsonl",
+      "rollback evidence",
+      "min_delta",
+      "validate-artifacts.py",
       "## Quality Gates",
       "## Calibration Hooks"
     ],
@@ -182,6 +197,7 @@
       "## Input Schema",
       "SemVer",
       "release evidence",
+      "validate-artifacts.py",
       "## Quality Gates",
       "## Calibration Hooks"
     ],
@@ -194,15 +210,27 @@
     ],
     "resolve": [
       "## Input Schema",
+      "mode",
+      "collect-pr.sh",
       "action-items.md",
+      "triage status",
       "closure evidence",
+      "validate-artifacts.py",
       "## Quality Gates",
       "## Calibration Hooks"
     ],
     "review": [
       "## Input Schema",
       "T0 mechanical scope gate",
-      "T2 specialist fan-out",
+      "collect-diff.sh",
+      "collect-pr.sh",
+      "Online Review Triage",
+      "review-threads.json",
+      "unresolved-review-threads.json",
+      "T2 multi-axis specialist fan-out",
+      "specialist-manifest.json",
+      "validate_artifacts.py",
+      "independence_satisfied",
       "review-notes.md",
       "## Quality Gates",
       "## Calibration Hooks"

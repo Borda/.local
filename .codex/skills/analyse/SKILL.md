@@ -40,8 +40,7 @@ Run a linear evidence-first analysis loop. Use this skill to answer "what is tru
 3. Capture scope and source inventory before drawing conclusions.
 
    ```bash
-   git status --short >"$OUT_DIR/status.txt" 2>/dev/null || true
-   git diff --stat >"$OUT_DIR/diffstat.txt" 2>/dev/null || true
+   .codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
    rg -n "$SCOPE_PATTERN" . >"$OUT_DIR/reference-scan.txt" 2>/dev/null || true
    ```
 

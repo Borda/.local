@@ -54,12 +54,16 @@ Skill checks:
 - artifact path uses `.reports/codex/<skill>/`
 - output examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, and `artifact_path`
 - native skill files do not depend on external runner-only metadata or cache paths
+- shared helper checks cover `run-gates.sh`, `write-result.sh`, `collect-diff.sh`, `collect-pr.sh`, and `validate-artifacts.py`
 
 Agent checks:
 
 - each configured agent file exists and is registered
+- active `model` and `review_model` pins use supported model strings for the current Codex runtime
+- high-stakes specialist roles use the high-capability model tier, while bounded support roles may use the lower-cost support tier
+- deprecated model strings are absent from active project config and agent TOML files
 - role has a clear `Scope` or equivalent boundary
-- counterpart mapping, evidence standard, boundaries, and output contract are present or explicitly waived
+- counterpart mapping, evidence standard, boundaries, output format, and output contract are present or explicitly waived
 - sensitive agents keep their sandbox constraints, especially read-only security audit
 - no external runtime tool names or external path variables are required by native agents
 

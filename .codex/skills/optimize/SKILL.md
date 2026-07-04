@@ -12,9 +12,12 @@ Run a metric-driven optimization loop with explicit guards, rollback criteria, a
 ```json
 {
   "goal": "required measurable improvement objective",
+  "mode": "single|campaign",
   "metric_cmd": "required command that emits or validates the target metric",
   "metric_direction": "higher|lower",
   "guard_cmd": "required command that must continue to pass",
+  "max_iterations": "optional integer, default 1",
+  "min_delta": "optional practical significance threshold",
   "scope_files": [
     "paths the optimization may edit"
   ],
@@ -40,6 +43,8 @@ Run a metric-driven optimization loop with explicit guards, rollback criteria, a
    - `metric_direction` is known.
    - `guard_cmd` fails on unacceptable regressions.
    - `scope_files` is bounded.
+   - `max_iterations` is explicit for `campaign` mode and remains bounded.
+   - Files or scripts used by `metric_cmd` and `guard_cmd` are protected unless the user explicitly includes them in scope and accepts the measurement-integrity risk.
 
    Dry-run both commands before editing:
 
@@ -58,9 +63,15 @@ Run a metric-driven optimization loop with explicit guards, rollback criteria, a
    - guard risk
    - rollback condition
 
-4. Apply one minimal optimization change.
+   Initialize a machine-readable iteration log:
 
-   Do not combine independent hypotheses in one iteration. Do not optimize unmeasured paths.
+   ```bash
+   : >"$OUT_DIR/experiments.jsonl"
+   ```
+
+4. Apply one minimal optimization change per iteration.
+
+   Do not combine independent hypotheses in one iteration. Do not optimize unmeasured paths. Before each iteration, write `$OUT_DIR/iteration-<n>-before.patch` with the current diff for the scoped files. If an iteration fails and only that iteration's patch is present, revert the iteration with `git apply -R` against the iteration diff or mark the run failed when a clean reversal cannot be proven. Never use `git reset --hard`.
 
 5. Re-measure.
 
@@ -80,25 +91,57 @@ Run a metric-driven optimization loop with explicit guards, rollback criteria, a
    - confidence
    - noise caveats
 
+   Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
+
+   ```json
+   {
+     "iteration": 1,
+     "hypothesis": "one-line mechanism",
+     "metric_before": 0.0,
+     "metric_after": 0.0,
+     "delta": 0.0,
+     "guard": "pass|fail",
+     "decision": "kept|reverted|inconclusive|failed",
+     "rollback_evidence": "path or reason"
+   }
+   ```
+
 7. Decide keep/revert.
 
    - Keep only when metric moves in the intended direction and guards pass.
+   - For `min_delta`, keep only when the delta meets or exceeds the practical significance threshold.
    - Revert or mark fail when guard regresses.
    - If measurement is noisy, require repeated runs or mark inconclusive.
+   - In `campaign` mode, stop at the first kept result unless the user asked for continued exploration; otherwise continue only while `max_iterations` remains and each rejected iteration has rollback evidence.
 
 8. Run shared quality gates.
 
    ```bash
    .codex/skills/_shared/run-gates.sh \
        --out "$OUT_DIR" \
-       --lint "${LINT_CMD:-uv run --no-sync ruff check .}" \
-       --format "${FORMAT_CMD:-uv run --no-sync ruff format --check .}" \
-       --types "${TYPES_CMD:-uv run --no-sync mypy src/}" \
-       --tests "${TESTS_CMD:-${GUARD_CMD:-uv run --no-sync pytest -q}}" \
-       --review "${REVIEW_CMD:-git diff --check}"
+       --tests "${TESTS_CMD:-$GUARD_CMD}"
    ```
 
-9. Write mandatory result artifact.
+9. Write and validate the mandatory result artifact.
+
+   ```bash
+   .codex/skills/_shared/write-result.sh \
+       --out "$OUT_DIR/result.candidate.json" \
+       --status "$STATUS" \
+       --checks-run "lint,format,types,tests,review" \
+       --checks-failed "$CHECKS_FAILED" \
+       --critical "$CRITICAL" \
+       --high "$HIGH" \
+       --medium "$MEDIUM" \
+       --low "$LOW" \
+       --confidence "$CONFIDENCE" \
+       --artifact-path "$OUT_DIR/result.json"
+   python3 .codex/skills/_shared/validate-artifacts.py \
+       --skill optimize \
+       --out "$OUT_DIR" \
+       --result "$OUT_DIR/result.candidate.json"
+   mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
+   ```
 
 ## Fail-Fast Rules
 
@@ -106,14 +149,19 @@ Run a metric-driven optimization loop with explicit guards, rollback criteria, a
 2. Baseline cannot be captured => fail.
 3. Scope is unbounded => fail.
 4. Guard regression after change => fail unless reverted.
-5. Result artifact missing => fail.
+5. Metric/guard script changed without explicit scope and measurement-integrity note => fail.
+6. Campaign iteration rejected without rollback evidence or unresolved-risk note => fail.
+7. Claimed improvement below `min_delta` without explicit inconclusive status => fail.
+8. Result artifact validator failure => fail.
+9. Result artifact missing => fail.
 
 ## Quality Gates
 
 Required checks:
 
 - `tests`: guard command or impacted tests.
-- `review`: metric comparison, rollback decision, and `git diff --check`.
+- `review`: metric comparison, rollback decision, campaign ledger when relevant, and `git diff --check`.
+- `artifact`: shared validator confirms comparison, experiments JSONL, gate logs, and result JSON shape.
 
 Recommended checks:
 
@@ -123,7 +171,7 @@ Recommended checks:
 
 Update calibration when metric/guard policy changes:
 
-- behavioral cases: baseline missing, guard regression, noisy metric overclaim
+- behavioral cases: baseline missing, guard regression, noisy metric overclaim, campaign rollback evidence, below-threshold improvement, artifact validator bypass
 - benchmark patterns: `optimize`
 
 ## Output Contract

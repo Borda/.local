@@ -3,7 +3,7 @@
 # `config_file` paths are relative to this file
 
 model                              = "gpt-5.5"
-review_model                       = "gpt-5.4-mini"
+review_model                       = "gpt-5.5"
 model_reasoning_effort             = "xhigh"
 model_reasoning_summary            = "auto"
 approval_policy                    = "on-request"
@@ -109,7 +109,7 @@ description = "ML data pipeline integrity: split leakage, DataLoader reproducibi
 config_file = "agents/data-steward.toml"
 
 [agents.cicd-steward]
-description = "CI/CD reliability: GitHub Actions, trusted PyPI publishing, pre-commit hooks, flaky test detection."
+description = "CI/CD reliability: GitHub Actions permissions, trusted publishing, matrix/caching, pre-commit automation, flaky CI."
 config_file = "agents/cicd-steward.toml"
 
 [agents.linting-expert]
@@ -133,7 +133,7 @@ description = "Configuration quality reviewer: detect duplication, drift, stale 
 config_file = "agents/curator.toml"
 
 [agents.challenger]
-description = "Adversarial review: stress-test plans, architecture, and non-trivial diffs against evidence and failure modes."
+description = "Adversarial review: 6-axis stress-test of plans, architecture, migrations, and non-trivial diffs with refutation."
 config_file = "agents/challenger.toml"
 
 [agents.scientist]

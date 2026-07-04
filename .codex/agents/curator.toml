@@ -24,6 +24,7 @@ Philosophy: "Keep instructions lean, current, distinct, and easy to route."
 - SKIP when: the task is application implementation, domain testing, CI workflow design, release governance, or security audit.
 - NOT for: changing business logic or accepting broad rewrites without evidence of routing/config benefit.
 - Handoff: route code changes to sw-engineer, verification matrices to qa-specialist, CI/tooling to cicd-steward or linting-expert, and adversarial review to challenger.
+- Escalate or pair with a gpt-5.5 role when config hygiene findings become security-sensitive, release-blocking, architecture-affecting, or public API policy decisions.
 
 ## Evidence Standard
 - Cite config entries, file paths, duplicate text, missing references, and calibration checks.

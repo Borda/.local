@@ -61,24 +61,24 @@ cp -r .codex/ ~/.codex/      # activate globally
 
 ### Reference table
 
-Agents are tiered by task profile. Coding-heavy agents use `gpt-5.3-codex`, complex reasoning agents use `gpt-5.5`, and lighter non-coding agents use `gpt-5.4-mini`.
+Agents are tiered by task risk. High-stakes reasoning, implementation, verification, security, CI, data, performance, architecture, adversarial, and research roles use `gpt-5.5`. Bounded support roles use `gpt-5.4-mini`. Deprecated Codex model strings are rejected by calibration.
 
-| Agent                  | Model         | Effort | Purpose                                                                 |
-| ---------------------- | ------------- | ------ | ----------------------------------------------------------------------- |
-| **sw-engineer**        | gpt-5.3-codex | xhigh  | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
-| **qa-specialist**      | gpt-5.3-codex | xhigh  | Edge-case matrix, The Borda Standard, adversarial test review           |
-| **squeezer**           | gpt-5.3-codex | xhigh  | Profile-first optimization, GPU throughput, memory efficiency           |
-| **doc-scribe**         | gpt-5.4-mini  | xhigh  | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
-| **security-auditor**   | gpt-5.3-codex | xhigh  | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
-| **data-steward**       | gpt-5.3-codex | xhigh  | Split leakage, DataLoader reproducibility, augmentation correctness     |
-| **cicd-steward**       | gpt-5.3-codex | xhigh  | GitHub Actions, trusted PyPI publishing, pre-commit, flaky tests        |
-| **linting-expert**     | gpt-5.3-codex | xhigh  | ruff, mypy, pre-commit config, rule progression, suppression discipline |
-| **oss-shepherd**       | gpt-5.4-mini  | xhigh  | Issue triage, PR review, SemVer, pyDeprecate, release checklist         |
-| **solution-architect** | gpt-5.5       | xhigh  | System design, ADRs, API compatibility, migration planning              |
-| **web-explorer**       | gpt-5.4-mini  | xhigh  | External docs/release-note extraction and evidence gathering            |
-| **curator**            | gpt-5.4-mini  | xhigh  | Config quality checks, drift/leak detection, workflow hygiene           |
-| **challenger**         | gpt-5.5       | xhigh  | Adversarial plan, architecture, migration, and diff stress-testing      |
-| **scientist**          | gpt-5.5       | xhigh  | Paper analysis, ML hypothesis design, ablations, experiment validation  |
+| Agent                  | Model        | Effort | Purpose                                                                 |
+| ---------------------- | ------------ | ------ | ----------------------------------------------------------------------- |
+| **sw-engineer**        | gpt-5.5      | xhigh  | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
+| **qa-specialist**      | gpt-5.5      | xhigh  | Edge-case matrix, The Borda Standard, adversarial test review           |
+| **squeezer**           | gpt-5.5      | xhigh  | Profile-first optimization, GPU throughput, memory efficiency           |
+| **doc-scribe**         | gpt-5.4-mini | xhigh  | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
+| **security-auditor**   | gpt-5.5      | xhigh  | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
+| **data-steward**       | gpt-5.5      | xhigh  | Split leakage, DataLoader reproducibility, augmentation correctness     |
+| **cicd-steward**       | gpt-5.5      | xhigh  | GitHub Actions permissions, trusted publishing, matrix/cache, flaky CI  |
+| **linting-expert**     | gpt-5.4-mini | xhigh  | ruff, mypy, pre-commit config, rule progression, suppression discipline |
+| **oss-shepherd**       | gpt-5.4-mini | xhigh  | Issue triage, PR review, SemVer, pyDeprecate, release checklist         |
+| **solution-architect** | gpt-5.5      | xhigh  | System design, ADRs, API compatibility, migration planning              |
+| **web-explorer**       | gpt-5.4-mini | xhigh  | External docs/release-note extraction and evidence gathering            |
+| **curator**            | gpt-5.4-mini | xhigh  | Config quality checks, drift/leak detection, workflow hygiene           |
+| **challenger**         | gpt-5.5      | xhigh  | 6-axis adversarial plan, architecture, migration, and diff review       |
+| **scientist**          | gpt-5.5      | xhigh  | Paper analysis, ML hypothesis design, ablations, experiment validation  |
 
 ### Spawn rules
 
@@ -107,15 +107,16 @@ When to address by name vs letting Codex decide:
 Session defaults:
 
 - `model = "gpt-5.5"`
-- `review_model = "gpt-5.4-mini"`
+- `review_model = "gpt-5.5"`
 - `approval_policy = "on-request"`
 - `sandbox_mode = "workspace-write"`
 
 Agent model allocation:
 
-- `gpt-5.3-codex`: code, tests, static analysis, CI/tooling, performance, data pipeline integrity, security code audit.
-- `gpt-5.5`: architecture, adversarial challenge, and research-to-experiment reasoning.
-- `gpt-5.4-mini`: documentation, web evidence gathering, OSS lifecycle, and config curation.
+- `gpt-5.5`: default and review model; use for implementation, tests, security, CI/tooling, data integrity, performance, architecture, adversarial challenge, and research-to-experiment reasoning.
+- `gpt-5.4-mini`: lower-cost support model; use for documentation, web evidence gathering, OSS lifecycle, config curation, and bounded static-analysis cleanup.
+- Escalate or pair a `gpt-5.4-mini` support role with a `gpt-5.5` owner when the decision becomes release-blocking, API-breaking, security-sensitive, architecture-heavy, or materially changes runtime behavior.
+- Deprecated model strings such as `gpt-5.3-codex` are not allowed in active Codex config.
 
 ### Profiles
 
@@ -126,12 +127,12 @@ codex --profile deep-review "full security audit of src/api/"
 codex --profile fast-edit "fix the typo in the docstring"
 ```
 
-| Profile       | What changes                                                          | When to use                                                  |
-| ------------- | --------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `cautious`    | `approval_policy = "untrusted"`                                       | Unfamiliar codebases, production systems, destructive ops    |
-| `fast-edit`   | `model = "gpt-5.3-codex"`, medium reasoning, low verbosity, 2 threads | Narrow mechanical code edits where speed > depth             |
-| `fresh-docs`  | `web_search = "live"`, concise summaries                              | Questions about volatile docs, library versions, API changes |
-| `deep-review` | `model = "gpt-5.5"`, `xhigh` reasoning, live web search               | Broad/high-risk changes needing maximum review depth         |
+| Profile       | What changes                                                         | When to use                                                  |
+| ------------- | -------------------------------------------------------------------- | ------------------------------------------------------------ |
+| `cautious`    | `approval_policy = "untrusted"`                                      | Unfamiliar codebases, production systems, destructive ops    |
+| `fast-edit`   | `model = "gpt-5.4-mini"`, medium reasoning, low verbosity, 2 threads | Narrow mechanical code edits where speed > depth             |
+| `fresh-docs`  | `web_search = "live"`, concise summaries                             | Questions about volatile docs, library versions, API changes |
+| `deep-review` | `model = "gpt-5.5"`, `xhigh` reasoning, live web search              | Broad/high-risk changes needing maximum review depth         |
 
 ## 🧭 Skills In Codex
 
@@ -284,11 +285,20 @@ Purpose: live OpenAI/Codex documentation lookups for freshness-critical guidance
 
 ## Independent Diff Review
 
-Run Codex as a cold reviewer when you want a separate pass over local changes.
+Run Codex as a cold reviewer when you want a separate pass over local changes or an open PR.
 
 ```bash
 codex --profile deep-review "review the current diff with no prior assumptions"
 codex --profile deep-review "review the diff in src/mypackage/ and write a review artifact"
+codex --profile deep-review "review PR 123 with scope=pr and write a review artifact"
 ```
 
 Codex reads `git diff`, applies the full `review` skill workflow, classifies findings by severity, and writes `.reports/codex/review/<timestamp>/result.json`. This is prompt-based invocation, not a registered slash command.
+
+For PR review, Codex collects `gh pr view`, `gh pr diff`, PR comments, PR reviews, review threads, and unresolved review threads into the same report directory. Resolve flow then starts from that report:
+
+```bash
+codex "resolve PR 123 using .reports/codex/review/<timestamp>/result.json; triage online review comments before editing"
+```
+
+`resolve` re-collects current PR comments/reviews, triages each item as `valid`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, or `needs-clarification`, and fixes only valid findings with closure evidence.

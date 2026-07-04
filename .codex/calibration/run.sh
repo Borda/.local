@@ -95,15 +95,40 @@ check_model() {
   return 0
 }
 
+check_review_model() {
+  local file="$1"
+  local label="$2"
+  if grep -Eq '^[[:space:]]*review_model[[:space:]]*=[[:space:]]*"gpt-5\.5"' "$file"; then
+    echo "$label:review_model=ok" >> "$OUT_DIR/checks.txt"
+  else
+    echo "$label:review_model=fail" >> "$OUT_DIR/checks.txt"
+    echo "review-model-not-gpt-5.5:$file" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "review-model-policy"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+  return 0
+}
+
+check_no_deprecated_active_models() {
+  local file
+  for file in "$PROJECT_CFG" "$ROOT"/.codex/agents/*.toml; do
+    if grep -Eq '^[[:space:]]*(model|review_model)[[:space:]]*=[[:space:]]*"gpt-5\.(2|3-codex)"' "$file"; then
+      echo "deprecated-active-model:$file" >> "$OUT_DIR/leaks.txt"
+      mark_check_failed "deprecated-model-policy"
+      FAILS=$((FAILS + 1))
+      LEAKS=$((LEAKS + 1))
+    fi
+  done
+  return 0
+}
+
 expected_agent_model() {
   case "$1" in
-    sw-engineer | qa-specialist | squeezer | data-steward | linting-expert | cicd-steward | security-auditor)
-      echo "gpt-5.3-codex"
-      ;;
-    solution-architect | challenger | scientist)
+    sw-engineer | qa-specialist | squeezer | data-steward | cicd-steward | security-auditor | solution-architect | challenger | scientist)
       echo "gpt-5.5"
       ;;
-    doc-scribe | web-explorer | oss-shepherd | curator)
+    doc-scribe | web-explorer | oss-shepherd | curator | linting-expert)
       echo "gpt-5.4-mini"
       ;;
     *)
@@ -138,6 +163,8 @@ check_agent_model() {
 echo "calibration-start:$TS" > "$OUT_DIR/checks.txt"
 check_model "$PROJECT_CFG" "project-config" "project-model-default"
 check_model "$HOME_CFG" "home-config" "home-model-default"
+check_review_model "$PROJECT_CFG" "project-config"
+check_no_deprecated_active_models
 
 for skill in "${SKILLS[@]}"; do
   SKILL_FILE="$ROOT/.codex/skills/$skill/SKILL.md"
@@ -212,11 +239,13 @@ for agent in "${AGENTS[@]}"; do
   if [[ -f "$ROOT/.codex/agents/$agent.toml" ]]; then
     check_contains "$ROOT/.codex/agents/$agent.toml" "^name[[:space:]]*=" "agent-schema-all"
     check_contains "$ROOT/.codex/agents/$agent.toml" "developer_instructions" "agent-schema-all"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "Scope" "native-agent-contract"
     check_contains "$ROOT/.codex/agents/$agent.toml" "Boundaries" "native-agent-contract"
     check_contains "$ROOT/.codex/agents/$agent.toml" "Evidence Standard" "native-agent-contract"
     check_contains "$ROOT/.codex/agents/$agent.toml" "TRIGGER when" "native-agent-contract"
     check_contains "$ROOT/.codex/agents/$agent.toml" "SKIP when" "native-agent-contract"
     check_contains "$ROOT/.codex/agents/$agent.toml" "NOT for" "native-agent-contract"
+    check_contains "$ROOT/.codex/agents/$agent.toml" "Output Format" "native-agent-contract"
     check_contains "$ROOT/.codex/agents/$agent.toml" "Output Contract" "native-agent-contract"
     check_agent_model "$agent" "$ROOT/.codex/agents/$agent.toml"
   else
@@ -278,6 +307,9 @@ fi
 
 RUN_GATES="$ROOT/.codex/skills/_shared/run-gates.sh"
 WRITE_RESULT="$ROOT/.codex/skills/_shared/write-result.sh"
+COLLECT_DIFF="$ROOT/.codex/skills/_shared/collect-diff.sh"
+COLLECT_PR="$ROOT/.codex/skills/_shared/collect-pr.sh"
+VALIDATE_ARTIFACTS="$ROOT/.codex/skills/_shared/validate-artifacts.py"
 
 if [[ ! -x "$RUN_GATES" ]]; then
   echo "shared-script-not-executable:$RUN_GATES" >> "$OUT_DIR/leaks.txt"
@@ -288,6 +320,27 @@ fi
 
 if [[ ! -x "$WRITE_RESULT" ]]; then
   echo "shared-script-not-executable:$WRITE_RESULT" >> "$OUT_DIR/leaks.txt"
+  mark_check_failed "shared-script-selftests"
+  FAILS=$((FAILS + 1))
+  LEAKS=$((LEAKS + 1))
+fi
+
+if [[ ! -x "$COLLECT_DIFF" ]]; then
+  echo "shared-script-not-executable:$COLLECT_DIFF" >> "$OUT_DIR/leaks.txt"
+  mark_check_failed "shared-script-selftests"
+  FAILS=$((FAILS + 1))
+  LEAKS=$((LEAKS + 1))
+fi
+
+if [[ ! -x "$COLLECT_PR" ]]; then
+  echo "shared-script-not-executable:$COLLECT_PR" >> "$OUT_DIR/leaks.txt"
+  mark_check_failed "shared-script-selftests"
+  FAILS=$((FAILS + 1))
+  LEAKS=$((LEAKS + 1))
+fi
+
+if [[ ! -x "$VALIDATE_ARTIFACTS" ]]; then
+  echo "shared-script-not-executable:$VALIDATE_ARTIFACTS" >> "$OUT_DIR/leaks.txt"
   mark_check_failed "shared-script-selftests"
   FAILS=$((FAILS + 1))
   LEAKS=$((LEAKS + 1))
@@ -326,6 +379,69 @@ if [[ -x "$WRITE_RESULT" ]]; then
     --artifact-path "$SELFTEST_DIR/result.json" >/dev/null
   if [[ ! -f "$SELFTEST_DIR/result.json" ]]; then
     echo "selftest-missing:result.json" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "shared-script-selftests"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+fi
+
+if [[ -x "$COLLECT_DIFF" ]]; then
+  (
+    cd "$ROOT"
+    "$COLLECT_DIFF" --scope working-tree --out "$SELFTEST_DIR/diff" >/dev/null
+  )
+  for expected in status.txt diff.patch files.txt diffstat.txt numstat.txt untracked.txt; do
+    if [[ ! -f "$SELFTEST_DIR/diff/$expected" ]]; then
+      echo "selftest-missing:collect-diff:$expected" >> "$OUT_DIR/leaks.txt"
+      mark_check_failed "shared-script-selftests"
+      FAILS=$((FAILS + 1))
+      LEAKS=$((LEAKS + 1))
+    fi
+  done
+fi
+
+if [[ -x "$COLLECT_PR" ]]; then
+  if ! bash -n "$COLLECT_PR"; then
+    echo "selftest-syntax:collect-pr" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "shared-script-selftests"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+fi
+
+if [[ -x "$VALIDATE_ARTIFACTS" && -x "$WRITE_RESULT" ]]; then
+  mkdir -p "$SELFTEST_DIR/validate"
+  cat >"$SELFTEST_DIR/validate/development-notes.md" <<'EOF'
+# Development Notes
+
+## Scope
+Selftest.
+
+## Acceptance Criteria
+Selftest.
+
+## Evidence
+Selftest.
+
+## Specialist Policy
+Selftest.
+
+## Gates
+Selftest.
+EOF
+  "$WRITE_RESULT" \
+    --out "$SELFTEST_DIR/validate/result.json" \
+    --status "pass" \
+    --checks-run "lint,format,types,tests,review" \
+    --checks-failed "" \
+    --critical "0" \
+    --high "0" \
+    --medium "0" \
+    --low "0" \
+    --confidence "0.95" \
+    --artifact-path "$SELFTEST_DIR/validate/result.json" >/dev/null
+  if ! "$VALIDATE_ARTIFACTS" --skill develop --out "$SELFTEST_DIR/validate" --result "$SELFTEST_DIR/validate/result.json"; then
+    echo "selftest-failed:validate-artifacts" >> "$OUT_DIR/leaks.txt"
     mark_check_failed "shared-script-selftests"
     FAILS=$((FAILS + 1))
     LEAKS=$((LEAKS + 1))
@@ -581,6 +697,8 @@ payload = {
     "checks_run": [
         "project-model-default",
         "home-model-default",
+        "review-model-policy",
+        "deprecated-model-policy",
         "skill-schema-all",
         "skill-registration-project",
         "skill-registration-home",

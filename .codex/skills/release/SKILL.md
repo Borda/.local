@@ -40,8 +40,9 @@ Run a SemVer-aware release readiness and communication loop. This skill prepares
 3. Collect release evidence.
 
    ```bash
-   git log --oneline "${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null)..HEAD}" >"$OUT_DIR/commits.txt" 2>/dev/null || true
-   git diff --stat "${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null)..HEAD}" >"$OUT_DIR/diffstat.txt" 2>/dev/null || true
+   RELEASE_RANGE="${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null)..HEAD}"
+   git log --oneline "$RELEASE_RANGE" >"$OUT_DIR/commits.txt" 2>/dev/null || true
+   .codex/skills/_shared/collect-diff.sh --scope commit --target "$RELEASE_RANGE" --out "$OUT_DIR/range" 2>/dev/null || true
    ```
 
    Write `$OUT_DIR/change-table.md` with change type, user impact, breaking status, docs need, and verification evidence.
@@ -57,16 +58,17 @@ Run a SemVer-aware release readiness and communication loop. This skill prepares
    - Reverted changes are not advertised as live features.
    - Security/dependency changes are called out with source evidence.
 
+   Write `$OUT_DIR/release-readiness.md` with:
+
+   - `SemVer`
+   - `Migration`
+   - `Checks`
+   - `Blockers`
+
 5. Run required checks from `../_shared/quality-gates.md`.
 
    ```bash
-   .codex/skills/_shared/run-gates.sh \
-       --out "$OUT_DIR" \
-       --lint "${LINT_CMD:-uv run --no-sync ruff check .}" \
-       --format "${FORMAT_CMD:-uv run --no-sync ruff format --check .}" \
-       --types "${TYPES_CMD:-uv run --no-sync mypy src/}" \
-       --tests "${TESTS_CMD:-uv run --no-sync pytest -q}" \
-       --review "${REVIEW_CMD:-git diff --check}"
+   .codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
    ```
 
 6. Classify blockers and warnings.
@@ -76,7 +78,26 @@ Run a SemVer-aware release readiness and communication loop. This skill prepares
    - `medium`: incomplete docs, missing contributor notes, uncertain compatibility.
    - `low`: wording, formatting, or optional artifact polish.
 
-7. Decide gate result and write `.reports/codex/release/<timestamp>/result.json`.
+7. Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/release/<timestamp>/result.json`.
+
+   ```bash
+   .codex/skills/_shared/write-result.sh \
+       --out "$OUT_DIR/result.candidate.json" \
+       --status "$STATUS" \
+       --checks-run "lint,format,types,tests,review" \
+       --checks-failed "$CHECKS_FAILED" \
+       --critical "$CRITICAL" \
+       --high "$HIGH" \
+       --medium "$MEDIUM" \
+       --low "$LOW" \
+       --confidence "$CONFIDENCE" \
+       --artifact-path "$OUT_DIR/result.json"
+   python3 .codex/skills/_shared/validate-artifacts.py \
+       --skill release \
+       --out "$OUT_DIR" \
+       --result "$OUT_DIR/result.candidate.json"
+   mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
+   ```
 
 ## Fail-Fast Rules
 
@@ -85,17 +106,19 @@ Run a SemVer-aware release readiness and communication loop. This skill prepares
 3. Breaking change without migration decision => fail.
 4. Release blocker presented as warning => fail.
 5. Publish/tag/upload action attempted by this skill => fail.
-6. Result artifact missing => fail.
+6. Missing `release-readiness.md` SemVer, Migration, Checks, or Blockers evidence => fail.
+7. Result artifact validator failure => fail.
+8. Result artifact missing => fail.
 
 ## Quality Gates
 
-All five shared gates are required for release readiness unless the project has no executable package; any skipped executable check must be recorded as a gap.
+All five shared gates and the shared artifact validator are required for release readiness unless the project has no executable package; any skipped executable check must be recorded as a gap.
 
 ## Calibration Hooks
 
 Update calibration when SemVer, deprecation, changelog, or release-blocker policy changes:
 
-- behavioral cases: missing migration, wrong SemVer, unreleased API removal
+- behavioral cases: missing migration, wrong SemVer, unreleased API removal, artifact validator bypass
 - benchmark patterns: `release`
 
 ## Output Contract

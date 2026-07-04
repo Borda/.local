@@ -21,10 +21,13 @@ Each skill run must write:
 - `confidence`: numeric `0.0` to `1.0`
 - `artifact_path`: absolute or repo-relative path to result artifact
 
+Each `run-gates.sh` invocation must also write `gates.json` with one entry per check containing `id`, `status`, `exit_code`, `duration_seconds`, `command_path`, `stdout`, and `stderr`.
+
 Optional but recommended:
 
 - `recommendations`: list of concrete next improvements
 - `follow_up`: list of prioritized next actions
+- `metadata`: skill-specific JSON object for machine-readable evidence that should not be hidden in prose notes
 
 ## Fail rules
 
@@ -60,6 +63,9 @@ Configured agents require:
 
 - Use `.codex/skills/_shared/run-gates.sh` to execute the five checks consistently.
 - Use `.codex/skills/_shared/write-result.sh` to write canonical JSON result payloads.
+- Use `.codex/skills/_shared/collect-diff.sh` to collect scope-aware git diff artifacts consistently.
+- Use `.codex/skills/_shared/collect-pr.sh` to collect PR diff, metadata, comments, reviews, review threads, and unresolved review threads consistently.
+- Use `.codex/skills/_shared/validate-artifacts.py` to validate common report, ledger, gate-log, and result JSON artifacts.
 - Use `.codex/skills/_shared/severity-map.md` to map findings to severity levels.
 
 ## Behavior-Change Guardrails
