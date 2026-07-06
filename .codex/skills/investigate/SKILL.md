@@ -1,17 +1,17 @@
 ---
 name: investigate
-description: Minimal codex-native investigation loop. Use for unknown failures and root-cause narrowing with measurable gates.
+description: Minimal codex-native investigation loop. Use for unknown failures, code debugging, and root-cause narrowing with measurable gates.
 ---
 
 # Investigate
 
-Run a diagnosis-first loop for unclear failures. This skill produces a root-cause claim with evidence, falsification checks, and rejected alternatives before any fix is attempted.
+Run a diagnosis-first loop for unclear failures, including code debugging from failing tests, tracebacks, regressions, and surprising runtime behavior. This skill produces a root-cause claim with evidence, falsification checks, and rejected alternatives before any fix is attempted. Use `investigate` for debugging until the root cause is established; then hand off to `develop` or `resolve` for the fix.
 
 ## Input Schema
 
 ```json
 {
-  "symptom": "required failing command, traceback, CI failure, flaky behavior, or tool anomaly",
+  "symptom": "required failing command, traceback, runtime bug, CI failure, flaky behavior, or tool anomaly",
   "scope": "optional path/module/tool/CI run",
   "pace": "fast|full",
   "done_when": "one root cause is confirmed or the remaining uncertainty is explicit"
@@ -20,99 +20,99 @@ Run a diagnosis-first loop for unclear failures. This skill produces a root-caus
 
 ## Workflow
 
-1. Create run directory.
+### 01: Create run directory
 
-   ```bash
-   TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-   OUT_DIR=".reports/codex/investigate/$TS"
-   mkdir -p "$OUT_DIR"
-   ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/investigate/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-2. Capture symptom and reproduction context.
+### 02: Capture symptom and reproduction context
 
-   Write `$OUT_DIR/symptom.md` with:
+Write `$OUT_DIR/symptom.md` with:
 
-   - failing command or observed behavior
-   - expected behavior
-   - local vs CI vs external context
-   - first known bad time or commit, if known
-   - whether the failure is deterministic, flaky, or unknown
+- failing command or observed behavior
+- expected behavior
+- local vs CI vs external context
+- first known bad time or commit, if known
+- whether the failure is deterministic, flaky, or unknown
 
-3. Gather signals before forming hypotheses.
+### 03: Gather signals before forming hypotheses
 
-   ```bash
-   .codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
-   git log --oneline -10 >"$OUT_DIR/recent-commits.txt" 2>/dev/null || true
-   python --version >"$OUT_DIR/python-version.txt" 2>&1 || true
-   ```
+```bash
+.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
+git log --oneline -10 >"$OUT_DIR/recent-commits.txt" 2>/dev/null || true
+python --version >"$OUT_DIR/python-version.txt" 2>&1 || true
+```
 
-   Add tool-specific logs, CI excerpts, traceback snippets, config files, and changed source files as needed. Never treat absence of evidence as evidence of absence.
+Add tool-specific logs, CI excerpts, traceback snippets, config files, and changed source files as needed. Never treat absence of evidence as evidence of absence.
 
-4. Rank hypotheses in `$OUT_DIR/hypotheses.md`.
+### 04: Rank hypotheses in `$OUT_DIR/hypotheses.md`
 
-   ```markdown
-   | Rank | Hypothesis | Supporting evidence | Falsification check | Status |
-   | --- | --- | --- | --- | --- |
-   ```
+```markdown
+| Rank | Hypothesis | Supporting evidence | Falsification check | Status |
+| --- | --- | --- | --- | --- |
+```
 
-   Include at least three plausible hypotheses unless the root cause is directly proven by a failing command and code/log evidence.
+Include at least three plausible hypotheses unless the root cause is directly proven by a failing command and code/log evidence.
 
-5. Probe the top hypotheses.
+### 05: Probe the top hypotheses
 
-   Use targeted probes that can confirm, rule out, or narrow one hypothesis at a time.
+Use targeted probes that can confirm, rule out, or narrow one hypothesis at a time.
 
-   Each probe must have a clear outcome:
+Each probe must have a clear outcome:
 
-   - `confirmed`
-   - `ruled_out`
-   - `inconclusive`
+- `confirmed`
+- `ruled_out`
+- `inconclusive`
 
-   Persist probe commands and outputs under `$OUT_DIR/probes/` or inline in `$OUT_DIR/probes.md`.
+Persist probe commands and outputs under `$OUT_DIR/probes/` or inline in `$OUT_DIR/probes.md`.
 
-6. Run the anti-rationalization gate.
+### 06: Run the anti-rationalization gate
 
-   A root-cause claim requires:
+A root-cause claim requires:
 
-   - supporting evidence from logs/code/commands
-   - one falsification check
-   - at least one rejected alternative
-   - explicit confidence
+- supporting evidence from logs/code/commands
+- one falsification check
+- at least one rejected alternative
+- explicit confidence
 
-   If confidence is low, continue probing instead of proposing a fix.
+If confidence is low, continue probing instead of proposing a fix.
 
-   Write `$OUT_DIR/root-cause.md` with:
+Write `$OUT_DIR/root-cause.md` with:
 
-   - `Evidence`
-   - `Falsification`
-   - `Rejected Alternatives`
-   - `Confidence`
+- `Evidence`
+- `Falsification`
+- `Rejected Alternatives`
+- `Confidence`
 
-7. Run shared quality gates or targeted checks relevant to the failure.
+### 07: Run shared quality gates or targeted checks relevant to the failure
 
-   ```bash
-   .codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-   ```
+```bash
+.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
+```
 
-8. Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`.
+### 08: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`
 
-   ```bash
-   .codex/skills/_shared/write-result.sh \
-       --out "$OUT_DIR/result.candidate.json" \
-       --status "$STATUS" \
-       --checks-run "lint,format,types,tests,review" \
-       --checks-failed "$CHECKS_FAILED" \
-       --critical "$CRITICAL" \
-       --high "$HIGH" \
-       --medium "$MEDIUM" \
-       --low "$LOW" \
-       --confidence "$CONFIDENCE" \
-       --artifact-path "$OUT_DIR/result.json"
-   python3 .codex/skills/_shared/validate-artifacts.py \
-       --skill investigate \
-       --out "$OUT_DIR" \
-       --result "$OUT_DIR/result.candidate.json"
-   mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-   ```
+```bash
+.codex/skills/_shared/write-result.sh \
+    --out "$OUT_DIR/result.candidate.json" \
+    --status "$STATUS" \
+    --checks-run "lint,format,types,tests,review" \
+    --checks-failed "$CHECKS_FAILED" \
+    --critical "$CRITICAL" \
+    --high "$HIGH" \
+    --medium "$MEDIUM" \
+    --low "$LOW" \
+    --confidence "$CONFIDENCE" \
+    --artifact-path "$OUT_DIR/result.json"
+python3 .codex/skills/_shared/validate-artifacts.py \
+    --skill investigate \
+    --out "$OUT_DIR" \
+    --result "$OUT_DIR/result.candidate.json"
+mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
+```
 
 ## Fail-Fast Rules
 

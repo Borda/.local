@@ -18,6 +18,7 @@ Run a dry-run-first project/home Codex configuration sync loop. This skill repor
     "agents",
     "config",
     "calibration",
+    "docs",
     "shared"
   ],
   "done_when": "drift is reported and approved sync actions are applied safely"
@@ -26,62 +27,64 @@ Run a dry-run-first project/home Codex configuration sync loop. This skill repor
 
 ## Workflow
 
-1. Create run directory.
+### 01: Create run directory
 
-   ```bash
-   TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-   OUT_DIR=".reports/codex/sync/$TS"
-   mkdir -p "$OUT_DIR/backup"
-   ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/sync/$TS"
+mkdir -p "$OUT_DIR/backup"
+```
 
-2. Compare project and home targets.
+### 02: Compare project and home targets
 
-   ```bash
-   find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/project-files.txt"
-   find "$HOME/.codex" -maxdepth 4 -type f | sort >"$OUT_DIR/home-files.txt" 2>/dev/null || true
-   ```
+```bash
+find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/project-files.txt"
+find "$HOME/.codex" -maxdepth 4 -type f | sort >"$OUT_DIR/home-files.txt" 2>/dev/null || true
+```
 
-   Write `$OUT_DIR/drift.md` with:
+Write `$OUT_DIR/drift.md` with:
 
-   - identical files
-   - project-only files
-   - home-only files
-   - changed files with hashes
-   - recommended direction per file
+- identical files
+- project-only files
+- home-only files
+- changed files with hashes
+- recommended direction per file
 
-3. Enforce dry-run default.
+### 03: Enforce dry-run default
 
-   `mode=check` never writes outside `.reports/codex/sync/<timestamp>/`.
+`mode=check` never writes outside `.reports/codex/sync/<timestamp>/`.
 
-4. For `mode=apply`, require explicit approval and allowlist.
+### 04: For `mode=apply`, require explicit approval and allowlist
 
-   Allowed targets:
+Allowed targets:
 
-   - `.codex/config.toml`
-   - `.codex/skills/**/SKILL.md`
-   - `.codex/skills/_shared/**`
-   - `.codex/agents/*.toml`
-   - `.codex/calibration/**`
+- `.codex/config.toml`
+- `.codex/AGENTS.md`
+- `.codex/README.md`
+- `.codex/skills/**/SKILL.md`
+- `.codex/skills/_shared/**`
+- `.codex/agents/*.toml`
+- `.codex/calibration/**`
 
-   Safety rules:
+Safety rules:
 
-   - back up each overwritten home file to `$OUT_DIR/backup/`
-   - never delete home-only files automatically
-   - never overwrite when both sides changed and no direction is explicit
-   - never sync secrets or local credentials
+- back up each overwritten home file to `$OUT_DIR/backup/`
+- never delete home-only files automatically
+- never overwrite when both sides changed and no direction is explicit
+- never sync secrets or local credentials
 
-5. Apply approved actions only.
+### 05: Apply approved actions only
 
-   Record every copy in `$OUT_DIR/actions.md` with source hash and destination hash.
+Record every copy in `$OUT_DIR/actions.md` with source hash and destination hash.
 
-6. Validate after sync.
+### 06: Validate after sync
 
-   ```bash
-   diff -qr .codex "$HOME/.codex" >"$OUT_DIR/post-sync-diff.txt" 2>&1 || true
-   git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
-   ```
+```bash
+diff -qr .codex "$HOME/.codex" >"$OUT_DIR/post-sync-diff.txt" 2>&1 || true
+git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
+```
 
-7. Decide gate result and write `.reports/codex/sync/<timestamp>/result.json`.
+### 07: Decide gate result and write `.reports/codex/sync/<timestamp>/result.json`
 
 ## Fail-Fast Rules
 

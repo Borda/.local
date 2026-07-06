@@ -22,81 +22,81 @@ Run a linear implementation loop with strict gates.
 
 ## Workflow (Exact Commands)
 
-01. Create run directory.
+### 01: Create run directory
 
-    ```bash
-    TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-    OUT_DIR=".reports/codex/develop/$TS"
-    mkdir -p "$OUT_DIR"
-    ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/develop/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-02. Record baseline diff and branch.
+### 02: Record baseline diff and branch
 
-    ```bash
-    git rev-parse --abbrev-ref HEAD >"$OUT_DIR/branch.txt"
-    .codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline"
-    ```
+```bash
+git rev-parse --abbrev-ref HEAD >"$OUT_DIR/branch.txt"
+.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline"
+```
 
-03. Route the change type and define ownership.
+### 03: Route the change type and define ownership
 
-    Modes:
+Modes:
 
-    - `feature`: define public behavior, acceptance checks, docs impact, and tests before implementation.
-    - `fix`: reproduce or cite the failing behavior before editing.
-    - `refactor`: preserve behavior with characterization tests or an equivalent safety net.
-    - `config`: inventory references and calibration/routing impact before editing.
-    - `spike`: read-only or disposable probe; do not present as completed implementation.
+- `feature`: define public behavior, acceptance checks, docs impact, and tests before implementation.
+- `fix`: reproduce or cite the failing behavior before editing.
+- `refactor`: preserve behavior with characterization tests or an equivalent safety net.
+- `config`: inventory references and calibration/routing impact before editing.
+- `spike`: read-only or disposable probe; do not present as completed implementation.
 
-    Define the narrowest reversible change, owned files, and acceptance criteria. If the task is 3+ steps or has design tradeoffs, update the plan before editing.
+Define the narrowest reversible change, owned files, and acceptance criteria. If the task is 3+ steps or has design tradeoffs, update the plan before editing.
 
-04. Run the anti-rationalization gate before editing.
+### 04: Run the anti-rationalization gate before editing
 
-    - Existing code and tests for the target surface have been read.
-    - Failure mode or new behavior is captured by a failing doctest, pytest, or explicit acceptance check.
-    - `feature` mode has a feature demo contract before production edits:
-      - simple public API: inline doctest or focused pytest that shows the intended call and result
-      - multi-step behavior: minimal example or pytest exercising the user-visible workflow end to end
-      - the demo must be automatically executable and must fail against current code for the intended missing behavior
-      - if the demo passes before implementation, stop and re-scope; do not silently proceed unless the user explicitly overrides the gate
-    - Review the demo contract for goal alignment, API shape, missing scenarios, and automatic verifiability before implementation.
-    - If the task starts from a symptom, failing test, failing CI, flaky behavior, regression, tool/environment error, or unexplained metric shift, run `investigate` first or document equivalent root-cause evidence before editing.
-    - Root-cause evidence includes the claim, supporting logs/code, a falsification check, and at least one rejected alternative. A workaround-only change is a temporary mitigation, not completion, unless explicitly requested by the user.
-    - Behavior-preserving refactors have characterization tests or an equivalent current-behavior safety net.
-    - The next edit is the smallest reversible step, not a speculative refactor.
+- Existing code and tests for the target surface have been read.
+- Failure mode or new behavior is captured by a failing doctest, pytest, or explicit acceptance check.
+- `feature` mode has a feature demo contract before production edits:
+  - simple public API: inline doctest or focused pytest that shows the intended call and result
+  - multi-step behavior: minimal example or pytest exercising the user-visible workflow end to end
+  - the demo must be automatically executable and must fail against current code for the intended missing behavior
+  - if the demo passes before implementation, stop and re-scope; do not silently proceed unless the user explicitly overrides the gate
+- Review the demo contract for goal alignment, API shape, missing scenarios, and automatic verifiability before implementation.
+- If the task starts from a symptom, failing test, failing CI, flaky behavior, regression, tool/environment error, or unexplained metric shift, run `investigate` first or document equivalent root-cause evidence before editing.
+- Root-cause evidence includes the claim, supporting logs/code, a falsification check, and at least one rejected alternative. A workaround-only change is a temporary mitigation, not completion, unless explicitly requested by the user.
+- Behavior-preserving refactors have characterization tests or an equivalent current-behavior safety net.
+- The next edit is the smallest reversible step, not a speculative refactor.
 
-05. Implement minimal change.
+### 05: Implement minimal change
 
-06. Apply specialist policy when the change crosses a domain boundary.
+### 06: Apply specialist policy when the change crosses a domain boundary
 
-    - public API or architecture: use or simulate `solution-architect` review before committing to the design.
-    - bug fix or test behavior: use or simulate `qa-specialist` review for the verification matrix.
-    - CI/tooling: use or simulate `cicd-steward` and `linting-expert` review.
-    - security-sensitive code: use or simulate read-only `security-auditor` review.
-    - ML/data/research behavior: use or simulate `data-steward`, `scientist`, or `squeezer` as appropriate.
+- public API or architecture: use or simulate `solution-architect` review before committing to the design.
+- bug fix or test behavior: use or simulate `qa-specialist` review for the verification matrix.
+- CI/tooling: use or simulate `cicd-steward` and `linting-expert` review.
+- security-sensitive code: use or simulate read-only `security-auditor` review.
+- ML/data/research behavior: use or simulate `data-steward`, `scientist`, or `squeezer` as appropriate.
 
-    If specialist fan-out is unavailable, record the in-main substitute in `$OUT_DIR/specialist-notes.md`.
+If specialist fan-out is unavailable, record the in-main substitute in `$OUT_DIR/specialist-notes.md`.
 
-07. Write `$OUT_DIR/development-notes.md` before running gates.
+### 07: Write `$OUT_DIR/development-notes.md` before running gates
 
-    Required sections:
+Required sections:
 
-    - `Scope`
-    - `Acceptance Criteria`
-    - `Evidence`
-    - `Specialist Policy`
-    - `Gates`
+- `Scope`
+- `Acceptance Criteria`
+- `Evidence`
+- `Specialist Policy`
+- `Gates`
 
-08. Run shared quality gates.
+### 08: Run shared quality gates
 
-    ```bash
-    .codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-    ```
+```bash
+.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
+```
 
-09. Review the changed files and the gate output before deciding pass/fail.
+### 09: Review the changed files and the gate output before deciding pass/fail
 
-10. Classify findings using `../_shared/severity-map.md`.
+### 10: Classify findings using `../_shared/severity-map.md`
 
-11. Write and validate the mandatory result artifact.
+### 11: Write and validate the mandatory result artifact
 
 ```bash
 .codex/skills/_shared/write-result.sh \

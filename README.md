@@ -84,7 +84,7 @@ OSS, develop, and research skills always use their plugin prefix (`/oss:review`,
 > ```bash
 > git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
 > npm install -g @openai/codex
-> cp -r Borda-AI-Rig/.codex/ ~/.codex/   # Codex agents and profiles
+> cp -r Borda-AI-Rig/.codex/ ~/.codex/   # Codex agents, skills, and config
 > ```
 
 → See [Token Savings (RTK)](#-token-savings-rtk) for RTK install details.
@@ -292,7 +292,7 @@ Mirrored skills are prompt-based — not slash commands:
 ```bash
 codex                                                        # interactive — auto-selects agents
 codex "use the qa-specialist to review src/api/auth.py"      # address agent by name
-codex --profile deep-review "full security audit of src/api/" # activate a profile
+codex "full security audit of src/api/"                      # ask for deeper review in plain language
 ```
 
 ```text
@@ -301,7 +301,7 @@ run investigate before fixing this failing pytest; do not suggest a workaround u
 run resolve for the current working tree and fix high-severity findings
 ```
 
-→ Deep reference — agents, profiles, adversarial review, mirrored skills, RTK integration: [`.codex/README.md`](.codex/README.md)
+→ Deep reference — agents, adversarial review, mirrored skills, RTK integration: [`.codex/README.md`](.codex/README.md)
 
 ## 🤝 Claude + Codex Integration
 
@@ -424,6 +424,9 @@ AI-Rig/
 │   ├── develop/            # Develop plugin: feature/fix/refactor/plan/debug
 │   ├── research/           # Research plugin: scientist, data-steward + topic/plan/judge/run/sweep
 │   └── codemap/            # codemap plugin: structural index, blast-radius scores, import graph
+├── .github/
+│   ├── codex-harness.sh    # offline Codex config harness for CI
+│   └── workflows/          # CI and docs workflows
 ├── .claude/                # Claude Code source of truth
 │   ├── README.md           # full reference: restore, skills, rules, hooks, architecture (real file)
 │   ├── CLAUDE.md           # workflow rules and core principles (symlink → plugins/foundry/)
@@ -436,7 +439,7 @@ AI-Rig/
 │   └── hooks/              # symlinks → plugins/foundry/hooks/
 ├── .mcp.json               # MCP server definitions
 ├── .codex/                 # OpenAI Codex CLI source of truth
-│   ├── README.md           # full reference: agents, profiles, Claude integration
+│   ├── README.md           # full reference: agents, skills, Claude integration
 │   ├── AGENTS.md           # global instructions and subagent spawn rules
 │   ├── config.toml         # multi-agent config (gpt-5.5 baseline)
 │   ├── agents/             # per-agent model and instruction overrides

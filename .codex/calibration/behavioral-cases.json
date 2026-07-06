@@ -324,6 +324,27 @@
     },
     {
       "expected_findings": [
+        "target-branch-refresh-missing",
+        "merge-prestage-missing",
+        "conflict-markers-used-as-primary-context",
+        "review-findings-applied-before-conflict-context"
+      ],
+      "id": "resolve-pr-merge-prestage",
+      "prompt": "Assess a PR resolve workflow that starts from a conflicted merge state and applies report findings before fetching the latest target branch, reading the clean PR implementation, and recording a merge conflict resolution strategy.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "git-gh-force-used-without-user-confirmation",
+        "overwrite-risk-not-explained",
+        "force-policy-artifact-missing"
+      ],
+      "id": "pr-checkout-force-policy",
+      "prompt": "Assess a PR review or resolve workflow where gh pr checkout fails, the agent retries with --force, and no user confirmation or overwrite-risk explanation is recorded.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
         "acceptance-evidence-missing",
         "doctest-failure-not-proven"
       ],

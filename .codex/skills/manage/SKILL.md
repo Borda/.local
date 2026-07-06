@@ -20,65 +20,65 @@ Run a guarded Codex configuration management loop for agents, skills, rules, and
 
 ## Workflow
 
-1. Create run directory.
+### 01: Create run directory
 
-   ```bash
-   TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-   OUT_DIR=".reports/codex/manage/$TS"
-   mkdir -p "$OUT_DIR"
-   ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/manage/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-2. Parse intent and target.
+### 02: Parse intent and target
 
-   Supported intents:
+Supported intents:
 
-   - `create`: scaffold a new skill/agent/rule/config entry.
-   - `update`: edit an existing target.
-   - `rename`: move target and update references.
-   - `delete`: remove target only after dependency scan.
-   - `add-permission` / `remove-permission`: modify permission policy with rationale.
+- `create`: scaffold a new skill/agent/rule/config entry.
+- `update`: edit an existing target.
+- `rename`: move target and update references.
+- `delete`: remove target only after dependency scan.
+- `add-permission` / `remove-permission`: modify permission policy with rationale.
 
-   Unknown intent => fail before editing.
+Unknown intent => fail before editing.
 
-3. Resolve owned files and blast radius.
+### 03: Resolve owned files and blast radius
 
-   ```bash
-   find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
-   rg -n "$TARGET" .codex AGENTS.md >"$OUT_DIR/references.txt" 2>/dev/null || true
-   ```
+```bash
+find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
+rg -n "$TARGET" .codex AGENTS.md >"$OUT_DIR/references.txt" 2>/dev/null || true
+```
 
-   Write `$OUT_DIR/ownership.md` with the exact files to edit and files intentionally not edited.
+Write `$OUT_DIR/ownership.md` with the exact files to edit and files intentionally not edited.
 
-4. Run safety gates before editing.
+### 04: Run safety gates before editing
 
-   Deletion safety is mandatory for delete and rename operations.
+Deletion safety is mandatory for delete and rename operations.
 
-   - Delete/rename requires no unresolved references or an explicit migration plan.
-   - Permission changes require reason, use case, and risk note.
-   - Public behavior changes require docs/routing/calibration consideration.
-   - Home sync is out of scope unless explicitly requested.
+- Delete/rename requires no unresolved references or an explicit migration plan.
+- Permission changes require reason, use case, and risk note.
+- Public behavior changes require docs/routing/calibration consideration.
+- Home sync is out of scope unless explicitly requested.
 
-5. Apply the smallest reversible edit.
+### 05: Apply the smallest reversible edit
 
-   Keep generated structure local to `.codex/` unless the user explicitly requests another root.
+Keep generated structure local to `.codex/` unless the user explicitly requests another root.
 
-6. Propagate references.
+### 06: Propagate references
 
-   Update relevant descriptions, mappings, routing text, and calibration notes in the same patch when behavior changes. If a reference is intentionally stale, list it in `$OUT_DIR/unresolved-references.md`.
+Update relevant descriptions, mappings, routing text, and calibration notes in the same patch when behavior changes. If a reference is intentionally stale, list it in `$OUT_DIR/unresolved-references.md`.
 
-7. Run shared quality gates.
+### 07: Run shared quality gates
 
-   ```bash
-   .codex/skills/_shared/run-gates.sh \
-       --out "$OUT_DIR" \
-       --lint "${LINT_CMD:-true}" \
-       --format "${FORMAT_CMD:-true}" \
-       --types "${TYPES_CMD:-true}" \
-       --tests "${TESTS_CMD:-true}" \
-       --review "${REVIEW_CMD:-git diff --check}"
-   ```
+```bash
+.codex/skills/_shared/run-gates.sh \
+    --out "$OUT_DIR" \
+    --lint "${LINT_CMD:-true}" \
+    --format "${FORMAT_CMD:-true}" \
+    --types "${TYPES_CMD:-true}" \
+    --tests "${TESTS_CMD:-true}" \
+    --review "${REVIEW_CMD:-git diff --check}"
+```
 
-8. Write mandatory result artifact.
+### 08: Write mandatory result artifact
 
 ## Fail-Fast Rules
 
@@ -107,6 +107,14 @@ Any behavior-changing management edit must update or explicitly review:
 - `.codex/calibration/benchmarks.json`
 - `.codex/calibration/behavioral-cases.json`
 - `.codex/skills/_shared/native-skill-contract.md`
+
+Commit-output management must also keep `.codex/skills/_shared/commit-response-template.md` aligned with the mandatory message shape:
+
+```text
+<type>(<scope>): <title>
+
+Co-authored-by: Codex <codex@openai.com>
+```
 
 ## Output Contract
 

@@ -32,14 +32,13 @@ For docs, dependencies, CI/CD, releases, security, and deprecations, prefer curr
 - When using parallel agents, treat their outputs as inputs to consolidation, not as interchangeable opinions. Reconcile conflicts explicitly.
 - If a conclusion depends on an assumption rather than a verified fact, mark it as a hypothesis in the summary or artifact.
 
-## Runtime Profiles
+## Runtime Effort Policy
 
-The default profile is optimized for everyday agentic coding work. Use profiles instead of editing the base config for common mode switches:
+Default reasoning effort is `high`. Per-agent effort is scoped to expected work:
 
-- `cautious`: stricter command approvals
-- `fast-edit`: lower-cost, lower-latency iteration for narrow coding tasks
-- `fresh-docs`: live web search for volatile documentation and tooling questions
-- `deep-review`: highest-effort review mode for broad or high-risk changes
+- `medium`: bounded support and static-analysis work (`doc-scribe`, `linting-expert`, `oss-shepherd`, `web-explorer`, `curator`)
+- `high`: implementation, verification, runtime, CI, data, and performance work (`sw-engineer`, `qa-specialist`, `squeezer`, `data-steward`, `cicd-steward`)
+- `xhigh`: adversarial, architecture, security, and research reasoning (`challenger`, `solution-architect`, `security-auditor`, `scientist`)
 
 ______________________________________________________________________
 
@@ -91,6 +90,10 @@ Mandatory coverage: `None`, empty inputs, boundaries, negatives, ML tensors (NaN
 - Route RTK-eligible shell commands through `rtk` proactively, for example `rtk git status --short` instead of `git status --short`.
 - Do not rely on PreToolUse hooks to rewrite commands in Codex. Codex currently treats hook denials as visible tool failures, so the hook is fail-open and command routing is an agent responsibility.
 - Keep destructive or state-changing commands under normal approval rules; never use RTK routing as a reason to bypass explicit user approval.
+- GitHub CLI (`gh`) is allowed for PR/issue read inspection and local PR checkout/update, such as `gh pr view`, `gh pr diff`, `gh pr checkout`, `gh issue view`, `gh repo view`, and read-only `gh api` queries. Never use `gh` for remote mutation: no PR comments, reviews, merges, issue edits/comments, release create/upload/delete, workflow dispatch/rerun, repo mutation, or `gh api` with POST/PUT/PATCH/DELETE or mutation payloads.
+- `git` CLI is allowed for local repository operations and read-only fetch needed to update a local PR branch, such as status, diff, log, show, fetch, add, commit, local branch creation/deletion/listing, switch/restore/reset/clean, and local merge/cherry-pick under normal approval rules. Never use `git` for remote mutation or remote state changes: no push, pull, clone, remote update, ls-remote, submodule remote update, upstream tracking changes, or remote configuration changes.
+- Never run `git` or `gh` with `--force`, `--force-with-lease`, or a command-specific forced update flag automatically. If a forced git/gh operation appears necessary, stop before running it, explain exactly why force is needed, what local or remote state it can overwrite, and ask the user for explicit confirmation.
+- Do not request escalation for forbidden remote/online mutations. If a task requires pushing, commenting, merging, publishing, dispatching CI, or otherwise changing a remote service, stop and tell the user it must be done by a human or an explicitly separate non-Codex workflow.
 
 ______________________________________________________________________
 
@@ -177,7 +180,7 @@ Parent agent responsibilities:
 - Release readiness: `oss-shepherd` + `cicd-steward` + `doc-scribe` + `qa-specialist`
 - Research-paper implementation: `scientist` + `solution-architect` + `sw-engineer` + `qa-specialist`
 - High-risk plan validation: `challenger` + the relevant domain specialist before implementation
-- PR review-to-resolution: `review` with `scope=pr` writes the report, then `resolve` with `mode=pr` re-collects online PR reviews, triages each comment, and fixes only valid findings.
+- PR review-to-resolution: `review` with `scope=pr` writes the report after collecting PR evidence, fetching the target branch, and checking out/updating the PR locally. Then `resolve` with `mode=pr` re-collects online PR reviews, fetches the latest target branch and PR branch, records clean PR/target implementation context plus merge-conflict risk before editing, triages each comment, and fixes only valid selected findings in local code.
 
 ### Model escalation policy
 
@@ -297,7 +300,7 @@ ______________________________________________________________________
 
 ## Commit Request Format
 
-When the user asks to commit (or asks for a commit summary), load and follow: `.codex/skills/_shared/commit-response-template.md`
+When the user asks to commit (or asks for a commit summary), load and follow `.codex/skills/_shared/commit-response-template.md`. Its commit message shape is mandatory.
 
 ______________________________________________________________________
 
@@ -353,4 +356,4 @@ Examples: `sw-engineer→qa-specialist-1735000000.patch` · `linting-expert→cl
 - Architecture changes that affect public APIs
 - Any data deletion or schema migration
 - Security-sensitive changes (auth, credentials, permissions)
-- Force-push or branch deletion
+- Force-push or remote branch deletion

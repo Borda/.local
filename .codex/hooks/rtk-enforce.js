@@ -9,8 +9,12 @@ if (spawnSync("which", ["rtk"]).status !== 0) {
 }
 
 const DENY_PATTERNS = [
-  /^git\s+(push|branch\s+-[Dd]|branch\s+--delete|reset\s+--hard|clean\s+-[fd]|checkout\s+--)\b/,
-  /^gh\s+(release\s+create|pr\s+merge|repo\s+delete)\b/,
+  /^git\s+(push|pull|clone|ls-remote|remote\s+update)\b/,
+  /^git\s+submodule\s+update\b.*(?:--remote|-remote)\b/,
+  /^git\s+branch\b.*(?:--set-upstream-to|-u)\b/,
+  /^git\s+remote\s+(?:add|set-url|remove|rename)\b/,
+  /^gh\s+(?:pr\s+(?:comment|review|merge|close|reopen|ready|lock|unlock|edit)|issue\s+(?:comment|edit|close|reopen|lock|unlock|transfer)|release\s+(?:create|upload|delete|edit)|workflow\s+run|run\s+rerun|repo\s+(?:delete|edit|rename)|secret\s+set|variable\s+set)\b/,
+  /^gh\s+api\b.*(?:-X\s+(?:POST|PUT|PATCH|DELETE)|--method\s+(?:POST|PUT|PATCH|DELETE)|--input|-f\s|--field\s|--raw-field\s)/,
   /^curl\s+(?:.*-X\s+(?:POST|PUT|PATCH|DELETE)|.*--(?:data|data-raw|upload-file))\b/,
 ];
 

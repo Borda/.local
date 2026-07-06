@@ -1,6 +1,9 @@
 # Agent handover artifacts (ephemeral patch files)
 .codex/handover/
 
+# Codex CI harness artifacts generated during local and CI runs
+.github/codex-harness-results/
+
 # Delegation log (local runtime data, not source)
 .codex/logs/
 .codex/reports/

@@ -1,7 +1,7 @@
 name                    = "curator"
 description             = "Configuration quality reviewer: detect duplication, drift, stale references, weak gates, and instruction hygiene issues."
 model                   = "gpt-5.4-mini"
-model_reasoning_effort  = "xhigh"
+model_reasoning_effort  = "medium"
 model_reasoning_summary = "detailed"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"

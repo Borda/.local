@@ -1,6 +1,6 @@
 ---
 name: review
-description: Tiered codex-native multi-axis review loop. Use for local diff review with mechanical scope gates, explicit specialist fan-out or labeled substitutes, measurable quality gates, and a JSON artifact.
+description: Tiered codex-native multi-axis review loop. Use for local diff review or GitHub PR review, including in-session skill invocations like "$review #123" where a bare number means PR number, with mechanical scope gates, explicit specialist fan-out or labeled substitutes, measurable quality gates, and a JSON artifact.
 ---
 
 # Review
@@ -11,7 +11,7 @@ Run a tiered review loop with strict output gates.
 
 ```json
 {
-  "scope": "working-tree|path|commit|pr",
+  "scope": "optional working-tree|path|commit|pr; infer pr for bare number, #number, or PR URL",
   "target": "optional path, commit ref, PR number, PR URL, or current branch PR",
   "done_when": "blocking issues are identified with gate decision"
 }
@@ -22,113 +22,144 @@ Run a tiered review loop with strict output gates.
 - `working-tree`: review unstaged/staged local changes.
 - `path`: review a specific file or directory diff.
 - `commit`: review a git diff revision spec, such as `COMMIT^!`, `BASE..HEAD`, or `BASE...HEAD`.
-- `pr`: review an open pull request using `gh pr view` and `gh pr diff`; `target` may be a PR number, URL, or omitted for the current branch.
+- `pr`: review an open pull request by collecting GitHub PR metadata/review evidence, fetching the target branch, updating a local checkout with `gh pr checkout`, and inspecting local files; `target` may be a PR number, URL, or omitted for the current branch.
 
-The skill is read-only except for `.reports/codex/review/<timestamp>/` artifacts. If the user asks to fix findings, switch to `resolve` after the review artifact exists.
+Input shorthand:
+
+- Canonical in-session invocation: `$review 123` or `$review #123` => `scope=pr`, `target=123`.
+- Natural-language aliases: `review 123`, `review #123`, and `review PR 123` => `scope=pr`, `target=123`.
+- `review <github-pr-url>` => `scope=pr`, `target=<github-pr-url>`.
+- If the user supplies a bare number, treat it as a GitHub PR number for this skill. Do not ask for `scope=pr`.
+
+The skill never writes to the remote service. PR scope may update the local checkout to the PR head before inspection; otherwise it is read-only except for `.reports/codex/review/<timestamp>/` artifacts. Do not pass `--force` to `git` or `gh`; if a forced checkout appears necessary to align the local branch with the PR head, stop, explain the overwrite risk, and ask the user before retrying. If the user asks to fix findings, switch to `resolve` after the review artifact exists.
 
 ## Workflow (Exact Commands)
 
-01. Create run directory.
+### 01: Create run directory
 
-    ```bash
-    TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-    OUT_DIR=".reports/codex/review/$TS"
-    mkdir -p "$OUT_DIR"
-    ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/review/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-02. T0 mechanical scope gate: resolve scope, collect diff, and classify review risk before any model-level judgment.
+### 02: T0 mechanical scope gate: resolve scope, collect diff, and classify review risk before any model-level judgment
 
-    For local scopes:
+For local scopes:
 
-    ```bash
-    .codex/skills/_shared/collect-diff.sh \
-        --scope "$SCOPE" \
-        --target "${TARGET:-}" \
-        --out "$OUT_DIR"
-    ```
+```bash
+.codex/skills/_shared/collect-diff.sh \
+    --scope "$SCOPE" \
+    --target "${TARGET:-}" \
+    --out "$OUT_DIR"
+```
 
-    For PR scope:
+For PR scope:
 
-    ```bash
-    .codex/skills/_shared/collect-pr.sh \
-        --target "${TARGET:-}" \
-        --out "$OUT_DIR"
-    ```
+```bash
+.codex/skills/_shared/collect-pr.sh \
+    --target "${TARGET:-}" \
+    --out "$OUT_DIR" \
+    --checkout
+```
 
-    Classify the diff and write the decision to `"$OUT_DIR/scope.txt"`:
+In PR scope, GitHub data is evidence only: `gh pr view`, `gh pr diff`, and review-thread queries provide metadata, patch, and comments. Source inspection must use the local checkout recorded in `"$OUT_DIR/local-checkout.json"` after target-branch refresh evidence is written. Do not reconstruct changed source files with `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots. If local checkout fails or `local-checkout.json` does not prove `head_matches_pr=true`, fail the review instead of reviewing remote raw files. Do not retry with `--force` unless the user explicitly confirms after being told why force is needed and what it may overwrite.
 
-    - `TRIVIAL`: no public API/config/security/ML behavior touched, fewer than 3 files, fewer than 50 changed lines.
-    - `LOCAL`: one subsystem or 3-7 files, behavior is understandable from local context.
-    - `BROAD`: 8+ files, cross-subsystem changes, dependency/config changes, or unclear ownership.
-    - `HIGH_RISK`: public API, release, security, auth, credentials, deserialization, data pipeline, ML tensor math, CI/CD, or migration behavior.
+Classify the diff and write the decision to `"$OUT_DIR/scope.txt"`:
 
-    If `scope=pr`, include `pr.json`, `comments.json`, `reviews.json`, `review-threads.json`, `unresolved-review-threads.json`, and `online-review-summary.json` in the review evidence. Treat unresolved online review threads and comments as candidate findings until triaged as valid, duplicate, stale, out-of-scope, or already fixed.
+- `TRIVIAL`: no public API/config/security/ML behavior touched, fewer than 3 files, fewer than 50 changed lines.
+- `LOCAL`: one subsystem or 3-7 files, behavior is understandable from local context.
+- `BROAD`: 8+ files, cross-subsystem changes, dependency/config changes, or unclear ownership.
+- `HIGH_RISK`: public API, release, security, auth, credentials, deserialization, data pipeline, ML tensor math, CI/CD, or migration behavior.
 
-    If `files.txt` and `untracked.txt` are both empty and there is no explicit target, fail before running gates. If `scope=pr` and `pr-error.txt` exists, fail with the captured reason.
+If `scope=pr`, include `pr.json`, `pr-routing.json`, `target-branch.json`, `local-checkout.json`, comments, reviews, review threads, unresolved review threads, and `online-review-summary.json` in the review evidence. `pr-routing.json` and `local-checkout.json` must include `force_policy` proving no forced checkout was run automatically. Treat unresolved online review threads and comments as candidate findings until triaged as valid, duplicate, stale, out-of-scope, or already fixed.
 
-03. T1 primary diff review. Read the changed files end-to-end and identify findings before considering any fix or gate outcome.
+If `files.txt` and `untracked.txt` are both empty and there is no explicit target, fail before running gates. If `scope=pr` and `pr-error.txt` exists, fail with the captured reason.
 
-    Review across these axes in order:
+### 03: T1 primary diff review. Read the changed files end-to-end from the local working tree or checked-out PR branch and identify findings before considering any fix or gate outcome
 
-    - API and behavior regressions.
-    - Test coverage and edge-case gaps.
-    - Error handling and logging.
-    - Security, data, ML, CI/CD, or release risks signaled by T0.
-    - Documentation or migration gaps caused by behavior/API changes.
+Review across these axes in order:
 
-04. T2 multi-axis specialist fan-out. For `LOCAL`, `BROAD`, and `HIGH_RISK` diffs, get specialist review before final severity classification.
+- API and behavior regressions.
+- Test coverage and edge-case gaps.
+- Error handling and logging.
+- Security, data, ML, CI/CD, or release risks signaled by T0.
+- Documentation or migration gaps caused by behavior/API changes.
 
-    Create `"$OUT_DIR/specialists"` and write one markdown file per spawned or substituted pass. Also write `"$OUT_DIR/specialist-manifest.json"` with a `passes` list containing every required and conditional role. Each entry must include role, axis, trigger rationale, mode (`spawned`, `substituted`, or `not_triggered`), output path for spawned/substituted passes, confidence, and blocking finding count. Do not continue to severity classification until required specialist outputs and the manifest exist.
+### 04: T2 multi-axis specialist fan-out. For `LOCAL`, `BROAD`, and `HIGH_RISK` diffs, get specialist review before final severity classification
 
-    Required specialist passes:
+Create `"$OUT_DIR/specialists"` and write one markdown file per spawned or substituted pass. Also write `"$OUT_DIR/specialist-manifest.json"` with a `passes` list containing every required and conditional role. Each entry must include role, axis, trigger rationale, mode (`spawned`, `substituted`, or `not_triggered`), output path for spawned/substituted passes, confidence, and blocking finding count. Do not continue to severity classification until required specialist outputs and the manifest exist.
 
-    - `qa-specialist`: test adequacy, edge cases, regression coverage, tensor/data boundaries when relevant.
-    - `challenger`: adversarial stress test for non-trivial findings, assumptions, migration/API risks, and "no findings" conclusions on `BROAD` or `HIGH_RISK` diffs.
+Required specialist passes:
 
-    Conditional specialist passes:
+- `qa-specialist`: test adequacy, edge cases, regression coverage, tensor/data boundaries when relevant.
+- `challenger`: adversarial stress test for non-trivial findings, assumptions, migration/API risks, and "no findings" conclusions on `BROAD` or `HIGH_RISK` diffs.
 
-    - `solution-architect`: public API, architecture, migration, or cross-subsystem coupling.
-    - `security-auditor`: auth, credentials, deserialization, external data, dependency/supply-chain, or CI permissions.
-    - `data-steward`: datasets, splits, augmentation, leakage, DataLoader reproducibility.
-    - `cicd-steward`: GitHub Actions, release automation, publishing, flaky CI.
-    - `linting-expert`: ruff, mypy, pre-commit configuration, suppression hygiene, or type/lint rollout.
-    - `doc-scribe`: public docs, changelog, migration text, examples, or public docstrings.
-    - `oss-shepherd`: SemVer, deprecation policy, release readiness, contributor-facing process.
-    - `squeezer`: performance, memory, throughput, profiling claims, training/inference bottlenecks.
-    - `scientist`: research-paper methods, benchmark claims, experiment design, metric validity.
-    - `web-explorer`: current external docs, changelogs, migration guides, or volatile ecosystem behavior.
+Conditional specialist passes:
 
-    Use native subagents when runtime policy permits, especially when the user explicitly asks for multi-agent or specialist review. Do not claim specialist fan-out occurred unless separate specialist output exists. If runtime policy, model support, or tool availability prevents spawning, perform a clearly labeled in-main substitute pass for each required role, write it to that role's specialist file, and mark `fanout_substituted=true` in the review notes and result metadata. Substituted passes lower confidence; they do not satisfy independence for critical findings.
+- `solution-architect`: public API, architecture, migration, or cross-subsystem coupling.
+- `security-auditor`: auth, credentials, deserialization, external data, dependency/supply-chain, or CI permissions.
+- `data-steward`: datasets, splits, augmentation, leakage, DataLoader reproducibility.
+- `cicd-steward`: GitHub Actions, release automation, publishing, flaky CI.
+- `linting-expert`: ruff, mypy, pre-commit configuration, suppression hygiene, or type/lint rollout.
+- `doc-scribe`: public docs, changelog, migration text, examples, or public docstrings.
+- `oss-shepherd`: SemVer, deprecation policy, release readiness, contributor-facing process.
+- `squeezer`: performance, memory, throughput, profiling claims, training/inference bottlenecks.
+- `scientist`: research-paper methods, benchmark claims, experiment design, metric validity.
+- `web-explorer`: current external docs, changelogs, migration guides, or volatile ecosystem behavior.
 
-    `BROAD` and `HIGH_RISK` reviews require real independent `qa-specialist` and `challenger` outputs to return `status=pass`, especially for "no blocking findings" conclusions. If required independent outputs are unavailable, return `status=fail` or `status=timeout`, set `independence_satisfied=false`, and add `needs-independent-review` to follow-up. `LOCAL` reviews may pass with substituted required passes only when the substitutions are explicit, all triggered conditional axes are covered, and confidence is reduced.
+Use native subagents when runtime policy permits, especially when the user explicitly asks for multi-agent or specialist review. Do not claim specialist fan-out occurred unless separate specialist output exists. If runtime policy, model support, or tool availability prevents spawning, perform a clearly labeled in-main substitute pass for each required role, write it to that role's specialist file, and mark `fanout_substituted=true` in the review notes and result metadata. Substituted passes lower confidence; they do not satisfy independence for critical findings.
 
-05. Cross-check every blocking finding against surrounding context and existing project patterns before reporting it. Critical/blocking findings require an independent second pass when feasible; if unconfirmed, downgrade or mark the evidence gap explicitly.
+`BROAD` and `HIGH_RISK` reviews require real independent `qa-specialist` and `challenger` outputs to return `status=pass`, especially for "no blocking findings" conclusions. If required independent outputs are unavailable, return `status=fail` or `status=timeout`, set `independence_satisfied=false`, and add `needs-independent-review` to follow-up. `LOCAL` reviews may pass with substituted required passes only when the substitutions are explicit, all triggered conditional axes are covered, and confidence is reduced.
 
-06. Write `$OUT_DIR/review-notes.md`.
+### 05: Cross-check every blocking finding against surrounding context and existing project patterns before reporting it. Critical/blocking findings require an independent second pass when feasible; if unconfirmed, downgrade or mark the evidence gap explicitly
 
-    Required sections:
+### 06: Write `$OUT_DIR/review-notes.md`
 
-    - `Scope`
-    - `Risk Tier`
-    - `Files Inspected`
-    - `Specialist Passes`
-    - `Specialist Manifest`
-    - `Findings`
-    - `No-Finding Residual Risks`
-    - `Confidence Gaps`
-    - `Online Review Triage` for `scope=pr`
+Required sections:
 
-07. Run shared quality gates.
+- `Decision Summary`
+- `Scope`
+- `Risk Tier`
+- `Files Inspected`
+- `Specialist Passes`
+- `Specialist Manifest`
+- `Findings`
+- `No-Finding Residual Risks`
+- `Confidence Gaps`
+- `Online Review Triage` for `scope=pr`
 
-    ```bash
-    .codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-    ```
+### 07: Run shared quality gates
 
-08. Classify findings using `../_shared/severity-map.md`.
+```bash
+.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
+```
 
-09. If no findings are present, state that explicitly and note residual risks from T0 classification and any substituted specialist passes.
+### 08: Classify findings using `../_shared/severity-map.md`
 
-10. Write and validate the mandatory result artifact.
+### 09: Compute the structured review decision and update `Decision Summary`
+
+Use exactly one recommendation:
+
+- `accept-as-is`: no findings, required gates passed or were not applicable, and residual risks are explicitly low.
+- `minor-changes`: only non-blocking low/medium findings or polish items remain.
+- `needs-more-work`: high findings, missing tests, missing evidence, failed relevant gates, or unresolved review-risk gaps remain.
+- `reject`: critical findings, unsafe behavior, security/data-loss risk, or a change that should not merge in its current form.
+- `not-aligned`: the change does not address the requested issue, PR intent, migration contract, or project direction even if the diff is mechanically sound.
+
+`Decision Summary` must include:
+
+- `Recommendation`: one of the exact values above
+- `Summary`: 1-3 sentences covering the review outcome
+- `Rationale`: why this recommendation follows from findings, gates, and scope
+- `Blocking findings`: critical/high items or `none`
+- `Minor changes`: medium/low items or `none`
+- `Required next work`: work needed before merge, or `none`
+- `Confidence`: score plus key gaps
+
+### 10: If no findings are present, state that explicitly and note residual risks from T0 classification and any substituted specialist passes
+
+### 11: Write and validate the mandatory result artifact
 
 ```bash
 .codex/skills/_shared/write-result.sh \
@@ -150,7 +181,7 @@ python3 .codex/skills/review/validate_artifacts.py \
 mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 ```
 
-`REVIEW_METADATA.specialist_passes` must mirror every entry from `specialist-manifest.json`. `REVIEW_METADATA.scope` must match the normalized input scope.
+`REVIEW_METADATA.specialist_passes` must mirror every entry from `specialist-manifest.json`. `REVIEW_METADATA.scope` must match the normalized input scope. `REVIEW_METADATA.review_decision` must mirror the `Decision Summary` recommendation, summary, and rationale.
 
 ## Fail-fast Rules
 
@@ -166,14 +197,17 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 10. `BROAD` or `HIGH_RISK` review that returns `status=pass` with substituted required specialists => fail.
 11. Result artifact validator failure => fail.
 12. Missing `review-notes.md` sections => fail.
-13. PR scope without `pr.json`, `diff.patch`, `comments.json`, `reviews.json`, `review-threads.json`, `unresolved-review-threads.json`, and `online-review-summary.json` => fail.
+13. PR scope without `pr.json`, `pr-routing.json`, `target-branch.json`, `local-checkout.json`, `diff.patch`, `comments.json`, `reviews.json`, `review-threads.json`, `unresolved-review-threads.json`, and `online-review-summary.json` => fail.
 14. PR scope that ignores unresolved online reviews without triage => fail.
+15. Missing structured review decision summary or invalid recommendation value => fail.
+16. PR scope using `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots for source inspection instead of the local checkout => fail.
+17. PR scope running `git` or `gh` with `--force` before explicit user confirmation and overwrite-risk explanation => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: T0 files, risk tier, changed-file inspection, specialist manifest, specialist notes, online review triage for PR scope, severity map, and `git diff --check`.
+- `review`: T0 files, risk tier, local changed-file inspection, PR target-branch refresh and checkout evidence when relevant, specialist manifest, specialist notes, structured decision summary, online review triage for PR scope, severity map, and `git diff --check`.
 
 Conditional checks:
 
@@ -182,14 +216,17 @@ Conditional checks:
 
 ## Calibration Hooks
 
-Update calibration when review routing, severity discipline, or output shape changes:
+Update calibration when review routing, severity discipline, decision vocabulary, or output shape changes:
 
 - benchmark patterns: `review`
 - behavioral cases: false blocker, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage
+- PR routing cases: target-branch refresh required, local checkout required, stale local PR branch, and raw-file snapshot rejection
 
 ## Output Contract
 
 Use shared gate schema from `../_shared/quality-gates.md`.
+
+The final chat output must start with a `Review Decision Summary` before detailed findings. Include recommendation, summary, blockers, minor changes, required next work, confidence, and artifact path. The recommendation must be one of `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
 Minimum artifact payload shape:
 
@@ -215,6 +252,11 @@ Minimum artifact payload shape:
   "metadata": {
     "scope": "working-tree|path|commit|pr",
     "risk_tier": "TRIVIAL|LOCAL|BROAD|HIGH_RISK",
+    "review_decision": {
+      "recommendation": "accept-as-is|minor-changes|needs-more-work|reject|not-aligned",
+      "summary": "1-3 sentence review outcome",
+      "rationale": "why the recommendation follows from findings, gates, and scope"
+    },
     "fanout_substituted": false,
     "independence_satisfied": true,
     "specialist_manifest": ".reports/codex/review/<timestamp>/specialist-manifest.json",

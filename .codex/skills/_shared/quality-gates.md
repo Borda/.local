@@ -64,7 +64,8 @@ Configured agents require:
 - Use `.codex/skills/_shared/run-gates.sh` to execute the five checks consistently.
 - Use `.codex/skills/_shared/write-result.sh` to write canonical JSON result payloads.
 - Use `.codex/skills/_shared/collect-diff.sh` to collect scope-aware git diff artifacts consistently.
-- Use `.codex/skills/_shared/collect-pr.sh` to collect PR diff, metadata, comments, reviews, review threads, and unresolved review threads consistently.
+- Use `.codex/skills/_shared/collect-pr.sh --checkout` to collect PR diff, metadata, comments, reviews, review threads, unresolved review threads, target-branch refresh evidence, PR branch refresh evidence where possible, and local PR checkout evidence consistently.
+- PR checkout/update artifacts must not record `git` or `gh` commands with `--force`; a forced operation requires a stop-and-ask user confirmation with overwrite-risk rationale before it is run.
 - Use `.codex/skills/_shared/validate-artifacts.py` to validate common report, ledger, gate-log, and result JSON artifacts.
 - Use `.codex/skills/_shared/severity-map.md` to map findings to severity levels.
 

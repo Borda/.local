@@ -3,7 +3,7 @@
 name                    = "sw-engineer"
 description             = "Core ML/backend implementation: SOLID, type-safety, doctest-driven, reproducible ML configs. Python 3.10+."
 model                   = "gpt-5.5"
-model_reasoning_effort  = "xhigh"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "auto"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"

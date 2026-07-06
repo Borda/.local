@@ -3,7 +3,7 @@
 name                    = "oss-shepherd"
 description             = "OSS lifecycle: issue triage, PR review, SemVer decisions, pyDeprecate, release checklist, trusted publishing."
 model                   = "gpt-5.4-mini"
-model_reasoning_effort  = "xhigh"
+model_reasoning_effort  = "medium"
 model_reasoning_summary = "auto"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"

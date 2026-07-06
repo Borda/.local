@@ -2,15 +2,30 @@
 
 Use this output format when the user asks to commit or asks for a commit summary.
 
-## summary
+## Required Commit Message Shape
 
-- List up to three most impactful changes only.
-- Ignore pure linting, formatting-only churn, and typo-only edits.
+Always compose the commit message in this shape:
 
-## all notable changes
+```text
+<type>(<scope>): <title>
 
-- List all notable changes across code, tests, docs, config, and tooling.
+- <notable change with description and impact>
+- <notable change with description and impact>
 
-## coauthor
+---
+
+Co-authored-by: Codex <codex@openai.com>
+```
+
+Rules:
+
+- Use Conventional Commit style for the first line.
+- Keep `<type>` lowercase, such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, or `perf`.
+- Use a specific lowercase `<scope>` when possible, such as `api`, `cli`, `config`, `tests`, `docs`, `ci`, `deps`, `packaging`, `models`, `data`, or `utils`.
+- Keep `<title>` imperative, concise, and under 72 characters when practical.
+- The body must be a bullet list of notable changes only.
+- Ignore pure linting, formatting-only churn, generated cache files, and typo-only edits unless they are the whole change.
+- Keep the `---` separator before the co-author trailer.
+- End with exactly this Git trailer:
 
 `Co-authored-by: Codex <codex@openai.com>`

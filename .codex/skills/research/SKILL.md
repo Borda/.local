@@ -22,74 +22,74 @@ Run a source-backed research loop for documentation, API migration, paper, or st
 
 ## Workflow
 
-1. Create run directory.
+### 01: Create run directory
 
-   ```bash
-   TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-   OUT_DIR=".reports/codex/research/$TS"
-   mkdir -p "$OUT_DIR"
-   ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/research/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-2. Define research question, mode, and constraints.
+### 02: Define research question, mode, and constraints
 
-   Modes:
+Modes:
 
-   - `docs`: current API/docs/migration answer.
-   - `sota`: method comparison and implementation recommendation.
-   - `paper`: single-paper analysis.
-   - `methodology`: experiment design, metric, guard, and ablation review.
-   - `code-fidelity`: compare paper/spec claims against implementation.
+- `docs`: current API/docs/migration answer.
+- `sota`: method comparison and implementation recommendation.
+- `paper`: single-paper analysis.
+- `methodology`: experiment design, metric, guard, and ablation review.
+- `code-fidelity`: compare paper/spec claims against implementation.
 
-3. Gather sources.
+### 03: Gather sources
 
-   Write `$OUT_DIR/sources.md`:
+Write `$OUT_DIR/sources.md`:
 
-   ```markdown
-   | Source | Type | Date/version | Why reliable | Used for |
-   | --- | --- | --- | --- | --- |
-   ```
+```markdown
+| Source | Type | Date/version | Why reliable | Used for |
+| --- | --- | --- | --- | --- |
+```
 
-   Source rules:
+Source rules:
 
-   - Prefer primary docs, papers, specifications, release notes, or code.
-   - Use current live sources for volatile docs, dependencies, and APIs.
-   - Mark any stale or unavailable source explicitly.
-   - Do not cite secondary summaries for high-impact claims unless independently corroborated.
+- Prefer primary docs, papers, specifications, release notes, or code.
+- Use current live sources for volatile docs, dependencies, and APIs.
+- Mark any stale or unavailable source explicitly.
+- Do not cite secondary summaries for high-impact claims unless independently corroborated.
 
-4. Map to codebase context when implementation is relevant.
+### 04: Map to codebase context when implementation is relevant
 
-   ```bash
-   .codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
-   rg -n "$TOPIC_PATTERN" src tests docs >"$OUT_DIR/codebase-scan.txt" 2>/dev/null || true
-   ```
+```bash
+.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
+rg -n "$TOPIC_PATTERN" src tests docs >"$OUT_DIR/codebase-scan.txt" 2>/dev/null || true
+```
 
-5. Produce `$OUT_DIR/research.md` with:
+### 05: Produce `$OUT_DIR/research.md` with:
 
-   - `Question`
-   - `Constraints`
-   - `Source Table`
-   - `Findings`
-   - `Comparison` for SOTA/method choices
-   - `Implementation Fit`
-   - `Risks And Unknowns`
-   - `Recommendation`
-   - `Next Checks`
+- `Question`
+- `Constraints`
+- `Source Table`
+- `Findings`
+- `Comparison` for SOTA/method choices
+- `Implementation Fit`
+- `Risks And Unknowns`
+- `Recommendation`
+- `Next Checks`
 
-6. For paper/code-fidelity mode, include dimensions:
+### 06: For paper/code-fidelity mode, include dimensions:
 
-   - `F`: formula/math match
-   - `H`: hyperparameter parity
-   - `E`: evaluation protocol
-   - `N`: notation and naming consistency
-   - `C`: citation/derivation chain
+- `F`: formula/math match
+- `H`: hyperparameter parity
+- `E`: evaluation protocol
+- `N`: notation and naming consistency
+- `C`: citation/derivation chain
 
-7. Run review gate.
+### 07: Run review gate
 
-   ```bash
-   git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
-   ```
+```bash
+git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
+```
 
-8. Decide gate result and write `.reports/codex/research/<timestamp>/result.json`.
+### 08: Decide gate result and write `.reports/codex/research/<timestamp>/result.json`
 
 ## Fail-Fast Rules
 

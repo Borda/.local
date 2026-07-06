@@ -20,69 +20,69 @@ Run a linear evidence-first analysis loop. Use this skill to answer "what is tru
 
 ## Workflow
 
-1. Create run directory.
+### 01: Create run directory
 
-   ```bash
-   TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-   OUT_DIR=".reports/codex/analyse/$TS"
-   mkdir -p "$OUT_DIR"
-   ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/analyse/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-2. Normalize the analysis mode.
+### 02: Normalize the analysis mode
 
-   - `local`: code, local diff, local reports, pasted text.
-   - `github`: issue/PR/discussion metadata where live access is available.
-   - `report`: existing `.reports/**` or `.reports/codex/**` artifact.
-   - `ecosystem`: downstream/API/dependency impact. Live web or `gh` evidence is required for current external claims.
+- `local`: code, local diff, local reports, pasted text.
+- `github`: issue/PR/discussion metadata where live access is available.
+- `report`: existing `.reports/**` or `.reports/codex/**` artifact.
+- `ecosystem`: downstream/API/dependency impact. Live web or `gh` evidence is required for current external claims.
 
-   Unsupported or ambiguous mode => fail with a usage note, unless the user supplied enough pasted evidence to continue in `local`.
+Unsupported or ambiguous mode => fail with a usage note, unless the user supplied enough pasted evidence to continue in `local`.
 
-3. Capture scope and source inventory before drawing conclusions.
+### 03: Capture scope and source inventory before drawing conclusions
 
-   ```bash
-   .codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
-   rg -n "$SCOPE_PATTERN" . >"$OUT_DIR/reference-scan.txt" 2>/dev/null || true
-   ```
+```bash
+.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
+rg -n "$SCOPE_PATTERN" . >"$OUT_DIR/reference-scan.txt" 2>/dev/null || true
+```
 
-4. Gather evidence with a ledger. Write `$OUT_DIR/evidence.md` with one row per claim:
+### 04: Gather evidence with a ledger. Write `$OUT_DIR/evidence.md` with one row per claim:
 
-   ```markdown
-   | Claim | Source | Freshness | Confidence | Notes |
-   | --- | --- | --- | --- | --- |
-   ```
+```markdown
+| Claim | Source | Freshness | Confidence | Notes |
+| --- | --- | --- | --- | --- |
+```
 
-   Evidence rules:
+Evidence rules:
 
-   - Code claims require file paths and line references.
-   - External/current claims require primary sources or a caveat that live verification was unavailable.
-   - Thread/report claims must separate verified facts from hypotheses.
-   - Duplicate or related issues/findings are listed explicitly instead of collapsed silently.
+- Code claims require file paths and line references.
+- External/current claims require primary sources or a caveat that live verification was unavailable.
+- Thread/report claims must separate verified facts from hypotheses.
+- Duplicate or related issues/findings are listed explicitly instead of collapsed silently.
 
-5. Analyze alternatives before recommending action.
+### 05: Analyze alternatives before recommending action
 
-   Required sections in `$OUT_DIR/analysis.md`:
+Required sections in `$OUT_DIR/analysis.md`:
 
-   - `Question`
-   - `Scope`
-   - `Verified Facts`
-   - `Hypotheses`
-   - `Rejected Alternatives`
-   - `Findings`
-   - `Recommendations`
-   - `Gaps`
+- `Question`
+- `Scope`
+- `Verified Facts`
+- `Hypotheses`
+- `Rejected Alternatives`
+- `Findings`
+- `Recommendations`
+- `Gaps`
 
-6. Run the self-review check.
+### 06: Run the self-review check
 
-   ```bash
-   git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
-   ```
+```bash
+git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
+```
 
-7. Decide gate result.
+### 07: Decide gate result
 
-   - `pass`: findings are evidence-backed, ranked, and gaps are explicit.
-   - `fail`: missing scope, missing evidence for a blocking claim, stale external claim presented as fact, or no result artifact.
+- `pass`: findings are evidence-backed, ranked, and gaps are explicit.
+- `fail`: missing scope, missing evidence for a blocking claim, stale external claim presented as fact, or no result artifact.
 
-8. Write mandatory result artifact to `.reports/codex/analyse/<timestamp>/result.json`.
+### 08: Write mandatory result artifact to `.reports/codex/analyse/<timestamp>/result.json`
 
 ## Self-Critical Gate
 

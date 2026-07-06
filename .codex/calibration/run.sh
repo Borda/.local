@@ -14,6 +14,12 @@ BEHAVIORAL_CASES="$ROOT/.codex/calibration/behavioral-cases.json"
 BEHAVIORAL_OBSERVATIONS="$ROOT/.codex/calibration/behavioral-observations.jsonl"
 BEHAVIORAL_SCORER="$ROOT/.codex/calibration/score_behavioral.py"
 BEHAVIORAL_RESULT="$OUT_DIR/behavioral.json"
+OFFLINE_HARNESS="$ROOT/.github/codex-harness.sh"
+OFFLINE_HARNESS_WORKFLOW="$ROOT/.github/workflows/ci-harness.yml"
+EXPECT_OFFLINE_HARNESS=false
+if [[ -d "$ROOT/.git" || -d "$ROOT/.github" ]]; then
+  EXPECT_OFFLINE_HARNESS=true
+fi
 SKILLS=(review develop resolve audit calibrate release investigate sync manage analyse optimize research)
 AGENTS=(sw-engineer qa-specialist squeezer doc-scribe security-auditor data-steward cicd-steward linting-expert oss-shepherd solution-architect web-explorer curator challenger scientist)
 
@@ -110,6 +116,23 @@ check_review_model() {
   return 0
 }
 
+check_reasoning_effort() {
+  local file="$1"
+  local expected="$2"
+  local label="$3"
+  local check_id="$4"
+  if grep -Eq "^[[:space:]]*model_reasoning_effort[[:space:]]*=[[:space:]]*\"$expected\"" "$file"; then
+    echo "$label:effort=$expected" >> "$OUT_DIR/checks.txt"
+  else
+    echo "$label:effort=fail" >> "$OUT_DIR/checks.txt"
+    echo "reasoning-effort-mismatch:$label:expected=$expected:$file" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "$check_id"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+  return 0
+}
+
 check_no_deprecated_active_models() {
   local file
   for file in "$PROJECT_CFG" "$ROOT"/.codex/agents/*.toml; do
@@ -123,6 +146,38 @@ check_no_deprecated_active_models() {
   return 0
 }
 
+check_skill_frontmatter() {
+  local file="$1"
+  local skill="$2"
+  if python3 - "$file" <<'PY'
+import sys
+from pathlib import Path
+
+lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+ok = len(lines) >= 4 and lines[0] == "---"
+if ok:
+    try:
+        end = lines[1:].index("---") + 1
+    except ValueError:
+        ok = False
+if ok:
+    frontmatter = lines[1:end]
+    ok = any(line.startswith("name:") for line in frontmatter) and any(
+        line.startswith("description:") for line in frontmatter
+    )
+raise SystemExit(0 if ok else 1)
+PY
+  then
+    echo "skill-frontmatter:$skill=ok" >> "$OUT_DIR/checks.txt"
+  else
+    echo "skill-frontmatter-invalid:$file" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "skill-schema-all"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+  return 0
+}
+
 expected_agent_model() {
   case "$1" in
     sw-engineer | qa-specialist | squeezer | data-steward | cicd-steward | security-auditor | solution-architect | challenger | scientist)
@@ -130,6 +185,23 @@ expected_agent_model() {
       ;;
     doc-scribe | web-explorer | oss-shepherd | curator | linting-expert)
       echo "gpt-5.4-mini"
+      ;;
+    *)
+      echo "unknown"
+      ;;
+  esac
+}
+
+expected_agent_effort() {
+  case "$1" in
+    challenger | solution-architect | security-auditor | scientist)
+      echo "xhigh"
+      ;;
+    sw-engineer | qa-specialist | squeezer | data-steward | cicd-steward)
+      echo "high"
+      ;;
+    doc-scribe | web-explorer | oss-shepherd | curator | linting-expert)
+      echo "medium"
       ;;
     *)
       echo "unknown"
@@ -160,10 +232,27 @@ check_agent_model() {
   return 0
 }
 
+check_agent_effort() {
+  local agent="$1"
+  local file="$2"
+  local expected
+  expected="$(expected_agent_effort "$agent")"
+  if [[ "$expected" == "unknown" ]]; then
+    echo "agent-effort-policy-missing:$agent" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "agent-effort-policy"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+    return 0
+  fi
+  check_reasoning_effort "$file" "$expected" "agent-effort:$agent" "agent-effort-policy"
+  return 0
+}
+
 echo "calibration-start:$TS" > "$OUT_DIR/checks.txt"
 check_model "$PROJECT_CFG" "project-config" "project-model-default"
 check_model "$HOME_CFG" "home-config" "home-model-default"
 check_review_model "$PROJECT_CFG" "project-config"
+check_reasoning_effort "$PROJECT_CFG" "high" "project-config" "reasoning-effort-policy"
 check_no_deprecated_active_models
 
 for skill in "${SKILLS[@]}"; do
@@ -175,6 +264,7 @@ for skill in "${SKILLS[@]}"; do
     LEAKS=$((LEAKS + 1))
     continue
   fi
+  check_skill_frontmatter "$SKILL_FILE" "$skill"
   check_contains "$SKILL_FILE" "^# " "skill-schema-all"
   check_contains "$SKILL_FILE" "Input Schema" "native-skill-contract"
   check_contains "$SKILL_FILE" "Workflow" "skill-schema-all"
@@ -248,10 +338,12 @@ for agent in "${AGENTS[@]}"; do
     check_contains "$ROOT/.codex/agents/$agent.toml" "Output Format" "native-agent-contract"
     check_contains "$ROOT/.codex/agents/$agent.toml" "Output Contract" "native-agent-contract"
     check_agent_model "$agent" "$ROOT/.codex/agents/$agent.toml"
+    check_agent_effort "$agent" "$ROOT/.codex/agents/$agent.toml"
   else
     echo "missing-agent-file:$agent" >> "$OUT_DIR/leaks.txt"
     mark_check_failed "agent-schema-all"
     mark_check_failed "agent-model-policy"
+    mark_check_failed "agent-effort-policy"
     FAILS=$((FAILS + 1))
     LEAKS=$((LEAKS + 1))
   fi
@@ -309,6 +401,7 @@ RUN_GATES="$ROOT/.codex/skills/_shared/run-gates.sh"
 WRITE_RESULT="$ROOT/.codex/skills/_shared/write-result.sh"
 COLLECT_DIFF="$ROOT/.codex/skills/_shared/collect-diff.sh"
 COLLECT_PR="$ROOT/.codex/skills/_shared/collect-pr.sh"
+FIND_REVIEW_REPORT="$ROOT/.codex/skills/_shared/find-review-report.py"
 VALIDATE_ARTIFACTS="$ROOT/.codex/skills/_shared/validate-artifacts.py"
 
 if [[ ! -x "$RUN_GATES" ]]; then
@@ -339,11 +432,57 @@ if [[ ! -x "$COLLECT_PR" ]]; then
   LEAKS=$((LEAKS + 1))
 fi
 
+if [[ ! -x "$FIND_REVIEW_REPORT" ]]; then
+  echo "shared-script-not-executable:$FIND_REVIEW_REPORT" >> "$OUT_DIR/leaks.txt"
+  mark_check_failed "shared-script-selftests"
+  FAILS=$((FAILS + 1))
+  LEAKS=$((LEAKS + 1))
+fi
+
 if [[ ! -x "$VALIDATE_ARTIFACTS" ]]; then
   echo "shared-script-not-executable:$VALIDATE_ARTIFACTS" >> "$OUT_DIR/leaks.txt"
   mark_check_failed "shared-script-selftests"
   FAILS=$((FAILS + 1))
   LEAKS=$((LEAKS + 1))
+fi
+
+if [[ "$EXPECT_OFFLINE_HARNESS" == true ]]; then
+  if [[ ! -x "$OFFLINE_HARNESS" ]]; then
+    echo "offline-harness-not-executable:$OFFLINE_HARNESS" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "offline-ci-harness"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  else
+    check_contains "$OFFLINE_HARNESS" "CODEX_OFFLINE_HARNESS" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "env -i" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "blocked by offline Codex harness" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "codex openai gh curl wget" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "HOME=\"\$TMP_HOME\"" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "CODEX_HARNESS_RESULTS_DIR" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "codex-harness-results" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "GITHUB_STEP_SUMMARY" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS" "summary.md" "offline-ci-harness"
+  fi
+
+  if [[ ! -f "$OFFLINE_HARNESS_WORKFLOW" ]]; then
+    echo "missing-offline-harness-workflow:$OFFLINE_HARNESS_WORKFLOW" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "offline-ci-harness"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  else
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "Codex CI harness" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "permissions:" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "contents: read" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "persist-credentials: false" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "OPENAI_API_KEY" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" ".github/codex-harness.sh" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "CODEX_HARNESS_RESULTS_DIR" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "actions/upload-artifact" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "codex-harness-results" "offline-ci-harness"
+    check_contains "$OFFLINE_HARNESS_WORKFLOW" "if-no-files-found: error" "offline-ci-harness"
+  fi
+else
+  echo "offline-ci-harness=skipped:non-repo-root" >> "$OUT_DIR/checks.txt"
 fi
 
 SELFTEST_DIR="$OUT_DIR/selftest"
@@ -403,6 +542,37 @@ fi
 if [[ -x "$COLLECT_PR" ]]; then
   if ! bash -n "$COLLECT_PR"; then
     echo "selftest-syntax:collect-pr" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "shared-script-selftests"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+fi
+
+if [[ -x "$FIND_REVIEW_REPORT" ]]; then
+  FIND_REPORT_FIXTURE="$SELFTEST_DIR/review-reports"
+  mkdir -p "$FIND_REPORT_FIXTURE/2026-01-01T00-00-00Z" "$FIND_REPORT_FIXTURE/2026-01-02T00-00-00Z"
+  printf '{}\n' >"$FIND_REPORT_FIXTURE/2026-01-01T00-00-00Z/result.json"
+  printf '{}\n' >"$FIND_REPORT_FIXTURE/2026-01-02T00-00-00Z/result.json"
+  cat >"$FIND_REPORT_FIXTURE/2026-01-01T00-00-00Z/pr.json" <<'EOF'
+{"number": 123, "url": "https://github.com/example/repo/pull/123"}
+EOF
+  cat >"$FIND_REPORT_FIXTURE/2026-01-02T00-00-00Z/pr.json" <<'EOF'
+{"number": 123, "url": "https://github.com/example/repo/pull/123"}
+EOF
+  FIND_REPORT_EXPECTED="$FIND_REPORT_FIXTURE/2026-01-02T00-00-00Z/result.json"
+  if ! FIND_REPORT_ACTUAL="$("$FIND_REVIEW_REPORT" --target "#123" --reports-dir "$FIND_REPORT_FIXTURE")"; then
+    echo "selftest-failed:find-review-report:match" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "shared-script-selftests"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  elif [[ "$FIND_REPORT_ACTUAL" != "$FIND_REPORT_EXPECTED" ]]; then
+    echo "selftest-mismatch:find-review-report:$FIND_REPORT_ACTUAL" >> "$OUT_DIR/leaks.txt"
+    mark_check_failed "shared-script-selftests"
+    FAILS=$((FAILS + 1))
+    LEAKS=$((LEAKS + 1))
+  fi
+  if "$FIND_REVIEW_REPORT" --target "#999" --reports-dir "$FIND_REPORT_FIXTURE" >/dev/null 2>&1; then
+    echo "selftest-failed:find-review-report:missing-target" >> "$OUT_DIR/leaks.txt"
     mark_check_failed "shared-script-selftests"
     FAILS=$((FAILS + 1))
     LEAKS=$((LEAKS + 1))
@@ -713,6 +883,7 @@ payload = {
         "benchmark-pattern-checks",
         "behavioral-metrics",
         "shared-script-selftests",
+        "offline-ci-harness",
     ],
     "checks_failed": checks_failed,
     "findings": {

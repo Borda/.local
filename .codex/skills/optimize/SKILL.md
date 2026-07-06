@@ -27,121 +27,121 @@ Run a metric-driven optimization loop with explicit guards, rollback criteria, a
 
 ## Workflow
 
-1. Create run directory.
+### 01: Create run directory
 
-   ```bash
-   TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-   OUT_DIR=".reports/codex/optimize/$TS"
-   mkdir -p "$OUT_DIR"
-   ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/optimize/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-2. Validate metric and guard commands.
+### 02: Validate metric and guard commands
 
-   Requirements:
+Requirements:
 
-   - `metric_cmd` is repeatable and produces a comparable value or pass/fail result.
-   - `metric_direction` is known.
-   - `guard_cmd` fails on unacceptable regressions.
-   - `scope_files` is bounded.
-   - `max_iterations` is explicit for `campaign` mode and remains bounded.
-   - Files or scripts used by `metric_cmd` and `guard_cmd` are protected unless the user explicitly includes them in scope and accepts the measurement-integrity risk.
+- `metric_cmd` is repeatable and produces a comparable value or pass/fail result.
+- `metric_direction` is known.
+- `guard_cmd` fails on unacceptable regressions.
+- `scope_files` is bounded.
+- `max_iterations` is explicit for `campaign` mode and remains bounded.
+- Files or scripts used by `metric_cmd` and `guard_cmd` are protected unless the user explicitly includes them in scope and accepts the measurement-integrity risk.
 
-   Dry-run both commands before editing:
+Dry-run both commands before editing:
 
-   ```bash
-   ${METRIC_CMD} >"$OUT_DIR/metric-baseline.txt" 2>&1
-   ${GUARD_CMD} >"$OUT_DIR/guard-baseline.txt" 2>&1
-   ```
+```bash
+${METRIC_CMD} >"$OUT_DIR/metric-baseline.txt" 2>&1
+${GUARD_CMD} >"$OUT_DIR/guard-baseline.txt" 2>&1
+```
 
-3. Record baseline and hypothesis.
+### 03: Record baseline and hypothesis
 
-   Write `$OUT_DIR/hypothesis.md`:
+Write `$OUT_DIR/hypothesis.md`:
 
-   - metric to improve
-   - expected mechanism
-   - files allowed to change
-   - guard risk
-   - rollback condition
+- metric to improve
+- expected mechanism
+- files allowed to change
+- guard risk
+- rollback condition
 
-   Initialize a machine-readable iteration log:
+Initialize a machine-readable iteration log:
 
-   ```bash
-   : >"$OUT_DIR/experiments.jsonl"
-   ```
+```bash
+: >"$OUT_DIR/experiments.jsonl"
+```
 
-4. Apply one minimal optimization change per iteration.
+### 04: Apply one minimal optimization change per iteration
 
-   Do not combine independent hypotheses in one iteration. Do not optimize unmeasured paths. Before each iteration, write `$OUT_DIR/iteration-<n>-before.patch` with the current diff for the scoped files. If an iteration fails and only that iteration's patch is present, revert the iteration with `git apply -R` against the iteration diff or mark the run failed when a clean reversal cannot be proven. Never use `git reset --hard`.
+Do not combine independent hypotheses in one iteration. Do not optimize unmeasured paths. Before each iteration, write `$OUT_DIR/iteration-<n>-before.patch` with the current diff for the scoped files. If an iteration fails and only that iteration's patch is present, revert the iteration with `git apply -R` against the iteration diff or mark the run failed when a clean reversal cannot be proven. Never use `git reset --hard`.
 
-5. Re-measure.
+### 05: Re-measure
 
-   ```bash
-   ${METRIC_CMD} >"$OUT_DIR/metric-after.txt" 2>&1
-   ${GUARD_CMD} >"$OUT_DIR/guard-after.txt" 2>&1
-   ```
+```bash
+${METRIC_CMD} >"$OUT_DIR/metric-after.txt" 2>&1
+${GUARD_CMD} >"$OUT_DIR/guard-after.txt" 2>&1
+```
 
-6. Compare baseline and after results in `$OUT_DIR/comparison.md`.
+### 06: Compare baseline and after results in `$OUT_DIR/comparison.md`
 
-   Required fields:
+Required fields:
 
-   - baseline value
-   - after value
-   - delta
-   - guard status
-   - confidence
-   - noise caveats
+- baseline value
+- after value
+- delta
+- guard status
+- confidence
+- noise caveats
 
-   Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
+Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
 
-   ```json
-   {
-     "iteration": 1,
-     "hypothesis": "one-line mechanism",
-     "metric_before": 0.0,
-     "metric_after": 0.0,
-     "delta": 0.0,
-     "guard": "pass|fail",
-     "decision": "kept|reverted|inconclusive|failed",
-     "rollback_evidence": "path or reason"
-   }
-   ```
+```json
+{
+  "iteration": 1,
+  "hypothesis": "one-line mechanism",
+  "metric_before": 0.0,
+  "metric_after": 0.0,
+  "delta": 0.0,
+  "guard": "pass|fail",
+  "decision": "kept|reverted|inconclusive|failed",
+  "rollback_evidence": "path or reason"
+}
+```
 
-7. Decide keep/revert.
+### 07: Decide keep/revert
 
-   - Keep only when metric moves in the intended direction and guards pass.
-   - For `min_delta`, keep only when the delta meets or exceeds the practical significance threshold.
-   - Revert or mark fail when guard regresses.
-   - If measurement is noisy, require repeated runs or mark inconclusive.
-   - In `campaign` mode, stop at the first kept result unless the user asked for continued exploration; otherwise continue only while `max_iterations` remains and each rejected iteration has rollback evidence.
+- Keep only when metric moves in the intended direction and guards pass.
+- For `min_delta`, keep only when the delta meets or exceeds the practical significance threshold.
+- Revert or mark fail when guard regresses.
+- If measurement is noisy, require repeated runs or mark inconclusive.
+- In `campaign` mode, stop at the first kept result unless the user asked for continued exploration; otherwise continue only while `max_iterations` remains and each rejected iteration has rollback evidence.
 
-8. Run shared quality gates.
+### 08: Run shared quality gates
 
-   ```bash
-   .codex/skills/_shared/run-gates.sh \
-       --out "$OUT_DIR" \
-       --tests "${TESTS_CMD:-$GUARD_CMD}"
-   ```
+```bash
+.codex/skills/_shared/run-gates.sh \
+    --out "$OUT_DIR" \
+    --tests "${TESTS_CMD:-$GUARD_CMD}"
+```
 
-9. Write and validate the mandatory result artifact.
+### 09: Write and validate the mandatory result artifact
 
-   ```bash
-   .codex/skills/_shared/write-result.sh \
-       --out "$OUT_DIR/result.candidate.json" \
-       --status "$STATUS" \
-       --checks-run "lint,format,types,tests,review" \
-       --checks-failed "$CHECKS_FAILED" \
-       --critical "$CRITICAL" \
-       --high "$HIGH" \
-       --medium "$MEDIUM" \
-       --low "$LOW" \
-       --confidence "$CONFIDENCE" \
-       --artifact-path "$OUT_DIR/result.json"
-   python3 .codex/skills/_shared/validate-artifacts.py \
-       --skill optimize \
-       --out "$OUT_DIR" \
-       --result "$OUT_DIR/result.candidate.json"
-   mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-   ```
+```bash
+.codex/skills/_shared/write-result.sh \
+    --out "$OUT_DIR/result.candidate.json" \
+    --status "$STATUS" \
+    --checks-run "lint,format,types,tests,review" \
+    --checks-failed "$CHECKS_FAILED" \
+    --critical "$CRITICAL" \
+    --high "$HIGH" \
+    --medium "$MEDIUM" \
+    --low "$LOW" \
+    --confidence "$CONFIDENCE" \
+    --artifact-path "$OUT_DIR/result.json"
+python3 .codex/skills/_shared/validate-artifacts.py \
+    --skill optimize \
+    --out "$OUT_DIR" \
+    --result "$OUT_DIR/result.candidate.json"
+mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
+```
 
 ## Fail-Fast Rules
 

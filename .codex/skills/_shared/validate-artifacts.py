@@ -25,7 +25,8 @@ SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
     },
     "resolve": {
         "files": {
-            "action-items.md": [],
+            "action-items.md": ["Review Item Resolution Table"],
+            "resolution-scope.md": ["Resolution Scope Selection"],
             "closure-log.md": ["Closure Evidence"],
             "unresolved.txt": [],
         },
@@ -148,20 +149,77 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
         _validate_jsonl(out_dir / str(filename))
     if skill == "resolve":
         metadata = result.get("metadata", {})
-        if isinstance(metadata, dict) and metadata.get("mode") == "pr":
-            pr_dir = out_dir / "pr"
+        if not isinstance(metadata, dict):
+            raise SystemExit("resolve-missing-metadata")
+        resolution_scope = metadata.get("resolution_scope")
+        if not isinstance(resolution_scope, dict):
+            raise SystemExit("resolve-missing-resolution-scope-metadata")
+        scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
+        for required_text in ("selectable", "selected", "deferred"):
+            if required_text not in scope_text:
+                raise SystemExit(f"resolve-scope-missing-{required_text}")
+        pr_dir = out_dir / "pr"
+        if metadata.get("mode") == "pr" or pr_dir.exists():
             for filename in (
                 "pr.json",
+                "pr-routing.json",
+                "target-branch.json",
+                "pr-head-fetch.json",
+                "local-checkout.json",
                 "comments.json",
                 "reviews.json",
                 "review-threads.json",
                 "unresolved-review-threads.json",
                 "online-review-summary.json",
+                "merge-base.txt",
+                "merge-tree.txt",
             ):
                 if not (pr_dir / filename).exists():
                     raise SystemExit(f"missing-resolve-pr-artifact:{filename}")
+            routing = _load_json(pr_dir / "pr-routing.json")
+            target_branch = _load_json(pr_dir / "target-branch.json")
+            checkout = _load_json(pr_dir / "local-checkout.json")
+            if routing.get("local_checkout_required") is not True:
+                raise SystemExit("resolve-pr-routing-local-checkout-not-required")
+            if "--force" in str(routing.get("local_checkout_command", "")):
+                raise SystemExit("resolve-pr-routing-force-checkout-forbidden")
+            if "force_policy" not in routing:
+                raise SystemExit("resolve-pr-routing-force-policy-missing")
+            if target_branch.get("status") != "fetched":
+                raise SystemExit("resolve-pr-target-branch-not-fetched")
+            if not target_branch.get("local_head"):
+                raise SystemExit("resolve-pr-target-branch-head-missing")
+            if checkout.get("status") != "checked-out":
+                raise SystemExit("resolve-pr-local-checkout-not-checked-out")
+            if "--force" in str(checkout.get("command", "")):
+                raise SystemExit("resolve-pr-local-checkout-force-forbidden")
+            if "force_policy" not in checkout:
+                raise SystemExit("resolve-pr-local-checkout-force-policy-missing")
+            if checkout.get("head_matches_pr") is not True:
+                raise SystemExit("resolve-pr-local-checkout-head-mismatch")
+            if (pr_dir / "head-files").exists():
+                raise SystemExit("resolve-pr-raw-head-file-snapshots-forbidden")
+            _require_file_sections(
+                out_dir / "merge-prestage.md",
+                [
+                    "PR And Target Refresh",
+                    "Clean PR Implementation Context",
+                    "Target Branch Context",
+                    "Conflict Risk",
+                    "Resolution Strategy",
+                ],
+            )
             action_text = (out_dir / "action-items.md").read_text(encoding="utf-8").lower()
-            required = ("valid", "duplicate", "stale", "out-of-scope", "already-fixed", "needs-clarification")
+            required = (
+                "valid",
+                "resolved",
+                "duplicate",
+                "stale",
+                "out-of-scope",
+                "already-fixed",
+                "already-applied",
+                "needs-clarification",
+            )
             if not any(status in action_text for status in required):
                 raise SystemExit("resolve-pr-triage-status-missing")
 

@@ -3,7 +3,7 @@
 name                    = "squeezer"
 description             = "Performance profiling and memory optimization: profile-first, benchmark before changing, ML throughput specialist."
 model                   = "gpt-5.5"
-model_reasoning_effort  = "xhigh"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "auto"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"

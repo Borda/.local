@@ -1,7 +1,7 @@
 name                    = "web-explorer"
 description             = "Web and external-doc research: package versions, changelogs, migration guides, release notes, API reference extraction."
 model                   = "gpt-5.4-mini"
-model_reasoning_effort  = "xhigh"
+model_reasoning_effort  = "medium"
 model_reasoning_summary = "concise"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"

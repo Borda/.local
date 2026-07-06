@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_SECTIONS = (
+    "Decision Summary",
     "Scope",
     "Risk Tier",
     "Files Inspected",
@@ -19,6 +20,7 @@ REQUIRED_SECTIONS = (
     "Confidence Gaps",
 )
 REQUIRED_ROLES = {"qa-specialist", "challenger"}
+VALID_RECOMMENDATIONS = {"accept-as-is", "minor-changes", "needs-more-work", "reject", "not-aligned"}
 ALL_MANIFEST_ROLES = {
     "qa-specialist",
     "challenger",
@@ -62,6 +64,19 @@ def _require_notes_sections(notes_path: Path) -> None:
             missing.append(section)
     if missing:
         raise SystemExit("missing-review-note-sections:" + ",".join(missing))
+
+
+def _validate_review_decision(metadata: dict[str, Any]) -> None:
+    decision = metadata.get("review_decision")
+    if not isinstance(decision, dict):
+        raise SystemExit("result-missing-review-decision")
+    recommendation = decision.get("recommendation")
+    if recommendation not in VALID_RECOMMENDATIONS:
+        raise SystemExit(f"invalid-review-recommendation:{recommendation!r}")
+    for key in ("summary", "rationale"):
+        value = decision.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise SystemExit(f"review-decision-missing-{key}")
 
 
 def _manifest_passes(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -131,12 +146,16 @@ def _validate_result(out_dir: Path, result_path: Path) -> None:
 
     notes_path = out_dir / "review-notes.md"
     _require_notes_sections(notes_path)
+    _validate_review_decision(metadata)
     if scope == "pr":
         notes_text = notes_path.read_text(encoding="utf-8")
         if "Online Review Triage" not in notes_text:
             raise SystemExit("missing-pr-online-review-triage")
         for filename in (
             "pr.json",
+            "pr-routing.json",
+            "target-branch.json",
+            "local-checkout.json",
             "comments.json",
             "reviews.json",
             "review-threads.json",
@@ -146,6 +165,29 @@ def _validate_result(out_dir: Path, result_path: Path) -> None:
         ):
             if not (out_dir / filename).exists():
                 raise SystemExit(f"missing-pr-artifact:{filename}")
+        routing = _load_json(out_dir / "pr-routing.json")
+        target_branch = _load_json(out_dir / "target-branch.json")
+        checkout = _load_json(out_dir / "local-checkout.json")
+        if routing.get("local_checkout_required") is not True:
+            raise SystemExit("pr-routing-local-checkout-not-required")
+        if "--force" in str(routing.get("local_checkout_command", "")):
+            raise SystemExit("pr-routing-force-checkout-forbidden")
+        if "force_policy" not in routing:
+            raise SystemExit("pr-routing-force-policy-missing")
+        if target_branch.get("status") != "fetched":
+            raise SystemExit("pr-target-branch-not-fetched")
+        if not target_branch.get("local_head"):
+            raise SystemExit("pr-target-branch-head-missing")
+        if checkout.get("status") != "checked-out":
+            raise SystemExit("pr-local-checkout-not-checked-out")
+        if "--force" in str(checkout.get("command", "")):
+            raise SystemExit("pr-local-checkout-force-forbidden")
+        if "force_policy" not in checkout:
+            raise SystemExit("pr-local-checkout-force-policy-missing")
+        if checkout.get("head_matches_pr") is not True:
+            raise SystemExit("pr-local-checkout-head-mismatch")
+        if (out_dir / "head-files").exists():
+            raise SystemExit("pr-raw-head-file-snapshots-forbidden")
 
     if risk_tier == "TRIVIAL":
         return

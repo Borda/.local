@@ -21,96 +21,96 @@ Run a linear configuration and workflow audit loop.
 
 ## Workflow (Exact Commands)
 
-01. Create run directory.
+### 01: Create run directory
 
-    ```bash
-    TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-    OUT_DIR=".reports/codex/audit/$TS"
-    mkdir -p "$OUT_DIR"
-    ```
+```bash
+TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+OUT_DIR=".reports/codex/audit/$TS"
+mkdir -p "$OUT_DIR"
+```
 
-02. Normalize scope and collect inventory.
+### 02: Normalize scope and collect inventory
 
-    Scopes:
+Scopes:
 
-    - `config`: `.codex/config.toml`, project instructions, permission/routing entries.
-    - `skills`: `.codex/skills/**` plus calibration coverage for skills.
-    - `agents`: `.codex/agents/*.toml` plus spawn/routing coverage.
-    - `all`: every scope above.
+- `config`: `.codex/config.toml`, project instructions, permission/routing entries.
+- `skills`: `.codex/skills/**` plus calibration coverage for skills.
+- `agents`: `.codex/agents/*.toml` plus spawn/routing coverage.
+- `all`: every scope above.
 
-    ```bash
-    find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
-    ```
+```bash
+find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
+```
 
-03. Build an audit ledger before running gates.
+### 03: Build an audit ledger before running gates
 
-    Write `$OUT_DIR/audit-ledger.md` with these sections:
+Write `$OUT_DIR/audit-ledger.md` with these sections:
 
-    - `Inventory`: configured vs present agents/skills.
-    - `Broken References`: missing files, stale paths, unresolved shared resources.
-    - `Runtime Leaks`: non-native runner fields or external runtime assumptions in native files.
-    - `Coverage`: calibration benchmark and behavioral coverage.
-    - `Overlap`: duplicate or fuzzy ownership decisions.
-    - `Recommendations`: ranked fix plan.
+- `Inventory`: configured vs present agents/skills.
+- `Broken References`: missing files, stale paths, unresolved shared resources.
+- `Runtime Leaks`: non-native runner fields or external runtime assumptions in native files.
+- `Coverage`: calibration benchmark and behavioral coverage.
+- `Overlap`: duplicate or fuzzy ownership decisions.
+- `Recommendations`: ranked fix plan.
 
-04. Run shared quality gates.
+### 04: Run shared quality gates
 
-    ```bash
-    .codex/skills/_shared/run-gates.sh \
-        --out "$OUT_DIR" \
-        --lint "${LINT_CMD:-bash -lc 'if command -v ruff >/dev/null 2>&1; then ruff check .codex; else UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/codex-uv-cache} uv run --no-sync ruff check .codex; fi'}" \
-        --format "${FORMAT_CMD:-bash -lc 'if command -v ruff >/dev/null 2>&1; then ruff format --check .codex; else UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/codex-uv-cache} uv run --no-sync ruff format --check .codex; fi'}" \
-        --types "${TYPES_CMD:-true}" \
-        --tests "${TESTS_CMD:-true}" \
-        --review "${REVIEW_CMD:-git diff --check}"
-    ```
+```bash
+.codex/skills/_shared/run-gates.sh \
+    --out "$OUT_DIR" \
+    --lint "${LINT_CMD:-bash -lc 'if command -v ruff >/dev/null 2>&1; then ruff check .codex; else UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/codex-uv-cache} uv run --no-sync ruff check .codex; fi'}" \
+    --format "${FORMAT_CMD:-bash -lc 'if command -v ruff >/dev/null 2>&1; then ruff format --check .codex; else UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/codex-uv-cache} uv run --no-sync ruff format --check .codex; fi'}" \
+    --types "${TYPES_CMD:-true}" \
+    --tests "${TESTS_CMD:-true}" \
+    --review "${REVIEW_CMD:-git diff --check}"
+```
 
-05. Detect drift and broken references.
+### 05: Detect drift and broken references
 
-    ```bash
-    rg -n "config_file|skills/|quality-gates|run-gates.sh|write-result.sh" .codex >"$OUT_DIR/reference-scan.txt"
-    ```
+```bash
+rg -n "config_file|skills/|quality-gates|run-gates.sh|write-result.sh" .codex >"$OUT_DIR/reference-scan.txt"
+```
 
-06. Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check).
+### 06: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
 
-    ```bash
-    rg -n "^### Spawn $(.+) when:" .codex/AGENTS.md >"$OUT_DIR/spawn-sections.txt"
-    rg -n "Automatic spawn patterns \\(all agents\\)|Collaboration team patterns" .codex/AGENTS.md >"$OUT_DIR/spawn-policy-sections.txt"
-    ```
+```bash
+rg -n "^### Spawn $(.+) when:" .codex/AGENTS.md >"$OUT_DIR/spawn-sections.txt"
+rg -n "Automatic spawn patterns \\(all agents\\)|Collaboration team patterns" .codex/AGENTS.md >"$OUT_DIR/spawn-policy-sections.txt"
+```
 
-07. Review native skill and agent contract consistency.
+### 07: Review native skill and agent contract consistency
 
-    Each configured skill should have:
+Each configured skill should have:
 
-    - `Input Schema`
-    - `Workflow`
-    - `Fail-Fast Rules`
-    - `Quality Gates`
-    - `Calibration Hooks`
-    - `Output Contract`
+- `Input Schema`
+- `Workflow`
+- `Fail-Fast Rules`
+- `Quality Gates`
+- `Calibration Hooks`
+- `Output Contract`
 
-    Each configured agent should have:
+Each configured agent should have:
 
-    - `## Scope` or clear role boundary text
-    - `## Evidence Standard`
-    - `## Boundaries`
-    - `## Output Contract` or explicit output format
+- `## Scope` or clear role boundary text
+- `## Evidence Standard`
+- `## Boundaries`
+- `## Output Contract` or explicit output format
 
-08. Review agent-roster consistency.
+### 08: Review agent-roster consistency
 
-    ```bash
-    rg -n "^(name|description|developer_instructions)" .codex/agents >"$OUT_DIR/agent-roster-scan.txt"
-    ```
+```bash
+rg -n "^(name|description|developer_instructions)" .codex/agents >"$OUT_DIR/agent-roster-scan.txt"
+```
 
-    Classify overlap findings explicitly as `keep`, `sharpen`, or `merge-prune`:
+Classify overlap findings explicitly as `keep`, `sharpen`, or `merge-prune`:
 
-    - `keep`: distinct decision surface remains
-    - `sharpen`: role stays, but boundary text should tighten
-    - `merge-prune`: role no longer owns a distinct acceptance criterion
+- `keep`: distinct decision surface remains
+- `sharpen`: role stays, but boundary text should tighten
+- `merge-prune`: role no longer owns a distinct acceptance criterion
 
-09. Classify findings using `../_shared/severity-map.md`.
+### 09: Classify findings using `../_shared/severity-map.md`
 
-10. Write mandatory result artifact.
+### 10: Write mandatory result artifact
 
 ```bash
 .codex/skills/_shared/write-result.sh \
