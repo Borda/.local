@@ -68,7 +68,7 @@ For `mode=pr`, also collect fresh online PR evidence, refresh the PR target bran
 
 The helper records `gh pr checkout` without `--force` in `$OUT_DIR/pr/local-checkout.json`.
 
-Use the review report plus `$OUT_DIR/pr/comments.json`, `$OUT_DIR/pr/reviews.json`, `$OUT_DIR/pr/review-threads.json`, and `$OUT_DIR/pr/unresolved-review-threads.json` as the findings intake. Use the local checkout recorded in `$OUT_DIR/pr/local-checkout.json` as the authoritative source for code triage and edits. `$OUT_DIR/pr/target-branch.json` must prove the base/target branch was fetched before conflict or review-item resolution, and `$OUT_DIR/pr/pr-head-fetch.json` records same-repo PR branch refresh or a cross-repository skip rationale. The checkout artifacts must include `force_policy`; if checkout fails or does not match the PR head, record `forced-checkout-not-attempted` and stop before any forced retry. If online PR collection, target refresh, or local checkout fails, record the failure and either continue with the supplied report only when the user accepts stale online-review coverage and no code edits are required, or fail. Do not inspect or edit PR code from `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots; this is a raw-file snapshot rejection rule.
+Use the review report plus `$OUT_DIR/pr/comments.json`, `$OUT_DIR/pr/reviews.json`, `$OUT_DIR/pr/review-threads.json`, and `$OUT_DIR/pr/unresolved-review-threads.json` as the findings intake. A review report is a closure contract, not only a list of code findings: normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence recovery remaining limits, and no-finding residual risks into report-origin action items before editing. Use the local checkout recorded in `$OUT_DIR/pr/local-checkout.json` as the authoritative source for code triage and edits. `$OUT_DIR/pr/target-branch.json` must prove the base/target branch was fetched before conflict or review-item resolution, and `$OUT_DIR/pr/pr-head-fetch.json` records same-repo PR branch refresh or a cross-repository skip rationale. The checkout artifacts must include `force_policy`; if checkout fails or does not match the PR head, record `forced-checkout-not-attempted` and stop before any forced retry. If online PR collection, target refresh, or local checkout fails, record the failure and either continue with the supplied report only when the user accepts stale online-review coverage and no code edits are required, or fail. Do not inspect or edit PR code from `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots; this is a raw-file snapshot rejection rule.
 
 ### 03: Pre-Stage PR Merge/Conflict Context
 
@@ -106,23 +106,53 @@ If the checkout starts in a dirty, conflicted, or partially merged state, fail o
 
 Write `$OUT_DIR/action-items.md` with a `## Review Item Resolution Table` section first, before any prose. Include one row per report finding and each fetched online PR review comment, PR review, review thread, and unresolved review thread. If the user supplied or asked to use a report, include report items even when the same item is also present in fresh PR evidence. The table is the source for selectable findings and must include resolved evidence for any item marked `resolved`.
 
+For `mode=pr`, every report and PR-review item must be checked against PR intent and the changed diff before triage:
+
+- `direct-diff`: the item references a changed file, changed hunk, or behavior directly modified by the PR
+- `pr-intent`: the item connects to the PR purpose, acceptance criteria, review decision, or requested change even if it is outside a touched hunk
+- `adjacent`: the item touches nearby code, tests, docs, config, or verification needed to safely merge the PR
+- `unknown`: relation cannot be determined from current evidence
+- `unrelated`: no connection to PR intent, changed files, adjacent verification, or merge readiness after inspecting local PR context
+
+Write this relation in the action table and in each expanded item. Items with relation `direct-diff`, `pr-intent`, `adjacent`, or `unknown` are not `out-of-scope`. They must remain `valid` or `needs-clarification` and be selectable unless already closed by `resolved`, `already-fixed`, or `already-applied` evidence. If such an item cannot be closed in the current PR, record it as `unresolved`, `deferred`, or required follow-up; do not downgrade it to `out-of-scope`. The user can then select it, defer it, or explicitly rule it into this PR.
+
+For a review report, also include report-origin review obligations even when they are not code edits:
+
+- failed checks from `checks_failed`, such as missing independence, full gates, lint, type, test, or confidence gates
+- `follow_up` entries, especially `needs-independent-review`
+- `review_decision.required_next_work` and merge/readiness blockers
+- confidence gaps, confidence recovery remaining limits, and no-finding residual risks that block acceptance
+
+Report-origin review obligations are in scope by default when the user asks for `+review`, `+report`, `report`, or a review report path. Do not mark them `out-of-scope` merely because closure requires an independent reviewer, an installed tool, CI/full-gate execution, or an environment that may not be available locally. Mark them `valid` or `needs-clarification`, keep them selectable, and leave them `unresolved` or user-deferred until closure evidence exists. `out-of-scope` is reserved for items unrelated to the requested report/PR/target after citing evidence; it is not a valid way to silence failed review gates or report follow-up.
+
+After the resolution table, write a `## Review Report Intake` section with counts for total report-origin items, report-origin review-gate/follow-up items, selectable review-gate/follow-up items, and report-origin items marked `out-of-scope`. The last count must be `0` unless the item is proven unrelated to the requested report/PR/target.
+
 Required table columns:
 
 - selection index: numeric for selectable items, `-` for non-selectable items
 - item id or source location
 - source: `report|pr-comment|pr-review|pr-thread|unresolved-pr-thread`
 - fetched evidence path, or `report-only`
+- PR/diff relation: `direct-diff|pr-intent|adjacent|unknown|unrelated`
 - severity
 - summary
 - triage status: `valid|resolved|duplicate|stale|out-of-scope|already-fixed|already-applied|needs-clarification`
 - resolution: `implemented|resolved|rejected|stale|not-applicable|duplicate|already-fixed|already-applied|needs-clarification|unresolved`
 - closure evidence or unresolved rationale
 
+Closure evidence for report-origin review obligations must match the obligation type:
+
+- independent review: path to the independent specialist/maintainer output and updated review metadata showing independence satisfied, or unresolved rationale if unavailable
+- full gates: path to a clean full-gate or CI result, or unresolved rationale if the workspace/environment prevents it
+- type/lint/test environment: command log from the installed environment, or unresolved rationale naming the missing executable/dependency
+- confidence gap: additional evidence that closes the gap, or an explicit unresolved/deferred record
+
 After the table, keep one expanded item per report finding and unresolved online review thread/comment:
 
 - finding id or source location
 - severity
 - source and fetched evidence path
+- PR/diff relation and evidence for that relation
 - summary
 - exact affected files
 - expected closure evidence
@@ -150,6 +180,8 @@ Selectable items:
 
 - include triage status `valid`
 - include `needs-clarification` only when the next step is clarification or code inspection, not implementation
+- include report-origin failed checks, follow-ups, required next work, confidence gaps, and residual risks unless already closed by cited evidence
+- include PR/review items related to PR intent, changed diff, adjacent verification, or unknown relation unless already closed by cited evidence
 - exclude triage or resolution `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, and `already-applied`
 - exclude fetched online PR review comments/threads marked resolved in current PR evidence
 
@@ -162,7 +194,17 @@ Which findings should I resolve?
 - indexes: comma-separated indexes or ranges such as 1,3,5-7
 ```
 
-If `resolve_scope` was supplied up front, apply it without asking, but still write `$OUT_DIR/resolution-scope.md`. Record the selected indexes, selected severity groups, omitted resolved-online count, deferred/unselected indexes, and any unselected critical/high findings. If no selectable items remain, write `none-selectable`, skip implementation, and proceed to gates/artifact output.
+If `resolve_scope` was supplied up front, treat that input as the user's selection, apply it without asking again, and still write `$OUT_DIR/resolution-scope.md`. If `resolve_scope` was omitted and selectable items exist, stop before editing and ask the user exactly which findings to resolve. Do not infer `all`, do not silently select only code-editable items, and do not proceed from a default selection. If the runtime cannot ask the user interactively, fail with `scope-selection-required` before editing. If no selectable items remain, write `none-selectable`, skip implementation, and proceed to gates/artifact output.
+
+Record in `$OUT_DIR/resolution-scope.md` and `RESOLVE_METADATA.resolution_scope`:
+
+- selection source: `explicit-input`, `user-prompt`, or `none-selectable`
+- whether a prompt was presented
+- whether the user's selection was confirmed before editing
+- selected indexes and selected severity groups
+- omitted resolved-online count
+- deferred/unselected indexes
+- any unselected critical/high findings
 
 Validate selection before editing:
 
@@ -170,7 +212,12 @@ Validate selection before editing:
 - severity groups select every selectable item with matching severity
 - indexes select only rows in the selectable list
 - invalid indexes or attempts to select omitted/resolved items => fail before editing
+- selectable items with no explicit input or confirmed user prompt => fail before editing
 - unselected critical/high findings must be recorded as deferred by user selection in `resolution-scope.md` and final output
+
+Any item marked `out-of-scope` must be justified and confirmed by the user before it is removed from the selectable list. Record each such item in a `## Out Of Scope Confirmation` section with item id, source, rationale, evidence path, and the user's confirmation. If the user does not confirm, keep the item selectable as `valid` or `needs-clarification`.
+
+For `mode=pr`, also write a `## PR Relevance Summary` section in `$OUT_DIR/action-items.md` and `$OUT_DIR/resolution-scope.md` with counts for connected open items, connected selectable items, connected required follow-ups, and connected items marked `out-of-scope`. Connected means relation `direct-diff`, `pr-intent`, `adjacent`, or `unknown`. `connected items marked out-of-scope` must be `0`. Required follow-up rows must remain visible in the final output so the user can rule them into the current PR if they choose.
 
 ### 06: Apply Fixes In Selected Scope
 
@@ -204,7 +251,7 @@ Write unresolved findings to `$OUT_DIR/unresolved.txt`.
 ### 10: Write And Validate Result Artifact
 
 ```bash
-.codex/skills/_shared/write-result.sh \
+.codex/skills/_shared/write-result.py \
     --out "$OUT_DIR/result.candidate.json" \
     --status "$STATUS" \
     --checks-run "lint,format,types,tests,review" \
@@ -223,7 +270,7 @@ python3 .codex/skills/_shared/validate-artifacts.py \
 mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 ```
 
-`RESOLVE_METADATA.mode` must be the normalized mode. `RESOLVE_METADATA.resolution_scope` must summarize the requested scope, selected indexes, deferred indexes, and omitted resolved-online count. For `mode=pr`, include the selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, and `$OUT_DIR/merge-prestage.md`.
+`RESOLVE_METADATA.mode` must be the normalized mode. `RESOLVE_METADATA.confidence_recovery` must include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `RESOLVE_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale. `RESOLVE_METADATA.resolution_scope` must summarize the requested scope, selection source, whether a prompt was presented, whether the user's selection was confirmed before editing, selected indexes, selected severity groups, deferred indexes, and omitted resolved-online count. `RESOLVE_METADATA.review_report_intake` must summarize report-origin intake with `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, and `report_items_marked_out_of_scope`. `RESOLVE_METADATA.out_of_scope_confirmation` must summarize `count`, `all_confirmed_by_user`, and one item per out-of-scope row with item id, source, rationale, evidence path, and confirmation status. `RESOLVE_METADATA.pr_relevance` must summarize `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, and `connected_items_marked_out_of_scope`. For `mode=pr`, include the selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, and `$OUT_DIR/merge-prestage.md`.
 
 ## Fail-fast Rules
 
@@ -246,12 +293,19 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 17. PR mode resolving merge conflicts from conflict markers without recorded clean PR and target-branch context => fail.
 18. Applying report or online-review findings before PR merge/conflict prestage is complete => fail.
 19. PR mode running `git` or `gh` with `--force` before explicit user confirmation and overwrite-risk explanation => fail.
+20. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, or residual risks omitted from `action-items.md` => fail.
+21. Report-origin review obligation marked `out-of-scope` before user scope selection without cited evidence that it is unrelated to the requested report/PR/target => fail.
+22. Selected review gate or follow-up item marked resolved without matching closure evidence => fail.
+23. Selectable findings exist and `resolve_scope` was omitted, but no user prompt and confirmed user selection were recorded before editing => fail.
+24. Any item marked `out-of-scope` without specific rationale and explicit user confirmation => fail.
+25. PR item connected to PR intent, changed diff, adjacent verification, or unknown relation marked `out-of-scope` => fail.
+26. Connected PR item omitted from selectable scope or required follow-up without closure evidence => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: action-item ledger with review item resolution table, indexed resolution scope selection, PR online review triage, target branch refresh, PR merge/conflict prestage, local checkout evidence when relevant, closure log, unresolved list, and `git diff --check`.
+- `review`: action-item ledger with review item resolution table, review report failed-gate/follow-up intake, PR/diff relevance classification, indexed resolution scope selection with prompt/confirmation evidence, user-confirmed out-of-scope rationale, PR online review triage, target branch refresh, PR merge/conflict prestage, local checkout evidence when relevant, closure log, unresolved list, and `git diff --check`.
 - `tests`: the smallest checks that prove closure for fixed findings.
 - `artifact`: shared validator confirms closure artifacts, gate logs, and result JSON shape.
 
@@ -265,13 +319,15 @@ Conditional checks:
 Update calibration when resolution policy or output shape changes:
 
 - benchmark patterns: `resolve`
-- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, user-selected resolution scope, gate failure disclosure, artifact validator bypass, PR online review triage, PR target-branch refresh, PR merge/conflict prestage, PR local checkout before edits
+- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, review-to-resolve gate symmetry, gate failure disclosure, artifact validator bypass, PR online review triage, PR target-branch refresh, PR merge/conflict prestage, PR local checkout before edits
 
 ## Output Contract
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-The final terminal/chat output must start with a Markdown table under `Review Item Resolution Table` before narrative summary. The table must include every report item requested by the user and every fetched PR review item considered during `mode=pr`, with source, summary, triage status, resolution, and evidence. Use the same resolution vocabulary as `$OUT_DIR/action-items.md`: `implemented`, `resolved`, `rejected`, `stale`, `not-applicable`, `duplicate`, `already-fixed`, `already-applied`, `needs-clarification`, or `unresolved`. Do not use `resolved` without explaining how it was resolved in the evidence column. For PR comments or threads resolved in fetched online evidence, mark triage status and resolution `resolved`, cite the fetched evidence, and do not list any further action. For review items already applied in current local code, mark triage status and resolution `already-applied` and do not list any further action. After the table, include a `Resolution Scope Selection` summary with selected indexes, selected severities or `all`, omitted resolved-online count, and deferred critical/high items. For `mode=pr`, also include a compact `Merge Prestage Summary` that cites `$OUT_DIR/merge-prestage.md`, target branch refresh evidence, and any conflict/collision work completed before applying review/report findings.
+Apply the shared confidence band policy from `../_shared/quality-gates.md` for confidence score, confidence recovery, and confidence-gap closure output.
+
+The final terminal/chat output must start with a Markdown table under `Review Item Resolution Table` before narrative summary. The table must include every report item requested by the user, every report-origin failed check/follow-up/required-next-work/confidence gap from a review report, and every fetched PR review item considered during `mode=pr`, with source, PR/diff relation, summary, triage status, resolution, and evidence. Use the same resolution vocabulary as `$OUT_DIR/action-items.md`: `implemented`, `resolved`, `rejected`, `stale`, `not-applicable`, `duplicate`, `already-fixed`, `already-applied`, `needs-clarification`, or `unresolved`. Do not use `resolved` without explaining how it was resolved in the evidence column. For PR comments or threads resolved in fetched online evidence, mark triage status and resolution `resolved`, cite the fetched evidence, and do not list any further action. For review items already applied in current local code, mark triage status and resolution `already-applied` and do not list any further action. For report-origin review gates or follow-ups that cannot be closed locally, keep triage `valid` or `needs-clarification`, resolution `unresolved`, and cite the blocker; do not downgrade them to `out-of-scope`. Any `out-of-scope` row must cite the rationale and user confirmation. For `mode=pr`, include a `PR Relevance Summary`; connected unresolved or deferred items must be shown as selectable work or required follow-up so the user can rule them into this PR. After the table, include a `Resolution Scope Selection` summary with selection source, whether the prompt was presented, whether the selection was confirmed by the user, selected indexes, selected severities or `all`, omitted resolved-online count, and deferred critical/high items. Include confidence score, confidence band status, recovery actions, remaining limits, confidence gaps or degradation reasons from `metadata.confidence_gaps`, and confidence-gap closures from `metadata.confidence_gap_closures`. For `mode=pr`, also include a compact `Merge Prestage Summary` that cites `$OUT_DIR/merge-prestage.md`, target branch refresh evidence, and any conflict/collision work completed before applying review/report findings.
 
 Minimum artifact payload:
 
@@ -295,12 +351,60 @@ Minimum artifact payload:
   "confidence": 0.0,
   "artifact_path": ".reports/codex/resolve/<timestamp>/result.json",
   "metadata": {
+    "confidence_gaps": [
+      "why confidence is below 1.0 or residual limits still matter"
+    ],
+    "confidence_gap_closures": [
+      {
+        "gap": "why confidence is below 1.0 or residual limits still matter",
+        "status": "closed|unresolved|deferred",
+        "evidence": "evidence that closes the gap when status=closed",
+        "rationale": "why the gap remains open when status=unresolved|deferred"
+      }
+    ],
+    "confidence_recovery": {
+      "initial_confidence": 0.0,
+      "final_confidence": 0.0,
+      "status": "shared-confidence-band-status",
+      "evidence": [
+        "objective evidence supporting final confidence"
+      ],
+      "recovery_actions": [
+        "internal confidence-improvement loop performed before output"
+      ],
+      "remaining_limits": [
+        "residual uncertainty"
+      ]
+    },
     "mode": "report|pr",
     "resolution_scope": {
       "requested": "all|critical|high|medium|low|indexes",
+      "selection_source": "explicit-input|user-prompt|none-selectable",
+      "prompt_presented": false,
+      "selection_confirmed_by_user": false,
       "selected_indexes": [],
+      "selected_severity_groups": [],
       "deferred_indexes": [],
       "omitted_resolved_online_count": 0
+    },
+    "review_report_intake": {
+      "requested_report": false,
+      "report_items_total": 0,
+      "review_gate_items_total": 0,
+      "review_gate_items_selectable": 0,
+      "report_items_marked_out_of_scope": 0
+    },
+    "out_of_scope_confirmation": {
+      "count": 0,
+      "all_confirmed_by_user": true,
+      "items": []
+    },
+    "pr_relevance": {
+      "evaluated": false,
+      "connected_open_items_total": 0,
+      "connected_selectable_items_total": 0,
+      "connected_required_followup_total": 0,
+      "connected_items_marked_out_of_scope": 0
     }
   }
 }

@@ -53,6 +53,7 @@ Define the narrowest reversible change, owned files, and acceptance criteria. If
 
 - Existing code and tests for the target surface have been read.
 - Failure mode or new behavior is captured by a failing doctest, pytest, or explicit acceptance check.
+- Coding changes have a project coding-principles plan from `.codex/AGENTS.md`: simple/readable/reproducible structure first, short reusable units without low-value argument-remapping wrappers, guard clauses or early `return`/`yield`/`continue` for invalid or terminal cases, project docstring-style detection, concise purpose docstrings, and inline comments only for non-trivial implementation blocks.
 - `feature` mode has a feature demo contract before production edits:
   - simple public API: inline doctest or focused pytest that shows the intended call and result
   - multi-step behavior: minimal example or pytest exercising the user-visible workflow end to end
@@ -65,6 +66,14 @@ Define the narrowest reversible change, owned files, and acceptance criteria. If
 - The next edit is the smallest reversible step, not a speculative refactor.
 
 ### 05: Implement minimal change
+
+While implementing, keep the code understandable from the code itself:
+
+- Apply the consolidated project coding principles from `.codex/AGENTS.md`.
+- Refactor long, dense, or deeply nested blocks into named helpers/classes before adding explanatory text.
+- Avoid tiny rarely used helpers that only remap arguments; keep the logic inline, use a local helper, or use `functools.partial` when only binding arguments.
+- Match the project's configured or established docstring style, and keep function/class purpose in docstrings rather than comments directly above definitions.
+- Refactor instead of writing long docstrings or comments when a block needs a long explanation to be understandable.
 
 ### 06: Apply specialist policy when the change crosses a domain boundary
 
@@ -96,10 +105,27 @@ Required sections:
 
 ### 10: Classify findings using `../_shared/severity-map.md`
 
-### 11: Write and validate the mandatory result artifact
+### 11: Run confidence calibration and recovery before any user-facing output
+
+Write `"$OUT_DIR/confidence-calibration.md"` with these sections:
+
+- `Initial Confidence`: starting score and the concrete uncertainty sources.
+- `Objective Evidence`: code paths read, tests/checks run, reproduction or acceptance evidence, and artifacts inspected.
+- `Confidence Gaps`: missing evidence, unverified assumptions, risky substitutions, or unavailable checks.
+- `Recovery Actions`: internal loops already performed to increase confidence, such as reading more source, running focused checks, adding/adjusting tests, consulting specialist policy, or reducing scope.
+- `Recomputed Confidence`: final score after recovery, with why it is objectively supported.
+- `Remaining Limits`: residual uncertainty and why it is acceptable or blocking.
+
+Shared confidence policy:
+
+Apply the shared confidence band policy from `../_shared/quality-gates.md`. This skill records the required evidence in `confidence-calibration.md` and mirrors it in `DEVELOP_METADATA.confidence_recovery` before output.
+
+Confidence must be honest and objectively verifiable. Do not inflate it to pass a gate; if the evidence is missing, keep the lower score and fail or time out with the missing evidence named.
+
+### 12: Write and validate the mandatory result artifact
 
 ```bash
-.codex/skills/_shared/write-result.sh \
+.codex/skills/_shared/write-result.py \
     --out "$OUT_DIR/result.candidate.json" \
     --status "$STATUS" \
     --checks-run "lint,format,types,tests,review" \
@@ -109,6 +135,7 @@ Required sections:
     --medium "$MEDIUM" \
     --low "$LOW" \
     --confidence "$CONFIDENCE" \
+    --metadata "$DEVELOP_METADATA" \
     --artifact-path "$OUT_DIR/result.json"
 python3 .codex/skills/_shared/validate-artifacts.py \
     --skill develop \
@@ -116,6 +143,8 @@ python3 .codex/skills/_shared/validate-artifacts.py \
     --result "$OUT_DIR/result.candidate.json"
 mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 ```
+
+`DEVELOP_METADATA.confidence_recovery` must mirror `confidence-calibration.md` and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `DEVELOP_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
 
 ## Fail-fast Rules
 
@@ -133,14 +162,22 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 12. Missing `development-notes.md` sections => fail.
 13. Result artifact validator failure => fail.
 14. Result artifact missing => fail.
+15. New or materially changed function/method without a purpose docstring in the configured, established, or fallback project style => fail unless it is generated or third-party code explicitly outside the edited ownership.
+16. Non-trivial new or changed code block without an explanatory inline comment => fail unless the code was refactored until the rationale is obvious from names and structure.
+17. Explanatory inline comment immediately before a new or changed function/class definition => fail; move that explanation into the docstring.
+18. Long, dense, or deeply nested new/changed code block that could be split into clear helpers/classes or simplified with guard clauses => fail unless the local project pattern requires the structure.
+19. Low-value tiny function/class that only remaps arguments, wraps one call without a semantic purpose, or is rarely used => fail unless it materially improves readability, testability, or API stability.
+20. Missing `confidence-calibration.md` sections => fail.
+21. Shared confidence policy violation from `../_shared/quality-gates.md` => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: `git diff --check`, changed-file inspection, and acceptance criteria trace.
+- `review`: `git diff --check`, changed-file inspection, acceptance criteria trace, simplicity/readability/reproducibility inspection, project docstring-style detection, and docstring/comment policy inspection for changed code.
 - `tests`: failing-then-passing check or explicit acceptance probe for changed behavior; `feature` mode must include the demo failure before edits and demo pass after implementation.
 - `artifact`: shared validator confirms `development-notes.md`, gate logs, and result JSON shape.
+- `confidence`: `confidence-calibration.md` and `DEVELOP_METADATA.confidence_recovery` satisfy the shared confidence band policy from `../_shared/quality-gates.md`.
 
 Conditional checks:
 
@@ -152,11 +189,13 @@ Conditional checks:
 Update calibration when implementation routing or output expectations change:
 
 - benchmark patterns: `develop`
-- behavioral cases: symptom-first routing, specialist substitution, config behavior changes, missing acceptance probe, feature demo gate bypass, artifact validator bypass
+- behavioral cases: symptom-first routing, specialist substitution, config behavior changes, missing acceptance probe, feature demo gate bypass, missing project docstring-style detection, missing function docstrings, overlong docstrings masking complex code, long code blocks not factored, deep branching without guard clauses, low-value argument-remapping wrappers, pre-definition comments that should be docstrings, missing explanatory inline comments, low-confidence recovery loop, objective confidence evidence, artifact validator bypass
 
 ## Output Contract
 
 Use shared gate schema from `../_shared/quality-gates.md`.
+
+Final chat output must include the confidence score, confidence band status, recovery actions, remaining limits, and the concrete confidence gaps or degradation reasons plus closure status from `metadata.confidence_gaps` and `metadata.confidence_gap_closures`.
 
 Minimum artifact payload:
 
@@ -178,6 +217,33 @@ Minimum artifact payload:
     "low": 0
   },
   "confidence": 0.0,
+  "metadata": {
+    "confidence_gaps": [
+      "why confidence is below 1.0 or residual limits still matter"
+    ],
+    "confidence_gap_closures": [
+      {
+        "gap": "why confidence is below 1.0 or residual limits still matter",
+        "status": "closed|unresolved|deferred",
+        "evidence": "evidence that closes the gap when status=closed",
+        "rationale": "why the gap remains open when status=unresolved|deferred"
+      }
+    ],
+    "confidence_recovery": {
+      "initial_confidence": 0.0,
+      "final_confidence": 0.0,
+      "status": "shared-confidence-band-status",
+      "evidence": [
+        "objective evidence supporting final confidence"
+      ],
+      "recovery_actions": [
+        "internal confidence-improvement loop performed before output"
+      ],
+      "remaining_limits": [
+        "residual uncertainty"
+      ]
+    }
+  },
   "artifact_path": ".reports/codex/develop/<timestamp>/result.json"
 }
 ```

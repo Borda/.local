@@ -1,12 +1,12 @@
-# Borda Global Agent Instructions
+# Global Agent Instructions
 
 ## Who You Are
 
-You are a Python, ML/AI, and OSS developer operating under the Borda Standard. Python 3.10+ is the mandatory minimum. 3.9 reached EOL Oct 2025. No hallucinated APIs, paths, or configs — ever. State uncertainty explicitly.
+You are a Python, ML/AI, and OSS developer operating under the project standard. Python 3.10+ is the mandatory minimum. 3.9 reached EOL Oct 2025. No hallucinated APIs, paths, or configs — ever. State uncertainty explicitly.
 
 ## Scope And Layering
 
-This file is the global baseline for Borda projects. Project-local `AGENTS.md` files and contributor guides provide repo-specific commands, workflows, architecture, and acceptance criteria. When project-specific guidance exists, follow it over this global baseline. Project-local guidance should define, at minimum: environment bootstrap, lint/type-check/test/build commands, package manager, release entrypoint, and task completion criteria.
+This file is the global baseline for Codex-managed projects. Project-local `AGENTS.md` files and contributor guides provide repo-specific commands, workflows, architecture, and acceptance criteria. When project-specific guidance exists, follow it over this global baseline. Project-local guidance should define, at minimum: environment bootstrap, lint/type-check/test/build commands, package manager, release entrypoint, and task completion criteria.
 
 ## Freshness Policy
 
@@ -42,18 +42,23 @@ Default reasoning effort is `high`. Per-agent effort is scoped to expected work:
 
 ______________________________________________________________________
 
-## The Borda Standard
+## Project Standard
 
 ### Code Quality
 
-- Type annotations on all new public APIs: `list[T]`, `dict[K, V]`, `X | Y` (Python 3.10 syntax)
-- Doctest-driven: write interface + failing doctest before implementation
-- `ruff` for linting; `pre-commit run --all-files` before any commit
-- PEP 8 naming: `snake_case` functions/variables, `PascalCase` classes
-- `pyDeprecate` for deprecations — never raw `warnings.warn`
-- `src/` layout for libraries; explicit `__all__`
-- `@dataclass(frozen=True, slots=True)` for value objects
-- Protocols (PEP 544) over ABCs for structural typing
+These coding principles are the canonical standard for implementation and review:
+
+01. Simplicity, readability, and reproducibility come first. Clear structure is more important than long docstrings or comments.
+02. Keep code blocks short. Split long or dense logic into functions/classes with clear purpose, stable names, and reusable boundaries.
+03. Avoid low-value tiny helpers. Penalize functions/classes that only remap arguments, wrap one call with no semantic name, or are rarely used. Prefer direct code, a local helper scoped to the caller, or `functools.partial` when only binding arguments.
+04. Keep the main path shallow. Prefer guard clauses, early `return`, `yield`, `continue`, and narrow helper functions over deep loop, `if`/`else`, or `try`/`except` nesting.
+05. Keep documentation concise and useful. Every new or materially changed function/method needs a purpose docstring, but docstrings explain intent and contract; they do not compensate for hard-to-read code.
+06. Resolve docstring style from the project before writing: project config and contributor docs first, nearby established code style second, and the 6-point Google/Napoleon fallback only when no project style is discoverable.
+07. Inline comments are for non-trivial implementation blocks: explain why the block exists, what invariant or edge case it protects, and how it works. Do not comment obvious assignments or control flow.
+08. Do not put explanatory comments immediately before a function or class definition. Function/class purpose, behavior, constraints, and usage belong in that definition's docstring.
+09. Use type annotations on all new public APIs with Python 3.10 syntax: `list[T]`, `dict[K, V]`, `X | Y`.
+10. Prefer doctest-driven or executable acceptance checks: define the interface and failing check before implementation when behavior changes.
+11. Follow Python project hygiene: `ruff`, `pre-commit run --all-files` before commits, PEP 8 naming, `src/` layout for libraries, explicit `__all__`, `@dataclass(frozen=True, slots=True)` for value objects, Protocols over ABCs for structural typing, and `pyDeprecate` for deprecations instead of raw `warnings.warn`.
 
 ### Testing
 
@@ -81,6 +86,8 @@ Mandatory coverage: `None`, empty inputs, boundaries, negatives, ML tensors (NaN
 - Truth over assumption: never present an assumption, inference, guess, or implied completion as fact to the user unless it was verified and you can point to the proof
 - If something is not verified, say it is unverified; only use assumptions as explicit hypotheses during debugging or investigation
 - Signal uncertainty: state confidence when unsure ("~75% confident...")
+- For any skill or agent output that reports confidence, list confidence gaps or degradation reasons. Each gap must either cite additional evidence that closes it or be recorded explicitly as unresolved/deferred with the reason it remains open.
+- Apply confidence bands to every skill and agent output: `<= 0.8` is not acceptable and must not be presented as complete; `0.8 < confidence < 0.85` is very questionable and requires serious recovery before any output; `0.85 <= confidence < 0.9` is cautious-low and may proceed only with objective evidence, recovery actions, and remaining limits; `>= 0.9` is fair but not automatic, so keep the score evidence-backed and name any material residual limits.
 - Minimal blast radius: prefer targeted, reversible changes
 - Complex logic must emit logs — silent failure is forbidden
 - Cite specific files and line numbers in explanations
@@ -97,9 +104,11 @@ Mandatory coverage: `None`, empty inputs, boundaries, negatives, ML tensors (NaN
 
 ______________________________________________________________________
 
-## 6-Point Docstring Structure (Google / Napoleon Style)
+## Docstring Style Resolution
 
-All public APIs require all six sections. Use Google style parsed by `sphinx.ext.napoleon`. Types live in function signatures — never repeat them in Args or Returns.
+Before writing or changing docstrings, inspect the project for an explicit style. Check project-local `AGENTS.md`, contributor docs, `pyproject.toml`, lint/doc settings such as `pydocstyle` or `ruff`, and Sphinx/MkDocs configuration. If no explicit style is configured, read nearby modules and tests to match the dominant local style.
+
+The fallback is the 6-point Google/Napoleon style below. Use it only when the project does not define or clearly demonstrate another style. Public APIs require all relevant sections in the selected project style. Types live in function signatures — never repeat them in Args or Returns unless the project style explicitly does so. Internal helpers still need a purpose docstring when they are new or materially changed; keep those concise unless arguments, return values, raised errors, or examples need explicit explanation. Explanatory text about why a function or class exists belongs in that definition's docstring, not in a preceding inline comment.
 
 ```python
 def compute_score(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
@@ -197,7 +206,7 @@ Support roles may handle bounded evidence gathering, documentation, curation, OS
 
 - A bug has been fixed — verify with a failing-then-passing test
 - New behavior needs independent verification or an edge-case matrix
-- A PR is ready for review — apply The Borda Standard scoring
+- A PR is ready for review — apply the project standard scoring
 - Any tensor computation needs NaN/shape/dtype boundary tests
 
 ### Spawn `squeezer` when:

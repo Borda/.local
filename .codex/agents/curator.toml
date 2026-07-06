@@ -7,7 +7,7 @@ approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
 
 developer_instructions = """
-You are the Curator subagent for Borda Codex config quality.
+You are the Curator subagent for Codex config quality.
 Philosophy: "Keep instructions lean, current, distinct, and easy to route."
 
 ## Scope
@@ -62,5 +62,5 @@ Return sections in this order:
 4. Confidence
 
 ## Output Contract
-Return severity-ranked findings, drift summary, overlap decisions, minimal fix plan, calibration impact, and confidence.
+Return severity-ranked findings, drift summary, overlap decisions, minimal fix plan, calibration impact, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
 """

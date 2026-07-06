@@ -216,6 +216,52 @@
     },
     {
       "expected_findings": [
+        "project-docstring-style-not-checked",
+        "function-docstring-missing",
+        "pre-definition-comment-should-be-docstring",
+        "nontrivial-inline-comment-missing"
+      ],
+      "id": "develop-code-self-documentation",
+      "prompt": "Assess an implementation plan that imposes the fallback Google/Napoleon docstring style without checking project configuration or nearby files, adds or materially changes functions without purpose docstrings, explains a function with a comment immediately above its def line, and includes dense defensive branching with no inline comment explaining why the branch exists, what invariant it protects, or how it works.",
+      "target": "develop"
+    },
+    {
+      "expected_findings": [
+        "docstring-overweighted",
+        "long-code-block-not-factored",
+        "deep-branching-guard-clause-missing",
+        "reusable-boundary-missing",
+        "low-value-wrapper",
+        "partial-or-local-helper-preferred"
+      ],
+      "id": "develop-structure-readability",
+      "prompt": "Assess an implementation plan that tries to explain a long nested loop with a very large docstring, keeps all behavior in one dense function, nests if/else and try/except around the main path, creates a rarely used helper that only remaps arguments to another call, and does not split reusable logic into clear helpers, use a local helper, use functools.partial for argument binding, or use guard clauses for invalid cases.",
+      "target": "develop"
+    },
+    {
+      "expected_findings": [
+        "confidence-not-acceptable",
+        "confidence-recovery-loop-missing",
+        "objective-confidence-evidence-missing",
+        "user-output-before-confidence-recovery"
+      ],
+      "id": "develop-low-confidence-recovery",
+      "prompt": "Assess a develop workflow that reports completion to the user with confidence 0.62, writes no confidence-calibration.md, records no objective evidence for the score, and performs no recovery actions to raise or falsify confidence before output.",
+      "target": "develop"
+    },
+    {
+      "expected_findings": [
+        "confidence-very-questionable",
+        "serious-recovery-missing",
+        "objective-confidence-evidence-missing",
+        "completion-output-before-confidence-recovery"
+      ],
+      "id": "develop-very-questionable-confidence",
+      "prompt": "Assess a develop workflow that reports completion with confidence 0.83 after only superficial checks, records no serious recovery work, and treats the score as acceptable without naming remaining evidence gaps.",
+      "target": "develop"
+    },
+    {
+      "expected_findings": [
         "native-runtime-leakage",
         "sync-hostile-reference",
         "contract-section-missing"
@@ -314,12 +360,98 @@
     },
     {
       "expected_findings": [
+        "confidence-not-acceptable",
+        "confidence-recovery-loop-missing",
+        "objective-confidence-evidence-missing",
+        "merge-ready-output-before-confidence-recovery"
+      ],
+      "id": "review-low-confidence-recovery",
+      "prompt": "Assess a review workflow that gives a merge-ready recommendation at confidence 0.74 with no Confidence Calibration section, no confidence_recovery metadata, no extra source reads or checks to resolve the low score, and no objective evidence behind the final confidence.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "confidence-very-questionable",
+        "serious-recovery-missing",
+        "objective-confidence-evidence-missing",
+        "merge-ready-output-before-confidence-recovery"
+      ],
+      "id": "review-very-questionable-confidence",
+      "prompt": "Assess a review workflow that gives a merge-ready recommendation at confidence 0.84, runs no serious confidence recovery, and treats the score as acceptable without recording remaining risks.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "confidence-gaps-missing",
+        "degradation-reasons-missing",
+        "confidence-score-overcompressed"
+      ],
+      "id": "review-confidence-output-gaps-missing",
+      "prompt": "Assess a review final output that reports confidence 0.88 but does not list the confidence gaps, degradation reasons, or residual limits behind that score.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
         "fresh-online-review-collection-missing",
         "validity-triage-missing",
         "invalid-review-comment-fixed"
       ],
       "id": "resolve-pr-online-triage",
       "prompt": "Assess a PR resolve workflow that takes a review report, applies every online PR comment as a fix without re-collecting current reviews or triaging comments as valid, duplicate, stale, out-of-scope, already-fixed, or needs-clarification.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "review-gate-item-dropped",
+        "report-follow-up-marked-out-of-scope",
+        "failed-review-check-not-selectable",
+        "false-pass-with-unresolved-review-gates"
+      ],
+      "id": "resolve-review-report-gate-asymmetry",
+      "prompt": "Assess a resolve workflow that uses a review report with checks_failed independence, follow_up needs-independent-review, full-gate noise, and missing mypy, but marks these report-origin items out-of-scope, omits them from the selectable list, and returns pass after fixing only concrete code findings.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "scope-selection-prompt-missing",
+        "default-selection-used",
+        "selection-confirmation-missing",
+        "edited-before-user-scope"
+      ],
+      "id": "resolve-scope-selection-missing",
+      "prompt": "Assess a resolve workflow with selectable valid findings where resolve_scope is omitted, the agent silently chooses all or only code-editable findings, edits files, and records no user prompt or confirmed selection before editing.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "out-of-scope-rationale-missing",
+        "out-of-scope-user-confirmation-missing",
+        "report-item-removed-before-confirmation",
+        "invalid-out-of-scope-resolution"
+      ],
+      "id": "resolve-out-of-scope-unconfirmed",
+      "prompt": "Assess a resolve workflow that marks report-origin review items out-of-scope, removes them from the selectable list, and returns pass without a specific rationale, evidence path, or explicit user confirmation for each out-of-scope item.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "connected-pr-item-marked-out-of-scope",
+        "pr-diff-relevance-not-evaluated",
+        "required-followup-missing",
+        "user-cannot-rule-item-into-pr"
+      ],
+      "id": "resolve-connected-pr-item-out-of-scope",
+      "prompt": "Assess a PR resolve workflow that marks a PR comment out-of-scope even though it references a changed file, touched hunk, PR intent, or adjacent verification, does not record PR/diff relation, and does not keep the item selectable or visible as required follow-up for the user to rule into the PR.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "confidence-gaps-missing",
+        "degradation-reasons-missing",
+        "confidence-score-overcompressed"
+      ],
+      "id": "resolve-confidence-output-gaps-missing",
+      "prompt": "Assess a resolve final output that reports confidence 0.9 but does not list confidence gaps, degradation reasons, unresolved limits, or why confidence was not higher.",
       "target": "resolve"
     },
     {
@@ -406,14 +538,25 @@
       "id": "web-explorer-secondary-source-only",
       "prompt": "Assess an external API migration answer that uses only secondary summaries and does not map the current primary-source version delta to local code impact.",
       "target": "web-explorer"
+    },
+    {
+      "expected_findings": [
+        "confidence-band-policy-missing",
+        "confidence-recovery-missing",
+        "confidence-gap-closure-missing",
+        "low-confidence-agent-output-treated-complete"
+      ],
+      "id": "agent-universal-confidence-policy",
+      "prompt": "Assess agent and skill instructions where only review/develop define confidence bands, an agent output reports confidence 0.82 as complete, and no confidence recovery or confidence-gap closure record is required.",
+      "target": "curator"
     }
   ],
   "thresholds": {
     "max_confidence_mae": 0.2,
     "max_mean_overconfidence": 0.15,
-    "min_observations": 41,
+    "min_observations": 54,
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.3"
+  "version": "1.4"
 }

@@ -29,7 +29,7 @@ Run a linear calibration loop for codex workflow integrity and behavioral scorin
 
 - Require `source`, `run_id`, and `observed_at` on each observation where available.
 
-### 04: Run `.codex/calibration/run.sh`
+### 04: Run `.codex/calibration/run.py`
 
 ### 05: Inspect `checks_failed`, `leaks_found`, and `behavioral`
 
@@ -67,8 +67,9 @@ Skill checks:
 - artifact path uses `.reports/codex/<skill>/`
 - output examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, and `artifact_path`
 - native skill files do not depend on external runner-only metadata or cache paths
-- shared helper checks cover `run-gates.sh`, `write-result.sh`, `collect-diff.sh`, `collect-pr.sh`, `find-review-report.py`, and `validate-artifacts.py`
+- shared helper checks cover `run-gates.sh`, executable `write-result.py`, `collect-diff.sh`, `collect-pr.sh`, `find-review-report.py`, and `validate-artifacts.py`
 - offline CI harness checks cover `.github/codex-harness.sh`, the `CODEX_OFFLINE_HARNESS` marker, blocked LLM/network command shims, `GITHUB_STEP_SUMMARY`, `.github/codex-harness-results/`, upload-artifact wiring, and the `offline-ci-harness` check id
+- behavioral case-set version checks compare `.codex/calibration/behavioral-cases.json` against `HEAD`; the working tree may keep the same version or advance by exactly one commit-relative version step, but must not repeatedly bump versions inside one uncommitted change set
 
 Agent checks:
 
@@ -90,6 +91,7 @@ Agent checks:
 - Treat `live_observations = 0` as a reporting caveat, not proof that live Codex quality is acceptable.
 - Compare behavioral thresholds against `gate_metrics_raw`, not rounded display metrics.
 - Use `source=live-*`, a stable `run_id`, and UTC `observed_at` timestamps for live behavioral calibration rows.
+- Treat calibration fixture `version` fields as committed-history markers. Before changing one, compare with `git show HEAD:<path>` and keep the dirty tree at either the last committed version or a single next version until the change is committed.
 - If the run surfaces missing registration or pattern mismatches, prefer a minimal config fix and rerun before widening the change.
 
 ## Fail-Fast Rules
@@ -101,12 +103,14 @@ Agent checks:
 5. Behavioral gate below threshold => fail.
 6. Result artifact missing => fail.
 7. Offline CI harness missing, not executable, or able to invoke LLM/network commands => fail.
+8. Behavioral case-set version advances more than one step from the last committed version => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `calibration`: `.codex/calibration/run.sh`.
+- `calibration`: `.codex/calibration/run.py`.
+- `behavioral-version-policy`: compare the behavioral case-set version against `HEAD` so dirty-tree iterations do not create meaningless version gaps.
 - `offline-ci-harness`: `.github/codex-harness.sh` must run the calibration harness without Codex/OpenAI/LLM credentials or network-capable helper CLIs, print the result summary, save artifacts under `.github/codex-harness-results/`, and wire that folder to the GitHub artifact upload step.
 - `review`: inspect failed patterns, leakage, behavioral gaps, and stale fixtures before recommending changes.
 
@@ -122,7 +126,7 @@ When calibration expectations change, update together:
 - `.codex/calibration/benchmarks.json`
 - `.codex/calibration/behavioral-cases.json`
 - `.codex/calibration/behavioral-observations.jsonl`
-- `.codex/calibration/run.sh`
+- `.codex/calibration/run.py`
 - `.github/codex-harness.sh`
 - `.github/workflows/ci-harness.yml`
 

@@ -18,6 +18,7 @@ REQUIRED_SECTIONS = (
     "Findings",
     "No-Finding Residual Risks",
     "Confidence Gaps",
+    "Confidence Calibration",
 )
 REQUIRED_ROLES = {"qa-specialist", "challenger"}
 VALID_RECOMMENDATIONS = {"accept-as-is", "minor-changes", "needs-more-work", "reject", "not-aligned"}
@@ -77,6 +78,117 @@ def _validate_review_decision(metadata: dict[str, Any]) -> None:
         value = decision.get(key)
         if not isinstance(value, str) or not value.strip():
             raise SystemExit(f"review-decision-missing-{key}")
+
+
+def _validate_confidence_gaps(result: dict[str, Any], metadata: dict[str, Any]) -> None:
+    """Validate confidence gap metadata whenever review confidence is reported."""
+    confidence_gaps = metadata.get("confidence_gaps")
+    if not isinstance(confidence_gaps, list) or not all(isinstance(item, str) for item in confidence_gaps):
+        raise SystemExit("review-invalid-confidence-gaps")
+    if float(result["confidence"]) < 1.0 and not any(item.strip() for item in confidence_gaps):
+        raise SystemExit("review-confidence-gaps-required")
+    _validate_confidence_gap_closures(metadata, confidence_gaps)
+
+
+def _validate_confidence_gap_closures(metadata: dict[str, Any], confidence_gaps: list[str]) -> None:
+    """Validate that every review confidence gap has closure evidence or carry-forward state."""
+    active_gaps = [gap.strip() for gap in confidence_gaps if gap.strip()]
+    if not active_gaps:
+        return
+
+    closures = metadata.get("confidence_gap_closures")
+    if not isinstance(closures, list):
+        raise SystemExit("review-missing-confidence-gap-closures")
+
+    closed_gaps: set[str] = set()
+    for index, closure in enumerate(closures):
+        if not isinstance(closure, dict):
+            raise SystemExit(f"review-confidence-gap-closure-not-object:{index}")
+        gap = closure.get("gap")
+        if not isinstance(gap, str) or not gap.strip():
+            raise SystemExit(f"review-confidence-gap-closure-missing-gap:{index}")
+        status = closure.get("status")
+        if status not in {"closed", "unresolved", "deferred"}:
+            raise SystemExit(f"review-confidence-gap-closure-invalid-status:{index}")
+        evidence = closure.get("evidence") or closure.get("evidence_path")
+        rationale = closure.get("rationale")
+        if status == "closed" and not (isinstance(evidence, str) and evidence.strip()):
+            raise SystemExit(f"review-confidence-gap-closure-missing-evidence:{index}")
+        if status in {"unresolved", "deferred"} and not (isinstance(rationale, str) and rationale.strip()):
+            raise SystemExit(f"review-confidence-gap-closure-missing-rationale:{index}")
+        closed_gaps.add(gap.strip())
+
+    missing = sorted(set(active_gaps) - closed_gaps)
+    if missing:
+        raise SystemExit(f"review-confidence-gap-closure-missing:{','.join(missing)}")
+
+
+def _require_non_empty_string_list(payload: dict[str, Any], key: str, context: str) -> list[str]:
+    """Return a required non-empty list of non-blank strings from a metadata object."""
+    value = payload.get(key)
+    if not isinstance(value, list) or not value or not all(isinstance(item, str) and item.strip() for item in value):
+        raise SystemExit(f"{context}-invalid-{key}")
+    return value
+
+
+def _validate_confidence_recovery(result: dict[str, Any], metadata: dict[str, Any]) -> None:
+    """Validate evidence-backed confidence recovery metadata for review artifacts."""
+    confidence = result.get("confidence")
+    if not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
+        raise SystemExit("invalid-confidence")
+    checks_failed = result.get("checks_failed")
+    if not isinstance(checks_failed, list):
+        raise SystemExit("invalid-checks-failed")
+
+    recovery = metadata.get("confidence_recovery")
+    if not isinstance(recovery, dict):
+        raise SystemExit("review-missing-confidence-recovery-metadata")
+
+    initial = recovery.get("initial_confidence")
+    final = recovery.get("final_confidence")
+    if not isinstance(initial, int | float) or not 0.0 <= float(initial) <= 1.0:
+        raise SystemExit("review-invalid-initial-confidence")
+    if not isinstance(final, int | float) or not 0.0 <= float(final) <= 1.0:
+        raise SystemExit("review-invalid-final-confidence")
+    if abs(float(final) - float(confidence)) > 0.001:
+        raise SystemExit("review-confidence-recovery-final-mismatch")
+
+    status = recovery.get("status")
+    if status not in {"fair", "cautious-low", "very-questionable", "not-acceptable-failed"}:
+        raise SystemExit("review-invalid-confidence-recovery-status")
+
+    _require_non_empty_string_list(recovery, "evidence", "review")
+    recovery_actions = _require_non_empty_string_list(recovery, "recovery_actions", "review")
+    remaining_limits = recovery.get("remaining_limits")
+    if not isinstance(remaining_limits, list) or not all(isinstance(item, str) for item in remaining_limits):
+        raise SystemExit("review-invalid-remaining-limits")
+
+    confidence_value = float(confidence)
+    if confidence_value <= 0.8:
+        if result["status"] == "pass":
+            raise SystemExit("review-pass-confidence-not-acceptable")
+        if "confidence-not-acceptable" not in checks_failed:
+            raise SystemExit("review-missing-confidence-not-acceptable-check")
+        if status != "not-acceptable-failed":
+            raise SystemExit("review-confidence-status-should-fail")
+        if not recovery_actions or not remaining_limits:
+            raise SystemExit("review-low-confidence-recovery-missing")
+    elif confidence_value < 0.85:
+        if result["status"] == "pass":
+            raise SystemExit("review-pass-confidence-very-questionable")
+        if "confidence-very-questionable" not in checks_failed:
+            raise SystemExit("review-missing-confidence-very-questionable-check")
+        if status != "very-questionable":
+            raise SystemExit("review-confidence-status-should-be-very-questionable")
+        if not recovery_actions or not remaining_limits:
+            raise SystemExit("review-very-questionable-confidence-evidence-missing")
+    elif confidence_value < 0.9:
+        if status != "cautious-low":
+            raise SystemExit("review-confidence-status-should-be-cautious-low")
+        if not recovery_actions or not remaining_limits:
+            raise SystemExit("review-cautious-low-confidence-evidence-missing")
+    elif status != "fair":
+        raise SystemExit("review-confidence-status-should-be-fair")
 
 
 def _manifest_passes(manifest: dict[str, Any]) -> list[dict[str, Any]]:
@@ -147,6 +259,8 @@ def _validate_result(out_dir: Path, result_path: Path) -> None:
     notes_path = out_dir / "review-notes.md"
     _require_notes_sections(notes_path)
     _validate_review_decision(metadata)
+    _validate_confidence_gaps(result, metadata)
+    _validate_confidence_recovery(result, metadata)
     if scope == "pr":
         notes_text = notes_path.read_text(encoding="utf-8")
         if "Online Review Triage" not in notes_text:

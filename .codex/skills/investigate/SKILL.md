@@ -96,7 +96,7 @@ Write `$OUT_DIR/root-cause.md` with:
 ### 08: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`
 
 ```bash
-.codex/skills/_shared/write-result.sh \
+.codex/skills/_shared/write-result.py \
     --out "$OUT_DIR/result.candidate.json" \
     --status "$STATUS" \
     --checks-run "lint,format,types,tests,review" \
@@ -106,6 +106,7 @@ Write `$OUT_DIR/root-cause.md` with:
     --medium "$MEDIUM" \
     --low "$LOW" \
     --confidence "$CONFIDENCE" \
+    --metadata "$INVESTIGATE_METADATA" \
     --artifact-path "$OUT_DIR/result.json"
 python3 .codex/skills/_shared/validate-artifacts.py \
     --skill investigate \

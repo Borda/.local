@@ -62,7 +62,7 @@ Agents are tiered by task risk. High-stakes reasoning, implementation, verificat
 | Agent                  | Model        | Effort | Purpose                                                                 |
 | ---------------------- | ------------ | ------ | ----------------------------------------------------------------------- |
 | **sw-engineer**        | gpt-5.5      | high   | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
-| **qa-specialist**      | gpt-5.5      | high   | Edge-case matrix, The Borda Standard, adversarial test review           |
+| **qa-specialist**      | gpt-5.5      | high   | Edge-case matrix, project standard, adversarial test review             |
 | **squeezer**           | gpt-5.5      | high   | Profile-first optimization, GPU throughput, memory efficiency           |
 | **doc-scribe**         | gpt-5.4-mini | medium | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
 | **security-auditor**   | gpt-5.5      | xhigh  | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
@@ -230,7 +230,7 @@ Shared gate references:
 
 - `.codex/skills/_shared/quality-gates.md`
 - `.codex/skills/_shared/run-gates.sh`
-- `.codex/skills/_shared/write-result.sh`
+- `.codex/skills/_shared/write-result.py`
 - `.codex/skills/_shared/severity-map.md`
 
 Artifact contract:
@@ -240,7 +240,7 @@ Artifact contract:
 Calibration runner:
 
 ```bash
-.codex/calibration/run.sh
+.codex/calibration/run.py
 ```
 
 Each run writes `result.json`, `behavioral.json`, and `recommendations.md`. Recommendations are generated from failed gates, leaks, behavioral false positives/negatives, confidence calibration gaps, and live-observation coverage.
@@ -251,7 +251,7 @@ Offline CI harness:
 .github/codex-harness.sh
 ```
 
-The GitHub Actions workflow `.github/workflows/ci-harness.yml` runs this wrapper for `.codex/**` changes. It does not invoke Codex or any LLM API: it clears common LLM API environment variables, runs with an isolated temporary `HOME`, and shadows `codex`, `openai`, `gh`, `curl`, and `wget` with blockers before executing `.codex/calibration/run.sh`. The wrapper prints a compact result summary in the action log, appends it to `GITHUB_STEP_SUMMARY`, saves generated calibration artifacts under `.github/codex-harness-results/`, and uploads that folder as the `codex-harness-results` artifact.
+The GitHub Actions workflow `.github/workflows/ci-harness.yml` runs this wrapper for `.codex/**` changes. It does not invoke Codex or any LLM API: it clears common LLM API environment variables, runs with an isolated temporary `HOME`, and shadows `codex`, `openai`, `gh`, `curl`, and `wget` with blockers before executing `.codex/calibration/run.py`. The wrapper prints a compact result summary in the action log, appends it to `GITHUB_STEP_SUMMARY`, saves generated calibration artifacts under `.github/codex-harness-results/`, and uploads that folder as the `codex-harness-results` artifact.
 
 ### AGENTS.md layering
 
@@ -292,7 +292,7 @@ codex "resolve PR 123 using .reports/codex/review/<timestamp>/result.json; triag
 codex '$resolve #123 +review'
 ```
 
-`$resolve #123 +review` auto-selects the newest `.reports/codex/review/*/result.json` whose sibling `pr.json` matches PR `123`, then re-collects current PR comments/reviews, fetches the latest target branch, updates the local PR checkout, and writes a merge-conflict pre-stage before applying report or online-review findings. That pre-stage records the clean PR intent, latest target-branch context, conflict risk, and collision resolution strategy so conflicts are resolved semantically instead of from noisy conflict markers alone. After that, resolve triages each item as `valid`, `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`, or `needs-clarification`, starts terminal output with a resolution table, and asks which selectable findings to resolve before editing. The selection prompt supports `all`, severity groups such as `critical,high`, or indexed items such as `1,3,5-7`; online PR items already marked resolved are omitted from the selectable list but kept in the audit table. `$resolve #123 +report` remains a compatibility alias.
+`$resolve #123 +review` auto-selects the newest `.reports/codex/review/*/result.json` whose sibling `pr.json` matches PR `123`, then re-collects current PR comments/reviews, fetches the latest target branch, updates the local PR checkout, and writes a merge-conflict pre-stage before applying report or online-review findings. That pre-stage records the clean PR intent, latest target-branch context, conflict risk, and collision resolution strategy so conflicts are resolved semantically instead of from noisy conflict markers alone. After that, resolve triages each item as `valid`, `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`, or `needs-clarification`, starts terminal output with a resolution table, and asks which selectable findings to resolve before editing unless the resolve scope was supplied up front. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, and residual risks are report-origin resolution items; they are not marked `out-of-scope` just because closure needs an independent reviewer, full gates, CI, or an installed tool. PR comments or review items connected to the PR purpose, changed diff, adjacent verification, or unknown relation remain selectable or visible as required follow-up so the user can rule them into the PR. Any `out-of-scope` item needs a specific rationale and explicit user confirmation before it is removed from the selectable list. The selection prompt supports `all`, severity groups such as `critical,high`, or indexed items such as `1,3,5-7`; online PR items already marked resolved are omitted from the selectable list but kept in the audit table. `$resolve #123 +report` remains a compatibility alias.
 
 Path-free PR review-to-resolve flow:
 

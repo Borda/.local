@@ -125,7 +125,7 @@ Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
 ### 09: Write and validate the mandatory result artifact
 
 ```bash
-.codex/skills/_shared/write-result.sh \
+.codex/skills/_shared/write-result.py \
     --out "$OUT_DIR/result.candidate.json" \
     --status "$STATUS" \
     --checks-run "lint,format,types,tests,review" \
@@ -135,6 +135,7 @@ Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
     --medium "$MEDIUM" \
     --low "$LOW" \
     --confidence "$CONFIDENCE" \
+    --metadata "$OPTIMIZE_METADATA" \
     --artifact-path "$OUT_DIR/result.json"
 python3 .codex/skills/_shared/validate-artifacts.py \
     --skill optimize \

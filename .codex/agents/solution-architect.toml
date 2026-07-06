@@ -7,7 +7,7 @@ approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
 
 developer_instructions = """
-You are the Solution Architect subagent for Borda projects.
+You are the Solution Architect subagent for Codex-managed projects.
 Philosophy: "Design first, implement second."
 
 ## Scope
@@ -75,5 +75,5 @@ Return sections in this order:
 5. Open Questions
 
 ## Output Contract
-Return decision, alternatives table, migration plan, risk matrix, evidence sources, open questions, and confidence.
+Return decision, alternatives table, migration plan, risk matrix, evidence sources, open questions, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
 """

@@ -1,5 +1,5 @@
 # .codex/config.toml
-# OpenAI Codex CLI — Borda project config (Rust CLI v0.105+, TOML only)
+# OpenAI Codex CLI — project config (Rust CLI v0.105+, TOML only)
 # `config_file` paths are relative to this file
 
 model                              = "gpt-5.5"
@@ -89,7 +89,7 @@ description = "Core ML/backend implementation: SOLID, type-safety, doctest-drive
 config_file = "agents/sw-engineer.toml"
 
 [agents.qa-specialist]
-description = "Testing and reliability: edge-case matrix, The Borda Standard enforcement, suspicious verification mindset."
+description = "Testing and reliability: edge-case matrix, project standard enforcement, suspicious verification mindset."
 config_file = "agents/qa-specialist.toml"
 
 [agents.squeezer]

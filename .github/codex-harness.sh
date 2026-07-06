@@ -39,7 +39,7 @@ cat >"$TMP_BIN/git" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 case "\${1:-}" in
-  status|diff|ls-files)
+  status|diff|ls-files|show)
     exec "$REAL_GIT" "\$@"
     ;;
   *)
@@ -60,7 +60,7 @@ CALIBRATION_OUTPUT="$(env -i \
   PATH="$TMP_BIN:$PATH" \
   CI="true" \
   CODEX_OFFLINE_HARNESS="1" \
-  bash "$ROOT/.codex/calibration/run.sh" 2>&1)"
+  "$ROOT/.codex/calibration/run.py" 2>&1)"
 CALIBRATION_EXIT=$?
 set -e
 

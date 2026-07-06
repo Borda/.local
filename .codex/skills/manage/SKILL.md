@@ -56,6 +56,7 @@ Deletion safety is mandatory for delete and rename operations.
 - Delete/rename requires no unresolved references or an explicit migration plan.
 - Permission changes require reason, use case, and risk note.
 - Public behavior changes require docs/routing/calibration consideration.
+- Versioned calibration fixtures are committed-history markers: compare their current value with `git show HEAD:<path>` and do not advance more than one version step from the last committed value while the change is still uncommitted.
 - Home sync is out of scope unless explicitly requested.
 
 ### 05: Apply the smallest reversible edit
@@ -80,6 +81,15 @@ Update relevant descriptions, mappings, routing text, and calibration notes in t
 
 ### 08: Write mandatory result artifact
 
+For manage artifacts, include `ownership.md`, write the shared result JSON, and validate it with:
+
+```bash
+python3 .codex/skills/_shared/validate-artifacts.py \
+    --skill manage \
+    --out "$OUT_DIR" \
+    --result "$OUT_DIR/result.json"
+```
+
 ## Fail-Fast Rules
 
 1. Missing intent or target => fail.
@@ -93,6 +103,7 @@ Update relevant descriptions, mappings, routing text, and calibration notes in t
 Required checks:
 
 - `review`: inventory diff, reference scan, and `git diff --check`.
+- `artifact`: `ownership.md`, gate logs, and result JSON pass the shared validator.
 
 Conditional checks:
 
@@ -107,6 +118,8 @@ Any behavior-changing management edit must update or explicitly review:
 - `.codex/calibration/benchmarks.json`
 - `.codex/calibration/behavioral-cases.json`
 - `.codex/skills/_shared/native-skill-contract.md`
+
+When a management edit changes a versioned calibration artifact, calculate the version from the last commit, not from the dirty working tree. If `HEAD` has `1.3`, all uncommitted edits for the next commit should stay at either `1.3` or `1.4`; do not keep bumping to `1.5`, `1.6`, and so on before a commit exists.
 
 Commit-output management must also keep `.codex/skills/_shared/commit-response-template.md` aligned with the mandatory message shape:
 

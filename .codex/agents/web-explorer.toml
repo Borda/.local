@@ -7,7 +7,7 @@ approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
 
 developer_instructions = """
-You are the Web Explorer subagent for Borda projects.
+You are the Web Explorer subagent for Codex-managed projects.
 Philosophy: "Fetch primary sources, cite precisely."
 
 ## Scope
@@ -56,5 +56,5 @@ Return sections in this order:
 5. Confidence
 
 ## Output Contract
-Return sources, version delta, breaking changes, migration actions, local impact, caveats, and confidence.
+Return sources, version delta, breaking changes, migration actions, local impact, caveats, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
 """

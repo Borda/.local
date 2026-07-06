@@ -68,7 +68,7 @@ Write `$OUT_DIR/audit-ledger.md` with these sections:
 ### 05: Detect drift and broken references
 
 ```bash
-rg -n "config_file|skills/|quality-gates|run-gates.sh|write-result.sh" .codex >"$OUT_DIR/reference-scan.txt"
+rg -n "config_file|skills/|quality-gates|run-gates.sh|write-result.py" .codex >"$OUT_DIR/reference-scan.txt"
 ```
 
 ### 06: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
@@ -113,7 +113,7 @@ Classify overlap findings explicitly as `keep`, `sharpen`, or `merge-prune`:
 ### 10: Write mandatory result artifact
 
 ```bash
-.codex/skills/_shared/write-result.sh \
+.codex/skills/_shared/write-result.py \
     --out "$OUT_DIR/result.json" \
     --status "$STATUS" \
     --checks-run "lint,format,types,tests,review" \
@@ -123,6 +123,7 @@ Classify overlap findings explicitly as `keep`, `sharpen`, or `merge-prune`:
     --medium "$MEDIUM" \
     --low "$LOW" \
     --confidence "$CONFIDENCE" \
+    --metadata "$AUDIT_METADATA" \
     --artifact-path "$OUT_DIR/result.json"
 ```
 
@@ -143,7 +144,7 @@ Classify overlap findings explicitly as `keep`, `sharpen`, or `merge-prune`:
 Required checks:
 
 - `review`: inventory, contract ledger, reference scan, overlap decisions, and `git diff --check`.
-- `calibration`: run or explicitly justify skipping `.codex/calibration/run.sh` when skill/agent behavior changed.
+- `calibration`: run or explicitly justify skipping `.codex/calibration/run.py` when skill/agent behavior changed.
 
 Conditional checks:
 

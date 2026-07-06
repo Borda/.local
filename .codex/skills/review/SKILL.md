@@ -83,6 +83,7 @@ Review across these axes in order:
 - API and behavior regressions.
 - Test coverage and edge-case gaps.
 - Error handling and logging.
+- Project coding principles: changed code follows `.codex/AGENTS.md` for simplicity, readability, reproducibility, short reusable units without low-value argument-remapping wrappers, guard clauses or early `return`/`yield`/`continue`, project docstring-style detection, concise purpose docstrings, and inline comments only for non-trivial implementation blocks.
 - Security, data, ML, CI/CD, or release risks signaled by T0.
 - Documentation or migration gaps caused by behavior/API changes.
 
@@ -102,7 +103,7 @@ Conditional specialist passes:
 - `data-steward`: datasets, splits, augmentation, leakage, DataLoader reproducibility.
 - `cicd-steward`: GitHub Actions, release automation, publishing, flaky CI.
 - `linting-expert`: ruff, mypy, pre-commit configuration, suppression hygiene, or type/lint rollout.
-- `doc-scribe`: public docs, changelog, migration text, examples, or public docstrings.
+- `doc-scribe`: public docs, changelog, migration text, examples, public docstrings, or code self-documentation policy.
 - `oss-shepherd`: SemVer, deprecation policy, release readiness, contributor-facing process.
 - `squeezer`: performance, memory, throughput, profiling claims, training/inference bottlenecks.
 - `scientist`: research-paper methods, benchmark claims, experiment design, metric validity.
@@ -127,6 +128,7 @@ Required sections:
 - `Findings`
 - `No-Finding Residual Risks`
 - `Confidence Gaps`
+- `Confidence Calibration`
 - `Online Review Triage` for `scope=pr`
 
 ### 07: Run shared quality gates
@@ -157,12 +159,31 @@ Use exactly one recommendation:
 - `Required next work`: work needed before merge, or `none`
 - `Confidence`: score plus key gaps
 
-### 10: If no findings are present, state that explicitly and note residual risks from T0 classification and any substituted specialist passes
+### 10: Run confidence calibration and recovery before any user-facing output
 
-### 11: Write and validate the mandatory result artifact
+Before final chat output or `result.json`, write the `Confidence Calibration` section in `review-notes.md` and mirror it in `REVIEW_METADATA.confidence_recovery`.
+
+Required confidence calibration content:
+
+- `Initial Confidence`: starting score and concrete uncertainty sources.
+- `Objective Evidence`: changed files inspected, PR/local artifacts used, tests/checks reviewed, specialist outputs, and pattern cross-checks.
+- `Confidence Gaps`: missing checks, substituted specialists, unresolved PR evidence, unverified assumptions, or unavailable source context.
+- `Recovery Actions`: internal loops already performed to increase confidence, such as reading more code, checking nearby patterns, running focused commands, adding specialist passes, narrowing claims, or downgrading unsupported findings.
+- `Recomputed Confidence`: final score and why the evidence supports it.
+- `Remaining Limits`: residual uncertainty and whether it is acceptable or blocking.
+
+Shared confidence policy:
+
+Apply the shared confidence band policy from `../_shared/quality-gates.md`. This skill records the required evidence in the `Confidence Calibration` section and mirrors it in `REVIEW_METADATA.confidence_recovery` before output.
+
+Confidence must be honest and objectively verifiable. Do not raise confidence to pass the gate; improve evidence, reduce claim scope, or fail with the missing evidence named.
+
+### 11: If no findings are present, state that explicitly and note residual risks from T0 classification and any substituted specialist passes
+
+### 12: Write and validate the mandatory result artifact
 
 ```bash
-.codex/skills/_shared/write-result.sh \
+.codex/skills/_shared/write-result.py \
     --out "$OUT_DIR/result.candidate.json" \
     --status "$STATUS" \
     --checks-run "lint,format,types,tests,review" \
@@ -181,7 +202,7 @@ python3 .codex/skills/review/validate_artifacts.py \
 mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 ```
 
-`REVIEW_METADATA.specialist_passes` must mirror every entry from `specialist-manifest.json`. `REVIEW_METADATA.scope` must match the normalized input scope. `REVIEW_METADATA.review_decision` must mirror the `Decision Summary` recommendation, summary, and rationale.
+`REVIEW_METADATA.specialist_passes` must mirror every entry from `specialist-manifest.json`. `REVIEW_METADATA.scope` must match the normalized input scope. `REVIEW_METADATA.review_decision` must mirror the `Decision Summary` recommendation, summary, and rationale. `REVIEW_METADATA.confidence_recovery` must mirror the `Confidence Calibration` section and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `REVIEW_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
 
 ## Fail-fast Rules
 
@@ -202,12 +223,14 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 15. Missing structured review decision summary or invalid recommendation value => fail.
 16. PR scope using `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots for source inspection instead of the local checkout => fail.
 17. PR scope running `git` or `gh` with `--force` before explicit user confirmation and overwrite-risk explanation => fail.
+18. Missing `Confidence Calibration` section, `metadata.confidence_recovery`, or `metadata.confidence_gap_closures` => fail.
+19. Shared confidence policy violation from `../_shared/quality-gates.md` => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: T0 files, risk tier, local changed-file inspection, PR target-branch refresh and checkout evidence when relevant, specialist manifest, specialist notes, structured decision summary, online review triage for PR scope, severity map, and `git diff --check`.
+- `review`: T0 files, risk tier, local changed-file inspection, simplicity/readability/reproducibility inspection, project docstring-style detection, docstring/comment policy inspection for changed code, PR target-branch refresh and checkout evidence when relevant, specialist manifest, specialist notes, structured decision summary, confidence calibration/recovery, online review triage for PR scope, severity map, and `git diff --check`.
 
 Conditional checks:
 
@@ -219,14 +242,14 @@ Conditional checks:
 Update calibration when review routing, severity discipline, decision vocabulary, or output shape changes:
 
 - benchmark patterns: `review`
-- behavioral cases: false blocker, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage
+- behavioral cases: false blocker, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage, missing project docstring-style detection, missing code self-documentation, long code blocks, deep branching, docstrings masking poor structure, low-confidence recovery loop, objective confidence evidence
 - PR routing cases: target-branch refresh required, local checkout required, stale local PR branch, and raw-file snapshot rejection
 
 ## Output Contract
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-The final chat output must start with a `Review Decision Summary` before detailed findings. Include recommendation, summary, blockers, minor changes, required next work, confidence, and artifact path. The recommendation must be one of `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
+The final chat output must start with a `Review Decision Summary` before detailed findings. Include recommendation, summary, blockers, minor changes, required next work, confidence, confidence band status, recovery actions, remaining limits, confidence gaps or degradation reasons, confidence-gap closures, and artifact path. The recommendation must be one of `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
 Minimum artifact payload shape:
 
@@ -250,12 +273,37 @@ Minimum artifact payload shape:
   "confidence": 0.0,
   "artifact_path": ".reports/codex/review/<timestamp>/result.json",
   "metadata": {
+    "confidence_gaps": [
+      "why confidence is below 1.0 or residual limits still matter"
+    ],
+    "confidence_gap_closures": [
+      {
+        "gap": "why confidence is below 1.0 or residual limits still matter",
+        "status": "closed|unresolved|deferred",
+        "evidence": "evidence that closes the gap when status=closed",
+        "rationale": "why the gap remains open when status=unresolved|deferred"
+      }
+    ],
     "scope": "working-tree|path|commit|pr",
     "risk_tier": "TRIVIAL|LOCAL|BROAD|HIGH_RISK",
     "review_decision": {
       "recommendation": "accept-as-is|minor-changes|needs-more-work|reject|not-aligned",
       "summary": "1-3 sentence review outcome",
       "rationale": "why the recommendation follows from findings, gates, and scope"
+    },
+    "confidence_recovery": {
+      "initial_confidence": 0.0,
+      "final_confidence": 0.0,
+      "status": "shared-confidence-band-status",
+      "evidence": [
+        "objective evidence supporting final confidence"
+      ],
+      "recovery_actions": [
+        "internal confidence-improvement loop performed before output"
+      ],
+      "remaining_limits": [
+        "residual uncertainty"
+      ]
     },
     "fanout_substituted": false,
     "independence_satisfied": true,

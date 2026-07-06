@@ -81,7 +81,7 @@ Write `$OUT_DIR/release-readiness.md` with:
 ### 07: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/release/<timestamp>/result.json`
 
 ```bash
-.codex/skills/_shared/write-result.sh \
+.codex/skills/_shared/write-result.py \
     --out "$OUT_DIR/result.candidate.json" \
     --status "$STATUS" \
     --checks-run "lint,format,types,tests,review" \
@@ -91,6 +91,7 @@ Write `$OUT_DIR/release-readiness.md` with:
     --medium "$MEDIUM" \
     --low "$LOW" \
     --confidence "$CONFIDENCE" \
+    --metadata "$RELEASE_METADATA" \
     --artifact-path "$OUT_DIR/result.json"
 python3 .codex/skills/_shared/validate-artifacts.py \
     --skill release \
