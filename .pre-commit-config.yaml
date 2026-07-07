@@ -47,7 +47,7 @@ repos:
         args: ["--autofix"]
 
   - repo: https://github.com/JoC0de/pre-commit-prettier
-    rev: v3.8.1 # using tag; previously pinned SHA when tags were not persistent
+    rev: v3.9.4 # using tag; previously pinned SHA when tags were not persistent
     hooks:
       - id: prettier
         name: 🎨 prettier
@@ -109,7 +109,7 @@ repos:
           - mdformat-web
 
   - repo: https://github.com/lycheeverse/lychee.git
-    rev: lychee-v0.23.0
+    rev: lychee-v0.24.2
     hooks:
       - id: lychee
         name: 🔗 lychee
