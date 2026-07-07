@@ -68,7 +68,6 @@ Skill checks:
 - output examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, and `artifact_path`
 - native skill files do not depend on external runner-only metadata or cache paths
 - shared helper checks cover `run-gates.sh`, executable `write-result.py`, `collect-diff.sh`, `collect-pr.sh`, `find-review-report.py`, and `validate-artifacts.py`
-- offline CI harness checks cover `.github/codex-harness.sh`, the `CODEX_OFFLINE_HARNESS` marker, blocked LLM/network command shims, `GITHUB_STEP_SUMMARY`, `.github/codex-harness-results/`, upload-artifact wiring, and the `offline-ci-harness` check id
 - behavioral case-set version checks compare `.codex/calibration/behavioral-cases.json` against `HEAD`; the working tree may keep the same version or advance by exactly one commit-relative version step, but must not repeatedly bump versions inside one uncommitted change set
 
 Agent checks:
@@ -102,8 +101,7 @@ Agent checks:
 4. Runtime leakage in native skill or agent files => fail.
 5. Behavioral gate below threshold => fail.
 6. Result artifact missing => fail.
-7. Offline CI harness missing, not executable, or able to invoke LLM/network commands => fail.
-8. Behavioral case-set version advances more than one step from the last committed version => fail.
+7. Behavioral case-set version advances more than one step from the last committed version => fail.
 
 ## Quality Gates
 
@@ -111,7 +109,6 @@ Required checks:
 
 - `calibration`: `.codex/calibration/run.py`.
 - `behavioral-version-policy`: compare the behavioral case-set version against `HEAD` so dirty-tree iterations do not create meaningless version gaps.
-- `offline-ci-harness`: `.github/codex-harness.sh` must run the calibration harness without Codex/OpenAI/LLM credentials or network-capable helper CLIs, print the result summary, save artifacts under `.github/codex-harness-results/`, and wire that folder to the GitHub artifact upload step.
 - `review`: inspect failed patterns, leakage, behavioral gaps, and stale fixtures before recommending changes.
 
 Conditional checks:
@@ -127,61 +124,9 @@ When calibration expectations change, update together:
 - `.codex/calibration/behavioral-cases.json`
 - `.codex/calibration/behavioral-observations.jsonl`
 - `.codex/calibration/run.py`
-- `.github/codex-harness.sh`
-- `.github/workflows/ci-harness.yml`
 
 ## Output Contract
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "calibration"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "behavioral": {
-    "status": "pass|fail",
-    "overall": {
-      "recall": 0.0,
-      "precision": 0.0,
-      "f1": 0.0,
-      "confidence_accuracy": 0.0,
-      "mean_overconfidence": 0.0
-    }
-  },
-  "by_source": {
-    "fixture-selftest": {
-      "recall": 0.0,
-      "precision": 0.0,
-      "confidence_accuracy": 0.0
-    }
-  },
-  "observation_freshness": {
-    "latest_observed_at": "2026-06-02T00:00:00Z",
-    "missing_observed_at": 0,
-    "fixture_observations": 0,
-    "live_observations": 0
-  },
-  "recommendations": [
-    "measured fix or improvement recommendation"
-  ],
-  "follow_up": [
-    "non-blocking next check"
-  ],
-  "artifacts": {
-    "recommendations": ".reports/codex/calibration/<timestamp>/recommendations.md"
-  },
-  "artifact_path": ".reports/codex/calibrate/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

@@ -133,22 +133,4 @@ Co-authored-by: Codex <codex@openai.com>
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/manage/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

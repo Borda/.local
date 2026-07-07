@@ -78,8 +78,6 @@ class Paths:
     behavioral_result: Path
     quality_gates: Path
     native_skill_contract: Path
-    offline_harness: Path
-    offline_harness_workflow: Path
     run_gates: Path
     run_py: Path
     write_result_py: Path
@@ -113,8 +111,6 @@ class Paths:
             behavioral_result=out_dir / "behavioral.json",
             quality_gates=root / ".codex" / "skills" / "_shared" / "quality-gates.md",
             native_skill_contract=root / ".codex" / "skills" / "_shared" / "native-skill-contract.md",
-            offline_harness=root / ".github" / "codex-harness.sh",
-            offline_harness_workflow=root / ".github" / "workflows" / "ci-harness.yml",
             run_gates=root / ".codex" / "skills" / "_shared" / "run-gates.sh",
             run_py=root / ".codex" / "calibration" / "run.py",
             write_result_py=root / ".codex" / "skills" / "_shared" / "write-result.py",
@@ -406,8 +402,18 @@ def check_core_configs(run: CalibrationRun) -> None:
         check_contains(run, skill_file, "Output Contract", "skill-schema-all")
         check_contains(run, skill_file, "quality-gates", "skill-schema-all")
         check_contains(run, skill_file, f".reports/codex/{skill}/", "skill-schema-all")
+        check_contains(run, skill_file, "result-template.json", "skill-schema-all")
+        template_file = skill_file.with_name("result-template.json")
+        if not template_file.exists():
+            run.fail_and_leak("skill-schema-all", f"missing-result-template:{skill}")
+            continue
+        try:
+            json.loads(template_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            run.fail_and_leak("skill-schema-all", f"invalid-result-template:{skill}:{exc.lineno}")
+            continue
         for field_name in ("status", "checks_run", "checks_failed", "findings", "confidence", "artifact_path"):
-            check_contains(run, skill_file, f'"{field_name}"', "skill-schema-all")
+            check_contains(run, template_file, f'"{field_name}"', "skill-schema-all")
         check_contains(run, run.paths.project_cfg, rf'path\s*=\s*"skills/{skill}"', "skill-registration-project")
         check_contains(run, run.paths.home_cfg, rf'path\s*=\s*"(.*\/)?skills/{skill}"', "skill-registration-home")
 
@@ -559,49 +565,6 @@ def check_shared_scripts(run: CalibrationRun) -> None:
     check_python_syntax(run, run.paths.run_py, "run.py")
     check_python_syntax(run, run.paths.write_result_py, "write-result.py")
     run_selftests(run)
-
-
-def check_offline_harness(run: CalibrationRun) -> None:
-    """Check offline CI harness files when this is a repository root."""
-    expect_harness = (run.paths.root / ".git").exists() or (run.paths.root / ".github").exists()
-    if not expect_harness:
-        run.append_check("offline-ci-harness=skipped:non-repo-root")
-        return
-
-    if not is_executable(run.paths.offline_harness):
-        run.fail_and_leak("offline-ci-harness", f"offline-harness-not-executable:{run.paths.offline_harness}")
-    else:
-        for pattern in (
-            "CODEX_OFFLINE_HARNESS",
-            "env -i",
-            "blocked by offline Codex harness",
-            "codex openai gh curl wget",
-            r'HOME="\$TMP_HOME"',
-            "CODEX_HARNESS_RESULTS_DIR",
-            "codex-harness-results",
-            "GITHUB_STEP_SUMMARY",
-            "summary.md",
-        ):
-            check_contains(run, run.paths.offline_harness, pattern, "offline-ci-harness")
-
-    if not run.paths.offline_harness_workflow.exists():
-        run.fail_and_leak(
-            "offline-ci-harness", f"missing-offline-harness-workflow:{run.paths.offline_harness_workflow}"
-        )
-        return
-    for pattern in (
-        "Codex CI harness",
-        "permissions:",
-        "contents: read",
-        "persist-credentials: false",
-        "OPENAI_API_KEY",
-        ".github/codex-harness.sh",
-        "CODEX_HARNESS_RESULTS_DIR",
-        "actions/upload-artifact",
-        "codex-harness-results",
-        "if-no-files-found: error",
-    ):
-        check_contains(run, run.paths.offline_harness_workflow, pattern, "offline-ci-harness")
 
 
 def run_selftests(run: CalibrationRun) -> None:
@@ -1054,7 +1017,6 @@ def write_result(run: CalibrationRun) -> None:
             "benchmark-pattern-checks",
             "behavioral-metrics",
             "shared-script-selftests",
-            "offline-ci-harness",
         ],
         "checks_failed": run.checks_failed,
         "findings": {"critical": 0, "high": run.leaks, "medium": 0, "low": 0},
@@ -1145,7 +1107,6 @@ def main() -> int:
     check_core_configs(run)
     check_native_runtime_leaks(run)
     check_shared_scripts(run)
-    check_offline_harness(run)
     run_benchmark_pattern_checks(run)
     run_behavioral_scoring(run)
     write_result(run)

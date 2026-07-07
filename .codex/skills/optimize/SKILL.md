@@ -63,6 +63,16 @@ Write `$OUT_DIR/hypothesis.md`:
 - guard risk
 - rollback condition
 
+For `campaign` mode, noisy metrics, GPU/ML performance, or optimization that touches correctness-sensitive code, apply `../_shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-optimization-plan.md"` with narrow context packs for:
+
+- `squeezer`: profiling mechanism, bottleneck hypothesis, measurement plan.
+- `qa-specialist`: guard coverage and regression risk.
+- `data-steward`: data pipeline or reproducibility impact.
+- `scientist`: metric validity, ablation design, statistical noise.
+- `challenger`: overfitting to the metric or weakening guard checks.
+
+Do not fan out for a single small measured change with a stable metric and guard. Never let a specialist change the metric or guard scripts unless that is explicitly in `scope_files` and measurement-integrity risk is recorded.
+
 Initialize a machine-readable iteration log:
 
 ```bash
@@ -179,23 +189,4 @@ Update calibration when metric/guard policy changes:
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "tests",
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/optimize/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

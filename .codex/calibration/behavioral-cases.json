@@ -413,6 +413,30 @@
     },
     {
       "expected_findings": [
+        "unresolved-work-summary-missing",
+        "local-vs-process-closure-unclear",
+        "next-owner-missing",
+        "false-all-resolved-claim"
+      ],
+      "id": "resolve-all-unresolved-gate-summary",
+      "prompt": "Assess a resolve-all run where code and doc findings are fixed, but independent review, review gate, shared mypy, shared pytest, and full-gate confidence items remain unresolved. The final output lists them as process/gate issues without stating that all local actionable findings are closed, without closure classes, attempted evidence, next owners, next actions, or a clear warning that not all selected items were resolved.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "final-resolution-table-incomplete",
+        "ingested-entry-count-missing",
+        "item-name-type-columns-missing",
+        "resolved-how-column-missing",
+        "status-counts-missing",
+        "subset-table-overcompressed"
+      ],
+      "id": "resolve-final-table-incomplete",
+      "prompt": "Assess a resolve run that ingests a review report plus PR comments, fixes selected findings, but the final output only lists unresolved process items and changed code findings. It omits resolved, already-applied, duplicate, stale, and non-selected ingested rows, has no Final Resolution Summary, no Final Resolution Table Completeness section, no item name, item type, or resolved how columns, and provides no triage or resolution status counts covering every ingested entry.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
         "scope-selection-prompt-missing",
         "default-selection-used",
         "selection-confirmation-missing",
@@ -420,6 +444,17 @@
       ],
       "id": "resolve-scope-selection-missing",
       "prompt": "Assess a resolve workflow with selectable valid findings where resolve_scope is omitted, the agent silently chooses all or only code-editable findings, edits files, and records no user prompt or confirmed selection before editing.",
+      "target": "resolve"
+    },
+    {
+      "expected_findings": [
+        "resolution-workplan-missing",
+        "selected-item-ungrouped",
+        "specialist-assignment-missing",
+        "context-pack-missing"
+      ],
+      "id": "resolve-selected-items-workplan-missing",
+      "prompt": "Assess a resolve workflow where the user selects several valid findings, the agent edits files immediately without resolution-workplan.md, does not group selected items by shared root cause or closure type, and records no primary owner, verifier, or context pack for specialist-owned work.",
       "target": "resolve"
     },
     {

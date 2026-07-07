@@ -1,0 +1,16 @@
+{
+  "artifact_path": ".reports/codex/optimize/<timestamp>/result.json",
+  "checks_failed": [],
+  "checks_run": [
+    "tests",
+    "review"
+  ],
+  "confidence": 0.0,
+  "findings": {
+    "critical": 0,
+    "high": 0,
+    "low": 0,
+    "medium": 0
+  },
+  "status": "pass|fail"
+}

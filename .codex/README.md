@@ -1,14 +1,20 @@
 # 🤖 Codex CLI — Deep Reference
 
-Self-contained multi-agent configuration for OpenAI Codex CLI. This file covers agent spawn rules, model strategy, execution architecture, skill usage, calibration, and home sync.
+Self-contained multi-agent configuration for OpenAI Codex CLI. This file covers agent spawn rules, specialist orchestration, model strategy, execution architecture, skill usage, calibration, PR review-to-resolve flow, and optional home sync.
 
 ## What This Enables
 
-Three things this Codex setup adds:
+Core capabilities this Codex setup adds:
 
-**Adversarial diff review.** Run `codex "review the current diff with no prior assumptions"`. Codex reads the diff from the working tree, classifies risk, runs the review workflow, and writes a findings artifact.
+**Adversarial, multi-axis diff review.** Run `codex "review the current diff with no prior assumptions"`. Codex reads the diff from the working tree, classifies risk, runs required QA and challenge passes for non-trivial changes, triggers conditional specialists, emits a structured recommendation, and writes a findings artifact.
 
-**Workflow backbone.** The `review`, `develop`, `resolve`, `audit`, `calibrate`, `release`, `investigate`, `manage`, `analyse`, `optimize`, `research`, and `sync` skills enforce the same discipline: quality gates run, findings are classified by severity, and a structured artifact lands under `.reports/codex/<skill>/<timestamp>/`.
+**Specialist orchestration without context flooding.** The shared orchestration policy splits broad work into narrow context packs. Specialists receive only the files, hunks, logs, comments, and questions relevant to their axis; the parent agent consolidates conflicts and owns the final decision.
+
+**Workflow backbone.** The `review`, `develop`, `resolve`, `audit`, `calibrate`, `release`, `investigate`, `manage`, `analyse`, `optimize`, `research`, and `sync` skills enforce the same discipline: quality gates run, findings are classified by severity, confidence gaps are recorded, and a structured artifact lands under `.reports/codex/<skill>/<timestamp>/`.
+
+**PR review-to-resolve loop.** `$review #123` creates the review artifact. `$resolve #123 +review` finds the newest matching report, re-fetches current PR comments/reviews/threads, checks out the PR locally, fetches the target branch, records merge-conflict context, asks which findings to resolve, groups selected work, and assigns it to the right owner/verifier before editing.
+
+**Confidence calibration and offline CI.** Skill and agent behavior is measured with fixed calibration fixtures plus live observations. The offline harness runs in CI without contacting Codex, OpenAI, GitHub, curl, or wget.
 
 **RTK token compression.** Bash output — `git log`, `pytest`, `cargo build` — is compressed 60–99% before reaching the model. A typical `resolve` or `review` run costs 40–60% fewer tokens than without RTK, with no quality difference.
 
@@ -19,6 +25,7 @@ Three things this Codex setup adds:
 - [🧩 Agents](#-agents)
   - [Reference table](#reference-table)
   - [Spawn rules](#spawn-rules)
+  - [Specialist orchestration](#specialist-orchestration)
 - [🧠 Model Strategy](#-model-strategy)
 - [🧭 Skills In Codex](#-skills-in-codex)
   - [Built-in vs mirrored commands](#built-in-vs-mirrored-commands)
@@ -35,13 +42,13 @@ Three things this Codex setup adds:
 
 ## 🔄 Config Sync
 
-This repo (`.codex/`) is the source of truth. Home (`~/.codex/`) is a downstream copy. Before config edits, keep project-local backups under `.reports/codex/manage/<timestamp>/backup/` so the source-of-truth state is reversible without relying on home config:
+This repo (`.codex/`) is the source of truth. Home (`~/.codex/`) is a downstream copy. Most users only need to copy the directory when they want to activate or refresh the Codex setup:
 
 ```bash
 cp -r .codex/ ~/.codex/ # activate globally (config_file paths are relative)
 ```
 
-Run after editing any agent config, `config.toml`, hooks, or `AGENTS.md`.
+The `sync` skill is optional maintenance tooling. It compares project `.codex/` with home `~/.codex/`, writes a drift report, and only applies copies after explicit approval and backups. Use it when you intentionally maintain both project and home configs; ordinary review/develop/resolve usage does not require it.
 
 <details>
 <summary><strong>Install</strong></summary>
@@ -96,6 +103,27 @@ When to address by name vs letting Codex decide:
 - Use by name when you want a specific perspective that task-type detection might not trigger
 - Let Codex decide for broad tasks; orchestration can fan out automatically
 
+### Specialist orchestration
+
+The shared policy lives in `.codex/skills/_shared/specialist-orchestration.md`.
+
+Orchestration is used when work crosses multiple domains, needs independent verification, or can be split into parallel evidence gathering without sending every specialist the same full context. It stays single-agent when the task is narrow, local, and the handoff would duplicate the parent context.
+
+Every spawned or substituted specialist pass needs:
+
+- a narrow context pack with objective, relevant files/logs/hunks, excluded context, concrete questions, output contract, and stop rule
+- an output with role, axis, evidence inspected, findings, confidence, confidence gaps, and recommended next action
+- parent-owned consolidation; specialist outputs are evidence, not votes
+
+High-benefit orchestrated skills:
+
+- `review`: QA and challenge are required for non-trivial risk tiers; architecture, security, CI, docs, data, performance, research, and web specialists trigger conditionally.
+- `develop`: public API, regression, CI/tooling, security, ML/data, docs, and broad changes get owner/verifier plans.
+- `resolve`: selected findings are grouped into work clusters, assigned to primary owners and verifiers, then closed with evidence.
+- `investigate`: broad symptoms split into hypothesis-specific specialist probes before root cause is claimed.
+
+Conditional orchestration exists in `analyse`, `research`, `release`, `audit`, and `optimize`. `sync`, `manage`, and `calibrate` stay mostly linear because serial safety and deterministic scoring matter more than fan-out.
+
 ## 🧠 Model Strategy
 
 Session defaults:
@@ -129,20 +157,20 @@ Mirrored workflow skills in `.codex/skills/*` are instruction assets, not custom
 
 Each skill enforces a complete quality loop that prompt-style invocation does not: structured input schema, mandatory gates (lint, format, types, tests), severity classification, and a result artifact.
 
-| Skill         | What it enables                                                                                                                                                                         |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review`      | Diff-scoped review with measurable gates: classifies findings by severity, emits a structured decision recommendation, and writes a JSON artifact so results are comparable across runs |
-| `develop`     | TDD-first implementation: writes a failing test first, requires root-cause evidence for symptom-first failures, then reruns all gates                                                   |
-| `resolve`     | Findings closure: applies fixes in priority order (critical → high → medium), reruns gates, surfaces what remains                                                                       |
-| `audit`       | Config hygiene: detects broken refs, inventory drift, instruction overlap; produces a scored report with keep/sharpen/prune recommendations                                             |
-| `calibrate`   | Benchmarks recall vs confidence bias on a fixed task set and emits measured recommendations for the next fixes or improvements                                                          |
-| `release`     | SemVer-disciplined release: changelog entry, migration guide, and readiness check in one structured pass                                                                                |
-| `investigate` | Root-cause diagnosis for unknown failures and code debugging — tracebacks, failing tests, env, tools, hooks, CI divergence — with ranked hypotheses and a handoff artifact              |
-| `manage`      | Scaffolds agents, skills, and config with cross-ref propagation; prevents orphaned references                                                                                           |
-| `analyse`     | Deep inspection of a scope (module, issue thread, PR) — surfaces structural findings that diff-level review misses                                                                      |
-| `optimize`    | Profile-first optimization: measures before and after, rejects changes that don't improve the target metric                                                                             |
-| `research`    | SOTA lookup anchored to the codebase — finds relevant techniques and maps them to concrete implementation entry points                                                                  |
-| `sync`        | Propagates config changes from `.codex/` to `~/.codex/` with a diff preview before overwriting                                                                                          |
+| Skill         | What it enables                                                                                                                                                                        |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review`      | Diff-scoped, multi-axis review with measurable gates: classifies findings by severity, emits a structured recommendation, and writes comparable JSON artifacts                         |
+| `develop`     | TDD-first implementation with specialist owner/verifier planning for broad changes; requires root-cause evidence for symptom-first failures before implementation                      |
+| `resolve`     | Findings closure with current PR evidence: asks scope, groups selected items, assigns specialist owners/verifiers, applies fixes in priority order, reruns gates, and surfaces remains |
+| `audit`       | Config hygiene: detects broken refs, inventory drift, instruction overlap; produces a scored report with keep/sharpen/prune recommendations                                            |
+| `calibrate`   | Benchmarks recall vs confidence bias on a fixed task set and emits measured recommendations for the next fixes or improvements                                                         |
+| `release`     | SemVer-disciplined release: changelog entry, migration guide, and readiness check in one structured pass                                                                               |
+| `investigate` | Root-cause diagnosis for unknown failures and code debugging — tracebacks, failing tests, env, tools, hooks, CI divergence — with ranked hypotheses and a handoff artifact             |
+| `manage`      | Scaffolds agents, skills, and config with cross-ref propagation; prevents orphaned references                                                                                          |
+| `analyse`     | Deep inspection of a scope (module, issue thread, PR) — surfaces structural findings that diff-level review misses                                                                     |
+| `optimize`    | Profile-first optimization: measures before and after, rejects changes that don't improve the target metric                                                                            |
+| `research`    | SOTA lookup anchored to the codebase — finds relevant techniques and maps them to concrete implementation entry points                                                                 |
+| `sync`        | Optional project/home `.codex` drift report and approved-copy helper; not needed for ordinary skill usage                                                                              |
 
 ### Usage examples
 
@@ -154,6 +182,8 @@ run investigate before fixing this failing pytest; do not suggest a workaround u
 run investigate this traceback before changing the code
 run resolve on the current working tree and fix high-severity findings
 run review, then develop, then audit for issue #42
+$review #123
+$resolve #123 +review
 ```
 
 One-shot shell usage:
@@ -161,7 +191,11 @@ One-shot shell usage:
 ```bash
 codex "run investigate for current failing pytest and write findings artifact"
 codex "run resolve on this diff and apply required quality gates"
+codex '$review #123'
+codex '$resolve #123 +review'
 ```
+
+`$review` and `$resolve` are in-session skill invocation shorthands. Quote them in shell prompts so the shell does not expand `$review` or `$resolve` as environment variables.
 
 Agent targeting examples:
 
@@ -232,6 +266,9 @@ Shared gate references:
 - `.codex/skills/_shared/run-gates.sh`
 - `.codex/skills/_shared/write-result.py`
 - `.codex/skills/_shared/severity-map.md`
+- `.codex/skills/_shared/specialist-orchestration.md`
+- `.codex/skills/_shared/validate-artifacts.py`
+- `.codex/skills/<skill>/result-template.json` for each skill-specific result payload example
 
 Artifact contract:
 
@@ -245,13 +282,22 @@ Calibration runner:
 
 Each run writes `result.json`, `behavioral.json`, and `recommendations.md`. Recommendations are generated from failed gates, leaks, behavioral false positives/negatives, confidence calibration gaps, and live-observation coverage.
 
+Confidence policy:
+
+- `<= 0.8`: not acceptable for a completed skill/agent conclusion; continue recovery or fail with the blocker.
+- `0.8 < confidence < 0.85`: very questionable; serious recovery is required before output and pass is not allowed without stronger evidence.
+- `0.85 <= confidence < 0.9`: cautious-low; may proceed only with objective evidence, recovery actions, and remaining limits recorded.
+- `>= 0.9`: fair, not automatic; residual limits still need to be named.
+
+Every output that reports confidence must include degradation reasons and confidence-gap closures or explicit unresolved/deferred records.
+
 Offline CI harness:
 
 ```bash
 .github/codex-harness.sh
 ```
 
-The GitHub Actions workflow `.github/workflows/ci-harness.yml` runs this wrapper for `.codex/**` changes. It does not invoke Codex or any LLM API: it clears common LLM API environment variables, runs with an isolated temporary `HOME`, and shadows `codex`, `openai`, `gh`, `curl`, and `wget` with blockers before executing `.codex/calibration/run.py`. The wrapper prints a compact result summary in the action log, appends it to `GITHUB_STEP_SUMMARY`, saves generated calibration artifacts under `.github/codex-harness-results/`, and uploads that folder as the `codex-harness-results` artifact.
+The GitHub Actions workflow `.github/workflows/ci-harness.yml` runs this wrapper for `.codex/**` changes. It does not invoke Codex or any LLM API: it clears common LLM API environment variables, runs with an isolated temporary `HOME`, and shadows `codex`, `openai`, `gh`, `curl`, and `wget` with blockers before executing `.codex/calibration/run.py`. The wrapper prints a compact result summary in the action log, appends it to `GITHUB_STEP_SUMMARY`, saves generated calibration artifacts under `.github/codex-harness-results/`, and uploads that folder as the `codex-harness-results` artifact only when the harness job fails.
 
 ### AGENTS.md layering
 
@@ -292,7 +338,11 @@ codex "resolve PR 123 using .reports/codex/review/<timestamp>/result.json; triag
 codex '$resolve #123 +review'
 ```
 
-`$resolve #123 +review` auto-selects the newest `.reports/codex/review/*/result.json` whose sibling `pr.json` matches PR `123`, then re-collects current PR comments/reviews, fetches the latest target branch, updates the local PR checkout, and writes a merge-conflict pre-stage before applying report or online-review findings. That pre-stage records the clean PR intent, latest target-branch context, conflict risk, and collision resolution strategy so conflicts are resolved semantically instead of from noisy conflict markers alone. After that, resolve triages each item as `valid`, `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`, or `needs-clarification`, starts terminal output with a resolution table, and asks which selectable findings to resolve before editing unless the resolve scope was supplied up front. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, and residual risks are report-origin resolution items; they are not marked `out-of-scope` just because closure needs an independent reviewer, full gates, CI, or an installed tool. PR comments or review items connected to the PR purpose, changed diff, adjacent verification, or unknown relation remain selectable or visible as required follow-up so the user can rule them into the PR. Any `out-of-scope` item needs a specific rationale and explicit user confirmation before it is removed from the selectable list. The selection prompt supports `all`, severity groups such as `critical,high`, or indexed items such as `1,3,5-7`; online PR items already marked resolved are omitted from the selectable list but kept in the audit table. `$resolve #123 +report` remains a compatibility alias.
+`$resolve #123 +review` auto-selects the newest `.reports/codex/review/*/result.json` whose sibling `pr.json` matches PR `123`, then re-collects current PR comments/reviews, fetches the latest target branch, updates the local PR checkout, and writes a merge-conflict pre-stage before applying report or online-review findings. That pre-stage records the clean PR intent, latest target-branch context, conflict risk, and collision resolution strategy so conflicts are resolved semantically instead of from noisy conflict markers alone.
+
+After that, resolve triages each item as `valid`, `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`, or `needs-clarification`, starts terminal output with a resolution table, and asks which selectable findings to resolve before editing unless the resolve scope was supplied up front. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, and residual risks are report-origin resolution items; they are not marked `out-of-scope` just because closure needs an independent reviewer, full gates, CI, or an installed tool. PR comments or review items connected to the PR purpose, changed diff, adjacent verification, or unknown relation remain selectable or visible as required follow-up so the user can rule them into the PR. Any `out-of-scope` item needs a specific rationale and explicit user confirmation before it is removed from the selectable list. The selection prompt supports `all`, severity groups such as `critical,high`, or indexed items such as `1,3,5-7`; online PR items already marked resolved are omitted from the selectable list but kept in the audit table. `$resolve #123 +report` remains a compatibility alias.
+
+Before editing selected findings, resolve writes `.reports/codex/resolve/<timestamp>/resolution-workplan.md`. The workplan groups selected items by shared root cause, closure type, affected files, verification command, or merge risk. Each group records selected indexes, severity range, grouping rationale, primary owner, verifier, context pack path, expected closure evidence, dependencies, and execution status. Parent-owned tiny items stay in `Ungrouped Items`; specialist-owned groups get narrow context packs under `$OUT_DIR/specialists/`. The shared validator fails selected-item runs that lack workplan groups, leave selected items unassigned, or omit owner/verifier/context/closure evidence.
 
 Path-free PR review-to-resolve flow:
 

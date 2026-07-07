@@ -56,6 +56,17 @@ Source rules:
 - Mark any stale or unavailable source explicitly.
 - Do not cite secondary summaries for high-impact claims unless independently corroborated.
 
+For `sota`, `paper`, `methodology`, and `code-fidelity` modes, apply `../_shared/specialist-orchestration.md` when independent expertise improves correctness. Write `"$OUT_DIR/specialist-research-plan.md"` with context packs for:
+
+- `web-explorer`: current docs, release notes, API and dependency changes.
+- `scientist`: formulas, methodology, metrics, ablations, benchmark claims.
+- `solution-architect`: implementation fit, API boundaries, migration shape.
+- `squeezer`: performance or resource claims.
+- `data-steward`: datasets, splits, leakage, reproducibility.
+- `challenger`: unsupported recommendation or overconfident source synthesis.
+
+Do not send full papers, entire repositories, or all search results to every specialist. Give each specialist only the source excerpts, code files, and questions needed for its axis.
+
 ### 04: Map to codebase context when implementation is relevant
 
 ```bash
@@ -120,22 +131,4 @@ Update calibration when source protocol or recommendation policy changes:
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/research/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

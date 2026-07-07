@@ -91,6 +91,16 @@ Review across these axes in order:
 
 Create `"$OUT_DIR/specialists"` and write one markdown file per spawned or substituted pass. Also write `"$OUT_DIR/specialist-manifest.json"` with a `passes` list containing every required and conditional role. Each entry must include role, axis, trigger rationale, mode (`spawned`, `substituted`, or `not_triggered`), output path for spawned/substituted passes, confidence, and blocking finding count. Do not continue to severity classification until required specialist outputs and the manifest exist.
 
+Apply the shared orchestration policy from `../_shared/specialist-orchestration.md`. Before any specialist pass, write a narrow context pack to `"$OUT_DIR/specialists/<role>-context.md"` with:
+
+- objective and axis
+- files, hunks, logs, PR comments, or docs that are relevant to that axis
+- explicitly excluded context that would add noise
+- concrete questions the specialist must answer
+- stop rule for when to ask the parent for more context instead of widening scope
+
+Do not hand every specialist the whole PR, full report, or full repository by default. Prefer small independent passes that can run in parallel and produce comparable outputs. The parent review agent owns final severity, duplicate merging, conflict resolution between specialists, and the review decision.
+
 Required specialist passes:
 
 - `qa-specialist`: test adequacy, edge cases, regression coverage, tensor/data boundaries when relevant.
@@ -251,86 +261,4 @@ Use shared gate schema from `../_shared/quality-gates.md`.
 
 The final chat output must start with a `Review Decision Summary` before detailed findings. Include recommendation, summary, blockers, minor changes, required next work, confidence, confidence band status, recovery actions, remaining limits, confidence gaps or degradation reasons, confidence-gap closures, and artifact path. The recommendation must be one of `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
-Minimum artifact payload shape:
-
-```json
-{
-  "status": "pass|fail|timeout",
-  "checks_run": [
-    "lint",
-    "format",
-    "types",
-    "tests",
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/review/<timestamp>/result.json",
-  "metadata": {
-    "confidence_gaps": [
-      "why confidence is below 1.0 or residual limits still matter"
-    ],
-    "confidence_gap_closures": [
-      {
-        "gap": "why confidence is below 1.0 or residual limits still matter",
-        "status": "closed|unresolved|deferred",
-        "evidence": "evidence that closes the gap when status=closed",
-        "rationale": "why the gap remains open when status=unresolved|deferred"
-      }
-    ],
-    "scope": "working-tree|path|commit|pr",
-    "risk_tier": "TRIVIAL|LOCAL|BROAD|HIGH_RISK",
-    "review_decision": {
-      "recommendation": "accept-as-is|minor-changes|needs-more-work|reject|not-aligned",
-      "summary": "1-3 sentence review outcome",
-      "rationale": "why the recommendation follows from findings, gates, and scope"
-    },
-    "confidence_recovery": {
-      "initial_confidence": 0.0,
-      "final_confidence": 0.0,
-      "status": "shared-confidence-band-status",
-      "evidence": [
-        "objective evidence supporting final confidence"
-      ],
-      "recovery_actions": [
-        "internal confidence-improvement loop performed before output"
-      ],
-      "remaining_limits": [
-        "residual uncertainty"
-      ]
-    },
-    "fanout_substituted": false,
-    "independence_satisfied": true,
-    "specialist_manifest": ".reports/codex/review/<timestamp>/specialist-manifest.json",
-    "specialist_passes": [
-      {
-        "role": "qa-specialist",
-        "axis": "tests",
-        "trigger": "required for LOCAL/BROAD/HIGH_RISK reviews",
-        "mode": "spawned|substituted",
-        "output_path": ".reports/codex/review/<timestamp>/specialists/qa-specialist.md",
-        "confidence": 0.0,
-        "blocking_findings": 0
-      },
-      {
-        "role": "solution-architect",
-        "axis": "architecture",
-        "trigger": "not triggered: no public API, migration, or cross-subsystem coupling",
-        "mode": "not_triggered",
-        "output_path": null,
-        "confidence": 0.0,
-        "blocking_findings": 0
-      }
-    ]
-  },
-  "follow_up": [
-    "needs-independent-review when independence_satisfied=false"
-  ]
-}
-```
+Minimum artifact payload template: `result-template.json`.

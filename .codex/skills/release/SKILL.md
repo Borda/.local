@@ -65,6 +65,17 @@ Write `$OUT_DIR/release-readiness.md` with:
 - `Checks`
 - `Blockers`
 
+For `prepare` and `audit` modes, apply `../_shared/specialist-orchestration.md` when the release includes public API changes, CI/release automation, security/dependency changes, docs/migration work, or broad verification risk. Write `"$OUT_DIR/specialist-release-plan.md"` with narrow context packs for:
+
+- `oss-shepherd`: SemVer, deprecation policy, maintainer readiness.
+- `cicd-steward`: release workflow, publishing, CI status, artifact gates.
+- `doc-scribe`: changelog, migration guide, README/examples.
+- `qa-specialist`: verification matrix and test evidence.
+- `security-auditor`: security/dependency-sensitive changes.
+- `challenger`: release-blocker downgrade or no-blocker conclusion.
+
+Stay single-agent for `notes` mode on a narrow, low-risk range unless SemVer or migration impact is ambiguous.
+
 ### 05: Run required checks from `../_shared/quality-gates.md`
 
 ```bash
@@ -126,26 +137,4 @@ Update calibration when SemVer, deprecation, changelog, or release-blocker polic
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "lint",
-    "format",
-    "types",
-    "tests",
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/release/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

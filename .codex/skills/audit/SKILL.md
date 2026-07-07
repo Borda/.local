@@ -53,6 +53,15 @@ Write `$OUT_DIR/audit-ledger.md` with these sections:
 - `Overlap`: duplicate or fuzzy ownership decisions.
 - `Recommendations`: ranked fix plan.
 
+For `scope=all`, `mode=adversarial`, or any audit crossing skills plus agents plus CI/config, apply `../_shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-audit-plan.md"` with context packs for:
+
+- `curator`: skill/agent/config drift, duplication, calibration hygiene.
+- `linting-expert`: Markdown, Python, shell, ruff/mypy/pre-commit references.
+- `cicd-steward`: CI harness, workflow permissions, artifact behavior.
+- `challenger`: adversarial check of no-finding or low-risk conclusions.
+
+Stay single-agent for narrow `scope=config`, `scope=skills`, or `scope=agents` audits where the same inventory would be sent to every specialist.
+
 ### 04: Run shared quality gates
 
 ```bash
@@ -162,28 +171,4 @@ Update calibration when audit scope, contract requirements, or routing checks ch
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail|timeout",
-  "checks_run": [
-    "lint",
-    "format",
-    "types",
-    "tests",
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/audit/<timestamp>/result.json",
-  "recommendations": [],
-  "follow_up": []
-}
-```
+Minimum artifact payload template: `result-template.json`.

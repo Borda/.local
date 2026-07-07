@@ -1,0 +1,135 @@
+{
+  "artifact_path": ".reports/codex/resolve/<timestamp>/result.json",
+  "checks_failed": [],
+  "checks_run": [
+    "lint",
+    "format",
+    "types",
+    "tests",
+    "review"
+  ],
+  "confidence": 0.0,
+  "findings": {
+    "critical": 0,
+    "high": 0,
+    "low": 0,
+    "medium": 0
+  },
+  "metadata": {
+    "confidence_gap_closures": [
+      {
+        "evidence": "evidence that closes the gap when status=closed",
+        "gap": "why confidence is below 1.0 or residual limits still matter",
+        "rationale": "why the gap remains open when status=unresolved|deferred",
+        "status": "closed|unresolved|deferred"
+      }
+    ],
+    "confidence_gaps": [
+      "why confidence is below 1.0 or residual limits still matter"
+    ],
+    "confidence_recovery": {
+      "evidence": [
+        "objective evidence supporting final confidence"
+      ],
+      "final_confidence": 0.0,
+      "initial_confidence": 0.0,
+      "recovery_actions": [
+        "internal confidence-improvement loop performed before output"
+      ],
+      "remaining_limits": [
+        "residual uncertainty"
+      ],
+      "status": "shared-confidence-band-status"
+    },
+    "final_resolution_table": {
+      "ingested_entries_total": 0,
+      "nonselectable_rows_total": 0,
+      "omitted_entries_total": 0,
+      "required_columns": [
+        "input item",
+        "item name",
+        "item type",
+        "triage status",
+        "resolution",
+        "owner/status",
+        "resolved how",
+        "evidence"
+      ],
+      "resolution_status_counts": {
+        "already-applied": 0,
+        "already-fixed": 0,
+        "duplicate": 0,
+        "implemented": 0,
+        "needs-clarification": 0,
+        "not-applicable": 0,
+        "rejected": 0,
+        "resolved": 0,
+        "stale": 0,
+        "unresolved": 0
+      },
+      "selectable_rows_total": 0,
+      "table_rows_total": 0,
+      "triage_status_counts": {
+        "already-applied": 0,
+        "already-fixed": 0,
+        "duplicate": 0,
+        "needs-clarification": 0,
+        "out-of-scope": 0,
+        "resolved": 0,
+        "stale": 0,
+        "valid": 0
+      }
+    },
+    "mode": "report|pr",
+    "out_of_scope_confirmation": {
+      "all_confirmed_by_user": true,
+      "count": 0,
+      "items": []
+    },
+    "pr_relevance": {
+      "connected_items_marked_out_of_scope": 0,
+      "connected_open_items_total": 0,
+      "connected_required_followup_total": 0,
+      "connected_selectable_items_total": 0,
+      "evaluated": false
+    },
+    "resolution_scope": {
+      "deferred_indexes": [],
+      "omitted_resolved_online_count": 0,
+      "prompt_presented": false,
+      "requested": "all|critical|high|medium|low|indexes",
+      "selected_indexes": [],
+      "selected_severity_groups": [],
+      "selection_confirmed_by_user": false,
+      "selection_source": "explicit-input|user-prompt|none-selectable"
+    },
+    "resolution_workplan": {
+      "groups_total": 0,
+      "parent_owned_groups": 0,
+      "specialist_owned_groups": 0,
+      "unassigned_selected_items": 0,
+      "verifier_groups": 0,
+      "workplan_path": ".reports/codex/resolve/<timestamp>/resolution-workplan.md"
+    },
+    "review_report_intake": {
+      "report_items_marked_out_of_scope": 0,
+      "report_items_total": 0,
+      "requested_report": false,
+      "review_gate_items_selectable": 0,
+      "review_gate_items_total": 0
+    },
+    "unresolved_summary": {
+      "all_local_actionable_items_closed": true,
+      "environment_blocked_items": 0,
+      "external_owner_items": 0,
+      "local_actionable_items_unresolved": 0,
+      "process_gate_items_unresolved": 0,
+      "selected_items_resolved": 0,
+      "selected_items_total": 0,
+      "selected_items_unresolved": 0,
+      "unresolved_reason_groups": [],
+      "user_deferred_items": 0
+    }
+  },
+  "status": "pass|fail"
+}

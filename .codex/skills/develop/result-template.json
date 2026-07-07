@@ -1,0 +1,46 @@
+{
+  "artifact_path": ".reports/codex/develop/<timestamp>/result.json",
+  "checks_failed": [],
+  "checks_run": [
+    "lint",
+    "format",
+    "types",
+    "tests",
+    "review"
+  ],
+  "confidence": 0.0,
+  "findings": {
+    "critical": 0,
+    "high": 0,
+    "low": 0,
+    "medium": 0
+  },
+  "metadata": {
+    "confidence_gap_closures": [
+      {
+        "evidence": "evidence that closes the gap when status=closed",
+        "gap": "why confidence is below 1.0 or residual limits still matter",
+        "rationale": "why the gap remains open when status=unresolved|deferred",
+        "status": "closed|unresolved|deferred"
+      }
+    ],
+    "confidence_gaps": [
+      "why confidence is below 1.0 or residual limits still matter"
+    ],
+    "confidence_recovery": {
+      "evidence": [
+        "objective evidence supporting final confidence"
+      ],
+      "final_confidence": 0.0,
+      "initial_confidence": 0.0,
+      "recovery_actions": [
+        "internal confidence-improvement loop performed before output"
+      ],
+      "remaining_limits": [
+        "residual uncertainty"
+      ],
+      "status": "shared-confidence-band-status"
+    }
+  },
+  "status": "pass|fail"
+}

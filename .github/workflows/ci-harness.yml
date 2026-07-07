@@ -42,7 +42,7 @@ jobs:
         run: .github/codex-harness.sh
 
       - name: Upload Codex harness results
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: codex-harness-results

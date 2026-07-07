@@ -23,6 +23,8 @@ Long workflow sections should keep `## Workflow` as the contract-level section a
 - Use `.codex/skills/_shared/collect-diff.sh` for scope-aware `working-tree`, `path`, or `commit` diff collection instead of duplicating git plumbing.
 - Use `.codex/skills/_shared/collect-pr.sh --checkout` for PR diff, metadata, comments, reviews, review threads, unresolved review-thread collection, target-branch refresh, PR branch refresh where possible, and local PR checkout evidence instead of ad hoc `gh` calls or raw URL file snapshots.
 - Use `.codex/skills/_shared/find-review-report.py` for path-free PR review report lookup instead of embedding ad hoc JSON parsing in skill instructions.
+- Use `.codex/skills/_shared/specialist-orchestration.md` when a skill delegates to specialist subagents or labeled in-main substitute passes. Fan-out must use narrow context packs, explicit output contracts, and parent-owned consolidation.
+- Keep bulky skill-specific result JSON examples in a sibling `result-template.json` file. In `SKILL.md`, reference that file instead of embedding long "Minimum artifact payload" blocks.
 - Never run `git` or `gh` with `--force` automatically. If a forced checkout or update appears necessary, stop and ask the user with the concrete reason and overwrite risk.
 - Use `.codex/skills/_shared/validate-artifacts.py` for common skill artifact shape checks when a skill has durable notes, ledgers, or JSONL evidence.
 - Prefer local files, `git`, `rg`, project commands, and explicit source citations.

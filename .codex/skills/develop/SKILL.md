@@ -75,15 +75,26 @@ While implementing, keep the code understandable from the code itself:
 - Match the project's configured or established docstring style, and keep function/class purpose in docstrings rather than comments directly above definitions.
 - Refactor instead of writing long docstrings or comments when a block needs a long explanation to be understandable.
 
-### 06: Apply specialist policy when the change crosses a domain boundary
+### 06: Orchestrate specialists when the change crosses a domain boundary
 
-- public API or architecture: use or simulate `solution-architect` review before committing to the design.
-- bug fix or test behavior: use or simulate `qa-specialist` review for the verification matrix.
-- CI/tooling: use or simulate `cicd-steward` and `linting-expert` review.
-- security-sensitive code: use or simulate read-only `security-auditor` review.
-- ML/data/research behavior: use or simulate `data-steward`, `scientist`, or `squeezer` as appropriate.
+Apply `../_shared/specialist-orchestration.md`. Stay single-agent for narrow implementation that fits in one to three files and one domain. Use specialist orchestration when the task crosses domains, benefits from independent verification, or can split into parallel context packs.
 
-If specialist fan-out is unavailable, record the in-main substitute in `$OUT_DIR/specialist-notes.md`.
+Before spawning or substituting specialists, write `"$OUT_DIR/specialist-plan.md"` with one row per planned pass:
+
+| role | trigger | context pack | expected output | mode |
+| ---- | ------- | ------------ | --------------- | ---- |
+
+Required orchestration patterns:
+
+- public API or architecture: `solution-architect` for API contract/migration shape, `sw-engineer` for implementation, `qa-specialist` for acceptance matrix, and `doc-scribe` for public docs/docstrings when applicable.
+- bug fix or regression: `investigate` or equivalent root-cause evidence first, then `sw-engineer` for the fix and `qa-specialist` for failure-before/pass-after proof.
+- CI/tooling: `cicd-steward` for workflow behavior and `linting-expert` for ruff/mypy/pre-commit or suppression policy.
+- security-sensitive code: read-only `security-auditor` before implementation; pair with `sw-engineer` and `qa-specialist` only after risk is scoped.
+- ML/data/research behavior: `data-steward` for data contracts, `scientist` for method/metric validity, `squeezer` for performance claims, plus `qa-specialist` for tensor boundary tests.
+- docs-impacting behavior: `doc-scribe` gets only the verified public behavior, API signatures, examples, and migration notes; do not send unrelated implementation details.
+- high-risk or broad changes: `challenger` runs after the draft plan or diff to stress-test assumptions and residual risk.
+
+Each specialist context pack must include only relevant files, hunks, logs, and questions. Do not give every specialist the full task history. If specialist fan-out is unavailable, record the in-main substitute in `$OUT_DIR/specialist-notes.md` and lower confidence when independence mattered.
 
 ### 07: Write `$OUT_DIR/development-notes.md` before running gates
 
@@ -197,53 +208,4 @@ Use shared gate schema from `../_shared/quality-gates.md`.
 
 Final chat output must include the confidence score, confidence band status, recovery actions, remaining limits, and the concrete confidence gaps or degradation reasons plus closure status from `metadata.confidence_gaps` and `metadata.confidence_gap_closures`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "lint",
-    "format",
-    "types",
-    "tests",
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "metadata": {
-    "confidence_gaps": [
-      "why confidence is below 1.0 or residual limits still matter"
-    ],
-    "confidence_gap_closures": [
-      {
-        "gap": "why confidence is below 1.0 or residual limits still matter",
-        "status": "closed|unresolved|deferred",
-        "evidence": "evidence that closes the gap when status=closed",
-        "rationale": "why the gap remains open when status=unresolved|deferred"
-      }
-    ],
-    "confidence_recovery": {
-      "initial_confidence": 0.0,
-      "final_confidence": 0.0,
-      "status": "shared-confidence-band-status",
-      "evidence": [
-        "objective evidence supporting final confidence"
-      ],
-      "recovery_actions": [
-        "internal confidence-improvement loop performed before output"
-      ],
-      "remaining_limits": [
-        "residual uncertainty"
-      ]
-    }
-  },
-  "artifact_path": ".reports/codex/develop/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

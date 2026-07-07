@@ -17,6 +17,61 @@ COMMON_RESULT_FIELDS = {
     "artifact_path",
 }
 
+UNRESOLVED_REASON_GROUPS = {
+    "local-code-or-doc",
+    "process-gate",
+    "independent-review",
+    "environment-blocked",
+    "external-ci",
+    "user-deferred",
+    "already-closed",
+    "other",
+}
+
+UNRESOLVED_NEXT_OWNERS = {
+    "codex",
+    "user",
+    "maintainer",
+    "ci",
+    "environment",
+    "external-reviewer",
+}
+
+RESOLVE_TRIAGE_STATUSES = {
+    "valid",
+    "resolved",
+    "duplicate",
+    "stale",
+    "out-of-scope",
+    "already-fixed",
+    "already-applied",
+    "needs-clarification",
+}
+
+RESOLVE_RESOLUTION_STATUSES = {
+    "implemented",
+    "resolved",
+    "rejected",
+    "stale",
+    "not-applicable",
+    "duplicate",
+    "already-fixed",
+    "already-applied",
+    "needs-clarification",
+    "unresolved",
+}
+
+RESOLVE_FINAL_TABLE_REQUIRED_COLUMNS = {
+    "input item",
+    "item name",
+    "item type",
+    "triage status",
+    "resolution",
+    "owner/status",
+    "resolved how",
+    "evidence",
+}
+
 SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
     "develop": {
         "files": {
@@ -333,6 +388,61 @@ def _validate_resolve_scope_selection(metadata: dict[str, Any], out_dir: Path) -
         raise SystemExit("resolve-selection-required")
 
 
+def _validate_resolve_workplan(metadata: dict[str, Any], out_dir: Path) -> None:
+    """Validate selected-item grouping and specialist assignment metadata."""
+    resolution_scope = metadata.get("resolution_scope")
+    if not isinstance(resolution_scope, dict):
+        raise SystemExit("resolve-missing-resolution-scope-metadata")
+    selected_indexes = resolution_scope.get("selected_indexes")
+    if not isinstance(selected_indexes, list) or not all(isinstance(item, int) for item in selected_indexes):
+        raise SystemExit("resolve-invalid-selected-indexes")
+
+    workplan = metadata.get("resolution_workplan")
+    if not isinstance(workplan, dict):
+        raise SystemExit("resolve-missing-resolution-workplan")
+
+    for key in (
+        "groups_total",
+        "parent_owned_groups",
+        "specialist_owned_groups",
+        "verifier_groups",
+        "unassigned_selected_items",
+    ):
+        value = workplan.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise SystemExit(f"resolve-invalid-resolution-workplan:{key}")
+
+    workplan_path_value = workplan.get("workplan_path")
+    if not isinstance(workplan_path_value, str) or not workplan_path_value.strip():
+        raise SystemExit("resolve-invalid-resolution-workplan:workplan_path")
+
+    if not selected_indexes:
+        return
+
+    if workplan["groups_total"] <= 0:
+        raise SystemExit("resolve-selected-items-without-workplan-groups")
+    if workplan["unassigned_selected_items"] != 0:
+        raise SystemExit("resolve-selected-items-unassigned-in-workplan")
+    if workplan["parent_owned_groups"] + workplan["specialist_owned_groups"] != workplan["groups_total"]:
+        raise SystemExit("resolve-workplan-owner-count-mismatch")
+    if workplan["verifier_groups"] > workplan["groups_total"]:
+        raise SystemExit("resolve-workplan-verifier-count-exceeds-groups")
+
+    workplan_path = out_dir / "resolution-workplan.md"
+    declared_path = Path(workplan_path_value)
+    if declared_path.name != "resolution-workplan.md":
+        raise SystemExit("resolve-workplan-path-name-invalid")
+    _require_file_sections(
+        workplan_path,
+        ["Selected Finding Groups", "Specialist Assignments", "Execution Order", "Ungrouped Items"],
+    )
+
+    workplan_text = workplan_path.read_text(encoding="utf-8").lower()
+    for required_text in ("primary", "verifier", "context", "closure"):
+        if required_text not in workplan_text:
+            raise SystemExit(f"resolve-workplan-missing-{required_text}")
+
+
 def _count_out_of_scope_items(action_text: str) -> int:
     """Count concrete out-of-scope rows in a resolve action ledger."""
     count = 0
@@ -427,6 +537,171 @@ def _validate_resolve_pr_relevance(metadata: dict[str, Any], out_dir: Path) -> N
         raise SystemExit("resolve-connected-relation-missing")
 
 
+def _validate_status_counts(
+    counts: Any,
+    allowed_statuses: set[str],
+    expected_total: int,
+    error_prefix: str,
+) -> None:
+    """Validate table status-count metadata covers every final table row."""
+    if not isinstance(counts, dict):
+        raise SystemExit(f"{error_prefix}-not-object")
+    missing = sorted(allowed_statuses - set(counts))
+    if missing:
+        raise SystemExit(f"{error_prefix}-missing:" + ",".join(missing))
+    unexpected = sorted(set(counts) - allowed_statuses)
+    if unexpected:
+        raise SystemExit(f"{error_prefix}-unexpected:" + ",".join(unexpected))
+
+    total = 0
+    for status, value in counts.items():
+        if not isinstance(value, int) or value < 0:
+            raise SystemExit(f"{error_prefix}-invalid:{status}")
+        total += value
+    if total != expected_total:
+        raise SystemExit(f"{error_prefix}-total-mismatch")
+
+
+def _validate_resolve_final_resolution_table(metadata: dict[str, Any], out_dir: Path) -> None:
+    """Validate the final resolve table covers every ingested entry."""
+    table = metadata.get("final_resolution_table")
+    if not isinstance(table, dict):
+        raise SystemExit("resolve-missing-final-resolution-table")
+
+    count_keys = (
+        "ingested_entries_total",
+        "table_rows_total",
+        "omitted_entries_total",
+        "selectable_rows_total",
+        "nonselectable_rows_total",
+    )
+    counts = {}
+    for key in count_keys:
+        value = table.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise SystemExit(f"resolve-invalid-final-resolution-table:{key}")
+        counts[key] = value
+
+    if counts["omitted_entries_total"] != 0:
+        raise SystemExit("resolve-final-table-omitted-entries")
+    if counts["ingested_entries_total"] != counts["table_rows_total"]:
+        raise SystemExit("resolve-final-table-row-count-mismatch")
+    if counts["selectable_rows_total"] + counts["nonselectable_rows_total"] != counts["table_rows_total"]:
+        raise SystemExit("resolve-final-table-selectable-count-mismatch")
+
+    _validate_status_counts(
+        table.get("triage_status_counts"),
+        RESOLVE_TRIAGE_STATUSES,
+        counts["table_rows_total"],
+        "resolve-triage-status-counts",
+    )
+    _validate_status_counts(
+        table.get("resolution_status_counts"),
+        RESOLVE_RESOLUTION_STATUSES,
+        counts["table_rows_total"],
+        "resolve-resolution-status-counts",
+    )
+
+    required_columns = table.get("required_columns")
+    if not isinstance(required_columns, list) or not all(isinstance(item, str) for item in required_columns):
+        raise SystemExit("resolve-final-table-required-columns-invalid")
+    normalized_columns = {item.strip().lower() for item in required_columns}
+    missing_columns = sorted(RESOLVE_FINAL_TABLE_REQUIRED_COLUMNS - normalized_columns)
+    if missing_columns:
+        raise SystemExit("resolve-final-table-required-columns-missing:" + ",".join(missing_columns))
+
+    if counts["table_rows_total"] == 0:
+        return
+
+    action_text = (out_dir / "action-items.md").read_text(encoding="utf-8").lower()
+    _require_file_sections(
+        out_dir / "action-items.md",
+        ["Review Item Resolution Table", "Final Resolution Summary", "Final Resolution Table Completeness"],
+    )
+    for required_column in sorted(RESOLVE_FINAL_TABLE_REQUIRED_COLUMNS):
+        if required_column not in action_text:
+            raise SystemExit(f"resolve-final-table-column-missing:{required_column}")
+    for required_text in (
+        "ingested entries",
+        "table rows",
+        "omitted entries",
+        "triage status counts",
+        "resolution status counts",
+    ):
+        if required_text not in action_text:
+            raise SystemExit(f"resolve-final-table-missing-{required_text.replace(' ', '-')}")
+
+
+def _validate_resolve_unresolved_summary(metadata: dict[str, Any], out_dir: Path) -> None:
+    """Validate selected unresolved work is actionable and not overclaimed."""
+    summary = metadata.get("unresolved_summary")
+    if not isinstance(summary, dict):
+        raise SystemExit("resolve-missing-unresolved-summary")
+
+    count_keys = (
+        "selected_items_total",
+        "selected_items_resolved",
+        "selected_items_unresolved",
+        "local_actionable_items_unresolved",
+        "process_gate_items_unresolved",
+        "environment_blocked_items",
+        "external_owner_items",
+        "user_deferred_items",
+    )
+    counts = {}
+    for key in count_keys:
+        value = summary.get(key)
+        if not isinstance(value, int) or value < 0:
+            raise SystemExit(f"resolve-invalid-unresolved-summary:{key}")
+        counts[key] = value
+
+    if counts["selected_items_resolved"] + counts["selected_items_unresolved"] != counts["selected_items_total"]:
+        raise SystemExit("resolve-unresolved-summary-total-mismatch")
+    if not isinstance(summary.get("all_local_actionable_items_closed"), bool):
+        raise SystemExit("resolve-invalid-local-actionable-closed")
+    if summary["all_local_actionable_items_closed"] and counts["local_actionable_items_unresolved"] > 0:
+        raise SystemExit("resolve-local-actionable-contradiction")
+
+    reason_groups = summary.get("unresolved_reason_groups")
+    if not isinstance(reason_groups, list):
+        raise SystemExit("resolve-invalid-unresolved-reason-groups")
+    if counts["selected_items_unresolved"] > 0 and not reason_groups:
+        raise SystemExit("resolve-unresolved-reason-groups-missing")
+
+    grouped_count = 0
+    for index, group in enumerate(reason_groups):
+        if not isinstance(group, dict):
+            raise SystemExit(f"resolve-unresolved-reason-group-not-object:{index}")
+        reason = group.get("reason")
+        if reason not in UNRESOLVED_REASON_GROUPS:
+            raise SystemExit(f"resolve-invalid-unresolved-reason:{index}")
+        count = group.get("count")
+        if not isinstance(count, int) or count <= 0:
+            raise SystemExit(f"resolve-invalid-unresolved-reason-count:{index}")
+        grouped_count += count
+        owner = group.get("owner")
+        if owner not in UNRESOLVED_NEXT_OWNERS:
+            raise SystemExit(f"resolve-invalid-unresolved-owner:{index}")
+        for key in ("next_action", "evidence_path"):
+            value = group.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise SystemExit(f"resolve-unresolved-reason-missing-{key}:{index}")
+
+    if grouped_count != counts["selected_items_unresolved"]:
+        raise SystemExit("resolve-unresolved-reason-count-mismatch")
+    if counts["selected_items_unresolved"] == 0:
+        return
+
+    _require_file_sections(
+        out_dir / "unresolved.txt",
+        ["Unresolved Work Summary", "Why Selected Items Remain Unresolved", "Next Action"],
+    )
+    unresolved_text = (out_dir / "unresolved.txt").read_text(encoding="utf-8").lower()
+    for required_text in ("closure class", "next owner", "attempted evidence"):
+        if required_text not in unresolved_text:
+            raise SystemExit(f"resolve-unresolved-summary-missing-{required_text.replace(' ', '-')}")
+
+
 def validate(skill: str, out_dir: Path, result_path: Path) -> None:
     result = _load_json(result_path)
     _require_result_shape(result)
@@ -457,9 +732,12 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
         if not isinstance(resolution_scope, dict):
             raise SystemExit("resolve-missing-resolution-scope-metadata")
         _validate_resolve_scope_selection(metadata, out_dir)
+        _validate_resolve_workplan(metadata, out_dir)
         _validate_resolve_out_of_scope_confirmation(metadata, out_dir)
         _validate_resolve_report_intake(result, out_dir)
+        _validate_resolve_final_resolution_table(metadata, out_dir)
         _validate_resolve_pr_relevance(metadata, out_dir)
+        _validate_resolve_unresolved_summary(metadata, out_dir)
         scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
         for required_text in ("selectable", "selected", "deferred"):
             if required_text not in scope_text:

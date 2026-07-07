@@ -57,7 +57,27 @@ Add tool-specific logs, CI excerpts, traceback snippets, config files, and chang
 
 Include at least three plausible hypotheses unless the root cause is directly proven by a failing command and code/log evidence.
 
-### 05: Probe the top hypotheses
+### 05: Orchestrate specialist probes when hypotheses split by domain
+
+Apply `../_shared/specialist-orchestration.md` when the symptom spans multiple plausible domains or when parallel evidence gathering can reduce elapsed time. Stay single-agent for a narrow deterministic failure with one obvious hypothesis.
+
+Write `"$OUT_DIR/specialist-probes.md"` before fan-out. Each row must include role, hypothesis, context pack path, expected falsification signal, and mode (`spawned`, `substituted`, or `not_triggered`).
+
+Recommended probe routing:
+
+- `qa-specialist`: flaky tests, failing assertions, regression reproduction, missing edge-case evidence.
+- `cicd-steward`: CI-only failure, matrix/cache/permission divergence, release workflow failures.
+- `linting-expert`: ruff, mypy, pre-commit, tool version or suppression anomalies.
+- `security-auditor`: auth, secret handling, deserialization, dependency, or permission-related failures.
+- `data-steward`: data split, leakage, augmentation, DataLoader, or reproducibility anomalies.
+- `squeezer`: performance regressions, memory/OOM, throughput drops, GPU sync suspicion.
+- `scientist`: metric instability, paper/method mismatch, experiment validity.
+- `web-explorer`: volatile dependency or external API behavior.
+- `challenger`: root-cause claim that would be damaging if wrong.
+
+Each context pack must include only the symptom slice, relevant logs, touched files, environment facts, and the exact falsification question for that hypothesis. Specialists may request more context, but the parent decides whether to widen. The parent consolidates probe outcomes and owns the final root-cause claim.
+
+### 06: Probe the top hypotheses
 
 Use targeted probes that can confirm, rule out, or narrow one hypothesis at a time.
 
@@ -69,7 +89,7 @@ Each probe must have a clear outcome:
 
 Persist probe commands and outputs under `$OUT_DIR/probes/` or inline in `$OUT_DIR/probes.md`.
 
-### 06: Run the anti-rationalization gate
+### 07: Run the anti-rationalization gate
 
 A root-cause claim requires:
 
@@ -87,13 +107,13 @@ Write `$OUT_DIR/root-cause.md` with:
 - `Rejected Alternatives`
 - `Confidence`
 
-### 07: Run shared quality gates or targeted checks relevant to the failure
+### 08: Run shared quality gates or targeted checks relevant to the failure
 
 ```bash
 .codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
 ```
 
-### 08: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`
+### 09: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`
 
 ```bash
 .codex/skills/_shared/write-result.py \
@@ -122,8 +142,9 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 3. Root cause stated without falsification check => fail.
 4. Workaround presented as root cause => fail.
 5. Missing `root-cause.md` evidence, falsification, rejected alternatives, confidence => fail.
-6. Result artifact validator failure => fail.
-7. Result artifact missing => fail.
+6. Broad multi-domain symptom without `specialist-probes.md` or an explicit single-agent rationale => fail.
+7. Result artifact validator failure => fail.
+8. Result artifact missing => fail.
 
 ## Quality Gates
 
@@ -148,26 +169,4 @@ Update calibration when root-cause routing or workaround rejection changes:
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "lint",
-    "format",
-    "types",
-    "tests",
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/investigate/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

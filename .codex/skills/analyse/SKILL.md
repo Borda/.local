@@ -58,7 +58,20 @@ Evidence rules:
 - Thread/report claims must separate verified facts from hypotheses.
 - Duplicate or related issues/findings are listed explicitly instead of collapsed silently.
 
-### 05: Analyze alternatives before recommending action
+### 05: Orchestrate specialist analysis when the question has independent axes
+
+Apply `../_shared/specialist-orchestration.md` for broad questions, PR/issue analysis with multiple risk domains, ecosystem analysis, or conclusions that need independent challenge. Stay single-agent for narrow local analysis where fan-out would duplicate the same context.
+
+Write `"$OUT_DIR/orchestration.md"` when fan-out is used or intentionally skipped for a broad scope. Include:
+
+- specialist axes considered
+- context pack per triggered axis
+- skipped axes with rationale
+- consolidation plan
+
+Useful routes: `solution-architect` for architecture/API tradeoffs, `qa-specialist` for testability, `security-auditor` for risk, `web-explorer` for current ecosystem evidence, `scientist` for methodology, `curator` for config/workflow drift, and `challenger` for high-impact conclusions.
+
+### 06: Analyze alternatives before recommending action
 
 Required sections in `$OUT_DIR/analysis.md`:
 
@@ -71,18 +84,18 @@ Required sections in `$OUT_DIR/analysis.md`:
 - `Recommendations`
 - `Gaps`
 
-### 06: Run the self-review check
+### 07: Run the self-review check
 
 ```bash
 git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
 ```
 
-### 07: Decide gate result
+### 08: Decide gate result
 
 - `pass`: findings are evidence-backed, ranked, and gaps are explicit.
 - `fail`: missing scope, missing evidence for a blocking claim, stale external claim presented as fact, or no result artifact.
 
-### 08: Write mandatory result artifact to `.reports/codex/analyse/<timestamp>/result.json`
+### 09: Write mandatory result artifact to `.reports/codex/analyse/<timestamp>/result.json`
 
 ## Self-Critical Gate
 
@@ -103,7 +116,8 @@ Critical conclusions without this self-review are non-passing.
 3. Current external claim without live primary-source evidence or stale/unverified caveat => fail.
 4. Blocking conclusion without evidence ledger entry => fail.
 5. Missing self-review for critical conclusions => fail.
-6. Result artifact missing => fail.
+6. Broad multi-axis analysis without orchestration evidence or skip rationale => fail.
+7. Result artifact missing => fail.
 
 ## Quality Gates
 
@@ -126,22 +140,4 @@ Update calibration when routing or evidence expectations change:
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Minimum artifact payload:
-
-```json
-{
-  "status": "pass|fail",
-  "checks_run": [
-    "review"
-  ],
-  "checks_failed": [],
-  "findings": {
-    "critical": 0,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "confidence": 0.0,
-  "artifact_path": ".reports/codex/analyse/<timestamp>/result.json"
-}
-```
+Minimum artifact payload template: `result-template.json`.

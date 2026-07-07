@@ -1,0 +1,15 @@
+{
+  "artifact_path": ".reports/codex/analyse/<timestamp>/result.json",
+  "checks_failed": [],
+  "checks_run": [
+    "review"
+  ],
+  "confidence": 0.0,
+  "findings": {
+    "critical": 0,
+    "high": 0,
+    "low": 0,
+    "medium": 0
+  },
+  "status": "pass|fail"
+}
