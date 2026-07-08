@@ -4,72 +4,16 @@ paths:
   - '**'
 ---
 
-## Canonical artifact layout
+## Artifact Layout (stub)
 
-Runtime artifacts at **project root**, not inside `.claude/`.
-Skill output dirs use dot-prefix (`.reports/`, `.temp/`, `.plans/`, etc.) — signals ephemeral.
+Runtime artifacts at **project root** dot-dirs — never inside `.claude/`:
 
-```text
-.plans/
-  blueprint/             ← /brainstorm spec and tree files  (was .brainstorming/)
-  active/                ← todo_*.md, plan_*.md
-  closed/                ← completed plans
-.notes/                  ← lessons.md, diary, guides  (was _tasks/_working/)
-.reports/
-  calibrate/             ← /foundry:calibrate — final calibration reports
-  resolve/               ← /oss:resolve — final lint+QA gate reports
-  audit/                 ← /foundry:audit — final audit reports
-  review/<timestamp>/    ← /oss:review, /develop:review — final consolidated review reports
-  analyse/               ← /oss:analyse skill (thread, ecosystem, health subdirs)
-  release/               ← /oss:release audit — release readiness reports
-  brainstorm/            ← /foundry:brainstorm — tree review reports
-  research/              ← research plugin skills (topic, judge, verify, fortify, retro, run)
-.experiments/            ← /research:run (run mode)
-.developments/           ← /develop:feature, /develop:fix, /develop:refactor runs
-.cache/
-  gh/                    ← shared GitHub API response cache (cross-skill)
-.temp/
-  output-<slug>-*.md     ← quality-gates prose output (cross-cutting, no dedicated skill dir)
-  review/<timestamp>/    ← /oss:review, /develop:review — intermediate subagent handover files
-  <skill>/<timestamp>/   ← other skills migrating to three-tier convention (audit, resolve, calibrate — pending)
-```
+- `.temp/<skill>/<ts>/` — intermediate/handover files · `.reports/<skill>/<ts>/` — final consolidated reports · `.plans/{blueprint,active,closed}` — specs/todos/results · `.notes/` — lessons, diary · `.cache/gh/` — GitHub API cache · `.experiments/`, `.developments/` — research/develop runs
+- Run-dir timestamp: `$(date -u +%Y-%m-%dT%H-%M-%SZ)` (UTC, dashes, filesystem-safe); completed run contains `result.jsonl`
+- TTL: dot-prefixed artifact dirs gitignored, auto-cleaned at 30 days; `.plans/active|closed` and `.notes/` manual — never auto-delete
 
-Dot-prefixed artifact dirs gitignored — ephemeral, TTL-managed.
-
-## Run directory naming
-
-Each skill creates timestamped subdir under canonical base dir:
-
-```bash
-# intermediate handover — NEVER in .reports/
-RUN_DIR=".temp/<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-mkdir -p "$RUN_DIR"
-
-# final consolidated report — one per skill run
-REPORT_DIR=".reports/<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
-mkdir -p "$REPORT_DIR"
-
-# RUN_DIR=".<skill>/$(date -u +%Y-%m-%dT%H-%M-%SZ)"   # .experiments/, .developments/
-```
-
-Format: `YYYY-MM-DDTHH-MM-SSZ` (UTC, dashes throughout, filesystem-safe).
-Example: `.reports/calibrate/2026-03-27T20-06-22Z/`.
-
-Completed run always has `result.jsonl`.
-Incomplete runs (crashed, timed out) lack it — TTL hook skips them (keeps for debugging).
-
-## TTL policy
-
-| Location | TTL | Condition |
-| --- | --- | --- |
-| `.reports/<skill>/YYYY-MM-DDTHH-MM-SSZ/`, `.<skill>/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | only dirs containing `result.jsonl` |
-| `.reports/review/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | keyed on dir mtime (no result.jsonl — hook uses separate find) |
-| `.temp/<skill>/YYYY-MM-DDTHH-MM-SSZ/` | 30 days | keyed on file mtime (intermediate subagent handover dirs) |
-| `.plans/blueprint/` | 30 days | keyed on file mtime (flat spec/tree files) |
-| `.cache/gh/` | 30 days | keyed on file mtime (GitHub API response cache) |
-| `.temp/` | 30 days | keyed on file mtime |
-| `.plans/active/`, `.plans/closed/` | manual | move to `closed/` when done; never auto-delete |
-| `.notes/` | manual | human-maintained |
-| `releases/<version>/` | manual | release artefacts; archive or delete after shipping |
-
-Log file TTL and SessionEnd cleanup hook in `foundry-config.md` (foundry-infrastructure only).
+> Full rule (complete layout tree, per-dir TTL conditions, naming examples) in `_full/artifact-lifecycle.md`. **Read when defining a new skill's output dirs or TTL behavior**:
+>
+> ```bash
+> RULE_FULL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/rules/_full/artifact-lifecycle.md 2>/dev/null | head -1)"; [ -z "$RULE_FULL" ] && RULE_FULL="plugins/foundry/rules/_full/artifact-lifecycle.md"  # timeout: 5000
+> ```

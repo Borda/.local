@@ -626,6 +626,8 @@ ______________________________________________________________________
 
 `/foundry:setup` symlinks all rule files from `plugins/foundry/rules/` into `~/.claude/rules/`. These govern Claude's behavior globally across all sessions after install.
 
+> **Stub + on-demand split (token diet):** `git-commit.md`, `debugging.md`, `external-data.md`, and `artifact-lifecycle.md` are thin always-loaded stubs carrying only the hard constraints; the full procedural bodies live in `rules/_full/` (resolved from the plugin cache, NOT symlinked or injected) and are Read on demand at the trigger point named in each stub — drafting a commit, multi-file fix, multi-page fetch, defining new output dirs. Cuts ~6K tokens of per-session injection with zero constraint loss.
+
 | Rule file               | Applies to                      | What it governs                                                                                         |
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `communication.md`      | all                             | Re: anchor format, progress narration, tone, output routing, breaking-findings format, terminal colors  |

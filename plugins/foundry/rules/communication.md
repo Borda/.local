@@ -97,16 +97,6 @@ Compliant example — this is the only valid form:
 - Max 4 questions per call; group related sub-questions into one option set rather than asking sequentially
 - **Recommended option placement**: place recommended option **second** in the options list, not first and not last. First slot = most natural/neutral default; second = recommended; last = skip/abort.
 
-## Long Reply File Dump
-
-**Trigger**: reply >1 sentence OR contains MD formatting beyond the `# Re:` anchor (bullets `-`/`*`, fenced code ` ``` `, tables `|`, additional headers).
-
-**Rule**: write full reply to `.temp/reply-<slug>-<YYYY-MM-DD>.md`; print path as first output line: `→ .temp/reply-<slug>-<YYYY-MM-DD>.md`.
-- `<slug>` = 3–4 word kebab summary of reply subject
-- Verbatim — no extra wrapping, no ANSI codes
-
-**Exemptions**: machine-parsed responses; pure status/narration lines; box header + single-sentence body with no other MD formatting.
-
 ## Output Routing
 
 Full rules (including anti-overwrite counter-suffix and branch-slug format) and breaking-findings format: see `quality-gates.md`.

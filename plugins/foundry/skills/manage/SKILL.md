@@ -188,14 +188,17 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
 
 1. Fetch latest Claude Code agent frontmatter schema:
 
-   - Resolve schema output path before spawning:
+   - Resolve schema cache path (24h TTL — schema changes rarely; saves one web-explorer spawn per create):
      ```bash
-     MANAGE_SCHEMA_FILE=$(mktemp -t manage-schema-XXXXXX).md
-     echo "Schema file: $MANAGE_SCHEMA_FILE"  # timeout: 3000
+     mkdir -p .cache/manage  # timeout: 3000
+     MANAGE_SCHEMA_FILE=".cache/manage/agent-schema.md"
+     if [ -n "$(find "$MANAGE_SCHEMA_FILE" -mmin -1440 2>/dev/null)" ]; then MANAGE_SCHEMA_CACHED=true; else MANAGE_SCHEMA_CACHED=false; fi
+     echo "Schema file: $MANAGE_SCHEMA_FILE (cached: $MANAGE_SCHEMA_CACHED)"  # timeout: 3000
      ```
+   - **`MANAGE_SCHEMA_CACHED=true`** → skip the spawn and health monitoring below; Read `$MANAGE_SCHEMA_FILE` (limit=60) for the field list and continue at the extraction bullet.
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/sub-agents` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
-   **Health monitoring** (CLAUDE.md §6): after spawning the web-explorer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `web-explorer` and find glob `manage-schema-*.md` (poll path `${TMPDIR:-/tmp}`).
+   **Health monitoring** (CLAUDE.md §6): after spawning the web-explorer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `web-explorer` and find glob `agent-schema.md` (poll path `.cache/manage`).
 
    - Read returned summary; extract: valid frontmatter fields (`name`, `description`, `tools`, `disallowedTools`, `model`, `permissionMode`, `maxTurns`, `effort`, `initialPrompt`, `skills`, `mcpServers`, `hooks`, `memory`, `background`, `isolation`, `color`), current model shorthands, new fields
    - Note new fields worth including. Adjust template to reflect current schema. If new field broadly useful for agent's role (e.g. `maxTurns` for long-running agents), include with sensible default and inline comment.
@@ -237,11 +240,14 @@ Return ONLY: {"status":"done","file":".claude/agents/<name>.md","lines":N,"confi
 
 1. Fetch latest Claude Code skill frontmatter schema:
 
-   - Resolve skill schema output path before spawning:
+   - Resolve skill schema cache path (24h TTL — same rationale as Create Agent step 1):
      ```bash
-     MANAGE_SKILL_SCHEMA_FILE=$(mktemp -t manage-skill-schema-XXXXXX).md
-     echo "Skill schema file: $MANAGE_SKILL_SCHEMA_FILE"  # timeout: 3000
+     mkdir -p .cache/manage  # timeout: 3000
+     MANAGE_SKILL_SCHEMA_FILE=".cache/manage/skill-schema.md"
+     if [ -n "$(find "$MANAGE_SKILL_SCHEMA_FILE" -mmin -1440 2>/dev/null)" ]; then MANAGE_SKILL_SCHEMA_CACHED=true; else MANAGE_SKILL_SCHEMA_CACHED=false; fi
+     echo "Skill schema file: $MANAGE_SKILL_SCHEMA_FILE (cached: $MANAGE_SKILL_SCHEMA_CACHED)"  # timeout: 3000
      ```
+   - **`MANAGE_SKILL_SCHEMA_CACHED=true`** → skip the spawn and health monitoring below; Read `$MANAGE_SKILL_SCHEMA_FILE` (limit=60) for the field list and continue at the extraction bullet.
    - Spawn **foundry:web-explorer** to fetch `https://code.claude.com/docs/en/skills` with instruction: "Write your full findings (schema fields, new fields, deprecated fields) to `<MANAGE_SKILL_SCHEMA_FILE>` (substitute resolved path from bash block above) using the Write tool. Return ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"file\":\"<MANAGE_SKILL_SCHEMA_FILE>\",\"fields\":N,\"new\":N,\"deprecated\":N,\"confidence\":0.N,\"summary\":\"N fields, N new, N deprecated\"}`"
 
    **Health monitoring** (CLAUDE.md §6): after spawning the web-explorer agent, apply the §8b boilerplate from `_shared/agent-spawn-protocol.md` with `<ID>` = `web-explorer-skill` and the find glob matching this agent's output files.

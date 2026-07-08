@@ -243,7 +243,7 @@ fi
 
 **Parallel analysis across projects** — for working sets with 2+ files, spawn one analysis agent per project simultaneously. For single-file working sets, run P1–P2 inline (no spawn).
 
-Spawn one `Agent` per project (no schema — returns text analysis):
+Spawn one `Agent` per project with `model="sonnet"` (mechanical Drop/Trim/Keep classification — no reasoning tier needed; no schema — returns text analysis):
 
 ```text
 Read MEMORY.md at <absolute-path>.
@@ -264,7 +264,7 @@ Wait for all agents to complete. Merge into consolidated proposal list keyed by 
 
 **If `$EAGER == true`** — skip P1–P3 below; execute P-eager steps:
 
-**P-eager-1**: Spawn one scoring agent per project in parallel (working sets with 2+ files); inline for single file. Each agent scores every section in its assigned MEMORY.md:
+**P-eager-1**: Spawn one scoring agent per project in parallel with `model="sonnet"` (structured two-dimension scoring — no reasoning tier needed); working sets with 2+ files; inline for single file. Each agent scores every section in its assigned MEMORY.md:
 
 ```text
 Read MEMORY.md at <absolute-path>.

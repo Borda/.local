@@ -4,45 +4,17 @@ paths:
   - '**'
 ---
 
-## Root-Cause Discipline
+## Root-Cause Discipline (stub)
 
-Never patch symptom. Symptoms = evidence — treat as signal, not problem.
+**Never patch symptom.** Diagnosis loop: observe ALL symptoms → hypothesize specific mechanism → **confirm with evidence** (code/logs/tests — no confirmation = no fix) → fix mechanism, not signal → validate ALL original symptoms. Max 3 iterations, then stop + AskUserQuestion.
 
-### Diagnosis loop
+- Memory/training knowledge ≠ evidence — every premise grounded in source read now; "Where is this documented?" before building on it
+- Falsification before closing: could a second independent root cause remain? If yes, diagnose it too
+- Post-fix, non-trivial (>1 file, or logic previously believed working): dispatch `foundry:challenger` via `Agent()` — batched per session (one challenger for grouped fixes), file-handoff envelope, read full findings only on FAIL
+- Anti-patterns (forbidden): symptom suppression (`try/except`/guard hiding failure), first-plausible-cause stop, partial validation, fix-before-confirm, ungrounded premise as design pillar
 
-1. **Observe symptoms** — collect all failure signals before forming hypothesis
-2. **Hypothesize root cause** — name specific mechanism; not "config wrong" but "config key X missing from production loader → Y falls back to default Z → symptom"
-3. **Confirm root cause** — find direct evidence in code, logs, or tests that hypothesized mechanism exists and is active; no confirmation = no fix
-4. **Fix the mechanism, not the signal** — change structural cause; never add guard that suppresses symptom without removing cause
-5. **Validate** — re-run all original failure signals; confirm every symptom resolved; if any remain → root cause was incomplete or not only one → return to step 2
-
-**Loop bound**: max 3 diagnosis-fix iterations (matches §Safety breaks default); at limit — stop, report remaining symptoms, invoke `AskUserQuestion` before continuing.
-
-### Falsification check
-
-Before marking fix complete: "Could this symptom have a second independent root cause not addressed by this fix?" If yes → diagnose and fix that cause too before closing.
-
-### Post-fix challenger invocation
-
-**Dispatch rule**: post-fix re-invoke is a fresh orchestrator-initiated dispatch — not a nested call from within an active challenger run. Challenger's SKIP rule ("already inside an active challenger context") still applies if currently executing inside a challenger review; orchestrator waits for challenger to complete, then dispatches a new instance for post-fix verification.
-
-After any non-trivial fix (multi-file change, behaviour change, fix to previously-masked bug):
-
-1. Invoke `foundry:challenger` with diff and original symptom description
-2. Challenger confirms: (a) root cause structurally consistent with diff, (b) all original symptoms resolved, (c) no new failure modes introduced
-3. Residual or new symptoms found → root cause incomplete → return to diagnosis loop
-
-**Batched challenger dispatch**: when multiple fixes are being committed together (same logical release, same session), batch them into **one** challenger call covering all groups — not one challenger per fix. Group fixes by logical concern (e.g. "research plugin", "hook fix", "rule change") and review together. Single-pass: avoids spawning N redundant agents for overlapping context; catches cross-group regressions a per-fix reviewer cannot see.
-
-**Delegation + file-handoff**: always delegate batch to `foundry:challenger` via `Agent()` — not inline. Challenger writes full findings to a `.temp/` file; returns only compact JSON envelope to orchestrator. Orchestrator reads envelope verdict; reads file only on FAIL or low confidence. Never accumulate full challenger output in main context.
-
-**Non-trivial threshold**: fix touching >1 file, or any logic previously believed working. Single-line typo fixes in isolated files exempt.
-
-### Anti-patterns
-
-- **Symptom suppression**: `try/except`, default value, or conditional guard hiding failure signal without removing cause — forbidden
-- **First-plausible-cause stop**: accepting first root cause that sounds reasonable without confirming with evidence
-- **Partial validation**: checking only primary symptom after fix, not all reported symptoms
-- **Fix-before-confirm**: writing fix before confirming root cause — risk of fixing wrong thing
-- **Skipping challenger on "obvious" fixes** — obvious fixes have highest rate of incomplete root-cause identification; obviousness not an exemption
-- **Ungrounded premise as design pillar**: using any assumption, constraint claim, recalled fact, or hypothesis as a foundation for design or fix without first reading authoritative source that proves it. Covers: technical constraints ("X can't do Y"), behavioral assumptions ("this function returns Z"), facts from memory or training ("I know this library does…"). Memory and training knowledge are never evidence. Drill move: challenge the premise's *justification* before challenging the design — "Where is this documented?" forces evidence lookup at the earliest point. Weak sources (blog posts, tweets, forum posts) require ≥2 independent corroborating sources or experimental validation before the premise can be treated as fact. Layers of implementation built on a false premise make the entire design infeasible; only catch point is before design begins.
+> Full protocol (diagnosis-loop detail, challenger dispatch rules, Tier-1/2 evidence standards) in `_full/debugging.md`. **Read before any multi-file or behaviour-changing fix**:
+>
+> ```bash
+> RULE_FULL="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/rules/_full/debugging.md 2>/dev/null | head -1)"; [ -z "$RULE_FULL" ] && RULE_FULL="plugins/foundry/rules/_full/debugging.md"  # timeout: 5000
+> ```

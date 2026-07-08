@@ -1,9 +1,9 @@
 ---
 name: rename-refs
 description: |
-  Atomic rename of Python symbols (functions, classes, methods) or modules using the structural index. Finds all static callers, import sites, __all__ re-exports, and Sphinx docstring cross-refs (:func:, :class:, :meth:, :mod:, :attr:). Optional: keep old name as deprecated alias via pydeprecate (--deprecate) or hard-delete when zero callers (--remove-if-no-callers).
-  TRIGGER when: user asks to rename a Python function, class, method, or module; phrases: "rename X to Y", "rename function", "rename class", "rename module", "move module X to Y", "update all references to X".
-  SKIP: non-Python project; codemap index not built (run /codemap:scan-codebase first); renaming a local variable (not a symbol definition or module path); user explicitly wants grep-only rename without index verification; user performing rename via IDE/LSP and only wants to preview coverage (invoke this skill with --dry-run to get the advisory list without applying edits); splitting one symbol into multiple (this skill handles 1:1 renames only); renaming a package directory (has __init__.py) — use git mv on the directory directly.
+  Atomic rename of Python symbols or modules via the structural index — static callers, import sites, __all__ re-exports, Sphinx cross-refs; optional deprecated alias (--deprecate) or hard-delete (--remove-if-no-callers).
+  TRIGGER: "rename X to Y" (function/class/method/module), "move module X to Y", "update all references to X".
+  SKIP: non-Python; index not built (/codemap:scan-codebase first); local-variable rename; grep-only rename wanted; 1:N symbol splits; package directory rename (git mv).
 argument-hint: "symbol <old_qname> <new_qname> [--dry-run] [--deprecate[=\"@deprecated(...)\"|\"@deprecated_class(...)\"]] [--since <ver>] [--removed-in <ver>] [--remove-if-no-callers] | module <old_module_path> <new_module_path> [--dry-run]"
 allowed-tools: Bash, Read, Edit, Write, AskUserQuestion
 model: sonnet
@@ -33,6 +33,8 @@ Rename Python symbol or module atomically. Coverage:
 **Hard limits** (static analysis boundary — not fixable):
 - `getattr(obj, "old_name")` — string not statically bound to symbol; Step 6 emits grep advisory
 - Cross-repo callers — out of scope by definition; use `--deprecate` + semver bump for public APIs
+
+Routing notes (moved from frontmatter): IDE/LSP-driven rename where user only wants a coverage preview → run with `--dry-run` for the advisory list without edits; this skill handles 1:1 renames only.
 
 NOT for: building index (`/codemap:scan-codebase`); querying without rename intent (`/codemap:query-code`); non-Python files; renaming symbols in abstract base classes or Protocol definitions where subclass overrides exist — subclass method overrides are not tracked by static import analysis; review `fn-rdeps` output manually and rename overrides explicitly. **Note**: this skill does not support `--index <path>` for alternate index selection — blast-radius and rename queries always use the default project index. For monorepos requiring a specific root, run `/codemap:scan-codebase --root <pkg>` first to build the correct index, then rename.
 

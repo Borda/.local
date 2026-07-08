@@ -45,6 +45,13 @@ The harness runs one Bash call at a time (foreground `sleep` blocked, ~10 min pe
 
 Canonical helper: `_FOUNDRY_SHARED/agent-spawn-protocol.md`. Skills may tighten timeouts in their own `<constants>` block.
 
+### 7. Context Cost Discipline
+
+- Cache-read cost = live context size × turn count — dominant cost line; keep both small
+- Multi-phase skill runs (e.g. review → resolve): after phase report file written, prefer fresh session or `/clear` for next phase; resume from report file, not transcript
+- Live context >200K tokens = smell — wrap up phase, persist state to file, restart lean
+- Batch tool calls: create all tasks in ONE response (parallel calls); pair `TaskUpdate` with next substantive tool call — never emit a response containing only task bookkeeping
+
 ## Pre-Authorized Operations
 
 Operations in `settings.json` pre-approved — execute directly. Operation not covered → restructure to match existing allow entry before requesting new permission; batch missing permissions into one ask.

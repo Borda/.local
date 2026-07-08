@@ -308,7 +308,7 @@ Resolve runs in three phases:
 
 1. **Intelligence gathering** — a dedicated subagent fetches the full PR thread (comments, reviews, inline code comments) so the orchestrator context stays small; subagent classifies each finding and writes structured output to files; orchestrator reads the compact classified table
 2. **Conflict resolution** — for merge conflicts, read intent from both sides; apply the semantically correct resolution (never mechanical "take ours" or "take theirs")
-3. **Action item implementation** — each item dispatched to Codex (or appropriate foundry agent per change type and complexity); soft codemap blast-radius check runs after the loop to flag callers of changed modules
+3. **Action item implementation** — items dispatched to Codex (or appropriate foundry agent per change type and complexity); with >=4 selected items, items are grouped by file/concern affinity (max 5 per batch) into one combined challenge call + one implementation agent per batch — per-item verdicts and `[resolve #N]` attribution unchanged, spawn count drops ~3x; soft cap 10 items per dispatch (AskUserQuestion beyond, hard cap 20); soft codemap blast-radius check runs after the loop to flag callers of changed modules
 
 **Severity → triage type mapping** (report mode):
 

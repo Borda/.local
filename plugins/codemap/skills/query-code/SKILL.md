@@ -1,9 +1,9 @@
 ---
 name: query-code
 description: |
-  Query the codemap structural index — central, coupled, deps, rdeps, import path, symbol-level source extraction, function-level call graph (fn-deps, fn-rdeps, fn-central, fn-blast), and listing central modules.
-  TRIGGER when: user asks about module relationships, dependency graph, callers/callees, blast radius, or central/coupled modules; phrases: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of", "list central modules".
-  SKIP: user wants to rename a symbol (use /codemap:rename-refs); this skill handles call-graph queries only (no rename) — for rename + caller analysis use /codemap:rename-refs; simple grep would suffice; non-Python repo. (A missing or stale index is built/refreshed automatically — see Step 0; no manual /codemap:scan-codebase first.)
+  Query the codemap structural index — module deps/rdeps/central/coupled/path, symbol-level source extraction, function call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
+  TRIGGER: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of", "list central modules".
+  SKIP: rename intent (use /codemap:rename-refs); simple grep suffices; non-Python repo. Missing/stale index auto-builds — no manual scan-codebase needed.
 argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] [--with-imports] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>] [--exhaustive]>"
 allowed-tools: Bash, Read, Write, Skill, AskUserQuestion
 model: haiku

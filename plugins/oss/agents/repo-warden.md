@@ -76,10 +76,16 @@ CUTOFF_30D=$((ANALYSIS_NOW - 30*86400))  # CRITICAL-1: explicit 30d cutoff for A
 
 ```bash
 _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/warden-oss-shared" 2>/dev/null || echo "plugins/oss/skills/_shared")  # reload (Check 41)
-[ -f "$_OSS_SHARED/vitality-scoring.md" ] || { echo "[repo-warden] ERROR: vitality-scoring.md not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
+case "$AXIS_GROUP" in
+  A) _GROUP_FILE="vitality-scoring-group-a.md" ;;
+  B) _GROUP_FILE="vitality-scoring-group-b.md" ;;
+  C) _GROUP_FILE="vitality-scoring-group-c.md" ;;
+esac
+[ -f "$_OSS_SHARED/$_GROUP_FILE" ] || { echo "[repo-warden] ERROR: $_GROUP_FILE not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
 ```
 
-Read `$_OSS_SHARED/vitality-scoring.md` fully. Score each axis in assigned group per rubric. Use raw data from Step 2.
+Read `$_OSS_SHARED/$_GROUP_FILE` fully — contains only the assigned group's axis rubrics (not the full 13-axis file). Score each axis in assigned group per rubric. Use raw data from Step 2.
+Per-axis weight table and confidence-threshold floors still live in `vitality-scoring.md` (§ Weights & Confidence Thresholds) — read that file too if a weight or floor value is needed; group files omit it to avoid duplication.
 
 **Group A** — any order (all independent; no cross-axis dependency; no internal parallelism needed):
 1. Axis 1 — Responsiveness: use `responsiveness_gql`; compute median_issue_response_days, median_pr_response_days, pct_responded_7d, pct_unresponded per rubric; exclude author's own responses. **Zero-sample guard**: if PR sample count = 0 (no PRs in window), set `median_pr_response_days = "N/A"` and exclude PR metrics from the axis score — use issue metrics only; note data gap in signal string

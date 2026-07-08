@@ -146,10 +146,10 @@ How to invoke bin/ scripts from `.md` files:
 
 ```bash
 # timeout enforced via annotation
-RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/script-name.sh" arg1 arg2 2>/dev/null || echo "fallback-value")  # timeout: 5000
+RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.sh" arg1 arg2 2>/dev/null || echo "fallback-value")  # timeout: 5000
 
 # timeout enforced by --timeout default inside script
-RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script-name.py" arg1 arg2)
+RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.py" arg1 arg2)
 ```
 
 ---
@@ -229,12 +229,12 @@ Every bin/ executable called from a SKILL.md with a `# timeout: N` comment must 
 
 ```bash
 # ✓ — Claude Code kills Bash tool after N ms; annotation is correct
-RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/script.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
+RESULT=$("${CLAUDE_PLUGIN_ROOT}/bin/<script>.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
 
 # ✗ — timeout S inside $() is redundant with # timeout: N and adds risk:
 #     (1) not in allow list — future permission prompt
 #     (2) same threshold; adds only subprocess fork overhead
-RESULT=$(timeout 5 "${CLAUDE_PLUGIN_ROOT}/bin/script.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
+RESULT=$(timeout 5 "${CLAUDE_PLUGIN_ROOT}/bin/<script>.sh" args 2>/dev/null || echo "fallback")  # timeout: 5000
 ```
 
 Note: `timeout S` IS valid for scripts invoked outside Claude Code (CI pipelines, standalone shell, pytest helpers). In SKILL.md context only: use `# timeout: N`.
@@ -243,10 +243,10 @@ Note: `timeout S` IS valid for scripts invoked outside Claude Code (CI pipelines
 
 ```bash
 # ✓ — --timeout default enforces budget; no shell wrapper needed
-RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script.py" args)  # timeout: 5000
+RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/<script>.py" args)  # timeout: 5000
 
 # ✓ — explicit override for different budget
-RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/script.py" --timeout 30 args)  # timeout: 30000
+RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/<script>.py" --timeout 30 args)  # timeout: 30000
 ```
 
 ```python
@@ -281,7 +281,7 @@ Minimum required structure for any new Python bin/ script:
 """script-name.py — one-line description.
 
 Usage:
-    python "${CLAUDE_PLUGIN_ROOT}/bin/script-name.py" <required-arg> [--flag]
+    python "${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.py" <required-arg> [--flag]
 """
 from __future__ import annotations
 import argparse

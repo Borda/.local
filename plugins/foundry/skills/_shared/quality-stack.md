@@ -122,17 +122,13 @@ Include `### Codex Pre-pass` section in final report:
 
 ## Progressive Review Loop
 
-```bash
-if ! claude plugin list 2>/dev/null | grep -q 'oss@'; then  # timeout: 15000
-    echo "oss plugin not installed — Progressive Review Loop skipped; proceeding to Codex Mechanical Delegation"
-fi
-```
+Max 3 cycles. Applied after quality stack. **`oss:*` skills are NEVER auto-invoked from develop flows** — they run only on explicit user request. Escalation below uses `/develop:review` (local-diff multi-agent review; requires `develop` plugin — the consumers of this file).
 
-Max 3 cycles. Applied after quality stack.
+**Cycle 1: Confidence-gated review escalation**
 
-**Cycle 1: Full review**
-
-- Invoke `/oss:review` for full multi-agent code review. `CODEX_FINDINGS` non-empty → prepend to review brief: "Codex pre-pass found the following — verify these, do not rediscover: $CODEX_FINDINGS"
+- Compute concern signal after the quality stack: any unresolved critical/high finding, OR any agent envelope `confidence` < 0.9, OR `CODEX_FINDINGS` non-empty and not yet verified
+- No concern → skip directly to report; in the final report list optional follow-ups the user may explicitly request (`/develop:review` for a deeper local pass; `/oss:review` once a PR exists)
+- Concern present → invoke `/develop:review` scoped to the modified files. `CODEX_FINDINGS` non-empty → prepend to review brief: "Codex pre-pass found the following — verify these, do not rediscover: $CODEX_FINDINGS". Also seed the quality-stack's own findings as "already checked — verify, do not rediscover"
 - Capture review state: `{agents_with_findings, unresolved_findings, files_reviewed}`
 - Clean (no critical/high findings): skip to report
 
