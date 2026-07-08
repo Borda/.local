@@ -233,6 +233,8 @@ Benchmarks agents and skills against synthetic problems with defined ground trut
 /foundry:calibrate --keep "task-456, .reports/calibrate/2026-07-03T10-00-00Z"
 ```
 
+**Large fan-out gate**: broad scopes (`all`, `agents`, `skills`, `plugins`, `<plugin-name>`) always confirm via `AskUserQuestion` before spawning — these expand to dozens of agent/skill pipelines only inside Step 2, so no exact count is available upfront. Narrow scopes (single agent/skill) confirm only when the exact spawn count exceeds 50. `--apply` no longer bypasses this gate on its own; only `--skip-gate` does.
+
 **Thresholds**:
 
 - Routing accuracy: 90% (hard-problem accuracy: 80%)

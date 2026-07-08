@@ -274,8 +274,16 @@ Codemap context propagation in Step 3:
   <content of $RUN_DIR/codemap-context.md>
 
   Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast`, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
+
+  Per-agent priority (skip redundant reads for symbols the listed query already covers):
+  - qa-specialist (Agent 2): `uncovered` + `mock-rdeps` first
+  - doc-scribe (Agent 4): `undocumented` + `xrefs --broken` first
+  - sw-engineer (Agent 1): `fn-rdeps` first (direct callers), then `fn-blast` (transitive)
+  - challenger (Agent 7): unchanged — always reads source directly
   ```
 - `codemap_available=false` → omit the block; agents proceed with current file-read behaviour.
+
+> Per-agent consumption guidance kept in sync with `$_DEV_SHARED/codemap-context.md` §Review-pipeline injection — update both on change.
 
 Tier annotation for Agent 1 (sw-engineer) only: label each module's `imported_by` count — **high risk** (>20), **moderate** (5–20), **low** (<5). Agent 1 uses this to prioritize: high `imported_by` modules warrant deeper scrutiny on API compatibility, error handling, behavioural correctness — downstream callers outside diff not otherwise visible.
 
