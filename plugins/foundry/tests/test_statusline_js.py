@@ -177,3 +177,26 @@ class TestCodexDisplay:
         rendered = _strip_ansi(result.stdout)
         assert "🤖" in rendered
         assert "rescue" in rendered
+
+    def test_active_codex_dir_agent_shows_label(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """codex agent tracked in the codex/ dir (not agents/) still renders in the 🤖 segment."""
+        _write_codex(sid, "tu-cdx-dir", since=datetime.now(timezone.utc).isoformat())
+
+        result = run_hook("statusline.js", _payload(sid), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rendered = _strip_ansi(result.stdout)
+        assert "🤖" in rendered
+        assert "rescue" in rendered
+        assert "🤖 none" not in rendered
+
+    def test_stale_codex_dir_agent_dropped(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """codex/ entry older than the 10-min safety net is dropped → ``🤖 none`` rendered."""
+        stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        _write_codex(sid, "tu-cdx-stale", since=stale)
+
+        result = run_hook("statusline.js", _payload(sid), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rendered = _strip_ansi(result.stdout)
+        assert "🤖 none" in rendered

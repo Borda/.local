@@ -217,7 +217,12 @@ process.stdin.on("end", () => {
     // Line 2 — agents (always shown, even when 0)
     try {
       const agentsDir = path.join(tmpDir, "agents");
-      const files = fs.readdirSync(agentsDir).filter((f) => f.endsWith(".json"));
+      // Tolerate a missing agents/ dir — a session may have codex/ entries but no agents/ yet;
+      // an unguarded readdirSync would throw and short-circuit the codex merge below.
+      let files = [];
+      try {
+        files = fs.readdirSync(agentsDir).filter((f) => f.endsWith(".json"));
+      } catch (_) {}
       // Safety-net: drop agents stuck > 10 min (SubagentStop didn't fire — crash or hang)
       const MAX_AGE_MS = 10 * 60 * 1000;
       const allAgents = files.flatMap((f) => {
@@ -227,6 +232,20 @@ process.stdin.on("end", () => {
           return [];
         }
       });
+      // codex:* subagents are tracked in a sibling codex/ dir (written by task-log.js on
+      // Skill(codex:*)/Agent(codex:*)), not agents/. Merge them so they render in 🤖 as the
+      // header comment promises. Dedup by id in case a codex agent also lands in agents/.
+      try {
+        const seenIds = new Set(allAgents.map((a) => a.id).filter(Boolean));
+        const codexDir = path.join(tmpDir, "codex");
+        for (const f of fs.readdirSync(codexDir).filter((cf) => cf.endsWith(".json"))) {
+          try {
+            const c = JSON.parse(fs.readFileSync(path.join(codexDir, f), "utf8"));
+            if (c.id && seenIds.has(c.id)) continue;
+            allAgents.push({ id: c.id, type: `codex:${c.type}`, model: "codex", color: "cyan", since: c.since });
+          } catch (_) {}
+        }
+      } catch (_) {}
       const agents = allAgents.filter((a) => !a.since || now - new Date(a.since).getTime() < MAX_AGE_MS);
       if (agents.length > 0) {
         // Specialized + pinned model → type name, normal color

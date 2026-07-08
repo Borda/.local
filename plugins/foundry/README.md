@@ -808,7 +808,7 @@ Each test spawns `node <hook>.js` with a JSON payload on stdin and asserts files
 | File                      | Hook              | Tests | What's covered                                                                                                                                                                 |
 | ------------------------- | ----------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `test_task_log_js.py`     | `task-log.js`     | 11    | Agent lifecycle (Pre/PostToolUse, SubagentStart/Stop), background agents kept past dispatch-time PostToolUse, pending/ race condition, codex skill tracking, per-tool counters |
-| `test_statusline_js.py`   | `statusline.js`   | 5     | `🤖` segment: empty/active/stale agents, codex agent type label                                                                                                                |
+| `test_statusline_js.py`   | `statusline.js`   | 10    | `🤖` segment: empty/active/stale agents, codex agent type label (via `agents/` and the `codex/` dir), missing-`agents/`-dir tolerance                                          |
 | `test_commit_guard_js.py` | `commit-guard.js` | 6     | Missing/fresh/expired sentinel gates, SessionStart wipe, UserPromptSubmit auto-arm, non-commit Bash passthrough                                                                |
 | `test_agent_router_js.py` | `agent-router.js` | 4     | Builtin/plugin-agent passthrough (tier 1), unknown-agent reroute to `general-purpose` (tier 3), SessionStart index build                                                       |
 
