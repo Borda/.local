@@ -26,9 +26,19 @@ import pytest
 
 _HOOK = Path(__file__).parent.parent / "hooks" / "record-exhausted.js"
 
-# scan-query embeds the coverage block (with `exhaustive`) under `index` in its JSON output.
-_EXHAUSTIVE_RESPONSE = json.dumps({"imported_by": ["pkg.a", "pkg.b"], "index": {"exhaustive": True, "stale": False}})
-_NONEXHAUSTIVE_RESPONSE = json.dumps({"imported_by": ["pkg.a"], "index": {"exhaustive": False, "stale": False}})
+# scan-query embeds the coverage block under `index`. It emits the forward `query_complete`
+# field and the legacy `exhaustive` alias byte-compatibly during the deprecation cycle.
+_EXHAUSTIVE_RESPONSE = json.dumps(
+    {"imported_by": ["pkg.a", "pkg.b"], "index": {"query_complete": True, "exhaustive": True, "stale": False}}
+)
+_NONEXHAUSTIVE_RESPONSE = json.dumps(
+    {"imported_by": ["pkg.a"], "index": {"query_complete": False, "exhaustive": False, "stale": False}}
+)
+# Forward-only response: a future index that has dropped the legacy `exhaustive` alias must
+# still arm the sentinel via `query_complete` alone.
+_QUERY_COMPLETE_ONLY_RESPONSE = json.dumps(
+    {"imported_by": ["pkg.a", "pkg.b"], "index": {"query_complete": True, "stale": False}}
+)
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not on PATH")
 
@@ -74,6 +84,15 @@ def test_non_exhaustive_writes_no_sentinel(tmp_path: Path) -> None:
     """A non-exhaustive result must NOT arm the guard."""
     _run('scan-query rdeps "mypackage.auth"', _NONEXHAUSTIVE_RESPONSE, "sess-nonexh", tmp_path)
     assert not (tmp_path / "codemap-exhausted-sess-nonexh").exists()
+
+
+def test_query_complete_alone_arms_sentinel(tmp_path: Path) -> None:
+    """A forward-only result (query_complete, no legacy exhaustive) still arms the guard."""
+    _run('scan-query rdeps "mypackage.auth"', _QUERY_COMPLETE_ONLY_RESPONSE, "sess-qc-only", tmp_path)
+
+    sentinel = tmp_path / "codemap-exhausted-sess-qc-only"
+    assert sentinel.exists(), "query_complete:true alone must write the sentinel"
+    assert "mypackage.auth" in sentinel.read_text().split()
 
 
 def test_unrelated_command_ignored(tmp_path: Path) -> None:

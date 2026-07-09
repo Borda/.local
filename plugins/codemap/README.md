@@ -115,7 +115,7 @@ Safety-grade = fraction of FN + BR tasks with explicit recall where recall ≥ 0
 >
 > codemap injects a rich dependency graph into every agent prompt. On weaker models or tasks with large blast-radius graphs, this extra context can overwhelm the model and cause it to fall back to grep-heavy loops — performing *worse* than plain arm. The benchmark labels this failure mode `degenerate_grep_loop`.
 >
-> Good integration requires three things: (1) **skill-first protocol** — the agent calls `/codemap:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap queries per task; (3) **hard stop on `exhaustive: true`** — when the index says the list is complete, write the answer immediately, no more tool calls. Skipping any of these — especially ignoring the exhaustive flag — is the primary cause of regressions that flip the codemap benefit into a liability. Use `/codemap:integration init` to wire integration correctly rather than injecting context manually.
+> Good integration requires three things: (1) **skill-first protocol** — the agent calls `/codemap:query-code` before any Grep/Glob; (2) **bounded call budget** — max 3 codemap queries per task; (3) **hard stop on `query_complete: true`** — when the index says the list is complete for this query's direction, write the answer immediately, no more tool calls. `query_complete` is direction-scoped: a `deps`/`symbols` query on a healthy module can be complete even while another file is degraded, but `rdeps`/`central`/`path` require zero degraded files. The legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle. Skipping any of these — especially ignoring the completeness flag — is the primary cause of regressions that flip the codemap benefit into a liability. Use `/codemap:integration init` to wire integration correctly rather than injecting context manually.
 
 ### Real-world proof: daily-work benchmark
 
@@ -333,6 +333,8 @@ Prefer scan-query over file reads: rdeps, fn-rdeps, fn-blast, xrefs, symbol.
 
 When the index is **stale** (git HEAD differs from stored sha), the hook spawns `scan-index --root <scan_root>` in the background (non-blocking, 10-minute lockfile guard) so the index refreshes silently while Claude is answering. Status reads `· refresh started` on the first stale turn and `· refresh in progress` on subsequent turns until the scan completes.
 
+Separately, `scan-query` self-heals at query time: on a stale index it runs a **bounded** inline `scan-index --incremental` (skipped when more than 50 `.py` files changed or the scan exceeds a 10 s wall-clock cap) and answers from the refreshed graph — so an edge added by a just-committed change is visible on the very next query. When the heal is skipped or unavailable, the query still answers, honestly flagged `stale: true`. Pass `--no-heal` to disable the inline heal.
+
 When the index is **current**, the hook injects the status line only once per session (30-min TTL flag at `/tmp/codemap-preamble-<proj>`). Subsequent turns skip injection — saving ~30 tokens × N turns ≈ ~900 tokens/session. Stale index always injects regardless of TTL so the auto-refresh note always reaches the agent.
 
 When there is **no index yet** and the project is Python (`__init__.py` at the git root or one level down, a `src/<pkg>/__init__.py` src-layout, or — failing those — a `pyproject.toml`/`setup.py` at the root), the hook emits a once-per-session directive (30-min TTL flag at `/tmp/codemap-noindex-<proj>`) asking the agent to raise an `AskUserQuestion` offering to build the index. On consent the agent runs `scan-index` in the foreground and waits for it to finish before continuing. This bootstraps first-time projects that would otherwise never self-scan — the stale auto-refresh only fires on an already-existing index, and the skill-level Gate A missing-index prompt only fires inside wired `/develop`/`/oss` skills. Non-Python dirs receive nothing.
@@ -341,9 +343,11 @@ This complements the per-skill SKILL.md injection — which handles dynamic per-
 
 ### 6 — Redundant-scan guard (Pre/PostToolUse hooks)
 
-Once `scan-query rdeps <module>` returns an **exhaustive** result, the import graph for that module is complete and authoritative — re-grepping it with `grep`/`rg` adds nothing but tokens. Benchmarks showed agents (weak tiers especially) ignoring the "stop" instruction and looping on verification greps, burning millions of input tokens at zero recall gain.
+Once `scan-query rdeps <module>` returns a **`query_complete`** result (legacy alias `exhaustive`), the import graph for that module is complete and authoritative — re-grepping it with `grep`/`rg` adds nothing but tokens. Benchmarks showed agents (weak tiers especially) ignoring the "stop" instruction and looping on verification greps, burning millions of input tokens at zero recall gain.
 
-Two hooks close this mechanically: `record-exhausted.js` (PostToolUse on Bash) notes each module returned exhaustive this session; `guard-redundant-scan.js` (PreToolUse on Bash) then **denies** import-discovery greps (`grep`/`rg` for `import`/`from`) targeting an already-exhausted module, pointing the agent back to the codemap result. Scope is deliberately narrow and fail-open: only import-greps for an already-exhausted module are blocked (source reads via `cat`/`Read` are never touched), only within the same session, and any hook error allows the call. Sessions that never run codemap (no sentinel) are unaffected. Disable by removing the two `Bash`-matcher entries from `hooks/hooks.json`.
+Two hooks close this mechanically: `record-exhausted.js` (PostToolUse on Bash) notes each module returned complete this session (matches `query_complete: true` or the legacy `exhaustive: true`); `guard-redundant-scan.js` (PreToolUse on Bash) then **denies** import-discovery greps (`grep`/`rg` for `import`/`from`) targeting an already-complete module, pointing the agent back to the codemap result. Scope is deliberately narrow and fail-open: only import-greps for an already-complete module are blocked (source reads via `cat`/`Read` are never touched), only within the same session, and any hook error allows the call. Sessions that never run codemap (no sentinel) are unaffected. Disable by removing the two `Bash`-matcher entries from `hooks/hooks.json`.
+
+Because `query_complete` is direction-scoped, the guard only ever arms for `rdeps`/`fn-rdeps` (global-in) results, which are marked complete only when zero files are degraded — a false `complete` can never block the exact grep that would surface a hidden edge.
 
 ### 7 — Two-tier currency check
 
@@ -508,6 +512,32 @@ Run a full scan once when you first set up the project. After that, skill-invoca
 ```text
 /codemap:scan-codebase --incremental
 ```
+
+#### Excluding paths from the index
+
+The scanner always skips a built-in set of noise directories (`.git`, `.venv`, `node_modules`, build/cache dirs, and agent/tooling scratch dirs such as `.claude`, `.temp`, `.reports`, `.plans`, and generated `site`/`_site`). Anything else you want kept out of the index — a vendored copy of another project, generated code, a large fixtures tree — can be declared in either of two places at the project root:
+
+- **`pyproject.toml`** under a `[tool.codemap]` table:
+
+  ```toml
+  [tool.codemap]
+  exclude = ["vendored-project", "generated/*.py"]
+  ```
+
+- **`.codemapignore`** — one pattern per line, `#` starts a comment:
+
+  ```text
+  # keep the bundled upstream copy out of the index
+  pytorch-lightning-master
+  generated/*.py
+  ```
+
+An entry with no `/` or glob character (`*`, `?`, `[`, `]`) is treated as a **directory name** and pruned anywhere in the tree (like the built-ins). An entry containing a path separator or glob character is an **`fnmatch` pattern** matched against each file's path relative to the project root. Excluded paths are dropped from both the module list and the change-detection hash set, so they never trigger incremental rebuilds.
+
+The index records what was excluded and any name collisions in two meta keys:
+
+- `excluded_roots` — list of `{"pattern", "kind": "dir"|"glob", "source": "pyproject.toml"|".codemapignore", "count"}`, where `count` is the number of `.py` files that entry removed.
+- `collisions` — when two files resolve to the same dotted module name (e.g. a duplicate package tree that was **not** excluded), only one is indexed. Each record is `{"name", "kept", "dropped": [...]}`. The kept path is chosen deterministically: a path under the detected source root wins, then the shortest path, then lexicographic order — so the same file always wins regardless of filesystem walk order.
 
 ______________________________________________________________________
 
@@ -737,16 +767,19 @@ Reads `.cache/codemap/logs/` JSONL telemetry produced by the core CLI tools (`sc
 
 All logs are local to `.cache/codemap/logs/` and never leave your machine.
 
-| File                     | Layer | When written                                                           |
-| ------------------------ | ----- | ---------------------------------------------------------------------- |
-| `cli_<session>.jsonl`    | cli   | Every `scan-query` query and every `scan-index` build (core CLI tools) |
-| `skills_<session>.jsonl` | skill | Every `/codemap:*` skill start (via PreToolUse hook)                   |
+| File                     | Layer | When written                                                                      |
+| ------------------------ | ----- | --------------------------------------------------------------------------------- |
+| `cli_<session>.jsonl`    | cli   | Every `scan-query` query and every `scan-index` build (core CLI tools)            |
+| `skills_<session>.jsonl` | skill | Every `/codemap:*` skill start (via PreToolUse hook)                              |
+| `tools_<session>.jsonl`  | tool  | Every `Grep` / `Read` / `Glob` tool call (via PostToolUse hook `log-tool-use.js`) |
 
-Logs are sharded per session: the SessionStart hook (`seed-session.js`) seeds the Claude Code session id into `$TMPDIR/codemap-<project>-session`, and both layers append to `<layer>_<session>.jsonl`. CLI runs outside a session (no seeded id) fall back to unsuffixed `cli.jsonl` / `skills.jsonl`. Per-session filenames keep concurrent sessions from interleaving appends.
+Logs are sharded per session: the SessionStart hook (`seed-session.js`) seeds the Claude Code session id into `$TMPDIR/codemap-<project>-session`, and all layers append to `<layer>_<session>.jsonl`. CLI runs outside a session (no seeded id) fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Per-session filenames keep concurrent sessions from interleaving appends.
 
 CLI records include: `cmd` (query subcommand, or `index` for a `scan-index` build), full argv, result summary (query: count, method, exhaustive flag, not_covered list, error; index: modules_indexed, degraded, incremental), timing_ms, stderr tail if any, exit code if non-zero.
 
 Skill records include: skill name, session UUID, intent (first 300 chars of the args string).
+
+Tool records include: `tool` (`Grep`|`Read`|`Glob`), session UUID, and `target` (Grep/Glob pattern or search path, Read file_path). They measure raw grep/read volume per session — the signal codemap's context injection aims to reduce. The `log-tool-use.js` hook never reads `tool_response` (no parse of search/read output), so its per-call cost is sub-millisecond; opt out with `CODEMAP_LOGGING=false`.
 
 Logs rotate automatically at 10 MB (3 rotations). Disable logging entirely with `CODEMAP_LOGGING=false` — useful in benchmark scripts.
 

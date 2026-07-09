@@ -31,11 +31,12 @@ ls .cache/codemap/logs/*.jsonl 2>/dev/null  # timeout: 5000
 
 No files → stop: "No codemap telemetry found. Run any `/codemap:*` skill or `scan-query` command to start collecting logs."
 
-Telemetry is **sharded per session** (`_telemetry.py` + `log-skill-start.js`): CLI records land in `cli_<session>.jsonl` and skill records in `skills_<session>.jsonl`; runs with no seeded session id fall back to unsuffixed `cli.jsonl` / `skills.jsonl`. Collect **all** matching files, not just the legacy names:
+Telemetry is **sharded per session** (`_telemetry.py` + `log-skill-start.js` + `log-tool-use.js`): CLI records land in `cli_<session>.jsonl`, skill records in `skills_<session>.jsonl`, and Grep/Read/Glob records in `tools_<session>.jsonl`; runs with no seeded session id fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Collect **all** matching files, not just the legacy names:
 
 ```bash
 CLI_LOGS=$(ls .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl 2>/dev/null)  # timeout: 5000
 SKILLS_LOGS=$(ls .cache/codemap/logs/skills_*.jsonl .cache/codemap/logs/skills.jsonl 2>/dev/null)  # timeout: 5000
+TOOLS_LOGS=$(ls .cache/codemap/logs/tools_*.jsonl .cache/codemap/logs/tools.jsonl 2>/dev/null)  # timeout: 5000
 ```
 
 ## Step 1: Optionally anonymize
@@ -46,7 +47,8 @@ If `--anonymize` flag given:
 
 ```bash
 for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
-         .cache/codemap/logs/skills_*.jsonl .cache/codemap/logs/skills.jsonl; do
+         .cache/codemap/logs/skills_*.jsonl .cache/codemap/logs/skills.jsonl \
+         .cache/codemap/logs/tools_*.jsonl .cache/codemap/logs/tools.jsonl; do
     [ -f "$f" ] || continue
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/anonymize.py" \
         --input "$f" --output "${f%.jsonl}-anon.jsonl"  # timeout: 15000
@@ -59,7 +61,7 @@ Use the `-anon` variants as source in Step 2. If anonymize.py not found, warn an
 
 ## Step 2: Read log files
 
-Read **every** CLI shard (`cli_*.jsonl` plus legacy `cli.jsonl`) and **every** skill shard (`skills_*.jsonl` plus legacy `skills.jsonl`) with the Read tool — use the `$CLI_LOGS` / `$SKILLS_LOGS` lists from Step 0 (or the `-anon` siblings when anonymized). Concatenate their records before analysing; a single-file read misses all per-session shards and reports a near-empty dataset.
+Read **every** CLI shard (`cli_*.jsonl` plus legacy `cli.jsonl`), **every** skill shard (`skills_*.jsonl` plus legacy `skills.jsonl`), and **every** tool shard (`tools_*.jsonl` plus legacy `tools.jsonl`) with the Read tool — use the `$CLI_LOGS` / `$SKILLS_LOGS` / `$TOOLS_LOGS` lists from Step 0 (or the `-anon` siblings when anonymized). Concatenate their records before analysing; a single-file read misses all per-session shards and reports a near-empty dataset.
 
 Each line is one JSON record. Filter by `--since` (compare `ts` field) and `--session` if given.
 
@@ -68,6 +70,8 @@ Each line is one JSON record. Filter by `--since` (compare `ts` field) and `--se
 CLI record fields: `ts`, `layer`, `session`, `cmd`, `argv`, `result` (nested: `count`, `exhaustive`, `stale`, `method`, `not_covered`, `error`), `timing_ms`, `stderr` (optional), `exit_code` (optional).
 
 Skill record fields: `ts`, `layer`, `session`, `skill`, `event`, `intent`, `hook_session`.
+
+Tool record fields (`layer: "tool"`, from `log-tool-use.js`): `ts`, `layer`, `session`, `tool` (`Grep`|`Read`|`Glob`), `target` (Grep/Glob pattern or search path, Read file_path). These count raw grep/read volume per session — the signal codemap's context-injection aims to reduce.
 
 ## Step 3: Analyse
 

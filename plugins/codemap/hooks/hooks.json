@@ -10,6 +10,15 @@
           }
         ],
         "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.js\"",
+            "type": "command"
+          }
+        ],
+        "matcher": "Grep|Read|Glob"
       }
     ],
     "PreToolUse": [

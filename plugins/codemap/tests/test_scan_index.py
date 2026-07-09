@@ -40,6 +40,10 @@ _scan_index_mod = _load_scan_index()
 extract_dynamic_imports = _scan_index_mod.extract_dynamic_imports
 scan_config_refs = _scan_index_mod.scan_config_refs
 _classify_entity = _scan_index_mod._classify_entity
+_load_exclusions = _scan_index_mod._load_exclusions
+_iter_python_files = _scan_index_mod._iter_python_files
+_dedup_modules = _scan_index_mod._dedup_modules
+_dedup_key = _scan_index_mod._dedup_key
 
 
 def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):
@@ -187,3 +191,177 @@ class TestScanConfigRefs:
     def test_no_config_files_returns_empty(self, tmp_path: Path):
         """Directory with no config files returns empty dict."""
         assert scan_config_refs(tmp_path, {"mypackage.utils"}) == {}
+
+
+class TestLoadExclusions:
+    """Loading extra dir-name/glob exclusions from pyproject.toml and .codemapignore (CR-2)."""
+
+    def test_pyproject_exclude_dirs_and_globs(self, tmp_path: Path):
+        """[tool.codemap] exclude splits bare names into dirs and glob entries into globs."""
+        (tmp_path / "pyproject.toml").write_text('[tool.codemap]\nexclude = ["vendor", "gen/*.py"]\n')
+        ex = _load_exclusions(tmp_path)
+        assert ex.dirs == frozenset({"vendor"})
+        assert ex.globs == ("gen/*.py",)
+        assert ex.sources == {"vendor": "pyproject.toml", "gen/*.py": "pyproject.toml"}
+
+    def test_codemapignore_strips_comments_and_slashes(self, tmp_path: Path):
+        """.codemapignore drops comments/blanks and trailing slashes on dir names."""
+        (tmp_path / ".codemapignore").write_text("# header\nvendored/\n\n  build_out/*.py  \n")
+        ex = _load_exclusions(tmp_path)
+        assert ex.dirs == frozenset({"vendored"})
+        assert ex.globs == ("build_out/*.py",)
+
+    def test_both_sources_merge(self, tmp_path: Path):
+        """Entries from both files merge; provenance records the first-seen origin."""
+        (tmp_path / "pyproject.toml").write_text('[tool.codemap]\nexclude = ["a"]\n')
+        (tmp_path / ".codemapignore").write_text("b\n")
+        ex = _load_exclusions(tmp_path)
+        assert ex.dirs == frozenset({"a", "b"})
+        assert ex.sources == {"a": "pyproject.toml", "b": ".codemapignore"}
+
+    def test_no_config_returns_empty(self, tmp_path: Path):
+        """Absent config files yield empty exclusions."""
+        ex = _load_exclusions(tmp_path)
+        assert ex.dirs == frozenset()
+        assert ex.globs == ()
+
+
+class TestIterPythonFilesExclusions:
+    """_iter_python_files honours SKIP_DIRS additions and configured exclusions (CR-2)."""
+
+    def test_prunes_worktree_copy_and_vendored_entry(self, tmp_path: Path):
+        """A .claude/worktrees copy and a .codemapignore-named dir are both pruned; meta counts them."""
+        (tmp_path / "app.py").write_text("x = 1\n")
+        worktree = tmp_path / ".claude" / "worktrees" / "agent-x"
+        worktree.mkdir(parents=True)
+        (worktree / "app.py").write_text("x = 1\n")
+        vendored = tmp_path / "pytorch-lightning-master"
+        vendored.mkdir()
+        (vendored / "trainer.py").write_text("y = 2\n")
+        (tmp_path / ".codemapignore").write_text("pytorch-lightning-master\n")
+
+        ex = _load_exclusions(tmp_path)
+        files, counts = _iter_python_files(tmp_path, ex)
+
+        rels = {p.relative_to(tmp_path).as_posix() for p in files}
+        assert rels == {"app.py"}
+        assert not any(".claude" in r for r in rels)
+        assert counts["pytorch-lightning-master"] == 1
+
+    def test_glob_exclusion_skips_matching_files(self, tmp_path: Path):
+        """A glob entry removes matching files while leaving siblings indexed."""
+        (tmp_path / "keep.py").write_text("a = 1\n")
+        gen = tmp_path / "gen"
+        gen.mkdir()
+        (gen / "auto.py").write_text("b = 2\n")
+        (tmp_path / "pyproject.toml").write_text('[tool.codemap]\nexclude = ["gen/*.py"]\n')
+
+        ex = _load_exclusions(tmp_path)
+        files, counts = _iter_python_files(tmp_path, ex)
+
+        rels = {p.relative_to(tmp_path).as_posix() for p in files}
+        assert rels == {"keep.py"}
+        assert counts["gen/*.py"] == 1
+
+
+class TestDedupKey:
+    """_dedup_key ranks candidate paths: under-src > shortest > lexicographic (CR-3)."""
+
+    def test_under_src_root_wins(self):
+        """A path under the source root outranks one outside it regardless of length."""
+        assert _dedup_key("src/m.py", "src") < _dedup_key("a/b/c/m.py", "src")
+
+    def test_shortest_path_wins_when_src_tied(self):
+        """With no src root, fewer path components wins."""
+        assert _dedup_key("m.py", "") < _dedup_key("pkg/m.py", "")
+
+    def test_lexicographic_tiebreak(self):
+        """Equal depth and src status falls back to lexicographic order."""
+        assert _dedup_key("a/m.py", "") < _dedup_key("b/m.py", "")
+
+
+class TestDedupModules:
+    """_dedup_modules produces a deterministic winner and records collisions (CR-3)."""
+
+    def test_deterministic_winner_across_shuffles(self):
+        """Same qualname at two paths yields the same winner regardless of input order."""
+        entries = [
+            {"name": "pkg.mod", "path": "copy/pkg/mod.py"},
+            {"name": "pkg.mod", "path": "src/pkg/mod.py"},
+        ]
+        winners = set()
+        for order in (entries, list(reversed(entries)), entries, list(reversed(entries)), entries):
+            kept, collisions = _dedup_modules(list(order), "src")
+            assert len(kept) == 1
+            winners.add(kept[0]["path"])
+            assert collisions == [{"name": "pkg.mod", "kept": "src/pkg/mod.py", "dropped": ["copy/pkg/mod.py"]}]
+        assert winners == {"src/pkg/mod.py"}
+
+    def test_no_collision_keeps_all(self):
+        """Distinct names are all kept with an empty collision list."""
+        entries = [{"name": "a", "path": "a.py"}, {"name": "b", "path": "b.py"}]
+        kept, collisions = _dedup_modules(entries, "")
+        assert {m["name"] for m in kept} == {"a", "b"}
+        assert collisions == []
+
+
+class TestScanExclusionMeta:
+    """End-to-end: a real scan writes excluded_roots and collisions into the index meta."""
+
+    def test_excluded_roots_and_collisions_in_index(self, tmp_path: Path, scan_index):
+        """Scanning a polluted tree prunes the worktree copy and records both meta keys."""
+        (tmp_path / "app.py").write_text("VALUE = 1\n")
+        worktree = tmp_path / ".claude" / "worktrees" / "agent-x"
+        worktree.mkdir(parents=True)
+        (worktree / "app.py").write_text("VALUE = 99\n")
+        vendored = tmp_path / "vendor_copy"
+        vendored.mkdir()
+        (vendored / "app.py").write_text("VALUE = 7\n")
+        (tmp_path / ".codemapignore").write_text("vendor_copy\n")
+
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, result.stderr
+
+        index_path = tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json"
+        index = json.loads(index_path.read_text())
+        paths = {m["path"] for m in index["modules"]}
+        assert paths == {"app.py"}
+        patterns = {r["pattern"] for r in index["excluded_roots"]}
+        assert "vendor_copy" in patterns
+        assert index["collisions"] == []
+
+    def test_collision_recorded_and_deterministic(self, tmp_path: Path, scan_index):
+        """Two package trees sharing a top-level name collide; the winner is stable across runs.
+
+        The canonical ``pkg`` tree and a whole-tree copy under ``wt/`` both resolve to the
+        dotted name ``pkg.mod``. Only one survives; the collision record names both, and the
+        winner is identical on every run regardless of filesystem walk order (CR-3 acceptance).
+        """
+        for parent in ("pkg", "wt/pkg"):
+            (tmp_path / parent).mkdir(parents=True)
+            (tmp_path / parent / "__init__.py").write_text("")
+        (tmp_path / "pkg" / "mod.py").write_text("Z = 1\n")
+        (tmp_path / "wt" / "pkg" / "mod.py").write_text("Z = 2\n")
+
+        winners = set()
+        collision = None
+        for _ in range(5):
+            result = subprocess.run(
+                [sys.executable, str(scan_index), "--root", str(tmp_path)],
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_path),
+            )
+            assert result.returncode == 0, result.stderr
+            index = json.loads((tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json").read_text())
+            collision = next((c for c in index["collisions"] if c["name"] == "pkg.mod"), None)
+            assert collision is not None
+            winners.add(collision["kept"])
+
+        assert len(winners) == 1
+        assert set(collision["dropped"]) | {collision["kept"]} == {"pkg/mod.py", "wt/pkg/mod.py"}

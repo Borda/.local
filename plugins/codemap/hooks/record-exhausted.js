@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // record-exhausted.js — PostToolUse(Bash) hook.
-// When a `scan-query rdeps <module>` / `fn-rdeps <module>::<fn>` call returns an
-// exhaustive result (the import graph is authoritative and complete), record the
+// When a `scan-query rdeps <module>` / `fn-rdeps <module>::<fn>` call returns a
+// complete result (`query_complete: true` — the import graph is authoritative and
+// complete for this global-in query; `exhaustive` is the legacy alias), record the
 // module in a per-session sentinel. Matches every real emitted form: quoted or
 // unquoted args, the `$SQ` / resolved-binary fallback (query-code SKILL.md), and
 // interposed flags like `--timeout 5` (develop codemap-context.md).
@@ -42,7 +43,10 @@ function main() {
   // tool_response is the Bash stdout — string or object depending on Claude Code version.
   const resp =
     typeof input.tool_response === "string" ? input.tool_response : JSON.stringify(input.tool_response || "");
-  if (!/"exhaustive"\s*:\s*true/.test(resp)) process.exit(0);
+  // Forward field is `query_complete` (direction-scoped); `exhaustive` is the legacy
+  // alias emitted byte-compatibly for one deprecation cycle. Match either so the
+  // sentinel arms whether the reader is on the old or new field.
+  if (!/"(?:query_complete|exhaustive)"\s*:\s*true/.test(resp)) process.exit(0);
 
   // For fn-rdeps the arg is `module::function`; record the module portion — the guard
   // operates on module names when blocking redundant import-greps.

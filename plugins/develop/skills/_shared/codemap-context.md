@@ -17,7 +17,8 @@ if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
             *'"error"'*|'') ;;
             *) _CM_H=$((_CM_H+1)); printf '%s\n' "$out"
                case "$out" in *'"stale":true'*|*'"stale": true'*) _CM_STALE=1;; esac
-               case "$out" in *'"exhaustive":false'*|*'"exhaustive": false'*) _CM_NONEXH=1;; esac ;;
+               # query_complete is the forward field (direction-scoped); exhaustive is its legacy alias for one cycle.
+               case "$out" in *'"query_complete":false'*|*'"query_complete": false'*|*'"exhaustive":false'*|*'"exhaustive": false'*) _CM_NONEXH=1;; esac ;;
         esac
     }
     _cq central --top 5
@@ -102,4 +103,4 @@ scan-query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage (v4.4
 
 **Semble companion** — include in agent spawn prompt only when caller sets `SEMBLE_ENABLED=true`; skip if flag absent:
 
-> `mcp__semble__search` available and codemap non-exhaustive (`"exhaustive": false`) or no index found: call `mcp__semble__search` with varied queries (e.g. `"<module> import"`, `"from <module> import"`, `"<module> usage"`) and `repo=<git_root>`, `top_k=20`. Stop when two consecutive queries return no new modules. Merge all results into final rdep set — union of codemap + all semble calls. Codemap exhaustive: skip semble.
+> `mcp__semble__search` available and codemap direction-incomplete (`"query_complete": false`, or the legacy `"exhaustive": false`) or no index found: call `mcp__semble__search` with varied queries (e.g. `"<module> import"`, `"from <module> import"`, `"<module> usage"`) and `repo=<git_root>`, `top_k=20`. Stop when two consecutive queries return no new modules. Merge all results into final rdep set — union of codemap + all semble calls. Codemap `query_complete: true`: skip semble.

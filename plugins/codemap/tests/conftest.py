@@ -111,3 +111,130 @@ def query(project, scan_query) -> Callable[..., dict]:
         return json.loads(result.stdout)
 
     return _query
+
+
+# ── Task 1.4: shared polluted-repo fixture for integration-level acceptance ──────
+#
+# A single realistic tree exercising the Phase-1 code-review items together, rather
+# than the per-concern inline trees used by the unit-level suites. It is a real git
+# repo (the staleness diff and self-heal are git-blob based) built by a factory so
+# individual tests can toggle a colliding copy, mutate files, and re-scan without
+# cross-test contamination.
+#
+# Layout (dotted names in parentheses), collision-free variant:
+#     pkg/__init__.py           (pkg)
+#     pkg/leaf.py               (pkg.leaf)     — no imports
+#     pkg/consumer.py           (pkg.consumer) — imports pkg.leaf
+#     pkg/broken.py             (pkg.broken)   — SyntaxError → degraded module
+#     .claude/worktrees/agent-x/pkg/…          — EXCLUDED ghost copy: pruned by 1.2
+#     vendored-lib/vendored.py                 — pruned via .codemapignore
+#     .codemapignore            — "vendored-lib"
+#
+# With ``with_collision=True`` an additional non-excluded whole-tree copy is added:
+#     wt/pkg/__init__.py, wt/pkg/leaf.py       — top-level package copy → its
+#                                                 qualnames collide with pkg/ (1.3)
+#
+# Why the toggle rather than one always-polluted tree: a recorded collision is an
+# index-level blind spot that poisons ``query_complete`` for EVERY command (by
+# design — _query_complete gates on collision_count). So the direction-scoped
+# completeness and self-heal acceptance (1.1) must run on a collision-free tree,
+# while dedup determinism (1.3) needs the colliding copy. The ghost (.claude) and
+# the collision copy (wt/) split the dual path the 1.3 implementer called out:
+# exclusions prune the ghost before dedup, while wt/ is a genuine non-excluded
+# duplicate that produces a real qualname collision.
+
+_PKG_INIT = ""
+_LEAF_SRC = "def leaf_fn(x):\n    return x\n"
+_CONSUMER_SRC = "import pkg.leaf\n\n\ndef use(x):\n    return pkg.leaf.leaf_fn(x)\n"
+_BROKEN_SRC = "def oops(:\n    return\n"  # SyntaxError → degraded
+_VENDORED_SRC = "def vendored_fn():\n    return 0\n"
+
+
+def _git(root: Path, *args: str) -> None:
+    """Run a git command inside *root*, asserting success."""
+    result = subprocess.run(["git", *args], cwd=str(root), capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def _index_path_for(root: Path) -> Path:
+    """Return the codemap index path scan-index writes for *root*."""
+    return root / ".cache" / "codemap" / f"{root.name}.json"
+
+
+def _run_scan(scan_index: Path, root: Path, *extra: str) -> None:
+    """Run scan-index over *root*, asserting success."""
+    result = subprocess.run(
+        [sys.executable, str(scan_index), "--root", str(root), *extra],
+        capture_output=True,
+        text=True,
+        cwd=str(root),
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def _materialize_polluted_tree(root: Path, *, with_collision: bool) -> None:
+    """Write the polluted-repo directory tree under *root* (no scan, no git).
+
+    Args:
+        root: repo root to populate.
+        with_collision: also add the non-excluded ``wt/pkg`` copy so its qualnames
+            collide with the canonical ``pkg`` tree (task 1.3).
+    """
+    pkg = root / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(_PKG_INIT)
+    (pkg / "leaf.py").write_text(_LEAF_SRC)
+    (pkg / "consumer.py").write_text(_CONSUMER_SRC)
+    (pkg / "broken.py").write_text(_BROKEN_SRC)
+
+    ghost = root / ".claude" / "worktrees" / "agent-x" / "pkg"
+    ghost.mkdir(parents=True)
+    (ghost / "__init__.py").write_text(_PKG_INIT)
+    (ghost / "leaf.py").write_text(_LEAF_SRC)
+
+    vendored = root / "vendored-lib"
+    vendored.mkdir()
+    (vendored / "vendored.py").write_text(_VENDORED_SRC)
+
+    (root / ".codemapignore").write_text("# vendored third-party copy\nvendored-lib\n")
+
+    if with_collision:
+        wt_pkg = root / "wt" / "pkg"
+        wt_pkg.mkdir(parents=True)
+        (wt_pkg / "__init__.py").write_text(_PKG_INIT)
+        (wt_pkg / "leaf.py").write_text(_LEAF_SRC)
+
+
+@pytest.fixture
+def polluted_repo(tmp_path: Path, scan_index: Path) -> Callable[..., tuple[Path, Path]]:
+    """Factory building the polluted git repo, scanning it, and returning (root, index_path).
+
+    Call the returned callable once per test. It initialises a git repo, materialises
+    the tree, commits it, runs an initial full scan, and returns the project root and
+    index path. Tests may then mutate files under the root and re-scan (or rely on
+    scan-query self-heal).
+
+    The callable accepts ``with_collision`` (default ``False``): when ``True`` the
+    non-excluded ``wt/pkg`` duplicate is added so the index records a real qualname
+    collision (task 1.3). Leave it ``False`` for direction-scoped completeness and
+    self-heal tests, which need a collision-free index to reach completeness.
+
+    Returns:
+        A factory ``(with_collision=False) -> (root, index_path)``.
+    """
+
+    def _build(*, with_collision: bool = False) -> tuple[Path, Path]:
+        root = tmp_path / "polluted"
+        root.mkdir()
+        _git(root, "init", "-q")
+        _git(root, "config", "user.email", "t@t.t")
+        _git(root, "config", "user.name", "t")
+        _materialize_polluted_tree(root, with_collision=with_collision)
+        _git(root, "add", "-A")
+        _git(root, "commit", "-q", "-m", "init polluted repo")
+        _run_scan(scan_index, root)
+        index_path = _index_path_for(root)
+        assert index_path.exists(), "scan-index did not produce an index file"
+        return root, index_path
+
+    return _build

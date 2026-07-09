@@ -19,6 +19,7 @@ import ast
 import builtins
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+import fnmatch
 import functools
 import json
 import multiprocessing
@@ -32,6 +33,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _exclusions import (
+    SKIP_DIRS,
+    Exclusions,
+    _GLOB_META_RE,
+    _load_exclusions,
+    _match_exclusion,
+)
 from _schema import SCAN_VERSION, Resolution
 from _telemetry import log_cli
 
@@ -123,21 +131,8 @@ _MOCK_FORM_CALL = "call"
 _MOCK_FORM_MOCKER = "mocker"
 
 
-SKIP_DIRS = {
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".tox",
-    "dist",
-    "build",
-    ".eggs",
-    "node_modules",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "htmlcov",
-}
+# SKIP_DIRS, Exclusions, and the exclusion parsers/matchers now live in _exclusions.py
+# so scan-query's staleness diff applies byte-identical rules (imported above).
 
 BUILTINS = frozenset(dir(builtins))
 
@@ -146,17 +141,55 @@ _DOCS_PATH_RE = re.compile(r"(^|/)docs?/")
 _EXAMPLES_PATH_RE = re.compile(r"(^|/)examples?/")
 
 
-def _iter_python_files(root: Path) -> list[Path]:
-    """Walk root with directory pruning, returning all non-symlink .py files."""
-    result = []
+def _iter_python_files(root: Path, exclusions: Exclusions | None = None) -> tuple[list[Path], dict[str, int]]:
+    """Walk root with directory pruning, returning non-symlink .py files and exclusion counts.
+
+    Args:
+        root: project root to walk.
+        exclusions: extra dir-name/glob exclusions layered on :data:`SKIP_DIRS`. When
+            ``None``, only the built-in ``SKIP_DIRS`` apply.
+
+    Returns:
+        Tuple of ``(files, counts)`` where ``counts`` maps each exclusion entry that
+        pruned at least one path to the number of ``.py`` files it removed.
+    """
+    exclusions = exclusions or Exclusions(frozenset(), (), {})
+    skip_dirs = SKIP_DIRS | exclusions.dirs
+    counts: dict[str, int] = {}
+    result: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root, topdown=True):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        pruned = [d for d in dirnames if d in exclusions.dirs]
+        for d in pruned:
+            counts[d] = counts.get(d, 0) + _count_py_files(Path(dirpath) / d)
+        dirnames[:] = [d for d in dirnames if d not in skip_dirs]
         for fn in filenames:
-            if fn.endswith(".py"):
-                fp = Path(dirpath) / fn
-                if not fp.is_symlink():
-                    result.append(fp)
-    return result
+            if not fn.endswith(".py"):
+                continue
+            fp = Path(dirpath) / fn
+            if fp.is_symlink():
+                continue
+            rel = fp.relative_to(root).as_posix()
+            matched = next((g for g in exclusions.globs if fnmatch.fnmatch(rel, g)), None)
+            if matched is not None:
+                counts[matched] = counts.get(matched, 0) + 1
+                continue
+            result.append(fp)
+    return result, counts
+
+
+def _count_py_files(directory: Path) -> int:
+    """Count non-symlink ``.py`` files beneath *directory* (for pruned-dir exclusion stats).
+
+    Args:
+        directory: directory being pruned from the walk.
+
+    Returns:
+        Number of ``.py`` files under it, or 0 if it cannot be traversed.
+    """
+    total = 0
+    for _dirpath, _dirnames, filenames in os.walk(directory):
+        total += sum(1 for fn in filenames if fn.endswith(".py"))
+    return total
 
 
 def _classify_entity(rel_path: Path, name: str) -> tuple[str, str]:
@@ -234,7 +267,7 @@ def get_git_sha(root: Path) -> str | None:
         return None
 
 
-def _git_file_hashes(root: Path) -> dict[str, str]:
+def _git_file_hashes(root: Path, exclusions: Exclusions) -> dict[str, str]:
     """Return git blob SHAs for all tracked ``.py``/``.rst``/``docs/**/*.md`` files.
 
     Hashes Python sources plus documentation files that participate in v4.5 xref
@@ -244,6 +277,8 @@ def _git_file_hashes(root: Path) -> dict[str, str]:
 
     Args:
         root: repository root used as cwd.
+        exclusions: paths matching these are dropped so git-tracked-but-excluded files
+            (e.g. a vendored copy named in ``.codemapignore``) never enter the index.
     """
     output = subprocess.check_output(
         ["git", "ls-files", "-s", "-z", "--", "*.py", "*.rst", "docs/**/*.md"],
@@ -258,35 +293,42 @@ def _git_file_hashes(root: Path) -> dict[str, str]:
             continue
         tab_idx = line.index("\t")
         rel_path = line[tab_idx + 1 :]
+        if _match_exclusion(rel_path, exclusions) is not None:
+            continue
         sha = line.split()[1]
         hashes[rel_path] = sha
     return hashes
 
 
-def _md5_file_hashes(root: Path) -> dict[str, str]:
+def _md5_file_hashes(root: Path, exclusions: Exclusions) -> dict[str, str]:
     """Return MD5 digests for ``.py``/``.rst``/``docs/**/*.md`` files (non-git fallback).
 
     Args:
         root: directory to search recursively.
+        exclusions: dir-name/glob exclusions applied to both ``.py`` and doc files.
     """
     import hashlib
 
     hashes: dict[str, str] = {}
-    for py_file in _iter_python_files(root):
+    py_files, _counts = _iter_python_files(root, exclusions)
+    for py_file in py_files:
         try:
             hashes[py_file.relative_to(root).as_posix()] = hashlib.md5(py_file.read_bytes()).hexdigest()
         except OSError as exc:
             print(f"[codemap] ⚠ could not hash {py_file}: {exc} — treating as unchanged", file=sys.stderr)
     rst_files, md_files = _iter_doc_files(root)
     for doc_file in rst_files + md_files:
+        rel = doc_file.relative_to(root).as_posix()
+        if _match_exclusion(rel, exclusions) is not None:
+            continue
         try:
-            hashes[doc_file.relative_to(root).as_posix()] = hashlib.md5(doc_file.read_bytes()).hexdigest()
+            hashes[rel] = hashlib.md5(doc_file.read_bytes()).hexdigest()
         except OSError as exc:
             print(f"[codemap] ⚠ could not hash {doc_file}: {exc} — treating as unchanged", file=sys.stderr)
     return hashes
 
 
-def get_file_hashes(root: Path) -> dict[str, str]:
+def get_file_hashes(root: Path, exclusions: Exclusions | None = None) -> dict[str, str]:
     """Git blob SHAs for tracked source/doc files; falls back to MD5 for non-git projects.
 
     Includes ``.py``, ``.rst``, and ``docs/**/*.md`` so doc-only edits invalidate
@@ -294,11 +336,14 @@ def get_file_hashes(root: Path) -> dict[str, str]:
 
     Args:
         root: project root path.
+        exclusions: dir-name/glob exclusions; excluded paths are omitted so the hash
+            set stays consistent with the walked module list. ``None`` = no extra exclusions.
     """
+    exclusions = exclusions or Exclusions(frozenset(), (), {})
     try:
-        return _git_file_hashes(root)
+        return _git_file_hashes(root, exclusions)
     except Exception:
-        return _md5_file_hashes(root)
+        return _md5_file_hashes(root, exclusions)
 
 
 # ── detect_src_root helpers ─────────────────────────────────────────────────────
@@ -2922,6 +2967,87 @@ def _build_sphinx_xref_count(modules: list[dict], doc_xrefs: list[dict]) -> dict
     return counts
 
 
+def _dedup_key(path: str, src_root_rel: str) -> tuple[int, int, str]:
+    """Sort key selecting the canonical winner among modules sharing a dotted name.
+
+    Prefers, in order: a path under the detected source root, then the shortest path
+    (by component count), then lexicographic order. Fully deterministic regardless of
+    filesystem walk order (CR-3).
+
+    Args:
+        path: module path relative to project root, posix separators.
+        src_root_rel: source root relative to project root (``""`` when src root == root).
+
+    Returns:
+        Tuple ranking this path — lower sorts first (= preferred winner).
+
+    Examples:
+        >>> _dedup_key("src/pkg/mod.py", "src")
+        (0, 3, 'src/pkg/mod.py')
+        >>> _dedup_key("copy/pkg/mod.py", "src")
+        (1, 3, 'copy/pkg/mod.py')
+    """
+    under_src = 0 if src_root_rel and (path == src_root_rel or path.startswith(src_root_rel + "/")) else 1
+    return (under_src, len(path.split("/")), path)
+
+
+def _dedup_modules(modules: list[dict], src_root_rel: str) -> tuple[list[dict], list[dict]]:
+    """Drop duplicate dotted names deterministically, keeping the canonical path.
+
+    Args:
+        modules: parsed module entries (each with ``name`` and ``path``).
+        src_root_rel: source root relative to project root, used by :func:`_dedup_key`.
+
+    Returns:
+        Tuple ``(kept_modules, collisions)`` where ``collisions`` is a list of
+        ``{"name", "kept", "dropped"}`` records (empty when no name repeated).
+    """
+    by_name: dict[str, list[dict]] = {}
+    for m in modules:
+        by_name.setdefault(m.get("name", ""), []).append(m)
+
+    kept: list[dict] = []
+    collisions: list[dict] = []
+    for name in sorted(by_name):
+        entries = by_name[name]
+        if len(entries) == 1:
+            kept.append(entries[0])
+            continue
+        entries.sort(key=lambda m: _dedup_key(m.get("path", ""), src_root_rel))
+        winner, *losers = entries
+        kept.append(winner)
+        dropped = [m.get("path", "") for m in losers]
+        collisions.append({"name": name, "kept": winner.get("path", ""), "dropped": dropped})
+        print(
+            f"[codemap] ⚠ name collision: '{name}' at {[winner.get('path', '')] + dropped} "
+            f"— kept '{winner.get('path', '')}'",
+            file=sys.stderr,
+        )
+    return kept, collisions
+
+
+def _build_excluded_roots(exclusions: Exclusions, counts: dict[str, int]) -> list[dict]:
+    """Assemble the ``excluded_roots`` meta list from loaded exclusions and hit counts.
+
+    Every user-configured entry appears (even at ``count == 0``) so consumers can see
+    what was requested; built-in ``SKIP_DIRS`` are omitted — they are implicit and
+    constant. Entries are sorted by descending count then name for stable output.
+
+    Args:
+        exclusions: loaded user exclusions (carries source provenance).
+        counts: per-entry ``.py`` files removed, keyed by the raw pattern/dir-name.
+
+    Returns:
+        List of ``{"pattern", "kind", "source", "count"}`` records.
+    """
+    roots = []
+    for entry, source in exclusions.sources.items():
+        kind = "glob" if _GLOB_META_RE.search(entry) else "dir"
+        roots.append({"pattern": entry, "kind": kind, "source": source, "count": counts.get(entry, 0)})
+    roots.sort(key=lambda r: (-r["count"], r["pattern"]))
+    return roots
+
+
 def scan(root: Path, coverage_path: Path | None = None) -> dict:
     """Run a full scan of all .py files under root and return the index dict.
 
@@ -2932,27 +3058,25 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
             fields are attached (v5.4).
     """
     src_root = detect_src_root(root)
+    exclusions = _load_exclusions(root)
 
-    filepaths = _iter_python_files(root)
+    filepaths, excluded_counts = _iter_python_files(root, exclusions)
+    filepaths = sorted(filepaths, key=lambda p: p.relative_to(root).as_posix())
+    if excluded_counts:
+        total = sum(excluded_counts.values())
+        print(
+            f"[codemap] excluded {total} .py file(s) via {len(excluded_counts)} pattern(s): "
+            f"{', '.join(sorted(excluded_counts))}",
+            file=sys.stderr,
+        )
     # Use fork on Unix to avoid __main__ re-import issues with extension-less script
     _mp_ctx = multiprocessing.get_context("fork") if sys.platform != "win32" else None
     with ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=_mp_ctx) as pool:
         modules = list(pool.map(_parse_file_star, [(fp, root, src_root) for fp in filepaths]))
 
-    seen_names: dict[str, str] = {}
-    deduped: list[dict] = []
-    for m in modules:
-        name = m.get("name", "")
-        if name in seen_names:
-            print(
-                f"[codemap] ⚠ name collision: '{name}' found at both "
-                f"'{seen_names[name]}' and '{m['path']}' — first entry kept",
-                file=sys.stderr,
-            )
-        else:
-            seen_names[name] = m.get("path", "")
-            deduped.append(m)
-    modules = deduped
+    src_root_rel = "" if src_root == root else src_root.relative_to(root).as_posix()
+    modules, collisions = _dedup_modules(modules, src_root_rel)
+    excluded_roots = _build_excluded_roots(exclusions, excluded_counts)
 
     # v5.1: collect conftest.py sys.path aliases before metric recompute so
     # rdep_count and import_groups attribute bare imports to their full names.
@@ -2980,7 +3104,7 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
         if coverage_data is not None:
             _attach_coverage(modules, root, coverage_data)
 
-    file_shas = get_file_hashes(root)
+    file_shas = get_file_hashes(root, exclusions)
     _maybe_stamp_coverage_mtime(file_shas, coverage_path)
 
     return {
@@ -2997,6 +3121,8 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
         "module_aliases": module_aliases,
         "subprocess_rdep_count": subprocess_rdep_count,
         "fixture_rdep_count": fixture_rdep_count,
+        "excluded_roots": excluded_roots,
+        "collisions": collisions,
     }
 
 
@@ -3011,7 +3137,8 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
             forces re-annotation even when no source file changed (v5.4).
     """
     src_root = detect_src_root(root)
-    current_shas = get_file_hashes(root)
+    exclusions = _load_exclusions(root)
+    current_shas = get_file_hashes(root, exclusions)
     _maybe_stamp_coverage_mtime(current_shas, coverage_path)
     stored_shas: dict[str, str] = old_index.get("file_shas", {})
 
@@ -3042,7 +3169,9 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
         modules_by_path[entry["path"]] = entry
         print(f"[codemap]   {action} {rel_path_str}", file=sys.stderr)
 
-    modules = list(modules_by_path.values())
+    src_root_rel = "" if src_root == root else src_root.relative_to(root).as_posix()
+    modules, collisions = _dedup_modules(list(modules_by_path.values()), src_root_rel)
+    excluded_roots = _build_excluded_roots(exclusions, {})
     # v5.1: re-collect conftest.py aliases from disk (cheap full sweep — every
     # conftest can affect rdep_count, so per-file invalidation is unsafe).
     conftest_paths = [root / m["path"] for m in modules if m.get("path", "").endswith("conftest.py")]
@@ -3085,6 +3214,8 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
         "module_aliases": module_aliases,
         "subprocess_rdep_count": subprocess_rdep_count,
         "fixture_rdep_count": fixture_rdep_count,
+        "excluded_roots": excluded_roots,
+        "collisions": collisions,
     }
 
 

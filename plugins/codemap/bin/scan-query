@@ -84,6 +84,7 @@ from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _exclusions import Exclusions, _load_exclusions, _match_exclusion, is_excluded
 from _schema import (
     COVERAGE_MIN_VER,
     DEAD_SYMBOL_MIN_VER,
@@ -195,6 +196,27 @@ def _get_current_sha_cached() -> str | None:
         _current_sha_cache = _current_git_sha()
         _current_sha_resolved = True
     return _current_sha_cache
+
+
+_exclusions_cache: Exclusions | None = None
+_exclusions_resolved: bool = False
+
+
+def _get_exclusions_cached() -> Exclusions:
+    """Return the project's index exclusions, resolving from git root / CWD once.
+
+    F4: scan-index drops SKIP_DIRS + pyproject/.codemapignore paths from the index.
+    scan-query's staleness diff must apply the SAME rules, or a tracked-but-excluded
+    ``.py`` (e.g. a vendored tree) re-lists as "added" and forces permanent stale.
+    Resolves the root the way scan-index's ``find_root`` does (git root, else CWD) so
+    both read the same config files.
+    """
+    global _exclusions_cache, _exclusions_resolved
+    if not _exclusions_resolved:
+        root = _get_git_root_cached() or Path.cwd()
+        _exclusions_cache = _load_exclusions(root)
+        _exclusions_resolved = True
+    return _exclusions_cache
 
 
 # ---------------------------------------------------------------------------
@@ -354,9 +376,26 @@ def load_index(path: Path) -> dict:
 
 _GIT_TIMEOUT_S = 10  # max seconds for any git subprocess (H78: hung process guard)
 
+# Self-heal bounds (CR-1): when the index is stale at query time we run
+# `scan-index --incremental` inline so the answer reflects the current tree.
+# Bounded so the heal never dominates the query path — a large change set or a
+# slow scan falls back to the stale-honest result instead.
+_HEAL_MAX_CHANGED_FILES = 50  # skip heal when more than this many .py files changed
+_HEAL_TIMEOUT_S = 10  # hard wall-clock cap on the incremental scan subprocess
+
 
 def _get_current_file_shas() -> dict[str, str]:
-    """Return {relative_path: blob_sha} for all tracked .py files, or {} if unavailable."""
+    """Return {relative_path: blob_sha} for tracked, non-excluded .py files, or {} if unavailable.
+
+    F4: drops paths matched by the user's pyproject / .codemapignore exclusions so this
+    set matches the ``file_shas`` scan-index wrote — otherwise an excluded tracked ``.py``
+    (e.g. a vendored tree) shows as "added" and forces the index permanently stale.
+
+    Uses ``_match_exclusion`` only (NOT SKIP_DIRS): scan-index's git-blob ``file_shas``
+    path (``_git_file_hashes``) filters solely by user exclusions and keeps SKIP_DIR files
+    that git tracks. Applying SKIP_DIRS here would drop those, making them show as
+    "deleted" and re-introducing the false stale. Matching the writer exactly is the point.
+    """
     try:
         output = subprocess.check_output(
             ["git", "ls-files", "-s", "--", "*.py"],
@@ -364,12 +403,15 @@ def _get_current_file_shas() -> dict[str, str]:
             stderr=subprocess.DEVNULL,
             timeout=_GIT_TIMEOUT_S,
         )
+        exclusions = _get_exclusions_cached()
         shas: dict[str, str] = {}
         for line in output.strip().splitlines():
             if not line:
                 continue
             tab_idx = line.index("\t")
             path = line[tab_idx + 1 :]
+            if _match_exclusion(path, exclusions) is not None:
+                continue
             sha = line.split()[1]
             shas[path] = sha
         return shas
@@ -416,6 +458,85 @@ def check_staleness(scanned_at: str) -> bool:
         return bool(result.stdout.strip())
     except Exception:
         return False
+
+
+def _changed_py_files(index: dict) -> list[str] | None:
+    """Return the list of tracked ``.py`` paths that differ from the index, or None.
+
+    Uses the v3 ``file_shas`` blob diff (git-based). Returns None when the index
+    predates ``file_shas`` or git is unavailable — callers fall back to the
+    timestamp check. An empty list means "fresh"; a populated list means "stale".
+
+    Args:
+        index: parsed codemap index dict.
+    """
+    stored_shas = index.get("file_shas")
+    if not stored_shas:
+        return None
+    current_shas = _get_current_file_shas()
+    if not current_shas:
+        return None
+    changed = [p for p in current_shas if stored_shas.get(p) != current_shas[p]]
+    added = [p for p in current_shas if p not in stored_shas]
+    deleted = [p for p in stored_shas if p not in current_shas]
+    return changed + added + deleted
+
+
+def maybe_self_heal(index: dict, index_path: Path, scan_root: Path | None) -> dict:
+    """Run a bounded incremental scan when the index is stale, then reload.
+
+    CR-1: a stale index at query time silently under-reports edges. When the
+    change set is small enough (:data:`_HEAL_MAX_CHANGED_FILES`) we re-run
+    ``scan-index --incremental`` inline and answer from the fresh graph. A large
+    change set, a missing scan-index, a slow scan (:data:`_HEAL_TIMEOUT_S`), or a
+    non-zero exit all fall back to the original stale index — the query still
+    answers, honestly flagged stale.
+
+    Args:
+        index: the freshly loaded (possibly stale) index dict.
+        index_path: path the index was loaded from, for reload after healing.
+        scan_root: project root to hand scan-index via ``--root``; None omits it.
+
+    Returns:
+        The reloaded fresh index on a successful heal, else the original index.
+    """
+    changed = _changed_py_files(index)
+    if not changed:  # None (no file_shas → can't bound safely) or [] (already fresh)
+        return index
+    if len(changed) > _HEAL_MAX_CHANGED_FILES:
+        _print(
+            f"⚠ codemap: {len(changed)} files changed (> {_HEAL_MAX_CHANGED_FILES} heal cap) — "
+            "answering from the stale index. Run /codemap:scan-codebase --incremental to refresh.",
+            file=sys.stderr,
+        )
+        return index
+
+    scan_index_bin = Path(__file__).resolve().parent / "scan-index"
+    if not scan_index_bin.exists():
+        return index
+    cmd = [sys.executable, str(scan_index_bin), "--incremental"]
+    if scan_root is not None:
+        cmd += ["--root", str(scan_root)]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=_HEAL_TIMEOUT_S,
+            cwd=str(scan_root) if scan_root is not None else None,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        _print("⚠ codemap: incremental self-heal timed out — answering from the stale index.", file=sys.stderr)
+        return index
+    if result.returncode != 0:
+        return index
+    try:
+        healed = load_index(index_path)
+    except SystemExit:
+        # load_index calls _exit_error on a corrupt reload; keep the stale index rather than aborting.
+        return index
+    _print(f"codemap: self-healed index ({len(changed)} file(s) re-scanned).", file=sys.stderr)
+    return healed
 
 
 def warn_if_stale(index: dict) -> None:
@@ -601,12 +722,38 @@ def _current_git_sha() -> str | None:
         return None
 
 
-def _coverage(index: dict) -> dict:
-    """Return an index coverage block for every query result.
+def _untracked_py_files() -> list[str]:
+    """Return new, git-untracked ``.py`` files, or [] if git is unavailable.
 
-    Embeds a machine-readable completeness guarantee and a staleness signal
-    so agents know whether the index matches the current codebase state.
-    When git is present, compares the SHA recorded at scan time against HEAD.
+    Documented blind spot: ``file_shas`` is git-blob based, so a brand-new
+    ``.py`` file that has never been ``git add``-ed is invisible to the
+    staleness diff. Surface it in the coverage block so a whole-graph/global-in
+    query never claims completeness while such a file exists.
+
+    F4: untracked files inside an excluded dir (e.g. a vendored tree or ``.claude/``)
+    are dropped — scan-index would never have indexed them, so they must not poison
+    ``query_complete`` either.
+    """
+    try:
+        output = subprocess.check_output(
+            ["git", "ls-files", "--others", "--exclude-standard", "--", "*.py"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=_GIT_TIMEOUT_S,
+        )
+        exclusions = _get_exclusions_cached()
+        return [line for line in output.strip().splitlines() if line and not is_excluded(line, exclusions)]
+    except Exception:
+        return []
+
+
+def _coverage(index: dict) -> dict:
+    """Return the shared, direction-independent coverage state for a query result.
+
+    Computes the base facts every command shares — module counts, degraded set,
+    staleness, and index-level blind spots (untracked ``.py`` files, qualname
+    collisions). Direction-scoped completeness (``query_complete``) is layered on
+    top per command by :func:`_cmd_coverage`; this function never decides it.
 
     Args:
         index: parsed codemap index dict.
@@ -617,7 +764,8 @@ def _coverage(index: dict) -> dict:
 
     modules = index.get("modules", [])
     total = sum(1 for m in modules if m.get("status") == "ok")
-    degraded = sum(1 for m in modules if m.get("status") == "degraded")
+    degraded_paths = sorted(m.get("path", "") for m in modules if m.get("status") == "degraded")
+    degraded = len(degraded_paths)
     total_syms = sum(len(m.get("symbols", [])) for m in modules if m.get("status") == "ok")
     star_modules = sum(1 for m in modules if m.get("status") == "ok" and m.get("has_star_imports"))
     has_call_graph = _has_call_graph(index)
@@ -641,49 +789,163 @@ def _coverage(index: dict) -> dict:
         scanned_at: str = index.get("scanned_at", "")
         stale = bool(scanned_at and check_staleness(scanned_at))
 
-    if stale:
-        note = (
-            f"All {total} indexed modules were searched. "
-            "⚠ Index may be stale — source files changed since last scan. "
-            "Re-run /codemap:scan-codebase to update before relying on this result."
-        )
-        exhaustive = False
-    else:
-        if degraded > 0:
-            note = (
-                f"All {total} parseable modules were searched. "
-                f"⚠ {degraded} module(s) failed to parse and were skipped — "
-                "those files may contain the symbol you seek; verify with grep."
-            )
-            exhaustive = False
-        else:
-            note = (
-                f"All {total} indexed modules were searched. "
-                "This result is complete — grep/bash verification is not needed."
-            )
-            exhaustive = True
+    # Blind spot: brand-new untracked .py files are invisible to the git-blob SHA diff,
+    # so they never register as "stale". A whole-graph / global-in query must not claim
+    # completeness while one exists — surfaced here, consumed by _query_complete.
+    untracked = _untracked_py_files()
+
+    # CR-2 cross-agent contract: scan-index (task 1.3) may write a `collisions` list of
+    # {name, kept, dropped} into index meta. Older indexes lack the key — treat missing as
+    # empty, never crash on absence. Keep the resolved names so a local query can check
+    # whether ITS module is the colliding one.
+    collisions = index.get("collisions", []) or []
+    collision_names = frozenset(str(c.get("name", "")) for c in collisions if isinstance(c, dict))
 
     _coverage_cache = {
         "total_modules": total,
         "total_symbols": total_syms,
         "degraded": degraded,
+        "degraded_files": degraded_paths,
         "star_import_modules": star_modules,
         "has_call_graph": has_call_graph,
-        "exhaustive": exhaustive if not stale else False,
         "stale": stale,
-        "note": note,
+        "untracked_py": untracked,
+        "collision_count": len(collisions),
+        # Internal: consumed by _query_complete for the local-collision check; not emitted.
+        "_collision_names": collision_names,
     }
     return _coverage_cache
 
 
-def _cmd_coverage(index: dict, **extra: object) -> dict:
-    """Merge base index coverage with per-command method metadata.
+# Command → direction class. Drives which incompleteness sources can hide a result:
+#   local      — answer read straight from the queried module's own entry; only that
+#                module's parse status matters.
+#   global-in  — answer aggregates edges pointing INTO a target; any degraded file
+#                anywhere could hide an inbound edge → complete iff degraded == 0.
+#   whole-graph— answer ranges over the entire graph; complete iff degraded == 0.
+# Anything unlisted defaults to whole-graph (the strictest: never over-claims).
+# Local = module-scoped read from ONE named module's own entry: `deps` (that module's
+# imports) and `symbols` (that module's symbols). `symbol <name>` is NOT local — it
+# matches by name across the whole graph, so a degraded module could hide another
+# definition; it falls through to whole-graph.
+_LOCAL_DIRECTION_CMDS = frozenset({"deps", "symbols"})
+_GLOBAL_IN_DIRECTION_CMDS = frozenset({"rdeps", "fn-rdeps", "mock-rdeps", "test-impact"})
+
+
+def _query_complete(
+    base: dict, *, command: str, module_status: str | None, module_name: str | None
+) -> tuple[bool, str]:
+    """Decide direction-scoped completeness for one command, with a matching reason.
+
+    HARD RULE: never return ``(True, ...)`` for a global-in or whole-graph query
+    while ``degraded > 0`` — a false ``query_complete`` arms guard-redundant-scan
+    against the exact grep that would surface the missing edge.
+
+    The veto sources differ by direction:
+
+    * **local** (``deps``/``symbols``): the answer is read straight from ONE
+      module's own index entry. An untracked new ``.py`` file elsewhere cannot
+      change that entry's ``direct_imports`` / symbols, so untracked files do NOT
+      veto local. A qualname collision vetoes local only when the queried module's
+      OWN name is the colliding one. Staleness still vetoes (the entry itself may
+      be out of date), as does the module failing to parse.
+    * **global-in / whole-graph**: any degraded file, untracked file, or collision
+      anywhere can hide an inbound / graph-wide edge → all veto.
+
+    Args:
+        base: the shared coverage dict from :func:`_coverage`.
+        command: the scan-query subcommand name (``args.command``).
+        module_status: for local queries, the queried module's ``status`` field
+            (``"ok"``, ``"degraded"``, or None when it is not in the index).
+        module_name: for local queries, the queried module's dotted name — used to
+            check whether it is itself a colliding name.
+
+    Returns:
+        ``(complete, reason)`` where ``reason`` is a short slug naming the veto
+        source (``"ok"`` when complete) so the caller can emit a consistent note.
+    """
+    # Staleness poisons every direction: even a local module's own entry may be stale.
+    if base["stale"]:
+        return False, "stale"
+    if command in _LOCAL_DIRECTION_CMDS:
+        return _local_complete(base, module_status=module_status, module_name=module_name)
+    return _wide_complete(base)
+
+
+def _local_complete(base: dict, *, module_status: str | None, module_name: str | None) -> tuple[bool, str]:
+    """Completeness for a local (module-scoped) query. See :func:`_query_complete`."""
+    if module_status != "ok":
+        return False, "module_degraded"
+    # Untracked files never affect a single module's own entry → not a local veto.
+    # A collision vetoes only when THIS module's name is the ambiguous one.
+    if module_name is not None and module_name in base["_collision_names"]:
+        return False, "collision"
+    return True, "ok"
+
+
+def _wide_complete(base: dict) -> tuple[bool, str]:
+    """Completeness for a global-in / whole-graph query. See :func:`_query_complete`."""
+    for key, reason in (("degraded", "degraded"), ("untracked_py", "untracked"), ("collision_count", "collision")):
+        if base[key]:
+            return False, reason
+    return True, "ok"
+
+
+def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
+    """Build a human note that never contradicts the emitted ``query_complete``.
+
+    F1: the note must track the direction-scoped flag, not the direction-agnostic
+    stale/degraded facts alone — otherwise an untracked/collision veto could ship
+    "This result is complete" next to ``query_complete: false``.
+
+    Args:
+        base: the shared coverage dict from :func:`_coverage`.
+        complete: the decided ``query_complete`` value for this command.
+        reason: the veto slug from :func:`_query_complete` (``"ok"`` when complete).
+    """
+    total = base["total_modules"]
+    if complete:
+        return f"All {total} indexed modules were searched. This result is complete — grep/bash verification is not needed."
+    prefix = f"All {total} indexed modules were searched. ⚠ This result may be incomplete — "
+    detail = {
+        "stale": "the index is stale (source files changed since last scan); a bounded self-heal was attempted. "
+        "Re-run /codemap:scan-codebase to update.",
+        "module_degraded": "the queried module failed to parse and was skipped; verify with grep.",
+        "degraded": f"{base['degraded']} module(s) failed to parse and were skipped — "
+        "those files may hide an edge into this result; verify with grep.",
+        "untracked": f"{len(base['untracked_py'])} new .py file(s) are untracked and invisible to the staleness "
+        "diff — they may hide an edge; git add them and re-scan, or verify with grep.",
+        "collision": f"{base['collision_count']} qualname collision(s) in the index dropped a module — "
+        "it may hide an edge; verify with grep.",
+    }.get(reason, "a structural blind spot may hide an edge; verify with grep.")
+    return prefix + detail
+
+
+def _cmd_coverage(
+    index: dict, *, command: str = "", module_status: str | None = None, module_name: str | None = None, **extra: object
+) -> dict:
+    """Merge shared coverage with direction-scoped completeness and per-command metadata.
+
+    Emits both the forward ``query_complete`` field (direction-scoped, per this
+    command) and the legacy ``exhaustive`` field (kept byte-compatible for one
+    deprecation cycle so existing consumers keep parsing). For local queries pass
+    ``module_status`` and ``module_name``; whole-graph/global-in queries ignore them.
 
     Args:
         index: parsed codemap index dict.
+        command: the scan-query subcommand name, used to pick the direction class.
+        module_status: queried module's ``status`` for local-direction commands.
+        module_name: queried module's dotted name for local-direction commands.
         **extra: per-command fields (method, not_covered, hint, scope, etc.).
     """
-    return {**_coverage(index), **extra}
+    base = _coverage(index)
+    complete, reason = _query_complete(
+        base, command=command or _CMD, module_status=module_status, module_name=module_name
+    )
+    note = _coverage_note(base, complete=complete, reason=reason)
+    # Drop the internal collision-names set from the emitted block; keep it out of JSON.
+    emitted = {k: v for k, v in base.items() if k != "_collision_names"}
+    return {**emitted, "note": note, "query_complete": complete, "exhaustive": complete, **extra}
 
 
 # ---------------------------------------------------------------------------
@@ -735,7 +997,13 @@ def cmd_deps(
             {
                 "module": module,
                 "direct_imports": direct,
-                "index": _cmd_coverage(index, method="import-graph", not_covered=_IMPORT_GRAPH_NOT_COVERED),
+                "index": _cmd_coverage(
+                    index,
+                    method="import-graph",
+                    module_status=entry.get("status"),
+                    module_name=module,
+                    not_covered=_IMPORT_GRAPH_NOT_COVERED,
+                ),
             }
         )
     )
@@ -1174,7 +1442,13 @@ def cmd_symbols(index: dict, module: str) -> None:
                     for s in syms
                 ],
                 "count": len(syms),
-                "index": _cmd_coverage(index, method="index-lookup", confidence="exact"),
+                "index": _cmd_coverage(
+                    index,
+                    method="index-lookup",
+                    module_status=entry.get("status"),
+                    module_name=module,
+                    confidence="exact",
+                ),
             }
         )
     )
@@ -2934,6 +3208,12 @@ def main() -> None:
         metavar="N",
         help="Hard timeout in seconds; 0 = no limit (default). Uses SIGALRM — Unix only.",
     )
+    parser.add_argument(
+        "--no-heal",
+        action="store_true",
+        default=False,
+        help="Disable the bounded incremental self-heal on a stale index (answer from the stale index as-is).",
+    )
 
     args = parser.parse_args()
     global _CMD  # noqa: PLW0603
@@ -2970,6 +3250,10 @@ def main() -> None:
     else:
         index_path = find_index()
     index = load_index(index_path)
+    if not args.no_heal:
+        # CR-1: refresh a stale index inline (bounded) so the answer reflects the
+        # current tree — e.g. an edge added by a just-committed change is visible.
+        index = maybe_self_heal(index, index_path, _resolve_project_root(args.root, index))
     warn_if_stale(index)
     project_root = _resolve_project_root(args.root, index)
 

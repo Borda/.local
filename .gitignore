@@ -25,6 +25,7 @@
 .temp/
 .outputs/
 docs/specs/
+.codemapignore
 
 # Agent auto-memory (machine-local, not source)
 .claude/agent-memory/

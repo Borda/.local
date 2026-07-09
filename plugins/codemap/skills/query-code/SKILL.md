@@ -100,7 +100,9 @@ scan-query fn-rdeps "mypackage.auth::validate_token"  # timeout: 5000
 
 **tool_use_error / skill unavailable**: do NOT count as a query attempt. Run `$SQ <same-args>` via Bash directly (timeout: 5000). Apply STOP rule after Bash result.
 
-**exhaustive: true → STOP ALL TOOL CALLS.** List complete and authoritative. Write answer immediately. Do NOT call codemap again. Do NOT grep/glob/bash to verify. (Enforced: a guard hook denies import-greps for any module already returned exhaustive this session — a re-grep wastes a turn and is blocked. Trust the index; this holds for every model tier.)
+**`query_complete: true` → STOP ALL TOOL CALLS.** List complete and authoritative for THIS query's direction. Write answer immediately. Do NOT call codemap again. Do NOT grep/glob/bash to verify. (`query_complete` is direction-scoped: a `deps`/`symbols` query on a healthy module can be complete even while another file is degraded, but `rdeps`/`central`/`path` are complete only when `degraded: 0`. The legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle — prefer `query_complete`.) (Enforced: a guard hook denies import-greps for any module already returned complete this session — a re-grep wastes a turn and is blocked. Trust the index; this holds for every model tier.)
+
+**`query_complete: false`** → the result is direction-incomplete. Check `degraded_files` (files that failed to parse — may hide edges), `untracked_py` (new files not yet `git add`-ed — invisible to the staleness diff), and `stale`; verify with grep only for those named gaps.
 
 Truncation check: result count = 20 AND `--limit 0` not passed → re-run once with `--limit 0` (1 budget slot), then apply STOP rule.
 
@@ -126,7 +128,7 @@ Symbol staleness: `stale: true` + empty source → `Read(path)` fallback. `stale
 | `fn-central` | `fn_central` | `count module::fn`, one per line |
 | `fn-blast` | `blast_radius` | `depth module::fn`, sorted by depth then name |
 
-`index.stale: true` → re-run `scan-index --incremental` and retry.
+`index.stale: true` → scan-query already attempted a bounded inline self-heal (`scan-index --incremental`) before answering; `stale` remaining true means the heal was skipped (change set over cap, or git unavailable). Re-run `/codemap:scan-codebase --incremental` manually, then retry.
 `index.not_covered` non-empty → note scope caveat in response.
 `index.degraded > 0` → caveat some modules unparsable; `path` results may be incomplete.
 `index.confidence == "exact"` → skip verification caveats.
