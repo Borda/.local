@@ -93,6 +93,10 @@ Applies to all Python written or reviewed by any agent. Run `ruff check --select
 
 Confidence < 0.9 → push back on the analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → also spawn `Agent(subagent_type="codex:codex-rescue")` naming the low-confidence area for adversarial review — incorporate findings before handover. After re-examination (and codex review if available): if confidence still < 0.9 → state the specific gap explicitly so user can decide to re-run.
 
+## Write-Delegation Checklist (`codex:codex-rescue --write`)
+
+Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write access): clean git tree first (`git status -sb` — dirty tree blocks; a dirty tree makes Codex's diff impossible to isolate or cleanly revert). After it returns: read the **full diff** yourself — Codex's own report is advisory, not proof; run the actual test/proof command yourself, don't trust pasted output. Repeated fix rounds on the same issue (2+) → stop delegating, finish by hand — ping-ponging trivia through delegation burns more than it saves. Commit only after your own diff read + your own proof run; Codex never commits.
+
 ## Link Verification
 
 **Never add URL without all three steps:**

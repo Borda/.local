@@ -168,6 +168,8 @@ For `research:scientist` hypothesis architectural-feasibility assessment (invoke
 
     Don't proceed until question crisp.
 
+    **If multiple open decision branches remain** (not just one crisp question but a tree — e.g. storage choice AND migration strategy AND rollback plan all unresolved): resolve one at a time via `AskUserQuestion`, not a single bulk ask. Each question states your recommended answer; explore codebase first when a branch is answerable from code instead of asking. Stop once tree resolved — this is scoped to genuinely branching decisions, not every spec.
+
 03. **Alignment check ⏸** (wait for user confirmation before Step 4) —
 
     > **Pipeline-subagent guard**: skip this pause when spawned as a pipeline subagent — proceed directly to Step 4 if the input prompt contains a `[pipeline]` tag or `AUTO_PROCEED=true` marker. No interactive user is present in pipeline mode; waiting would block indefinitely. (pipeline context: caller adds `[pipeline]` or `AUTO_PROCEED=true` to prompt to suppress interactive gates.)

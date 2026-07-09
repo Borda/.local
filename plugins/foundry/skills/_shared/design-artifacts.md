@@ -2,6 +2,8 @@
 
 ## ADR (Architecture Decision Record)
 
+> Write ADR only when all three hold: (1) hard to reverse — cost of changing mind later is real; (2) surprising without context — future reader would ask "why this way?"; (3) result of genuine trade-off — real alternatives existed. Missing any one → skip, no ADR needed.
+
 ```markdown
 # ADR-NNN: [Decision Title]
 

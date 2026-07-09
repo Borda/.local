@@ -474,7 +474,7 @@ ______________________________________________________________________
 
 **Auto-invokes when (MAYBE):** user asks about architecture involving 3+ components; "how should I structure this", "ADR for", "migration plan for". Not triggered for simple design questions.
 
-Produces documentation — ADRs, interface contracts, migration plans, component diagrams — not production code. Hands off to `foundry:sw-engineer` for execution.
+Produces documentation — ADRs, interface contracts, migration plans, component diagrams — not production code. Hands off to `foundry:sw-engineer` for execution. When a spec has multiple unresolved decision branches, resolves them one at a time via `AskUserQuestion` with a recommended answer each, rather than one bulk ask.
 
 ______________________________________________________________________
 
