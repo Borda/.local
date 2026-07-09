@@ -43,6 +43,15 @@ function extractField(key, text) {
   return m ? m[1] : "";
 }
 
+// Read a millisecond timestamp from a flag/lock file. Returns a finite epoch-ms
+// number, or NaN when the file is missing, empty, or corrupted (non-numeric).
+// Callers MUST treat NaN as "no valid flag" (stale/absent) and rewrite the file —
+// otherwise `Date.now() - NaN` silently poisons every age comparison.
+function readTimestamp(file) {
+  const parsed = parseInt(fs.readFileSync(file, "utf8"), 10);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
 // No-index branch: a project with zero index never bootstraps itself (the stale
 // auto-refresh below only fires on an already-existing index). For Python projects
 // emit a once-per-session directive; the agent turns it into an AskUserQuestion and,
@@ -206,29 +215,53 @@ function main() {
 
   const currency = !headSha || !gitSha ? "unknown" : gitSha !== headSha || dirtyPyCount > 0 ? "stale" : "current";
 
-  // Auto-refresh on stale: spawn scan-index in background with lockfile guard
+  // Auto-refresh on stale: spawn scan-index in background with lockfile guard.
+  // Lock acquisition is atomic — fs.openSync(lockFile, "wx") uses O_EXCL so at
+  // most one concurrent hook can create the lock. This closes the TOCTOU window
+  // the old read-check-unlink-then-write flow left open, where two hooks could
+  // both observe a stale/absent lock and both spawn a redundant background scan.
   let refreshNote = "";
   if (currency === "stale") {
     const lockFile = path.join(os.tmpdir(), `codemap-refresh-${proj}`);
-    let scanning = false;
-    try {
-      const lockAge = Date.now() - parseInt(fs.readFileSync(lockFile, "utf8"), 10);
-      if (lockAge < LOCK_TTL_MS) {
-        scanning = true;
-      } else {
-        fs.unlinkSync(lockFile); // stale lock — remove and allow re-trigger
-      }
-    } catch {
-      /* no lock file yet */
-    }
 
-    if (!scanning) {
+    // Atomically create the lock; returns an open fd on success, null if held.
+    // On EEXIST we inspect the incumbent lock's age: a fresh lock means a scan is
+    // genuinely in progress; a stale OR corrupted (NaN age) lock is taken over by
+    // unlinking and retrying the exclusive create once. The retry itself is still
+    // atomic, so a takeover race resolves to a single winner.
+    const acquireLock = () => {
+      try {
+        return fs.openSync(lockFile, "wx");
+      } catch (e) {
+        if (e.code !== "EEXIST") return null; // unexpected fs error — fail open, no spawn
+        const lockAge = Date.now() - readTimestamp(lockFile);
+        if (Number.isFinite(lockAge) && lockAge < LOCK_TTL_MS) return null; // fresh — scan in progress
+        try {
+          fs.unlinkSync(lockFile); // stale or corrupted lock — take over
+          return fs.openSync(lockFile, "wx");
+        } catch {
+          return null; // another hook won the takeover race — treat as in progress
+        }
+      }
+    };
+
+    const lockFd = acquireLock();
+    if (lockFd !== null) {
       // Plugin root: CLAUDE_PLUGIN_ROOT env (set by Claude Code) or __dirname/../
       const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || path.dirname(__dirname);
       const scanBin = path.join(pluginRoot, "bin", "scan-index");
+      try {
+        fs.writeSync(lockFd, String(Date.now()));
+      } catch {
+        /* best-effort timestamp; lock is already held via the open fd */
+      }
+      try {
+        fs.closeSync(lockFd);
+      } catch {
+        /* ignore */
+      }
       if (fs.existsSync(scanBin)) {
         try {
-          fs.writeFileSync(lockFile, String(Date.now()));
           // Non-blocking: detached child, stdin/stdout/stderr all ignored
           const child = spawn(scanBin, ["--root", scanRoot, "--timeout", "300"], {
             detached: true,
@@ -239,6 +272,13 @@ function main() {
           refreshNote = " · refresh started";
         } catch {
           /* best-effort; spawn errors never block */
+        }
+      } else {
+        // No scan binary — release the lock we just took so a later hook can retry.
+        try {
+          fs.unlinkSync(lockFile);
+        } catch {
+          /* ignore */
         }
       }
     } else {
@@ -252,8 +292,10 @@ function main() {
   const sessionFlag = path.join(os.tmpdir(), `codemap-preamble-${proj}`);
   if (currency === "current") {
     try {
-      const flagAge = Date.now() - parseInt(fs.readFileSync(sessionFlag, "utf8"), 10);
-      if (flagAge < SESSION_TTL_MS) process.exit(0); // already injected this session
+      // Corrupted flag (NaN age) falls through to the rewrite below — a single
+      // re-injection this turn, then the flag is valid again. Never let NaN early-exit.
+      const flagAge = Date.now() - readTimestamp(sessionFlag);
+      if (Number.isFinite(flagAge) && flagAge < SESSION_TTL_MS) process.exit(0); // already injected this session
     } catch {
       /* no flag yet */
     }

@@ -510,10 +510,20 @@ class TestFunctionCallGraph:
         assert any("func_beta" in t for t in callers)
 
 
-def test_rdeps_unknown_module(query):
-    """rdeps on a module not in index returns empty imported_by list."""
-    data = query("rdeps", "nonexistent.module.xyz")
-    assert data.get("imported_by", []) == []
+def test_rdeps_unknown_module(project, scan_query):
+    """rdeps on a module absent from the index errors (exit 3) instead of an empty imported_by list."""
+    root, index_path = project
+    result = subprocess.run(
+        [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "nonexistent.module.xyz"],
+        capture_output=True,
+        text=True,
+        cwd=str(root),
+    )
+    assert result.returncode == 3, result.stderr + result.stdout
+    data = json.loads(result.stdout)
+    assert data["error"] == "module not indexed"
+    assert data["module"] == "nonexistent.module.xyz"
+    assert "suggestions" in data
 
 
 def test_path_same_module(project, scan_query):
@@ -3008,3 +3018,187 @@ class TestCoverageQueryCommands:
         assert result.returncode != 0
         data = json.loads(result.stdout)
         assert "coverage" in data.get("error", "")
+
+
+class TestErrorSemantics:
+    """Task 2.6 (ME-1, ME-7, CR-5): structured JSON errors + exit-code contract."""
+
+    def test_unknown_module_errors_with_suggestions(self, project, scan_query):
+        """deps on a module absent from the index → exit 3 with difflib suggestions."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "deps", "gama"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 3, result.stderr + result.stdout
+        data = json.loads(result.stdout)
+        assert data["error"] == "module not indexed"
+        assert data["module"] == "gama"
+        # 'gama' is one edit from the indexed 'gamma' → difflib surfaces it.
+        assert "gamma" in data["suggestions"]
+
+    def test_unknown_module_no_close_match_empty_suggestions(self, project, scan_query):
+        """A wildly-different name still yields a parseable object with empty suggestions."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "symbols", "zzz.totally.absent"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 3, result.stderr + result.stdout
+        data = json.loads(result.stdout)
+        assert data["error"] == "module not indexed"
+        assert data["suggestions"] == []
+
+    def test_rdeps_indexed_leaf_keeps_empty_list(self, project, scan_query):
+        """An indexed module with no importers still returns imported_by:[] (not an error)."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "rdeps", "pkg.delta"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        data = json.loads(result.stdout)
+        assert data["module"] == "pkg.delta"
+        assert data["imported_by"] == []
+
+    def test_symbol_deleted_category(self, tmp_path, scan_index, scan_query):
+        """A deleted source file → stale_category 'symbol_deleted' (the symbol is gone)."""
+        root = tmp_path / "deleted_cat"
+        root.mkdir()
+        (root / "goner.py").write_text("def goner(x):\n    return x\n")
+        subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            cwd=str(root),
+            check=True,
+        )
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        (root / "goner.py").unlink()
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "goner"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0
+        sym = json.loads(result.stdout)["symbols"][0]
+        assert sym["stale"] is True
+        assert sym["stale_category"] == "symbol_deleted"
+
+    def test_coords_stale_category(self, tmp_path, scan_index, scan_query):
+        """A renamed symbol at the indexed lines → stale_category 'coords_stale' (moved, not gone)."""
+        root = tmp_path / "coords_cat"
+        root.mkdir()
+        (root / "mover.py").write_text("def mover(x):\n    return x\n")
+        subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(root)],
+            capture_output=True,
+            cwd=str(root),
+            check=True,
+        )
+        index_path = root / ".cache" / "codemap" / f"{root.name}.json"
+        (root / "mover.py").write_text("def mover_renamed(x):\n    return x\n")
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "symbol", "mover"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0
+        sym = json.loads(result.stdout)["symbols"][0]
+        assert sym["stale"] is True
+        assert sym["stale_category"] == "coords_stale"
+
+    def test_redos_pattern_rejected_as_json(self, project, scan_query):
+        """find-symbol with a catastrophic-backtracking pattern → parseable JSON error, non-zero exit."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "find-symbol", "(a+)+"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 2, result.stderr + result.stdout
+        data = json.loads(result.stdout)
+        assert data["error"] == "pattern rejected"
+        assert data["reason"] == "redos"
+
+    def test_invalid_regex_rejected_as_json(self, project, scan_query):
+        """find-symbol with a syntactically invalid regex → parseable JSON error."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "find-symbol", "([unclosed"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 2, result.stderr + result.stdout
+        data = json.loads(result.stdout)
+        assert data["error"] == "invalid regex"
+
+
+class TestRootMismatch:
+    """Task 2.7 (CR-4): index scan_root vs queried root — visible mismatch, not silent wrong answers."""
+
+    def test_root_mismatch_flag_and_incomplete(self, tmp_path, scan_index, scan_query):
+        """Querying with --root pointing elsewhere sets root_mismatch and forces query_complete=false."""
+        scanned = tmp_path / "scanned"
+        scanned.mkdir()
+        (scanned / "mod.py").write_text("def fn(x):\n    return x\n")
+        subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(scanned)],
+            capture_output=True,
+            cwd=str(scanned),
+            check=True,
+        )
+        index_path = scanned / ".cache" / "codemap" / f"{scanned.name}.json"
+        other = tmp_path / "other"
+        other.mkdir()
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "--root", str(other), "central"],
+            capture_output=True,
+            text=True,
+            cwd=str(scanned),
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        cov = json.loads(result.stdout)["index"]
+        assert cov["root_mismatch"] is True
+        assert cov["query_complete"] is False
+        assert "different project" in cov["note"]
+        assert "differs from queried root" in result.stderr
+
+    def test_matching_root_no_mismatch(self, project, scan_query):
+        """Querying with --root equal to scan_root leaves root_mismatch false."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "--root", str(root), "central"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 0, result.stderr + result.stdout
+        cov = json.loads(result.stdout)["index"]
+        assert cov["root_mismatch"] is False
+
+    def test_index_guard_rejection_emits_json(self, tmp_path, scan_query):
+        """--index pointing outside the project root → parseable JSON error on stdout, exit 2."""
+        root = tmp_path / "guarded"
+        root.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
+        outside = tmp_path / "outside.json"
+        outside.write_text(json.dumps({"scan_version": 10, "modules": []}))
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(outside), "list"],
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+        )
+        assert result.returncode == 2, result.stderr + result.stdout
+        data = json.loads(result.stdout)
+        assert data["error"] == "index path outside project root"

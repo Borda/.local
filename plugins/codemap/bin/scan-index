@@ -2696,10 +2696,15 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             "name": name,
             "path": str(rel_path),
             "status": "degraded",
-            "error": f"file too large ({file_size} bytes) — skipped to prevent OOM",
+            "reason": f"file too large ({file_size} bytes) — skipped to prevent OOM",
         }
     try:
-        source = filepath.read_text(encoding="utf-8", errors="replace")
+        try:
+            source = filepath.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            # errors="replace" would substitute U+FFFD and index corrupted source
+            # silently; mark degraded so scan-query surfaces it in degraded_files.
+            return {"name": name, "path": str(rel_path), "status": "degraded", "reason": f"encoding: {exc}"}
         tree = ast.parse(source, filename=str(filepath))
         try:
             imports, nm, mm, star_imports = _extract_imports_and_scope(tree, name)

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """install_post_commit_hook.py — install or append the codemap incremental rebuild hook idempotently.
 
 Usage:
@@ -24,7 +24,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-HOOK_MARKER = "# codemap: incremental"
+# Sentinel lines wrapping the managed block. Reinstall replaces everything between them in place,
+# so the body can change across plugin versions without leaving a stale duplicate behind (HI-7).
+BLOCK_START = "# codemap:start — managed block, do not edit between start/end"
+BLOCK_END = "# codemap:end"
+HOOK_MARKER = "# codemap: incremental"  # legacy single-line marker — still detected for upgrade
+# Matches a full managed block (start line … end line) including the leading blank separator, so it
+# can be replaced in place on reinstall. DOTALL: the body spans multiple lines. Non-greedy up to the
+# first end sentinel so adjacent blocks are not merged.
+_BLOCK_RE = re.compile(
+    r"\n?" + re.escape(BLOCK_START) + r".*?" + re.escape(BLOCK_END) + r"\n?",
+    re.DOTALL,
+)
 MAX_HOOK_SIZE = 1_048_576  # 1 MB — refuse to read oversized hook files into memory (SEC-L4: DoS guard)
 _VALID_PLUGIN_ROOT_RE = re.compile(r"^[a-zA-Z0-9_./-]{1,1024}$")
 
@@ -32,13 +43,18 @@ _VALID_PLUGIN_ROOT_RE = re.compile(r"^[a-zA-Z0-9_./-]{1,1024}$")
 def _make_hook_body(plugin_root: str | None) -> str:
     """Return the hook body fragment, optionally with an absolute ``scan-index`` path baked in.
 
+    The fragment is wrapped in ``# codemap:start`` / ``# codemap:end`` sentinel lines so a reinstall
+    can locate and replace the managed block in place (HI-7), leaving any surrounding user hook
+    content untouched.
+
     Args:
         plugin_root: Value of ``CLAUDE_PLUGIN_ROOT`` at install time.  When provided the hook
             uses the absolute path as primary invocation and ``command -v`` as fallback.  When
             ``None`` the hook uses ``command -v`` only (works inside Claude Code sessions).
 
     Returns:
-        Multi-line shell fragment starting with a newline (suitable for appending).
+        Multi-line shell fragment starting with a newline (suitable for appending), bounded by the
+        ``# codemap:start`` / ``# codemap:end`` sentinels.
 
     Raises:
         ValueError: if ``plugin_root`` contains characters outside ``[a-zA-Z0-9_./-]`` — only
@@ -48,6 +64,8 @@ def _make_hook_body(plugin_root: str | None) -> str:
     Examples:
         >>> body = _make_hook_body(None)
         >>> "command -v scan-index" in body
+        True
+        >>> body.strip().startswith("# codemap:start") and body.strip().endswith("# codemap:end")
         True
         >>> body_abs = _make_hook_body("/some/path")
         >>> "/some/path/bin/scan-index" in body_abs
@@ -62,20 +80,18 @@ def _make_hook_body(plugin_root: str | None) -> str:
     log_path = '"${TMPDIR:-/tmp}/codemap-hook-$$.log"'
     if plugin_root:
         scan = f"{plugin_root}/bin/scan-index"
-        return (
-            "\n# codemap: incremental index rebuild — do not remove this line\n"
+        inner = (
             f'if [ -x "{scan}" ]; then\n'
             f'    "{scan}" --incremental >> {log_path} 2>&1 &\n'
             "elif command -v scan-index >/dev/null 2>&1; then\n"
             f"    scan-index --incremental >> {log_path} 2>&1 &\n"
             "fi\n"
         )
-    return (
-        "\n# codemap: incremental index rebuild — do not remove this line\n"
-        "if command -v scan-index >/dev/null 2>&1; then\n"
-        f"    scan-index --incremental >> {log_path} 2>&1 &\n"
-        "fi\n"
-    )
+    else:
+        inner = (
+            f"if command -v scan-index >/dev/null 2>&1; then\n    scan-index --incremental >> {log_path} 2>&1 &\nfi\n"
+        )
+    return f"\n{BLOCK_START}\n# codemap: incremental index rebuild — do not remove this line\n{inner}{BLOCK_END}\n"
 
 
 # Backward-compatible module-level constants (plugin_root=None form).
@@ -206,6 +222,26 @@ def hook_already_installed(hook_file: Path) -> bool:
         return False
 
 
+def _read_hook_text(hook_file: Path) -> str | None:
+    """Return the hook file text, or ``None`` when missing, oversized, or unreadable.
+
+    Args:
+        hook_file: path to the post-commit hook.
+
+    Returns:
+        File contents, or ``None`` if the file is absent, larger than ``MAX_HOOK_SIZE``
+        (SEC-L4 DoS guard), or cannot be read.
+    """
+    if not hook_file.is_file():
+        return None
+    try:
+        if hook_file.stat().st_size > MAX_HOOK_SIZE:
+            return None
+        return hook_file.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
 def shebang_warning(hook_file: Path) -> str | None:
     """Return a warning message if the existing hook's shebang is non-standard.
 
@@ -227,8 +263,62 @@ def shebang_warning(hook_file: Path) -> str | None:
     return f"⚠ post-commit hook uses unusual interpreter: {first_line} — appending anyway; verify compatibility"
 
 
+def _replace_managed_block(hook_file: Path, existing: str, hook_body: str) -> tuple[int, list[str]]:
+    """Replace the ``# codemap:start … # codemap:end`` block in ``existing`` with ``hook_body`` in place.
+
+    Rewrites ``hook_file`` with the managed block swapped for the freshly generated one, leaving all
+    surrounding user hook content intact. When the block is already byte-identical the file is left
+    untouched (no write) so a reinstall is a true no-op (HI-7).
+
+    Args:
+        hook_file: target hook path.
+        existing: current file contents (already read).
+        hook_body: freshly generated managed block (leading newline + start/end sentinels).
+
+    Returns:
+        Tuple of ``(exit_code, status_lines)``.
+    """
+    updated = _BLOCK_RE.sub(lambda _m: hook_body, existing, count=1)
+    if updated == existing:
+        return 0, [f"✓ post-commit hook: already installed ({hook_file})"]
+    try:
+        hook_file.write_text(updated, encoding="utf-8")
+    except OSError as exc:
+        return 1, [f"✗ post-commit hook: failed to update {hook_file}: {exc}"]
+    return 0, [f"✓ post-commit hook: updated managed block in {hook_file}"]
+
+
+def _append_block(hook_file: Path, hook_body: str) -> tuple[int, list[str]]:
+    """Append the managed ``hook_body`` to an existing hook, preserving prior content.
+
+    Args:
+        hook_file: target hook path (must already exist).
+        hook_body: freshly generated managed block.
+
+    Returns:
+        Tuple of ``(exit_code, status_lines)``. A shebang warning, when applicable, precedes the
+        status line.
+    """
+    lines: list[str] = []
+    warning = shebang_warning(hook_file)
+    if warning is not None:
+        lines.append(warning)
+    try:
+        with hook_file.open("a", encoding="utf-8") as fh:
+            fh.write(hook_body)
+    except OSError as exc:
+        return 1, [f"✗ post-commit hook: failed to append to {hook_file}: {exc}"]
+    lines.append(f"✓ post-commit hook: appended to {hook_file}")
+    return 0, lines
+
+
 def install_hook(hook_file: Path, plugin_root: str | None = None) -> tuple[int, list[str]]:
-    """Install, append, or no-op the codemap post-commit hook.
+    """Install, update-in-place, append, or no-op the codemap post-commit hook.
+
+    Idempotent and re-runnable: a hook already carrying the managed ``# codemap:start … end`` block
+    is replaced in place (a no-op when byte-identical, an upgrade when the body changed across plugin
+    versions); a legacy single-line-marker hook is left untouched; a hook without any marker is
+    appended to; and an absent hook is created. Surrounding user hook content is always preserved.
 
     Args:
         hook_file: target hook path.
@@ -240,28 +330,22 @@ def install_hook(hook_file: Path, plugin_root: str | None = None) -> tuple[int, 
         Tuple of ``(exit_code, status_lines)``. ``status_lines`` contains the lines to print
         (no trailing newlines).
     """
-    if hook_already_installed(hook_file):
+    hook_body = _make_hook_body(plugin_root)
+    existing = _read_hook_text(hook_file)
+
+    if existing is not None and BLOCK_START in existing:
+        return _replace_managed_block(hook_file, existing, hook_body)
+
+    # Legacy hook installed before start/end sentinels existed — leave it alone to avoid duplicating.
+    if existing is not None and HOOK_MARKER in existing:
         return 0, [f"✓ post-commit hook: already installed ({hook_file})"]
 
-    hook_body = _make_hook_body(plugin_root)
-    hook_file_new = "#!/bin/sh" + hook_body
-
-    if hook_file.exists():
-        lines: list[str] = []
-        warning = shebang_warning(hook_file)
-        if warning is not None:
-            lines.append(warning)
-        try:
-            with hook_file.open("a", encoding="utf-8") as fh:
-                fh.write(hook_body)
-        except OSError as exc:
-            return 1, [f"✗ post-commit hook: failed to append to {hook_file}: {exc}"]
-        lines.append(f"✓ post-commit hook: appended to {hook_file}")
-        return 0, lines
+    if existing is not None or hook_file.exists():
+        return _append_block(hook_file, hook_body)
 
     try:
         hook_file.parent.mkdir(parents=True, exist_ok=True)
-        hook_file.write_text(hook_file_new, encoding="utf-8")
+        hook_file.write_text("#!/bin/sh" + hook_body, encoding="utf-8")
         hook_file.chmod(0o755)
     except OSError as exc:
         return 1, [f"✗ post-commit hook: failed to create {hook_file}: {exc}"]

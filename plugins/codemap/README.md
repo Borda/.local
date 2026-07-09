@@ -609,13 +609,13 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 
 #### Common flags
 
-| Flag              | Applies to                                                                       | Effect                                                               |
-| ----------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `--exclude-tests` | `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central` | Drop test modules from results                                       |
-| `--limit N`       | `symbol`, `find-symbol`                                                          | Max results (default 20). Use `0` for unlimited                      |
-| `--with-imports`  | `symbol`                                                                         | Include module-level import block alongside each symbol's source     |
-| `--root <path>`   | all commands                                                                     | Override project root for file path resolution (see scan_root below) |
-| `--index <path>`  | all commands                                                                     | Explicit index file; bypasses auto-discovery                         |
+| Flag              | Applies to                                                                       | Effect                                                                                                                                                                                                                   |
+| ----------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--exclude-tests` | `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central` | Drop test modules from results                                                                                                                                                                                           |
+| `--limit N`       | `symbol`, `find-symbol`                                                          | Max results (default 20). Use `0` for unlimited                                                                                                                                                                          |
+| `--with-imports`  | `symbol`                                                                         | Include module-level import block alongside each symbol's source                                                                                                                                                         |
+| `--root <path>`   | all commands                                                                     | Override project root for **file-path resolution only** — does not re-scan or re-target the index. Disagreeing with the index's `scan_root` yields `root_mismatch: true` + `query_complete: false` (see scan_root below) |
+| `--index <path>`  | all commands                                                                     | Explicit index file; bypasses auto-discovery. Must resolve inside CWD or git root, else exits `{"error": "index path outside project root"}`                                                                             |
 
 #### Common patterns
 
@@ -915,6 +915,8 @@ scan-query --root path/to/project symbol MyFunction
 
 Priority chain: `--root` flag › `scan_root` in index › `git rev-parse --show-toplevel` › current directory.
 
+`--root` only changes where file paths are resolved — it never re-scans or re-targets the index. If the root you query against (`--root`, or the CWD's git root) disagrees with the index's stored `scan_root`, the index is describing a *different* project: `scan-query` sets `root_mismatch: true` in the coverage block, forces `query_complete: false`, and prints a warning to stderr. Re-scan the current root, or point `--root` at the tree the index was built for.
+
 ### Keeping the index current
 
 **Primary mechanism — skill-invocation currency gates**: every `/develop:*` or `/oss:*` skill run calls `check-index-currency` before spawning any agent. This two-tier check compares the stored `git_sha` against HEAD (Tier 1, git repos) or verifies per-file content hashes from the stored `file_shas` map (Tier 2, non-git or after pull/branch switch). If stale:
@@ -928,13 +930,15 @@ This catches all staleness paths the post-commit hook misses: `git pull`, branch
 
 ```bash
 # .git/hooks/post-commit (installed by /codemap:integration init)
+# codemap:start — managed block, do not edit between start/end
 # codemap: incremental index rebuild — do not remove this line
 if command -v scan-index >/dev/null 2>&1; then
     scan-index --incremental 2>/dev/null &
 fi
+# codemap:end
 ```
 
-The rebuild runs in the background — commit completes immediately, index updates silently within seconds. The hook is a convenience shortcut; skill-invocation gates are the authoritative safety net.
+The rebuild runs in the background — commit completes immediately, index updates silently within seconds. The managed block is bounded by `# codemap:start`/`# codemap:end` sentinels: reinstalling replaces it in place (upgrading the body across plugin versions) while preserving any surrounding user hook content, so re-running the installer is idempotent. The hook is a convenience shortcut; skill-invocation gates are the authoritative safety net.
 
 ______________________________________________________________________
 

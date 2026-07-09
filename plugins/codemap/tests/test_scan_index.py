@@ -44,6 +44,7 @@ _load_exclusions = _scan_index_mod._load_exclusions
 _iter_python_files = _scan_index_mod._iter_python_files
 _dedup_modules = _scan_index_mod._dedup_modules
 _dedup_key = _scan_index_mod._dedup_key
+_parse_file = _scan_index_mod._parse_file
 
 
 def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):
@@ -365,3 +366,103 @@ class TestScanExclusionMeta:
 
         assert len(winners) == 1
         assert set(collision["dropped"]) | {collision["kept"]} == {"pkg/mod.py", "wt/pkg/mod.py"}
+
+
+class TestEncodingDegradation:
+    """A file whose bytes are not valid UTF-8 must be marked degraded, not silently indexed."""
+
+    def test_invalid_utf8_parse_file_returns_encoding_degraded(self, tmp_path: Path):
+        """_parse_file returns a degraded entry with an 'encoding' reason for non-UTF-8 bytes."""
+        bad = tmp_path / "bad.py"
+        bad.write_bytes(b"x = '\xff\xfe not utf8'\n")
+
+        entry = _parse_file(bad, tmp_path, tmp_path)
+
+        assert entry["status"] == "degraded"
+        assert entry["reason"].startswith("encoding:")
+        assert "symbols" not in entry  # corrupted source never parsed into symbols
+
+    def test_invalid_utf8_not_silently_indexed(self, tmp_path: Path, scan_index):
+        """End-to-end: an invalid-UTF-8 module lands as degraded in the index, not status ok."""
+        (tmp_path / "good.py").write_text("y = 1\n")
+        (tmp_path / "bad.py").write_bytes(b"x = '\xff\xfe'\n")
+
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, result.stderr
+
+        index = json.loads((tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json").read_text())
+        bad = next(m for m in index["modules"] if m["path"] == "bad.py")
+        assert bad["status"] == "degraded"
+        assert bad["reason"].startswith("encoding:")
+
+
+class TestFileTooLargeDegradation:
+    """An oversized file is marked degraded with a 'reason' key so the print loop never KeyErrors."""
+
+    def test_too_large_uses_reason_key(self, tmp_path: Path, monkeypatch):
+        """_parse_file over the size cap returns a degraded entry keyed on 'reason', not 'error'."""
+        monkeypatch.setattr(_scan_index_mod, "_MAX_FILE_SIZE_BYTES", 8)
+        big = tmp_path / "big.py"
+        big.write_text("x = 1234567890\n")  # >8 bytes on disk
+
+        entry = _parse_file(big, tmp_path, tmp_path)
+
+        assert entry["status"] == "degraded"
+        assert "error" not in entry  # contract unified on 'reason'
+        assert entry["reason"].startswith("file too large")
+
+    def test_all_degraded_reasons_printable(self, tmp_path: Path, monkeypatch):
+        """Every degraded branch of _parse_file exposes 'reason' — the key the print loop reads."""
+        monkeypatch.setattr(_scan_index_mod, "_MAX_FILE_SIZE_BYTES", 8)
+        too_large = tmp_path / "big.py"
+        too_large.write_text("x = 1234567890\n")
+        bad_utf8 = tmp_path / "bad.py"
+        bad_utf8.write_bytes(b"x = '\xff\xfe'\n")
+        bad_syntax = tmp_path / "broken.py"
+        bad_syntax.write_text("def (:\n")
+
+        entries = [_parse_file(p, tmp_path, tmp_path) for p in (too_large, bad_utf8, bad_syntax)]
+
+        assert all(e["status"] == "degraded" for e in entries)
+        assert all("reason" in e for e in entries)  # print loop does m['reason'] — must never KeyError
+
+
+class TestAtomicIndexWrite:
+    """Index write goes through a temp file so a kill mid-write leaves the prior index readable."""
+
+    def test_no_stale_tmp_and_index_valid_after_write(self, tmp_path: Path, scan_index):
+        """A completed run leaves a parseable index and no leftover .json.tmp sidecar."""
+        (tmp_path / "gamma.py").write_text("g = 1\n")
+
+        result = subprocess.run(
+            [sys.executable, str(scan_index), "--root", str(tmp_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+        )
+        assert result.returncode == 0, result.stderr
+
+        cache_dir = tmp_path / ".cache" / "codemap"
+        index_path = cache_dir / f"{tmp_path.name}.json"
+        json.loads(index_path.read_text())  # final index is complete/parseable
+        assert not (cache_dir / f"{tmp_path.name}.json.tmp").exists()  # os.replace consumed the tmp
+
+    def test_rerun_preserves_readable_index(self, tmp_path: Path, scan_index):
+        """Re-running over an existing index yields a still-parseable index (replace is atomic)."""
+        (tmp_path / "gamma.py").write_text("g = 1\n")
+        for _ in range(2):
+            result = subprocess.run(
+                [sys.executable, str(scan_index), "--root", str(tmp_path)],
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_path),
+            )
+            assert result.returncode == 0, result.stderr
+
+        index = json.loads((tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json").read_text())
+        assert any(m["name"] == "gamma" for m in index["modules"])

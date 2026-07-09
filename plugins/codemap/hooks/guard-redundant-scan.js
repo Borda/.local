@@ -61,7 +61,29 @@ function main() {
     process.exit(0); // no sentinel = nothing answered exhaustively yet → allow
   }
 
-  const hit = modules.find((mod) => cmd.includes(mod));
+  // Exact word-boundary match, not substring: a plain cmd.includes(mod) falsely
+  // denies near-miss greps — sentinel "mypackage.auth" would block a grep for
+  // "mypackage.auth2", "notmypackage.auth", or "mypackage.authx". A false deny
+  // blocks the exact grep that would find a genuinely missing edge — worse than a
+  // missed deny. Build a regex per module: escape metachars (dots!), accept "." or
+  // "/" as the segment separator (sentinel may store either form), and require the
+  // match to not be flanked by an identifier char [A-Za-z0-9_] on either side.
+  const matchesModule = (mod) => {
+    // Escape every regex metachar first, then relax the separators: a "." or "/"
+    // in the module name becomes the class [./] so both dotted and slashed forms
+    // match. Escaping runs before substitution so the injected "[./]" is not itself
+    // re-escaped. Split on the raw separators to avoid escaping them as literals.
+    const escaped = mod
+      .split(/[./]/)
+      .map((seg) => seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("[./]");
+    try {
+      return new RegExp(`(^|[^A-Za-z0-9_])${escaped}([^A-Za-z0-9_]|$)`).test(cmd);
+    } catch {
+      return false; // malformed pattern → fail open (no deny)
+    }
+  };
+  const hit = modules.find(matchesModule);
   if (hit) {
     deny(
       `codemap already returned the EXHAUSTIVE caller set for ${hit.replace(/\//g, ".")} this session. ` +

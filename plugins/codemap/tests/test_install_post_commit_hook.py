@@ -218,6 +218,71 @@ class TestInstallHookWithPluginRoot:
 
 
 # ---------------------------------------------------------------------------
+# managed-block replace-in-place (HI-7)
+# ---------------------------------------------------------------------------
+
+
+class TestManagedBlockReplaceInPlace:
+    """Cover start/end sentinel wrapping, byte-identical re-run, upgrade, and content preservation."""
+
+    def test_created_hook_wraps_body_in_start_end_sentinels(self, tmp_path: Path):
+        """A freshly created hook carries the ``# codemap:start``/``# codemap:end`` sentinels."""
+        hook = tmp_path / "hooks" / "post-commit"
+        iph.install_hook(hook)
+        content = hook.read_text(encoding="utf-8")
+        assert iph.BLOCK_START in content
+        assert iph.BLOCK_END in content
+
+    def test_double_run_is_byte_identical(self, tmp_path: Path):
+        """Reinstalling over a managed block reproduces a byte-identical file (idempotent)."""
+        hook = tmp_path / "post-commit"
+        iph.install_hook(hook, plugin_root="/abs/root")
+        after_first = hook.read_text(encoding="utf-8")
+        exit_code, lines = iph.install_hook(hook, plugin_root="/abs/root")
+        assert exit_code == 0
+        assert hook.read_text(encoding="utf-8") == after_first
+        assert any("already installed" in line for line in lines)
+
+    def test_reinstall_replaces_block_in_place_on_body_change(self, tmp_path: Path):
+        """A body change across versions replaces the managed block without stacking duplicates."""
+        hook = tmp_path / "post-commit"
+        iph.install_hook(hook, plugin_root="/old/root")
+        exit_code, lines = iph.install_hook(hook, plugin_root="/new/root")
+        content = hook.read_text(encoding="utf-8")
+        assert exit_code == 0
+        assert "/new/root/bin/scan-index" in content
+        assert "/old/root/bin/scan-index" not in content  # old block replaced, not duplicated
+        assert content.count(iph.BLOCK_START) == 1  # exactly one managed block
+        assert any("updated managed block" in line for line in lines)
+
+    def test_preexisting_user_content_preserved_across_reinstall(self, tmp_path: Path):
+        """User hook lines before and after the managed block survive a replace-in-place reinstall."""
+        hook = tmp_path / "post-commit"
+        hook.write_text("#!/bin/sh\necho user-prefix\n", encoding="utf-8")
+        iph.install_hook(hook, plugin_root="/root/one")
+        # Append trailing user content after the managed block, then reinstall.
+        with hook.open("a", encoding="utf-8") as fh:
+            fh.write("echo user-suffix\n")
+        iph.install_hook(hook, plugin_root="/root/two")
+        content = hook.read_text(encoding="utf-8")
+        assert "echo user-prefix" in content
+        assert "echo user-suffix" in content
+        assert "/root/two/bin/scan-index" in content
+        assert content.count(iph.BLOCK_START) == 1
+
+
+# ---------------------------------------------------------------------------
+# shebang
+# ---------------------------------------------------------------------------
+
+
+def test_module_shebang_is_python3():
+    """The install script shebang pins ``python3`` (HI-7), not the ambiguous ``python``."""
+    source = Path(iph.__file__).read_text(encoding="utf-8")
+    assert source.splitlines()[0] == "#!/usr/bin/env python3"
+
+
+# ---------------------------------------------------------------------------
 # main (CLI)
 # ---------------------------------------------------------------------------
 

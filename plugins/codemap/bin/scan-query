@@ -638,6 +638,13 @@ _coverage_cache: dict | None = None
 _symbol_map_cache: dict | None = None
 _rev_graph_cache: dict | None = None
 
+# CR-4: set once in main() before any command runs. True when the index's stored
+# scan_root does not match where this query is being resolved against (a mismatched
+# --root, or a CWD outside the scanned tree). A root-mismatched index answers about a
+# DIFFERENT project, so its graph can never be a complete answer here — this flag both
+# surfaces in every coverage block and forces query_complete=false in _query_complete.
+_root_mismatch: bool = False
+
 
 def _get_symbol_map(index: dict, exclude_tests: bool = False) -> dict:
     global _symbol_map_cache
@@ -672,14 +679,65 @@ def _get_rev_import_graph(index: dict) -> dict[str, list[str]]:
     return _rev_import_graph_cache
 
 
+# Exit-code contract (CR-5 / ME-1): every error exit prints a parseable JSON object
+# to stdout — never a bare non-zero exit with empty stdout. Codes let a caller branch
+# on failure class without string-matching the message.
+_EXIT_GENERIC = 1  # generic failure (missing symbol, invalid index, feature gate)
+_EXIT_BAD_INPUT = 2  # caller-supplied argument is malformed or rejected (bad regex, ReDoS, guard)
+_EXIT_NOT_INDEXED = 3  # queried module is absent from the index (distinct from "no results")
+
+
+def _die_json(payload: dict, exit_code: int = _EXIT_GENERIC) -> None:
+    """Print a JSON error object to stdout and exit with *exit_code*.
+
+    Single choke point for every error exit so all failures share one shape
+    (parseable JSON on stdout, never empty) and a stable exit-code contract.
+    Routing through :func:`_print` keeps the cli.jsonl telemetry record.
+
+    Args:
+        payload: JSON-serialisable error object; ``error`` key is conventional.
+        exit_code: process exit status (see the ``_EXIT_*`` constants).
+
+    Examples:
+        >>> import subprocess, sys
+        >>> # _die_json({"error": "boom"}, 2) prints '{"error": "boom"}' then exits 2.
+    """
+    _print(json.dumps(payload))
+    sys.exit(exit_code)
+
+
 def _exit_error(message: str) -> None:
-    """Print a JSON error object to stdout and exit with code 1.
+    """Print a ``{"error": message}`` object to stdout and exit with code 1.
+
+    Backward-compatible wrapper over :func:`_die_json` preserving the historic
+    shape and exit code for the many callers that only need a plain message.
 
     Args:
         message: human-readable error description.
     """
-    _print(json.dumps({"error": message}))
-    sys.exit(1)
+    _die_json({"error": message}, _EXIT_GENERIC)
+
+
+def _die_module_not_indexed(index: dict, module: str) -> None:
+    """Exit 3 with a structured "module not indexed" error plus close suggestions.
+
+    Replaces the historic ``Module 'X' not in index.`` message (ME-1 / CR-5): a
+    caller can now distinguish "this module is absent from the index" from "this
+    module exists but has no results", and gets up to three closest indexed module
+    names (difflib) to recover from a typo without a second round-trip.
+
+    Args:
+        index: parsed codemap index dict (source of the candidate module names).
+        module: the dotted module name that was not found in the index.
+    """
+    import difflib
+
+    known = [m["name"] for m in index.get("modules", []) if "name" in m]
+    suggestions = difflib.get_close_matches(module, known, n=3, cutoff=0.6)
+    _die_json(
+        {"error": "module not indexed", "module": module, "suggestions": suggestions},
+        _EXIT_NOT_INDEXED,
+    )
 
 
 def _require_call_graph(index: dict) -> None:
@@ -811,6 +869,7 @@ def _coverage(index: dict) -> dict:
         "stale": stale,
         "untracked_py": untracked,
         "collision_count": len(collisions),
+        "root_mismatch": _root_mismatch,
         # Internal: consumed by _query_complete for the local-collision check; not emitted.
         "_collision_names": collision_names,
     }
@@ -864,6 +923,11 @@ def _query_complete(
         ``(complete, reason)`` where ``reason`` is a short slug naming the veto
         source (``"ok"`` when complete) so the caller can emit a consistent note.
     """
+    # CR-4: a root-mismatched index describes a DIFFERENT project — no direction
+    # (not even a local module read) can be a complete answer here. Vetoes first,
+    # ahead of staleness, since the whole graph is off-target.
+    if base.get("root_mismatch"):
+        return False, "root_mismatch"
     # Staleness poisons every direction: even a local module's own entry may be stale.
     if base["stale"]:
         return False, "stale"
@@ -917,6 +981,9 @@ def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
         "diff — they may hide an edge; git add them and re-scan, or verify with grep.",
         "collision": f"{base['collision_count']} qualname collision(s) in the index dropped a module — "
         "it may hide an edge; verify with grep.",
+        "root_mismatch": "the index was built for a different project root than the one queried "
+        "(--root or CWD differs from the index's scan_root) — this result describes another tree. "
+        "Re-scan the current root, or query with a matching --root.",
     }.get(reason, "a structural blind spot may hide an edge; verify with grep.")
     return prefix + detail
 
@@ -978,7 +1045,7 @@ def cmd_deps(
     modules = build_module_map(index)
     entry = modules.get(module)
     if entry is None:
-        _exit_error(f"Module '{module}' not in index.")
+        _die_module_not_indexed(index, module)
     direct = entry.get("direct_imports", [])
     if stdlib_only or third_party_only or internal_only:
         _require_feature(index, IMPORT_GROUPS_MIN_VER, "import_groups")
@@ -1023,7 +1090,7 @@ def cmd_import_types(index: dict, module: str) -> None:
     modules = build_module_map(index)
     entry = modules.get(module)
     if entry is None:
-        _exit_error(f"Module '{module}' not in index.")
+        _die_module_not_indexed(index, module)
     groups = entry.get("import_groups", {"stdlib": [], "third_party": [], "internal": []})
     _print(
         json.dumps(
@@ -1061,6 +1128,13 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: str
     entry = module_map.get(module, {})
     dynamic = entry.get("dynamic_imported_by", [])
     config = entry.get("config_refs", [])
+    # CR-5: a module absent from the index AND imported by nothing is "not indexed",
+    # not "no reverse deps" — error with suggestions instead of a misleading empty
+    # ``imported_by: []``. An indexed leaf with zero importers legitimately keeps the
+    # empty list (it IS in module_map); an external dep someone imports is kept too
+    # (it shows up in result/dynamic/config even though it has no own module entry).
+    if module not in module_map and not (result or dynamic or config):
+        _die_module_not_indexed(index, module)
     _print(
         json.dumps(
             {
@@ -1152,10 +1226,11 @@ def cmd_coupled(index: dict, top: int, exclude_tests: bool = False, entity: str 
 def cmd_path(index: dict, frm: str, to: str) -> None:
     """Print the shortest import path between two modules via BFS.
 
-    Both endpoints exist in the index (unknown modules exit non-zero via
-    :func:`_exit_error`). When no import path connects them, this exits ``0``
-    with ``"path": null`` and ``"reason": "no-import-path"`` — a legitimate empty
-    result, distinct from the non-zero ``"error"`` contract used for failures.
+    Both endpoints exist in the index (unknown modules exit ``3`` via
+    :func:`_die_module_not_indexed`). When no import path connects them, this
+    exits ``0`` with ``"path": null`` and ``"reason": "no-import-path"`` — a
+    legitimate empty result, distinct from the ``"error"`` contract used for
+    failures.
 
     Args:
         index: parsed codemap index dict.
@@ -1164,9 +1239,9 @@ def cmd_path(index: dict, frm: str, to: str) -> None:
     """
     modules = build_module_map(index)
     if frm not in modules:
-        _exit_error(f"Module '{frm}' not in index.")
+        _die_module_not_indexed(index, frm)
     if to not in modules:
-        _exit_error(f"Module '{to}' not in index.")
+        _die_module_not_indexed(index, to)
 
     queue: deque[list[str]] = deque([[frm]])
     visited: set[str] = {frm}
@@ -1275,6 +1350,42 @@ def _resolve_project_root(explicit_root: Path | None, index: dict) -> Path:
     if stored:
         return Path(stored)
     return _get_git_root_cached() or Path.cwd()
+
+
+def _detect_root_mismatch(explicit_root: Path | None, index: dict) -> bool:
+    """Return True when the query is being resolved against a different tree than the index.
+
+    CR-4: ``_resolve_project_root`` prefers the index's own ``scan_root`` when no
+    ``--root`` is given, so it can never surface a mismatch on its own. This compares
+    the index's stored ``scan_root`` against where the caller actually is — ``--root``
+    if supplied, otherwise the git root of the CWD (fallback: CWD) — and reports when
+    they diverge. An index with no ``scan_root`` (older builds) never mismatches.
+
+    Args:
+        explicit_root: the ``--root`` value if the caller passed one, else None.
+        index: parsed codemap index dict (source of the stored ``scan_root``).
+    """
+    stored = index.get("scan_root")
+    if not stored:
+        return False
+    stored_root = Path(stored).resolve()
+    queried = (
+        explicit_root.resolve() if explicit_root is not None else (_get_git_root_cached() or Path.cwd())
+    ).resolve()
+    return stored_root != queried
+
+
+# ME-1: coarse classification of a stale symbol coordinate. The fine-grained
+# ``stale_reason`` is kept for diagnostics; ``stale_category`` gives agents the one
+# bit that changes their next action — the symbol is GONE (``symbol_deleted``: its
+# file or definition no longer exists → stop looking) versus MOVED (``coords_stale``:
+# it still exists but the indexed line range is wrong → re-scan / Read the file).
+_STALE_CATEGORY = {
+    "no path": "symbol_deleted",
+    "file deleted": "symbol_deleted",
+    "line range past EOF": "coords_stale",
+    "symbol name not in slice header": "coords_stale",
+}
 
 
 def cmd_symbol(
@@ -1394,6 +1505,7 @@ def cmd_symbol(
                     "source": source,
                     "stale": stale,
                     "stale_reason": stale_reason,
+                    "stale_category": _STALE_CATEGORY.get(stale_reason) if stale_reason else None,
                     "imports": import_block,
                 }
             )
@@ -1424,7 +1536,7 @@ def cmd_symbols(index: dict, module: str) -> None:
     modules = build_module_map(index)
     entry = modules.get(module)
     if entry is None:
-        _exit_error(f"Module '{module}' not in index.")
+        _die_module_not_indexed(index, module)
     syms: list[Symbol] = entry.get("symbols", [])
     _print(
         json.dumps(
@@ -1502,17 +1614,22 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
         limit: max results to return (0 = unlimited).
     """
     # ReDoS guard — nested/adjacent and alternation quantifiers (e.g. `(a+)+`, `(.*){2,}`,
-    # `(a|aa)+`) can cause catastrophic backtracking.
+    # `(a|aa)+`) can cause catastrophic backtracking. ME-7: a bare stderr `return` left
+    # stdout empty and exited 0, breaking JSON consumers — emit a parseable error object
+    # and a non-zero exit so a rejection is unmistakable both to humans and to callers.
     if _is_dangerous_regex(pattern):
         _print(
             f"find-symbol: pattern '{pattern}' may cause ReDoS — use a simpler pattern",
             file=sys.stderr,
         )
-        return
+        _die_json(
+            {"error": "pattern rejected", "reason": "redos", "pattern": pattern},
+            _EXIT_BAD_INPUT,
+        )
     try:
         rx = re.compile(pattern, re.IGNORECASE)
     except re.error as exc:
-        _exit_error(f"Invalid regex '{pattern}': {exc}")
+        _die_json({"error": "invalid regex", "pattern": pattern, "detail": str(exc)}, _EXIT_BAD_INPUT)
 
     results = []
     for m in index.get("modules", []):
@@ -1965,7 +2082,7 @@ def cmd_subprocess_deps(index: dict, module: str) -> None:
     modules = build_module_map(index)
     entry = modules.get(module)
     if entry is None:
-        _exit_error(f"Module '{module}' not in index.")
+        _die_module_not_indexed(index, module)
     calls = entry.get("subprocess_calls", []) or []
     _print(
         json.dumps(
@@ -2473,7 +2590,7 @@ def cmd_coverage(index: dict, qname: str) -> None:
     module_name, symbol_name = _split_coverage_qname(qname)
     module = _find_module(index, module_name)
     if module is None:
-        _exit_error(f"Module '{module_name}' not in index.")
+        _die_module_not_indexed(index, module_name)
     if symbol_name is None:
         rows: list[dict] = []
         for sym in module.get("symbols", []):
@@ -3199,7 +3316,9 @@ def main() -> None:
         type=Path,
         default=None,
         metavar="PATH",
-        help="Override project root for file path resolution (highest priority; supersedes scan_root in index and git root).",
+        help="Override project root for FILE-PATH RESOLUTION ONLY (does not re-scan or re-target the index; "
+        "highest priority, supersedes scan_root and git root). Disagreeing with the index's scan_root flags "
+        "root_mismatch and forces query_complete=false.",
     )
     parser.add_argument(
         "--timeout",
@@ -3244,8 +3363,10 @@ def main() -> None:
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             git_root = cwd
         if not (resolved.is_relative_to(cwd) or resolved.is_relative_to(git_root)):
+            # CR-4: emit a parseable JSON error (not just a bare stderr + exit) so a
+            # caller sees the guard rejection in the same channel as every other failure.
             _print(f"scan-query: --index path outside project root: {resolved}", file=sys.stderr)
-            sys.exit(2)
+            _die_json({"error": "index path outside project root", "path": str(resolved)}, _EXIT_BAD_INPUT)
         index_path = resolved
     else:
         index_path = find_index()
@@ -3256,6 +3377,19 @@ def main() -> None:
         index = maybe_self_heal(index, index_path, _resolve_project_root(args.root, index))
     warn_if_stale(index)
     project_root = _resolve_project_root(args.root, index)
+
+    # CR-4: flag a query resolved against a different tree than the index was built for.
+    # Set before any command runs so _coverage picks it up; also warn on stderr so a
+    # human sees it even if they ignore the coverage block. query_complete is forced
+    # false downstream in _query_complete.
+    global _root_mismatch  # noqa: PLW0603
+    _root_mismatch = _detect_root_mismatch(args.root, index)
+    if _root_mismatch:
+        _print(
+            f"⚠ codemap: index scan_root ({index.get('scan_root')}) differs from queried root "
+            f"({project_root}) — result describes a different project; re-scan or pass a matching --root.",
+            file=sys.stderr,
+        )
 
     if args.command == "deps":
         cmd_deps(
