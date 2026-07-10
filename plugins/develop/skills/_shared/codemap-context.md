@@ -1,76 +1,35 @@
 <!-- file: codemap-context.md — consumers: plugins/develop/skills/{plan,fix,feature,refactor,review}/SKILL.md, plugins/oss/skills/review/SKILL.md -->
 
-**Structural context (codemap)** — run only when caller sets `CODEMAP_ENABLED=true`; skip if flag absent.
+**Structural context (codemap)** — run only when caller sets `CODEMAP_ENABLED=true`; skip if flag absent. Callers may pre-set `TARGET_MODULE` (dotted) and `TARGET_FN` (bare function name) before reading this file; both empty → only the global `central` baseline runs.
 
-Callers may pre-set `TARGET_MODULE` (dotted) and `TARGET_FN` (bare function name) before reading this file. Both empty → only the global `central` baseline runs.
+**Wrapper** — the query mechanics, batch pre-flight bash, evidence-line contract, completeness/staleness semantics, coverage-metadata rules, targeted-edit pattern, and effort tiers live in the codemap-shipped contract. Resolve and read it:
 
 ```bash
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-_IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}"
-if command -v scan-query >/dev/null 2>&1 && [ -f "${_IDX}/${PROJ}.json" ]; then
-    scan-index --incremental 2>/dev/null || true   # refresh SHA-changed files only; never full-build mid-task
-    _CM_N=0 _CM_H=0 _CM_STALE=0 _CM_NONEXH=0
-    _cq() {
-        local out; _CM_N=$((_CM_N+1))
-        out=$(scan-query --timeout 5 "$@" 2>/dev/null)
-        case "$out" in
-            *'"error"'*|'') ;;
-            *) _CM_H=$((_CM_H+1)); printf '%s\n' "$out"
-               case "$out" in *'"stale":true'*|*'"stale": true'*) _CM_STALE=1;; esac
-               # query_complete is the forward field (direction-scoped); exhaustive is its legacy alias for one cycle.
-               case "$out" in *'"query_complete":false'*|*'"query_complete": false'*|*'"exhaustive":false'*|*'"exhaustive": false'*) _CM_NONEXH=1;; esac ;;
-        esac
-    }
-    _cq central --top 5
-    [ -n "$TARGET_FN" ]     && _cq fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests  # direct callers — benchmarked 94k vs 1M+ tokens, +40pp accuracy
-    [ -n "$TARGET_FN" ]     && _cq fn-blast "${TARGET_MODULE}::${TARGET_FN}"  # transitive callers — depth > 1
-    [ -n "$TARGET_MODULE" ] && _cq uncovered --top 20 "$TARGET_MODULE"
-    [ -n "$TARGET_FN" ]     && _cq mock-rdeps "${TARGET_MODULE}::${TARGET_FN}"
-    [ -n "$TARGET_MODULE" ] && _cq undocumented "$TARGET_MODULE"
-    [ -n "$TARGET_FN" ]     && _cq symbol --with-imports "$TARGET_FN"
-    _IDX_MTIME=$(date -r "${_IDX}/${PROJ}.json" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo "?")
-    if [ "$_CM_STALE" -eq 1 ]; then _CM_COMPL="stale"
-    elif [ "$_CM_NONEXH" -eq 1 ]; then _CM_COMPL="partial"
-    elif [ "$_CM_H" -eq 0 ]; then _CM_COMPL="unknown"
-    else _CM_COMPL="exhaustive"
-    fi
-    echo "codemap_evidence: queries_run=${_CM_N} hits=${_CM_H} completeness=${_CM_COMPL} index_mtime=${_IDX_MTIME}"
-fi
+_CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/_shared 2>/dev/null | head -1)"
+[ -z "$_CM_SHARED" ] && _CM_SHARED="plugins/codemap/skills/_shared"
+[ -f "$_CM_SHARED/codemap-context.md" ] && echo "$_CM_SHARED/codemap-context.md" || echo "codemap contract absent — use fallback below"
 ```
 
-> Query map (per agent dimension):
-> - `central --top 5` — global blast-radius baseline (sw-engineer, architect)
-> - `fn-rdeps --exclude-tests` — direct callers; benchmarked (94k vs 1M+ tokens, +40pp accuracy); run first (sw-engineer)
-> - `fn-blast` — transitive caller impact when depth > 1 needed (sw-engineer)
-> - `uncovered --top 20` — test gaps (qa-specialist)
-> - `mock-rdeps` — test mock coverage; prevents false "untested" on mocked symbols (qa-specialist)
-> - `undocumented` — docstring gaps (doc-scribe)
-> - `symbol --with-imports` — contract reading without re-reading the file (all agents)
->
-> Targeted edit (known symbol, file >~300 lines): `symbol <mod::name>` → take line span → `Read(offset=span_start−10, limit=span_len+20)` → Edit. Slice Read suffices — Edit needs only a slice containing the target, not the whole file. Spans come from the index; file changed since scan → spans may drift (self-heal usually covers it). Edit errors "Found N matches" (`old_string` not file-wide unique) or no-match (drifted) → full `Read`, then Edit with a larger unique `old_string`.
+Read `$_CM_SHARED/codemap-context.md` (contract `v2`) — follow §Batch pre-flight pattern (run it with `TARGET_MODULE`/`TARGET_FN`), §Evidence-line contract, §Coverage metadata, §Targeted-edit pattern, §Effort-tier guidance.
 
-Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap_evidence:` line at end of block reports retrieval reliability — agents may skip re-querying only when `completeness=exhaustive`. `scan-query` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap: scan-query unavailable or index missing — context reduced to central --top 5" `), then proceed.
+**Fallback when the codemap plugin is absent** (`$_CM_SHARED/codemap-context.md` missing): run only the baseline `scan-query --timeout 5 central --top 5 2>/dev/null` plus, when a target is known, `scan-query --timeout 5 fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests 2>/dev/null`; treat any non-empty output as usable, skip the evidence-line/completeness logic, and proceed with file reads for the rest. Never break the load.
 
-**Coverage metadata in output** — each `scan-query` result includes an `index` block with per-command coverage fields:
-- `index.method` — analysis technique used (`static-ast`, `import-graph`, `index-lookup`, `ast-flags`)
-- `index.not_covered` — what the method structurally misses (list); when non-empty, surface as a scope caveat in the response; do NOT run grep to fill the gap — gaps are structurally unresolvable by static analysis
-- `index.hint` — actionable alternative if user needs deeper coverage (e.g. grep pattern for hook-registered callers)
-- `index.confidence: "exact"` — result is authoritative; omit verification caveats
+## Per-agent query map (develop dimension)
 
-**Codemap = primary codebase navigation tool.** Do NOT grep/bash to re-verify what codemap already returned. When `not_covered` non-empty: (1) include one-line caveat in response — "Note: callers via [not_covered items] not included — structurally invisible to static AST"; (2) log gap:
-```bash
-mkdir -p .cache/codemap
-printf '{"ts":"%s","cmd":"%s","target":"%s","not_covered":%s,"hint":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "<subcommand>" "<target>" '<not_covered_json>' "<hint_or_empty>" \
-    >> .cache/codemap/gaps.jsonl 2>/dev/null || true
-```
-(3) Continue achieving goal — do NOT abandon task because of structural gap.
+Extends the contract core map with develop's dimension queries:
+- `central --top 5` — global blast-radius baseline (sw-engineer, architect)
+- `fn-rdeps --exclude-tests` — direct callers; benchmarked (94k vs 1M+ tokens, +40pp accuracy); run first (sw-engineer)
+- `fn-blast` — transitive caller impact when depth > 1 needed (sw-engineer)
+- `uncovered --top 20` — test gaps (qa-specialist)
+- `mock-rdeps` — test mock coverage; prevents false "untested" on mocked symbols (qa-specialist)
+- `undocumented` — docstring gaps (doc-scribe)
+- `symbol --with-imports` — contract reading without re-reading the file (all agents)
 
-When `method=index-lookup` + `confidence=exact`: result authoritative, skip verification caveats.
+Results returned: prepend `## Structural Context (codemap)` block to the foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap_evidence:` line at the end reports retrieval reliability — agents may skip re-querying only when `completeness=exhaustive`. `scan-query` not found or index missing: emit a ⚠ warning to stderr (` >&2 echo "⚠ codemap: scan-query unavailable or index missing — context reduced to central --top 5" `), then proceed.
 
-## Extended scan — multi-file / API changes
+## Extended scan — multi-file / API changes (develop batch producer)
 
-When task touches multiple modules or changes public API surface, run per-affected-module reverse-dependency scan:
+Contract §Extended scan defines the risk tiers (`>=5` HIGH, `1–4` MODERATE, `0` LOW). Develop's batch producer:
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_scan.py" --source=diff  # timeout: 15000
@@ -78,11 +37,6 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_scan.py" --source=dif
 
 > Interpret: any `rdeps` output = external callers affected; `coupled` output = co-change pairs.
 > Fallback (specific known module): `scan-query rdeps <mod> --top 10 2>/dev/null || true`.
->
-> Risk tier based on rdep_count:
-> - `>= 5` → HIGH blast radius — flag before proceeding
-> - `1–4` → MODERATE — note in plan/report
-> - `0` → LOW — proceed normally
 
 ## Review-pipeline injection (oss:review, develop:review)
 

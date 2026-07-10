@@ -13,8 +13,9 @@ from here so ``inject``, ``check``, the integration SKILL, and the README never 
     * :data:`BLOCK` — the full markdown block, version-stamped, running real queries and emitting a
       ``codemap_evidence:`` line, with one reference line pointing at the shared context contract.
 
-The block is a *loader* from day one: short inline queries plus a reference to
-``skills/_shared/codemap-context.md`` for the full query map, which later contract work enriches.
+The block is a *loader*: short inline queries plus a reference to
+``skills/_shared/codemap-context.md``, the plugin-agnostic context contract carrying the full query
+map, evidence-line contract, completeness semantics, batch pre-flight, and effort tiers.
 """
 
 from __future__ import annotations

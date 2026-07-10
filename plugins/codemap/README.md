@@ -439,14 +439,14 @@ End-to-end validation for a repo. Runs plumbing check, builds index if missing, 
 
 **Flags** (all optional):
 
-| Flag                 | Effect                                                                   |
-| -------------------- | ------------------------------------------------------------------------ |
-| `--repo <path\|url>` | Target repo — local path or git URL; URL triggers clone gate             |
-| `--public`           | Force clone gate even if current repo has `.py` files                    |
-| `--anonymize`        | Forward `--anonymize` to `debrief-coding` in the final report            |
+| Flag                   | Effect                                                                                                         |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `--repo <path\|url>`   | Target repo — local path or git URL; URL triggers clone gate                                                   |
+| `--public`             | Force clone gate even if current repo has `.py` files                                                          |
+| `--anonymize`          | Forward `--anonymize` to `debrief-coding` in the final report                                                  |
 | `--probe-skill <name>` | Probe a specific user skill (priority: this arg > develop/oss list > synthetic); report states which probe ran |
-| `--keep-clone`       | Skip cleanup prompt after demo on a cloned repo                          |
-| `--output <path>`    | Override report output path (default: `.reports/codemap/demo-<date>.md`) |
+| `--keep-clone`         | Skip cleanup prompt after demo on a cloned repo                                                                |
+| `--output <path>`      | Override report output path (default: `.reports/codemap/demo-<date>.md`)                                       |
 
 ```text
 # Validate current repo
