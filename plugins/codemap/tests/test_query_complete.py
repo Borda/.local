@@ -77,7 +77,7 @@ class TestDirectionScopedCompleteness:
         root, index_path = degraded_project
         data = _query(scan_query, root, index_path, "deps", "consumer")
         assert data["index"]["degraded"] == 1
-        assert any("broken.py" in p for p in data["index"]["degraded_files"])
+        assert any("broken.py" in entry["path"] for entry in data["index"]["degraded_files"])
 
     def test_local_deps_on_healthy_module_complete(self, degraded_project, scan_query):
         """Local `deps` on a cleanly-parsed module is complete despite a degraded file elsewhere."""
@@ -98,7 +98,7 @@ class TestDirectionScopedCompleteness:
         data = _query(scan_query, root, index_path, "rdeps", "leaf")
         assert data["index"]["query_complete"] is False
         assert data["index"]["exhaustive"] is False
-        assert any("broken.py" in p for p in data["index"]["degraded_files"])
+        assert any("broken.py" in entry["path"] for entry in data["index"]["degraded_files"])
 
     def test_whole_graph_central_incomplete_with_degraded(self, degraded_project, scan_query):
         """Whole-graph `central` is never complete while any file is degraded."""

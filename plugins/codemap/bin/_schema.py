@@ -29,6 +29,82 @@ FIXTURE_GRAPH_MIN_VER: int = 9  # v5.3 — fixture_uses per test module, fixture
 COVERAGE_MIN_VER: int = 10  # v5.4 — coverage_pct, covered_by per symbol (requires --with-coverage build)
 ENTITY_TYPE_MIN_VER: int = 11  # v5.5 — entity_type ("pkg"|"test"|"docs"|"example"), package (top-level name)
 
+# Root-level keys every index file must carry to be loadable. A file missing any of
+# these is structurally broken (a truncated write, a hand-edited file, or the output
+# of an incompatible tool) and must be rejected before any command reads it — a
+# partial-serve on such a file produces silently wrong answers. ``scan_root`` and the
+# many optional feature keys are intentionally NOT required: older indexes omit them
+# and per-feature version gates handle their absence.
+REQUIRED_INDEX_KEYS: frozenset[str] = frozenset({"scan_version", "modules"})
+
+# Oldest index structure scan-query can read. Indexes below this predate the loadable
+# contract entirely; the reader refuses them and asks for a rebuild rather than
+# guessing at a shape it no longer understands.
+MIN_LOADABLE_VERSION: int = 3
+
+
+def validate_index(index: object) -> str | None:
+    """Return an error slug when *index* is not a loadable codemap index, else None.
+
+    Pure structural gate run by the reader immediately after ``json.load`` — before
+    any command touches the data — so a truncated, hand-edited, or incompatible index
+    is rejected with a clear rebuild instruction instead of being partly served. The
+    checks, in order: the top-level value is an object; every key in
+    :data:`REQUIRED_INDEX_KEYS` is present; ``scan_version`` is an int at or above
+    :data:`MIN_LOADABLE_VERSION`; ``modules`` is a list; and ``collisions`` (when
+    present) is a list of objects — a corrupt collision record poisons
+    ``query_complete`` for every command, so its shape is sanity-checked here.
+
+    Args:
+        index: the value decoded from the index JSON (any type — callers pass
+            straight from ``json.load`` without pre-checking).
+
+    Returns:
+        A short slug naming the first failed check (``"not_object"``,
+        ``"missing_keys"``, ``"bad_version"``, ``"version_too_old"``,
+        ``"modules_not_list"``, ``"collisions_not_list"``), or None when the index
+        satisfies every structural invariant.
+
+    Examples:
+        >>> validate_index({"scan_version": 11, "modules": []}) is None
+        True
+        >>> validate_index({"scan_version": 11, "modules": [], "collisions": []}) is None
+        True
+        >>> validate_index([])
+        'not_object'
+        >>> validate_index({"modules": []})
+        'missing_keys'
+        >>> validate_index({"scan_version": "x", "modules": []})
+        'bad_version'
+        >>> validate_index({"scan_version": 1, "modules": []})
+        'version_too_old'
+        >>> validate_index({"scan_version": 11, "modules": {}})
+        'modules_not_list'
+        >>> validate_index({"scan_version": 11, "modules": [], "collisions": 3})
+        'collisions_not_list'
+        >>> validate_index({"scan_version": 11, "modules": [], "collisions": [1]})
+        'collisions_not_list'
+    """
+    if not isinstance(index, dict):
+        return "not_object"
+    if not REQUIRED_INDEX_KEYS.issubset(index):
+        return "missing_keys"
+    version = index.get("scan_version")
+    # bool is an int subclass — reject it explicitly so ``True`` never reads as v1.
+    if not isinstance(version, int) or isinstance(version, bool):
+        return "bad_version"
+    if version < MIN_LOADABLE_VERSION:
+        return "version_too_old"
+    if not isinstance(index.get("modules"), list):
+        return "modules_not_list"
+    collisions = index.get("collisions")
+    if collisions is not None:
+        if not isinstance(collisions, list):
+            return "collisions_not_list"
+        if not all(isinstance(c, dict) for c in collisions):
+            return "collisions_not_list"
+    return None
+
 
 class Resolution(str, Enum):
     """Resolution kind for a call edge. Inherits str so json.dump serialises values as plain strings."""

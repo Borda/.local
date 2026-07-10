@@ -97,6 +97,7 @@ scan-query fn-rdeps "mypackage.auth::validate_token"  # timeout: 5000
 | incoming calls | `fn-rdeps module::function [--exclude-tests]` |
 | most-called functions | `fn-central --top 10` |
 | transitive callers | `fn-blast module::function` |
+| blast radius of current git change set | `diff-impact [--base REF]` |
 
 **tool_use_error / skill unavailable**: do NOT count as a query attempt. Run `$SQ <same-args>` via Bash directly (timeout: 5000). Apply STOP rule after Bash result.
 
@@ -111,6 +112,8 @@ Budget: max 3 calls. Non-exhaustive after 3 → report what found, stop.
 `find-symbol`: Python regex — `^Auth.*Handler$` (anchored) or `auth` (substring). Escape `.` for literal dot. Always use `--limit 0` when counting or ranking to avoid 20-item truncation.
 
 Symbol staleness: `stale: true` + empty source → `Read(path)` fallback. `stale: false` + empty → `[source not available — re-run /codemap:scan-codebase]`.
+
+Targeted edit (known symbol, file >~300 lines): `symbol <mod::name>` → take line span → `Read(offset=span_start−10, limit=span_len+20)` → Edit. Slice Read suffices — Edit needs only a slice containing the target, not the whole file. Spans come from the index; file changed since scan → spans may drift (self-heal usually covers it). Edit errors "Found N matches" (`old_string` not file-wide unique) or no-match (drifted out of slice) → do a full `Read`, then Edit with a larger unique `old_string`.
 
 ## Step 2: Parse JSON + render
 
@@ -127,6 +130,7 @@ Symbol staleness: `stale: true` + empty source → `Read(path)` fallback. `stale
 | `fn-deps`/`fn-rdeps` | `calls`/`called_by` | `module::fn (resolution)`, one per line |
 | `fn-central` | `fn_central` | `count module::fn`, one per line |
 | `fn-blast` | `blast_radius` | `depth module::fn`, sorted by depth then name |
+| `diff-impact` | `changed_modules` array | `module (risk) — changed symbols`, one per line; end with `test_impact.pytest_cmd` |
 
 `index.stale: true` → scan-query already attempted a bounded inline self-heal (`scan-index --incremental`) before answering; `stale` remaining true means the heal was skipped (change set over cap, or git unavailable). Re-run `/codemap:scan-codebase --incremental` manually, then retry.
 `index.not_covered` non-empty → note scope caveat in response.

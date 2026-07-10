@@ -144,7 +144,7 @@ class TestDirectionScopedIncompleteness:
         root, index_path = polluted_repo()
         data = _query(scan_query, root, index_path, "--no-heal", "rdeps", "pkg.leaf")
         assert data["index"]["degraded"] == 1
-        assert any("broken.py" in p for p in data["index"]["degraded_files"])
+        assert any("broken.py" in entry["path"] for entry in data["index"]["degraded_files"])
 
     @pytest.mark.parametrize(
         ("command", "args"),

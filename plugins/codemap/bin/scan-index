@@ -39,6 +39,7 @@ from _exclusions import (
     _GLOB_META_RE,
     _load_exclusions,
     _match_exclusion,
+    load_src_roots,
 )
 from _schema import SCAN_VERSION, Resolution
 from _telemetry import log_cli
@@ -895,6 +896,39 @@ def path_to_module(filepath: Path, src_root: Path) -> str:
     if parts and parts[-1] == "__init__":
         parts = parts[:-1]
     return ".".join(parts)
+
+
+def _effective_src_root(filepath: Path, configured_roots: tuple[Path, ...], default_root: Path) -> Path:
+    """Return the source root a file's dotted name should be computed relative to.
+
+    In a monorepo, ``[tool.codemap] src_roots`` can list several package roots (e.g.
+    ``libs/core/src`` and ``services/api/src``). A file's module name derives from the
+    first configured root that contains it — list order is priority, so a file under an
+    earlier root is named relative to that root even if a later root would also match.
+    When no configured root contains the file (or none are configured), *default_root*
+    is returned, preserving the single-root ``detect_src_root`` behaviour unchanged.
+
+    Args:
+        filepath: absolute path to the ``.py`` file being named.
+        configured_roots: explicit source roots in priority order (may be empty).
+        default_root: fallback root when no configured root contains *filepath*
+            (typically the ``detect_src_root`` result).
+
+    Returns:
+        The source root *filepath*'s dotted name should be relative to.
+
+    Examples:
+        >>> from pathlib import Path
+        >>> roots = (Path("/repo/libs/core/src"), Path("/repo/services/api/src"))
+        >>> _effective_src_root(Path("/repo/libs/core/src/pkg_a/m.py"), roots, Path("/repo"))
+        PosixPath('/repo/libs/core/src')
+        >>> _effective_src_root(Path("/repo/other/m.py"), roots, Path("/repo"))
+        PosixPath('/repo')
+    """
+    for candidate in configured_roots:
+        if filepath == candidate or candidate in filepath.parents:
+            return candidate
+    return default_root
 
 
 def count_loc(source: str) -> int:
@@ -2972,16 +3006,71 @@ def _build_sphinx_xref_count(modules: list[dict], doc_xrefs: list[dict]) -> dict
     return counts
 
 
-def _dedup_key(path: str, src_root_rel: str) -> tuple[int, int, str]:
-    """Sort key selecting the canonical winner among modules sharing a dotted name.
+def _src_root_rels(src_root_rel: str | tuple[str, ...]) -> tuple[str, ...]:
+    """Normalise a single source-root rel or a priority tuple into a non-empty tuple.
 
-    Prefers, in order: a path under the detected source root, then the shortest path
-    (by component count), then lexicographic order. Fully deterministic regardless of
-    filesystem walk order.
+    Accepts the legacy single-string form (``""`` when src root == project root) or a
+    tuple of source-root rels in priority order (monorepo ``src_roots``). Empty strings
+    are dropped — they denote "src root is the project root", which every path is
+    trivially under, so they carry no ranking signal.
+
+    Args:
+        src_root_rel: source root rel string, or tuple of rels in priority order.
+
+    Returns:
+        Tuple of non-empty source-root rels in priority order (possibly empty).
+
+    Examples:
+        >>> _src_root_rels("src")
+        ('src',)
+        >>> _src_root_rels("")
+        ()
+        >>> _src_root_rels(("libs/core/src", "services/api/src", ""))
+        ('libs/core/src', 'services/api/src')
+    """
+    rels = (src_root_rel,) if isinstance(src_root_rel, str) else tuple(src_root_rel)
+    return tuple(r for r in rels if r)
+
+
+def _under_root_rank(path: str, root_rels: tuple[str, ...]) -> int:
+    """Return the priority rank of the first source root *path* lies under.
+
+    Rank ``0`` is the highest-priority (first-listed) root; a path under no configured
+    root gets ``len(root_rels)`` so it always sorts after any in-root path. With a single
+    root this reproduces the original ``0 (under) vs 1 (outside)`` ranking exactly.
 
     Args:
         path: module path relative to project root, posix separators.
-        src_root_rel: source root relative to project root (``""`` when src root == root).
+        root_rels: source-root rels in priority order (from :func:`_src_root_rels`).
+
+    Returns:
+        Index of the matching root (0-based priority), or ``len(root_rels)`` if none.
+
+    Examples:
+        >>> _under_root_rank("src/pkg/mod.py", ("src",))
+        0
+        >>> _under_root_rank("copy/pkg/mod.py", ("src",))
+        1
+        >>> _under_root_rank("services/api/src/pkg/m.py", ("libs/core/src", "services/api/src"))
+        1
+    """
+    for rank, rel in enumerate(root_rels):
+        if path == rel or path.startswith(rel + "/"):
+            return rank
+    return len(root_rels)
+
+
+def _dedup_key(path: str, src_root_rel: str | tuple[str, ...]) -> tuple[int, int, str]:
+    """Sort key selecting the canonical winner among modules sharing a dotted name.
+
+    Prefers, in order: a path under a configured source root (earlier-listed roots win
+    over later ones), then the shortest path (by component count), then lexicographic
+    order. Fully deterministic regardless of filesystem walk order.
+
+    Args:
+        path: module path relative to project root, posix separators.
+        src_root_rel: source root rel (``""`` when src root == root) or, for monorepos
+            with multiple ``src_roots``, a tuple of rels in priority order.
 
     Returns:
         Tuple ranking this path — lower sorts first (= preferred winner).
@@ -2991,17 +3080,20 @@ def _dedup_key(path: str, src_root_rel: str) -> tuple[int, int, str]:
         (0, 3, 'src/pkg/mod.py')
         >>> _dedup_key("copy/pkg/mod.py", "src")
         (1, 3, 'copy/pkg/mod.py')
+        >>> _dedup_key("services/api/src/pkg/m.py", ("libs/core/src", "services/api/src"))
+        (1, 5, 'services/api/src/pkg/m.py')
     """
-    under_src = 0 if src_root_rel and (path == src_root_rel or path.startswith(src_root_rel + "/")) else 1
-    return (under_src, len(path.split("/")), path)
+    root_rels = _src_root_rels(src_root_rel)
+    return (_under_root_rank(path, root_rels), len(path.split("/")), path)
 
 
-def _dedup_modules(modules: list[dict], src_root_rel: str) -> tuple[list[dict], list[dict]]:
+def _dedup_modules(modules: list[dict], src_root_rel: str | tuple[str, ...]) -> tuple[list[dict], list[dict]]:
     """Drop duplicate dotted names deterministically, keeping the canonical path.
 
     Args:
         modules: parsed module entries (each with ``name`` and ``path``).
-        src_root_rel: source root relative to project root, used by :func:`_dedup_key`.
+        src_root_rel: source root rel used by :func:`_dedup_key` — a single rel string,
+            or a priority-ordered tuple of rels for monorepos with multiple ``src_roots``.
 
     Returns:
         Tuple ``(kept_modules, collisions)`` where ``collisions`` is a list of
@@ -3053,6 +3145,65 @@ def _build_excluded_roots(exclusions: Exclusions, counts: dict[str, int]) -> lis
     return roots
 
 
+@dataclass(frozen=True)
+class _SrcRootContext:
+    """Resolved source-root context shared by full and incremental scans.
+
+    Bundles the effective source root(s) so both :func:`scan` and
+    :func:`incremental_scan` derive module names and rank collisions identically.
+    ``configured`` is the explicit monorepo ``[tool.codemap] src_roots`` list (empty
+    when unconfigured); ``default`` is the single-root ``detect_src_root`` fallback used
+    for any file not under a configured root — and the only root when none are configured.
+    """
+
+    configured: tuple[Path, ...]
+    default: Path
+
+    def name_root_for(self, filepath: Path) -> Path:
+        """Return the source root *filepath*'s dotted name is computed relative to."""
+        return _effective_src_root(filepath, self.configured, self.default)
+
+    def dedup_rels(self, root: Path) -> tuple[str, ...]:
+        """Return source-root rels (posix, relative to *root*) in dedup-priority order.
+
+        Configured roots come first, in declaration order; the default root is appended
+        last so an in-``src`` path still beats a stray copy when no explicit roots match.
+        The project-root sentinel (``""``) is dropped by :func:`_src_root_rels`.
+        """
+        ordered = [*self.configured, self.default]
+        rels: list[str] = []
+        seen: set[str] = set()
+        for candidate in ordered:
+            rel = "" if candidate == root else candidate.relative_to(root).as_posix()
+            if rel and rel not in seen:
+                seen.add(rel)
+                rels.append(rel)
+        return tuple(rels)
+
+    def meta(self, root: Path) -> list[str]:
+        """Return the effective source roots as posix rels for the index meta.
+
+        Configured roots first (declaration order), then the default root when it is a
+        proper subdirectory of *root* — so single-``src`` layouts still record ``["src"]``.
+        The project root itself is omitted (represented by an empty list).
+        """
+        return list(self.dedup_rels(root))
+
+
+def _resolve_src_roots(root: Path) -> _SrcRootContext:
+    """Build the :class:`_SrcRootContext` for *root* from config and heuristics.
+
+    Reads explicit ``[tool.codemap] src_roots`` (monorepo multi-root layout) and always
+    computes the single-root ``detect_src_root`` fallback. When no roots are configured
+    the context collapses to that single root, so behaviour is byte-identical to the
+    prior single-root path.
+
+    Args:
+        root: project root to resolve source roots for.
+    """
+    return _SrcRootContext(configured=tuple(load_src_roots(root)), default=detect_src_root(root))
+
+
 def scan(root: Path, coverage_path: Path | None = None) -> dict:
     """Run a full scan of all .py files under root and return the index dict.
 
@@ -3062,7 +3213,7 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
             provided and loadable, per-symbol ``coverage_pct`` / ``covered_by``
             fields are attached (v5.4).
     """
-    src_root = detect_src_root(root)
+    src_ctx = _resolve_src_roots(root)
     exclusions = _load_exclusions(root)
 
     filepaths, excluded_counts = _iter_python_files(root, exclusions)
@@ -3077,10 +3228,10 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
     # Use fork on Unix to avoid __main__ re-import issues with extension-less script
     _mp_ctx = multiprocessing.get_context("fork") if sys.platform != "win32" else None
     with ProcessPoolExecutor(max_workers=os.cpu_count(), mp_context=_mp_ctx) as pool:
-        modules = list(pool.map(_parse_file_star, [(fp, root, src_root) for fp in filepaths]))
+        modules = list(pool.map(_parse_file_star, [(fp, root, src_ctx.name_root_for(fp)) for fp in filepaths]))
 
-    src_root_rel = "" if src_root == root else src_root.relative_to(root).as_posix()
-    modules, collisions = _dedup_modules(modules, src_root_rel)
+    src_root_rels = src_ctx.dedup_rels(root)
+    modules, collisions = _dedup_modules(modules, src_root_rels)
     excluded_roots = _build_excluded_roots(exclusions, excluded_counts)
 
     # v5.1: collect conftest.py sys.path aliases before metric recompute so
@@ -3118,7 +3269,8 @@ def scan(root: Path, coverage_path: Path | None = None) -> dict:
         "git_sha": get_git_sha(root),
         "project": root.name,
         "scan_root": str(root.resolve()),
-        "src_layout": src_root != root,
+        "src_layout": bool(src_root_rels),
+        "src_roots": src_ctx.meta(root),
         "file_shas": file_shas,
         "modules": modules,
         "doc_xrefs": doc_xrefs,
@@ -3141,7 +3293,7 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
             provided, the coverage stamp is compared so re-running tests alone
             forces re-annotation even when no source file changed (v5.4).
     """
-    src_root = detect_src_root(root)
+    src_ctx = _resolve_src_roots(root)
     exclusions = _load_exclusions(root)
     current_shas = get_file_hashes(root, exclusions)
     _maybe_stamp_coverage_mtime(current_shas, coverage_path)
@@ -3169,13 +3321,13 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
         if not filepath.exists():
             modules_by_path.pop(rel_path_str, None)
             continue
-        entry = _parse_file(filepath, root, src_root)
+        entry = _parse_file(filepath, root, src_ctx.name_root_for(filepath))
         action = "updated" if rel_path_str in stored_shas else "added"
         modules_by_path[entry["path"]] = entry
         print(f"[codemap]   {action} {rel_path_str}", file=sys.stderr)
 
-    src_root_rel = "" if src_root == root else src_root.relative_to(root).as_posix()
-    modules, collisions = _dedup_modules(list(modules_by_path.values()), src_root_rel)
+    src_root_rels = src_ctx.dedup_rels(root)
+    modules, collisions = _dedup_modules(list(modules_by_path.values()), src_root_rels)
     excluded_roots = _build_excluded_roots(exclusions, {})
     # v5.1: re-collect conftest.py aliases from disk (cheap full sweep — every
     # conftest can affect rdep_count, so per-file invalidation is unsafe).
@@ -3211,7 +3363,8 @@ def incremental_scan(root: Path, old_index: dict, coverage_path: Path | None = N
         "git_sha": get_git_sha(root),
         "project": root.name,
         "scan_root": str(root.resolve()),
-        "src_layout": src_root != root,
+        "src_layout": bool(src_root_rels),
+        "src_roots": src_ctx.meta(root),
         "file_shas": current_shas,
         "modules": modules,
         "doc_xrefs": doc_xrefs,

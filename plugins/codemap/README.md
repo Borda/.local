@@ -534,10 +534,20 @@ The scanner always skips a built-in set of noise directories (`.git`, `.venv`, `
 
 An entry with no `/` or glob character (`*`, `?`, `[`, `]`) is treated as a **directory name** and pruned anywhere in the tree (like the built-ins). An entry containing a path separator or glob character is an **`fnmatch` pattern** matched against each file's path relative to the project root. Excluded paths are dropped from both the module list and the change-detection hash set, so they never trigger incremental rebuilds.
 
-The index records what was excluded and any name collisions in two meta keys:
+Monorepos with several source roots can declare them explicitly:
+
+```toml
+[tool.codemap]
+src_roots = ["libs/core/src", "services/api/src"]
+```
+
+Module names then derive from the **first-listed matching root** (a file under `libs/core/src/pkg_a/mod.py` is indexed as `pkg_a.mod`), and declaration order doubles as collision priority. Without `src_roots`, single-root auto-detection behaves exactly as before.
+
+The index records what was excluded, the effective source roots, and any name collisions in three meta keys:
 
 - `excluded_roots` — list of `{"pattern", "kind": "dir"|"glob", "source": "pyproject.toml"|".codemapignore", "count"}`, where `count` is the number of `.py` files that entry removed.
-- `collisions` — when two files resolve to the same dotted module name (e.g. a duplicate package tree that was **not** excluded), only one is indexed. Each record is `{"name", "kept", "dropped": [...]}`. The kept path is chosen deterministically: a path under the detected source root wins, then the shortest path, then lexicographic order — so the same file always wins regardless of filesystem walk order.
+- `src_roots` — list of effective source-root paths (posix, relative to the project root); empty for a flat repo with no configured roots.
+- `collisions` — when two files resolve to the same dotted module name (e.g. a duplicate package tree that was **not** excluded), only one is indexed. Each record is `{"name", "kept", "dropped": [...]}`. The kept path is chosen deterministically: a path under a configured source root wins (earlier-listed `src_roots` beat later ones), then a path under the detected source root, then the shortest path, then lexicographic order — so the same file always wins regardless of filesystem walk order.
 
 ______________________________________________________________________
 
@@ -574,6 +584,7 @@ These work with any v2 or v3 index.
 | `path <from> <to>`  | Shortest import chain between two modules; `null` (with `reason: "no-import-path"`, exit 0) means not connected                 |
 | `list [--limit N]`  | Indexed modules with their file paths; capped at N (default 100, `0` = all). Emits `total` and `shown` so truncation is visible |
 | `batch <file\|->`   | Run many queries in one process from a JSON array of `{cmd, args}`; see [batch mode](#batch-mode)                               |
+| `diff-impact [--base REF]` | Blast radius of the current git change set: changed modules + symbols, per-module `rdeps`/`coupled`, per-symbol `fn-rdeps`, union `test-impact`, risk tiers (HIGH ≥5 importers / MODERATE 1–4 / LOW 0) — one JSON, one coverage block. Default diffs the working tree against `HEAD`; `--base` accepts any ref or range |
 
 #### Symbol-level queries
 
@@ -801,6 +812,8 @@ CLI records include: `cmd` (query subcommand, or `index` for a `scan-index` buil
 Skill records include: skill name, session UUID, intent (first 300 chars of the args string).
 
 Tool records include: `tool` (`Grep`|`Read`|`Glob`), session UUID, and `target` (Grep/Glob pattern or search path, Read file_path). They measure raw grep/read volume per session — the signal codemap's context injection aims to reduce. The `log-tool-use.js` hook never reads `tool_response` (no parse of search/read output), so its per-call cost is sub-millisecond; opt out with `CODEMAP_LOGGING=false`.
+
+The debrief joins the tool layer against the cli layer to measure **avoidance events** (`bin/join_avoidance.py`): a Grep/Read/Glob on a module within a time window (default 10 min) *after* a `query_complete: true` answer already covered that module counts as a leak — the agent re-derived what the index had answered. The join uses the same word-boundary module matching as the live `guard-redundant-scan.js` hook, so the offline rate measures exactly what the online guard is meant to deny. A high avoidance rate is a dead-chain signal: queries succeed but downstream behavior ignores them.
 
 Logs rotate automatically at 10 MB (3 rotations). Disable logging entirely with `CODEMAP_LOGGING=false` — useful in benchmark scripts.
 

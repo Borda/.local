@@ -94,6 +94,16 @@ Compute from filtered records:
 - Sessions appearing in both layers → linked chains (skill invoked → N CLI calls)
 - Average CLI calls per skill session
 
+**Avoidance join (guard-chain leak rate):**
+
+Join the tool layer against the CLI layer: a Grep/Read/Glob whose target names a module that codemap already answered completely (`query_complete: true`) within the window is an **avoidance event** — the agent re-derived by hand what the index had already returned exhaustively, so the guard chain leaked. `join_avoidance.py` runs the join (module-match is word-boundary safe, ported from `guard-redundant-scan.js`) and reports the rate per session and per skill:
+
+```bash
+python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/join_avoidance.py" --logs .cache/codemap/logs --window-min 10 --json  # timeout: 15000
+```
+
+Interpret the `rate` field: a **high avoidance rate is a dead-chain signal** — the guard is not firing, the injected context is not being read, or the model is ignoring both. Feed the count into both the product telemetry (is the index earning its keep?) and stranger self-diagnosis (did I re-grep what I already knew?). Add the count and rate to the report's Overview and, when non-zero, list the flagged modules from the `events` array.
+
 ## Step 4: Write report
 
 Output path: `--output` if given, else `.reports/codemap/debrief-<YYYY-MM-DD>.md` where date is today.

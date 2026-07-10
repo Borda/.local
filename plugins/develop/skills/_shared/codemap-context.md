@@ -46,6 +46,8 @@ fi
 > - `mock-rdeps` — test mock coverage; prevents false "untested" on mocked symbols (qa-specialist)
 > - `undocumented` — docstring gaps (doc-scribe)
 > - `symbol --with-imports` — contract reading without re-reading the file (all agents)
+>
+> Targeted edit (known symbol, file >~300 lines): `symbol <mod::name>` → take line span → `Read(offset=span_start−10, limit=span_len+20)` → Edit. Slice Read suffices — Edit needs only a slice containing the target, not the whole file. Spans come from the index; file changed since scan → spans may drift (self-heal usually covers it). Edit errors "Found N matches" (`old_string` not file-wide unique) or no-match (drifted) → full `Read`, then Edit with a larger unique `old_string`.
 
 Results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt with hotspot JSON and per-query output. `codemap_evidence:` line at end of block reports retrieval reliability — agents may skip re-querying only when `completeness=exhaustive`. `scan-query` not found or index missing: emit ⚠ warning to stderr (` >&2 echo "⚠ codemap: scan-query unavailable or index missing — context reduced to central --top 5" `), then proceed.
 

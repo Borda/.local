@@ -104,6 +104,72 @@ def _parse_codemap_exclude_toml(text: str) -> list[str]:
     return re.findall(r'["\']([^"\']+)["\']', m.group(1))
 
 
+def _parse_codemap_src_roots_toml(text: str) -> list[str]:
+    """Extract the ``[tool.codemap] src_roots = [...]`` string array from pyproject text.
+
+    Uses the same targeted-regex strategy as :func:`_parse_codemap_exclude_toml`
+    (``tomllib`` is 3.11+; this project runs on 3.10). Handles single-line and
+    multi-line array forms. Declaration order is preserved — the array order is the
+    source-root priority applied by module naming and collision resolution.
+
+    Args:
+        text: full contents of a ``pyproject.toml`` file.
+
+    Returns:
+        List of raw source-root entries in declaration order (empty if the section
+        or key is absent).
+
+    Examples:
+        >>> _parse_codemap_src_roots_toml('[tool.codemap]\\nsrc_roots = ["a/src", "b/src"]\\n')
+        ['a/src', 'b/src']
+        >>> _parse_codemap_src_roots_toml('[tool.other]\\nsrc_roots = ["x"]\\n')
+        []
+    """
+    section = re.search(r"^\[tool\.codemap\](.*?)(?=^\[|\Z)", text, re.MULTILINE | re.DOTALL)
+    if not section:
+        return []
+    m = re.search(r"src_roots\s*=\s*\[(.*?)\]", section.group(1), re.DOTALL)
+    if not m:
+        return []
+    return re.findall(r'["\']([^"\']+)["\']', m.group(1))
+
+
+def load_src_roots(root: Path) -> list[Path]:
+    """Load explicit source roots from ``pyproject.toml`` ``[tool.codemap] src_roots``.
+
+    Joins each declared entry to *root* (without ``resolve()`` — kept in the same
+    unresolved path space as the ``os.walk`` file paths so relative-path derivation
+    never trips over ``/var`` → ``/private/var`` symlink canonicalisation on macOS),
+    keeping only entries that exist as directories, in declaration order — which is the
+    priority order applied by module naming and collision resolution (earlier entries
+    win). Duplicate roots (by relative posix form) are dropped, preserving the first
+    occurrence. Returns an empty list when the key is absent, so callers fall back to
+    single-root ``detect_src_root`` detection with no behaviour change.
+
+    Args:
+        root: project root to read ``pyproject.toml`` from.
+
+    Returns:
+        List of existing source-root directories under *root*, in priority order.
+    """
+    pyproject = root / "pyproject.toml"
+    if not pyproject.exists():
+        return []
+    entries = _parse_codemap_src_roots_toml(pyproject.read_text(errors="replace"))
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for entry in entries:
+        candidate = root / entry
+        try:
+            rel = candidate.relative_to(root).as_posix()
+        except ValueError:
+            continue  # entry escapes the project root (e.g. "../x") — ignore
+        if rel and rel not in seen and candidate.is_dir():
+            seen.add(rel)
+            roots.append(candidate)
+    return roots
+
+
 def _parse_codemapignore(text: str) -> list[str]:
     """Extract patterns from a ``.codemapignore`` file (one per line, ``#`` comments).
 
