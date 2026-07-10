@@ -414,31 +414,24 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/inject_codemap.py" \
 
 #### Manual injection
 
-If you write custom skills or agents and want to add codemap yourself, drop this soft-check block before the first agent spawn. It runs when codemap is available and silently skips when it is not:
+If you write custom skills or agents and want to add codemap yourself, the injection block is the single source of truth in `bin/_injection_block.py` (the `BLOCK` constant). `init` and `check` both import it, so hand-writing a variant will drift and fail `check`. Print the canonical block and paste it before the first agent spawn:
 
 ```bash
-# Structural context (codemap — Python projects only, silent skip if absent)
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
-if command -v scan-query >/dev/null 2>&1 && [ -f ".cache/codemap/${PROJ}.json" ]; then
-    scan-query central --top 3  # timeout: 5000
-fi
-# If results returned: prepend ## Structural Context (codemap) to the agent spawn prompt.
+# timeout: 5000
+python -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin'); import _injection_block as b; sys.stdout.write(b.BLOCK)"
 ```
 
-For skills that know the target module up front (refactor, fix), also add targeted queries:
+The block:
 
-```bash
-scan-query rdeps "$TARGET_MODULE" 2>/dev/null  # timeout: 5000
-scan-query deps  "$TARGET_MODULE" 2>/dev/null  # timeout: 5000
-```
+- detects the index with `command -v scan-query` and a `.cache/codemap/<project>.json` check (silent skip when absent);
+- runs `scan-query central --top 3` for the global baseline;
+- runs one targeted query when you set `TARGET_MODULE` / `TARGET_FN` first — `fn-rdeps` for a known function, else `rdeps` for a known module;
+- prints a `codemap_evidence:` line summarising retrieval reliability;
+- carries a `codemap-block: vN` version stamp so `check` can report OUTDATED after a block upgrade.
 
-For agent `.md` files, add this instruction before the closing section:
+The full query map lives in `skills/_shared/codemap-context.md`. For agent `.md` files (no `$ARGUMENTS`), add an instruction that runs `scan-query central --top 5` plus `scan-query rdeps <target_module>` when a target is derivable from the task, before any Glob/Grep exploration; skip silently when the index is absent.
 
-```markdown
-**Structural context (codemap — Python projects only)**: if `.cache/codemap/<project>.json` exists,
-run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known)
-**before** any Glob/Grep exploration for structural information. Skip silently if the index is absent.
-```
+**Durability**: injecting into a plugin's own cache file (under `~/.claude/plugins/cache/`) is wiped on the next `claude plugin install` — Claude Code has no project-local override for a single plugin file, and plugin skills are namespace-isolated. After an upgrade, run `/codemap:integration check` (it reports wiped blocks MISSING, or OUTDATED when the block version changed) and re-run `init` to re-inject. Personal skills and agents under `.claude/skills/`, `~/.claude/skills/`, and `.claude/agents/` are project/user files, not cache — they survive upgrades untouched, so prefer them when the same skill exists in both places.
 
 #### demo mode
 
@@ -451,6 +444,7 @@ End-to-end validation for a repo. Runs plumbing check, builds index if missing, 
 | `--repo <path\|url>` | Target repo — local path or git URL; URL triggers clone gate             |
 | `--public`           | Force clone gate even if current repo has `.py` files                    |
 | `--anonymize`        | Forward `--anonymize` to `debrief-coding` in the final report            |
+| `--probe-skill <name>` | Probe a specific user skill (priority: this arg > develop/oss list > synthetic); report states which probe ran |
 | `--keep-clone`       | Skip cleanup prompt after demo on a cloned repo                          |
 | `--output <path>`    | Override report output path (default: `.reports/codemap/demo-<date>.md`) |
 
@@ -575,15 +569,15 @@ When Step 0 does build, it prints one line — `[codemap] index built in <N>s` �
 
 These work with any v2 or v3 index.
 
-| Subcommand          | What it answers                                                                                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `rdeps <module>`    | What imports this module? (blast radius)                                                                                        |
-| `deps <module>`     | What does this module import?                                                                                                   |
-| `central [--top N]` | Which modules are imported by the most others? Default N=10                                                                     |
-| `coupled [--top N]` | Which modules import the most others? Default N=10                                                                              |
-| `path <from> <to>`  | Shortest import chain between two modules; `null` (with `reason: "no-import-path"`, exit 0) means not connected                 |
-| `list [--limit N]`  | Indexed modules with their file paths; capped at N (default 100, `0` = all). Emits `total` and `shown` so truncation is visible |
-| `batch <file\|->`   | Run many queries in one process from a JSON array of `{cmd, args}`; see [batch mode](#batch-mode)                               |
+| Subcommand                 | What it answers                                                                                                                                                                                                                                                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rdeps <module>`           | What imports this module? (blast radius)                                                                                                                                                                                                                                                                                |
+| `deps <module>`            | What does this module import?                                                                                                                                                                                                                                                                                           |
+| `central [--top N]`        | Which modules are imported by the most others? Default N=10                                                                                                                                                                                                                                                             |
+| `coupled [--top N]`        | Which modules import the most others? Default N=10                                                                                                                                                                                                                                                                      |
+| `path <from> <to>`         | Shortest import chain between two modules; `null` (with `reason: "no-import-path"`, exit 0) means not connected                                                                                                                                                                                                         |
+| `list [--limit N]`         | Indexed modules with their file paths; capped at N (default 100, `0` = all). Emits `total` and `shown` so truncation is visible                                                                                                                                                                                         |
+| `batch <file\|->`          | Run many queries in one process from a JSON array of `{cmd, args}`; see [batch mode](#batch-mode)                                                                                                                                                                                                                       |
 | `diff-impact [--base REF]` | Blast radius of the current git change set: changed modules + symbols, per-module `rdeps`/`coupled`, per-symbol `fn-rdeps`, union `test-impact`, risk tiers (HIGH ≥5 importers / MODERATE 1–4 / LOW 0) — one JSON, one coverage block. Default diffs the working tree against `HEAD`; `--base` accepts any ref or range |
 
 #### Symbol-level queries
@@ -819,7 +813,7 @@ Logs rotate automatically at 10 MB (3 rotations). Disable logging entirely with 
 
 #### Anonymization
 
-`--anonymize` runs `bin/anonymize.py` on every present log file before reading. Qualified names (strings containing `.` or `::`) are replaced with stable `sym_<hash>` pseudonyms using a project-local salt stored at `.cache/codemap/logs/.salt`. The salt must stay local — never share it alongside anonymized output. Without the salt, pseudonyms are not reversible.
+`--anonymize` runs `bin/anonymize.py` on every present log file before reading. Qualified names (strings containing `.` or `::`) are replaced with stable `sym_<hash>` pseudonyms using a project-local salt stored at `.cache/codemap/logs/.salt`. Scrubbing reaches into free-text `error` and `stderr` fields (each embedded qualified name is pseudonymized in place, surrounding prose preserved) and hashes every element of `not_covered` lists. Anonymized `-anon.jsonl` files are written to a dedicated export directory (`--out-dir`, default `.cache/codemap/export/`) that is kept separate from the salt: `anonymize.py` refuses (nonzero exit) to write into any directory that already contains a `.salt` file, since a recipient handed both would be able to reverse the pseudonyms. The salt must stay local — never share it alongside anonymized output. Without the salt, pseudonyms are not reversible.
 
 #### Examples
 

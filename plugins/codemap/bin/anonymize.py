@@ -5,13 +5,21 @@ Pseudonyms are stable within a project (same salt + same name → same pseudonym
 but opaque to anyone without the salt file. Never share the salt alongside the
 anonymized log — the salt lives only at ``--salt`` path (default local to project).
 
+Anonymized ``-anon.jsonl`` files are written to a dedicated export directory
+(``--out-dir``, default ``.cache/codemap/export/``) that is deliberately separate
+from the salt directory. Writing anonymized output into any directory that holds a
+``.salt`` file is refused outright: a recipient handed both the output and the salt
+could reverse every pseudonym.
+
 Usage:
-    python anonymize.py --input cli.jsonl --output cli-anon.jsonl
-    python anonymize.py --input skills.jsonl --output skills-anon.jsonl [--salt PATH]
+    python anonymize.py --input cli.jsonl
+    python anonymize.py --input skills.jsonl --out-dir .cache/codemap/export [--salt PATH]
+    python anonymize.py --input cli.jsonl --output /explicit/path/cli-anon.jsonl
 
 Exit codes:
     0 — success
     1 — input file not found
+    2 — refused: output directory contains a salt file
 """
 
 from __future__ import annotations
@@ -19,9 +27,34 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import secrets
 import sys
 from pathlib import Path
+
+#: Default directory for anonymized ``-anon.jsonl`` output. Deliberately distinct
+#: from the log/salt directory so anonymized shards are never written next to the
+#: salt that would make their pseudonyms reversible.
+DEFAULT_OUT_DIR = ".cache/codemap/export"
+
+#: Filename that, when present in a target directory, marks it as salt-bearing.
+#: Writing anonymized output beside this file would let a recipient of both the
+#: output and the salt reverse every pseudonym — so it is refused.
+SALT_FILENAME = ".salt"
+
+#: Exit code returned when the resolved output directory holds a salt file.
+_EXIT_UNSAFE_OUT_DIR = 2
+
+#: Matches a qualified-name token embedded in free text: an identifier followed by
+#: at least one ``.`` or ``::`` separator plus a further identifier (e.g. ``pkg.auth``,
+#: ``pkg.auth::login``, ``mod::Class.method``). Lets error/stderr prose be scrubbed
+#: token-by-token without swallowing the surrounding words or punctuation.
+_QUALIFIED_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::)[A-Za-z_][A-Za-z0-9_]*)+")
+
+#: Record fields whose string values are free-text that may embed qualified names
+#: inline (error messages, captured ``stderr``/tracebacks). Scrubbed per-token,
+#: preserving surrounding prose, rather than replaced wholesale.
+_FREE_TEXT_FIELDS = ("error", "stderr")
 
 
 def _load_salt(salt_file: Path) -> bytes:
@@ -90,6 +123,34 @@ def _is_qualified(v: str) -> bool:
     return "." in v or "::" in v
 
 
+def _anonymize_text(text: str, salt: bytes) -> str:
+    """Replace every qualified-name token embedded in free text with its pseudonym.
+
+    Unlike :func:`_anonymize_value`, which pseudonymizes a string only when the
+    *whole* value is a qualified name, this scans inside prose (error messages,
+    captured stderr / tracebacks) and rewrites each qualified token found while
+    leaving the surrounding words and punctuation intact.
+
+    Args:
+        text: Free-text string that may contain zero or more qualified names.
+        salt: Per-project salt bytes.
+
+    Returns:
+        The text with each qualified-name token replaced by its ``sym_`` pseudonym.
+
+    Examples:
+        >>> s = b'x' * 32
+        >>> out = _anonymize_text("module pkg.auth::login not indexed", s)
+        >>> "pkg.auth::login" in out
+        False
+        >>> out.startswith("module sym_") and out.endswith(" not indexed")
+        True
+        >>> _anonymize_text("no qualified names here", s)
+        'no qualified names here'
+    """
+    return _QUALIFIED_TOKEN_RE.sub(lambda m: _pseudo(m.group(0), salt), text)
+
+
 def _anonymize_value(v: object, salt: bytes) -> object:
     """Recursively replace qualified names with pseudonyms.
 
@@ -109,11 +170,58 @@ def _anonymize_value(v: object, salt: bytes) -> object:
     return v
 
 
+def _scrub_special_fields(v: object, salt: bytes) -> object:
+    """Recursively scrub free-text (``error``/``stderr``) and ``not_covered`` fields.
+
+    Walks any nested dict/list structure. For dict keys in :data:`_FREE_TEXT_FIELDS`
+    the string value is scrubbed token-by-token (see :func:`_anonymize_text`), so
+    qualified names embedded in error messages and captured stderr are pseudonymized
+    while their surrounding prose survives. For a ``not_covered`` key holding a list,
+    each element is scrubbed individually: qualified-name elements become pseudonyms,
+    plain diagnostic labels (e.g. ``lazy-loading``) pass through unchanged.
+
+    This complements — and is applied alongside — :func:`_anonymize_value`, which
+    handles whole-value qualified names in the ``args`` payload.
+
+    Args:
+        v: Any JSON-compatible value (record, nested dict, list, or scalar).
+        salt: Per-project salt bytes.
+
+    Returns:
+        A new value with the special fields scrubbed; non-special data unchanged.
+
+    Examples:
+        >>> s = b'x' * 32
+        >>> out = _scrub_special_fields({"error": "boom in pkg.auth"}, s)
+        >>> out["error"].startswith("boom in sym_")
+        True
+        >>> nc = _scrub_special_fields({"not_covered": ["a.b", "lazy-loading"]}, s)
+        >>> nc["not_covered"][0].startswith("sym_"), nc["not_covered"][1]
+        (True, 'lazy-loading')
+    """
+    if isinstance(v, dict):
+        scrubbed: dict = {}
+        for key, val in v.items():
+            if key in _FREE_TEXT_FIELDS and isinstance(val, str):
+                scrubbed[key] = _anonymize_text(val, salt)
+            elif key == "not_covered" and isinstance(val, list):
+                scrubbed[key] = [_anonymize_text(e, salt) if isinstance(e, str) else e for e in val]
+            else:
+                scrubbed[key] = _scrub_special_fields(val, salt)
+        return scrubbed
+    if isinstance(v, list):
+        return [_scrub_special_fields(item, salt) for item in v]
+    return v
+
+
 def anonymize_record(record: dict, salt: bytes) -> dict:
     """Anonymize one JSONL log record in-place (returns new dict).
 
     Replaces qualified names in ``args``, ``argv``, ``intent``, and ``target``
-    fields. Leaves all other fields (timestamps, counts, flags) unchanged.
+    fields. In addition, scrubs qualified names embedded in the free-text
+    ``error`` / ``stderr`` fields and hashes each element of any ``not_covered``
+    list, wherever those fields appear (including nested inside ``result``).
+    Leaves all other fields (timestamps, counts, flags) unchanged.
 
     Args:
         record: Parsed log record.
@@ -129,8 +237,12 @@ def anonymize_record(record: dict, salt: bytes) -> dict:
         True
         >>> r["cmd"]
         'rdeps'
+        >>> e = anonymize_record({"result": {"error": "module pkg.auth not indexed"}}, s)
+        >>> "pkg.auth" in e["result"]["error"]
+        False
     """
-    out = dict(record)
+    out = _scrub_special_fields(record, salt)
+    assert isinstance(out, dict)  # a dict in always yields a dict out
     if "args" in out and isinstance(out["args"], dict):
         out["args"] = _anonymize_value(out["args"], salt)
     if "argv" in out and isinstance(out["argv"], list):
@@ -139,6 +251,57 @@ def anonymize_record(record: dict, salt: bytes) -> dict:
         if field in out and isinstance(out[field], str) and _is_qualified(out[field]):
             out[field] = _pseudo(out[field], salt)
     return out
+
+
+def _dir_has_salt(directory: Path) -> bool:
+    """Return True if ``directory`` contains a salt file.
+
+    Args:
+        directory: Directory to inspect (may not yet exist).
+
+    Returns:
+        Whether a :data:`SALT_FILENAME` file lives directly in the directory.
+
+    Examples:
+        >>> import tempfile, pathlib
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     _dir_has_salt(pathlib.Path(d))
+        False
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     _ = (pathlib.Path(d) / ".salt").write_text("00")
+        ...     _dir_has_salt(pathlib.Path(d))
+        True
+    """
+    return (directory / SALT_FILENAME).exists()
+
+
+def _resolve_output(input_path: Path, out_dir: str | None, explicit_output: str | None) -> Path:
+    """Resolve the anonymized output path from CLI flags.
+
+    An explicit ``--output`` wins when given. Otherwise the file is named
+    ``<input-stem>-anon.jsonl`` inside ``out_dir`` (default :data:`DEFAULT_OUT_DIR`).
+
+    Args:
+        input_path: The source log file.
+        out_dir: ``--out-dir`` value, or None to use the default export directory.
+        explicit_output: ``--output`` value, or None to derive from ``out_dir``.
+
+    Returns:
+        The resolved destination path (not yet created).
+
+    Examples:
+        >>> import pathlib
+        >>> _resolve_output(pathlib.Path("logs/cli.jsonl"), None, None).as_posix()
+        '.cache/codemap/export/cli-anon.jsonl'
+        >>> _resolve_output(pathlib.Path("logs/cli.jsonl"), "exp", None).as_posix()
+        'exp/cli-anon.jsonl'
+        >>> _resolve_output(pathlib.Path("logs/cli.jsonl"), None, "out/x.jsonl").as_posix()
+        'out/x.jsonl'
+    """
+    if explicit_output is not None:
+        return Path(explicit_output)
+    base = out_dir if out_dir is not None else DEFAULT_OUT_DIR
+    return Path(base) / f"{input_path.stem}-anon.jsonl"
 
 
 def process(input_path: Path, output_path: Path, salt: bytes) -> tuple[int, int]:
@@ -178,6 +341,31 @@ def process(input_path: Path, output_path: Path, salt: bytes) -> tuple[int, int]
     return processed, skipped
 
 
+def _build_parser() -> argparse.ArgumentParser:
+    """Construct the argument parser for the anonymize CLI."""
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--input", required=True, help="Source JSONL log file")
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Explicit destination path (overrides --out-dir); still refused if its directory holds a salt file",
+    )
+    parser.add_argument(
+        "--out-dir",
+        default=None,
+        help=f"Directory for the '<input>-anon.jsonl' output (default {DEFAULT_OUT_DIR}; never the salt directory)",
+    )
+    parser.add_argument(
+        "--salt",
+        default=".cache/codemap/logs/.salt",
+        help="Salt file path (created with random value if absent; keep local — never share)",
+    )
+    return parser
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the anonymize CLI.
 
@@ -185,28 +373,27 @@ def main(argv: list[str] | None = None) -> int:
         argv: Override ``sys.argv[1:]`` (mainly for testing).
 
     Returns:
-        0 on success, 1 if input not found.
+        0 on success; 1 if input not found; 2 if the output directory holds a salt file.
     """
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--input", required=True, help="Source JSONL log file")
-    parser.add_argument("--output", required=True, help="Destination anonymized JSONL file")
-    parser.add_argument(
-        "--salt",
-        default=".cache/codemap/logs/.salt",
-        help="Salt file path (created with random value if absent; keep local — never share)",
-    )
-    args = parser.parse_args(argv)
+    args = _build_parser().parse_args(argv)
 
     input_path = Path(args.input)
     if not input_path.exists():
         print(f"anonymize: input not found: {input_path}", file=sys.stderr)
         return 1
 
+    output_path = _resolve_output(input_path, args.out_dir, args.output)
+    out_dir = output_path.parent
+    if _dir_has_salt(out_dir):
+        print(
+            f"anonymize: refusing to write into {out_dir} — it contains a '{SALT_FILENAME}' file; "
+            f"anonymized output beside the salt is reversible. Use --out-dir (default {DEFAULT_OUT_DIR}).",
+            file=sys.stderr,
+        )
+        return _EXIT_UNSAFE_OUT_DIR
+
     salt = _load_salt(Path(args.salt))
-    output_path = Path(args.output)
+    out_dir.mkdir(parents=True, exist_ok=True)
     processed, skipped = process(input_path, output_path, salt)
     print(f"anonymize: {processed} records → {output_path}" + (f" ({skipped} skipped)" if skipped else ""))
     return 0

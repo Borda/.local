@@ -21,9 +21,17 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# Canonical injection-site list — keep in sync with develop, oss, and research plugin skill directories.
-# Patterns match relative cache paths; ``.*`` stands in for the plugin-version directory.
-# cicd-steward and shepherd are agents (agents/*.md), not skills — no SKILL.md to check; omitted intentionally.
+from _injection_block import (
+    BLOCK_VERSION,
+    SCAN_QUERY_MARKER,
+    load_integration_sites,
+    parse_block_version,
+)
+
+# Default canonical injection-site list for the borda-ai-rig distribution — used when those plugins
+# are present and no per-project ``integration.json`` record overrides it. Patterns match relative
+# cache paths; ``.*`` stands in for the plugin-version directory. cicd-steward and shepherd are
+# agents (agents/*.md), not skills — no SKILL.md to check; omitted intentionally.
 CANONICAL_INJECTION_SITES: tuple[str, ...] = (
     "develop/.*/skills/fix",
     "develop/.*/skills/feature",
@@ -39,7 +47,8 @@ CANONICAL_INJECTION_SITES: tuple[str, ...] = (
     "research/.*/skills/topic",
 )
 
-SKILL_INJECTION_MARKER = "command -v scan-query"
+# Injection marker sourced from the single-source-of-truth block module so init and check never drift.
+SKILL_INJECTION_MARKER = SCAN_QUERY_MARKER
 AGENT_INJECTION_MARKER = "Structural context (codemap"
 DEFAULT_CACHE_GLOB = "borda-ai-rig/codemap/*"
 MAX_AUDIT_FILE_SIZE = 1_000_000  # 1 MB — skip oversized files in marker scan (SEC-M8: DoS guard)
@@ -200,6 +209,68 @@ def missing_canonical_sites(
     return missing
 
 
+def classify_block_version(path: Path) -> str:
+    """Return ``"current"`` or ``"outdated"`` for the injected block in ``path``.
+
+    Compares the file's ``codemap-block: vN`` stamp against :data:`BLOCK_VERSION`. A file with the
+    injection marker but no parseable stamp is treated as ``"outdated"`` (a legacy, pre-versioning
+    block that a re-inject should refresh).
+
+    Args:
+        path: an injected SKILL.md file.
+
+    Returns:
+        ``"current"`` when the stamp equals the shipped block version, else ``"outdated"``.
+    """
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return "outdated"
+    return "current" if parse_block_version(content) == BLOCK_VERSION else "outdated"
+
+
+def audit_recorded_sites(sites: list[str], base_dir: Path) -> list[str]:
+    """Return per-site PASS/OUTDATED/MISSING status lines for init-recorded injection sites.
+
+    Each recorded site is a path (absolute, or relative to ``base_dir`` — typically the project root)
+    checked directly rather than via the plugin-cache scan, so personal skills under ``.claude/skills``
+    or ``.claude/agents`` are audited by name. A recorded file that no longer carries the injection
+    marker reports MISSING (e.g. after a plugin update wiped a cache target); a marker present but
+    version-stamped below :data:`BLOCK_VERSION` reports OUTDATED.
+
+    Args:
+        sites: recorded site paths from ``integration.json``.
+        base_dir: directory recorded relative paths resolve against.
+
+    Returns:
+        Status lines (no trailing newlines), one per recorded site.
+    """
+    lines: list[str] = []
+    for site in sites:
+        path = Path(site) if Path(site).is_absolute() else base_dir / site
+        if not _file_has_marker(path, SCAN_QUERY_MARKER):
+            lines.append(f"  ⚠ MISSING injection: {site} — run /codemap:integration init to (re)inject")
+        elif classify_block_version(path) == "outdated":
+            lines.append(f"  ⟳ OUTDATED block (v{BLOCK_VERSION} available): {site} — re-inject via init")
+        else:
+            lines.append(f"  ✓ {site}")
+    return lines
+
+
+def borda_default_sites(cache: Path) -> tuple[str, ...]:
+    """Return the borda-ai-rig canonical site patterns when those plugins are present in ``cache``.
+
+    Args:
+        cache: plugin cache root being audited.
+
+    Returns:
+        :data:`CANONICAL_INJECTION_SITES` when any of develop/oss/research is installed, else ``()``.
+    """
+    if any((cache / plugin).is_dir() for plugin in ("develop", "oss", "research")):
+        return CANONICAL_INJECTION_SITES
+    return ()
+
+
 def _file_has_marker(path: Path, *markers: str) -> bool:
     """Return True when ``path`` is readable and contains any of ``markers``.
 
@@ -259,11 +330,70 @@ def check_gate_wiring(skill_files: list[Path]) -> list[Path]:
     return [p for p in skill_files if not _file_has_marker(p, GATE_WIRING_MARKER, GATE_WIRING_INLINE_MARKER)]
 
 
-def build_audit_lines(cache: Path) -> list[str]:
+def _skill_status_lines(skill_files: list[Path], cache_prefix: str) -> list[str]:
+    """Return the per-file PASS/OUTDATED status lines for injected skill files.
+
+    Each injected file is classified by :func:`classify_block_version`: a current block prints ``✓``,
+    an outdated block prints ``⟳`` with a re-inject hint (distinct from the MISSING case handled by
+    :func:`missing_canonical_sites`).
+
+    Args:
+        skill_files: SKILL.md paths carrying the injection marker.
+        cache_prefix: cache-root prefix to strip for display.
+
+    Returns:
+        Status lines (no trailing newlines).
+    """
+    if not skill_files:
+        return [
+            "⚠ 0 SKILL.md files have injection block — codemap not integrated into any skill",
+            "  → Run /codemap:integration init to add injection",
+        ]
+    outdated = [p for p in skill_files if classify_block_version(p) == "outdated"]
+    lines = [f"✓ {len(skill_files)} SKILL.md file(s) have the injection block:"]
+    for p in skill_files:
+        rel = p.as_posix().removeprefix(cache_prefix)
+        mark = "⟳ OUTDATED" if p in outdated else "✓ current"
+        lines.append(f"  • {rel} — {mark}")
+    if outdated:
+        lines.append(f"  ⟳ {len(outdated)} block(s) OUTDATED (block v{BLOCK_VERSION} available)")
+        lines.append("  → Run /codemap:integration init to re-inject the current block")
+    return lines
+
+
+def _canonical_site_lines(cache: Path, integration_dir: Path | None, relative: list[str]) -> list[str]:
+    """Return the canonical-site audit lines, preferring the per-project ``integration.json`` record.
+
+    When ``integration_dir`` holds a recorded site list, each recorded site is audited directly by
+    path (personal ``.claude/skills`` targets included). Otherwise the borda default patterns are
+    matched against the cache-relative ``relative`` paths of injected files.
+
+    Args:
+        cache: plugin cache root being audited.
+        integration_dir: project cache dir (``.cache/codemap``) that may hold ``integration.json``.
+        relative: cache-relative paths of injected skill files (borda-default path).
+
+    Returns:
+        Status lines (no trailing newlines).
+    """
+    recorded = load_integration_sites(integration_dir) if integration_dir is not None else None
+    if recorded:
+        base_dir = integration_dir.parent.parent  # <root>/.cache/codemap → <root>
+        header = [f"  (canonical sites from {integration_dir.as_posix()}/integration.json)"]
+        return header + audit_recorded_sites(recorded, base_dir)
+    return [
+        f"  ⚠ missing injection in: {missing}/SKILL.md"
+        for missing in missing_canonical_sites(relative, borda_default_sites(cache))
+    ]
+
+
+def build_audit_lines(cache: Path, integration_dir: Path | None = None) -> list[str]:
     """Produce the ordered status lines for an audit of ``cache``.
 
     Args:
         cache: cache root directory (contains plugin-name/version subtrees).
+        integration_dir: optional project cache dir (``.cache/codemap``) holding ``integration.json``;
+            when present its recorded sites drive the canonical-site check instead of the borda default.
 
     Returns:
         Status lines (no trailing newlines) in display order.
@@ -274,15 +404,8 @@ def build_audit_lines(cache: Path) -> list[str]:
     cache_prefix = f"{cache.as_posix()}/"
     relative = [p.as_posix().removeprefix(cache_prefix) for p in skill_files]
 
-    if not skill_files:
-        lines.append("⚠ 0 SKILL.md files have injection block — codemap not integrated into any skill")
-        lines.append("  → Run /codemap:integration init to add injection")
-    else:
-        lines.append(f"✓ {len(skill_files)} SKILL.md file(s) have the injection block:")
-        lines.extend(f"  • {rel}" for rel in relative)
-
-    for missing in missing_canonical_sites(relative):
-        lines.append(f"  ⚠ missing injection in: {missing}/SKILL.md")
+    lines.extend(_skill_status_lines(skill_files, cache_prefix))
+    lines.extend(_canonical_site_lines(cache, integration_dir, relative))
 
     agent_files = find_files_with_marker(cache, "*.md", AGENT_INJECTION_MARKER, path_substr="/agents/")
     if not agent_files:
@@ -321,7 +444,32 @@ def build_audit_lines(cache: Path) -> list[str]:
     return lines
 
 
-def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = None) -> AuditResult:
+def _resolve_integration_dir(explicit: str | None) -> Path | None:
+    """Return the project cache dir holding ``integration.json``, or ``None``.
+
+    Uses the explicit value when given; otherwise honours ``CODEMAP_INDEX_DIR`` and finally falls
+    back to ``<cwd>/.cache/codemap``. The path is only returned when it exists as a directory so the
+    audit silently ignores a stranger project that never ran init.
+
+    Args:
+        explicit: caller-supplied path to the project cache dir (may be empty/``None``).
+
+    Returns:
+        Existing project cache dir, or ``None`` when none is present.
+    """
+    if explicit:
+        candidate = Path(explicit).expanduser()
+    else:
+        env_dir = os.environ.get("CODEMAP_INDEX_DIR")
+        candidate = Path(env_dir) if env_dir else Path.cwd() / ".cache" / "codemap"
+    return candidate if candidate.is_dir() else None
+
+
+def run_audit(
+    plugin_root_arg: str | None,
+    cache_root_override: str | None = None,
+    integration_dir_arg: str | None = None,
+) -> AuditResult:
     """Run the audit and return its result (lines + exit code).
 
     Args:
@@ -333,6 +481,8 @@ def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = Non
             resolved path must be an existing directory, must reside within ``$HOME``
             (SEC-M2: blocks unbounded ``rglob`` from ``/``), and must pass
             :func:`_is_plausible_plugin_dir` (SEC-M3).
+        integration_dir_arg: caller-supplied project cache dir holding ``integration.json``;
+            when absent it is resolved from ``CODEMAP_INDEX_DIR`` or ``<cwd>/.cache/codemap``.
 
     Returns:
         ``AuditResult`` capturing exit code and output lines.
@@ -341,6 +491,7 @@ def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = Non
         ValueError: If ``cache_root_override`` resolves outside ``$HOME`` or is not
             a plausible plugin directory.
     """
+    integration_dir = _resolve_integration_dir(integration_dir_arg)
     if cache_root_override:
         cache = Path(cache_root_override).expanduser().resolve()
         if not cache.is_dir():
@@ -355,7 +506,7 @@ def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = Non
             raise ValueError(f"cache_root_override {cache} is outside $HOME — refusing to scan") from exc
         if not _is_plausible_plugin_dir(cache):
             raise ValueError(f"cache_root_override {cache} is not a plausible plugin directory — refusing to scan")
-        return AuditResult(exit_code=0, lines=tuple(build_audit_lines(cache)))
+        return AuditResult(exit_code=0, lines=tuple(build_audit_lines(cache, integration_dir)))
 
     plugin_root = resolve_plugin_root(plugin_root_arg)
     if plugin_root is None:
@@ -367,7 +518,7 @@ def run_audit(plugin_root_arg: str | None, cache_root_override: str | None = Non
             ),
         )
     cache = derive_cache_root(plugin_root)
-    return AuditResult(exit_code=0, lines=tuple(build_audit_lines(cache)))
+    return AuditResult(exit_code=0, lines=tuple(build_audit_lines(cache, integration_dir)))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -399,10 +550,23 @@ def main(argv: list[str] | None = None) -> int:
             "useful for non-standard cache locations or auditing a custom plugin registry."
         ),
     )
+    parser.add_argument(
+        "--integration-dir",
+        default="",
+        metavar="PATH",
+        help=(
+            "Project cache dir holding integration.json (default: $CODEMAP_INDEX_DIR or "
+            "<cwd>/.cache/codemap). When present, its recorded sites drive the canonical-site check."
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
-        result = run_audit(args.plugin_root or None, cache_root_override=args.cache_root or None)
+        result = run_audit(
+            args.plugin_root or None,
+            cache_root_override=args.cache_root or None,
+            integration_dir_arg=args.integration_dir or None,
+        )
     except ValueError as exc:
         sys.stderr.write(f"! {exc}\n")
         return 1

@@ -1,7 +1,7 @@
 ---
 name: integration
 description: "Manage codemap integration — 'check' audits installation health (scan-query reachable, index fresh, injection present), 'init' onboards codemap by discovering skills/agents, recommending injection sites, and wiring them in, 'demo' runs end-to-end validation: plumbing check + plain-vs-codemap A/B on real tasks + telemetry diagnostic. TRIGGER when: 'check' — after upgrade or when codemap stops finding context; 'init' — after first plugin install or when adding new agents/skills; 'demo' — to validate end-to-end gains or debug telemetry pipeline."
-argument-hint: "check | init [--approve] | demo [--repo <url|path>] [--public] [--keep-clone] [--output <path>]"
+argument-hint: "check | init [--approve] | demo [--repo <url|path>] [--probe-skill <name>] [--public] [--keep-clone] [--output <path>]"
 effort: medium
 allowed-tools: Read, Write, Edit, Bash, Glob, Skill, AskUserQuestion, Agent
 model: sonnet
@@ -26,7 +26,7 @@ NOT for: running structural query (use `/codemap:query-code`); pure plumbing wit
 - **$ARGUMENTS**: optional — one of:
   - Omitted or `check` — run diagnostic; print health status for all codemap integration points
   - `init` — interactive onboarding: build index if missing, discover skills/agents, recommend injection sites, wire in selected files
-  - `init --approve` — non-interactive for files within codemap's own `installPath`; auto-applies all High+Medium recommendations + installs post-commit hook without prompting. Other plugins' files require interactive confirmation even under `--approve`. CHECK-tier items never auto-applied. If installPath undeterminable, falls back to interactive. **⚠ Scope warning**: injects into cache files (see I2/I5 warning) — overwritten on next plugin upgrade. Recommended: run `init` (interactive) first to review candidates before `--approve`. `init` without `--approve` = guided interactive workflow; `init --approve` = `bin/inject_codemap.py` deterministic automation.
+  - `init --approve` — non-interactive for files within codemap's own `installPath`; auto-applies all High+Medium recommendations + installs post-commit hook without prompting. Other plugins' files require interactive confirmation even under `--approve`. CHECK-tier items never auto-applied. If installPath undeterminable, falls back to interactive. **⚠ Scope warning**: injects into cache files (see I2/I5 warning) — wiped on next plugin upgrade; re-run `check` after any upgrade and re-inject what it reports MISSING/OUTDATED. Recommended: run `init` (interactive) first to review candidates before `--approve`. `init` without `--approve` = guided interactive workflow; `init --approve` = `bin/inject_codemap.py` deterministic automation.
   - `demo [--repo <path|url>] [--public] [--anonymize] [--keep-clone] [--output <path>]` — end-to-end validation; all flags optional; see `modes/demo.md`
 
 </inputs>
@@ -134,7 +134,7 @@ fi
 
 ### C4 — Skill injection and gate wiring audit
 
-`check_injection.py` audits three things: (1) the codemap injection block (`scan-query` marker) in installed SKILL.md files; (2) `fn-rdeps` wiring in review skills; (3) Gate A/B wiring — via `codemap-gates.md` shared-file load or inline gate text — in all wired skills.
+`check_injection.py` audits: (1) the codemap injection block (`scan-query` marker) in installed SKILL.md files, reporting each as **current** or **OUTDATED** by comparing its `codemap-block: vN` stamp against the shipped block version — a wired file whose block is wiped by a plugin upgrade reports **MISSING**; (2) `fn-rdeps` wiring in review skills; (3) Gate A/B wiring — via `codemap-gates.md` shared-file load or inline gate text — in all wired skills. When a per-project `.cache/codemap/integration.json` exists (written by `init`), its recorded sites — including personal skills under `.claude/skills` — drive the canonical-site audit; otherwise the borda-ai-rig default list is used when those plugins are installed.
 
 ```bash
 # timeout: 20000
@@ -142,6 +142,8 @@ fi
 PLUGIN_CACHE=$(ls -td ~/.claude/plugins/cache/ 2>/dev/null | head -1 || echo "$HOME/.claude/plugins/cache")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_PLUGIN_ROOT" --cache-root "$PLUGIN_CACHE"
 ```
+
+`check_injection.py` resolves the project `integration.json` from `$CODEMAP_INDEX_DIR` or `<cwd>/.cache/codemap` automatically; pass `--integration-dir <path>` to override. When it reports OUTDATED or MISSING blocks, re-run `/codemap:integration init` to re-inject the current block.
 
 ## INIT MODE (Steps I0–I6)
 
@@ -203,10 +205,18 @@ Report result (module count, degraded count).
 
 Read `~/.claude/plugins/installed_plugins.json` (Claude Code internal plugin registry — format may change across versions; fallback: glob `~/.claude/plugins/cache/*/*/` if file absent/unreadable). After reading, count entries missing `installPath`; if >50% lack `installPath`, print `⚠ installed_plugins.json schema may have changed — installPath absent on majority of entries; aborting I2` and exit with actionable message (suggest re-installing or manually specifying plugin path). Otherwise, per plugin entry, check `installPath` key present before accessing; if absent on that entry, log `installPath field missing — plugin manifest format may have changed` and fall back to cache-glob discovery for that entry. For each plugin's `installPath`, glob:
 
-> **⚠ Cache-mutation warning**: files discovered via `installPath` are in the plugin cache (`~/.claude/plugins/cache/`). I5 edits to these files are overwritten on the next `claude plugin install` or upgrade for that plugin. For durable injection surviving upgrades, create a project-local override in `.claude/agents/` or `.claude/skills/` first, then inject into the override copy. **Scope guard**: in interactive mode, I5 skips any file whose resolved plugin root falls outside the current project root and `$CLAUDE_PLUGIN_ROOT` — injection is project-scoped by default.
+> **⚠ Cache-mutation warning**: files discovered via `installPath` are in the plugin cache (`~/.claude/plugins/cache/`). I5 edits to these files are wiped on the next `claude plugin install` or upgrade for that plugin — Claude Code has no mechanism for a project-local file to override a single file inside an installed plugin, and plugin skills are namespace-isolated, so a `.claude/skills/` copy is never invoked in place of the plugin's own skill. **Durability comes from the version-check + re-inject loop, not from an override file**: after a plugin upgrade wipes a cache injection, `check` reports it MISSING (or OUTDATED when the block version changed) and `init` re-injects it. **Prefer durable targets**: personal skills and agents under `.claude/skills/`, `~/.claude/skills/`, and `.claude/agents/` are project/user files, not cache files — they survive upgrades untouched, so when the same skill exists both as a plugin cache file and a personal `.claude` file, wire the personal copy. **Scope guard**: in interactive mode, I5 skips any file whose resolved plugin root falls outside the current project root and `$CLAUDE_PLUGIN_ROOT` — injection is project-scoped by default.
 
 - `skills/*/SKILL.md` — skill files
 - `agents/*.md` — agent files
+
+Also discover **personal** skills and agents that live outside any plugin (durable — not wiped by plugin upgrades). Glob these in addition to the per-plugin cache globs:
+
+- `.claude/skills/*/SKILL.md` — project-local personal skills
+- `~/.claude/skills/*/SKILL.md` — user-level personal skills
+- `.claude/agents/*.md` — project-local personal agents
+
+`bin/inject_codemap.py` performs this personal discovery automatically (project root + user home) in `--approve` mode; the interactive path globs them here.
 
 Per file: extract from frontmatter `name`, `description`, `allowed-tools` (skills) or `description` body (agents). Extract first sentence of `<objective>`.
 
@@ -317,42 +327,37 @@ For each file edited, append `printf '%s\t%s\n' "$(date -u +%FT%TZ)" "$FILE" >> 
 
 Per selected file, determine insertion point and content:
 
-**For SKILL.md files** — find the first step that spawns an agent (first `Agent(` call or first `spawn` instruction). If multiple agent-spawn steps exist, inject before the **first** one only. Insert hardened soft-check block immediately before that step, blank line before and after.
+**For SKILL.md files** — find the first step that spawns an agent (first `Agent(` call or first `spawn` instruction). If multiple agent-spawn steps exist, inject before the **first** one only. Insert the canonical block immediately before that step, blank line before and after.
 
 > **No Agent() spawn step in target SKILL.md?** Inject the block as a **pre-step before the first tool call** in the workflow (typically at the top of `<workflow>` or right after Project Detection / Flag parsing). Structural context still informs subsequent reasoning even when no agent is spawned.
 
+The block text is the single source of truth in `bin/_injection_block.py` (`BLOCK` constant) — do not hand-write a variant here. Emit it verbatim (init/check import it, so a hand-edited copy would drift and fail `check`):
+
 ```bash
-# Structural context (codemap — Python projects only; skip if absent or --no-codemap)
-# Three-tier locate fallback: PATH → CLAUDE_PLUGIN_ROOT → newest cache install
-SQ=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/locate_scan_query.py" 2>/dev/null || echo "scan-query")
-case "${ARGUMENTS:-}" in
-    *--no-codemap*) ;;
-    *)  _GIT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")
-        PROJ=$(basename "$_GIT_ROOT"); _IDX="${CODEMAP_INDEX_DIR:-${_GIT_ROOT}/.cache/codemap}"
-        [ -x "$SQ" ] && [ -f "${_IDX}/${PROJ}.json" ] && "$SQ" --timeout 5 central --top 3 ;;
-esac
-# If results returned: prepend a ## Structural Context (codemap) block to the agent spawn prompt.
-# Also add: "For targeted analysis run: $SQ rdeps <module> or $SQ fn-blast module::function"
+# timeout: 5000
+python -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin'); import _injection_block as b; sys.stdout.write(b.BLOCK)"
 ```
 
-For skills where target module derives from `$ARGUMENTS` (refactor, fix with module path, review), also add after `central` — **derive `TARGET_MODULE` first**; without it calls run as `"$SQ" rdeps ""` and return nothing.
+The block detects the index with `command -v scan-query`, runs `central --top 3` plus a `fn-rdeps`/`rdeps` query when a target is set, and prints a `codemap_evidence:` line. Full query map: `skills/_shared/codemap-context.md`.
+
+For skills where the target module derives from `$ARGUMENTS` (refactor, fix with module path, review), set `TARGET_MODULE` (and `TARGET_FN` when a symbol is known) **before** the block so its targeted query fires; without them only the `central` baseline runs.
 
 Derive `TARGET_MODULE` from `$ARGUMENTS`: strip leading `./`; strip leading `src/`; strip trailing `.py`; replace `/` → `.`. If result empty, use `Path($ARGUMENTS).stem`. Example: `src/foo/bar.py` → `foo.bar`.
-
-If `TARGET_MODULE` non-empty, substitute derived value and run:
-
-```bash
-"$SQ" --timeout 5 rdeps "<TARGET_MODULE>" 2>/dev/null
-"$SQ" --timeout 5 deps  "<TARGET_MODULE>" 2>/dev/null
-```
 
 **For agent `.md` files** — append to last workflow instruction paragraph, before closing section or final notes. Agents have no `$ARGUMENTS` — derive `TARGET_MODULE` from user's input prompt:
 
 ```markdown
-**Structural context (codemap — Python projects only)**: if `.cache/codemap/<project>.json` exists (or `$CODEMAP_INDEX_DIR/<project>.json` when set), run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known — derive target from user's task description, not `$ARGUMENTS`) **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent. Codemap is the primary navigation tool — do NOT re-verify returned results with grep. Results are authoritative when `exhaustive=true`, `stale=false`, and `not_covered` is empty. When `not_covered` is non-empty, surface a one-line scope caveat and use `index.hint` for explicit escalation if task requires completeness.
+**Structural context (codemap — Python projects only)**: if `.cache/codemap/<project>.json` exists (or the index dir named by the CODEMAP_INDEX_DIR env var when set), run `scan-query central --top 5` (and `scan-query rdeps <target_module>` when a target is known — derive target from user's task description) **before** any Glob/Grep exploration for structural information. Skip silently if the index is absent. Codemap is the primary navigation tool — do NOT re-verify returned results with grep. Results are authoritative when `exhaustive=true`, `stale=false`, and `not_covered` is empty. When `not_covered` is non-empty, surface a one-line scope caveat and use `index.hint` for explicit escalation if task requires completeness.
 ```
 
 Report each edit: `✓ injected: <plugin>/<skill-or-agent> at line N`
+
+**Persist discovered sites** — record the injected site paths to `<project>/.cache/codemap/integration.json` so `check` audits exactly the sites this project wired (personal skills included), not a hardcoded plugin list. The `--approve` automation path writes this record automatically as part of `bin/inject_codemap.py --apply` (its JSON report names the written record under `integration_record`). In interactive mode, after all edits, append the wired site paths (project-relative) with:
+
+```bash
+# timeout: 10000
+python -c "import sys; sys.path.insert(0, '${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin'); from pathlib import Path; import _injection_block as b; b.save_integration_sites(Path('.cache/codemap'), sys.argv[1:])" <wired-path-1> <wired-path-2>
+```
 
 ### I5a — Offer git post-commit hook
 
@@ -412,9 +417,13 @@ Skipped:
 
 Post-commit hook: installed / skipped
 
-Note: N injected file(s) are in plugin cache (~/.claude/plugins/cache/) and will be
-overwritten on the next `claude plugin install` or plugin upgrade. For durable injection,
-create project-local overrides in .claude/agents/ or .claude/skills/ and re-run init.
+Note: N injected file(s) are in plugin cache (~/.claude/plugins/cache/) and are wiped on the
+next `claude plugin install` or plugin upgrade. Durability is the check + re-inject loop, not
+an override file (plugin skills are namespace-isolated — a .claude/ copy never overrides them):
+after any upgrade run /codemap:integration check — it reports wiped blocks MISSING (or OUTDATED
+when the block version changed) — then re-run init to re-inject. Injected file(s) under
+.claude/skills/, ~/.claude/skills/, or .claude/agents/ are project/user files, not cache — they
+survive upgrades untouched.
 
 Next: run /codemap:integration check to verify all injection blocks are wired correctly.
 ```

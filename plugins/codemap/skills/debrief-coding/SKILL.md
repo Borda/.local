@@ -43,7 +43,7 @@ TOOLS_LOGS=$(ls .cache/codemap/logs/tools_*.jsonl .cache/codemap/logs/tools.json
 
 If `--anonymize` flag given:
 
-**Guard**: anonymize every present shard — never assume the legacy `cli.jsonl` / `skills.jsonl` exist (per-session sharding means they usually don't). Loop over the `$CLI_LOGS` / `$SKILLS_LOGS` sets from Step 0, writing a `-anon` sibling per file; do not mix anonymized and original data in Step 2.
+**Guard**: anonymize every present shard — never assume the legacy `cli.jsonl` / `skills.jsonl` exist (per-session sharding means they usually don't). Loop over the `$CLI_LOGS` / `$SKILLS_LOGS` sets from Step 0; anonymized copies land in `.cache/codemap/export/` (anonymize.py refuses to write next to `.salt` — never target the logs dir); do not mix anonymized and original data in Step 2.
 
 ```bash
 for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
@@ -51,13 +51,13 @@ for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
          .cache/codemap/logs/tools_*.jsonl .cache/codemap/logs/tools.jsonl; do
     [ -f "$f" ] || continue
     python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/anonymize.py" \
-        --input "$f" --output "${f%.jsonl}-anon.jsonl"  # timeout: 15000
+        --input "$f"  # default --out-dir .cache/codemap/export/ — separated from .salt; timeout: 15000
 done
 ```
 
 If neither set has any file: print `⚠ --anonymize: no CLI or skill logs found — cannot produce anonymized report.` and stop. If only one layer is present, anonymize it and note the gap.
 
-Use the `-anon` variants as source in Step 2. If anonymize.py not found, warn and proceed with originals.
+Use the `-anon` variants under `.cache/codemap/export/` as source in Step 2. If anonymize.py not found, warn and proceed with originals.
 
 ## Step 2: Read log files
 
