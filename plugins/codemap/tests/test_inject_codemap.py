@@ -1,6 +1,6 @@
 """Tests for inject_codemap bin script.
 
-Focuses on the append-fallback idempotency guard (HI-6): re-running injection on an
+Focuses on the append-fallback idempotency guard: re-running injection on an
 already-injected SKILL.md — via either the step-heading or the append-fallback path — must be a
 byte-identical no-op rather than duplicating the block.
 """
@@ -19,7 +19,7 @@ import inject_codemap as ic
 
 
 class TestInjectBlockIdempotency:
-    """Cover the marker-guarded no-op on re-injection (HI-6)."""
+    """Cover the marker-guarded no-op on re-injection."""
 
     def test_append_fallback_second_run_is_byte_identical(self):
         """No step heading → append path; second run must not append a second block."""

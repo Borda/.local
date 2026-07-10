@@ -232,35 +232,22 @@ Extended scan for changed modules — runs the v4 pre-flight queries per module,
 
 ```bash
 codemap_available=false
-PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null) || PROJ=$(basename "$PWD")
 CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-enabled 2>/dev/null || echo false)
 if [ "$CODEMAP_ENABLED" = "true" ]; then
     codemap_available=true
-    # src-layout assumed; non-src files may not be valid modules — scan-query returns empty
-    CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|^src/||;s|\.py$||;s|/|.|g' | grep -v '__init__$')  # timeout: 3000
-    if [ -z "$CHANGED_MODS" ]; then
-        CHANGED_MODS=$(git diff HEAD --name-only | grep '\.py$' | sed 's|/[^/]*\.py$||' | sort -u | head -10)
-    fi
     # RUN_DIR not yet created (Step 2); stage here, copy to $RUN_DIR/codemap-context.md after mkdir
     # scan-query on PATH guaranteed — codemap-resolve confirmed it
     CODEMAP_CONTEXT_STAGE="${TMPDIR:-/tmp}/dev-review-codemap-context.md"
+    BATCH_REQ="${TMPDIR:-/tmp}/dev-review-codemap-batch.json"
+    # build_codemap_batch.py derives changed modules from git diff (src-layout mapping,
+    # dir fallback) and writes one batch request: central + 7 pre-flight queries per
+    # module — one scan-query process, one shared coverage block, instead of N×7 spawns
+    python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/build_codemap_batch.py" "$BATCH_REQ"  # timeout: 5000
     {
         echo "## Structural Context (codemap)"
         echo
-        echo "### Global blast-radius baseline"
-        scan-query --timeout 5 central --top 5 2>/dev/null
-        echo
-        for mod in $CHANGED_MODS; do
-            echo "### Module: $mod"
-            scan-query --timeout 5 rdeps        "$mod"          2>/dev/null  # importer count → risk tier
-            scan-query --timeout 5 fn-rdeps    "$mod" --exclude-tests 2>/dev/null
-            scan-query --timeout 5 fn-blast     "$mod"          2>/dev/null  # v3
-            scan-query --timeout 5 mock-rdeps   "$mod"          2>/dev/null  # v4.1
-            scan-query --timeout 5 uncovered    --top 20 "$mod" 2>/dev/null  # v4.2
-            scan-query --timeout 5 xrefs --broken        "$mod" 2>/dev/null  # v4.5
-            scan-query --timeout 5 undocumented "$mod" 2>/dev/null  # v4.4
-            echo
-        done
+        echo "### Batched query results (one shared coverage block)"
+        scan-query --timeout 20 batch "$BATCH_REQ" 2>/dev/null
     } > "$CODEMAP_CONTEXT_STAGE"
 fi
 echo "$codemap_available" > "${TMPDIR:-/tmp}/dev-review-codemap-available"
@@ -273,7 +260,7 @@ Codemap context propagation in Step 3:
   ## Structural Context (codemap, codemap_available=true)
   <content of $RUN_DIR/codemap-context.md>
 
-  Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast`, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
+  Read this section first. The results are a single `batch` JSON array: each entry has `cmd` (the query) and `result` (its payload), keyed by `index`; one shared `index` coverage block covers the whole batch. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast` entries, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when a query's `result` is empty for a symbol you need or when verifying a specific finding.
 
   Per-agent priority (skip redundant reads for symbols the listed query already covers):
   - qa-specialist (Agent 2): `uncovered` + `mock-rdeps` first

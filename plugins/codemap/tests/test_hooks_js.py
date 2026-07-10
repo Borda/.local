@@ -141,6 +141,45 @@ def _session_flag(tmpdir: Path, proj: str) -> Path:
     return tmpdir / f"codemap-preamble-{proj}"
 
 
+def _stale_flag(tmpdir: Path, proj: str) -> Path:
+    return tmpdir / f"codemap-stale-{proj}"
+
+
+def _session_marker(repo: Path) -> Path:
+    """The session marker path — always under <git-root>/.cache/codemap, never TMPDIR."""
+    return repo / ".cache" / "codemap" / "current-session"
+
+
+def _run_inject_with_event(
+    repo: Path,
+    idx_dir: Path,
+    plugin_root: Path,
+    tmpdir: Path,
+    event: dict,
+) -> subprocess.CompletedProcess:
+    """Drive inject-preamble.js piping a full UserPromptSubmit *event* dict on stdin.
+
+    Mirrors :func:`_run_inject` but lets a test control the whole event (e.g. supply
+    ``session_id``) rather than only the prompt string.
+    """
+    env = {
+        **os.environ,
+        "CODEMAP_INDEX_DIR": str(idx_dir),
+        "CLAUDE_PLUGIN_ROOT": str(plugin_root),
+        "TMPDIR": str(tmpdir),
+        "TEMP": str(tmpdir),
+        "TMP": str(tmpdir),
+    }
+    return subprocess.run(
+        ["node", str(_INJECT)],
+        input=json.dumps(event),
+        text=True,
+        capture_output=True,
+        cwd=str(repo),
+        env=env,
+    )
+
+
 # ── inject-preamble: staleness detection + preamble emit ─────────────────────────
 
 
@@ -343,6 +382,220 @@ class TestInjectPreambleRefreshLock:
         assert not marker.exists()
         # The lock the hook briefly acquired must be released so a later hook can retry.
         assert not _lock_file(tmpdir, proj).exists(), "lock must be released when scan bin absent"
+
+
+# ── inject-preamble: session marker (cross-agent scan-query contract) ─────────────
+
+
+class TestInjectPreambleSessionMarker:
+    """The <git-root>/.cache/codemap/current-session marker written every invocation.
+
+    scan-query reads this marker to correlate queries with the session that triggered
+    a refresh (the coverage-diet dedup). The hook must write it UNCONDITIONALLY after
+    resolving the project root — before the no-index early exit, before the current-
+    path session-flag dedup exit — so the marker's ts advances on every prompt even
+    when the preamble itself is suppressed. It carries single-line JSON
+    ``{"session_id","ts"}`` + trailing newline, and fails open (never throws).
+    """
+
+    def test_marker_written_with_session_id_and_ts(self, tmp_path: Path) -> None:
+        """A current-index turn writes the marker with the stdin session_id and an ms ts."""
+        repo = tmp_path / "proj"
+        head = _init_repo(repo)
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha=head)
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        before_ms = int(time.time() * 1000)
+
+        result = _run_inject_with_event(
+            repo, idx_dir, plugin_root, tmpdir, {"prompt": "hi", "session_id": "sid-marker"}
+        )
+
+        assert result.returncode == 0, result.stderr
+        raw = _session_marker(repo).read_text()
+        assert raw.endswith("\n"), "marker must end with a trailing newline"
+        payload = json.loads(raw)
+        assert payload["session_id"] == "sid-marker"
+        assert isinstance(payload["ts"], int)
+        assert payload["ts"] >= before_ms
+
+    def test_marker_written_before_no_index_exit(self, tmp_path: Path) -> None:
+        """A non-Python, no-index dir stays silent yet still writes the session marker."""
+        plain = tmp_path / "plain"
+        plain.mkdir()
+        (plain / "notes.txt").write_text("hi")  # non-Python, no index → silent exit
+        idx_dir = tmp_path / "idx-empty"  # never created
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+
+        result = _run_inject_with_event(
+            plain, idx_dir, plugin_root, tmpdir, {"prompt": "hi", "session_id": "sid-silent"}
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == ""  # silent exit path
+        payload = json.loads(_session_marker(plain).read_text())
+        assert payload["session_id"] == "sid-silent"  # marker written despite the silent exit
+
+    def test_marker_ts_advances_on_deduped_second_turn(self, tmp_path: Path) -> None:
+        """A session-flag-suppressed second turn still advances the marker ts (written pre-dedup)."""
+        repo = tmp_path / "proj"
+        head = _init_repo(repo)
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha=head)
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        # Pre-seed a fresh session flag so the current-index turn dedups to a silent exit.
+        _session_flag(tmpdir, repo.name).write_text(str(int(time.time() * 1000)))
+
+        first = _run_inject_with_event(repo, idx_dir, plugin_root, tmpdir, {"prompt": "hi", "session_id": "sid-dedup"})
+        first_ts = json.loads(_session_marker(repo).read_text())["ts"]
+        time.sleep(0.01)
+        second = _run_inject_with_event(repo, idx_dir, plugin_root, tmpdir, {"prompt": "hi", "session_id": "sid-dedup"})
+
+        assert first.returncode == 0 and second.returncode == 0
+        assert second.stdout == "", "second current-index turn must dedup to a silent exit"
+        second_ts = json.loads(_session_marker(repo).read_text())["ts"]
+        assert second_ts >= first_ts, "marker ts must advance even on a deduped turn"
+
+    def test_marker_session_id_empty_on_unparsable_stdin(self, tmp_path: Path) -> None:
+        """Unparsable stdin fails open: marker written with session_id '' (no throw, exit 0)."""
+        repo = tmp_path / "proj"
+        head = _init_repo(repo)
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha=head)
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        env = {
+            **os.environ,
+            "CODEMAP_INDEX_DIR": str(idx_dir),
+            "CLAUDE_PLUGIN_ROOT": str(plugin_root),
+            "TMPDIR": str(tmpdir),
+            "TEMP": str(tmpdir),
+            "TMP": str(tmpdir),
+        }
+        result = subprocess.run(
+            ["node", str(_INJECT)],
+            input="}{ not json",
+            text=True,
+            capture_output=True,
+            cwd=str(repo),
+            env=env,
+        )
+
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(_session_marker(repo).read_text())
+        assert payload["session_id"] == ""
+
+
+# ── inject-preamble: stale-reminder collapse ──────────────────────────────────────
+
+
+class TestInjectPreambleStaleCollapse:
+    """The once-per-session full stale notice collapses to a single line thereafter.
+
+    A separate sentinel (``codemap-stale-<proj>``, distinct from the preamble flag)
+    tracks the stale-reminder dedup: the first still-stale prompt emits the full two-
+    line notice and writes the sentinel; every later still-stale prompt within
+    SESSION_TTL_MS collapses to one line ``[codemap] index stale<refreshNote>`` and
+    exits before the module-count parse. Currency paths other than stale are untouched.
+    """
+
+    def _stale_repo(self, tmp_path: Path) -> tuple[Path, Path, str]:
+        """Build a repo whose committed HEAD differs from the indexed sha (→ stale)."""
+        repo = tmp_path / "proj"
+        _init_repo(repo)
+        idx_dir = tmp_path / "idx"
+        _write_index(idx_dir, repo.name, git_sha="0" * 40)
+        return repo, idx_dir, repo.name
+
+    def test_first_stale_emits_full_notice_and_writes_sentinel(self, tmp_path: Path) -> None:
+        """The first stale prompt emits the full two-line notice and drops the stale sentinel."""
+        repo, idx_dir, proj = self._stale_repo(tmp_path)
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+
+        result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        # Full form carries the second "Prefer scan-query" line and a module count.
+        assert "Prefer scan-query" in result.stdout
+        assert "modules" in result.stdout
+        assert _stale_flag(tmpdir, proj).exists(), "the stale sentinel must be written on the full notice"
+
+    def test_second_stale_collapses_to_single_line(self, tmp_path: Path) -> None:
+        """A fresh stale sentinel collapses the notice to one line with no second body line."""
+        repo, idx_dir, proj = self._stale_repo(tmp_path)
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        # Pre-seed a fresh stale sentinel so the reminder collapses immediately.
+        _stale_flag(tmpdir, proj).write_text(str(int(time.time() * 1000)))
+        # Pre-seed a fresh refresh lock so the note reads "refresh in progress" deterministically.
+        _lock_file(tmpdir, proj).write_text(str(int(time.time() * 1000)))
+
+        result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        lines = [ln for ln in result.stdout.splitlines() if ln]
+        assert lines == ["[codemap] index stale · refresh in progress"]
+        # Collapsed form exits before the module-count parse — no second "Prefer" line.
+        assert "Prefer scan-query" not in result.stdout
+
+    def test_collapsed_line_refresh_pending_when_no_note(self, tmp_path: Path) -> None:
+        """When neither spawn nor lock produced a note, the collapsed line reads 'refresh pending'.
+
+        A stale-but-non-git currency cannot occur here, so drive the note-less path by
+        pre-seeding the stale sentinel while removing the scan bin AND holding no lock —
+        the hook takes the lock, finds no scan bin, releases it, and emits no note. The
+        collapsed reminder then supplies its own ' · refresh pending' default.
+        """
+        repo, idx_dir, proj = self._stale_repo(tmp_path)
+        marker = tmp_path / "spawned.marker"
+        # No scan bin → spawn path releases the lock and sets no refreshNote.
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=False, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        _stale_flag(tmpdir, proj).write_text(str(int(time.time() * 1000)))
+
+        result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        lines = [ln for ln in result.stdout.splitlines() if ln]
+        assert lines == ["[codemap] index stale · refresh pending"]
+
+    def test_stale_collapse_isolated_from_preamble_flag(self, tmp_path: Path) -> None:
+        """A fresh preamble flag (current-path dedup) does NOT collapse the stale reminder.
+
+        The two sentinels track independent conditions: seeding only the preamble flag
+        must still yield the full stale notice, proving the stale path keys on its own
+        ``codemap-stale-<proj>`` sentinel rather than the preamble one.
+        """
+        repo, idx_dir, proj = self._stale_repo(tmp_path)
+        marker = tmp_path / "spawned.marker"
+        plugin_root = _fake_plugin_root(tmp_path, with_scan_bin=True, marker=marker)
+        tmpdir = tmp_path / "tmp"
+        tmpdir.mkdir()
+        # Seed the PREAMBLE flag only — the stale sentinel is absent.
+        _session_flag(tmpdir, proj).write_text(str(int(time.time() * 1000)))
+
+        result = _run_inject(repo, idx_dir, plugin_root, tmpdir)
+
+        assert result.returncode == 0, result.stderr
+        assert "Prefer scan-query" in result.stdout, "stale full notice must not be suppressed by the preamble flag"
+        assert _stale_flag(tmpdir, proj).exists()
 
 
 # ── guard-redundant-scan ─────────────────────────────────────────────────────────

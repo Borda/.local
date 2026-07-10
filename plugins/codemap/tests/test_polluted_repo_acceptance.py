@@ -1,4 +1,4 @@
-"""Integration-level acceptance for Phase-1 codemap hardening (tasks 1.1/1.2/1.3).
+"""Integration-level acceptance for codemap index hardening (exclusions, dedup, completeness).
 
 Driven through the shared ``polluted_repo`` factory fixture (see conftest.py): one
 realistic git repo exercising exclusions, deterministic dedup, direction-scoped
@@ -13,7 +13,7 @@ Tree recap (collision-free variant; dotted names in parentheses):
     vendored-lib/vendored.py         — pruned via .codemapignore
 The ``with_collision=True`` variant adds wt/pkg/… → a real pkg.* qualname collision.
 
-``TestExcludedPathStaleness`` regression-guards a fixed task 1.2 ↔ 1.1 integration
+``TestExcludedPathStaleness`` regression-guards a fixed scan-index/scan-query integration
 gap: scan-index filters excluded paths out of the index ``file_shas`` while
 scan-query's staleness diff applies the same exclusions (shared via
 ``bin/_exclusions.py``), so a ``.codemapignore``-excluded tracked ``.py`` (here
@@ -66,7 +66,7 @@ def _module_paths(index: dict) -> set[str]:
 
 
 class TestExclusions:
-    """Task 1.2: the ghost worktree and vendored dir never enter the module index."""
+    """the ghost worktree and vendored dir never enter the module index."""
 
     def test_no_modules_under_excluded_roots(self, polluted_repo):
         """Fresh scan indexes zero modules under .claude/ or the vendored dir."""
@@ -99,7 +99,7 @@ class TestExclusions:
 
 
 class TestDedupDeterminism:
-    """Task 1.3: the non-excluded duplicate tree collides deterministically."""
+    """the non-excluded duplicate tree collides deterministically."""
 
     def test_collision_recorded_for_shared_qualname(self, polluted_repo):
         """pkg/leaf.py and wt/pkg/leaf.py share dotted name pkg.leaf → one collision record."""
@@ -125,7 +125,7 @@ class TestDedupDeterminism:
         assert not any(p.startswith(".claude/") for p in involved), involved
 
     def test_winner_stable_across_repeated_scans(self, polluted_repo, scan_index):
-        """The dedup winner for pkg.leaf is identical across repeated full scans (CR-3)."""
+        """The dedup winner for pkg.leaf is identical across repeated full scans."""
         root, index_path = polluted_repo(with_collision=True)
         winners = set()
         for _ in range(3):
@@ -137,7 +137,7 @@ class TestDedupDeterminism:
 
 
 class TestDirectionScopedIncompleteness:
-    """Task 1.1: a degraded file forces global-in / whole-graph queries to report incomplete."""
+    """a degraded file forces global-in / whole-graph queries to report incomplete."""
 
     def test_degraded_file_registered(self, polluted_repo, scan_query):
         """broken.py registers as the sole degraded module, surfaced in degraded_files."""
@@ -164,7 +164,7 @@ class TestDirectionScopedIncompleteness:
 
 
 class TestSelfHeal:
-    """Task 1.1: a stale index is refreshed inline before the query answers."""
+    """a stale index is refreshed inline before the query answers."""
 
     def test_new_committed_edge_surfaces_via_heal(self, polluted_repo, scan_query):
         """Committing a new importer then querying rdeps auto-heals and reflects the new edge."""
@@ -192,7 +192,7 @@ class TestSelfHeal:
 
 
 class TestExcludedPathStaleness:
-    """Task 1.2↔1.1: excluded tracked .py files must not poison staleness or completeness.
+    """↔1.1: excluded tracked .py files must not poison staleness or completeness.
 
     scan-index drops ``.codemapignore``-excluded paths from the index ``file_shas``;
     scan-query's staleness diff now applies the same exclusions (shared via

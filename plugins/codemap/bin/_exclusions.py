@@ -22,7 +22,7 @@ import re
 
 # Built-in directory names pruned from every scan. Never project source, but can hold
 # worktree copies of the whole repo (.claude/, .codex/) that would otherwise inflate the
-# index and create qualname collisions (CR-2), plus the usual build/cache/venv dirs.
+# index and create qualname collisions, plus the usual build/cache/venv dirs.
 SKIP_DIRS = {
     ".git",
     ".venv",

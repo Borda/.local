@@ -218,7 +218,7 @@ class TestInstallHookWithPluginRoot:
 
 
 # ---------------------------------------------------------------------------
-# managed-block replace-in-place (HI-7)
+# managed-block replace-in-place
 # ---------------------------------------------------------------------------
 
 
@@ -277,7 +277,7 @@ class TestManagedBlockReplaceInPlace:
 
 
 def test_module_shebang_is_python3():
-    """The install script shebang pins ``python3`` (HI-7), not the ambiguous ``python``."""
+    """The install script shebang pins ``python3``, not the ambiguous ``python``."""
     source = Path(iph.__file__).read_text(encoding="utf-8")
     assert source.splitlines()[0] == "#!/usr/bin/env python3"
 

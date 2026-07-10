@@ -18,7 +18,9 @@ import ast
 import importlib.machinery
 import importlib.util
 import json
+import os
 import subprocess
+import uuid
 import sys
 from pathlib import Path
 
@@ -3021,7 +3023,7 @@ class TestCoverageQueryCommands:
 
 
 class TestErrorSemantics:
-    """Task 2.6 (ME-1, ME-7, CR-5): structured JSON errors + exit-code contract."""
+    """structured JSON errors + exit-code contract."""
 
     def test_unknown_module_errors_with_suggestions(self, project, scan_query):
         """deps on a module absent from the index → exit 3 with difflib suggestions."""
@@ -3144,7 +3146,7 @@ class TestErrorSemantics:
 
 
 class TestRootMismatch:
-    """Task 2.7 (CR-4): index scan_root vs queried root — visible mismatch, not silent wrong answers."""
+    """index scan_root vs queried root — visible mismatch, not silent wrong answers."""
 
     def test_root_mismatch_flag_and_incomplete(self, tmp_path, scan_index, scan_query):
         """Querying with --root pointing elsewhere sets root_mismatch and forces query_complete=false."""
@@ -3202,3 +3204,213 @@ class TestRootMismatch:
         assert result.returncode == 2, result.stderr + result.stdout
         data = json.loads(result.stdout)
         assert data["error"] == "index path outside project root"
+
+
+# ── list --limit cap + total/shown disclosure ──────────────────────────────
+
+
+class TestListLimit:
+    """`list` honours --limit and always discloses total vs shown."""
+
+    def test_list_default_reports_total_and_shown(self, query):
+        """Default list emits total and shown counts alongside the module list."""
+        data = query("list")
+        assert data["total"] == len(data["modules"])
+        assert data["shown"] == len(data["modules"])
+
+    def test_list_limit_caps_modules(self, query):
+        """--limit N returns at most N modules while total reflects the full count."""
+        data = query("list", "--limit", "2")
+        assert len(data["modules"]) == 2
+        assert data["shown"] == 2
+        assert data["total"] >= 5  # fixture has 5+ modules; total is uncapped
+
+    def test_list_limit_zero_returns_all(self, query):
+        """--limit 0 disables the cap — shown equals total."""
+        data = query("list", "--limit", "0")
+        assert data["shown"] == data["total"]
+        assert len(data["modules"]) == data["total"]
+
+
+# ── session-scoped coverage diet ───────────────────────────────────────────
+
+
+def _build_diet_repo(root: Path, scan_index: Path) -> Path:
+    """Git-init *root*, write one module, scan it, return the index path.
+
+    The diet reader resolves the marker at ``<git-root>/.cache/codemap/current-session``,
+    so the test tree must be a real git repo for the marker path to match.
+    """
+    subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
+    (root / "modx.py").write_text("def fx(x):\n    return x\n")
+    subprocess.run(
+        [sys.executable, str(scan_index), "--root", str(root)],
+        capture_output=True,
+        cwd=str(root),
+        check=True,
+    )
+    return root / ".cache" / "codemap" / f"{root.name}.json"
+
+
+def _write_marker(root: Path, session_id: str) -> None:
+    """Write the hook-owned session marker matching the cross-agent contract."""
+    import time
+
+    marker = root / ".cache" / "codemap" / "current-session"
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"session_id": session_id, "ts": int(time.time() * 1000)}))
+
+
+def _run_coverage_query(scan_query: Path, root: Path, index_path: Path, *extra: str) -> dict:
+    """Run `central --top 1` and return its `index` coverage block."""
+    result = subprocess.run(
+        [sys.executable, str(scan_query), "--index", str(index_path), *extra, "central", "--top", "1"],
+        capture_output=True,
+        text=True,
+        cwd=str(root),
+        env={**os.environ, "CODEMAP_LOGGING": "false"},
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    return json.loads(result.stdout)["index"]
+
+
+class TestCoverageDiet:
+    """First query per session emits the full block; subsequent emit a compact one."""
+
+    def test_first_query_full_then_second_compact(self, tmp_path, scan_index, scan_query):
+        """Two sequential same-session queries: first full, second compact."""
+        import tempfile
+
+        index_path = _build_diet_repo(tmp_path, scan_index)
+        session_id = f"diet-{tmp_path.name}-{uuid.uuid4().hex[:8]}"
+        _write_marker(tmp_path, session_id)
+        sentinel = Path(tempfile.gettempdir()) / f"codemap-coverage-{session_id}"
+        sentinel.unlink(missing_ok=True)
+        try:
+            first = _run_coverage_query(scan_query, tmp_path, index_path)
+            second = _run_coverage_query(scan_query, tmp_path, index_path)
+        finally:
+            sentinel.unlink(missing_ok=True)
+        assert not first.get("compact"), "first query must emit the full block"
+        assert "total_modules" in first
+        assert second.get("compact") is True, "second query must emit the compact block"
+        assert "total_modules" not in second
+        # Per-query honesty signals survive the diet.
+        assert "query_complete" in second
+        assert "stale" in second
+        assert "root_mismatch" in second
+
+    def test_missing_marker_stays_verbose(self, tmp_path, scan_index, scan_query):
+        """No session marker → every query emits the full block (fail-verbose)."""
+        index_path = _build_diet_repo(tmp_path, scan_index)
+        first = _run_coverage_query(scan_query, tmp_path, index_path)
+        second = _run_coverage_query(scan_query, tmp_path, index_path)
+        assert not first.get("compact")
+        assert not second.get("compact"), "without a marker the diet must never engage"
+
+    def test_verbose_coverage_flag_forces_full(self, tmp_path, scan_index, scan_query):
+        """--verbose-coverage restores the full block even after the first query."""
+        import tempfile
+
+        index_path = _build_diet_repo(tmp_path, scan_index)
+        session_id = f"verbose-{tmp_path.name}-{uuid.uuid4().hex[:8]}"
+        _write_marker(tmp_path, session_id)
+        sentinel = Path(tempfile.gettempdir()) / f"codemap-coverage-{session_id}"
+        sentinel.unlink(missing_ok=True)
+        try:
+            _run_coverage_query(scan_query, tmp_path, index_path)  # consumes the sentinel
+            forced = _run_coverage_query(scan_query, tmp_path, index_path, "--verbose-coverage")
+        finally:
+            sentinel.unlink(missing_ok=True)
+        assert not forced.get("compact")
+        assert "total_modules" in forced
+
+
+# ── batch subcommand ───────────────────────────────────────────────────────
+
+
+def _run_batch(scan_query: Path, root: Path, index_path: Path, items: list) -> dict:
+    """Run `batch` feeding *items* via stdin; return the decoded batch result."""
+    result = subprocess.run(
+        [sys.executable, str(scan_query), "--index", str(index_path), "batch", "-"],
+        input=json.dumps(items),
+        capture_output=True,
+        text=True,
+        cwd=str(root),
+        env={**os.environ, "CODEMAP_LOGGING": "false"},
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    return json.loads(result.stdout)
+
+
+class TestBatch:
+    """`batch` runs N queries in-process with one shared coverage block."""
+
+    def test_batch_matches_individual_results(self, project, scan_query, query):
+        """A batch of 4 mixed queries equals the 4 standalone results (modulo coverage dedup)."""
+        root, index_path = project
+        items = [
+            {"cmd": "deps", "args": ["alpha"]},
+            {"cmd": "rdeps", "args": ["gamma"]},
+            {"cmd": "central", "args": ["--top", "3"]},
+            {"cmd": "list", "args": ["--limit", "2"]},
+        ]
+        batch = _run_batch(scan_query, root, index_path, items)
+        assert batch["count"] == 4
+        # Each item's payload matches its standalone form once the per-item coverage
+        # block (deduped to the batch level) is stripped from the standalone result.
+        for entry, item in zip(batch["batch"], items):
+            standalone = query(item["cmd"], *item["args"])
+            standalone.pop("index", None)
+            assert entry["ok"] is True
+            assert entry["result"] == standalone
+        # One shared coverage block for the whole batch.
+        assert "index" in batch
+
+    def test_batch_preserves_input_order(self, project, scan_query):
+        """Results are keyed by input order via the ``index`` field."""
+        root, index_path = project
+        items = [{"cmd": "deps", "args": ["alpha"]}, {"cmd": "deps", "args": ["beta"]}]
+        batch = _run_batch(scan_query, root, index_path, items)
+        assert [e["index"] for e in batch["batch"]] == [0, 1]
+        assert batch["batch"][0]["result"]["module"] == "alpha"
+        assert batch["batch"][1]["result"]["module"] == "beta"
+
+    def test_batch_failing_item_does_not_kill_batch(self, project, scan_query):
+        """A failing query yields a per-item error object; sibling queries still succeed."""
+        root, index_path = project
+        items = [
+            {"cmd": "deps", "args": ["nonexistent.module.xyz"]},
+            {"cmd": "deps", "args": ["alpha"]},
+        ]
+        batch = _run_batch(scan_query, root, index_path, items)
+        assert batch["batch"][0]["ok"] is False
+        assert batch["batch"][1]["ok"] is True
+        assert batch["batch"][1]["result"]["module"] == "alpha"
+
+    def test_batch_invalid_command_is_per_item_error(self, project, scan_query):
+        """An unknown subcommand surfaces as a per-item error, not a batch abort."""
+        root, index_path = project
+        batch = _run_batch(scan_query, root, index_path, [{"cmd": "not-a-command"}])
+        assert batch["batch"][0]["ok"] is False
+        assert "error" in batch["batch"][0]
+
+    def test_batch_nested_batch_rejected(self, project, scan_query):
+        """`batch` inside `batch` is rejected per item (no nesting)."""
+        root, index_path = project
+        batch = _run_batch(scan_query, root, index_path, [{"cmd": "batch"}])
+        assert batch["batch"][0]["ok"] is False
+
+    def test_batch_non_array_input_exits_bad_input(self, project, scan_query):
+        """A non-array top-level JSON value is a bad-input error (exit 2)."""
+        root, index_path = project
+        result = subprocess.run(
+            [sys.executable, str(scan_query), "--index", str(index_path), "batch", "-"],
+            input=json.dumps({"cmd": "list"}),
+            capture_output=True,
+            text=True,
+            cwd=str(root),
+            env={**os.environ, "CODEMAP_LOGGING": "false"},
+        )
+        assert result.returncode == 2, result.stderr + result.stdout
+        assert "error" in json.loads(result.stdout)

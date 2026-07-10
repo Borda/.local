@@ -1,4 +1,4 @@
-"""Direction-scoped completeness and stale-index self-heal for scan-query (CR-1).
+"""Direction-scoped completeness and stale-index self-heal for scan-query.
 
 Two behaviours are exercised:
 
@@ -241,7 +241,7 @@ class TestCollisionVeto:
     """A qualname collision vetoes whole-graph always, but local only for the colliding module."""
 
     def _inject_collision(self, index_path: Path, name: str) -> None:
-        """Write a `collisions` entry (as scan-index task 1.3 would) into an existing index file."""
+        """Write a `collisions` entry (as scan-index would on collision) into an existing index file."""
         data = json.loads(index_path.read_text())
         data["collisions"] = [{"name": name, "kept": f"{name}.a", "dropped": f"{name}.b"}]
         index_path.write_text(json.dumps(data))

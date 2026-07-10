@@ -113,9 +113,9 @@ def query(project, scan_query) -> Callable[..., dict]:
     return _query
 
 
-# ── Task 1.4: shared polluted-repo fixture for integration-level acceptance ──────
+# ── shared polluted-repo fixture for integration-level acceptance ──────
 #
-# A single realistic tree exercising the Phase-1 code-review items together, rather
+# A single realistic tree exercising the index-hardening fixes together, rather
 # than the per-concern inline trees used by the unit-level suites. It is a real git
 # repo (the staleness diff and self-heal are git-blob based) built by a factory so
 # individual tests can toggle a colliding copy, mutate files, and re-scan without
@@ -178,7 +178,7 @@ def _materialize_polluted_tree(root: Path, *, with_collision: bool) -> None:
     Args:
         root: repo root to populate.
         with_collision: also add the non-excluded ``wt/pkg`` copy so its qualnames
-            collide with the canonical ``pkg`` tree (task 1.3).
+            collide with the canonical ``pkg`` tree.
     """
     pkg = root / "pkg"
     pkg.mkdir()
@@ -216,7 +216,7 @@ def polluted_repo(tmp_path: Path, scan_index: Path) -> Callable[..., tuple[Path,
 
     The callable accepts ``with_collision`` (default ``False``): when ``True`` the
     non-excluded ``wt/pkg`` duplicate is added so the index records a real qualname
-    collision (task 1.3). Leave it ``False`` for direction-scoped completeness and
+    collision. Leave it ``False`` for direction-scoped completeness and
     self-heal tests, which need a collision-free index to reach completeness.
 
     Returns:

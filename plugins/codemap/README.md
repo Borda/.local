@@ -565,14 +565,15 @@ When Step 0 does build, it prints one line — `[codemap] index built in <N>s` �
 
 These work with any v2 or v3 index.
 
-| Subcommand          | What it answers                                                                                                 |
-| ------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `rdeps <module>`    | What imports this module? (blast radius)                                                                        |
-| `deps <module>`     | What does this module import?                                                                                   |
-| `central [--top N]` | Which modules are imported by the most others? Default N=10                                                     |
-| `coupled [--top N]` | Which modules import the most others? Default N=10                                                              |
-| `path <from> <to>`  | Shortest import chain between two modules; `null` (with `reason: "no-import-path"`, exit 0) means not connected |
-| `list`              | All indexed modules with their file paths                                                                       |
+| Subcommand          | What it answers                                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `rdeps <module>`    | What imports this module? (blast radius)                                                                                        |
+| `deps <module>`     | What does this module import?                                                                                                   |
+| `central [--top N]` | Which modules are imported by the most others? Default N=10                                                                     |
+| `coupled [--top N]` | Which modules import the most others? Default N=10                                                                              |
+| `path <from> <to>`  | Shortest import chain between two modules; `null` (with `reason: "no-import-path"`, exit 0) means not connected                 |
+| `list [--limit N]`  | Indexed modules with their file paths; capped at N (default 100, `0` = all). Emits `total` and `shown` so truncation is visible |
+| `batch <file\|->`   | Run many queries in one process from a JSON array of `{cmd, args}`; see [batch mode](#batch-mode)                               |
 
 #### Symbol-level queries
 
@@ -609,13 +610,14 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 
 #### Common flags
 
-| Flag              | Applies to                                                                       | Effect                                                                                                                                                                                                                   |
-| ----------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--exclude-tests` | `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central` | Drop test modules from results                                                                                                                                                                                           |
-| `--limit N`       | `symbol`, `find-symbol`                                                          | Max results (default 20). Use `0` for unlimited                                                                                                                                                                          |
-| `--with-imports`  | `symbol`                                                                         | Include module-level import block alongside each symbol's source                                                                                                                                                         |
-| `--root <path>`   | all commands                                                                     | Override project root for **file-path resolution only** — does not re-scan or re-target the index. Disagreeing with the index's `scan_root` yields `root_mismatch: true` + `query_complete: false` (see scan_root below) |
-| `--index <path>`  | all commands                                                                     | Explicit index file; bypasses auto-discovery. Must resolve inside CWD or git root, else exits `{"error": "index path outside project root"}`                                                                             |
+| Flag                 | Applies to                                                                       | Effect                                                                                                                                                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--exclude-tests`    | `rdeps`, `central`, `coupled`, `symbol`, `find-symbol`, `fn-rdeps`, `fn-central` | Drop test modules from results                                                                                                                                                                                           |
+| `--limit N`          | `symbol`, `find-symbol`, `list`                                                  | Max results (default 20; `list` default 100). Use `0` for unlimited                                                                                                                                                      |
+| `--with-imports`     | `symbol`                                                                         | Include module-level import block alongside each symbol's source                                                                                                                                                         |
+| `--root <path>`      | all commands                                                                     | Override project root for **file-path resolution only** — does not re-scan or re-target the index. Disagreeing with the index's `scan_root` yields `root_mismatch: true` + `query_complete: false` (see scan_root below) |
+| `--index <path>`     | all commands                                                                     | Explicit index file; bypasses auto-discovery. Must resolve inside CWD or git root, else exits `{"error": "index path outside project root"}`                                                                             |
+| `--verbose-coverage` | all commands                                                                     | Force the full coverage block on every query, disabling the once-per-session diet (see [coverage diet](#coverage-block-diet))                                                                                            |
 
 #### Common patterns
 
@@ -649,6 +651,25 @@ Use `module::function` format for qualified names, for example `mypackage.auth::
 ```
 
 </details>
+
+<a id="batch-mode"></a>
+
+#### batch mode
+
+`batch` runs many queries inside a single `scan-query` process instead of paying the process-spawn and coverage-block cost once per call. It reads a JSON array of `{cmd, args}` objects from a file path or stdin (`-`), runs each request through the same code path as its standalone form, and returns the results keyed by input order under one shared coverage block:
+
+```bash
+echo '[{"cmd":"rdeps","args":["myproject.auth"]},{"cmd":"fn-blast","args":["myproject.db::fetch_user"]}]' \
+    | scan-query batch -
+```
+
+The response shape is `{"batch": [{"ok": bool, "index": N, "cmd": "...", "result": {...}}, ...], "count": N, "index": <shared coverage block>}`. A request that fails to parse or errors yields a per-item `{"ok": false, ...}` object — one bad query never aborts the batch. `batch` cannot be nested inside `batch`. This is the form the `/develop:review` and `/oss:review` pre-flight uses to collect every per-module query in one call.
+
+<a id="coverage-block-diet"></a>
+
+#### coverage block diet
+
+Every query result carries an `index` coverage block. Its session-invariant fields (module counts, degraded file list, star-import count, etc.) are identical across queries, so after the **first** query of a Claude Code session `scan-query` emits a **compact** block carrying only the per-query honesty signals — `query_complete`, `stale`, `root_mismatch`, plus `compact: true`, and (only when the result is incomplete) the `degraded` count and `note` explaining why. Session identity comes from the hook-written marker at `<git-root>/.cache/codemap/current-session`; when that marker is missing, unparsable, or stale, every query emits the full block (fail-verbose). Pass `--verbose-coverage` to force the full block on every query.
 
 ______________________________________________________________________
 

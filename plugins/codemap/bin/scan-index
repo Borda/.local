@@ -2977,7 +2977,7 @@ def _dedup_key(path: str, src_root_rel: str) -> tuple[int, int, str]:
 
     Prefers, in order: a path under the detected source root, then the shortest path
     (by component count), then lexicographic order. Fully deterministic regardless of
-    filesystem walk order (CR-3).
+    filesystem walk order.
 
     Args:
         path: module path relative to project root, posix separators.

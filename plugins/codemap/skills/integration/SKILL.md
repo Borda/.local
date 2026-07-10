@@ -9,15 +9,15 @@ model: sonnet
 
 <objective>
 
-Three modes: use `init` first-time to onboard, then `check` regularly to verify, then `demo` to validate end-to-end. Default (no args) → `check`.
+Three modes: `init` first-time to onboard, `check` regularly to verify, `demo` to validate end-to-end. Default (no args) → `check`.
 
-- **`check`** — fast diagnostic: finds `scan-query`, verifies index exists and fresh, runs smoke test, audits which skill files have injection block. Prints `✓`/`✗`/`⚠` per check with one-line remediation hints. Pure bash — no model reasoning needed for happy path.
-- **`init`** — interactive onboarding: builds index if missing, discovers all installed skills and agents, scores by how much codemap would help, presents recommendation table, asks which to wire in, inserts correct injection block into each selected file.
-- **`demo`** — end-to-end validation: plumbing check + index build if missing + plain-vs-codemap A/B on real tasks + telemetry pipeline diagnostic. Proves expected gains on current repo or a gated public clone.
+- **`check`** — fast diagnostic: find `scan-query`, verify index exists + fresh, run smoke test, audit which skill files have injection block. Prints `✓`/`✗`/`⚠` per check + one-line remediation. Pure bash — no model reasoning for happy path.
+- **`init`** — interactive onboarding: build index if missing, discover installed skills/agents, score by codemap-value, present recommendation table, ask which to wire, insert injection block into each selected file.
+- **`demo`** — end-to-end validation: plumbing check + index build if missing + plain-vs-codemap A/B on real tasks + telemetry diagnostic.
 
-NOT for: running structural query (use `/codemap:query-code`); pure plumbing without gain proof (use `check`); explicitly requesting a standalone index rebuild (use `/codemap:scan-codebase` — note: `init` builds the index as a side-effect when missing, but that is not its primary purpose).
+NOT for: running structural query (use `/codemap:query-code`); pure plumbing without gain proof (use `check`); explicit standalone index rebuild (use `/codemap:scan-codebase` — `init` builds index as side-effect when missing, but that's not its purpose).
 
-Arguments: `check` (no flags) or `init [--approve]` — `--approve` auto-applies all High+Medium injection recommendations for files within codemap's own installed plugin root (the `installPath` discovered for the codemap entry in `installed_plugins.json`), installs the post-commit hook, and skips interactive prompts. **`--approve` scope**: files belonging to other installed plugins always require interactive confirmation regardless of `--approve` — they are outside codemap's installPath. CHECK-tier items (prefixed `CHECK:`) are informational and are never auto-applied under `--approve`. If codemap's installPath cannot be determined from `installed_plugins.json`, `--approve` falls back to interactive confirmation for all candidates.
+**`--approve`** (init): auto-applies all High+Medium injection recommendations for files within codemap's own installed plugin root (`installPath` for the codemap entry in `installed_plugins.json`), installs the post-commit hook, skips interactive prompts. **Scope**: files belonging to other plugins always require interactive confirmation regardless of `--approve` — outside codemap's installPath. CHECK-tier items (`CHECK:` prefix) are informational — never auto-applied. If codemap's installPath cannot be determined from `installed_plugins.json`, `--approve` falls back to interactive for all candidates.
 
 </objective>
 
@@ -26,7 +26,7 @@ Arguments: `check` (no flags) or `init [--approve]` — `--approve` auto-applies
 - **$ARGUMENTS**: optional — one of:
   - Omitted or `check` — run diagnostic; print health status for all codemap integration points
   - `init` — interactive onboarding: build index if missing, discover skills/agents, recommend injection sites, wire in selected files
-  - `init --approve` — non-interactive for files within codemap's own installed plugin root (`installPath` from `installed_plugins.json`); auto-applies all High+Medium injection recommendations and installs post-commit hook without prompting. Files from other plugins require explicit interactive confirmation even under `--approve`. CHECK-tier items (`CHECK:` prefix) are informational — never auto-applied. If codemap's installPath cannot be determined, falls back to interactive. **⚠ Scope warning**: injects into cache files (see I2/I5 warning) — overwritten on next plugin upgrade. Recommended: run `init` (interactive) first to review the candidate list before using `--approve` for subsequent runs. `init` without `--approve` is a guided interactive workflow; `init --approve` uses `bin/inject_codemap.py` for deterministic automation.
+  - `init --approve` — non-interactive for files within codemap's own `installPath`; auto-applies all High+Medium recommendations + installs post-commit hook without prompting. Other plugins' files require interactive confirmation even under `--approve`. CHECK-tier items never auto-applied. If installPath undeterminable, falls back to interactive. **⚠ Scope warning**: injects into cache files (see I2/I5 warning) — overwritten on next plugin upgrade. Recommended: run `init` (interactive) first to review candidates before `--approve`. `init` without `--approve` = guided interactive workflow; `init --approve` = `bin/inject_codemap.py` deterministic automation.
   - `demo [--repo <path|url>] [--public] [--anonymize] [--keep-clone] [--output <path>]` — end-to-end validation; all flags optional; see `modes/demo.md`
 
 </inputs>
@@ -37,13 +37,13 @@ Arguments: `check` (no flags) or `init [--approve]` — `--approve` auto-applies
 
 Parse `$ARGUMENTS` (case-insensitive):
 
-- Starts with `check` or empty → run **check mode** (Steps C1–C4)
-- Starts with `init` → run **init mode** (Steps I0–I6 (I5 has sub-steps I5a, I5b))
-- Starts with `demo` → run **demo mode**
+- Starts with `check` or empty → **check mode** (Steps C1–C4)
+- Starts with `init` → **init mode** (Steps I0–I6; I5 has sub-steps I5a, I5b)
+- Starts with `demo` → **demo mode**
 
 > loads: modes/demo.md
 
-- Anything else → use `AskUserQuestion`: "Unrecognized command `$ARGUMENTS`. Which operation did you want?" Options: (a) `check` — audit integration health, (b) `init` — onboard codemap interactively, (c) `init --approve` — onboard non-interactively (auto-applies all High+Medium recommendations without prompting), (d) `demo` — end-to-end validation with A/B gain proof
+- Anything else → `AskUserQuestion`: "Unrecognized command `$ARGUMENTS`. Which operation did you want?" Options: (a) `check` — audit integration health, (b) `init` — onboard interactively, (c) `init --approve` — onboard non-interactively (auto-applies all High+Medium without prompting), (d) `demo` — end-to-end validation with A/B gain proof
 
 ## CHECK MODE (Steps C1–C4)
 
@@ -73,8 +73,7 @@ fi
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
 C1_STATUS=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c1-status" 2>/dev/null || echo "ok")
 [ "$C1_STATUS" = "failed" ] && { echo "C1 failed — skipping this step."; echo "failed" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-c2-status"; exit 0; }
-# stderr to tempfile; eval sees KEY=value stdout only
-# script emits PROJ/INDEX on stdout regardless of exit code
+# stderr to tempfile; eval sees KEY=value stdout only. script emits PROJ/INDEX on stdout regardless of exit code
 # --output-prefix scopes tmpfiles per-project; avoids concurrent collision
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/resolve_index_env.py" \
     --check-exists --output-prefix "codemap-${_CM_PROJ}" 2>/dev/null  # timeout: 5000
@@ -100,7 +99,7 @@ fi
 
 ### C3 — Smoke test and currency check
 
-`check_index_smoke.py` validates the index is loadable JSON and reports mtime age by wrapping `smoke_test_index.py` (informational). When valid, `check-index-currency` performs content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from the stored `file_shas` field (covers non-git projects and pulls/branch switches that bypass the post-commit hook).
+`check_index_smoke.py` validates the index is loadable JSON and reports mtime age by wrapping `smoke_test_index.py` (informational). When valid, `check-index-currency` does content-based staleness detection: Tier 1 uses git SHA comparison; Tier 2 uses per-file hashes from the stored `file_shas` field (covers non-git projects and pulls/branch switches that bypass the post-commit hook).
 
 ```bash
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
@@ -135,7 +134,7 @@ fi
 
 ### C4 — Skill injection and gate wiring audit
 
-`check_injection.py` audits three things: (1) the codemap injection block (`scan-query` marker) in installed SKILL.md files; (2) `fn-rdeps` wiring in review skills; (3) Gate A/B wiring — either via `codemap-gates.md` shared file load or inline gate text — in all wired skills.
+`check_injection.py` audits three things: (1) the codemap injection block (`scan-query` marker) in installed SKILL.md files; (2) `fn-rdeps` wiring in review skills; (3) Gate A/B wiring — via `codemap-gates.md` shared-file load or inline gate text — in all wired skills.
 
 ```bash
 # timeout: 20000
@@ -148,9 +147,9 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/check_injection.py" "$CLAUDE_
 
 ### I0 — Detect --approve
 
-`--approve` in `$ARGUMENTS` → auto-apply all High+Medium injection recommendations for files within codemap's own `installPath` (resolved in I2 from `installed_plugins.json`) without `AskUserQuestion`. Files belonging to other installed plugins always require interactive confirmation even under `--approve` — those files are outside codemap's installPath. If codemap's installPath cannot be determined, fall back to interactive for all candidates and print `⚠ [--approve] codemap installPath unresolvable — falling back to interactive mode for all candidates`. CHECK-tier items are never auto-applied. Print `[--approve] applying recommended options` in place of each skipped question. `init` without `--approve` is a guided interactive workflow; `init --approve` delegates to `bin/inject_codemap.py` (`inject_codemap.py --apply`) for deterministic automation.
+`--approve` in `$ARGUMENTS` → auto-apply all High+Medium injection recommendations for files within codemap's own `installPath` (resolved in I2 from `installed_plugins.json`) without `AskUserQuestion`. Other plugins' files always require interactive confirmation even under `--approve` — outside codemap's installPath. If codemap's installPath undeterminable, fall back to interactive for all candidates and print `⚠ [--approve] codemap installPath unresolvable — falling back to interactive mode for all candidates`. CHECK-tier items never auto-applied. Print `[--approve] applying recommended options` in place of each skipped question. `init` without `--approve` = guided interactive; `init --approve` delegates to `bin/inject_codemap.py` (`inject_codemap.py --apply`).
 
-**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after extracting supported flags, scan `$ARGUMENTS` for remaining `--<token>`. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--approve\`.` then `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 ### I1 — Verify or build the index
 
@@ -174,16 +173,16 @@ If `--approve` active and index missing: first check for monorepo structure befo
 _PYPROJECT_COUNT=$(find . -maxdepth 3 \( -name 'pyproject.toml' -o -name 'setup.py' \) 2>/dev/null | head -5 | wc -l)
 ```
 
-> **Note**: `find -maxdepth 3` detects packages at up to 3 directory levels. Monorepos with packages at depth 4+ (e.g. `repo/workspace/group/package/pyproject.toml`) are not detected and will proceed to auto-build without the monorepo warning. If auto-build fails or produces an empty index, re-run `init` interactively and specify `--root <package_dir>` explicitly.
+> **Note**: `find -maxdepth 3` detects packages up to 3 dir levels. Monorepos with packages at depth 4+ (e.g. `repo/workspace/group/package/pyproject.toml`) are not detected and proceed to auto-build without the monorepo warning. If auto-build fails or produces an empty index, re-run `init` interactively with `--root <package_dir>`.
 
-If `_PYPROJECT_COUNT` ≥ 2: downgrade to interactive — print `⚠ monorepo detected — cannot auto-build without --root; please run /codemap:scan-codebase --root <package_dir> first` and skip auto-build (proceed to `AskUserQuestion` below). Otherwise: auto-select option (b) — skip `AskUserQuestion`, proceed directly to build. Print `[--approve] building index for: $PROJ`. Auto-build delegates to `codemap:scan-codebase` via `Skill()` dispatch, which runs scan-index from the project git root.
+`_PYPROJECT_COUNT` ≥ 2: downgrade to interactive — print `⚠ monorepo detected — cannot auto-build without --root; please run /codemap:scan-codebase --root <package_dir> first` and skip auto-build (proceed to `AskUserQuestion` below). Otherwise: auto-select option (b) — skip `AskUserQuestion`, proceed to build. Print `[--approve] building index for: $PROJ`. Auto-build delegates to `codemap:scan-codebase` via `Skill()`, which runs scan-index from the project git root.
 
 Use `AskUserQuestion`:
 
 ```text
 No codemap index found for project: $PROJ
 
-a) Skip — I'll run /codemap:scan-codebase later (recommendations will be generic, no module-count weighting)
+a) Skip — I'll run /codemap:scan-codebase later (recommendations generic, no module-count weighting)
 b) Build now ★ — scans all .py files via ast.parse (Python only), <60s on most projects
 ```
 
@@ -202,16 +201,16 @@ Report result (module count, degraded count).
 
 ### I2 — Discover installed skills and agents
 
-Read `~/.claude/plugins/installed_plugins.json` (Claude Code internal plugin registry — format may change across versions; fallback: glob `~/.claude/plugins/cache/*/*/` if file absent or unreadable). After reading, count entries missing `installPath`; if >50% of entries lack `installPath`, print `⚠ installed_plugins.json schema may have changed — installPath absent on majority of entries; aborting I2` and exit with actionable message (suggest re-installing or manually specifying plugin path). Otherwise, for each plugin entry, check `installPath` key present before accessing; if absent on that entry, log `installPath field missing — plugin manifest format may have changed` and fall back gracefully to cache-glob discovery for that entry. For each plugin's `installPath`, glob:
+Read `~/.claude/plugins/installed_plugins.json` (Claude Code internal plugin registry — format may change across versions; fallback: glob `~/.claude/plugins/cache/*/*/` if file absent/unreadable). After reading, count entries missing `installPath`; if >50% lack `installPath`, print `⚠ installed_plugins.json schema may have changed — installPath absent on majority of entries; aborting I2` and exit with actionable message (suggest re-installing or manually specifying plugin path). Otherwise, per plugin entry, check `installPath` key present before accessing; if absent on that entry, log `installPath field missing — plugin manifest format may have changed` and fall back to cache-glob discovery for that entry. For each plugin's `installPath`, glob:
 
-> **⚠ Cache-mutation warning**: files discovered via `installPath` are in the plugin cache (`~/.claude/plugins/cache/`). Edits made by I5 to these files are overwritten on the next `claude plugin install` or upgrade for that plugin. For durable injection that survives upgrades, create a project-local override in `.claude/agents/` or `.claude/skills/` first, then inject into the override copy. **Scope guard**: in interactive mode, I5 skips any file whose resolved plugin root falls outside the current project root and `$CLAUDE_PLUGIN_ROOT` — injection is project-scoped by default.
+> **⚠ Cache-mutation warning**: files discovered via `installPath` are in the plugin cache (`~/.claude/plugins/cache/`). I5 edits to these files are overwritten on the next `claude plugin install` or upgrade for that plugin. For durable injection surviving upgrades, create a project-local override in `.claude/agents/` or `.claude/skills/` first, then inject into the override copy. **Scope guard**: in interactive mode, I5 skips any file whose resolved plugin root falls outside the current project root and `$CLAUDE_PLUGIN_ROOT` — injection is project-scoped by default.
 
 - `skills/*/SKILL.md` — skill files
 - `agents/*.md` — agent files
 
-Per file: extract from frontmatter: `name`, `description`, `allowed-tools` (skills) or `description` body (agents). Extract first sentence of `<objective>` section.
+Per file: extract from frontmatter `name`, `description`, `allowed-tools` (skills) or `description` body (agents). Extract first sentence of `<objective>`.
 
-For each plugin discovered, set `CACHE` to its resolved `installPath` value. (No shared tmpfile write — I5 derives `INSTALL_PATH` per-file from the actual target file path, making a shared last-plugin-wins tmpfile unnecessary and misleading.) Flag files with injection block:
+Per plugin discovered, set `CACHE` to its resolved `installPath`. (No shared tmpfile write — I5 derives `INSTALL_PATH` per-file from the actual target path, making a shared last-plugin-wins tmpfile unnecessary and misleading.) Flag files with injection block:
 
 ```bash
 # timeout: 10000
@@ -227,17 +226,17 @@ Build two lists: `ALREADY_INJECTED` and `CANDIDATES`.
 
 ### I3 — Score and rank candidates
 
-Classify each candidate by value tier. For skill files: use `<objective>` text and `allowed-tools`. For agent files: use `<role>` text and `tools` frontmatter field (agents use `<role>`, not `<objective>`).
+Classify each candidate by value tier. Skill files: use `<objective>` text and `allowed-tools`. Agent files: use `<role>` text and `tools` frontmatter field (agents use `<role>`, not `<objective>`).
 
 | Tier | Signal | Recommendation |
 | --- | --- | --- |
-| **High** | `allowed-tools` includes `Edit` or `Write`; `<objective>` mentions spawning `foundry:sw-engineer` (requires `foundry` plugin) or `foundry:qa-specialist` (requires `foundry` plugin); performs code changes. **Cross-plugin signal downgrade**: if the scoring criterion depends on an agent from another plugin (e.g. `foundry:sw-engineer`), first check if that plugin is installed — if absent, downgrade this criterion to zero (do not score High on a cross-plugin signal that can never fire). | "Strongly recommend — agent starts with blast-radius context" |
-| **Medium** | analysis or planning skills; spawns read-only agents; multi-file review without edits | "Moderate value — centrality context speeds structural decisions" |
+| **High** | `allowed-tools` includes `Edit`/`Write`; `<objective>` mentions spawning `foundry:sw-engineer` (requires `foundry` plugin) or `foundry:qa-specialist` (requires `foundry` plugin); performs code changes. **Cross-plugin signal downgrade**: if the criterion depends on an agent from another plugin (e.g. `foundry:sw-engineer`), first check if that plugin is installed — if absent, downgrade this criterion to zero (do not score High on a cross-plugin signal that can never fire). | "Strongly recommend — agent starts with blast-radius context" |
+| **Medium** | analysis/planning skills; spawns read-only agents; multi-file review without edits | "Moderate value — centrality context speeds structural decisions" |
 | **Low** | documentation, release, communication; no code traversal | "Low value — structural context unlikely to help" |
 | **Check/Warn** | release-orchestration skills (e.g. `oss:release` (requires `oss` plugin)) — canonical injection sites per `check_injection.py`; surface as CHECK not SKIP | "Check — injection expected per check_injection.py rubric" |
 | **Skip** | config-only, single-file, non-Python purpose (e.g. shell, YAML, JS) | "Skip — not applicable for Python import graphs" |
 
-If index built and `total_modules` value is available and `total_modules < 20`: downgrade all tiers one level (small project = less value). Skip downgrade when index was not built (skip-build path) or when `total_modules` is absent/zero (empty Python project).
+If index built and `total_modules` available and `total_modules < 20`: downgrade all tiers one level (small project = less value). Skip downgrade when index was not built (skip-build path) or when `total_modules` is absent/zero (empty Python project).
 
 ### I4 — Present recommendations and ask user
 
@@ -254,7 +253,7 @@ Codemap injection candidates for: $PROJ
   ⚠check  oss:release          CHECK   expected injection site per check_injection.py — check manually  (requires oss plugin)
 ```
 
-CHECK-tier items shown with `⚠check` prefix are informational only — not selectable via letter. They are NOT included when user replies "all". Verify injection status manually using `/codemap:integration check`.
+CHECK-tier items shown with `⚠check` prefix are informational only — not selectable via letter. NOT included when user replies "all". Verify injection status manually via `/codemap:integration check`.
 
 Call `AskUserQuestion` tool with:
 
@@ -275,11 +274,11 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/inject_codemap.py" --apply \
     --plugin-root "$PLUGIN_ROOT"  # timeout: 30000
 ```
 
-`inject_codemap.py --apply` handles file writes, idempotency checks, rollback logging, and scope guard (codemap `installPath` only). In interactive mode (`init` without `--approve`), this step executes the guided per-file workflow below instead of delegating to the script.
+`inject_codemap.py --apply` handles file writes, idempotency checks, rollback logging, scope guard (codemap `installPath` only). In interactive mode (`init` without `--approve`), this step executes the guided per-file workflow below instead of delegating.
 
-**⚠ --approve scope guard**: when running in `--approve` mode, restrict auto-injection to files under codemap's own `installPath` (the per-entry path discovered from `installed_plugins.json` in I2 for the codemap plugin specifically) — skip all files from other plugins. If codemap's `installPath` cannot be determined from `installed_plugins.json` (field absent or file unreadable), fall back to interactive confirmation for all candidates rather than using the broader `$CLAUDE_PLUGIN_ROOT` (which may cover the entire `~/.claude/plugins/cache/borda-ai-rig/` tree and auto-inject into unintended plugins). In interactive mode, present all candidates but highlight cache-path files with ⚠ to remind user they affect all projects.
+**⚠ --approve scope guard**: in `--approve` mode, restrict auto-injection to files under codemap's own `installPath` (per-entry path discovered from `installed_plugins.json` in I2 for the codemap plugin specifically) — skip all files from other plugins. If codemap's `installPath` undeterminable (field absent or file unreadable), fall back to interactive confirmation for all candidates rather than using the broader `$CLAUDE_PLUGIN_ROOT` (may cover the entire `~/.claude/plugins/cache/borda-ai-rig/` tree and auto-inject into unintended plugins). In interactive mode, present all candidates but highlight cache-path files with ⚠ to remind user they affect all projects.
 
-**Write-permission probe + rollback log** — once before the file loop, then per-file INSTALL_PATH is derived from the target file's own path (walk-up until a dir with `agents/` or `skills/` child is found) — avoids the I2 last-plugin-wins overwrite where a single shared tmpfile held only the last-discovered plugin's install path:
+**Write-permission probe + rollback log** — once before the file loop; then per-file INSTALL_PATH is derived from the target file's own path (walk-up until a dir with `agents/` or `skills/` child is found) — avoids the I2 last-plugin-wins overwrite where a single shared tmpfile held only the last-discovered plugin's install path:
 
 ```bash
 _CM_PROJ=$(git rev-parse --show-toplevel 2>/dev/null | xargs basename 2>/dev/null || echo "cm")
@@ -314,11 +313,11 @@ esac
 
 For each file edited, append `printf '%s\t%s\n' "$(date -u +%FT%TZ)" "$FILE" >> "$ROLLBACK_LOG"` before writing the edit.
 
-**On failure**: previous state is preserved; no partial write leaves cache in inconsistent state. Each edit is atomic (single `Edit` tool call); rollback log identifies every touched file. **Limitation**: `~/.claude/plugins/cache/` is not a git repo — `git checkout` cannot restore individual files. Rollback options: (1) re-run `claude plugin install codemap@borda-ai-rig` to restore the plugin from registry; (2) manually re-edit files listed in `$ROLLBACK_LOG` to remove the injection block. The rollback log records file paths only (no original content) — this is informational, not a full snapshot restore.
+**On failure**: previous state preserved; no partial write leaves cache inconsistent. Each edit is atomic (single `Edit` call); rollback log identifies every touched file. **Limitation**: `~/.claude/plugins/cache/` is not a git repo — `git checkout` cannot restore individual files. Rollback options: (1) re-run `claude plugin install codemap@borda-ai-rig` to restore the plugin from registry; (2) manually re-edit files listed in `$ROLLBACK_LOG` to remove the injection block. The rollback log records file paths only (no original content) — informational, not a full snapshot restore.
 
 Per selected file, determine insertion point and content:
 
-**For SKILL.md files** — find the first step that spawns an agent (first `Agent(` call or first `spawn` instruction in the workflow). If multiple agent spawn steps exist, inject before the **first** one only. Insert hardened soft-check block immediately before that step, blank line before and after.
+**For SKILL.md files** — find the first step that spawns an agent (first `Agent(` call or first `spawn` instruction). If multiple agent-spawn steps exist, inject before the **first** one only. Insert hardened soft-check block immediately before that step, blank line before and after.
 
 > **No Agent() spawn step in target SKILL.md?** Inject the block as a **pre-step before the first tool call** in the workflow (typically at the top of `<workflow>` or right after Project Detection / Flag parsing). Structural context still informs subsequent reasoning even when no agent is spawned.
 
@@ -336,7 +335,7 @@ esac
 # Also add: "For targeted analysis run: $SQ rdeps <module> or $SQ fn-blast module::function"
 ```
 
-For skills where target module derives from `$ARGUMENTS` (refactor, fix with module path, review), also add after `central` — **derive `TARGET_MODULE` first**; without it calls run as `"$SQ" rdeps ""` and return nothing:
+For skills where target module derives from `$ARGUMENTS` (refactor, fix with module path, review), also add after `central` — **derive `TARGET_MODULE` first**; without it calls run as `"$SQ" rdeps ""` and return nothing.
 
 Derive `TARGET_MODULE` from `$ARGUMENTS`: strip leading `./`; strip leading `src/`; strip trailing `.py`; replace `/` → `.`. If result empty, use `Path($ARGUMENTS).stem`. Example: `src/foo/bar.py` → `foo.bar`.
 
@@ -365,7 +364,7 @@ git rev-parse --is-inside-work-tree 2>/dev/null || { printf "⚠ not a git repos
 
 If not a git repo: skip I5a/I5b entirely, proceed to I6.
 
-If `--approve` active: auto-select (b) Install, skip `AskUserQuestion`, proceed directly to I5b.
+If `--approve` active: auto-select (b) Install, skip `AskUserQuestion`, proceed to I5b.
 
 Otherwise use `AskUserQuestion`:
 
@@ -380,11 +379,11 @@ b) Install ★ — runs scan-index --incremental in background after every commi
 
 ### I5b — Write hook file
 
-If arriving from I5a with user's **b** selection (or auto-approved via `--approve` at I5a): skip further confirmation — I5a answer is sufficient. Proceed directly to hook write. On **a** (Skip): report `✓ post-commit hook skipped` and proceed to I6.
+If arriving from I5a with user's **b** (or auto-approved via `--approve` at I5a): skip further confirmation — I5a answer is sufficient. Proceed to hook write. On **a** (Skip): report `✓ post-commit hook skipped` and proceed to I6.
 
 Then write `.git/hooks/post-commit`. Idempotent — check for `# codemap: incremental` marker before writing.
 
-> **Path-baking note**: the hook bakes `CLAUDE_PLUGIN_ROOT` at install time. After a codemap version upgrade (`claude plugin install codemap@borda-ai-rig`), the baked path becomes stale — the hook falls back to `command -v scan-index` in that case. Re-run `/codemap:integration init` (interactive) to refresh the hook path; the idempotency marker is checked before writing so a second init safely overwrites the stale hook.
+> **Path-baking note**: the hook bakes `CLAUDE_PLUGIN_ROOT` at install time. After a codemap version upgrade (`claude plugin install codemap@borda-ai-rig`), the baked path becomes stale — the hook falls back to `command -v scan-index`. Re-run `/codemap:integration init` (interactive) to refresh the hook path; the idempotency marker is checked before writing so a second init safely overwrites the stale hook.
 
 ```bash
 # timeout: 5000

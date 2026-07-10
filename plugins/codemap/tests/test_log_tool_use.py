@@ -1,7 +1,7 @@
 """Contract test: log-tool-use.js appends one tools.jsonl record per Grep/Read/Glob call.
 
 The PostToolUse hook (`log-tool-use.js`) is the raw grep/read-volume signal codemap's
-Phase-1 fixes aim to reduce. It must:
+index-hygiene fixes aim to reduce. It must:
 
 - write one JSON line to `tools_<session>.jsonl` for each Grep/Read/Glob call, carrying
   `tool` + the right `target` field (Grep/Glob pattern-or-path, Read file_path);

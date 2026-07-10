@@ -195,7 +195,7 @@ class TestScanConfigRefs:
 
 
 class TestLoadExclusions:
-    """Loading extra dir-name/glob exclusions from pyproject.toml and .codemapignore (CR-2)."""
+    """Loading extra dir-name/glob exclusions from pyproject.toml and .codemapignore."""
 
     def test_pyproject_exclude_dirs_and_globs(self, tmp_path: Path):
         """[tool.codemap] exclude splits bare names into dirs and glob entries into globs."""
@@ -228,7 +228,7 @@ class TestLoadExclusions:
 
 
 class TestIterPythonFilesExclusions:
-    """_iter_python_files honours SKIP_DIRS additions and configured exclusions (CR-2)."""
+    """_iter_python_files honours SKIP_DIRS additions and configured exclusions."""
 
     def test_prunes_worktree_copy_and_vendored_entry(self, tmp_path: Path):
         """A .claude/worktrees copy and a .codemapignore-named dir are both pruned; meta counts them."""
@@ -266,7 +266,7 @@ class TestIterPythonFilesExclusions:
 
 
 class TestDedupKey:
-    """_dedup_key ranks candidate paths: under-src > shortest > lexicographic (CR-3)."""
+    """_dedup_key ranks candidate paths: under-src > shortest > lexicographic."""
 
     def test_under_src_root_wins(self):
         """A path under the source root outranks one outside it regardless of length."""
@@ -282,7 +282,7 @@ class TestDedupKey:
 
 
 class TestDedupModules:
-    """_dedup_modules produces a deterministic winner and records collisions (CR-3)."""
+    """_dedup_modules produces a deterministic winner and records collisions."""
 
     def test_deterministic_winner_across_shuffles(self):
         """Same qualname at two paths yields the same winner regardless of input order."""
@@ -341,7 +341,7 @@ class TestScanExclusionMeta:
 
         The canonical ``pkg`` tree and a whole-tree copy under ``wt/`` both resolve to the
         dotted name ``pkg.mod``. Only one survives; the collision record names both, and the
-        winner is identical on every run regardless of filesystem walk order (CR-3 acceptance).
+        winner is identical on every run regardless of filesystem walk order (acceptance).
         """
         for parent in ("pkg", "wt/pkg"):
             (tmp_path / parent).mkdir(parents=True)

@@ -143,9 +143,24 @@ _CMD: str = ""
 _LOG_DIR: Path = Path(os.environ.get("CODEMAP_LOG_DIR", ".cache/codemap/logs"))
 _builtin_print = print  # saved before print( → _print( sweep below
 
+# batch mode: when a list is installed here, _print captures each command's stdout
+# JSON into it instead of writing to the real stdout, so cmd_* functions (which all
+# emit via _print) can be reused unchanged and their results collected per item.
+# stderr writes (file=... kwarg) always pass through untouched.
+_capture: list[str] | None = None
+
 
 def _print(*args: object, **kwargs: object) -> None:
-    """Forward to built-in print; for stdout output also append a cli.jsonl record."""
+    """Forward to built-in print; for stdout output also append a cli.jsonl record.
+
+    In batch mode (:data:`_capture` set) a stdout write is diverted into the capture
+    buffer and neither printed nor logged — the batch driver owns the single real
+    stdout write and one telemetry record for the whole batch. stderr writes
+    (``file=`` kwarg) always go straight through regardless of mode.
+    """
+    if not kwargs.get("file") and _capture is not None:
+        _capture.append(str(args[0]) if args else "")
+        return
     _builtin_print(*args, **kwargs)
     if kwargs.get("file"):
         return
@@ -376,7 +391,7 @@ def load_index(path: Path) -> dict:
 
 _GIT_TIMEOUT_S = 10  # max seconds for any git subprocess (H78: hung process guard)
 
-# Self-heal bounds (CR-1): when the index is stale at query time we run
+# Self-heal bounds: when the index is stale at query time we run
 # `scan-index --incremental` inline so the answer reflects the current tree.
 # Bounded so the heal never dominates the query path — a large change set or a
 # slow scan falls back to the stale-honest result instead.
@@ -485,7 +500,7 @@ def _changed_py_files(index: dict) -> list[str] | None:
 def maybe_self_heal(index: dict, index_path: Path, scan_root: Path | None) -> dict:
     """Run a bounded incremental scan when the index is stale, then reload.
 
-    CR-1: a stale index at query time silently under-reports edges. When the
+    a stale index at query time silently under-reports edges. When the
     change set is small enough (:data:`_HEAL_MAX_CHANGED_FILES`) we re-run
     ``scan-index --incremental`` inline and answer from the fresh graph. A large
     change set, a missing scan-index, a slow scan (:data:`_HEAL_TIMEOUT_S`), or a
@@ -638,7 +653,7 @@ _coverage_cache: dict | None = None
 _symbol_map_cache: dict | None = None
 _rev_graph_cache: dict | None = None
 
-# CR-4: set once in main() before any command runs. True when the index's stored
+# set once in main() before any command runs. True when the index's stored
 # scan_root does not match where this query is being resolved against (a mismatched
 # --root, or a CWD outside the scanned tree). A root-mismatched index answers about a
 # DIFFERENT project, so its graph can never be a complete answer here — this flag both
@@ -679,7 +694,7 @@ def _get_rev_import_graph(index: dict) -> dict[str, list[str]]:
     return _rev_import_graph_cache
 
 
-# Exit-code contract (CR-5 / ME-1): every error exit prints a parseable JSON object
+# Exit-code contract: every error exit prints a parseable JSON object
 # to stdout — never a bare non-zero exit with empty stdout. Codes let a caller branch
 # on failure class without string-matching the message.
 _EXIT_GENERIC = 1  # generic failure (missing symbol, invalid index, feature gate)
@@ -721,7 +736,7 @@ def _exit_error(message: str) -> None:
 def _die_module_not_indexed(index: dict, module: str) -> None:
     """Exit 3 with a structured "module not indexed" error plus close suggestions.
 
-    Replaces the historic ``Module 'X' not in index.`` message (ME-1 / CR-5): a
+    Replaces the historic ``Module 'X' not in index.`` message: a
     caller can now distinguish "this module is absent from the index" from "this
     module exists but has no results", and gets up to three closest indexed module
     names (difflib) to recover from a typo without a second round-trip.
@@ -852,7 +867,7 @@ def _coverage(index: dict) -> dict:
     # completeness while one exists — surfaced here, consumed by _query_complete.
     untracked = _untracked_py_files()
 
-    # CR-2 cross-agent contract: scan-index (task 1.3) may write a `collisions` list of
+    # scan-index may write a `collisions` list of
     # {name, kept, dropped} into index meta. Older indexes lack the key — treat missing as
     # empty, never crash on absence. Keep the resolved names so a local query can check
     # whether ITS module is the colliding one.
@@ -923,7 +938,7 @@ def _query_complete(
         ``(complete, reason)`` where ``reason`` is a short slug naming the veto
         source (``"ok"`` when complete) so the caller can emit a consistent note.
     """
-    # CR-4: a root-mismatched index describes a DIFFERENT project — no direction
+    # a root-mismatched index describes a DIFFERENT project — no direction
     # (not even a local module read) can be a complete answer here. Vetoes first,
     # ahead of staleness, since the whole graph is off-target.
     if base.get("root_mismatch"):
@@ -988,6 +1003,115 @@ def _coverage_note(base: dict, *, complete: bool, reason: str) -> str:
     return prefix + detail
 
 
+# ---------------------------------------------------------------------------
+# coverage diet: session-scoped once-per-session full block, compact after
+# ---------------------------------------------------------------------------
+#
+# The full coverage block repeats ~15 identical keys on EVERY query result. Within
+# one Claude Code session that's pure token waste after the first read: the agent
+# has already seen total_modules/degraded_files/note once and only needs the
+# per-query honesty signals thereafter. So the FIRST query per session emits the
+# full block; every later query in the same session emits a compact block carrying
+# only the fields that can change per query (query_complete, stale, root_mismatch)
+# plus the incompleteness reason (degraded count + note) so the diet never hides
+# WHY a result is incomplete.
+#
+# Session identity comes from the hook-written marker (cross-agent contract): the
+# CLI cannot see session_id itself (no session env var in the Bash tool env; pid
+# changes per invocation so pid-keying can never dedup across queries). Marker
+# missing / unparsable / older than the TTL → treat as absent → always full block
+# (fail-verbose: never silently compact when we can't prove same-session).
+
+_SESSION_MARKER_TTL_MS = 30 * 60 * 1000  # 30 min — matches the hook writer's guard
+_verbose_coverage: bool = False  # set from --verbose-coverage in main(); forces full block
+_coverage_full_keys = (
+    "total_modules",
+    "total_symbols",
+    "degraded",
+    "degraded_files",
+    "star_import_modules",
+    "has_call_graph",
+    "untracked_py",
+    "collision_count",
+)
+
+
+def _read_session_marker() -> str | None:
+    """Return the current session id from the hook-written marker, or None if absent.
+
+    Cross-agent contract (the hook writes, scan-query reads): the marker lives at
+    ``<git-root>/.cache/codemap/current-session`` and holds single-line JSON
+    ``{"session_id": "<id>", "ts": <epoch-ms>}``. Any of missing file, unparsable
+    JSON, missing/empty ``session_id``, or a ``ts`` older than
+    :data:`_SESSION_MARKER_TTL_MS` is treated as "no marker" so the caller falls back
+    to the full coverage block (fail-verbose). scan-query never writes this file.
+
+    Returns:
+        The marker's ``session_id`` when present and fresh, else None.
+    """
+    git_root = _get_git_root_cached()
+    if git_root is None:
+        return None
+    marker = git_root / ".cache" / "codemap" / "current-session"
+    try:
+        raw = marker.read_text(encoding="utf-8", errors="replace").strip()
+        data = json.loads(raw)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    sid = data.get("session_id")
+    ts = data.get("ts")
+    if not sid or not isinstance(sid, str):
+        return None
+    if not isinstance(ts, (int, float)):
+        return None
+    if (time.time() * 1000) - ts > _SESSION_MARKER_TTL_MS:
+        return None
+    return sid
+
+
+def _coverage_already_emitted(session_id: str) -> bool:
+    """Return True if the full coverage block was already emitted this session.
+
+    Uses a per-session sentinel file in the OS temp dir (NOT the git-root marker,
+    which the hook owns) keyed on *session_id*. Absent → this is the session's first
+    query: create the sentinel and return False (caller emits the full block).
+    Present → a prior query in the same session already emitted it: return True
+    (caller emits the compact block). Any filesystem error falls back to "not
+    emitted" so a broken sentinel yields a full block rather than a silent compact.
+
+    Args:
+        session_id: the fresh session id from :func:`_read_session_marker`.
+    """
+    import tempfile
+
+    safe = re.sub(r"[^A-Za-z0-9_-]", "-", session_id)
+    sentinel = Path(tempfile.gettempdir()) / f"codemap-coverage-{safe}"
+    try:
+        if sentinel.exists():
+            return True
+        sentinel.touch()
+        return False
+    except OSError:
+        return False
+
+
+def _should_compact_coverage() -> bool:
+    """Decide whether to emit the compact coverage block for this invocation.
+
+    Compact only when ALL hold: ``--verbose-coverage`` was not passed, a fresh
+    same-session marker exists, and the full block was already emitted earlier this
+    session. Any failure of those conditions → full block (fail-verbose).
+    """
+    if _verbose_coverage:
+        return False
+    session_id = _read_session_marker()
+    if session_id is None:
+        return False
+    return _coverage_already_emitted(session_id)
+
+
 def _cmd_coverage(
     index: dict, *, command: str = "", module_status: str | None = None, module_name: str | None = None, **extra: object
 ) -> dict:
@@ -997,6 +1121,12 @@ def _cmd_coverage(
     command) and the legacy ``exhaustive`` field (kept byte-compatible for one
     deprecation cycle so existing consumers keep parsing). For local queries pass
     ``module_status`` and ``module_name``; whole-graph/global-in queries ignore them.
+
+    diet: after the first query in a session the shared, session-invariant keys
+    (module counts, degraded_files, star imports, etc.) are dropped and only the
+    per-query honesty signals survive — ``query_complete``, ``stale``,
+    ``root_mismatch``, plus ``degraded`` count and ``note`` when the result is
+    incomplete (the reason for incompleteness is never compacted away).
 
     Args:
         index: parsed codemap index dict.
@@ -1012,6 +1142,19 @@ def _cmd_coverage(
     note = _coverage_note(base, complete=complete, reason=reason)
     # Drop the internal collision-names set from the emitted block; keep it out of JSON.
     emitted = {k: v for k, v in base.items() if k != "_collision_names"}
+    if _should_compact_coverage():
+        compact = {
+            "query_complete": complete,
+            "stale": emitted["stale"],
+            "root_mismatch": emitted["root_mismatch"],
+            "compact": True,
+        }
+        # Honesty signal must survive the diet: when incomplete, keep the degraded
+        # count and the note that says WHY. A complete result needs neither.
+        if not complete:
+            compact["degraded"] = emitted["degraded"]
+            compact["note"] = note
+        return {**compact, **extra}
     return {**emitted, "note": note, "query_complete": complete, "exhaustive": complete, **extra}
 
 
@@ -1128,7 +1271,7 @@ def cmd_rdeps(index: dict, module: str, exclude_tests: bool = False, entity: str
     entry = module_map.get(module, {})
     dynamic = entry.get("dynamic_imported_by", [])
     config = entry.get("config_refs", [])
-    # CR-5: a module absent from the index AND imported by nothing is "not indexed",
+    # a module absent from the index AND imported by nothing is "not indexed",
     # not "no reverse deps" — error with suggestions instead of a misleading empty
     # ``imported_by: []``. An indexed leaf with zero importers legitimately keeps the
     # empty list (it IS in module_map); an external dep someone imports is kept too
@@ -1282,17 +1425,25 @@ def cmd_path(index: dict, frm: str, to: str) -> None:
     )
 
 
-def cmd_list(index: dict) -> None:
-    """Print all indexed modules with their paths and status.
+def cmd_list(index: dict, limit: int = 100) -> None:
+    """Print indexed modules with their paths and status, capped at *limit*.
+
+    diet: a large repo's full module list is the single biggest scan-query
+    result. The default cap keeps the common ``list`` call small while ``total``
+    and ``shown`` disclose the truncation so a caller knows to raise ``--limit``
+    (or pass ``0`` for the full list) when it genuinely needs every module.
 
     Args:
         index: parsed codemap index dict.
+        limit: max modules to emit; 0 returns all (default 100).
     """
-    modules = [
+    all_modules = [
         {"name": m["name"], "path": m.get("path", ""), "status": m.get("status", "ok")}
         for m in index.get("modules", [])
     ]
-    _print(json.dumps({"modules": modules}))
+    total = len(all_modules)
+    modules = all_modules if limit <= 0 else all_modules[:limit]
+    _print(json.dumps({"modules": modules, "total": total, "shown": len(modules)}))
 
 
 def _entity_type(m: dict) -> str:
@@ -1355,7 +1506,7 @@ def _resolve_project_root(explicit_root: Path | None, index: dict) -> Path:
 def _detect_root_mismatch(explicit_root: Path | None, index: dict) -> bool:
     """Return True when the query is being resolved against a different tree than the index.
 
-    CR-4: ``_resolve_project_root`` prefers the index's own ``scan_root`` when no
+    ``_resolve_project_root`` prefers the index's own ``scan_root`` when no
     ``--root`` is given, so it can never surface a mismatch on its own. This compares
     the index's stored ``scan_root`` against where the caller actually is — ``--root``
     if supplied, otherwise the git root of the CWD (fallback: CWD) — and reports when
@@ -1375,7 +1526,7 @@ def _detect_root_mismatch(explicit_root: Path | None, index: dict) -> bool:
     return stored_root != queried
 
 
-# ME-1: coarse classification of a stale symbol coordinate. The fine-grained
+# coarse classification of a stale symbol coordinate. The fine-grained
 # ``stale_reason`` is kept for diagnostics; ``stale_category`` gives agents the one
 # bit that changes their next action — the symbol is GONE (``symbol_deleted``: its
 # file or definition no longer exists → stop looking) versus MOVED (``coords_stale``:
@@ -1614,7 +1765,7 @@ def cmd_find_symbol(index: dict, pattern: str, limit: int = 20, exclude_tests: b
         limit: max results to return (0 = unlimited).
     """
     # ReDoS guard — nested/adjacent and alternation quantifiers (e.g. `(a+)+`, `(.*){2,}`,
-    # `(a|aa)+`) can cause catastrophic backtracking. ME-7: a bare stderr `return` left
+    # `(a|aa)+`) can cause catastrophic backtracking. a bare stderr `return` left
     # stdout empty and exited 0, breaking JSON consumers — emit a parseable error object
     # and a non-zero exit so a rejection is unmistakable both to humans and to callers.
     if _is_dangerous_regex(pattern):
@@ -3017,6 +3168,122 @@ def cmd_dead_modules(index: dict, args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# batch: run N queries in one process, share the coverage block once
+# ---------------------------------------------------------------------------
+
+
+def _load_batch_items(source: str) -> list[dict]:
+    """Read and validate the batch request array from a file path or stdin.
+
+    Args:
+        source: filesystem path to a JSON file, or ``"-"`` to read stdin.
+
+    Returns:
+        The parsed list of request objects.
+
+    Raises:
+        SystemExit: via :func:`_die_json` (exit 2) on unreadable input, non-JSON,
+            or a top-level value that is not a list.
+    """
+    try:
+        raw = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    except OSError as exc:
+        _die_json({"error": "batch input unreadable", "detail": str(exc)}, _EXIT_BAD_INPUT)
+    try:
+        items = json.loads(raw)
+    except ValueError as exc:
+        _die_json({"error": "batch input is not valid JSON", "detail": str(exc)}, _EXIT_BAD_INPUT)
+    if not isinstance(items, list):
+        _die_json({"error": "batch input must be a JSON array of {cmd, args} objects"}, _EXIT_BAD_INPUT)
+    return items
+
+
+def _batch_item_argv(item: object) -> list[str] | dict:
+    """Turn one batch request object into an argv list, or return an error dict.
+
+    A valid item is ``{"cmd": "<subcommand>", "args": ["...", ...]}`` where ``args``
+    is optional and defaults to ``[]``. ``cmd`` must be a non-empty string and must
+    not be ``batch`` (no nesting). Every token is coerced to ``str`` so a caller may
+    pass ``{"cmd": "central", "args": ["--top", 5]}`` with a numeric arg.
+
+    Args:
+        item: one element of the decoded batch array.
+
+    Returns:
+        The argv list (``[cmd, *args]``) on success, else an ``{"error": ...}`` dict.
+    """
+    if not isinstance(item, dict):
+        return {"error": "batch item must be an object with a 'cmd' key", "item": item}
+    cmd = item.get("cmd")
+    if not cmd or not isinstance(cmd, str):
+        return {"error": "batch item missing string 'cmd'", "item": item}
+    if cmd == "batch":
+        return {"error": "batch cannot be nested inside batch", "cmd": cmd}
+    raw_args = item.get("args", [])
+    if not isinstance(raw_args, list):
+        return {"error": "batch item 'args' must be a list", "cmd": cmd}
+    return [cmd, *(str(a) for a in raw_args)]
+
+
+def cmd_batch(index: dict, args: argparse.Namespace, parser: argparse.ArgumentParser, project_root: Path) -> None:
+    """Run a list of queries in-process and emit one combined result with one coverage block.
+
+    agents that fire many small scan-query calls per module pay the process
+    spawn + coverage-block cost N times. ``batch`` collapses that into a single
+    process: each request re-parses through the top-level *parser* and runs through
+    the same :func:`_dispatch_command` path, so a batched query is byte-for-byte the
+    same as its standalone form — minus the per-item coverage block, which is
+    deduplicated to one shared ``index`` block for the whole batch.
+
+    Results preserve input order. A request that fails to parse, raises, or exits via
+    :func:`_die_json` yields a per-item ``{"ok": false, "error": ...}`` object rather
+    than aborting the batch — one bad query never kills the run.
+
+    Args:
+        index: parsed codemap index dict.
+        args: the batch namespace; ``args.input`` is the file path or ``"-"``.
+        parser: the top-level argparse parser, reused to parse each item's argv.
+        project_root: resolved project root for file-path lookups.
+    """
+    global _capture  # noqa: PLW0603
+    items = _load_batch_items(args.input)
+    results: list[dict] = []
+    shared_coverage: dict | None = None
+    for i, item in enumerate(items):
+        argv = _batch_item_argv(item)
+        if isinstance(argv, dict):  # malformed item — argv builder returned an error
+            results.append({"ok": False, "index": i, "error": argv["error"], "detail": argv})
+            continue
+        try:
+            item_args = parser.parse_args(argv)
+        except SystemExit:
+            # argparse exits on a bad subcommand/flag; capture it as a per-item error.
+            results.append({"ok": False, "index": i, "cmd": argv[0], "error": "invalid command or arguments"})
+            continue
+        buf: list[str] = []
+        _capture = buf
+        try:
+            _dispatch_command(index, item_args, parser, project_root)
+        except SystemExit:
+            # A cmd_* handler hit _die_json / _exit_error; its JSON error object is
+            # already in buf. Fall through to decode it as this item's result.
+            pass
+        finally:
+            _capture = None
+        payload = json.loads(buf[-1]) if buf else {"error": "no output"}
+        # Hoist the shared coverage block out of the item to one batch-level field.
+        coverage = payload.pop("index", None)
+        if coverage is not None and shared_coverage is None:
+            shared_coverage = coverage
+        ok = "error" not in payload
+        results.append({"ok": ok, "index": i, "cmd": argv[0], "result": payload})
+    out: dict = {"batch": results, "count": len(results)}
+    if shared_coverage is not None:
+        out["index"] = shared_coverage
+    _print(json.dumps(out))
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -3088,7 +3355,10 @@ def main() -> None:
     p_path.add_argument("frm", metavar="from")
     p_path.add_argument("to")
 
-    sub.add_parser("list", help="List all indexed modules.")
+    p_list = sub.add_parser("list", help="List all indexed modules.")
+    p_list.add_argument(
+        "--limit", type=int, default=100, metavar="N", help="Max modules to return (default 100). Use 0 for all."
+    )
 
     sub.add_parser(
         "packages",
@@ -3310,6 +3580,17 @@ def main() -> None:
         help="Modules with zero external importers (requires v4.6+ index).",
     )
 
+    p_batch = sub.add_parser(
+        "batch",
+        help="Run many queries in one process, sharing one coverage block (reads a JSON array).",
+    )
+    p_batch.add_argument(
+        "input",
+        nargs="?",
+        default="-",
+        help="Path to a JSON file of [{cmd, args}] objects, or '-' for stdin (default).",
+    )
+
     parser.add_argument("--index", metavar="PATH", help="Explicit path to the index JSON (auto-discovered if omitted).")
     parser.add_argument(
         "--root",
@@ -3333,10 +3614,17 @@ def main() -> None:
         default=False,
         help="Disable the bounded incremental self-heal on a stale index (answer from the stale index as-is).",
     )
+    parser.add_argument(
+        "--verbose-coverage",
+        action="store_true",
+        default=False,
+        help="Always emit the full coverage block, even after the first query of a session (disables the diet).",
+    )
 
     args = parser.parse_args()
-    global _CMD  # noqa: PLW0603
+    global _CMD, _verbose_coverage  # noqa: PLW0603
     _CMD = args.command
+    _verbose_coverage = args.verbose_coverage
 
     if args.timeout > 0 and hasattr(signal, "SIGALRM"):
 
@@ -3363,7 +3651,7 @@ def main() -> None:
         except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             git_root = cwd
         if not (resolved.is_relative_to(cwd) or resolved.is_relative_to(git_root)):
-            # CR-4: emit a parseable JSON error (not just a bare stderr + exit) so a
+            # emit a parseable JSON error (not just a bare stderr + exit) so a
             # caller sees the guard rejection in the same channel as every other failure.
             _print(f"scan-query: --index path outside project root: {resolved}", file=sys.stderr)
             _die_json({"error": "index path outside project root", "path": str(resolved)}, _EXIT_BAD_INPUT)
@@ -3372,13 +3660,13 @@ def main() -> None:
         index_path = find_index()
     index = load_index(index_path)
     if not args.no_heal:
-        # CR-1: refresh a stale index inline (bounded) so the answer reflects the
+        # refresh a stale index inline (bounded) so the answer reflects the
         # current tree — e.g. an edge added by a just-committed change is visible.
         index = maybe_self_heal(index, index_path, _resolve_project_root(args.root, index))
     warn_if_stale(index)
     project_root = _resolve_project_root(args.root, index)
 
-    # CR-4: flag a query resolved against a different tree than the index was built for.
+    # flag a query resolved against a different tree than the index was built for.
     # Set before any command runs so _coverage picks it up; also warn on stderr so a
     # human sees it even if they ignore the coverage block. query_complete is forced
     # false downstream in _query_complete.
@@ -3391,6 +3679,29 @@ def main() -> None:
             file=sys.stderr,
         )
 
+    if args.command == "batch":
+        cmd_batch(index, args, parser, project_root)
+    else:
+        _dispatch_command(index, args, parser, project_root)
+
+
+def _dispatch_command(
+    index: dict, args: argparse.Namespace, parser: argparse.ArgumentParser, project_root: Path
+) -> None:
+    """Route a parsed ``args`` namespace to its command handler.
+
+    Shared by :func:`main` and :func:`cmd_batch` so a batched item runs through the
+    exact same code path as a standalone invocation. ``batch`` is intentionally not
+    routed here — nesting a batch inside a batch is rejected by :func:`cmd_batch`.
+
+    Args:
+        index: parsed codemap index dict.
+        args: the argparse namespace for a single command (``args.command`` set).
+        parser: the top-level parser (unused here; kept for signature symmetry with
+            :func:`cmd_batch`, which needs it to re-parse item argv).
+        project_root: resolved project root for file-path lookups.
+    """
+    del parser  # symmetry only; _dispatch_command re-parses nothing
     if args.command == "deps":
         cmd_deps(
             index,
@@ -3408,7 +3719,7 @@ def main() -> None:
     elif args.command == "path":
         cmd_path(index, args.frm, args.to)
     elif args.command == "list":
-        cmd_list(index)
+        cmd_list(index, limit=args.limit)
     elif args.command == "packages":
         cmd_packages(index)
     elif args.command == "symbol":

@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 # Sentinel lines wrapping the managed block. Reinstall replaces everything between them in place,
-# so the body can change across plugin versions without leaving a stale duplicate behind (HI-7).
+# so the body can change across plugin versions without leaving a stale duplicate behind.
 BLOCK_START = "# codemap:start — managed block, do not edit between start/end"
 BLOCK_END = "# codemap:end"
 HOOK_MARKER = "# codemap: incremental"  # legacy single-line marker — still detected for upgrade
@@ -44,7 +44,7 @@ def _make_hook_body(plugin_root: str | None) -> str:
     """Return the hook body fragment, optionally with an absolute ``scan-index`` path baked in.
 
     The fragment is wrapped in ``# codemap:start`` / ``# codemap:end`` sentinel lines so a reinstall
-    can locate and replace the managed block in place (HI-7), leaving any surrounding user hook
+    can locate and replace the managed block in place, leaving any surrounding user hook
     content untouched.
 
     Args:
@@ -268,7 +268,7 @@ def _replace_managed_block(hook_file: Path, existing: str, hook_body: str) -> tu
 
     Rewrites ``hook_file`` with the managed block swapped for the freshly generated one, leaving all
     surrounding user hook content intact. When the block is already byte-identical the file is left
-    untouched (no write) so a reinstall is a true no-op (HI-7).
+    untouched (no write) so a reinstall is a true no-op.
 
     Args:
         hook_file: target hook path.

@@ -126,12 +126,45 @@ function handleMissingIndex(projRoot, proj) {
   process.exit(0);
 }
 
-function main() {
-  // Drain stdin (UserPromptSubmit sends event JSON we don't need here)
+// Extract session_id from the UserPromptSubmit event JSON on stdin. Returns the
+// id string, or "" when stdin is empty/unparsable. Never throws — the session
+// marker is best-effort and must not perturb the fail-open guarantee.
+function readSessionId(stdinText) {
+  if (!stdinText) return "";
   try {
-    fs.readFileSync(0);
+    const ev = JSON.parse(stdinText);
+    return typeof ev.session_id === "string" ? ev.session_id : "";
   } catch {
-    /* ok */
+    return "";
+  }
+}
+
+// Write <git-root>/.cache/codemap/current-session recording the live session id
+// and wall-clock ms. scan-query reads this marker to correlate queries with the
+// session that triggered a refresh. Unconditional and fail-open: any error (dir
+// create, write) is swallowed so the marker never blocks a user turn, and it runs
+// before every early-exit path so the marker exists even when the preamble is
+// suppressed. Direct write of a single tiny line — no tmp+rename needed.
+function writeSessionMarker(projRoot, sessionId) {
+  try {
+    const dir = path.join(projRoot, ".cache", "codemap");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "current-session"),
+      JSON.stringify({ session_id: sessionId, ts: Date.now() }) + "\n",
+    );
+  } catch {
+    /* best-effort; marker write failures never block the turn */
+  }
+}
+
+function main() {
+  // Read stdin (UserPromptSubmit event JSON) — needed for session_id below.
+  let stdinText = "";
+  try {
+    stdinText = fs.readFileSync(0, "utf8");
+  } catch {
+    /* ok — stdin may be empty */
   }
 
   const cwd = process.cwd();
@@ -150,6 +183,10 @@ function main() {
     /* non-git → cwd */
   }
   const proj = path.basename(projRoot);
+
+  // Session marker: written every invocation, before any early-exit, so scan-query
+  // always sees the live session id even when the preamble is later suppressed.
+  writeSessionMarker(projRoot, readSessionId(stdinText));
 
   // Resolve index path (CODEMAP_INDEX_DIR env override supported)
   const idxDir = process.env.CODEMAP_INDEX_DIR || path.join(projRoot, ".cache", "codemap");
@@ -304,6 +341,30 @@ function main() {
     fs.writeFileSync(sessionFlag, String(Date.now()));
   } catch {
     /* best-effort; flag write failures never block */
+  }
+
+  // Stale-reminder collapse: the full stale notice fires once per session; every
+  // later still-stale prompt collapses to a single line so the reminder does not
+  // re-flood context while a refresh is pending. Sentinel is separate from
+  // sessionFlag above so preamble-emission dedup (current path) and stale-reminder
+  // dedup do not interfere — they track independent conditions. Fresh sentinel →
+  // emit the one-liner and exit; else write it and fall through to the full form.
+  if (currency === "stale") {
+    const staleFlag = path.join(os.tmpdir(), `codemap-stale-${proj}`);
+    try {
+      const staleAge = Date.now() - readTimestamp(staleFlag);
+      if (Number.isFinite(staleAge) && staleAge < SESSION_TTL_MS) {
+        process.stdout.write(`[codemap] index stale${refreshNote || " · refresh pending"}\n`);
+        process.exit(0);
+      }
+    } catch {
+      /* no stale flag yet — fall through to the full notice below */
+    }
+    try {
+      fs.writeFileSync(staleFlag, String(Date.now()));
+    } catch {
+      /* best-effort; flag write failures never block */
+    }
   }
 
   // Module count: full parse deferred to here so the current+recently-injected

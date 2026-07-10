@@ -40,7 +40,7 @@ INTEGRATION_MARKERS: tuple[str, ...] = ("scan-query", "codemap")
 STEP_HEADING_RE = re.compile(r"^#{2,3}\s+Step\s+1\b", re.MULTILINE)
 
 # Stable substring identifying an already-injected block — keyed on the heading text so a
-# re-run detects prior injection and stays idempotent regardless of insertion site (HI-6).
+# re-run detects prior injection and stays idempotent regardless of insertion site.
 INJECTION_MARKER = "## Codemap context"
 
 INJECTION_BLOCK = """## Codemap context (optional — skip if index absent)
@@ -136,7 +136,7 @@ def inject_block(content: str, block: str = INJECTION_BLOCK) -> str:
 
     Idempotent: if ``content`` already contains the injection marker (``## Codemap context``),
     it is returned unchanged, so re-running the injection on an already-injected file — via either
-    the step-heading or the append-fallback path — never duplicates the block (HI-6).
+    the step-heading or the append-fallback path — never duplicates the block.
 
     Args:
         content: original SKILL.md text.
