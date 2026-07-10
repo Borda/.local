@@ -47,6 +47,8 @@
 //       after a >30s gap. Agent and Task calls excluded — tracked via SubagentStart/Stop.
 //     • For Agent() calls: writes state/pending/<tool_use_id>.json with subagent_type so
 //       SubagentStart can resolve agent_type when its payload omits it (Agent() vs Task()).
+//     • Refreshes last_active on a worktree subagent's own tool events (join via cwd →
+//       agent_id), so a still-working long-running agent isn't reaped by the staleness filter.
 //
 //   PostToolUse
 //     • Closes the codex session file when Skill(codex:*) or Agent(codex:*) completes,
@@ -271,6 +273,16 @@ process.stdin.on("end", () => {
           fs.writeFileSync(toolFile, JSON.stringify({ tool: tool_name, since: windowStart, count }));
         } catch (_) {}
       }
+      // Refresh a running subagent's liveness on its own tool activity, so a still-working
+      // long-running agent is never reaped by the statusline's staleness filter. An agent file's
+      // `since` is dispatch time and is never updated once running, so after 10 min the agent
+      // vanishes even while working. Tool events carry no agent_id (CC hook schema: only
+      // session_id/tool_name/tool_input/tool_result/tool_use_id/cwd), so the one reliable
+      // per-agent join is `cwd` for worktree-isolated agents: the worktree dir is
+      // .claude/worktrees/agent-<agent_id>/ and the agent state file is keyed by that same
+      // agent_id. Non-worktree agents share the parent's cwd (indistinguishable from the
+      // orchestrator's own calls) and stay covered by the staleness backstop.
+      touchAgentLastActive(data.cwd, agentsDir);
       // Write timing start marker. PostToolUse reads it to compute wall-clock duration.
       // isDuplicateEvent dedup prevents double-write when both project and home settings.json fire.
       if (data.tool_use_id && !isDuplicateEvent(`Pre-${data.tool_use_id}`, tmpDir)) {
@@ -304,7 +316,9 @@ process.stdin.on("end", () => {
         // tool_input may omit run_in_background.
         // ponytail: a finished background agent lingers until SubagentStop or the statusline's 10-min
         // staleness filter reaps it — SubagentStop carries only agent_id, so it can't match this
-        // tool_use_id-keyed entry; the staleness filter is the backstop.
+        // tool_use_id-keyed entry; the staleness filter is the backstop. A *still-running* worktree
+        // agent keeps its last_active fresh via touchAgentLastActive (PreToolUse), so only genuinely
+        // dead agents (no activity) age out — that is the filter's intended job.
         if (tool_name === "Agent") {
           let isBackground = tool_input?.run_in_background === true;
           try {
@@ -730,6 +744,25 @@ function isDuplicateEvent(eventName, tmpDir) {
     fs.writeFileSync(lockFile, String(process.pid));
   } catch (_) {}
   return false;
+}
+
+// touchAgentLastActive — refresh a worktree-isolated subagent's liveness on its own tool activity.
+// A subagent's tool events run with cwd = its worktree (.claude/worktrees/agent-<agent_id>/) and are
+// delivered under the parent session_id, so agentsDir resolves to the same dir holding the agent file
+// keyed by <agent_id>. Extract that id from the cwd basename and stamp last_active; the statusline
+// filters on (last_active ?? since), so an actively-working agent never ages out. No-op when cwd is
+// absent or not a worktree path (non-worktree agents share the parent cwd and can't be attributed).
+// Per-file read-modify-write is race-free: a subagent runs one tool at a time (single writer per file).
+function touchAgentLastActive(cwd, agentsDir) {
+  if (!cwd || typeof cwd !== "string") return;
+  const m = path.basename(cwd).match(/^agent-([a-zA-Z0-9]+)$/);
+  if (!m) return; // not a worktree cwd — cannot attribute activity to a specific agent
+  const agentFile = path.join(agentsDir, `${m[1]}.json`);
+  try {
+    const rec = JSON.parse(fs.readFileSync(agentFile, "utf8"));
+    rec.last_active = new Date().toISOString();
+    fs.writeFileSync(agentFile, JSON.stringify(rec));
+  } catch (_) {} // agent file gone (agent finished) or unreadable — nothing to refresh
 }
 
 function readAgentInfo(root, agentType) {

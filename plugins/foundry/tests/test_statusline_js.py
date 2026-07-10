@@ -70,14 +70,25 @@ def _payload(sid: str) -> dict:
     }
 
 
-def _write_agent(sid: str, agent_id: str, *, since: str, agent_type: str = "foundry:sw-engineer") -> None:
-    """Write an agents/<id>.json file under the per-session state dir."""
+def _write_agent(
+    sid: str,
+    agent_id: str,
+    *,
+    since: str,
+    agent_type: str = "foundry:sw-engineer",
+    last_active: str | None = None,
+) -> None:
+    """Write an agents/<id>.json file under the per-session state dir.
+
+    ``last_active`` is included only when provided so tests can exercise both the
+    legacy (since-only) records and the refreshed (last_active-bearing) ones.
+    """
     d = Path("/tmp") / f"claude-state-{sid}" / "agents"
     d.mkdir(parents=True, exist_ok=True)
-    (d / f"{agent_id}.json").write_text(
-        json.dumps({"id": agent_id, "type": agent_type, "model": "opus", "color": None, "since": since}),
-        encoding="utf-8",
-    )
+    record: dict = {"id": agent_id, "type": agent_type, "model": "opus", "color": None, "since": since}
+    if last_active is not None:
+        record["last_active"] = last_active
+    (d / f"{agent_id}.json").write_text(json.dumps(record), encoding="utf-8")
 
 
 def _write_codex(sid: str, tool_use_id: str, *, since: str) -> None:
@@ -147,6 +158,39 @@ class TestAgentDisplay:
         """Agent older than the 10-min safety net is dropped → ``🤖 none`` rendered."""
         stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
         _write_agent(sid, "a-stale", since=stale)
+
+        result = run_hook("statusline.js", _payload(sid), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rendered = _strip_ansi(result.stdout)
+        assert "🤖 none" in rendered
+
+    def test_long_running_agent_kept_visible_by_last_active(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """A long-running agent with a stale ``since`` but a fresh ``last_active`` stays visible.
+
+        Reproduces the reported bug: a 20-min-old dispatch (``since``) would drop under the
+        10-min filter, but ongoing tool activity keeps ``last_active`` current so the agent
+        must remain in the 🤖 segment.
+        """
+        stale_since = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        fresh_active = datetime.now(timezone.utc).isoformat()
+        _write_agent(sid, "a-longrun", since=stale_since, last_active=fresh_active)
+
+        result = run_hook("statusline.js", _payload(sid), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rendered = _strip_ansi(result.stdout)
+        assert "sw-engineer" in rendered
+        assert "🤖 none" not in rendered
+
+    def test_idle_agent_with_stale_last_active_dropped(self, sid: str, tmp_home: Path, run_hook) -> None:
+        """An agent whose ``last_active`` is also older than 10 min ages out (backstop preserved).
+
+        Confirms the refresh path does not defeat the staleness net: a crashed/hung agent that
+        stopped emitting activity has a stale ``last_active`` and is still reaped.
+        """
+        stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+        _write_agent(sid, "a-dead", since=stale, last_active=stale)
 
         result = run_hook("statusline.js", _payload(sid), home=tmp_home)
 

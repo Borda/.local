@@ -17,8 +17,8 @@
 //       so agent badges reset immediately after /clear
 //   4. Build Line 2 skills segment (⚡): read state/skills/*.json; render each active skill in
 //      bright yellow; shows "none" when idle (consistent with agents/tools segments)
-//   5. Build Line 2 agent segment (🤖): read state/agents/*.json; skip entries older than 10 min
-//      (safety net); group by type; color from agent frontmatter COLOR_MAP; codex:* shown here
+//   5. Build Line 2 agent segment (🤖): read state/agents/*.json; skip entries idle > 10 min
+//      (freshness = last_active ?? since, safety net); group by type; color from frontmatter; codex:* here
 //   6. Build Line 2 tool segment (🛠️): read state/tools/*.json; skip entries older than 30 s;
 //      render per-type call counts with fixed TOOL_COLORS palette
 //   7. Write both lines to stdout with \x1b[K (clear-to-end-of-line) on each line
@@ -54,7 +54,9 @@
 //   🤖 agents   reads /tmp/claude-state-<session_id>/agents/*.json written by task-log.js
 //               SubagentStart/Stop. Groups by type; all agents (incl. codex:*) shown in their
 //               declared color (from agent frontmatter color: field); general-purpose gray.
-//               Safety-net: ignores entries older than 10 min (SubagentStop crash/hang).
+//               Safety-net: ignores entries idle > 10 min, measured from last_active (last tool
+//               activity, worktree agents only) ?? since (dispatch time) — so a still-working
+//               long-running agent stays visible while a crashed/hung one (no activity) ages out.
 //   🛠️ tools    reads /tmp/claude-state-<session_id>/tools/*.json written by task-log.js
 //               PreToolUse. Shows tool types active within the last 30 s with per-type
 //               call counts. Each tool type has a fixed ANSI color for visual stability.
@@ -223,7 +225,10 @@ process.stdin.on("end", () => {
       try {
         files = fs.readdirSync(agentsDir).filter((f) => f.endsWith(".json"));
       } catch (_) {}
-      // Safety-net: drop agents stuck > 10 min (SubagentStop didn't fire — crash or hang)
+      // Safety-net: drop agents idle > 10 min. Freshness is measured from last_active (last tool
+      // activity, refreshed by task-log.js for worktree agents) falling back to since (dispatch time)
+      // for agents that have never been refreshed. A still-working long-running agent keeps last_active
+      // current and stays visible; a crashed/hung agent stops emitting activity and ages out as before.
       const MAX_AGE_MS = 10 * 60 * 1000;
       const allAgents = files.flatMap((f) => {
         try {
@@ -246,7 +251,10 @@ process.stdin.on("end", () => {
           } catch (_) {}
         }
       } catch (_) {}
-      const agents = allAgents.filter((a) => !a.since || now - new Date(a.since).getTime() < MAX_AGE_MS);
+      const agents = allAgents.filter((a) => {
+        const freshness = a.last_active || a.since;
+        return !freshness || now - new Date(freshness).getTime() < MAX_AGE_MS;
+      });
       if (agents.length > 0) {
         // Specialized + pinned model → type name, normal color
         // Specialized + inherit model → type name, gray (no special model assigned)

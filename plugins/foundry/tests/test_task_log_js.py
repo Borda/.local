@@ -150,6 +150,22 @@ def _pre_bash(sid: str, tool_use_id: str) -> dict:
     }
 
 
+def _pre_tool_with_cwd(sid: str, tool_use_id: str, cwd: str, tool_name: str = "Read") -> dict:
+    """Build a PreToolUse payload carrying a ``cwd`` (a subagent's worktree working dir).
+
+    Mirrors the live CC hook contract where PreToolUse payloads include ``cwd`` but no
+    ``agent_id`` — the field ``touchAgentLastActive`` uses to attribute worktree activity.
+    """
+    return {
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": {"file_path": "/x"} if tool_name == "Read" else {"command": "echo hi"},
+        "tool_use_id": tool_use_id,
+        "session_id": sid,
+        "cwd": cwd,
+    }
+
+
 def _pre_compact(sid: str, transcript_path: str) -> dict:
     """Build a ``PreCompact`` payload pointing at a transcript file."""
     return {
@@ -157,6 +173,27 @@ def _pre_compact(sid: str, transcript_path: str) -> dict:
         "transcript_path": transcript_path,
         "session_id": sid,
     }
+
+
+def _write_agent_file(state_dir, sid: str, agent_id: str) -> None:
+    """Seed an agents/<agent_id>.json record with a fixed dispatch time and no last_active.
+
+    The fixed ``since`` (2000-01-01) lets a test assert it is preserved untouched by a refresh.
+    """
+    d = state_dir(sid) / "agents"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{agent_id}.json").write_text(
+        json.dumps(
+            {
+                "id": agent_id,
+                "type": "foundry:sw-engineer",
+                "model": "inherit",
+                "color": None,
+                "since": "2000-01-01T00:00:00.000Z",
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def _write_transcript(path: Path, file_paths: list[str]) -> None:
@@ -353,6 +390,53 @@ class TestToolCounting:
         assert result.returncode == 0, result.stderr
         data = json.loads((state_dir(sid) / "tools" / "Bash.json").read_text(encoding="utf-8"))
         assert data["count"] == 2
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
+class TestAgentLivenessRefresh:
+    """task-log.js: touchAgentLastActive refreshes a worktree subagent's last_active on tool activity."""
+
+    def test_worktree_tool_event_stamps_last_active(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
+        """A tool event with cwd = .claude/worktrees/agent-<id> stamps last_active on agents/<id>.json.
+
+        The agent file is keyed by agent_id (as SubagentStart writes it); the worktree cwd basename
+        (agent-<id>) resolves back to that key, so the still-running agent's freshness is renewed.
+        """
+        agent_id = "a0abc123"
+        _write_agent_file(state_dir, sid, agent_id)
+        cwd = f"/repo/.claude/worktrees/agent-{agent_id}"
+
+        result = run_hook("task-log.js", _pre_tool_with_cwd(sid, "tu-r1", cwd), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rec = json.loads((state_dir(sid) / "agents" / f"{agent_id}.json").read_text(encoding="utf-8"))
+        assert "last_active" in rec
+        assert rec["since"] == "2000-01-01T00:00:00.000Z"  # dispatch time preserved, not overwritten
+
+    def test_non_worktree_cwd_does_not_stamp(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
+        """A tool event whose cwd is the project root (not a worktree) leaves last_active unset.
+
+        Non-worktree agents share the parent's cwd, so their activity can't be attributed to a
+        specific agent — the record must stay unchanged and rely on the staleness backstop.
+        """
+        agent_id = "a0def456"
+        _write_agent_file(state_dir, sid, agent_id)
+        cwd = "/repo"  # project root, not a worktree
+
+        result = run_hook("task-log.js", _pre_tool_with_cwd(sid, "tu-r2", cwd), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        rec = json.loads((state_dir(sid) / "agents" / f"{agent_id}.json").read_text(encoding="utf-8"))
+        assert "last_active" not in rec
+
+    def test_worktree_cwd_no_matching_agent_is_noop(self, sid: str, tmp_home: Path, run_hook, state_dir) -> None:
+        """A worktree cwd whose agent file is absent (agent finished) is a silent no-op, not an error."""
+        cwd = "/repo/.claude/worktrees/agent-a0gone999"
+
+        result = run_hook("task-log.js", _pre_tool_with_cwd(sid, "tu-r3", cwd), home=tmp_home)
+
+        assert result.returncode == 0, result.stderr
+        assert not (state_dir(sid) / "agents" / "a0gone999.json").exists()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
