@@ -45,6 +45,7 @@ Secondary:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -55,7 +56,7 @@ import sys
 import threading
 import time
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Optional
 
@@ -85,12 +86,47 @@ RESULTS_DIR = Path("benchmarks/results")
 # tool-count data only — never accuracy.
 _EXTERNAL_TASK_TYPE = "develop_skill"
 
+# Diff-impact tasks (review DI) stage a scripted change around BOTH arms, then revert (DiffImpactStager).
+_DIFF_IMPACT_TYPE = "diff_impact"
+
+# real_issue (RI) series reproduces + locates files for a real GitHub issue; those runs routinely
+# reach ~2M input tokens (the plain arm greps the whole tree). They therefore run only under the
+# release profile or an explicit task selection, never in the fast dev / tiered-haiku default set.
+_RI_TASK_TYPE = "real_issue"
+
+# Cost profiles. `dev` selects the dev-tagged subset on haiku for a fast regression signal; `release`
+# runs the full matrix including RI. Absent (None) → current behavior, unchanged.
+_PROFILE_DEV = "dev"
+_PROFILE_RELEASE = "release"
+_PROFILES = (_PROFILE_DEV, _PROFILE_RELEASE)
+
+# Per-task JSON tag: `"profiles": ["dev"]` marks membership in the stratified dev subset. Declared in
+# tasks-bench.json (not hardcoded here) so the subset can be re-stratified without a code change.
+_PROFILE_TAG_KEY = "profiles"
+
+# Per-task JSON tag: `"self_consistency": true` marks a task whose ground truth is derived from the
+# same scan-query index the codemap arm queries (uncovered / broken-xref counts). Such tasks still
+# run and score, but are excluded from the headline accuracy aggregates and reported separately —
+# scoring the codemap arm against index-derived truth would measure agreement with itself, not skill.
+_SELF_CONSISTENCY_KEY = "self_consistency"
+
+# Head-meta keys hashed into the index fingerprint (index_sha). These content-defining fields change
+# whenever the index is rebuilt over a different tree / scan; `modules` is intentionally excluded so
+# the fingerprint stays cheap to compute without loading the whole (large) index body.
+_INDEX_META_KEYS = ("scan_version", "scanned_at", "git_sha", "project", "scan_root")
+
 MODELS: dict[str, str] = {
     "haiku": "claude-haiku-4-5-20251001",
     "sonnet": "claude-sonnet-4-6",
     "opus": "claude-opus-4-8",
 }
 _MODEL_TIMEOUT: dict[str, int] = {"haiku": 210, "sonnet": 420, "opus": 600}
+
+# Tiered protocol (release companion). Each tier runs a progressively smaller task set:
+#   haiku  → full suite         sonnet → dev-tagged subset        opus → disagreement adjudication
+_TIER_HAIKU = "haiku"
+_TIER_SONNET = "sonnet"
+_TIER_OPUS = "opus"
 
 ARMS = ("plain", "codemap")
 
@@ -201,6 +237,15 @@ class BenchRun:
         patch_pass: Patch tasks only — True when the failing test passed after the
             agent's diff was applied in a sandbox; None for non-patch tasks or when
             no diff could be extracted from the agent output.
+        self_consistency: True when the task's ground truth is derived from the same
+            scan-query index the codemap arm queries (uncovered / broken-xref counts).
+            Such runs are still scored but excluded from headline accuracy aggregates
+            and reported in a separate self-consistency row.
+        repo_sha: Provenance — repo HEAD SHA when the run executed; "unknown" on failure.
+        index_sha: Provenance — fingerprint of the index head-meta (see ``_index_sha``).
+        task_hash: Provenance — sha256 of the canonical task JSON (see ``_task_hash``).
+        resumed: True when this line was reused from a prior results file via ``--resume``
+            (the claude subprocess was not re-executed for this tuple).
     """
 
     arm: str
@@ -226,11 +271,17 @@ class BenchRun:
         0  # plain arm only: full-string reads/execs touching the codemap index or binary (review H-2)
     )
     scan_query_subcommands: dict[str, int] = field(default_factory=dict)
+    used_batch: bool = False  # codemap arm invoked scan-query `batch` (JSON-array multi-query form) at least once
     turn_count: int = 0
     incomplete: bool = False  # budget exhausted before final answer; excluded from accuracy
     codemap_methods: list[str] = field(default_factory=list)
     codemap_not_covered: list[str] = field(default_factory=list)
     patch_pass: bool | None = None  # patch tasks only: True if failing test passed after applying the agent diff
+    self_consistency: bool = False  # ground truth derived from the queried index; excluded from headline accuracy
+    repo_sha: str = "unknown"  # provenance: repo HEAD when the run executed (git rev-parse; "unknown" on failure)
+    index_sha: str = "unknown"  # provenance: fingerprint of the index head-meta (see _index_sha)
+    task_hash: str = "unknown"  # provenance: sha256 of the canonical task JSON (see _task_hash)
+    resumed: bool = False  # True when this line was reused from a prior results file via --resume (not re-executed)
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +332,12 @@ Subcommands:
   undocumented [module] [--all]          — symbols lacking docstrings
   uncovered [module] [--top N]           — symbols lacking test coverage
   coupled [--top N]                      — most-coupled modules
-  xrefs <module> [--broken]             — Sphinx cross-references"""
+  xrefs <module> [--broken]             — Sphinx cross-references
+  central [--top N] [--exclude-tests]   — most-imported modules, ranked by importer count
+  path <source> <target>                 — a shortest import path between two modules
+  fn-blast <qname>                       — transitive caller closure of a function
+  diff-impact [--base REF]               — structural blast radius of the current git change set
+  batch [FILE|-]                         — run many queries in one process (reads a JSON array of {{cmd, args}})"""
 
 
 def _build_system_prompt(arm: str, repo_name: str, repo_path: str, index_path: str) -> str:
@@ -460,6 +516,401 @@ def _load_tasks_file(path: Path) -> list[dict]:
     return [_normalize_external_task(t) for t in raw_tasks]
 
 
+# ---------------------------------------------------------------------------
+# Provenance + resume cache (cost lever: --resume)
+# ---------------------------------------------------------------------------
+
+# Result-line fields that identify one (task, arm, model) execution against a specific tree + index +
+# task definition. Two lines match iff all six agree — the resume key.
+_RESUME_KEY_FIELDS = ("task_id", "arm", "model", "repo_sha", "index_sha", "task_hash")
+
+
+def _repo_sha(repo_path: Path) -> str:
+    """Return the repository HEAD SHA, or "unknown" when git is unavailable.
+
+    Args:
+        repo_path: Path to the target repository clone.
+
+    Returns:
+        The 40-char HEAD SHA, or "unknown" when ``repo_path`` is not a git work tree
+        or git is not on PATH.
+
+    Examples:
+        >>> _repo_sha(Path("/definitely/not/a/repo/xyzzy"))
+        'unknown'
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    sha = out.stdout.strip()
+    return sha if out.returncode == 0 and sha else "unknown"
+
+
+def _index_sha(index_path: Path) -> str:
+    """Fingerprint the index by hashing its content-defining head-meta fields.
+
+    Only the small :data:`_INDEX_META_KEYS` subset is hashed (``scan_version``,
+    ``scanned_at``, ``git_sha``, ``project``, ``scan_root``) — enough to distinguish
+    two rebuilds without loading the large ``modules`` body. A missing or unreadable
+    index yields "unknown" rather than raising, so provenance degrades gracefully.
+
+    Args:
+        index_path: Path to the codemap index JSON file.
+
+    Returns:
+        A hex sha256 digest of the canonicalised head-meta subset, or "unknown".
+
+    Examples:
+        >>> import json, tempfile
+        >>> f = Path(tempfile.mkstemp(suffix=".json")[1])
+        >>> _ = f.write_text(json.dumps({"scan_version": 5, "scanned_at": "t", "modules": [1, 2]}))
+        >>> len(_index_sha(f))
+        64
+        >>> _index_sha(Path("/no/such/index.json"))
+        'unknown'
+    """
+    try:
+        raw = json.loads(index_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return "unknown"
+    meta = {k: raw.get(k) for k in _INDEX_META_KEYS}
+    payload = json.dumps(meta, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _task_hash(task: dict) -> str:
+    """Return a stable sha256 of the task's JSON definition.
+
+    The task dict is serialised with sorted keys so the digest is invariant to key
+    order; any change to prompt, ground truth, or expected queries changes the hash,
+    invalidating a stale resume match.
+
+    Args:
+        task: A task dict from tasks-bench.json.
+
+    Returns:
+        A hex sha256 digest of the canonicalised task JSON.
+
+    Examples:
+        >>> _task_hash({"id": "SE-01", "prompt": "p"}) == _task_hash({"prompt": "p", "id": "SE-01"})
+        True
+    """
+    payload = json.dumps(task, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _resume_key(line: dict) -> tuple:
+    """Build the resume-match key from a result line (or any dict with the key fields).
+
+    Args:
+        line: A dict carrying at least :data:`_RESUME_KEY_FIELDS`.
+
+    Returns:
+        A tuple of the six identifying values, in :data:`_RESUME_KEY_FIELDS` order.
+
+    Examples:
+        >>> _resume_key({"task_id": "SE-01", "arm": "plain", "model": "haiku",
+        ...              "repo_sha": "a", "index_sha": "b", "task_hash": "c"})
+        ('SE-01', 'plain', 'haiku', 'a', 'b', 'c')
+    """
+    return tuple(line.get(f, "unknown") for f in _RESUME_KEY_FIELDS)
+
+
+def _load_resume_cache(results_dir: Path) -> dict[tuple, dict]:
+    """Index every prior result line in *results_dir* by its resume key.
+
+    Scans ``bench-*.jsonl`` files. Later files win on key collision, so a re-run's
+    lines shadow an earlier partial run's. Malformed lines are skipped silently.
+
+    Args:
+        results_dir: Directory holding prior ``bench-*.jsonl`` result files.
+
+    Returns:
+        Mapping from resume key (see :func:`_resume_key`) to the stored line dict.
+    """
+    cache: dict[tuple, dict] = {}
+    if not results_dir.is_dir():
+        return cache
+    for path in sorted(results_dir.glob("bench-*.jsonl")):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        for raw in text.splitlines():
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                line = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(line, dict):
+                cache[_resume_key(line)] = line
+    return cache
+
+
+def _run_from_cached(line: dict) -> BenchRun:
+    """Reconstruct a :class:`BenchRun` from a cached result line, flagged ``resumed``.
+
+    Only the dataclass fields present in *line* are copied; unknown keys (from a newer
+    or older schema) are ignored so a resume across schema drift still yields a usable
+    run for reporting. ``quality`` is rebuilt into a :class:`BenchQuality`.
+
+    Args:
+        line: A prior result line dict (as written by :func:`_save_results`).
+
+    Returns:
+        A BenchRun equal to the cached run with ``resumed=True``.
+    """
+    field_names = {f.name for f in fields(BenchRun)}
+    kwargs = {k: v for k, v in line.items() if k in field_names and k != "quality"}
+    q_field_names = {f.name for f in fields(BenchQuality)}
+    q_raw = line.get("quality") or {}
+    q_kwargs = {k: v for k, v in q_raw.items() if k in q_field_names} if isinstance(q_raw, dict) else {}
+    run = BenchRun(**kwargs)
+    run.quality = BenchQuality(**q_kwargs)
+    run.resumed = True
+    return run
+
+
+# ---------------------------------------------------------------------------
+# Cost profiles + tiered protocol (cost levers: --profile, --tiered)
+# ---------------------------------------------------------------------------
+
+
+def _is_dev_task(task: dict) -> bool:
+    """Return True when *task* is tagged for the stratified dev subset.
+
+    Args:
+        task: A task dict, possibly carrying a ``profiles`` list.
+
+    Returns:
+        True when ``_PROFILE_DEV`` is listed in the task's ``profiles`` tag.
+
+    Examples:
+        >>> _is_dev_task({"id": "SE-01", "profiles": ["dev"]})
+        True
+        >>> _is_dev_task({"id": "SE-02"})
+        False
+    """
+    return _PROFILE_DEV in (task.get(_PROFILE_TAG_KEY) or [])
+
+
+def _is_ri_task(task: dict) -> bool:
+    """Return True when *task* belongs to the real_issue (RI) series.
+
+    Args:
+        task: A task dict.
+
+    Returns:
+        True when the task type is :data:`_RI_TASK_TYPE`.
+
+    Examples:
+        >>> _is_ri_task({"id": "RI-01", "type": "real_issue"})
+        True
+        >>> _is_ri_task({"id": "SE-01", "type": "symbol_extraction"})
+        False
+    """
+    return task.get("type") == _RI_TASK_TYPE
+
+
+def _gate_ri(tasks: list[dict], profile: Optional[str], explicit: bool) -> list[dict]:
+    """Drop RI tasks unless the release profile is active or they were selected explicitly.
+
+    RI runs are ~2M-token outliers; they are excluded from the fast dev / tiered-haiku default
+    set. An explicit ``--tasks``/``--task-type`` selection or ``--profile release`` opts them back in.
+
+    Args:
+        tasks: The candidate task list after other selection.
+        profile: Active profile (``dev``/``release``) or None.
+        explicit: True when the caller selected tasks explicitly (``--tasks``/``--task-type``).
+
+    Returns:
+        The task list with RI tasks removed when gating applies, else unchanged.
+
+    Examples:
+        >>> ri = {"id": "RI-01", "type": "real_issue"}
+        >>> se = {"id": "SE-01", "type": "symbol_extraction"}
+        >>> [t["id"] for t in _gate_ri([ri, se], None, explicit=False)]
+        ['SE-01']
+        >>> [t["id"] for t in _gate_ri([ri, se], "release", explicit=False)]
+        ['RI-01', 'SE-01']
+        >>> [t["id"] for t in _gate_ri([ri, se], None, explicit=True)]
+        ['RI-01', 'SE-01']
+    """
+    if profile == _PROFILE_RELEASE or explicit:
+        return tasks
+    return [t for t in tasks if not _is_ri_task(t)]
+
+
+def _apply_profile(tasks: list[dict], profile: Optional[str]) -> list[dict]:
+    """Filter *tasks* down to the profile's subset.
+
+    ``dev`` keeps only dev-tagged tasks; ``release`` keeps everything (RI included, gated
+    separately). None leaves the list unchanged.
+
+    Args:
+        tasks: The candidate task list.
+        profile: Active profile (``dev``/``release``) or None.
+
+    Returns:
+        The profile-filtered task list.
+
+    Examples:
+        >>> tasks = [{"id": "SE-01", "profiles": ["dev"]}, {"id": "SE-02"}]
+        >>> [t["id"] for t in _apply_profile(tasks, "dev")]
+        ['SE-01']
+        >>> [t["id"] for t in _apply_profile(tasks, "release")]
+        ['SE-01', 'SE-02']
+        >>> [t["id"] for t in _apply_profile(tasks, None)]
+        ['SE-01', 'SE-02']
+    """
+    if profile == _PROFILE_DEV:
+        return [t for t in tasks if _is_dev_task(t)]
+    return tasks
+
+
+def _correct_by_task(results_dir: Path, model: str, repo_sha: str, index_sha: str) -> dict[str, bool]:
+    """Read prior *model*-tier results and fold each task to a single correctness verdict.
+
+    A task counts as correct for the tier only when every scored arm of that task in the
+    matching results (same repo_sha + index_sha) was ``quality.correct``. Used by the tiered
+    protocol to find haiku/sonnet disagreements for opus adjudication.
+
+    Args:
+        results_dir: Directory holding prior ``bench-*.jsonl`` result files.
+        model: Tier model whose lines to read (e.g. ``haiku``).
+        repo_sha: Provenance filter — only lines from this repo HEAD count.
+        index_sha: Provenance filter — only lines from this index fingerprint count.
+
+    Returns:
+        Mapping task_id → conjunctive correctness across scored arms of that tier. Tasks with no
+        scored arm are absent from the mapping.
+    """
+    scored: dict[str, list[bool]] = defaultdict(list)
+    for line in _load_resume_cache(results_dir).values():
+        if line.get("model") != model or line.get("repo_sha") != repo_sha or line.get("index_sha") != index_sha:
+            continue
+        quality = line.get("quality") or {}
+        if not quality.get("scored") or quality.get("extraction_failed") or line.get("incomplete"):
+            continue
+        scored[line["task_id"]].append(bool(quality.get("correct")))
+    return {tid: all(verdicts) for tid, verdicts in scored.items() if verdicts}
+
+
+def _tiered_tasks(tasks: list[dict], model: str, results_dir: Path, repo_sha: str, index_sha: str) -> list[dict]:
+    """Select the task subset for one tier of the tiered protocol.
+
+    Sequencing (three invocations, one per model):
+
+      * ``haiku``  → the full suite (RI gated separately by profile).
+      * ``sonnet`` → the dev-tagged subset only.
+      * ``opus``   → only tasks where the haiku and sonnet verdicts disagree (adjudication);
+        requires both prior tiers' results in *results_dir*.
+
+    Args:
+        tasks: The candidate task list (already profile/RI filtered for the caller).
+        model: The tier model being run.
+        results_dir: Directory holding prior-tier ``bench-*.jsonl`` result files.
+        repo_sha: Provenance filter for reading prior-tier verdicts.
+        index_sha: Provenance filter for reading prior-tier verdicts.
+
+    Returns:
+        The task subset for this tier. Opus with no disagreements (or missing prior results)
+        yields an empty list.
+    """
+    if model == _TIER_SONNET:
+        return [t for t in tasks if _is_dev_task(t)]
+    if model == _TIER_OPUS:
+        haiku = _correct_by_task(results_dir, _TIER_HAIKU, repo_sha, index_sha)
+        sonnet = _correct_by_task(results_dir, _TIER_SONNET, repo_sha, index_sha)
+        disagree = {tid for tid in haiku.keys() & sonnet.keys() if haiku[tid] != sonnet[tid]}
+        return [t for t in tasks if t["id"] in disagree]
+    return tasks
+
+
+@dataclass
+class TaskSelection:
+    """Inputs that determine which tasks run, bundled to keep helper signatures small.
+
+    Attributes:
+        all_tasks: Every loaded task (bench + any --tasks-file + patch).
+        ids: Explicit ``--tasks`` id set, or None.
+        task_type: Explicit ``--task-type`` filter, or None.
+        run_all: True when ``--all`` was passed.
+        external_ids: IDs supplied via ``--tasks-file``.
+        patch_ids: IDs supplied via ``--patch``.
+        profile: Active cost profile (``dev``/``release``) or None.
+        tiered: True when the tiered protocol is active.
+        model: Short model tier name (drives the tiered subset).
+    """
+
+    all_tasks: list[dict]
+    ids: Optional[set[str]]
+    task_type: Optional[str]
+    run_all: bool
+    external_ids: set[str]
+    patch_ids: set[str]
+    profile: Optional[str]
+    tiered: bool
+    model: str
+
+
+def _base_task_list(sel: TaskSelection) -> Optional[list[dict]]:
+    """Apply the explicit/type/subset selection that predates the cost-lever flags.
+
+    Args:
+        sel: The bundled selection inputs.
+
+    Returns:
+        The base task list, or None when no selection was specified (caller reports the error).
+        An empty list means a selector matched nothing.
+    """
+    if sel.ids is not None:
+        return [t for t in sel.all_tasks if t["id"] in sel.ids]
+    if sel.task_type:
+        return [t for t in sel.all_tasks if t["type"] == sel.task_type]
+    if sel.run_all:
+        return list(sel.all_tasks)
+    subset = sel.external_ids | sel.patch_ids
+    if subset:
+        return [t for t in sel.all_tasks if t["id"] in subset]
+    return None
+
+
+def _select_tasks(sel: TaskSelection, results_dir: Path, repo_sha: str, index_sha: str) -> Optional[list[dict]]:
+    """Resolve the final task list from base selection + profile + RI gating + tiered protocol.
+
+    Order: base selection → profile subset → RI gating → tiered subset. The tiered step reads
+    prior-tier results (for opus adjudication) via *results_dir* + provenance filters.
+
+    Args:
+        sel: The bundled selection inputs.
+        results_dir: Directory holding prior ``bench-*.jsonl`` result files (tiered opus tier).
+        repo_sha: Provenance filter for reading prior-tier verdicts.
+        index_sha: Provenance filter for reading prior-tier verdicts.
+
+    Returns:
+        The final task list, None when no base selector was given, or an empty list when a
+        selector matched nothing.
+    """
+    base = _base_task_list(sel)
+    if base is None:
+        return None
+    explicit = sel.ids is not None or bool(sel.task_type)
+    selected = _apply_profile(base, sel.profile)
+    selected = _gate_ri(selected, sel.profile, explicit)
+    if sel.tiered:
+        selected = _tiered_tasks(selected, sel.model, results_dir, repo_sha, index_sha)
+    return selected
+
+
 def _subprocess_env(index_path: Path) -> dict[str, str]:
     """Build subprocess environment with codemap bin dir and CODEMAP_INDEX set.
 
@@ -506,6 +957,8 @@ def _is_contaminating_access(text: str) -> bool:
 
 
 # Subcommands recognised by scan-query (mirrors the _CODEMAP_TOOLS help block).
+# `central` / `path` / `fn-blast` back the graph series (review GR); `diff-impact` backs the
+# diff-impact series (review DI); `batch` is the JSON-array multi-query form (measured, not forced).
 _SCAN_QUERY_SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "symbol",
@@ -517,8 +970,19 @@ _SCAN_QUERY_SUBCOMMANDS: frozenset[str] = frozenset(
         "uncovered",
         "coupled",
         "xrefs",
+        "central",
+        "path",
+        "fn-blast",
+        "diff-impact",
+        "batch",
     }
 )
+
+# Batch mode reads a JSON array of ``{"cmd": ..., "args": [...]}`` items and runs each in one process.
+# When the codemap arm uses batch, each inner item's ``cmd`` must still be attributed to its own
+# subcommand counter (so batched `fn-rdeps` counts as an `fn-rdeps` use, not vanishing into `batch`).
+# The array may be passed as an inline heredoc/echo pipe or a file argument.
+_BATCH_SUBCOMMAND = "batch"
 
 
 def _parse_scan_query_subcommand(command: str) -> Optional[str]:
@@ -573,6 +1037,57 @@ def _parse_scan_query_subcommand(command: str) -> Optional[str]:
             continue
         return tok if tok in _SCAN_QUERY_SUBCOMMANDS else None
     return None
+
+
+# Match a JSON array embedded anywhere in a Bash command line (heredoc body, echo/printf pipe, or an
+# inline single-quoted argument). Non-greedy across the whole command; the outermost `[ ... ]` pair is
+# taken and re-validated as JSON before any item is trusted, so a stray bracket in prose is rejected.
+_BATCH_ARRAY_RE = re.compile(r"\[\s*\{.*\}\s*\]", re.DOTALL)
+
+
+def _parse_batch_subcommands(command: str) -> list[str]:
+    """Return the inner subcommand names of a scan-query ``batch`` invocation (review batch-mode).
+
+    Batch mode reads a JSON array of ``{"cmd": <name>, "args": [...]}`` items. Each inner ``cmd`` is a
+    real subcommand use that must be attributed to its own counter — a batched ``fn-rdeps`` counts as an
+    ``fn-rdeps`` use, not as an opaque ``batch``. Only the ``cmd`` value of each object is extracted;
+    unknown ``cmd`` values (not in :data:`_SCAN_QUERY_SUBCOMMANDS`) are dropped. Returns an empty list
+    when the command is not a batch invocation or carries no decodable JSON array.
+
+    Args:
+        command: Raw Bash command string (as recorded in tool input).
+
+    Returns:
+        List of recognised inner subcommand names, in array order (duplicates preserved).
+
+    Examples:
+        >>> _parse_batch_subcommands(
+        ...     'scan-query batch <<< \\'[{"cmd": "fn-rdeps", "args": ["m::f"]}, {"cmd": "rdeps", "args": ["m"]}]\\''
+        ... )
+        ['fn-rdeps', 'rdeps']
+        >>> _parse_batch_subcommands("scan-query symbol Trainer")
+        []
+        >>> _parse_batch_subcommands('scan-query batch <<< \\'[{"cmd": "bogus"}]\\'')
+        []
+    """
+    if _parse_scan_query_subcommand(command) != _BATCH_SUBCOMMAND:
+        return []
+    match = _BATCH_ARRAY_RE.search(command)
+    if not match:
+        return []
+    try:
+        items = json.loads(match.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(items, list):
+        return []
+    subs: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            cmd = item.get("cmd")
+            if isinstance(cmd, str) and cmd in _SCAN_QUERY_SUBCOMMANDS:
+                subs.append(cmd)
+    return subs
 
 
 # Per-task turn cap (review M-6). Applied IDENTICALLY to both arms so the token_ratio headline is not
@@ -1204,15 +1719,84 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
         return BenchQuality(scored=False)
 
     expected_set = set(expected_callers)
+    found_qualnames = _match_callers(output_text, expected_callers)
 
-    # Score only the agent's inline output_text (review M-10). Earlier code regex-matched a
-    # "→ <file>.md" reply-dump pointer and open()d that file, appending its content before scoring —
-    # but Write/Edit are blocked on BOTH arms, so the agent can never freshly write that file: the
-    # path resolved to a stale/pre-existing file (injecting wrong content into the score) or was dead.
-    # No file is read here; a "→ foo.md" pointer in the output is treated as ordinary text.
+    true_positives = len(expected_set & found_qualnames)
+    recall = true_positives / max(len(expected_set), 1)
+    correct = recall >= 0.70
 
-    # Extract qualified names. Three forms, then normalize to module::Class.method.
+    return BenchQuality(
+        scored=True,
+        correct=correct,
+        metric_expected=len(expected_set),
+        metric_got=true_positives,
+        recall=round(recall, 3),
+        caller_count_gt=gt["unique_caller_count"],
+        extraction_failed=len(found_qualnames) == 0,
+        evaluator_used="_evaluate_develop_br",
+        evaluator_version=_EVAL_VER_NAME_RECALL,
+        extracted_metric=sorted(found_qualnames),
+        scoring_detail={
+            "metric_expected": len(expected_set),
+            "metric_got": true_positives,
+            "threshold": 0.70,
+            "method": "recall",
+            "safety_grade": recall >= 0.90,
+        },
+    )
 
+
+def _match_callers(output_text: str, expected_callers: list[str]) -> set[str]:
+    """Extract the ground-truth callers named anywhere in *output_text* (review M-10/M-11; reused by DI).
+
+    The multi-form caller matcher shared by the develop_blast_radius / fn_call_graph evaluators and the
+    diff-impact evaluator (review DI). It recognises the eleven output shapes agents emit for caller
+    lists — canonical ``module::Class.method``, multi-``::`` chains, file-path forms, grouped headers +
+    bullets, markdown tables, bold-backtick + numbered lists, slash-paired abbreviations, a fully-dotted
+    reverse lookup, an always-on underscore-insensitive fuzzy tier gated on module compatibility, and a
+    bare ``Class.method`` fallback that fires only when every other form produced nothing and rejects
+    generic method tails. Only ``output_text`` is scored — no file is read (a ``→ foo.md`` pointer is
+    ordinary text, since Write/Edit are blocked on both arms).
+
+    Args:
+        output_text: The agent's full response text.
+        expected_callers: Ground-truth caller qualified names (``module::Class.method``).
+
+    Returns:
+        Candidate qualified names found in *output_text*. Callers intersect this with their expected
+        set to get the true positives; the returned set may include normalization artifacts (e.g. an
+        alternate ``::`` split) that fall outside the expected set and are discarded by that
+        intersection.
+
+    Examples:
+        >>> found = _match_callers("caller: a.b::Foo.bar", ["a.b::Foo.bar", "a.b::Baz.qux"])
+        >>> sorted(found & {"a.b::Foo.bar", "a.b::Baz.qux"})
+        ['a.b::Foo.bar']
+        >>> _match_callers("nothing relevant", ["a.b::Foo.bar"]) & {"a.b::Foo.bar"}
+        set()
+    """
+    found_raw = _extract_caller_raw_forms(output_text)
+    return _normalize_caller_forms(found_raw, output_text, expected_callers)
+
+
+def _extract_caller_raw_forms(output_text: str) -> list[str]:  # noqa: C901
+    """Extract raw ``module::callee`` tokens from *output_text* across ten regex output shapes.
+
+    The first phase of :func:`_match_callers` (review M-10): scans the agent output for every caller
+    shape agents emit — canonical ``ns.x::Class.method``, multi-``::`` chains, ``.py:``/``src/`` file
+    paths, grouped headers + bullets, markdown tables, section-header + rows, bold-backtick + numbered
+    lists, and slash-paired abbreviations — and returns the raw tokens (pre-normalization). Kept as a
+    single function because the forms share the ``_ns_pat`` alternation and header-position scans;
+    ``# noqa: C901`` because splitting the ten independent, extensively-tested regex blocks further
+    would fragment tightly-coupled matching logic without reducing real risk.
+
+    Args:
+        output_text: The agent's full response text.
+
+    Returns:
+        Raw ``module::callee`` candidate tokens (unnormalized; may contain duplicates/artifacts).
+    """
+    # Extract qualified names. Ten regex forms; :func:`_normalize_caller_forms` maps them to canonical.
     _ns_alt = "|".join(re.escape(n) for n in _REPO_NAMESPACE)
     _ns_pat = f"(?:{_ns_alt})"
 
@@ -1313,6 +1897,29 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
         cls_prefix = left.rsplit(".", 1)[0] if "." in left else left
         found_raw.append(f"{cls_prefix}.{right_fn}")
 
+    return found_raw
+
+
+def _normalize_caller_forms(found_raw: list[str], output_text: str, expected_callers: list[str]) -> set[str]:  # noqa: C901
+    """Map raw caller tokens to canonical ``module::Class.method`` and match them to *expected_callers*.
+
+    The second phase of :func:`_match_callers` (review M-10/M-11): normalizes each raw token from
+    :func:`_extract_caller_raw_forms` (default split, multi-``::`` split points, ``module.Class::method``
+    reclassification, abbreviated-suffix match), adds the fully-dotted reverse lookup (Form 5), the
+    always-on underscore-insensitive fuzzy tier (gated on :func:`_module_compatible`), and the bare
+    ``Class.method`` fallback (Form 11, module-blind, fired only when nothing else matched and rejecting
+    generic method tails). ``# noqa: C901`` because these normalization tiers are interdependent and
+    order-sensitive; splitting further would fragment tested matching semantics without reducing risk.
+
+    Args:
+        found_raw: Raw ``module::callee`` tokens from :func:`_extract_caller_raw_forms`.
+        output_text: The agent's full response text (needed for the Form 5 / Form 11 reverse lookups).
+        expected_callers: Ground-truth caller qualified names.
+
+    Returns:
+        Candidate canonical qualified names (intersect with expected set for true positives).
+    """
+    expected_set = set(expected_callers)
     # Normalize all extracted tokens → canonical module::Class.method
     _ns_prefixes = [""] + [f"{n}." for n in _REPO_NAMESPACE]
     found_qualnames: set[str] = set()
@@ -1417,29 +2024,7 @@ def _evaluate_develop_br(task: dict, output_text: str) -> BenchQuality:
                 if re.search(pattern2, output_text):
                     found_qualnames.add(canonical)
 
-    true_positives = len(expected_set & found_qualnames)
-    recall = true_positives / max(len(expected_set), 1)
-    correct = recall >= 0.70
-
-    return BenchQuality(
-        scored=True,
-        correct=correct,
-        metric_expected=len(expected_set),
-        metric_got=true_positives,
-        recall=round(recall, 3),
-        caller_count_gt=gt["unique_caller_count"],
-        extraction_failed=len(found_qualnames) == 0,
-        evaluator_used="_evaluate_develop_br",
-        evaluator_version=_EVAL_VER_NAME_RECALL,
-        extracted_metric=sorted(found_qualnames),
-        scoring_detail={
-            "metric_expected": len(expected_set),
-            "metric_got": true_positives,
-            "threshold": 0.70,
-            "method": "recall",
-            "safety_grade": recall >= 0.90,
-        },
-    )
+    return found_qualnames
 
 
 def _evaluate_debug(task: dict, output_text: str) -> BenchQuality:
@@ -1584,6 +2169,260 @@ def _evaluate_real_issue(task: dict, output_text: str) -> BenchQuality:
     )
 
 
+# ---------------------------------------------------------------------------
+# Diff-impact / graph evaluators (review DI / GR)
+# ---------------------------------------------------------------------------
+
+_DI_RECALL_THRESHOLD = 0.70  # caller recall AND test-file recall must each clear this for DI correctness
+_GR_RECALL_THRESHOLD = 0.70  # central set-overlap / fn-blast recall threshold
+
+
+def _module_mentioned(module: str, output_text: str) -> bool:
+    """Return True when dotted *module* is named in *output_text* (exact or abbreviated-suffix form).
+
+    A module counts when its full dotted name appears, or when a distinctive dotted suffix of it
+    appears (``loops.evaluation_loop`` for ``lightning.pytorch.loops.evaluation_loop``) — the same
+    abbreviation tolerance the caller matcher grants. A single-component tail is too weak and is not
+    accepted on its own. Word-boundary lookarounds prevent substring false positives.
+
+    Args:
+        module: Dotted module name from ground truth.
+        output_text: Agent's full response text.
+
+    Returns:
+        True when the module is named by an exact or ≥2-component-suffix form.
+
+    Examples:
+        >>> _module_mentioned("lightning.pytorch.loops.evaluation_loop", "see loops.evaluation_loop")
+        True
+        >>> _module_mentioned("a.b.c", "unrelated prose")
+        False
+    """
+    forms = {module}
+    parts = module.split(".")
+    for start in range(1, len(parts) - 1):  # ≥2-component suffixes only
+        forms.add(".".join(parts[start:]))
+    return any(re.search(r"(?<![\w.])" + re.escape(f) + r"(?![\w.])", output_text) for f in forms)
+
+
+def _set_recall(expected: list[str], predicate: Any) -> tuple[int, float]:
+    """Return ``(hits, recall)`` for *expected* items, each tested by *predicate*.
+
+    Args:
+        expected: Ground-truth items.
+        predicate: One-argument callable returning True when the item is present in the output.
+
+    Returns:
+        ``(hits, recall)`` — recall is ``hits / len(expected)`` (0.0 when *expected* is empty).
+
+    Examples:
+        >>> _set_recall(["a", "b"], lambda x: x == "a")
+        (1, 0.5)
+        >>> _set_recall([], lambda x: True)
+        (0, 0.0)
+    """
+    hits = sum(1 for item in expected if predicate(item))
+    return hits, (hits / len(expected) if expected else 0.0)
+
+
+def _evaluate_diff_impact(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate a ``diff_impact`` task: caller recall AND test-file recall both ≥ 0.70 (review DI).
+
+    A diff-impact task stages a change and asks for the blast radius: which modules/callers are affected
+    and which tests to run. Correctness requires BOTH the caller recall (reusing the develop_br
+    multi-form matcher, :func:`_match_callers`) and the test-module recall (dotted-name match) to clear
+    0.70 — a good blast-radius answer names both what breaks and what to re-run.
+
+    Args:
+        task: Task dict; reads ``ground_truth.fn_callers`` and ``.test_modules``.
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality with recall = caller recall; scoring_detail carries both recalls.
+    """
+    gt = task["ground_truth"]
+    expected_callers: list[str] = gt.get("fn_callers", [])
+    expected_tests: list[str] = gt.get("test_modules", [])
+    if not expected_callers and not expected_tests:
+        return BenchQuality(scored=False)
+
+    found_callers = _match_callers(output_text, expected_callers)
+    caller_hits = len(set(expected_callers) & found_callers)
+    caller_recall = caller_hits / len(expected_callers) if expected_callers else 1.0
+
+    test_hits, test_recall = _set_recall(expected_tests, lambda m: _module_mentioned(m, output_text))
+    if not expected_tests:
+        test_recall = 1.0
+
+    correct = caller_recall >= _DI_RECALL_THRESHOLD and test_recall >= _DI_RECALL_THRESHOLD
+    return BenchQuality(
+        scored=True,
+        correct=correct,
+        metric_expected=len(expected_callers),
+        metric_got=caller_hits,
+        recall=round(caller_recall, 3),
+        caller_count_gt=gt.get("unique_caller_count"),
+        extraction_failed=not found_callers and test_hits == 0,
+        evaluator_used="_evaluate_diff_impact",
+        scoring_detail={
+            "caller_recall": round(caller_recall, 3),
+            "test_recall": round(test_recall, 3),
+            "caller_expected": len(expected_callers),
+            "caller_got": caller_hits,
+            "test_expected": len(expected_tests),
+            "test_got": test_hits,
+            "threshold": _DI_RECALL_THRESHOLD,
+            "method": "caller_recall_and_test_recall",
+        },
+    )
+
+
+def _evaluate_graph_central(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate a ``graph_central`` task: set overlap with the top-N central modules ≥ 0.70 (review GR).
+
+    The agent lists the most-imported modules; correctness is the fraction of ground-truth central
+    modules named in the output (order-insensitive set overlap).
+
+    Args:
+        task: Task dict; reads ``ground_truth.central_modules``.
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality with recall = set overlap.
+    """
+    gt = task["ground_truth"]
+    expected: list[str] = gt.get("central_modules", [])
+    if not expected:
+        return BenchQuality(scored=False)
+    hits, recall = _set_recall(expected, lambda m: _module_mentioned(m, output_text))
+    return BenchQuality(
+        scored=True,
+        correct=recall >= _GR_RECALL_THRESHOLD,
+        metric_expected=len(expected),
+        metric_got=hits,
+        recall=round(recall, 3),
+        extraction_failed=hits == 0,
+        evaluator_used="_evaluate_graph_central",
+        scoring_detail={
+            "metric_expected": len(expected),
+            "metric_got": hits,
+            "threshold": _GR_RECALL_THRESHOLD,
+            "method": "set_overlap",
+        },
+    )
+
+
+def _evaluate_graph_path(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate a ``graph_path`` task: the reported chain equals the oracle path (review GR).
+
+    The ground-truth path is the unique shortest import chain. The agent's chain matches when every GT
+    hop module is named in the output AND they appear in the GT order — a correct answer must trace the
+    same chain. Because pairs are chosen where the shortest path is unique (generator enforces
+    ``path_is_unique``), the single oracle path is the only valid answer.
+
+    Args:
+        task: Task dict; reads ``ground_truth.import_path`` (list of module names, source→target).
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality; correct when every hop is present in GT order.
+    """
+    gt = task["ground_truth"]
+    path: list[str] = gt.get("import_path") or []
+    if not path:
+        return BenchQuality(scored=False)
+    positions = [_module_first_pos(hop, output_text) for hop in path]
+    all_present = all(pos is not None for pos in positions)
+    in_order = all_present and all(
+        positions[i] < positions[i + 1]  # type: ignore[operator]
+        for i in range(len(positions) - 1)
+    )
+    hits = sum(1 for pos in positions if pos is not None)
+    return BenchQuality(
+        scored=True,
+        correct=bool(in_order),
+        metric_expected=len(path),
+        metric_got=hits,
+        recall=round(hits / len(path), 3),
+        extraction_failed=hits == 0,
+        evaluator_used="_evaluate_graph_path",
+        scoring_detail={
+            "expected_path": path,
+            "hops_found": hits,
+            "in_order": bool(in_order),
+            "method": "ordered_chain_match",
+        },
+    )
+
+
+def _module_first_pos(module: str, output_text: str) -> Optional[int]:
+    """Return the first character offset at which *module* is named, or None (review GR path order).
+
+    Uses the same exact/≥2-component-suffix matching as :func:`_module_mentioned`, returning the
+    earliest match offset across all accepted forms so path-order can be checked.
+
+    Args:
+        module: Dotted module name.
+        output_text: Agent's full response text.
+
+    Returns:
+        Earliest match offset, or None when the module is not named.
+
+    Examples:
+        >>> _module_first_pos("a.b.c", "start a.b.c end")
+        6
+        >>> _module_first_pos("a.b.c", "nothing") is None
+        True
+    """
+    forms = {module}
+    parts = module.split(".")
+    for start in range(1, len(parts) - 1):
+        forms.add(".".join(parts[start:]))
+    positions = [
+        m.start()
+        for f in forms
+        if (m := re.search(r"(?<![\w.])" + re.escape(f) + r"(?![\w.])", output_text)) is not None
+    ]
+    return min(positions) if positions else None
+
+
+def _evaluate_graph_fn_blast(task: dict, output_text: str) -> BenchQuality:
+    """Evaluate a ``graph_fn_blast`` task: transitive-caller recall ≥ 0.70 (review GR).
+
+    Reuses the develop_br multi-form caller matcher (:func:`_match_callers`) against the depth-N
+    transitive caller closure.
+
+    Args:
+        task: Task dict; reads ``ground_truth.blast_callers``.
+        output_text: Agent's full response text.
+
+    Returns:
+        BenchQuality with recall over the transitive closure.
+    """
+    gt = task["ground_truth"]
+    expected: list[str] = gt.get("blast_callers", [])
+    if not expected:
+        return BenchQuality(scored=False)
+    found = _match_callers(output_text, expected)
+    hits = len(set(expected) & found)
+    recall = hits / len(expected)
+    return BenchQuality(
+        scored=True,
+        correct=recall >= _GR_RECALL_THRESHOLD,
+        metric_expected=len(expected),
+        metric_got=hits,
+        recall=round(recall, 3),
+        extraction_failed=not found,
+        evaluator_used="_evaluate_graph_fn_blast",
+        scoring_detail={
+            "metric_expected": len(expected),
+            "metric_got": hits,
+            "threshold": _GR_RECALL_THRESHOLD,
+            "method": "recall",
+        },
+    )
+
+
 _EVALUATORS = {
     "symbol_extraction": _evaluate_symbol,
     "fn_call_graph": _evaluate_develop_br,  # name-recall, not count-tolerance: callers are enumerated, not counted
@@ -1593,7 +2432,127 @@ _EVALUATORS = {
     "debug_from_trace": _evaluate_debug,
     "feature_scaffolding": _evaluate_feature,
     "real_issue": _evaluate_real_issue,
+    "diff_impact": _evaluate_diff_impact,
+    "graph_central": _evaluate_graph_central,
+    "graph_path": _evaluate_graph_path,
+    "graph_fn_blast": _evaluate_graph_fn_blast,
 }
+
+
+# ---------------------------------------------------------------------------
+# Diff-impact staging (review DI)
+# ---------------------------------------------------------------------------
+
+
+class DirtyTreeError(Exception):
+    """Raised when the target tree already has uncommitted changes at DI-series start.
+
+    A diff-impact task stages a synthetic change and reverts it with ``git checkout -- <paths>``.
+    That revert is only safe when the touched paths were clean beforehand — reverting a path the user
+    had already modified would silently destroy their edits. So the series refuses to run against a
+    dirty tree rather than risk clobbering pre-existing changes.
+    """
+
+
+class DiffImpactStager:
+    """Stage a scripted synthetic change in the target repo, then robustly revert it (review DI).
+
+    A diff-impact task ships a ``stage`` spec — a list of ``{"file": <rel-path>, "find": <str>,
+    "replace": <str>}`` or ``{"file": <rel-path>, "append": <str>}`` edits describing a widely-called
+    signature/body change. The stager applies every edit inside a ``with`` block and, on exit
+    (success OR exception), reverts every touched path with ``git checkout -- <path>`` — so the change
+    is present for both arms of the task and gone afterwards. The tree is verified clean (via
+    ``git status --porcelain`` scoped to the touched paths) before staging: a dirty path aborts the
+    whole series with :class:`DirtyTreeError` rather than risk clobbering the user's own edits.
+
+    Args:
+        repo_path: Root of the target repository (a git clone).
+        stage_spec: List of edit dicts from the task's ``stage`` field.
+
+    Examples:
+        >>> stager = DiffImpactStager("/repo", [{"file": "a.py", "find": "x", "replace": "y"}])  # doctest: +SKIP
+        >>> with stager:  # doctest: +SKIP
+        ...     run_both_arms()  # change is live here
+        >>> # change is reverted on block exit, even if run_both_arms raised
+    """
+
+    def __init__(self, repo_path: str | Path, stage_spec: list[dict]) -> None:
+        self.repo_path = Path(repo_path)
+        self.stage_spec = stage_spec
+        self._touched: list[Path] = []
+
+    def _rel_paths(self) -> list[str]:
+        """Return the repo-relative paths named by the stage spec (deduplicated, order-preserving)."""
+        seen: dict[str, None] = {}
+        for edit in self.stage_spec:
+            rel = edit.get("file", "")
+            if rel:
+                seen.setdefault(rel, None)
+        return list(seen)
+
+    def _assert_clean(self) -> None:
+        """Raise :class:`DirtyTreeError` when any staged path already has uncommitted changes."""
+        rels = self._rel_paths()
+        if not rels:
+            return
+        proc = subprocess.run(
+            ["git", "-C", str(self.repo_path), "status", "--porcelain", "--", *rels],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            raise DirtyTreeError(f"git status failed in {self.repo_path}: {proc.stderr.strip()}")
+        if proc.stdout.strip():
+            raise DirtyTreeError(
+                f"target tree is dirty at DI start — refusing to stage (would risk clobbering): "
+                f"{proc.stdout.strip().splitlines()[:5]}"
+            )
+
+    def _apply(self) -> None:
+        """Apply every edit in the stage spec, recording each touched path for revert."""
+        for edit in self.stage_spec:
+            rel = edit.get("file", "")
+            if not rel:
+                continue
+            fpath = self.repo_path / rel
+            text = fpath.read_text(encoding="utf-8")
+            if "append" in edit:
+                text = text + edit["append"]
+            elif "find" in edit and "replace" in edit:
+                if edit["find"] not in text:
+                    raise DirtyTreeError(f"stage find-text not present in {rel}: {edit['find']!r}")
+                text = text.replace(edit["find"], edit["replace"], 1)
+            else:
+                raise DirtyTreeError(f"stage edit for {rel} needs 'append' or 'find'+'replace'")
+            fpath.write_text(text, encoding="utf-8")
+            if fpath not in self._touched:
+                self._touched.append(fpath)
+
+    def revert(self) -> None:
+        """Restore every touched path via ``git checkout -- <path>`` (best-effort, never raises)."""
+        rels = self._rel_paths()
+        if not rels:
+            return
+        try:
+            subprocess.run(
+                ["git", "-C", str(self.repo_path), "checkout", "--", *rels],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (subprocess.SubprocessError, OSError):
+            pass
+        self._touched = []
+
+    def __enter__(self) -> "DiffImpactStager":
+        self._assert_clean()
+        self._apply()
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        # Revert runs whether the arms succeeded or raised — the change must never outlive the task.
+        self.revert()
 
 
 # ---------------------------------------------------------------------------
@@ -1784,6 +2743,9 @@ class BenchRunner:
         repo_path: Root of the target repository clone.
         index_path: Path to the pre-built codemap index.
         timeout: Wall-clock seconds per run before killing the subprocess.
+        resume_cache: When non-None, a prior-results cache (see :func:`_load_resume_cache`);
+            a matching (task, arm, model, repo_sha, index_sha, task_hash) tuple is reused
+            instead of re-executing the claude subprocess. None disables resume (default).
     """
 
     def __init__(
@@ -1793,15 +2755,37 @@ class BenchRunner:
         repo_path: Path,
         index_path: Path,
         timeout: int = 300,
+        resume_cache: Optional[dict[tuple, dict]] = None,
     ) -> None:
         self.model_short = model_short
         self.model_id = model_id
         self.repo_path = repo_path
         self.index_path = index_path
         self.timeout = timeout
+        self.resume_cache = resume_cache
+        # Provenance stamped on every run so results can be matched on a later --resume pass.
+        self.repo_sha = _repo_sha(repo_path)
+        self.index_sha = _index_sha(index_path)
+
+    def _stamp_provenance(self, result: BenchRun, task: dict, task_hash: str) -> None:
+        """Attach provenance + self-consistency metadata to *result* in place.
+
+        Args:
+            result: The BenchRun to annotate.
+            task: The task dict being run.
+            task_hash: Precomputed sha256 of the task JSON.
+        """
+        result.repo_sha = self.repo_sha
+        result.index_sha = self.index_sha
+        result.task_hash = task_hash
+        result.self_consistency = bool(task.get(_SELF_CONSISTENCY_KEY))
 
     def run(self, task: dict, arm: str, update_fn: Optional[Any] = None) -> BenchRun:
         """Run one task in one arm; parse stream-json for metrics.
+
+        When a resume cache is active and holds a matching prior result for this
+        (task, arm, model, repo_sha, index_sha, task_hash) tuple, that line is reused
+        (``resumed=True``) and the claude subprocess is skipped entirely.
 
         Args:
             task: Task dict from tasks-bench.json.
@@ -1811,6 +2795,32 @@ class BenchRunner:
 
         Returns:
             BenchRun with all metrics filled.
+        """
+        task_hash = _task_hash(task)
+        if self.resume_cache is not None:
+            key = (task["id"], arm, self.model_short, self.repo_sha, self.index_sha, task_hash)
+            cached = self.resume_cache.get(key)
+            if cached is not None:
+                run = _run_from_cached(cached)
+                self._stamp_provenance(run, task, task_hash)
+                return run
+        result = self._execute(task, arm, update_fn=update_fn)
+        self._stamp_provenance(result, task, task_hash)
+        return result
+
+    def _execute(self, task: dict, arm: str, update_fn: Optional[Any] = None) -> BenchRun:
+        """Execute one (task, arm) via the claude subprocess and score the output.
+
+        Split out of :meth:`run` so the resume fast-path stays a thin guard. Contains the
+        subprocess launch, retry loop, incomplete/scoreable handling, and contamination guards.
+
+        Args:
+            task: Task dict from tasks-bench.json.
+            arm: "plain" or "codemap".
+            update_fn: Optional live-progress callback forwarded to ``_stream``.
+
+        Returns:
+            A freshly executed BenchRun (provenance stamped by the caller).
         """
         system = _build_system_prompt(arm, _REPO_NAME, str(self.repo_path), str(self.index_path))
         disallow_flags = _ARM_DISALLOWED.get(arm, [])
@@ -2022,6 +3032,13 @@ class BenchRunner:
                 sub = _parse_scan_query_subcommand(cmd)
                 if sub is not None:
                     result.scan_query_subcommands[sub] = result.scan_query_subcommands.get(sub, 0) + 1
+                # Batch mode (review batch-mode): attribute each inner {cmd} to its own subcommand
+                # counter so a batched fn-rdeps counts as fn-rdeps, and flag used_batch for the run.
+                # The outer `batch` counter above is kept so total batch invocations stay visible.
+                if sub == _BATCH_SUBCOMMAND:
+                    result.used_batch = True
+                    for inner in _parse_batch_subcommands(cmd):
+                        result.scan_query_subcommands[inner] = result.scan_query_subcommands.get(inner, 0) + 1
             # review H-2: count index/binary access on the FULL command (plain arm only).
             if result.arm == "plain" and _is_contaminating_access(cmd):
                 result.contamination_hits += 1
@@ -2276,10 +3293,16 @@ def _print_workflow_breakdown(runs: list[BenchRun]) -> None:
                 ratios.append(codemap.input_tokens / plain.input_tokens)
         ratio_str = f"{statistics.median(ratios):>10.2f}" if ratios else f"{'n/a':>10}"
 
+        # Headline accuracy excludes self-consistency (index-derived GT) runs — same rule as the
+        # top-level per-arm accuracy, so the per-workflow_type figure stays consistent with it.
         cm_scored = [
             r
             for r in wf_runs
-            if r.arm == "codemap" and r.quality.scored and not r.quality.extraction_failed and not r.incomplete
+            if r.arm == "codemap"
+            and r.quality.scored
+            and not r.quality.extraction_failed
+            and not r.incomplete
+            and not _is_self_consistency(r)
         ]
         if cm_scored:
             n_correct = sum(1 for r in cm_scored if r.quality.correct)
@@ -2306,6 +3329,26 @@ def _arm_extracted(run: Optional[BenchRun]) -> bool:
     return bool(run and run.quality.scored and not run.quality.extraction_failed and not run.incomplete)
 
 
+def _is_self_consistency(run: Optional[BenchRun]) -> bool:
+    """Return True when *run* is a self-consistency (index-derived ground truth) task.
+
+    Args:
+        run: A benchmark run, or None.
+
+    Returns:
+        True when the run carries the ``self_consistency`` flag.
+
+    Examples:
+        >>> _is_self_consistency(None)
+        False
+        >>> r = BenchRun(arm="codemap", task_id="CQ-02", task_type="code_quality", model="haiku", success=True)
+        >>> r.self_consistency = True
+        >>> _is_self_consistency(r)
+        True
+    """
+    return bool(run and run.self_consistency)
+
+
 def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
     """Compute paired accuracy over tasks where BOTH arms extracted successfully (review M-8).
 
@@ -2314,6 +3357,9 @@ def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
     unpaired comparison. This view restricts both arms to the SAME task set: only tasks where the
     plain AND the codemap run were each scored, extracted a metric, and completed. Both arm accuracies
     then share one denominator, the paired-n, so the headline comparison is like-for-like.
+
+    Self-consistency tasks (index-derived ground truth) are excluded — the codemap arm would be scored
+    against the same index it queries. They are reported separately by :func:`_print_self_consistency`.
 
     Args:
         runs: All benchmark runs (both arms, all tasks).
@@ -2326,7 +3372,11 @@ def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
     for r in runs:
         by_task[r.task_id][r.arm] = r
     paired = [
-        arms for arms in by_task.values() if _arm_extracted(arms.get("plain")) and _arm_extracted(arms.get("codemap"))
+        arms
+        for arms in by_task.values()
+        if _arm_extracted(arms.get("plain"))
+        and _arm_extracted(arms.get("codemap"))
+        and not _is_self_consistency(arms.get("codemap"))
     ]
     if not paired:
         return None
@@ -2335,6 +3385,29 @@ def _paired_accuracy(runs: list[BenchRun]) -> Optional[dict[str, int]]:
         "plain_correct": sum(1 for a in paired if a["plain"].quality.correct),
         "codemap_correct": sum(1 for a in paired if a["codemap"].quality.correct),
     }
+
+
+def _print_self_consistency(runs: list[BenchRun]) -> None:
+    """Print a separate self-consistency accuracy row (index-derived ground truth).
+
+    These tasks (e.g. uncovered / broken-xref counts) are excluded from the headline accuracy
+    aggregates because the codemap arm is scored against the very index it queries. Reporting them
+    apart keeps the headline honest while still surfacing the self-agreement signal.
+
+    Args:
+        runs: All benchmark runs (both arms, all tasks).
+    """
+    sc = [r for r in runs if _is_self_consistency(r) and _arm_extracted(r)]
+    if not sc:
+        return
+    ids = sorted({r.task_id for r in sc})
+    print(f"\n  Self-consistency (index-derived GT — excluded from headline accuracy; tasks: {', '.join(ids)}):")
+    for arm in ("plain", "codemap"):
+        arm_sc = [r for r in sc if r.arm == arm]
+        if not arm_sc:
+            continue
+        n_correct = sum(1 for r in arm_sc if r.quality.correct)
+        print(f"    {arm}   = {n_correct / len(arm_sc):.1%}  ({n_correct}/{len(arm_sc)})")
 
 
 def _print_paired_accuracy(runs: list[BenchRun]) -> None:
@@ -2432,10 +3505,13 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
         extraction_failed_runs = [r for r in runs if r.arm == arm and r.quality.extraction_failed]
         incomplete_runs = [r for r in runs if r.arm == arm and r.incomplete]
         contaminated_runs = [r for r in runs if r.arm == arm and r.error == "contaminated"]
-        if arm_runs:
-            n_correct = sum(1 for r in arm_runs if r.quality.correct)
-            acc = n_correct / len(arm_runs)
-            print(f"  {arm} accuracy = {acc:.1%}  ({n_correct}/{len(arm_runs)} scored)")
+        # Headline accuracy excludes self-consistency (index-derived GT) runs; they are reported by
+        # _print_self_consistency below so the codemap arm is never credited for agreeing with itself.
+        headline_runs = [r for r in arm_runs if not _is_self_consistency(r)]
+        if headline_runs:
+            n_correct = sum(1 for r in headline_runs if r.quality.correct)
+            acc = n_correct / len(headline_runs)
+            print(f"  {arm} accuracy = {acc:.1%}  ({n_correct}/{len(headline_runs)} scored)")
         if extraction_failed_runs:
             ids = ", ".join(r.task_id for r in extraction_failed_runs)
             print(
@@ -2474,6 +3550,9 @@ def _print_summary(runs: list[BenchRun], model: str) -> None:
     # per-arm figures above use different denominators (each arm drops its own extraction failures),
     # so the paired view is the like-for-like headline comparison with its shared n stated.
     _print_paired_accuracy(runs)
+
+    # Self-consistency row: index-derived GT tasks, reported apart from the headline accuracy.
+    _print_self_consistency(runs)
 
     # Tier E: patch pass rate (failing test → fix → test pass). Only shown when any
     # run carries a patch_pass signal; agents emitting prose without a diff score 0.
@@ -2516,7 +3595,7 @@ def _save_results(runs: list[BenchRun], model: str) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def main(
+def main(  # noqa: PLR0913 — fire CLI adapter: every param is a keyword flag with a default (0 required)
     repo_path: Path = None,
     index_path: Path = None,
     tasks: list[str] = None,
@@ -2528,6 +3607,9 @@ def main(
     patch: bool = False,
     no_save: bool = False,
     timeout: int = None,
+    resume: bool = False,
+    profile: str = None,
+    tiered: bool = False,
 ) -> None:
     """Entry point: load tasks, run selected arms, print summary.
 
@@ -2543,8 +3625,21 @@ def main(
         patch: Run patch tasks from tasks-patch.json.
         no_save: Skip writing JSONL results.
         timeout: Per-run timeout in seconds.
+        resume: Reuse matching prior results (same task/arm/model + repo/index/task provenance)
+            from the results dir instead of re-executing them (CLI flag: ``--resume``).
+        profile: Cost profile ``dev`` (haiku-only stratified subset, fast regression signal) or
+            ``release`` (full matrix incl. RI). Absent → current behavior, unchanged.
+        tiered: Tiered protocol (release companion): run haiku full, sonnet on the dev subset, and
+            opus only on haiku/sonnet disagreements. Select the tier via ``--model`` per invocation.
     """
     global _REPO_NAME, _REPO_NAMESPACE, _REPO_DEFAULT_PATH
+
+    if profile is not None and profile not in _PROFILES:
+        print(f"ERROR: --profile must be one of {_PROFILES}, got {profile!r}")
+        sys.exit(1)
+    # The dev profile is a haiku-only fast signal — pin the model regardless of --model.
+    if profile == _PROFILE_DEV:
+        model = _TIER_HAIKU
 
     # fire passes CLI string args regardless of type annotation — coerce Path args explicitly.
     if repo_path is not None:
@@ -2638,25 +3733,35 @@ def main(
         print(f"ERROR: {exc}")
         sys.exit(1)
 
-    # Filter tasks
-    task_list = all_tasks
+    # Provenance fingerprints — shared by task selection (tiered) and the runner (resume + stamping).
+    repo_sha = _repo_sha(repo_path)
+    index_sha = _index_sha(index_path)
+
+    # Task IDs must exist before selection filters run so a typo fails loudly.
     if tasks:
         ids = set(tasks)
-        task_list = [t for t in task_list if t["id"] in ids]
-        missing = ids - {t["id"] for t in task_list}
+        missing = ids - {t["id"] for t in all_tasks}
         if missing:
             print(f"ERROR: task IDs not found: {sorted(missing)}")
             sys.exit(1)
-    elif task_type:
-        task_list = [t for t in task_list if t["type"] == task_type]
-    elif not run_all:
-        # Without --all: run only the externally-supplied subset (--tasks-file / --patch).
-        subset = set(external_ids) | patch_id_set
-        if subset:
-            task_list = [t for t in task_list if t["id"] in subset]
-        else:
-            print("Specify --tasks, --task-type, --tasks-file, --patch, or --all")
-            sys.exit(1)
+    else:
+        ids = None
+
+    selection = TaskSelection(
+        all_tasks=all_tasks,
+        ids=ids,
+        task_type=task_type,
+        run_all=run_all,
+        external_ids=set(external_ids),
+        patch_ids=patch_id_set,
+        profile=profile,
+        tiered=tiered,
+        model=model,
+    )
+    task_list = _select_tasks(selection, RESULTS_DIR, repo_sha, index_sha)
+    if task_list is None:
+        print("Specify --tasks, --task-type, --tasks-file, --patch, --all, or --profile")
+        sys.exit(1)
 
     if not task_list:
         print("No tasks matched.")
@@ -2669,8 +3774,14 @@ def main(
     model_short = model
     model_id = MODELS[model_short]
     run_timeout = timeout or _MODEL_TIMEOUT[model_short]
+    resume_cache = _load_resume_cache(RESULTS_DIR) if resume else None
     runner = BenchRunner(
-        model_short=model_short, model_id=model_id, repo_path=repo_path, index_path=index_path, timeout=run_timeout
+        model_short=model_short,
+        model_id=model_id,
+        repo_path=repo_path,
+        index_path=index_path,
+        timeout=run_timeout,
+        resume_cache=resume_cache,
     )
 
     print(f"Codemap benchmark: {len(task_list)} tasks × {len(arms_to_run)} arm(s) × model={model_short}")
@@ -2752,6 +3863,43 @@ def main(
 
         return _update
 
+    def _run_task_arms(task: dict, progress: Any, outer: Any, done_start: int, total: int) -> None:
+        """Run every selected arm for one task, staging a diff-impact change around both arms.
+
+        A ``diff_impact`` task with a ``stage`` spec applies the synthetic change once (via
+        :class:`DiffImpactStager`), runs BOTH arms against the staged tree, then reverts on block exit —
+        so both arms see the identical change and the tree is restored regardless of per-arm outcome.
+        Every other task runs its arms directly. Progress bookkeeping is unchanged.
+
+        Args:
+            task: Task dict.
+            progress: Active rich Progress instance.
+            outer: Outer progress task id.
+            done_start: 1-based index of this task's first arm in the overall sequence.
+            total: Total combo count.
+        """
+        stage_spec = task.get("stage") if task.get("type") == _DIFF_IMPACT_TYPE else None
+
+        def _run_arms() -> None:
+            for offset, arm_name in enumerate(arms_to_run):
+                task_max_turns = _max_turns_for_task(task)
+                sub = progress.add_task("  0s calls=0", total=task_max_turns)
+                progress.update(outer, description=f"{task['id']} {arm_name}")
+                _run_combo(
+                    task,
+                    arm_name,
+                    progress.console.print,
+                    update_fn=_make_rich_update(progress, outer, sub, task["id"], arm_name, done_start + offset, total),
+                )
+                progress.remove_task(sub)
+                progress.advance(outer)
+
+        if stage_spec:
+            with DiffImpactStager(repo_path, stage_spec):
+                _run_arms()
+        else:
+            _run_arms()
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -2761,18 +3909,16 @@ def main(
     ) as progress:
         total = len(combos)
         outer = progress.add_task("running", total=total)
-        for done, (task, arm) in enumerate(combos, 1):
-            task_max_turns = _max_turns_for_task(task)
-            sub = progress.add_task("  0s calls=0", total=task_max_turns)
-            progress.update(outer, description=f"{task['id']} {arm}")
-            _run_combo(
-                task,
-                arm,
-                progress.console.print,
-                update_fn=_make_rich_update(progress, outer, sub, task["id"], arm, done, total),
-            )
-            progress.remove_task(sub)
-            progress.advance(outer)
+        done = 1
+        for task in task_list:
+            try:
+                _run_task_arms(task, progress, outer, done, total)
+            except DirtyTreeError as exc:
+                # Refuse the diff-impact series rather than risk clobbering the user's own edits;
+                # abort loudly so no partial/contaminated DI results are recorded.
+                progress.console.print(f"[red]! DI series refused (dirty target tree): {exc}[/red]")
+                raise
+            done += len(arms_to_run)
 
     _print_summary(runs, model_short)
 

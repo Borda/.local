@@ -796,6 +796,306 @@ def _uncovered_via_ast(repo: Path, module: str | None = None) -> tuple[set[str],
     return uncovered, None
 
 
+def _module_imports(tree: ast.Module) -> set[str]:
+    """Return the dotted import targets of a module (mirrors scan-index ``extract_imports``).
+
+    Collects every ``import x.y`` alias name and every ``from x.y import z`` module target — exactly
+    the set scan-index stores as ``direct_imports`` and scan-query ``rdeps`` matches against. Relative
+    imports (``from . import x``, ``node.module is None``) are skipped, matching scan-index.
+
+    Args:
+        tree: Parsed AST of the module.
+
+    Returns:
+        Set of dotted import-target module names.
+
+    Examples:
+        >>> import ast
+        >>> src = "import a.b\\nfrom c.d import e\\nfrom . import f\\n"
+        >>> sorted(_module_imports(ast.parse(src)))
+        ['a.b', 'c.d']
+    """
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.add(alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+    return imports
+
+
+def _build_import_graph(repo: Path, exclude_tests: bool = True) -> dict[str, set[str]]:
+    """Build the repo's module import graph, edges restricted to in-repo modules (review DI/GR).
+
+    Mirrors scan-query ``rdeps``/``central`` semantics: module *A* imports module *M* iff *M* appears
+    literally as an import target of *A* (``import M`` or ``from M import ...``) AND *M* is itself a repo
+    module. External/stdlib targets are dropped (rdeps only lists repo module ``name`` values). Module
+    names are derived structurally by :func:`_module_name_for` (no ``src.`` prefix), so keys and edge
+    targets match scan-query output for any repo layout.
+
+    Args:
+        repo: Repository root directory.
+        exclude_tests: When True, omit test modules as both graph nodes and edge sources/targets
+            (matches ``rdeps --exclude-tests`` / ``central --exclude-tests``).
+
+    Returns:
+        Mapping ``{module: set(imported_repo_modules)}`` for every scanned module.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "a.py").write_text("import b\\n")
+        ...     _ = (repo / "b.py").write_text("import os\\n")
+        ...     g = _build_import_graph(repo)
+        >>> sorted(g["a"]), sorted(g["b"])
+        (['b'], [])
+    """
+    src_root = _detect_src_root(repo)
+    raw: dict[str, set[str]] = {}
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
+        for fname in files:
+            if not fname.endswith(".py"):
+                continue
+            fpath = Path(root) / fname
+            rel_path = str(fpath.relative_to(repo)).replace(os.sep, "/")
+            if exclude_tests and _TEST_PATH_RE.search(rel_path):
+                continue
+            try:
+                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
+            except SyntaxError:
+                continue
+            raw[_module_name_for(fpath, repo, src_root)] = _module_imports(tree)
+    in_repo = set(raw)
+    return {mod: {tgt for tgt in tgts if tgt in in_repo} for mod, tgts in raw.items()}
+
+
+def _central_via_ast(repo: Path, top: int, exclude_tests: bool = True) -> list[tuple[str, int]]:
+    """Return the top-N most-imported repo modules ranked by importer count (review GR).
+
+    Independent AST oracle for scan-query ``central``: each module's rank is its in-degree in the
+    import graph (:func:`_build_import_graph`) — the number of repo modules importing it. Ties are
+    broken by module name for determinism.
+
+    Args:
+        repo: Repository root directory.
+        top: Number of top-ranked modules to return.
+        exclude_tests: When True, exclude test modules (matches ``central --exclude-tests``).
+
+    Returns:
+        List of ``(module, importer_count)`` pairs, highest count first, length ``<= top``.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "hub.py").write_text("x = 1\\n")
+        ...     _ = (repo / "a.py").write_text("import hub\\n")
+        ...     _ = (repo / "b.py").write_text("import hub\\n")
+        ...     _central_via_ast(repo, top=1)
+        [('hub', 2)]
+    """
+    graph = _build_import_graph(repo, exclude_tests=exclude_tests)
+    in_degree: dict[str, int] = {mod: 0 for mod in graph}
+    for importers in graph.values():
+        for target in importers:
+            in_degree[target] = in_degree.get(target, 0) + 1
+    ranked = sorted(in_degree.items(), key=lambda item: (-item[1], item[0]))
+    return ranked[:top]
+
+
+def _import_path_via_ast(repo: Path, source: str, target: str, exclude_tests: bool = True) -> list[str] | None:
+    """Return a shortest import path ``source -> ... -> target`` over the import graph, or None (review GR).
+
+    Independent AST oracle for scan-query ``path``: breadth-first search over
+    :func:`_build_import_graph` yields a shortest module chain where each step is a direct import.
+    Returns None when no path exists. When several shortest paths exist, the one found first under a
+    name-sorted neighbour expansion is returned; callers needing a unique answer should pick pairs with
+    a single shortest path (see :func:`_shortest_path_is_unique`).
+
+    Args:
+        repo: Repository root directory.
+        source: Dotted module name to start from.
+        target: Dotted module name to reach.
+        exclude_tests: When True, exclude test modules from the graph.
+
+    Returns:
+        List of module names from *source* to *target* inclusive, or None when unreachable.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "a.py").write_text("import b\\n")
+        ...     _ = (repo / "b.py").write_text("import c\\n")
+        ...     _ = (repo / "c.py").write_text("x = 1\\n")
+        ...     _import_path_via_ast(repo, "a", "c")
+        ['a', 'b', 'c']
+    """
+    graph = _build_import_graph(repo, exclude_tests=exclude_tests)
+    if source not in graph or target not in graph:
+        return None
+    queue: list[list[str]] = [[source]]
+    seen: set[str] = {source}
+    while queue:
+        path = queue.pop(0)
+        node = path[-1]
+        if node == target:
+            return path
+        for neighbour in sorted(graph.get(node, set())):
+            if neighbour not in seen:
+                seen.add(neighbour)
+                queue.append([*path, neighbour])
+    return None
+
+
+def _shortest_path_is_unique(repo: Path, source: str, target: str, exclude_tests: bool = True) -> bool:
+    """Return True when exactly one shortest import path connects *source* to *target* (review GR).
+
+    A path task's ground truth is only well-defined when the shortest path is unique — otherwise the
+    agent could report a different, equally-short chain. This counts shortest paths by BFS layer: each
+    node's count is the sum of its predecessors' counts within the previous layer; the target is unique
+    when its accumulated count is exactly one.
+
+    Args:
+        repo: Repository root directory.
+        source: Dotted source module name.
+        target: Dotted target module name.
+        exclude_tests: When True, exclude test modules from the graph.
+
+    Returns:
+        True when a unique shortest path exists; False when zero or multiple shortest paths exist.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "a.py").write_text("import b\\nimport c\\n")
+        ...     _ = (repo / "b.py").write_text("import d\\n")
+        ...     _ = (repo / "c.py").write_text("import d\\n")
+        ...     _ = (repo / "d.py").write_text("x = 1\\n")
+        ...     _shortest_path_is_unique(repo, "a", "d")
+        False
+    """
+    graph = _build_import_graph(repo, exclude_tests=exclude_tests)
+    if source not in graph or target not in graph:
+        return False
+    path_counts: dict[str, int] = {source: 1}
+    visited: set[str] = {source}
+    frontier = [source]
+    while frontier and target not in visited:
+        next_counts: dict[str, int] = {}
+        for node in frontier:
+            for neighbour in graph.get(node, set()):
+                if neighbour not in visited:
+                    next_counts[neighbour] = next_counts.get(neighbour, 0) + path_counts[node]
+        visited.update(next_counts)
+        path_counts.update(next_counts)
+        frontier = list(next_counts)
+    return path_counts.get(target, 0) == 1
+
+
+def _fn_blast_via_ast(primary_fn: str, repo: Path, depth: int = 2) -> tuple[set[str], str | None]:
+    """Return the transitive caller closure of *primary_fn* up to *depth* hops (review GR).
+
+    Independent AST oracle for scan-query ``fn-blast``: starts from the direct callers
+    (:func:`_callers_via_ast`) and repeats the caller walk on each newly-found caller, up to *depth*
+    levels. The result is the union of all callers reachable within *depth* hops (excluding the target
+    itself). Test modules are excluded throughout, matching the direct-caller oracle.
+
+    Args:
+        primary_fn: Qualified target name ``"module::Class.method"`` or ``"module::func"``.
+        repo: Repository root directory.
+        depth: Maximum transitive hop count (default 2).
+
+    Returns:
+        (transitive_caller_set, error_reason) — error is None on success.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     _ = (repo / "m.py").write_text(
+        ...         "def target():\\n    pass\\n\\n\\n"
+        ...         "def mid():\\n    target()\\n\\n\\n"
+        ...         "def top():\\n    mid()\\n"
+        ...     )
+        ...     blast, err = _fn_blast_via_ast("m::target", repo, depth=2)
+        >>> sorted(blast), err
+        (['m::mid', 'm::top'], None)
+    """
+    reached: set[str] = set()
+    frontier = {primary_fn}
+    for _ in range(depth):
+        next_frontier: set[str] = set()
+        for fn in frontier:
+            callers, err = _callers_via_ast(fn, repo)
+            if err is not None:
+                return reached, err
+            for caller in callers:
+                if caller != primary_fn and caller not in reached:
+                    reached.add(caller)
+                    next_frontier.add(caller)
+        frontier = next_frontier
+        if not frontier:
+            break
+    return reached, None
+
+
+def _test_modules_importing_via_ast(repo: Path, module: str) -> tuple[set[str], str | None]:
+    """Return test modules whose imports include *module* (DI test-file mapping oracle, review DI).
+
+    Independent AST oracle for the diff-impact test-file recall metric: a change to *module* should be
+    covered by re-running the test modules that import it. Scans every test file (matched by
+    :data:`_TEST_PATH_RE`) and credits it when *module* is an exact import target (``import module`` or
+    ``from module import ...``). Emitted names are the test modules' structural dotted paths.
+
+    Args:
+        repo: Repository root directory.
+        module: Dotted name of the changed module.
+
+    Returns:
+        (test_module_names, error_reason) — error is None on success.
+
+    Examples:
+        >>> import tempfile
+        >>> from pathlib import Path
+        >>> with tempfile.TemporaryDirectory() as d:
+        ...     repo = Path(d)
+        ...     tests = repo / "tests"; tests.mkdir()
+        ...     _ = (tests / "test_a.py").write_text("from pkg.mod import f\\n")
+        ...     _ = (tests / "test_b.py").write_text("import other\\n")
+        ...     mods, err = _test_modules_importing_via_ast(repo, "pkg.mod")
+        >>> sorted(mods), err
+        (['tests.test_a'], None)
+    """
+    src_root = _detect_src_root(repo)
+    found: set[str] = set()
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", ".venv", "venv")]
+        for fname in files:
+            if not fname.endswith(".py"):
+                continue
+            fpath = Path(root) / fname
+            rel_path = str(fpath.relative_to(repo)).replace(os.sep, "/")
+            if not _TEST_PATH_RE.search(rel_path):
+                continue
+            try:
+                tree = ast.parse(fpath.read_text(encoding="utf-8", errors="ignore"), filename=str(fpath))
+            except SyntaxError:
+                continue
+            if module in _module_imports(tree):
+                found.add(_module_name_for(fpath, repo, src_root))
+    return found, None
+
+
 def _warn_ast_divergence(task_id: str, kind: str, ast_only: list[str], scan_only: list[str]) -> None:
     """Print a loud warning when the AST oracle and scan-query disagree (potential plugin bug).
 
@@ -1271,12 +1571,240 @@ def _validate_oss(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, 
     return (not problems), live_gt, "; ".join(problems)
 
 
+# ---- DIFF-IMPACT / GRAPH VALIDATORS (AST-oracle-backed; no scan-query dependency) ----
+#
+# These validators compute ground truth exclusively from the independent AST oracles
+# (:func:`_callers_via_ast`, :func:`_test_modules_importing_via_ast`, :func:`_central_via_ast`,
+# :func:`_import_path_via_ast`, :func:`_fn_blast_via_ast`). scan-query is never consulted for their
+# GT — it is the tool the codemap arm invokes, so grading it against its own output is circular. Each
+# validator honours a ``gt_pending`` flag: when a task ships with ``gt_pending: true`` (target repo
+# absent at authoring time) the validator computes and writes the oracle GT and clears the flag,
+# rather than failing on the empty placeholder.
+
+
+def _gt_is_pending(task: dict) -> bool:
+    """Return True when a task carries an unresolved ``gt_pending`` placeholder.
+
+    A ``gt_pending`` task was authored without a target repo present, so its ``ground_truth`` holds
+    empty placeholders. Validators treat such tasks as *always-compute* under ``--update`` (never a
+    hard validation failure) and clear the flag once real oracle GT is written.
+
+    Args:
+        task: Task dict from tasks-bench.json.
+
+    Returns:
+        True when ``task["ground_truth"].get("gt_pending")`` is truthy.
+
+    Examples:
+        >>> _gt_is_pending({"ground_truth": {"gt_pending": True}})
+        True
+        >>> _gt_is_pending({"ground_truth": {"gt_pending": False}})
+        False
+        >>> _gt_is_pending({"ground_truth": {}})
+        False
+    """
+    return bool(task.get("ground_truth", {}).get("gt_pending"))
+
+
+def _validate_diff_impact(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate a ``diff_impact`` task: AST caller + test-module oracle for a staged change.
+
+    A diff-impact task stages a scripted change to ``primary_fn`` (a widely-called function) and asks
+    for the blast radius — direct callers plus the test modules that import the changed module. Ground
+    truth is the *pre-change* AST caller set (:func:`_callers_via_ast`) unioned with the test modules
+    importing the changed module (:func:`_test_modules_importing_via_ast`); both are independent of
+    scan-query. ``sq``/``index`` are unused (kept for the uniform validator signature).
+
+    Args:
+        task: Task dict; reads ``primary_fn`` and ``primary_module``.
+        sq: Path to scan-query (unused — GT is AST-only).
+        index: Path to codemap index (unused).
+        repo: Repo root directory.
+
+    Returns:
+        (ok, live_ground_truth, failure_reason).
+    """
+    del sq, index  # GT is AST-oracle-only; scan-query never consulted for diff-impact GT.
+    gt = task.get("ground_truth", {})
+    primary_fn = task.get("primary_fn", "")
+    primary_module = task.get("primary_module", "") or primary_fn.split("::")[0]
+    if not primary_fn or "::" not in primary_fn:
+        return False, None, "diff_impact task needs a `primary_fn` of the form module::qualname"
+
+    callers, cerr = _callers_via_ast(primary_fn, repo)
+    if cerr is not None:
+        return False, None, f"caller oracle failed: {cerr}"
+    test_mods, terr = _test_modules_importing_via_ast(repo, primary_module)
+    if terr is not None:
+        return False, None, f"test-module oracle failed: {terr}"
+
+    caller_list = sorted(callers)
+    test_list = sorted(test_mods)
+    live_gt: dict[str, Any] = {
+        "fn_callers": caller_list,
+        "unique_caller_count": len(caller_list),
+        "test_modules": test_list,
+        "test_module_count": len(test_list),
+        "gt_source": "ast-caller-oracle + test-import-oracle",
+        "gt_pending": False,
+    }
+    if _gt_is_pending(task):
+        return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
+
+    problems = _diff_problems(gt, live_gt)
+    return (not problems), live_gt, "; ".join(problems)
+
+
+def _diff_problems(gt: dict, live_gt: dict) -> list[str]:
+    """Return the mismatches between stored and freshly-computed diff-impact GT.
+
+    Args:
+        gt: Ground truth currently stored in the task file.
+        live_gt: Freshly-computed oracle ground truth.
+
+    Returns:
+        A list of human-readable problem strings; empty when GT matches.
+    """
+    problems: list[str] = []
+    if set(gt.get("fn_callers", [])) != set(live_gt["fn_callers"]):
+        problems.append(
+            f"fn_callers mismatch: expected {len(gt.get('fn_callers', []))}, got {live_gt['unique_caller_count']}"
+        )
+    if set(gt.get("test_modules", [])) != set(live_gt["test_modules"]):
+        problems.append(
+            f"test_modules mismatch: expected {len(gt.get('test_modules', []))}, got {live_gt['test_module_count']}"
+        )
+    return problems
+
+
+def _validate_graph_central(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate a ``graph_central`` task: top-N most-imported modules (:func:`_central_via_ast`).
+
+    Args:
+        task: Task dict; reads ``ground_truth.top`` (default 10) and ``exclude_tests`` (default True).
+        sq: Path to scan-query (unused — GT is AST-only).
+        index: Path to codemap index (unused).
+        repo: Repo root directory.
+
+    Returns:
+        (ok, live_ground_truth, failure_reason).
+    """
+    del sq, index
+    gt = task.get("ground_truth", {})
+    top = int(gt.get("top", 10))
+    exclude_tests = bool(gt.get("exclude_tests", True))
+    ranked = _central_via_ast(repo, top=top, exclude_tests=exclude_tests)
+    modules = [mod for mod, _count in ranked]
+    live_gt: dict[str, Any] = {
+        "top": top,
+        "exclude_tests": exclude_tests,
+        "central_modules": modules,
+        "central_ranked": [[mod, count] for mod, count in ranked],
+        "gt_source": "ast-central-oracle",
+        "gt_pending": False,
+    }
+    if _gt_is_pending(task):
+        return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
+    if set(gt.get("central_modules", [])) != set(modules):
+        return (
+            False,
+            live_gt,
+            f"central_modules mismatch: expected {gt.get('central_modules', [])[:3]}, got {modules[:3]}",
+        )
+    return True, live_gt, ""
+
+
+def _validate_graph_path(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate a ``graph_path`` task: a *unique* shortest import path source→target.
+
+    A path task's GT is well-defined only when the shortest path is unique (:func:`_shortest_path_is_unique`);
+    the validator records both the path and its uniqueness so authors can pick unambiguous pairs. Ground
+    truth is :func:`_import_path_via_ast` output.
+
+    Args:
+        task: Task dict; reads ``ground_truth.source`` / ``.target`` / ``exclude_tests`` (default True).
+        sq: Path to scan-query (unused — GT is AST-only).
+        index: Path to codemap index (unused).
+        repo: Repo root directory.
+
+    Returns:
+        (ok, live_ground_truth, failure_reason).
+    """
+    del sq, index
+    gt = task.get("ground_truth", {})
+    source = gt.get("source", "")
+    target = gt.get("target", "")
+    exclude_tests = bool(gt.get("exclude_tests", True))
+    if not source or not target:
+        return False, None, "graph_path task needs ground_truth.source and .target module names"
+    path = _import_path_via_ast(repo, source, target, exclude_tests=exclude_tests)
+    unique = _shortest_path_is_unique(repo, source, target, exclude_tests=exclude_tests)
+    live_gt: dict[str, Any] = {
+        "source": source,
+        "target": target,
+        "exclude_tests": exclude_tests,
+        "import_path": path,
+        "path_is_unique": unique,
+        "gt_source": "ast-path-oracle",
+        "gt_pending": False,
+    }
+    if _gt_is_pending(task):
+        return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
+    if gt.get("import_path") != path:
+        return False, live_gt, f"import_path mismatch: expected {gt.get('import_path')}, got {path}"
+    return True, live_gt, ""
+
+
+def _validate_graph_fn_blast(task: dict, sq: Path, index: Path, repo: Path) -> tuple[bool, dict[str, Any] | None, str]:
+    """Validate a ``graph_fn_blast`` task: transitive caller closure to depth-N (:func:`_fn_blast_via_ast`).
+
+    Args:
+        task: Task dict; reads ``primary_fn`` and ``ground_truth.depth`` (default 2).
+        sq: Path to scan-query (unused — GT is AST-only).
+        index: Path to codemap index (unused).
+        repo: Repo root directory.
+
+    Returns:
+        (ok, live_ground_truth, failure_reason).
+    """
+    del sq, index
+    gt = task.get("ground_truth", {})
+    primary_fn = task.get("primary_fn", "")
+    depth = int(gt.get("depth", 2))
+    if not primary_fn or "::" not in primary_fn:
+        return False, None, "graph_fn_blast task needs a `primary_fn` of the form module::qualname"
+    blast, berr = _fn_blast_via_ast(primary_fn, repo, depth=depth)
+    if berr is not None:
+        return False, None, f"fn-blast oracle failed: {berr}"
+    blast_list = sorted(blast)
+    live_gt: dict[str, Any] = {
+        "depth": depth,
+        "blast_callers": blast_list,
+        "blast_count": len(blast_list),
+        "gt_source": "ast-fn-blast-oracle",
+        "gt_pending": False,
+    }
+    if _gt_is_pending(task):
+        return False, live_gt, "gt_pending: computed oracle GT (pass --update to write)"
+    if set(gt.get("blast_callers", [])) != set(blast_list):
+        return (
+            False,
+            live_gt,
+            f"blast_callers mismatch: expected {len(gt.get('blast_callers', []))}, got {len(blast_list)}",
+        )
+    return True, live_gt, ""
+
+
 VALIDATORS = {
     "symbol_extraction": _validate_symbol,
     "fn_call_graph": _validate_fn,
     "review_assistance": _validate_rv,
     "code_quality": _validate_oss,
     "develop_blast_radius": _validate_fn,
+    "diff_impact": _validate_diff_impact,
+    "graph_central": _validate_graph_central,
+    "graph_path": _validate_graph_path,
+    "graph_fn_blast": _validate_graph_fn_blast,
 }
 
 
@@ -1288,8 +1816,10 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
 
     Args:
         task_type: One of "symbol_extraction", "fn_call_graph", "develop_blast_radius",
-            "review_assistance", or "code_quality".
-        live_gt: Computed ground truth from scan-query output.
+            "review_assistance", "code_quality", "diff_impact", "graph_central", "graph_path",
+            or "graph_fn_blast".
+        live_gt: Computed ground truth (scan-query output for legacy types; AST oracle for the
+            diff-impact / graph series).
         existing_gt: Existing ground_truth from the task file (for fields not recomputed).
 
     Returns:
@@ -1298,6 +1828,9 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
     if task_type == "symbol_extraction":
         return {**existing_gt, **live_gt}
     if task_type in ("fn_call_graph", "develop_blast_radius"):
+        return {**existing_gt, **live_gt}
+    if task_type in ("diff_impact", "graph_central", "graph_path", "graph_fn_blast"):
+        # AST-oracle-only GT (review DI/GR); live_gt already carries the cleared gt_pending flag.
         return {**existing_gt, **live_gt}
     if task_type == "review_assistance":
         # live_gt is {sq_id: {count: N} | {symbols: [...]}}
@@ -1310,7 +1843,18 @@ def _build_updated_ground_truth(task_type: str, live_gt: dict[str, Any], existin
 # Task types whose refreshed ground truth comes from an INDEPENDENT oracle (AST), not from
 # scan-query (the tool under test). Only these may be refreshed under a plain --update; every
 # other type is scan-query-derived (circular) and requires --update-from-tool (review C-3).
-_ORACLE_BACKED_TYPES: frozenset[str] = frozenset({"fn_call_graph", "develop_blast_radius"})
+# The diff-impact / graph series (review DI/GR) are AST-oracle-only by construction — their GT never
+# touches scan-query — so they refresh under a plain --update alongside the caller-graph types.
+_ORACLE_BACKED_TYPES: frozenset[str] = frozenset(
+    {
+        "fn_call_graph",
+        "develop_blast_radius",
+        "diff_impact",
+        "graph_central",
+        "graph_path",
+        "graph_fn_blast",
+    }
+)
 
 # code_quality checks with a dedicated independent AST oracle (review C-2 / C-2 remainder).
 _ORACLE_BACKED_CQ_CHECKS: frozenset[str] = frozenset({"undocumented", "uncovered"})

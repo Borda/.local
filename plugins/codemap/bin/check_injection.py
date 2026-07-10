@@ -21,6 +21,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _injection_block import (
     BLOCK_VERSION,
     SCAN_QUERY_MARKER,
