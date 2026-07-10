@@ -87,7 +87,52 @@ Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight. Codemap v
 
 Determine task type and affected surface.
 
+**Codemap target derivation** — when the goal names an explicit target as `module.path` or `module.path::function`, pre-set `TARGET_MODULE`/`TARGET_FN` so `codemap-context.md` runs caller-impact queries (`rdeps`, `fn-rdeps`) instead of only the `central` baseline. Goal with no explicit target → both empty → only `central` runs (correct: affected surface unknown until the agent searches):
+
+```bash
+# timeout: 5000
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+if [[ "$ARGUMENTS" == *"::"* ]]; then
+    _QNAME=$(printf '%s\n' "$ARGUMENTS" | grep -oE '[A-Za-z_][A-Za-z0-9_.]*::[A-Za-z_][A-Za-z0-9_]*' | head -1)
+    TARGET_MODULE="${_QNAME%%::*}"
+    TARGET_FN="${_QNAME##*::}"               # bare fn — codemap-context.md builds module::fn
+elif [[ "$ARGUMENTS" =~ ([A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+) ]]; then
+    TARGET_MODULE="${BASH_REMATCH[1]}"       # dotted module target
+    TARGET_FN=""
+else
+    TARGET_MODULE=""
+    TARGET_FN=""
+fi
+export TARGET_MODULE TARGET_FN
+echo "$TARGET_MODULE" > "$PLAN_NS/target-module"   # persist — bash state lost between Bash() calls
+echo "$TARGET_FN"     > "$PLAN_NS/target-fn"
+```
+
 **If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both flags false.
+
+**Effort sizing (codemap)** — when `CODEMAP_ENABLED=true`, derive a blast-radius tier table from reverse dependencies so the complexity estimate is structural, not guessed. Degrade silently when codemap absent — the plan works unchanged, sizing falls back to the agent's file-count heuristic. Run the Extended scan (`--source=diff` when a partial diff exists, e.g. re-planning after abandoned work; otherwise per-target `rdeps` when `TARGET_MODULE` known):
+
+```bash
+# timeout: 15000
+PLAN_NS=$(cat ${TMPDIR:-/tmp}/dev-plan-ns-current 2>/dev/null)
+CODEMAP_ENABLED=$(cat "$PLAN_NS/codemap-enabled" 2>/dev/null || echo false)
+TARGET_MODULE=$(cat "$PLAN_NS/target-module" 2>/dev/null || echo "")
+if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1; then
+    if [ -n "$(git diff HEAD --name-only 2>/dev/null | grep '\.py$')" ]; then
+        python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/codemap_scan.py" --source=diff > "$PLAN_NS/sizing-rdeps" 2>/dev/null || true
+    elif [ -n "$TARGET_MODULE" ]; then
+        scan-query --timeout 5 rdeps "$TARGET_MODULE" --top 10 --exclude-tests > "$PLAN_NS/sizing-rdeps" 2>/dev/null || true
+        scan-query --timeout 5 coupled --top 10 >> "$PLAN_NS/sizing-rdeps" 2>/dev/null || true
+    fi
+fi
+```
+
+> Interpret `$PLAN_NS/sizing-rdeps` (skip when empty — codemap absent or no target): each `rdeps` block's caller count sets a per-module blast tier; `coupled` output lists co-change pairs. Tiers match develop's convention:
+> - `>= 5` rdeps → **HIGH** blast radius — cross-module reach; nudges complexity toward `large` and adds a Risks entry
+> - `1–4` rdeps → **MODERATE** — note affected importers in the plan
+> - `0` rdeps → **LOW** — self-contained; proceed
+>
+> Fold the highest tier across affected modules into the complexity assessment below (HIGH tier or ≥3 affected modules → `large`), and pass the tier table + coupled pairs to the sw-engineer spawn as a `## Structural blast radius` block so its scope estimate accounts for downstream callers rather than file count alone.
 
 Spawn **foundry:sw-engineer** agent with full goal text from `$ARGUMENTS`. Agent should:
 
@@ -113,10 +158,10 @@ fi
 
 At depth 0: stop, report current plan state, invoke `AskUserQuestion` — (a) Accept plan as-is · (b) Re-scope with reduced depth requirement.
 - Identify affected files and modules (search codebase — no guessing)
-- Assess complexity: small (1-3 files, self-contained), medium (4-8 files or 1-2 modules), large (cross-module, API changes, or 3+ modules)
+- Assess complexity: small (1-3 files, self-contained), medium (4-8 files or 1-2 modules), large (cross-module, API changes, or 3+ modules). When the effort-sizing block produced a tier table, let structural reach override file count: any **HIGH** blast module (≥5 rdeps) or ≥3 affected modules → `large`, regardless of raw file count.
 - Return **two separate** structured fields (not merged into a flat risks list):
   - `breaking_changes`: list of changes that affect **public API only** — see criteria below; empty list when none
-  - `risks`: non-breaking concerns (missing tests, unclear requirements, external dependencies, internal coupling)
+  - `risks`: non-breaking concerns (missing tests, unclear requirements, external dependencies, internal coupling); when the effort-sizing tier table flags HIGH/MODERATE modules or coupled pairs, add each as a concrete risk (e.g. "changing `<mod>` reaches N downstream callers", "`<a>`/`<b>` co-change coupling")
 - Note complexity smells: ambiguous goal, scope creep risk, missing reproduction case, directory-wide refactor without explicit goal
 
 Agent returns findings inline (no file handoff — output short).

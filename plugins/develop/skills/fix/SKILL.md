@@ -448,11 +448,35 @@ Make minimal change to fix root cause:
    ```
 3. Run affected tests (prefer targeted over full suite):
 
-   **Test impact (codemap)** — derive the minimal test set before running anything:
+   **Test impact (codemap)** — derive the minimal test set before running anything.
+
+   **Reuse from diagnosis handoff first** — when invoked with `--diagnosis`, `/develop:debug` may have already run this query and written it into the diagnosis file under `## Test Impact (codemap)`. Reuse it (one query total across debug→fix) only when it is still fresh — not `stale` and not older than the current index:
+
+   ```bash
+   # timeout: 6000
+   DIAG_FILE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/diagnosis_parse.py" "$ARGUMENTS" 2>/dev/null)  # re-derive — bash state lost between Bash() calls
+   REUSED_PYTEST_CMD=""
+   if [ -n "$DIAG_FILE" ] && grep -q '^## Test Impact (codemap)' "$DIAG_FILE" 2>/dev/null; then
+       # extract the fenced JSON block that follows the marker heading
+       _TI_JSON=$(awk '/^## Test Impact \(codemap\)/{f=1} f&&/^```json/{g=1;next} f&&/^```/{g=0} g' "$DIAG_FILE")
+       _HANDOFF_AT=$(grep -m1 'index_scanned_at:' "$DIAG_FILE" | sed 's/.*index_scanned_at:[[:space:]]*//')
+       PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || basename "$PWD")
+       _LIVE_AT=$(grep -o '"scanned_at"[[:space:]]*:[[:space:]]*"[^"]*"' "${CODEMAP_INDEX_DIR:-.cache/codemap}/${PROJ}.json" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+       case "$_TI_JSON" in *'"stale": true'*|*'"stale":true'*) _TI_STALE=1;; *) _TI_STALE=0;; esac
+       if [ "$_TI_STALE" -eq 0 ] && [ -n "$_HANDOFF_AT" ] && [ "$_HANDOFF_AT" = "$_LIVE_AT" ]; then
+           REUSED_PYTEST_CMD=$(printf '%s' "$_TI_JSON" | grep -o '"pytest_cmd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')
+           echo "→ reusing test-impact from diagnosis handoff (index unchanged): $REUSED_PYTEST_CMD"
+       else
+           echo "→ diagnosis test-impact stale or index moved — re-querying live"
+       fi
+   fi
+   ```
+
+   **Live query** — run only when no fresh handoff result was reused (`REUSED_PYTEST_CMD` empty):
    ```bash
    scan-query test-impact "<changed_module::function or bare module>" 2>/dev/null
    ```
-   - Result non-empty `pytest_cmd` → use it instead of full `<test_dir>` run; surface `not_covered` caveat if present
+   - Reused `REUSED_PYTEST_CMD` non-empty, OR live result non-empty `pytest_cmd` → use it instead of full `<test_dir>` run; surface `not_covered` caveat if present
    - Result empty or `scan-query` absent → fall back to full directory below
 
    **Full suite fallback** (only when impact query returns empty or is unavailable):

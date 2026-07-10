@@ -74,11 +74,11 @@ claude plugin install research@borda-ai-rig
 
 **Optional integrations** (unlock additional capabilities inside `oss` skills):
 
-| Plugin    | What it unlocks                                                                                                                                             |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry` | Specialized review agents (sw-engineer, qa-specialist, perf-optimizer, doc-scribe, solution-architect, linting-expert) instead of general-purpose fallbacks |
-| `codex`   | Action item implementation in `/oss:resolve` Step 8; Tier 1 pre-pass in `/oss:review`                                                                       |
-| `codemap` | Reverse-dependency count (`rdep_count`) in `/oss:review` risk assessment                                                                                    |
+| Plugin    | What it unlocks                                                                                                                                                                                      |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry` | Specialized review agents (sw-engineer, qa-specialist, perf-optimizer, doc-scribe, solution-architect, linting-expert) instead of general-purpose fallbacks                                          |
+| `codex`   | Action item implementation in `/oss:resolve` Step 8; Tier 1 pre-pass in `/oss:review`                                                                                                                |
+| `codemap` | Reverse-dependency count (`rdep_count`) in `/oss:review` risk assessment; stale-symbol detection in `/oss:analyse` issue triage, Open-PR Overlap + Structural Constraints in `/oss:analyse vitality` |
 
 All `oss` skills degrade gracefully when optional plugins are absent — you get reduced capability, not broken commands.
 
@@ -154,9 +154,9 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 
 **What it does:**
 
-For a thread number, `analyse` fetches the issue or PR, reads all comments, classifies the thread type (bug report, feature request, question, duplicate, stale), and produces a structured summary: what was asked, what the current state is, what action is needed from you, and — with `--reply` — a draft response.
+For a thread number, `analyse` fetches the issue or PR, reads all comments, classifies the thread type (bug report, feature request, question, duplicate, stale), and produces a structured summary: what was asked, what the current state is, what action is needed from you, and — with `--reply` — a draft response. When a codemap index is present, symbols and modules named in an issue thread are existence-checked against the index; identifiers that no longer resolve flag the issue as referencing stale code (with the likely rename target when codemap suggests one).
 
-For `vitality`, it pulls open issues and PRs, scores repo vitality across 9 axes (Axes 1–8 plus Axis 9 Trajectory), clusters duplicates, flags threads stale beyond your project's threshold, and gives you a prioritised triage list with a weighted Health Score %. All raw API data is saved to a JSONL file alongside the report for manual inspection.
+For `vitality`, it pulls open issues and PRs, scores repo vitality across 9 axes (Axes 1–8 plus Axis 9 Trajectory), clusters duplicates, flags threads stale beyond your project's threshold, and gives you a prioritised triage list with a weighted Health Score %. All raw API data is saved to a JSONL file alongside the report for manual inspection. With a codemap index, the report also gains an Open-PR Overlap note (pairwise changed-file overlap plus tightly-coupled-module conflict candidates) and a Structural Constraints block (highest-blast-radius modules, collision/degraded/stale index signals). Every codemap signal is optional — with no index or the codemap plugin absent, analyse degrades to its GitHub-only behavior and flags the gap inline rather than blocking.
 
 **Sample vitality scorecard (terminal output):**
 
@@ -310,6 +310,8 @@ Resolve runs in three phases:
 2. **Conflict resolution** — for merge conflicts, read intent from both sides; apply the semantically correct resolution (never mechanical "take ours" or "take theirs")
 3. **Action item implementation** — items dispatched to Codex (or appropriate foundry agent per change type and complexity); with >=4 selected items, items are grouped by file/concern affinity (max 5 per batch) into one combined challenge call + one implementation agent per batch — per-item verdicts and `[resolve #N]` attribution unchanged, spawn count drops ~3x; soft cap 10 items per dispatch (AskUserQuestion beyond, hard cap 20); soft codemap blast-radius check runs after the loop to flag callers of changed modules
 
+When resolve follows `/review` on the same PR, the blast-radius check reuses the per-module codemap answers review already computed instead of re-querying: review's persisted pre-flight batch is split into freshness-stamped per-module artifacts (index `git_sha` + `scanned_at`), and each module served from cache when its stamp still matches the current index. A rebuilt index invalidates the cache and resolve re-queries. Reuse is measured as `reuse_ratio` (fraction of persisted answers actually reused). With no review artifact or the codemap plugin absent, every module is a cache miss and the scan queries live — no behaviour change.
+
 **Severity → triage type mapping** (report mode):
 
 | Review severity         | Section                                                        | Resolve `type`                                                           |
@@ -404,6 +406,8 @@ Flag mark = output produced only when that flag is passed. ¹ Full guide when br
 - A `patch` bump is proposed but the diff contains breaking changes → should be `major`
 - A `minor` bump is proposed but no new public API was added → should be `patch`
 - Version string does not follow `MAJOR.MINOR.PATCH` format
+
+**Breaking-change classification** (codemap-gated): after the truth check, each diff-derived public symbol is run through `fn-rdeps --exclude-tests`. A symbol with a caller outside its own top-level package is labelled **Breaking** and moved to ⚠️ Breaking Changes with the external call sites cited; a symbol whose callers all live inside its own package stays under its human label. The affected call-site list is drafted into the migration guide so downstream consumers see exactly what to change. Requires a codemap v3 index — with no index this phase is skipped and the human classification stands. Partial coverage (`query_complete:false`) surfaces the evidence as possibly-incomplete rather than dropping it.
 
 **CHANGELOG section ordering** (strict, enforced):
 

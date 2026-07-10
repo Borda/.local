@@ -507,6 +507,32 @@ fi
 
 If codemap output returned: prepend `## Structural Context (codemap)` block to each implementation agent prompt in action-item-dispatch.md — blast radius, top callers, coupling pairs.
 
+**Review pre-flight cache** — reuse the per-module codemap answers `/review` already computed, so the Step 8 blast-radius scan issues 0 duplicate pre-flight queries when a fresh review artifact exists (contract + artifact shape in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache; requires `develop`/`oss` codemap wiring). Locate the latest review run-dir and materialize the per-module cache once, before the per-item loop:
+
+```bash
+CODEMAP_CACHE_DIR=""
+if [ "$CODEMAP_ENABLED" = "true" ]; then
+    _IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/${_PROJ}.json"
+    CODEMAP_CACHE_DIR=".temp/resolve/codemap-context"  # resolve-owned; stable across the run
+    mkdir -p "$CODEMAP_CACHE_DIR"  # timeout: 3000
+    # review persists its pre-flight batch blob to .temp/review/<ts>/codemap-context.md
+    _REVIEW_CTX=$(ls -t .temp/review/*/codemap-context.md 2>/dev/null | head -1)
+    if [ -n "$_REVIEW_CTX" ] && [ -f "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/codemap_cache.py" ]; then
+        # the .md wraps one `scan-query batch` JSON array under markdown headers — extract it
+        _BATCH_JSON="${TMPDIR:-/tmp}/resolve-review-batch.json"
+        sed -n '/^{/,$p' "$_REVIEW_CTX" | head -1 > "$_BATCH_JSON" 2>/dev/null || true
+        if [ -s "$_BATCH_JSON" ] && [ -f "$_IDX_FILE" ]; then
+            python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/codemap_cache.py" write \
+                --batch "$_BATCH_JSON" --index "$_IDX_FILE" --cache-dir "$CODEMAP_CACHE_DIR" 2>/dev/null || true  # timeout: 5000
+            echo "→ Review pre-flight cache materialized from $_REVIEW_CTX"
+        fi
+    fi
+fi
+echo "${CODEMAP_CACHE_DIR}" > "${TMPDIR:-/tmp}/resolve-codemap-cache-dir"  # timeout: 3000
+```
+
+`action-item-dispatch.md`'s per-item blast-radius scan reads this cache first (freshness-gated `codemap_cache.py read`) and only calls `scan-query` on a cache miss — see its **Pre-loop blast-radius scan**. Empty `CODEMAP_CACHE_DIR` (no review artifact, or oss helper absent) → every module is a cache miss and the scan queries live, unchanged from prior behaviour.
+
 <!-- Step 8 defined in action-item-dispatch.md -->
 
 Read `$_OSS_RESOLVE/modes/action-item-dispatch.md`; execute its prelude (IMPL_AGENT routing, IMPL_DIR init, blast-radius scan), then run its per-item loop directly in the orchestrator: per item, `TaskUpdate(in_progress)` → challenge → impl → commit → `TaskUpdate(completed)`. Orchestrator-owned so each task flips **live** as work starts and finishes — never delegate the loop to a subagent (a subagent cannot drive the parent's task list, which would freeze every per-item task until return).

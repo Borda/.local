@@ -153,7 +153,7 @@ ______________________________________________________________________
 
 **What happens**:
 
-1. Spawns `foundry:sw-engineer` to classify the task (feature / fix / refactor), map affected files, estimate complexity (small / medium / large), and list risks
+1. Spawns `foundry:sw-engineer` to classify the task (feature / fix / refactor), map affected files, estimate complexity (small / medium / large), and list risks. When codemap is available, effort sizing is structural rather than file-count-based: reverse-dependency counts per affected module set a blast tier (≥5 rdeps HIGH, 1–4 MODERATE, 0 LOW) and co-change coupled pairs surface as risks — a HIGH module or 3+ affected modules pushes complexity to `large`
 2. Writes a structured plan to `.plans/active/<slug>.md`
 3. Spawns parallel feasibility agents matching the classification — they flag blockers, open questions, and concerns
 4. Attempts to resolve blockers autonomously (codebase search, WebFetch for docs); escalates only what genuinely requires your input
@@ -387,8 +387,8 @@ ______________________________________________________________________
 
 1. **Understand the symptom** (`foundry:sw-engineer`): reads full tracebacks, recent git changes near the failing code, and traces the call path from entry point to failure site. If a GitHub issue number is provided, fetches the full issue with comments (from upstream repo if `--repo` specified).
 2. **Pattern analysis**: finds 2-3 similar working code paths and compares them exhaustively against the broken path — across input, environment, call order, conditional branches, and None/empty guards.
-3. **Hypothesis and gate**: states root cause explicitly with supporting and contradicting evidence and a confidence level (high / medium / low). Presents hypothesis to you and waits for confirmation before proceeding. Low confidence triggers a targeted probe (minimal script, added assertion) to gather missing signal.
-4. **Hand off to fix**: writes a diagnosis file to `.plans/active/debug_<slug>.md` and emits `-> /develop:fix --diagnosis <path>`. Fix's Step 1 analysis is pre-answered by the diagnosis.
+3. **Hypothesis and gate**: states root cause explicitly with supporting and contradicting evidence and a confidence level (high / medium / low). Presents hypothesis to you and waits for confirmation before proceeding. Low confidence triggers a targeted probe (minimal script, added assertion) to gather missing signal. When codemap is enabled, also runs a one-time `test-impact` query on the confirmed suspect module/function.
+4. **Hand off to fix**: writes a diagnosis file to `.plans/active/debug_<slug>.md` and emits `-> /develop:fix --diagnosis <path>`. Fix's Step 1 analysis is pre-answered by the diagnosis. The test-impact result (with the index timestamp) is written under a `## Test Impact (codemap)` section so `/develop:fix` reuses it — running test-impact once across the debug→fix flow — and re-queries only if the index moved or the result is stale.
 
 **Debug is investigation-only** — no code changes. The fix happens in a separate, auditable session with its own regression test gate.
 

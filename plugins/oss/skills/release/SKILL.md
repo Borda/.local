@@ -41,7 +41,7 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`) — converted internally to git ran
 **Task hygiene**: Call `TaskList`; triage found tasks (`completed` / `deleted` / `in_progress`).
 
 **Task tracking** — create ALL tasks upfront, execute sequentially; mark completed as each phase finishes. After mode detection, mark inapplicable tasks `deleted`:
-- `demo` mode: mark deleted — Classify each change, Validate migration docs, Audit changelog, Extract contributors, Draft migration guide, Draft executive summary, Write release draft
+- `demo` mode: mark deleted — Classify each change, Classify breaking changes, Validate migration docs, Audit changelog, Extract contributors, Draft migration guide, Draft executive summary, Write release draft
 - bug-fix-only release (no 🚀 Added items): mark deleted — Generate release demo
 
 Tasks:
@@ -49,6 +49,7 @@ Tasks:
 - Explore codebase (changed files, impl detail)
 - Validate docs alignment
 - Classify each change
+- Classify breaking changes (codemap-gated; skip without index)
 - Validate migration docs (skip when no migration doc found)
 - Audit changelog
 - Extract contributors
@@ -286,6 +287,11 @@ Read `$SKILL_DIR/modes/classify-truth-check.md` and execute. Contains: category 
 <!-- loads: modes/classify-truth-check.md -->
 Read `$SKILL_DIR/modes/classify-truth-check.md` (Truth check section) and execute. Gate: runs after Classify, before Audit changelog. Verifies 🚀 Added / ⚠️ Breaking Changes / 🌱 Changed symbols exist in HEAD via codemap or grep fallback. Max 3 loop iterations.
 
+## Breaking-change classification
+
+<!-- loads: modes/classify-truth-check.md -->
+Read `$SKILL_DIR/modes/classify-truth-check.md` (Breaking-change classification section) and execute. Codemap-gated (skips without a v3 index). For each diff-derived public symbol, `fn-rdeps --exclude-tests` labels it Breaking (caller outside its own package) or internal; Breaking symbols move to ⚠️ Breaking Changes with caller evidence, and `migration_lines` feed the Draft migration guide as `breaking_callers` findings.
+
 ## Validate migration docs
 
 Gate — runs after Truth check. Only when project has migration docs page.
@@ -382,6 +388,8 @@ Pick top 3–5 most significant changes from Classify. Ranking: breaking changes
 Always produce. No breaking changes → single line "No breaking changes in this release." Deprecations/removals → show before→after code examples. State in preamble: API deprecated in prior release and now removed → ❌ Removed (not Breaking).
 
 If `migration_gaps` non-empty (from Validate migration docs): for each `[MISSING-MIGRATION]` item, add dedicated section covering that symbol with before→after example. For each `[SHALLOW]` item, expand existing coverage to add concrete upgrade instructions.
+
+If `breaking_callers` non-empty (from Breaking-change classification): for each Breaking symbol, add a before→after section citing its external call sites (the `migration_lines`) so downstream consumers see exactly which of their call sites must change. When that phase reported `query_complete:false`, prefix the section "Affected call sites (possibly-incomplete — codemap coverage partial)".
 
 ## Generate release demo
 

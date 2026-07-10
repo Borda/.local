@@ -141,6 +141,14 @@ Collect JSON envelope. `REPRO_STATUS` = `status` field.
 
 Populate `Repro` and `Sensitive` fields in `---` terminal summary block and `Repro validation`/`Repro missing` lines in `## Thread` metadata.
 
+## Stale-symbol check (issues/discussions only — optional, codemap)
+
+Skip for PRs (their diffs already name live files). Optional structural signal — degrades silently-but-flagged when codemap absent.
+
+> loads: codemap-signals.md
+
+Read `$_OSS_ANALYSE/modes/codemap-signals.md` and run its **Detect** block, then **Signal A**. `$_OSS_ANALYSE` is set by parent `analyse/SKILL.md`; if empty, the Detect block re-resolves it. From the thread body + comments, extract candidate identifiers (dotted modules + backtick/import/traceback symbols, project-internal only, cap 8) and write them one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates.txt` before running Signal A's batch fence. Run the existence-check and set `STALE_ISSUE`. When `STALE_ISSUE=true`: list missing identifiers + suggested renames under `### Analysis` and add `stale-symbols` to `### Suggested Labels`. When `CM_ENABLED=false`: emit the one-line inline flag from codemap-signals.md into the report (do not block).
+
 Status mapping: `reproduced` → ✅ · `not_reproduced` → ❌ · `partial` → ⚠ · `missing_context` → ⚠ (add missing detail) · `HAS_REPRO=false` → 🔍 No Example · PR → ⏭ Skipped
 
 Produce:

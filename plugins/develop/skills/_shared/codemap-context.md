@@ -101,6 +101,33 @@ scan-query --timeout 5 undocumented "$MODULE"  2>/dev/null  # doc coverage (v4.4
 > - `sw-engineer` — read `fn-rdeps` first (direct callers), then `fn-blast` for transitive depth; skip caller-walk reads when blast list complete
 > - `challenger` — unchanged; always reads source directly
 
+## Review→resolve pre-flight cache (persisted artifact)
+
+Review runs the per-changed-module pre-flight batch once (§Review-pipeline injection). A follow-on skill on the same PR — `oss:resolve` after `/review` — otherwise re-issues the identical `fn-rdeps`/`fn-blast`/`mock-rdeps`/`uncovered`/`xrefs`/`undocumented`/`rdeps` queries for the same modules. The persisted cache lets the follow-on **reuse** those answers instead.
+
+**Artifact shape (report §5.3)** — one file per module at `.temp/<run>/codemap-context/<module>.json`, split into a stable *prefix* (index-derived, content-hashed + git-sha stamped) and a volatile *delta* (touched files, exhausted queries, notes) so a later cross-skill handoff generalizes without rework:
+
+```json
+{"module": "pkg.mod",
+ "prefix": {"git_sha": "<index git_sha>", "scanned_at": "<index ISO ts>", "content_hash": "<sha256>", "answers": {"rdeps": {...}, "fn-rdeps": {...}}},
+ "delta": {"touched_files": [], "exhausted_queries": [], "notes": []}}
+```
+
+**Freshness rule**: reusable only when `prefix.git_sha` matches the current index `git_sha` AND `prefix.scanned_at` is not older than the current index `scanned_at` (a rebuilt index — newer `scanned_at` — invalidates every artifact; re-query). Health metric: `reuse_ratio` = reused answers / total persisted.
+
+**Writer/reader contract** (oss plugin ships `bin/codemap_cache.py`; gate on `oss` availability — a consumer without it simply re-queries):
+
+```bash
+# write — split a scan-query batch result into per-module artifacts (batch-producer side)
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/codemap_cache.py" write --batch "$BATCH_OUT" --index "$IDX" --cache-dir "$CACHE_DIR"
+# read — reuse verdict + cached answers for one module (consumer side)
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/codemap_cache.py" read  --module "$MOD" --index "$IDX" --cache-dir "$CACHE_DIR"
+# report — aggregate reuse_ratio for telemetry
+python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/codemap_cache.py" report --cache-dir "$CACHE_DIR"
+```
+
+> Review-side wiring (optional, not yet in review/SKILL.md): review may call `codemap_cache.py write` on its `$RUN_DIR` batch output to seed `$RUN_DIR/codemap-context/` — until then, resolve materializes the cache from review's persisted `$RUN_DIR/codemap-context.md` batch blob on first use, so no review change is required for reuse to work.
+
 **Semble companion** — include in agent spawn prompt only when caller sets `SEMBLE_ENABLED=true`; skip if flag absent:
 
 > `mcp__semble__search` available and codemap direction-incomplete (`"query_complete": false`, or the legacy `"exhaustive": false`) or no index found: call `mcp__semble__search` with varied queries (e.g. `"<module> import"`, `"from <module> import"`, `"<module> usage"`) and `repo=<git_root>`, `top_k=20`. Stop when two consecutive queries return no new modules. Merge all results into final rdep set — union of codemap + all semble calls. Codemap `query_complete: true`: skip semble.

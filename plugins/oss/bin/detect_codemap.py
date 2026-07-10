@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """detect_codemap.py — detect codemap plugin availability, index presence, and currency.
 
-consumers: resolve/SKILL.md, review/SKILL.md
+consumers: resolve/SKILL.md, review/SKILL.md, analyse/modes/codemap-signals.md
 
 Determines whether the codemap plugin is installed and an index exists for the
 current project.  Writes result to ${TMPDIR:-/tmp}/<prefix>-codemap-enabled.

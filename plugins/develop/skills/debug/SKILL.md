@@ -371,6 +371,21 @@ Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using *
 
 If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out the current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses` and re-run the boundary contract block above before re-hypothesizing — keeps the loop guard current so the ruled-out cause is not revisited.
 
+**Test impact (codemap) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query the affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `scan-query` availability (same gate as Step 1). `<SUSPECT>` is the confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
+
+```bash
+# timeout: 8000
+CODEMAP_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-debug-codemap-enabled 2>/dev/null || echo false)
+if [ "$CODEMAP_ENABLED" = "true" ] && command -v scan-query >/dev/null 2>&1; then
+    # SUSPECT resolved from Step 3 hypothesis — e.g. mypackage.auth::validate or mypackage.auth
+    scan-query test-impact "$SUSPECT" 2>/dev/null | tee ${TMPDIR:-/tmp}/dev-debug-test-impact
+else
+    rm -f ${TMPDIR:-/tmp}/dev-debug-test-impact  # no query — fix falls back to its own live query
+fi
+```
+
+The captured JSON carries `pytest_cmd`, `test_files`, top-level `stale`, and `index.not_covered`. It is written into the diagnosis file (Step 4) under a marked section so fix can reuse a fresh result. Query returns `"error"` or empty → skip silently; fix re-queries.
+
 ## Step 4: Hand off to fix
 
 Root cause confirmed. Transition to fix mode with diagnosis as input — fix's Step 1 pre-answered.
@@ -415,6 +430,27 @@ Write `$DIAG_FILE` with this structure:
 
 ## Confidence
 <high|medium|low>
+```
+
+**Append Test Impact section** — only when Step 3 captured a non-empty, non-error result (`${TMPDIR:-/tmp}/dev-debug-test-impact` present). fix reads this to skip re-querying. Records the raw JSON plus the index `scanned_at` so fix can verify the handoff is not older than the current index (freshness guard):
+
+```bash
+# timeout: 5000
+TI_FILE="${TMPDIR:-/tmp}/dev-debug-test-impact"
+if [ -s "$TI_FILE" ] && ! grep -q '"error"' "$TI_FILE"; then
+    PROJ=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || basename "$PWD")
+    _IDX="${CODEMAP_INDEX_DIR:-.cache/codemap}/${PROJ}.json"
+    IDX_SCANNED_AT=$(grep -o '"scanned_at"[[:space:]]*:[[:space:]]*"[^"]*"' "$_IDX" 2>/dev/null | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    {
+        echo ""
+        echo "## Test Impact (codemap)"
+        echo "<!-- reused by /develop:fix Step 3 when index_scanned_at still matches the live index and stale != true -->"
+        echo "- index_scanned_at: ${IDX_SCANNED_AT:-unknown}"
+        echo '```json'
+        cat "$TI_FILE"
+        echo '```'
+    } >> "$DIAG_FILE"
+fi
 ```
 
 Hand off: `-> /develop:fix --diagnosis $DIAG_FILE`. Root cause already known — fix's Step 1 analysis complete.

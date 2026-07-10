@@ -67,22 +67,40 @@ Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for stash label and 
 
 **Pre-loop blast-radius scan** — run once in the main orchestrator before the loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `scan-query` is a no-op.
 
+Each module's `rdeps` answer is served from the **review pre-flight cache** first (materialized in SKILL.md Step 8; contract in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache). `codemap_cache.py read` returns `{"reuse":true,...}` only when the cached answer is fresh against the current index (matching `git_sha`, `scanned_at` not older); a cache hit skips the `scan-query` process entirely, so a resolve after `/review` issues 0 duplicate pre-flight queries. Cache miss (`reuse:false`, no artifact, or oss helper absent) → query live, unchanged. Reused hits are marked in the artifact `delta.notes` so `codemap_cache.py report` can compute `reuse_ratio` as the health metric.
+
 ```bash
 # pre-loop; BLAST_RADIUS_CONTEXT shared with impl agents
 BLAST_RADIUS_CONTEXT=""
+CODEMAP_CACHE_DIR=$(cat "${TMPDIR:-/tmp}/resolve-codemap-cache-dir" 2>/dev/null || echo "")  # timeout: 3000
+_IDX_FILE="${CODEMAP_INDEX_DIR:-.cache/codemap}/$(git rev-parse --show-toplevel 2>/dev/null | xargs basename | tr -cd 'a-zA-Z0-9._-').json"
+_CACHE_BIN="${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/codemap_cache.py"
 if command -v scan-query >/dev/null 2>&1 && [ -f "$IMPL_DIR/action-items.jsonl" ]; then
     echo "→ Codemap pre-scan — caller context for selected action items:"
     for _id in $SELECTED_ITEMS; do
         _f=$(jq -r "select(.id == $_id) | .file // empty" "$IMPL_DIR/action-items.jsonl")  # timeout: 5000
         [[ "$_f" == *.py ]] || continue
         _m=$(echo "$_f" | sed -E 's|^src/||; s|/|.|g; s|\.py$||')
-        _c=$(scan-query rdeps "$_m" 2>/dev/null | head -20)  # timeout: 10000
+        _c=""
+        # cache-first: reuse review's rdeps answer when fresh; only query on miss
+        if [ -n "$CODEMAP_CACHE_DIR" ] && [ -f "$_CACHE_BIN" ] && [ -f "$_IDX_FILE" ]; then
+            _V=$(python "$_CACHE_BIN" read --module "$_m" --index "$_IDX_FILE" --cache-dir "$CODEMAP_CACHE_DIR" 2>/dev/null)  # timeout: 5000
+            if echo "$_V" | grep -q '"reuse": *true'; then
+                _c=$(echo "$_V" | python -c "import json,sys; a=json.load(sys.stdin)['answers'].get('rdeps',{}); print('\n'.join((a.get('imported_by') or a.get('importers') or [])[:20]))" 2>/dev/null)
+                _ART="$CODEMAP_CACHE_DIR/${_m}.json"
+                [ -f "$_ART" ] && python -c "import json,sys; p='$_ART'; d=json.load(open(p)); d['delta']['notes'].append('reused@'+__import__('datetime').datetime.utcnow().isoformat()); json.dump(d,open(p,'w'))" 2>/dev/null || true
+                echo "  #${_id} ${_m} ← callers (cached, reused): $(echo "$_c" | tr '\n' ' ')"
+            fi
+        fi
+        [ -z "$_c" ] && _c=$(scan-query rdeps "$_m" 2>/dev/null | head -20)  # timeout: 10000
         if [ -n "$_c" ]; then
             printf "  #%s %s ← callers: %s\n" "$_id" "$_m" "$(echo "$_c" | tr '\n' ' ')"
             BLAST_RADIUS_CONTEXT+="item #${_id} (${_m}) callers:"$'\n'"${_c}"$'\n\n'
         fi
     done
     [ -z "$BLAST_RADIUS_CONTEXT" ] && echo "  (no Python callers found for selected items)"
+    # health metric — reuse_ratio over the materialized cache
+    [ -n "$CODEMAP_CACHE_DIR" ] && [ -f "$_CACHE_BIN" ] && python "$_CACHE_BIN" report --cache-dir "$CODEMAP_CACHE_DIR" 2>/dev/null || true  # timeout: 5000
 fi
 ```
 

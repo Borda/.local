@@ -65,3 +65,50 @@ Outcomes: confirmed present → keep (note "truth-checked"); not found → remov
 Gate loop (max 3 iterations): truth-check → remove unverified → re-run on updated set → after 3 iterations surface remaining unverified claims and proceed.
 
 Runs before Identify highlights — highlights and demo must never reference unverified items.
+
+---
+
+## Breaking-change classification
+
+Gate — runs after Truth check, before Audit changelog. Labels each diff-derived public symbol **Breaking** (external caller) or **internal** (same-package caller only), and drafts migration evidence lines.
+
+**Codemap-gated** — `fn-rdeps` needs a v3 index. No index → skip; keep the human Classify labels as-is.
+
+```bash
+# Reload RANGE (Check 41: fresh shell)
+RANGE=$(cat "${TMPDIR:-/tmp}/release-range" 2>/dev/null || echo "")
+CODEMAP_OK=$(scan-query list 2>/dev/null | wc -l)  # timeout: 5000
+# 0 = no index → skip this phase entirely (human Classify labels stand)
+```
+
+When `CODEMAP_OK` non-zero:
+
+1. Extract changed public symbols (diff-derived, `__init__.py` surface):
+   ```bash
+   CHANGED_SYMBOLS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_changed_symbols.py" "$RANGE")  # timeout: 15000
+   [ -z "$CHANGED_SYMBOLS" ] && echo "No changed public symbols — skipping Breaking classification"
+   ```
+2. Resolve each bare name to a `module::symbol` qname (skip test modules) and build one `fn-rdeps --exclude-tests` batch query per resolved qname. Removed public name (no `find-symbol` match) → still add its `<pkg>::<name>` qname so `fn-rdeps` errors and the helper labels it Breaking-removed. Write the query array to `$QUERIES_FILE`:
+   ```json
+   [{"cmd": "fn-rdeps", "args": ["<module>::<symbol>", "--exclude-tests"]}]
+   ```
+3. Classify in one batched pass (one process, one coverage block) — pipe batch output through the classifier:
+   ```bash
+   BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
+   DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
+   BREAKING_FILE=".temp/release-breaking-$BRANCH-$DATE.json"
+   mkdir -p .temp  # timeout: 5000
+   scan-query batch "$QUERIES_FILE" 2>/dev/null \
+     | python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/classify_breaking.py" > "$BREAKING_FILE"  # timeout: 15000
+   echo "${BREAKING_FILE:-}" > "${TMPDIR:-/tmp}/release-breaking-file"
+   ```
+
+`classify_breaking.py` output: `{breaking:[{symbol,package,external_callers|reason}], internal:[...], query_complete, migration_lines}`. "External caller" = caller whose top-level package differs from the symbol's own package.
+
+**Apply**:
+- Every `breaking` symbol not already under ⚠️ Breaking Changes → move it there (or add), citing its external callers as evidence.
+- `migration_lines` = the affected call-site draft — carry into **Draft migration guide** (`breaking_callers` findings); each external call site gets a before→after entry.
+- `internal` symbols → leave under their human Classify label (🚀 Added / 🌱 Changed); a same-package-only caller is not a downstream break.
+- `query_complete:false` → label the evidence "possibly-incomplete (codemap coverage partial)" rather than dropping it; do not silently trust it as exhaustive.
+
+**Do not block** — this phase re-labels and drafts evidence; it never removes classified items.

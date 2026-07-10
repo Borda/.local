@@ -114,6 +114,17 @@ _OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2
 REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 ```
 
+**Structural signals (optional, codemap)** — populate the template's `### Structural Constraints` block from index-wide data:
+
+```bash
+_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+[ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/oss/skills/analyse"
+```
+
+> loads: codemap-signals.md
+
+Read `$_OSS_ANALYSE/modes/codemap-signals.md` and run its **Detect** block, then **Signal B** (open-PR conflict/duplicate candidates) and **Signal C** (Structural Constraints). Signal B fetches changed-file lists for open PRs (bounded by `PR_FILES_CAP`), does pairwise file overlap, and — when `CM_ENABLED=true` — adds `coupled`-based hidden-conflict pairs; surface `PRSET_CANDIDATES` pairs in the report. Signal C uses parsed `central[]` / `collision_count` / `degraded` / `stale` to fill the template's `### Structural Constraints` bullets. `CM_ENABLED=false`: Signal B still runs its direct file-overlap layer (no codemap needed); Signal C fills the Structural Constraints block with the single "structural index unavailable" bullet — never leave it empty and never block.
+
 Run `mkdir -p .reports/analyse/vitality` then **Read `$REPORT_TPL`** to get full report structure. Write `$REPORT_FILE` using that structure as scaffold — substitute all `{VARIABLE}` placeholders with bash variables set above (`REPORT_TIMESTAMP`, `GH_OWNER`, `GH_REPO`, `SKILL_VERSION`, `REPORT_COMMIT`, `TOTAL_PASSES`, `CONFIDENCE_HISTORY`, `REPORT_AGENTS_YAML`, etc.). Do not print full analysis to terminal.
 
 ## Step 5 — Codex Independent Repo Review · Step 6 — Adversarial Rework Loop

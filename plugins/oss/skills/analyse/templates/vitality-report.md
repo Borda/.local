@@ -124,6 +124,15 @@ when items share a component/area but have distinct problems.
 
 _(Repeat for each group. If no duplicate groups found: "No obvious duplicates detected.")_
 
+### Open-PR Overlap
+
+Merge-conflict / duplicate-effort candidates among open PRs (Signal B). Direct = shared changed files; Structural = tightly-coupled modules touched by different PRs (codemap). Emit only when candidates found:
+
+- **PRs #A and #B** — direct: both touch `path/to/file` → conflict/duplicate candidate.
+- **PRs #A and #C** — structural: touch coupled modules `m1`/`m2` (no shared files) → review together.
+
+_(No candidates: "No overlapping open PRs detected." Skipped on high-traffic repos: "PR-set overlap skipped — {N} open PRs exceeds cap {PR_FILES_CAP}.")_
+
 ---
 
 ## Recommended Actions
@@ -208,6 +217,14 @@ Permanent limitations — will not resolve by re-running. Emit only when applica
 - **Axis 7 branch protection**: requires admin/push scope — endpoint returns 404 without elevated access; cannot confirm whether direct pushes to default branch are blocked. Grant admin scope or check branch protection manually in GitHub Settings.
 - **Adversarial review skipped**: Agent tool unavailable — skill was invoked without Agent capability (e.g. direct Bash execution, restricted context). Adversarial review is mandatory; re-run via `/oss:analyse vitality` in a full Claude Code session.
 - **Axis 5 SAST — inference only**: no SAST workflow file detected; SAST signal inferred from config files or naming patterns — one additional inference step reduces confidence. Add a dedicated SAST workflow to resolve.
+
+**Structural (codemap)** — populated from `central --top 5` + index coverage when codemap available; single "unavailable" bullet otherwise:
+
+- **Highest blast radius**: `{module}` ({N} reverse-deps) — changes here ripple widest; weight review effort accordingly. _(top 1–5 modules)_
+- **Symbol collisions**: {N} name collisions in the index — rename/find-symbol precision reduced for those names. _(omit when 0)_
+- **Index degraded**: built in degraded mode — some structural signals approximate. _(omit unless degraded)_
+- **Index stale**: lags recent commits — structural figures may miss latest changes. _(omit unless stale)_
+- **Structural index unavailable**: blast-radius / collision signals not computed — codemap plugin absent or no index (build via `/codemap:scan-codebase`, requires codemap plugin). _(this bullet only, when codemap disabled)_
 
 _(Omit bullets that do not apply to this run.)_
 
