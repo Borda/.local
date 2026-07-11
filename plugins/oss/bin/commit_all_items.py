@@ -20,6 +20,7 @@ Args:
 
 from __future__ import annotations
 
+import argparse
 import atexit
 import os
 import re
@@ -154,6 +155,17 @@ def main(argv: list[str] | None = None) -> int:
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
+
+    # Honour only -h/--help via argparse; every other token flows through the manual
+    # positional loop below, which silently ignores extra positionals and accepts
+    # --codex anywhere (legacy "ignore" contract). A broad parse_args would reject
+    # extras with exit 2 and reorder positional handling — keep the manual parser.
+    if args in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="commit_all_items.py",
+            description="Create a bulk commit for all resolved review items.",
+        ).parse_args(["-h"])
+
     pr_number = ""
     raw_counts: list[str] = ["0", "0", "0"]
     summaries_file = ""

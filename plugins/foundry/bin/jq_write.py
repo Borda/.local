@@ -7,17 +7,18 @@ Mirrors the original ``jq-write.sh`` interface: read ``<target>``, apply
 ensures readers never see a half-written file.
 
 Usage:
-    python "${CLAUDE_PLUGIN_ROOT}/bin/jq_write.py" <target-file> <jq-filter> [--arg <name> <value>]...
+    jq_write.py <target-file> <jq-filter> [--arg <name> <value>]...
 
 Exit codes:
-    0  Success
-    1  Target file missing
-    2  jq subprocess error (non-zero exit or jq not on PATH)
-    3  Bad args (odd number of --arg trailing tokens, or no target/filter)
+    0 — success
+    1 — target file missing
+    2 — jq subprocess error (non-zero exit or jq not on PATH)
+    3 — bad args (odd number of --arg trailing tokens, or no target/filter)
 """
 
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -183,20 +184,37 @@ def run_jq_write(target: Path, jq_filter: str, extras: list[str]) -> int:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Returns exit code.
 
-    Hand-parses ``argv`` (no argparse): the bash original passes ``--arg name
-    value`` triplets straight through to jq, which argparse would mangle.
+    Args:
+        argv: Optional argv override (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        ``0`` on success, ``1`` if target missing, ``2`` on jq error, ``3`` on
+        bad args; argparse exits ``2`` on malformed args (e.g. unknown flag
+        before the positionals).
+
+    No doctest — subprocess- and argv-dependent; covered by pytest.
     """
-    args = sys.argv[1:] if argv is None else list(argv)
-    if len(args) < 2:
+    parser = argparse.ArgumentParser(
+        prog="jq_write.py",
+        description="Atomically apply a jq filter to a JSON file via temp-file + rename.",
+    )
+    # nargs="?" keeps the legacy exit-3-on-missing-arg contract; REMAINDER hands
+    # the trailing --arg/--argjson/--indent triplets straight through to jq
+    # untouched (argparse must not parse them — validated by _parse_jq_args).
+    parser.add_argument("target", nargs="?", help="JSON file to rewrite in place.")
+    parser.add_argument("jq_filter", nargs="?", help="jq program string to apply.")
+    parser.add_argument("extras", nargs=argparse.REMAINDER, help="Passthrough jq tokens (e.g. --arg <name> <value>).")
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    if args.target is None or args.jq_filter is None:
         print(
             "Usage: jq_write.py <target-file> <jq-filter> [--arg <name> <value>]...",
             file=sys.stderr,
         )
         return 3
 
-    target_str, jq_filter, *extras = args
     try:
-        parsed = _parse_jq_args(extras)
+        parsed = _parse_jq_args(args.extras)
     except ValueError as exc:
         print(f"! {exc}", file=sys.stderr)
         return 3
@@ -204,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         print("! malformed --arg: each --arg requires <name> <value>", file=sys.stderr)
         return 3
 
-    return run_jq_write(Path(target_str), jq_filter, parsed)
+    return run_jq_write(Path(args.target), args.jq_filter, parsed)
 
 
 if __name__ == "__main__":

@@ -12,11 +12,19 @@ Prints ``true`` if codex is enabled and installed, ``false`` otherwise.
 Always exits 0 — callers branch on stdout, never on exit code.
 
 Usage:
-    python "${CLAUDE_PLUGIN_ROOT}/bin/check_codex.py"
+    check_codex.py
+
+Output (stdout):
+    Single line: ``true`` or ``false``.
+
+Exit codes:
+    0 — always (answer is on stdout; callers never branch on exit code)
+    2 — bad/unknown argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
 import sys
@@ -126,12 +134,20 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
     Args:
-        argv: Unused; accepted for parity with the bin/ skeleton.
+        argv: Optional argument list (defaults to ``sys.argv[1:]``). No flags are
+            accepted beyond ``-h``/``--help``; argparse rejects anything else.
 
     Returns:
-        Always 0 — stdout carries the boolean answer.
+        Always 0 — stdout carries the boolean answer; argparse exits 2 on bad args.
+
+    Examples:
+        No doctest — filesystem-/argv-dependent; covered by pytest with capsys/monkeypatch.
     """
-    del argv  # interface parity; no flags accepted
+    parser = argparse.ArgumentParser(
+        prog="check_codex.py",
+        description="Detect whether the codex plugin is available AND enabled; prints 'true' or 'false'.",
+    )
+    parser.parse_args(argv)
     print("true" if codex_available(Path.home(), Path(".")) else "false")
     return 0
 

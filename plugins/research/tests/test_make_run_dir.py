@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -154,3 +156,24 @@ class TestMainHappyPath:
         main(["myskill", "runs"])
         out = capsys.readouterr().out
         assert "\r" not in out
+
+
+class TestArgparseCLI:
+    """Argparse-surface tests: ``--help`` and the golden 2-positional invocation."""
+
+    def test_help_exits_zero(self) -> None:
+        """``--help`` prints usage and exits 0 (argparse contract)."""
+        result = subprocess.run([sys.executable, str(_SCRIPT), "--help"], capture_output=True, text=True)
+        assert result.returncode == 0
+        assert "usage" in result.stdout.lower()
+
+    def test_golden_invocation_two_positional(self, tmp_path: Path) -> None:
+        """Golden regression: SKILL call shape ``<skill-slug> <base-dir>`` (2 positional) exits 0 and prints a run dir."""
+        result = subprocess.run(
+            [sys.executable, str(_SCRIPT), "myskill", "runs"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert (tmp_path / result.stdout.strip()).is_dir()

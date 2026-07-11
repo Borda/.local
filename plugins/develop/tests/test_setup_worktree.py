@@ -97,6 +97,24 @@ class TestRunDirCreation:
         assert "\r" not in out
 
 
+class TestArgparse:
+    """Argparse-layer contract: --help exits 0; golden invocations preserve behaviour."""
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage and exits 0 without creating a run dir."""
+        with pytest.raises(SystemExit) as exc:
+            setup_worktree.main(["--help"])
+        assert exc.value.code == 0
+        assert "setup_worktree.py" in capsys.readouterr().out
+
+    def test_golden_bare_invocation(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Golden bare call (feature SKILL.md) returns 0 and creates the run dir."""
+        monkeypatch.chdir(tmp_path)
+        rc = setup_worktree.main([])
+        assert rc == 0
+        assert (tmp_path / ".temp" / "develop").is_dir()
+
+
 class TestSentinelFlag:
     """Tests for ``--sentinel <name>`` behaviour."""
 

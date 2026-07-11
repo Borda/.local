@@ -144,6 +144,13 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-cli-flag-drift
+        name: 🚩 SKILL.md flag drift vs argparse
+        language: system
+        entry: python3 plugins/foundry/bin/check_cli_flag_drift.py
+        pass_filenames: false
+        always_run: true
+
       - id: check-readme-drift
         name: 📄 README drift (version + bin/ refs)
         language: system

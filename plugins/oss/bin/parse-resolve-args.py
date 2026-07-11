@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Parse oss:resolve $ARGUMENTS, emit shell variable assignments for eval.
+"""parse-resolve-args.py — parse oss:resolve $ARGUMENTS, emit shell variable assignments for eval.
 
 Usage (Claude Code plugin — ``CLAUDE_PLUGIN_ROOT`` set automatically)::
 
@@ -19,10 +19,18 @@ Match order (PR/URL/report tried before any string mutation, so prompts like
 2. GitHub PR URL (with optional trailing ``report``)
 3. Bare ``report``
 4. Otherwise comment-dispatch (strip exactly one leading ``#``)
+
+Exit codes:
+    0 — assignments emitted
+
+Note: the ``$ARGUMENTS`` blob is forwarded verbatim to the internal regex parser;
+argparse is used only to provide ``-h``/``--help`` and never consumes blob tokens
+(``parse_known_args`` lets dash-leading prose fall through untouched).
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import shlex
 import sys
@@ -92,6 +100,28 @@ def _emit(parsed: dict[str, str]) -> str:
 
 
 def main(argv: list[str]) -> int:
+    """Parse the ``$ARGUMENTS`` blob and emit shell assignments.
+
+    Args:
+        argv: Raw argv tokens (``sys.argv[1:]``). Space-joined into the blob and
+            forwarded verbatim to :func:`parse_resolve_args`.
+
+    Returns:
+        Exit code ``0``; argparse exits ``2`` when the *sole* argument is a bad
+        ``-h``/``--help`` variant.
+
+    Examples:
+        No doctest — emits to stdout; covered by pytest via subprocess.
+    """
+    # argparse only intercepts a lone -h/--help so users get discoverable help;
+    # for any real payload the blob is forwarded untouched (dash-leading prose,
+    # e.g. a comment starting with "-", must reach the regex parser intact).
+    if argv in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="parse-resolve-args.py",
+            description="Parse oss:resolve $ARGUMENTS, emit shell variable assignments for eval.",
+        ).parse_args(argv)  # prints help, exits 0
+
     arguments = " ".join(argv)
     parsed = parse_resolve_args(arguments)
     print(_emit(parsed))

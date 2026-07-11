@@ -48,6 +48,7 @@ CHECKS: list[dict[str, object]] = [
     {"id": "spawn-prompt-vars", "kind": "scan", "script": "check_spawn_prompt_vars.py"},
     {"id": "routing-links", "kind": "whole", "script": "check_routing_links.py"},
     {"id": "orphaned-bin", "kind": "whole", "script": "check_orphaned_bin.py"},
+    {"id": "cli-flag-drift", "kind": "whole", "script": "check_cli_flag_drift.py"},
     {"id": "shared-drift", "kind": "whole", "script": "propagate_shared.py"},
 ]
 

@@ -1,3 +1,29 @@
+#!/usr/bin/env python
+"""scan-stats.py — print a codemap index summary: module, symbol, and call-edge counts.
+
+Resolves the project root (``--root`` inside the ``SCAN_ARGS`` env var → git
+toplevel → cwd), loads the codemap index JSON, and prints module/symbol/call
+totals plus the five most central modules by reverse-dependency count. The
+``--root`` argument is read from the ``SCAN_ARGS`` environment variable, not
+from argv; argparse only handles ``-h``/``--help``.
+
+Usage:
+    SCAN_ARGS="--root <dir>" scan-stats.py
+
+Output (stdout):
+    Human-readable summary lines: module counts, symbol total, optional call
+    total, and a ``Most central`` ranking.
+
+Exit codes:
+    0 — summary printed (or ``No modules indexed.``)
+    1 — index file missing or larger than the size cap
+    2 — ``--root`` (from SCAN_ARGS) escapes the project root, or
+        ``CODEMAP_INDEX_DIR`` resolves outside allowed cache roots
+"""
+
+from __future__ import annotations
+
+import argparse
 import contextlib
 import json
 import os
@@ -127,8 +153,28 @@ def _load_index(root: str) -> dict:
 _DEFAULT_TIMEOUT = 15
 
 
-def main() -> None:
-    """Print codemap index summary: module count, symbols, top central modules."""
+def main(argv: list[str] | None = None) -> None:
+    """Print codemap index summary: module count, symbols, top central modules.
+
+    The ``--root`` selector is read from the ``SCAN_ARGS`` environment variable
+    (see :func:`_resolve_root`), not from argv; argparse handles only
+    ``-h``/``--help`` here. Exit codes are raised via ``sys.exit`` in the
+    helpers, so this function returns ``None`` on the success path.
+
+    Args:
+        argv: Optional argv override (defaults to ``sys.argv[1:]``). Pass ``[]``
+            in tests so argparse does not pick up pytest's own argv.
+
+    No doctest — reads SCAN_ARGS env + index file and calls sys.exit; covered by
+    pytest with monkeypatch/capsys.
+    """
+    parser = argparse.ArgumentParser(
+        prog="scan-stats.py",
+        description="Print a codemap index summary: module, symbol, and call-edge counts.",
+    )
+    # argparse exits with code 2 on bad/missing args — matches legacy bash contract.
+    parser.parse_args(argv)
+
     root = _resolve_root(os.environ.get("SCAN_ARGS", ""), timeout=_DEFAULT_TIMEOUT)
     d = _load_index(root)
 

@@ -18,6 +18,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -196,6 +197,17 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     env = os.environ if env is None else env
     workdir = Path(cwd).as_posix() if cwd else Path(os.getcwd()).as_posix()
+
+    # Honour only -h/--help via argparse; every other token flows through the manual
+    # _parse_args below, which mirrors the bash interface (last non-flag token wins,
+    # --mode=X form, bad mode/arg → exit 2). argparse's own positional/choices errors
+    # would change the exit-2 message and the last-token-wins capture — keep the
+    # manual parser as the sole argv authority so the observable contract is unchanged.
+    if raw_argv in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="docker_sandbox_run.py",
+            description="Run a command inside a sandboxed python:3.11-slim Docker container.",
+        ).parse_args(["-h"])
 
     mode, arg = _parse_args(raw_argv)
 

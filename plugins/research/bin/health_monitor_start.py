@@ -8,16 +8,20 @@ Sentinel dir mirrors JS getSentinelDir(): ``/tmp`` on POSIX,
 ``tempfile.gettempdir()`` on Windows — matches task-log.js and commit-guard.js.
 
 Usage:
-    python health_monitor_start.py <skill-id>
+    health_monitor_start.py <skill-id>
+
+Output (stdout):
+    Two lines: ``LAUNCH_AT=<epoch>`` and ``SENTINEL=<posix-path>``.
 
 Exit codes:
     0 — success
     1 — missing skill-id argument
-    2 — invalid skill-id (unsafe characters)
+    2 — invalid skill-id (unsafe characters), or bad argparse usage (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 import tempfile
@@ -40,19 +44,37 @@ def main(argv: list[str] | None = None) -> int:
     """Create sentinel file and print LAUNCH_AT + SENTINEL; return exit code.
 
     Args:
-        argv: Argument list (defaults to sys.argv[1:]).
+        argv: Optional argument list (defaults to ``sys.argv[1:]``).
 
     Returns:
-        0 on success, 1 on missing arg, 2 on validation error.
-    """
-    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
-    args = argv if argv is not None else sys.argv[1:]
+        ``0`` on success, ``1`` on missing skill-id; ``2`` on invalid skill-id or
+        bad argparse usage.
 
-    if not args:
+    Examples:
+        No doctest — argv-dependent and touches the filesystem; covered by pytest
+        with ``capsys``.
+    """
+    parser = argparse.ArgumentParser(
+        prog="health_monitor_start.py",
+        description="Create a research health-monitoring sentinel and print LAUNCH_AT + SENTINEL.",
+    )
+    # nargs="?" keeps the empty-argv case as exit 1 (handled below) rather than
+    # argparse's exit 2 for a missing required positional — preserves the legacy contract.
+    parser.add_argument(
+        "skill_id",
+        nargs="?",
+        help="Skill identifier ([a-zA-Z0-9_-]); names the sentinel research-<skill-id>-check-<ts>.",
+    )
+    # argparse exits with code 2 on unknown flags or extra positionals — matches legacy bash contract.
+    args = parser.parse_args(argv)
+
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
+
+    if args.skill_id is None:
         print("health_monitor_start: skill-id required", file=sys.stderr)
         return 1
 
-    skill_id = args[0]
+    skill_id = args.skill_id
     if not _SKILL_RE.match(skill_id):
         print(f"health_monitor_start: invalid SKILL_ID: {skill_id!r}", file=sys.stderr)
         return 2

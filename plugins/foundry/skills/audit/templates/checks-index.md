@@ -52,3 +52,4 @@
 | 40 | Health monitoring gap | high | agents/skills | Skill using `Agent(..., run_in_background=true)` without health_sentinel sentinel + 5-min poll protocol |
 | R5 | Consumer→template orphan | medium | plugins (LOCAL_MODE only) | `<!-- loads: X -->` or `# loads: X` comment points to non-existent template file — reverse of R2 |
 | 41 | LLM-first formatting | low/medium | all .md excl. README | 41a list-marker uniformity (`-` only); 41b numbering-intent clarity (`1.`=steps, `(a)`=choices); 41c table-vs-prose preference (3+ items × 2+ attrs → table) |
+| 42 | CLI flag drift (SKILL.md vs argparse) | medium | plugins (LOCAL_MODE only) | `check_cli_flag_drift.py` — flag on a literal `python .../bin/<script>.py` invocation not defined by that script's argparse (renamed/removed/typo'd); passthrough (`nargs=REMAINDER`) scripts skipped |

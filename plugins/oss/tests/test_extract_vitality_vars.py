@@ -134,3 +134,23 @@ class TestMain:
         f.write_text("not json")
         rc = main([str(f)])
         assert rc == 1
+
+    def test_help_flag_exits_zero(self, capsys) -> None:
+        """``--help`` prints usage and exits 0 (argparse)."""
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+        assert exc.value.code == 0
+        assert "usage:" in capsys.readouterr().out
+
+    def test_golden_invocation_stdout_is_eval_safe(self, tmp_path: Path, capsys) -> None:
+        """Documented call site ``extract_vitality_vars.py SCORES_FILE`` — stdout is ONLY VAR=value lines.
+
+        The caller runs ``eval "$(... extract_vitality_vars.py "$SCORES_FILE")"`` so any
+        stray argparse banner on stdout would corrupt the eval; every line must be an assignment.
+        """
+        f = tmp_path / "scores.json"
+        f.write_text(json.dumps(_scores()))
+        rc = main([str(f)])
+        assert rc == 0
+        lines = capsys.readouterr().out.strip().splitlines()
+        assert lines and all("=" in ln for ln in lines)

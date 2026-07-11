@@ -10,12 +10,13 @@ the form ``N deps, M vulns``.  Extracted from run_audit_checks.sh inline
 project Check 23e policy prohibiting inline ``python -c`` snippets.
 
 Exit codes:
-    0  on success
-    1  on stdin read error or JSON parse error
+    0 — on success
+    1 — stdin read error or JSON parse error
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from typing import Any
@@ -49,16 +50,23 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point — read JSON from stdin, print summary.
 
     Args:
-        argv: Argument list override for testing. Unused; pip-audit JSON
-            arrives via stdin.
+        argv: Optional argv override. Ignored except for an explicit ``-h``/``--help``
+            (preserves the legacy stdin-only, argv-ignored contract). pip-audit
+            JSON arrives via stdin.
 
     Returns:
-        Exit code: 0 on success, 1 on parse error.
+        Exit code: 0 on success, 1 on parse error; argparse exits 0 after printing ``-h``/``--help``.
 
     Examples:
         No doctest — requires stdin; covered by pytest with monkeypatch.
     """
-    _ = sys.argv[1:] if argv is None else argv  # no positional args used
+    # Honour only -h/--help; any other argv is ignored (legacy stdin-only contract).
+    effective_argv = sys.argv[1:] if argv is None else argv
+    if effective_argv in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="parse_audit_json.py",
+            description="Summarize pip-audit JSON output (read from stdin) as deps/vulns counts.",
+        ).parse_args(["-h"])  # prints help, exits 0
     try:
         payload = json.load(sys.stdin)
     except json.JSONDecodeError as e:

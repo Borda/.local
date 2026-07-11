@@ -22,6 +22,9 @@ Usage:
 
 When the second argument is omitted (or is ``-``), the text is read from stdin.
 
+The positionals are captured opaquely (the ``<json-or-text>`` blob may begin with ``--``);
+argparse is present only to supply ``-h/--help``.
+
 Exit codes:
     0  Success — value printed to stdout.
     1  No balanced JSON object could be recovered from the input.
@@ -31,6 +34,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from typing import Any
@@ -144,8 +148,22 @@ def main(argv: list[str] | None = None) -> int:
         0 on success, 1 if no object recovered, 2 if field absent, 3 on usage error.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
-    args = list(sys.argv[1:] if argv is None else argv)
+    raw = list(sys.argv[1:] if argv is None else argv)
 
+    # Handle -h/--help via argparse, then treat positionals opaquely. The <json-or-text>
+    # blob may begin with ``--``, which argparse would reject as an unknown option — so the
+    # positionals are NOT fed through parse_args, and the missing-field case keeps exit 3
+    # (argparse's own missing-required exit is 2).
+    if raw and raw[0] in {"-h", "--help"}:
+        parser = argparse.ArgumentParser(
+            prog="extract_json_field.py",
+            description="Recover a JSON object from text and print a field.",
+        )
+        parser.add_argument("field", nargs="?", help="Top-level field name, or '.'/'_object' for the whole object.")
+        parser.add_argument("text", nargs="?", help="JSON-or-text blob; omit or pass '-' to read stdin.")
+        parser.parse_args(raw)  # exits 0 after printing help
+
+    args = raw
     if not args:
         print(
             "Usage: extract_json_field.py <field> [<json-or-text>]",

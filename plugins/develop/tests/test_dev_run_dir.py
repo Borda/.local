@@ -150,3 +150,14 @@ class TestSentinelFlag:
         dev_run_dir.main(["--sentinel"])
         after = set(sentinel_base.glob("dev-py-test-*"))
         assert before == after
+
+
+class TestHelp:
+    """``--help`` short-circuits before any run-dir side effects."""
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        with pytest.raises(SystemExit) as exc:
+            dev_run_dir.main(["--help"])
+        assert exc.value.code == 0
+        assert "usage" in capsys.readouterr().out.lower()

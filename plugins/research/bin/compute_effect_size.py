@@ -25,6 +25,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from typing import Any
@@ -102,12 +103,16 @@ def main(argv: list[str] | None = None) -> int:
     """CLI entry point. Reads JSON from stdin, prints effect size to stdout.
 
     Args:
-        argv: Unused; kept for API parity with other bin/ scripts.
+        argv: Optional argv override (defaults to ``sys.argv[1:]``); only ``-h/--help`` is honored.
 
     Returns:
         Process exit code (0 on success, 2 on input error).
     """
-    del argv  # no CLI arguments consumed
+    parser = argparse.ArgumentParser(
+        prog="compute_effect_size.py",
+        description="Rank-biserial correlation effect size for Wilcoxon results (reads JSON from stdin).",
+    )
+    parser.parse_args(argv)  # no positional/flag args — enables -h/--help, rejects stray tokens (exit 2)
     raw = sys.stdin.read()
     try:
         payload = json.loads(raw)

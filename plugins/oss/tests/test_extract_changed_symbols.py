@@ -165,3 +165,11 @@ def test_default_range_used_when_no_args(monkeypatch: pytest.MonkeyPatch, tmp_pa
     rev_parse_calls = [c for c in calls if "rev-parse" in c]
     assert any("HEAD~1" in c for c in rev_parse_calls)
     assert any("HEAD" in c for c in rev_parse_calls)
+
+
+def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 without running git."""
+    with pytest.raises(SystemExit) as exc:
+        ecs.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage: extract_changed_symbols.py" in capsys.readouterr().out

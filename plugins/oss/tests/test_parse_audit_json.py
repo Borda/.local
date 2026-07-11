@@ -108,6 +108,21 @@ class TestMain:
             rc = main(["--ignored"])
         assert rc == 0
 
+    def test_help_flag_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Explicit ``--help`` prints usage and exits 0 without reading stdin (argparse)."""
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+        assert exc.value.code == 0
+        assert "usage:" in capsys.readouterr().out
+
+    def test_golden_invocation_stdin_pipe(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Documented call site (``pip-audit --format=json | parse_audit_json.py``) — stdin-only."""
+        payload = {"dependencies": [{"vulns": []}, {"vulns": [{}]}]}
+        with patch("sys.stdin", io.StringIO(json.dumps(payload))):
+            rc = main()
+        assert rc == 0
+        assert capsys.readouterr().out.strip() == "2 deps, 1 vulns"
+
 
 # ---------------------------------------------------------------------------
 # Doctest hookup

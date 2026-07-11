@@ -24,12 +24,13 @@ Args:
 
 Exit codes:
     0 — listing emitted (possibly empty if range has no non-bot authors)
-    1 — bad args (no range given, or both --range and --from/--to)
+    1 — bad args (no range given, both --range and --from/--to, or unknown flag)
     2 — git invocation failed
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -146,8 +147,17 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — subprocess-dependent; covered by pytest with monkeypatch.
     """
-    sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
+    # Honour only -h/--help via argparse; all other flags keep the manual reject
+    # loop below (exit 1 on unknown arg) — argparse's native exit-2 would break
+    # the legacy contract that a bad flag exits 1.
+    if args in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="extract_contributors.py",
+            description="List unique non-bot contributors in a git range.",
+        ).parse_args(["-h"])
+
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
 
     range_arg = from_ref = to_ref = repo = ""
     i = 0

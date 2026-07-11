@@ -141,6 +141,30 @@ def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         cai.main(["42", "3", "1", "0"])
 
 
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_help_exits_0_without_git(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
+    """``-h``/``--help`` prints usage and exits 0; no subprocess/git ever runs."""
+    called: list[Any] = []
+    monkeypatch.setattr(cai.subprocess, "run", lambda *a, **k: called.append(a))
+    with pytest.raises(SystemExit) as exc:
+        cai.main([flag])
+    assert exc.value.code == 0
+    assert called == []
+
+
+def test_golden_all_mode_invocation_constructs_expected_commit(fake_git: list[list[str]]) -> None:
+    """Exact COMMIT_MODE=all call-site argv → single ``git commit -m`` with expected PR/counts."""
+    rc = cai.main(["42", "3", "1", "0", "", "--codex"])
+    assert rc == 0
+    commit_calls = _commit_calls(fake_git)
+    assert len(commit_calls) == 1
+    assert commit_calls[0][:3] == ["/fake/git", "commit", "-m"]
+    msg = commit_calls[0][3]
+    assert "PR #42" in msg
+    assert "3 as-suggested, 1 self-resolved, 0 rejected" in msg
+    assert "Co-authored-by: OpenAI Codex" in msg
+
+
 def test_build_commit_message_pure() -> None:
     """``build_commit_message`` returns expected subject and counts; no subprocess needed."""
     msg = cai.build_commit_message("7", 5, 2, 1, "", False)

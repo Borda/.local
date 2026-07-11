@@ -92,3 +92,10 @@ class TestMain:
         """No output path → usage on stderr, exit 1, nothing written."""
         assert bcb.main([]) == 1
         assert "usage" in capsys.readouterr().err
+
+    def test_help_exits_zero(self, capsys):
+        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        with pytest.raises(SystemExit) as exc:
+            bcb.main(["--help"])
+        assert exc.value.code == 0
+        assert "usage" in capsys.readouterr().out.lower()

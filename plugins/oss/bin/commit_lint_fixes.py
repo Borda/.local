@@ -10,6 +10,7 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import atexit
 import os
 import re
@@ -93,7 +94,8 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point — mirrors ``commit_lint_fixes.sh`` behaviour.
 
     Args:
-        argv: Unused; script takes no positional arguments.
+        argv: Optional argument list (defaults to ``sys.argv[1:]``); only -h/--help
+            is honoured, otherwise the script takes no positional arguments.
 
     Returns:
         Exit code: 0 if no changes or commit succeeds; git exit code otherwise.
@@ -101,6 +103,15 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — requires subprocess; covered by pytest with monkeypatch.
     """
+    # Honour only -h/--help via argparse; the script otherwise takes no arguments and
+    # ignores argv entirely (legacy zero-arg contract — the sole call site passes none).
+    # A broad parse_args would reject any stray token with exit 2; keep argv ignored.
+    if list(sys.argv[1:] if argv is None else argv) in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="commit_lint_fixes.py",
+            description="Stage all changed tracked files and commit with a lint-fix message.",
+        ).parse_args(["-h"])
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     git = _resolve("git")
     changed_proc = subprocess.run(  # noqa: S603

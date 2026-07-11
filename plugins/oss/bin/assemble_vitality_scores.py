@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """assemble_vitality_scores.py — merge 3 parallel axis-scoring partials into unified health score.
 
-Usage:
-    python "${CLAUDE_PLUGIN_ROOT}/bin/assemble_vitality_scores.py" \\
-        PARTIAL_A PARTIAL_B PARTIAL_C SCORING_FILE SCORES_FILE
-
 Reads three partial JSON files (one per oss:repo-warden axis group A/B/C), loads
 axis weights from the vitality-scoring.md rubric, renormalizes weights for
 unavailable axes (score==null or label==⚪), and writes the assembled result to
 SCORES_FILE.  Extracted from oss:analyse vitality Step 3 inline python -c block.
 
+Usage:
+    assemble_vitality_scores.py PARTIAL_A PARTIAL_B PARTIAL_C SCORING_FILE SCORES_FILE
+
 Exit codes:
-    0  on success
-    1  on wrong argument count, I/O error, or JSON parse error
+    0 — on success
+    1 — wrong argument count, I/O error, or JSON parse error
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -164,20 +164,28 @@ def main(argv: list[str] | None = None) -> int:
         argv: Argument list override for testing. Defaults to sys.argv[1:].
 
     Returns:
-        Exit code: 0 on success, 1 on error.
+        Exit code: 0 on success, 1 on error; argparse exits 2 on bad ``-h``/unknown flag.
 
     Examples:
         No doctest — requires on-disk fixtures; covered by pytest.
     """
-    args = sys.argv[1:] if argv is None else argv
-    if len(args) != 5:
+    parser = argparse.ArgumentParser(
+        prog="assemble_vitality_scores.py",
+        description="Merge 3 parallel axis-scoring partials into a unified health score.",
+    )
+    # Positionals are optional (nargs="*") so the legacy wrong-count contract
+    # (exit 1, not argparse's exit 2) is preserved by the explicit check below.
+    parser.add_argument("paths", nargs="*", help="PARTIAL_A PARTIAL_B PARTIAL_C SCORING_FILE SCORES_FILE (5 paths).")
+    args = parser.parse_args(argv)
+
+    if len(args.paths) != 5:
         print(
-            f"Usage: {sys.argv[0]} PARTIAL_A PARTIAL_B PARTIAL_C SCORING_FILE SCORES_FILE",
+            f"Usage: {parser.prog} PARTIAL_A PARTIAL_B PARTIAL_C SCORING_FILE SCORES_FILE",
             file=sys.stderr,
         )
         return 1
 
-    partial_a, partial_b, partial_c, scoring_file, scores_file = (Path(a) for a in args)
+    partial_a, partial_b, partial_c, scoring_file, scores_file = (Path(a) for a in args.paths)
 
     try:
         result = assemble_scores(partial_a, partial_b, partial_c, scoring_file)

@@ -4,15 +4,20 @@
 Prints the created directory path to stdout (LF-terminated, no CRLF).
 
 Usage:
-    python make_run_dir.py <base-dir>
+    make_run_dir.py <base-dir>
+
+Output (stdout):
+    Single line: absolute or relative path of the created run directory.
 
 Exit codes:
     0 — success
-    1 — wrong number of arguments
+    1 — wrong number of positional arguments
+    2 — path validation failure (traversal / forbidden system prefix)
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from datetime import datetime, timezone
@@ -95,15 +100,27 @@ def main(argv: list[str] | None = None) -> int:
         argv: Argument list (defaults to sys.argv[1:]).
 
     Returns:
-        0 on success, 1 on argument error, 2 on path-validation failure.
+        0 on success, 1 on argument-count error, 2 on path-validation failure.
+
+    Examples:
+        No doctest — argv-/filesystem-dependent; covered by pytest with capsys/monkeypatch.
     """
+    parser = argparse.ArgumentParser(
+        prog="make_run_dir.py",
+        description="Create a UTC-timestamped run directory under <base-dir> and print its path.",
+    )
+    # nargs="*" so argparse never owns the arg-count error path — the manual
+    # guard below preserves the legacy exit-1 contract for empty AND extra args
+    # (argparse's native positional would exit 2, inverting the exit-code map).
+    parser.add_argument("base_dir", nargs="*", help="Parent directory to create the timestamped run dir under.")
+    args = parser.parse_args(argv)
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
-    args = argv if argv is not None else sys.argv[1:]
-    if len(args) != 1:
+    if len(args.base_dir) != 1:
         print("usage: make_run_dir.py <base-dir>", file=sys.stderr)
         return 1
     try:
-        sys.stdout.write(str(make_run_dir(args[0])) + "\n")
+        sys.stdout.write(str(make_run_dir(args.base_dir[0])) + "\n")
     except ValueError as exc:
         print(f"make_run_dir: {exc}", file=sys.stderr)
         return 2

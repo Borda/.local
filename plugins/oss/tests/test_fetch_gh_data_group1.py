@@ -177,3 +177,11 @@ def test_gh_missing_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     monkeypatch.setattr(fgd, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="gh"):
         fgd.main(["--repo", "owner/repo", "--output-dir", str(tmp_path)])
+
+
+def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 without running gh."""
+    with pytest.raises(SystemExit) as exc:
+        fgd.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage: fetch_gh_data_group1.py" in capsys.readouterr().out

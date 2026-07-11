@@ -406,3 +406,42 @@ class TestMain:
         _patch_run(monkeypatch, fake_run)
         find_polluter.main(["tests/test_z.py::fail"])
         assert "tests" in collected_dirs
+
+
+# ---------------------------------------------------------------------------
+# argparse CLI surface
+# ---------------------------------------------------------------------------
+
+
+class TestArgparseCli:
+    """CLI argument parsing: --help and the golden cross-plugin invocation."""
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage and exits 0 (argparse SystemExit)."""
+        with pytest.raises(SystemExit) as exc:
+            find_polluter.main(["--help"])
+        assert exc.value.code == 0
+        assert "find-polluter.py" in capsys.readouterr().out
+
+    def test_golden_single_positional_invocation(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Cross-plugin call form ``find-polluter.py "<node-id>"`` parses and defaults test_dir to 'tests'."""
+        failing = "tests/test_model.py::test_predict"
+        polluter = "tests/test_a.py::one"
+        monkeypatch.setattr(find_polluter, "_resolve_pytest_cmd", lambda: ["pytest"])
+
+        def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
+            if "--tb=short" in argv:
+                return _FakeResult(stdout="1 passed in 0.01s\n")
+            if "--collect-only" in argv:
+                assert "tests" in argv  # default test_dir applied
+                return _FakeResult(stdout=f"{polluter}\n{failing}\n")
+            if polluter in argv:
+                return _FakeResult(stdout="FAILED\n", returncode=1)
+            return _FakeResult(stdout="ok\n")
+
+        _patch_run(monkeypatch, fake_run)
+        rc = find_polluter.main([failing])
+        assert rc == 0
+        assert polluter in capsys.readouterr().out

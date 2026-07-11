@@ -38,3 +38,18 @@ def test_path_traversal_blocked(tmp_path: Path):
     traversal = tmp_path / ".." / ".." / "etc"
     result = subprocess.run([sys.executable, BIN, str(traversal), str(tmp_path)])
     assert result.returncode == 1
+
+
+def test_help_exits_zero():
+    """``--help`` prints usage and exits 0 (argparse contract)."""
+    result = subprocess.run([sys.executable, BIN, "--help"], capture_output=True, text=True)
+    assert result.returncode == 0
+    assert "usage" in result.stdout.lower()
+
+
+def test_golden_invocation_within_root(tmp_path: Path):
+    """Golden regression: the SKILL call shape ``<candidate> <root>`` (2 positional) still exits 0 within root."""
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    result = subprocess.run([sys.executable, BIN, str(sub), str(tmp_path)])
+    assert result.returncode == 0

@@ -13,10 +13,15 @@ symlink; re-linking on re-run is safe and intentional.
 
 Usage:
     setup_release_dir.py RELEASE_DIR CHANGELOG_FILE
+
+Exit codes:
+    0 — on success
+    1 — missing/unsafe argument
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import sys
@@ -110,17 +115,26 @@ def main(argv: list[str] | None = None) -> int:
         No doctest — filesystem I/O; covered by pytest with ``tmp_path``.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
-    args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) < 1:
+    parser = argparse.ArgumentParser(
+        prog="setup_release_dir.py",
+        description="Create release dir, symlink changelog, back up artifacts.",
+    )
+    # nargs="*" keeps the per-arg "release_dir required" / "changelog_file required"
+    # stderr messages and exit-1 contract (vs argparse's exit 2).
+    parser.add_argument("paths", nargs="*", help="RELEASE_DIR CHANGELOG_FILE (2 paths).")
+    args_ns = parser.parse_args(argv)
+    positional = args_ns.paths
+
+    if len(positional) < 1:
         print("setup_release_dir: release_dir required", file=sys.stderr)
         return 1
-    if len(args) < 2:
+    if len(positional) < 2:
         print("setup_release_dir: changelog_file required", file=sys.stderr)
         return 1
 
     try:
-        release_dir = _validate_path_arg(args[0], "release_dir")
-        changelog_file = _validate_path_arg(args[1], "changelog_file")
+        release_dir = _validate_path_arg(positional[0], "release_dir")
+        changelog_file = _validate_path_arg(positional[1], "changelog_file")
     except ValueError as exc:
         print(f"setup_release_dir: {exc}", file=sys.stderr)
         return 1

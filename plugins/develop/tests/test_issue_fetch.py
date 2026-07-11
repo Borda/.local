@@ -101,6 +101,31 @@ def test_resolve_raises_when_gh_missing(monkeypatch: pytest.MonkeyPatch) -> None
         issue_fetch.main(["1"])
 
 
+def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 (argparse) before any gh call."""
+    with pytest.raises(SystemExit) as exc:
+        issue_fetch.main(["--help"])
+    assert exc.value.code == 0
+    assert "issue_fetch.py" in capsys.readouterr().out
+
+
+def test_golden_invocation_with_repo(captured_argv: list[list[str]]) -> None:
+    """Golden call site ``issue_fetch.py "$ARGUMENTS" --repo owner/repo`` forwards both."""
+    rc = issue_fetch.main(["42", "--repo", "owner/repo"])
+    assert rc == 0
+    assert captured_argv[0] == ["/fake/path/to/gh", "issue", "view", "42", "--comments", "--repo", "owner/repo"]
+
+
+def test_blob_with_dash_tokens_reaches_extraction_unmangled(captured_argv: list[list[str]]) -> None:
+    """A blob whose first token is the issue number but which also carries ``--``-shaped
+    tokens still yields the correct issue number — the blob is never handed to argparse."""
+    rc = issue_fetch.main(["#7 --repo evil/repo --foo bar"])
+    assert rc == 0
+    # Only the first token (#7 → 7) is used; embedded --repo inside the blob is ignored,
+    # not consumed as an outer flag, so no --repo reaches gh.
+    assert captured_argv[0] == ["/fake/path/to/gh", "issue", "view", "7", "--comments"]
+
+
 def test_passthrough_no_capture(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sanity: ``subprocess.run`` is called WITHOUT ``capture_output=True``.
 

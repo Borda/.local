@@ -28,6 +28,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import atexit
 import os
 import re
@@ -232,6 +233,16 @@ def main(argv: list[str] | None = None) -> int:
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
+
+    # Honour only -h/--help via argparse; every other flag flows through the manual
+    # _parse_args below, which is already reject-strict (unknown arg → exit 1) with a
+    # bespoke "unknown arg '<a>'" message. argparse's native errors would change that
+    # exit-1 contract to exit-2 — keep the manual parser as the sole argv authority.
+    if args in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="commit_action_item.py",
+            description="Sentinel-aware commit helper for /oss:resolve Step 8.",
+        ).parse_args(["-h"])
 
     opts, files, err = _parse_args(args)
     if err is not None:

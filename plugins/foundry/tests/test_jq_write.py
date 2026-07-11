@@ -190,3 +190,19 @@ class TestMain:
         rc = jq_write.main([str(target), ".k = 2"])
         assert rc == 0
         assert json.loads(target.read_text(encoding="utf-8")) == {"k": 2}
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage and exits 0 (argparse SystemExit)."""
+        with pytest.raises(SystemExit) as exc:
+            jq_write.main(["--help"])
+        assert exc.value.code == 0
+        assert "jq_write.py" in capsys.readouterr().out
+
+    @_requires_jq
+    def test_golden_arg_passthrough_invocation(self, tmp_path: Path) -> None:
+        """Manage call form ``<target> '<filter>' --arg rule '<rule>'`` reaches jq untouched."""
+        target = tmp_path / "settings.json"
+        target.write_text(json.dumps({"rule": "old"}), encoding="utf-8")
+        rc = jq_write.main([str(target), ".rule = $rule", "--arg", "rule", "new-value"])
+        assert rc == 0
+        assert json.loads(target.read_text(encoding="utf-8")) == {"rule": "new-value"}

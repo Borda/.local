@@ -151,3 +151,10 @@ class TestMain:
         rc = check_codex.main([])
         assert rc == 0
         assert capsys.readouterr().out.strip() == "false"
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage to stdout and exits 0 (argparse contract)."""
+        with pytest.raises(SystemExit) as exc:
+            check_codex.main(["--help"])
+        assert exc.value.code == 0
+        assert "check_codex.py" in capsys.readouterr().out

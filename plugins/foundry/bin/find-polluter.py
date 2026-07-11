@@ -2,29 +2,22 @@
 """find-polluter.py — binary-search test isolation.
 
 Finds which test in a suite contaminates another test when run before it.
-Uses binary search: O(log N) runs instead of O(N).
+Uses binary search: O(log N) runs instead of O(N). pytest must be available on
+PATH (or importable via ``python -m pytest``).
 
-Usage (Claude Code plugin — CLAUDE_PLUGIN_ROOT is set automatically):
-    python "${CLAUDE_PLUGIN_ROOT}/bin/find-polluter.py" <failing-test-id> [test-dir]
-
-Arguments:
-    failing-test-id   pytest node ID of the test that fails due to contamination
-                      e.g. tests/test_foo.py::TestClass::test_method
-    test-dir          directory to search for candidate tests (default: tests)
-
-Example:
-    python "${CLAUDE_PLUGIN_ROOT}/bin/find-polluter.py" tests/test_model.py::test_predict tests/
-
-Requirements: pytest available on PATH (or via `python -m pytest`).
+Usage:
+    find-polluter.py <failing-test-id> [test-dir]
 
 Exit codes:
-    0   polluter found and reported
-    1   validation failure (bad args, test passes when isolated, no candidates,
-        or pytest unavailable)
+    0 — polluter found and reported
+    1 — validation failure (missing arg, test passes when isolated, no
+        candidates, or pytest unavailable)
+    2 — bad/missing required argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import math
 import re
 import shutil
@@ -33,6 +26,8 @@ import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+
+DEFAULT_TEST_DIR = "tests"
 
 ISOLATION_PASS_RE = re.compile(r"^(PASSED|1 passed)", re.MULTILINE)
 FAILURE_RE = re.compile(r"FAILED|ERROR")
@@ -292,17 +287,42 @@ def binary_search(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Entry point. Returns process exit code."""
-    args = list(argv if argv is not None else sys.argv[1:])
-    if not args:
+    """Entry point. Returns process exit code.
+
+    Args:
+        argv: Optional argv override (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        ``0`` when a polluter is found; ``1`` on validation failure (missing
+        arg, isolation pass, no candidates, pytest missing); argparse exits
+        ``2`` on malformed args.
+
+    No doctest — subprocess- and argv-dependent; covered by pytest.
+    """
+    parser = argparse.ArgumentParser(
+        prog="find-polluter.py",
+        description="Binary-search which test contaminates another when run before it.",
+    )
+    # nargs="?" keeps the legacy exit-1-on-missing-arg contract (argparse's
+    # native code 2 is reserved for genuinely malformed input); the manual
+    # check below fires when no failing-test-id is supplied.
+    parser.add_argument("failing_test", nargs="?", help="pytest node ID of the test that fails due to contamination.")
+    parser.add_argument(
+        "test_dir",
+        nargs="?",
+        default=DEFAULT_TEST_DIR,
+        help=f"Directory to search for candidate tests (default: {DEFAULT_TEST_DIR}).",
+    )
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    failing_test = args.failing_test
+    test_dir = args.test_dir
+    if not failing_test:
         print(
             "Usage: find-polluter.py <failing-test-id> [test-dir]\n\tExample: find-polluter.py tests/test_foo.py::test_bar tests/",
             file=sys.stderr,
         )
         return 1
-
-    failing_test = args[0]
-    test_dir = args[1] if len(args) > 1 else "tests"
 
     if not _is_safe_node_id(failing_test):
         print(

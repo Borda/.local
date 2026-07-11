@@ -248,3 +248,31 @@ def test_main_mode_routing_via_subprocess(argv: list[str], expected_mode: str) -
     # MODE value is shell-quoted ('pr', 'pr+report', etc.); strip surrounding quotes.
     raw_mode = assignments["MODE"].strip("'")
     assert raw_mode == expected_mode, f"argv={argv!r}: expected MODE={expected_mode!r}, got {raw_mode!r}"
+
+
+def test_help_flag_exits_zero_via_subprocess() -> None:
+    """``--help`` prints usage and exits 0 (argparse)."""
+    result = subprocess.run(
+        [sys.executable, str(_BIN), "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.returncode == 0
+    assert "usage:" in result.stdout
+
+
+def test_dash_leading_prose_forwarded_not_misparsed_as_flag() -> None:
+    """Blob-forward safety: a comment starting with ``-`` reaches the regex parser as comment-dispatch.
+
+    argparse must NOT intercept dash-leading blob content as an unknown flag — the
+    ``$ARGUMENTS`` blob is forwarded verbatim to ``parse_resolve_args``.
+    """
+    result = subprocess.run(
+        [sys.executable, str(_BIN), "-x is broken"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assignments = dict(line.split("=", 1) for line in result.stdout.strip().splitlines())
+    assert assignments["MODE"].strip("'") == "comment-dispatch"

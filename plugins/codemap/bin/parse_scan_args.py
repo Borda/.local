@@ -2,7 +2,7 @@
 """parse_scan_args.py — extract ``--root`` and ``--incremental`` flags from a single $ARGUMENTS string.
 
 Usage:
-    python3 "${CLAUDE_PLUGIN_ROOT}/bin/parse_scan_args.py" "$ARGUMENTS" [--nul-output <file>] [--print-root]
+    parse_scan_args.py "$ARGUMENTS" [--nul-output <file>] [--print-root]
 
 Output (default):
     Shell-quoted argument tokens suitable for ``eval``:
@@ -17,12 +17,13 @@ Output (--print-root):
     Prints just the resolved --root value (or '.' when absent) on stdout.
 
 Exit codes:
-    0  always (never fails on input).
+    0  always (never fails on parsed input).
     1  --nul-output path validation failed (SEC-M1).
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shlex
@@ -129,25 +130,26 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = sys.argv[1:] if argv is None else argv
 
-    # First positional arg = raw $ARGUMENTS string.
+    # arg[0] is the raw $ARGUMENTS blob (its embedded --root/--incremental tokens feed the
+    # INNER parser below, NOT argparse). Extracted positionally BEFORE argparse so a blob
+    # beginning with "--" is never handed to argparse's flag matcher — all call sites quote it
+    # as one argv element. Only the genuine OUTER flags in args[1:] reach argparse.
     arguments = args[0] if args else ""
     rest = args[1:]
 
-    # Parse optional flags from rest.
-    nul_output: str | None = None
-    print_root: bool = False
-    i = 0
-    while i < len(rest):
-        if rest[i] == "--nul-output":
-            i += 1
-            if i < len(rest):
-                nul_output = rest[i]
-            i += 1
-        elif rest[i] == "--print-root":
-            print_root = True
-            i += 1
-        else:
-            i += 1
+    parser = argparse.ArgumentParser(
+        prog="parse_scan_args.py",
+        description="Extract --root and --incremental flags from a single $ARGUMENTS blob.",
+    )
+    parser.add_argument("--nul-output", default=None, help="Write tokens NUL-delimited to <file>; no stdout.")
+    parser.add_argument(
+        "--print-root", action="store_true", help="Print only the resolved --root value (or '.') on stdout."
+    )
+    # parse_known_args: unknown outer tokens are silently absorbed (legacy "ignore" strictness — the
+    # SKILL pre-rejects unsupported $ARGUMENTS flags upstream, so this never newly rejects a call site).
+    parsed, _unknown = parser.parse_known_args(rest)
+    nul_output: str | None = parsed.nul_output
+    print_root: bool = parsed.print_root
 
     tokens = parse_scan_args(arguments)
 

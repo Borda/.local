@@ -151,3 +151,11 @@ def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sic, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="git"):
         sic.main(["item1"])
+
+
+def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 without running git."""
+    with pytest.raises(SystemExit) as exc:
+        sic.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage: stage_item_changes.py" in capsys.readouterr().out

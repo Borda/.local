@@ -46,7 +46,7 @@ def test_gh_not_found_exits_1(
     monkeypatch.setattr(rp, "which", lambda cmd: None if cmd == "gh" else "/fake/" + cmd)
     monkeypatch.setattr(rp.subprocess, "run", _dispatch({}))
     monkeypatch.chdir(tmp_path)
-    rc = rp.main()
+    rc = rp.main([])
     assert rc == 1
     assert "gh not found" in capsys.readouterr().err
 
@@ -69,7 +69,7 @@ def test_gh_unauthenticated_exits_1(
         ),
     )
     monkeypatch.chdir(tmp_path)
-    rc = rp.main()
+    rc = rp.main([])
     assert rc == 1
     assert "gh found but not authenticated" in capsys.readouterr().err
 
@@ -91,7 +91,7 @@ def test_gh_ok_codex_absent_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: P
         ),
     )
     monkeypatch.chdir(tmp_path)
-    rc = rp.main()
+    rc = rp.main([])
     assert rc == 0
     assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE").read_text() == "false"
     assert (tmp_path / "resolve-preflight-GH_OK").read_text() == "true"
@@ -114,7 +114,7 @@ def test_gh_ok_codex_present_exits_0(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         ),
     )
     monkeypatch.chdir(tmp_path)
-    rc = rp.main()
+    rc = rp.main([])
     assert rc == 0
     assert (tmp_path / "resolve-preflight-CODEX_AVAILABLE").read_text() == "true"
 
@@ -131,7 +131,7 @@ def test_gh_cache_hit_skips_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setattr(rp.subprocess, "run", _tracking_run)
     monkeypatch.chdir(tmp_path)
     rp._preflight_pass("gh")
-    rp.main()
+    rp.main([])
     assert not any("gh auth" in c for c in calls)
 
 
@@ -165,7 +165,7 @@ def test_remote_ahead_pulls(
 
     monkeypatch.setattr(rp.subprocess, "run", _seq_run)
     monkeypatch.chdir(tmp_path)
-    rc = rp.main()
+    rc = rp.main([])
     assert rc == 0
     assert "git pull: merged" in capsys.readouterr().err
 
@@ -197,7 +197,7 @@ def test_pull_conflict_exits_1(
 
     monkeypatch.setattr(rp.subprocess, "run", _conflict_run)
     monkeypatch.chdir(tmp_path)
-    rc = rp.main()
+    rc = rp.main([])
     assert rc == 1
     assert "git pull had conflicts" in capsys.readouterr().err
 
@@ -216,3 +216,21 @@ def test_preflight_ok_fresh_returns_true(tmp_path: Path) -> None:
     state_dir = tmp_path / "preflight"
     rp._preflight_pass("gh", state_dir)
     assert rp._preflight_ok("gh", state_dir) is True
+
+
+def test_help_exits_0_no_subprocess(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 WITHOUT running gh auth / git pull.
+
+    Regression guard for the pre-argparse hazard where the script executed its
+    full preflight (network + working-tree mutation) even when given ``--help``.
+    """
+
+    def _boom(*_a: Any, **_k: Any) -> None:
+        raise AssertionError("subprocess.run must not be called on --help")
+
+    monkeypatch.setattr(rp.subprocess, "run", _boom)
+    monkeypatch.setattr(rp, "which", lambda _cmd: (_ for _ in ()).throw(AssertionError("which must not run on --help")))
+    with pytest.raises(SystemExit) as exc:
+        rp.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage: resolve_preflight.py" in capsys.readouterr().out

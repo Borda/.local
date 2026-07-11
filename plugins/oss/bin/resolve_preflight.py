@@ -10,19 +10,21 @@ Output:
     files — writes CODEX_AVAILABLE and GH_OK to ${TMPDIR:-/tmp}/resolve-preflight-<KEY>
     stderr — human-readable status (echoed to terminal)
 
-Exit:
+Exit codes:
     0 — all required checks passed (codex absence is non-fatal)
     1 — required check failed (gh missing, gh unauthenticated, git pull
         conflict, or other hard error)
+    2 — bad/missing required argument (argparse default)
 
 Caller pattern:
-    python resolve_preflight.py  # timeout: 15000
+    resolve_preflight.py  # timeout: 15000
     CODEX_AVAILABLE=$(cat "${TMPDIR:-/tmp}/resolve-preflight-CODEX_AVAILABLE" 2>/dev/null || echo "false")
     GH_OK=$(cat "${TMPDIR:-/tmp}/resolve-preflight-GH_OK" 2>/dev/null || echo "true")
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -74,18 +76,25 @@ def _preflight_pass(name: str, state_dir: Path = _PREFLIGHT_DIR) -> None:
     (state_dir / f"{name}.ok").write_text(str(int(datetime.now(tz=timezone.utc).timestamp())), encoding="utf-8")
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: ARG001
+def main(argv: list[str] | None = None) -> int:
     """Entry point — mirrors ``resolve_preflight.sh`` behaviour.
 
     Args:
-        argv: Unused; script takes no positional arguments.
+        argv: Optional argument list (defaults to ``sys.argv[1:]``); no flags.
 
     Returns:
-        Exit code: 0 on success; 1 on required-check failure.
+        Exit code: 0 on success; 1 on required-check failure; argparse exits 2 on bad args.
 
     Examples:
         No doctest — subprocess-dependent; covered by pytest.
     """
+    # Parse args before any network/git call — a bare -h/--help must print usage
+    # and exit without running gh auth / git fetch / git pull.
+    argparse.ArgumentParser(
+        prog="resolve_preflight.py",
+        description="Preflight checks (codex, gh auth, remote state) for /oss:resolve Step 1.",
+    ).parse_args(argv)
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
 
     # --- codex (optional) -------------------------------------------------------

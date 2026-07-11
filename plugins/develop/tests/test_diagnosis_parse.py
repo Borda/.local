@@ -147,3 +147,31 @@ def test_equals_form_missing_file_exits_1(capsys: pytest.CaptureFixture[str]) ->
     err = capsys.readouterr().err
     assert "! BREAKING" in err
     assert "/no/such/file.md" in err
+
+
+def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+    with pytest.raises(SystemExit) as exc:
+        diagnosis_parse.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage" in capsys.readouterr().out.lower()
+
+
+@pytest.mark.parametrize(
+    "blob",
+    [
+        pytest.param("--mode fix --team", id="dash-tokens-no-diagnosis"),
+        pytest.param("--diagnosis", id="bare-diagnosis-token-only"),
+        pytest.param("--team --other", id="multiple-unknown-dash-tokens"),
+    ],
+)
+def test_blob_dash_tokens_reach_inner_parser_unmangled(blob: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """A blob whose tokens are ``--``-shaped is passed opaquely to parse_diagnosis, not argparse.
+
+    argparse would reject a bare ``--``-prefixed token as an unknown option (exit 2). The
+    script must instead hand the whole blob to the inner scanner, which finds no diagnosis
+    value and exits 0 with empty stdout — proving the blob was never fed to argparse.
+    """
+    rc = diagnosis_parse.main([blob])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == ""

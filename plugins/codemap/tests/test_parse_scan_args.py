@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 
 import pytest
 
@@ -107,3 +108,48 @@ class TestMain:
         out = capsys.readouterr().out
         assert rc == 0
         assert out.strip() == ""
+
+    def test_help_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` in the outer-flag position exits 0 and prints usage.
+
+        arg[0] is the opaque $ARGUMENTS blob, so ``-h``/``--help`` is only an argparse
+        flag when it follows the blob (here an empty blob); a leading ``--help`` is
+        treated as blob content, not a flag.
+        """
+        with pytest.raises(SystemExit) as exc:
+            main(["", "--help"])
+        assert exc.value.code == 0
+        assert "usage" in capsys.readouterr().out.lower()
+
+    def test_leading_help_is_blob_not_flag(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A leading ``--help`` is the blob positional (no --root/--incremental) → empty output, exit 0."""
+        rc = main(["--help"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert out.strip() == ""
+
+
+class TestSkillCallSiteRegression:
+    """Golden invocation matching scan-codebase SKILL.md: blob positional + outer --nul-output."""
+
+    def test_nul_output_golden(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """Exact SKILL.md argv shape writes NUL-delimited tokens; no stdout, exit 0."""
+        args_file = tmp_path / "codemap-scan-args-nul"
+        rc = main(["--root /abs/proj --incremental", "--nul-output", str(args_file)])
+        assert rc == 0
+        assert capsys.readouterr().out == ""
+        assert args_file.read_bytes() == b"--root\x00/abs/proj\x00--incremental\x00"
+
+    def test_blob_reaches_inner_parser_unmangled(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A blob whose --root/--incremental tokens must feed the inner parser, not argparse."""
+        rc = main(["--root /abs/proj --incremental"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert out.strip() == "--root /abs/proj --incremental"
+
+    def test_unknown_outer_token_silently_ignored(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Legacy 'ignore' strictness: an unrecognised OUTER flag must not raise or exit nonzero."""
+        rc = main(["--root /abs/proj", "--unrecognised-outer"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert out.strip() == "--root /abs/proj"

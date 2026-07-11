@@ -145,7 +145,7 @@ class TestMain:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.setattr(shutil, "which", _no_which)
-        rc = main()
+        rc = main([])
         assert rc == 0
         assert capsys.readouterr().out.strip() == str(exe)
 
@@ -157,7 +157,7 @@ class TestMain:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.setattr(shutil, "which", _no_which)
-        rc = main()
+        rc = main([])
         assert rc == 1
         assert capsys.readouterr().err.strip() != ""
 
@@ -170,5 +170,12 @@ class TestMain:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.setattr(shutil, "which", _no_which)
-        main()
+        main([])
         assert "\r" not in capsys.readouterr().out
+
+    def test_help_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` exits 0 and prints usage (argparse convention)."""
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+        assert exc.value.code == 0
+        assert "usage" in capsys.readouterr().out.lower()

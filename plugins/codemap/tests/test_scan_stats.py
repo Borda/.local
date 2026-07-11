@@ -160,7 +160,7 @@ class TestMain:
         monkeypatch.setenv("SCAN_ARGS", "")
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
             with pytest.raises(SystemExit) as exc_info:
-                main()
+                main([])
         assert exc_info.value.code == 0
         assert "No modules indexed." in capsys.readouterr().out
 
@@ -180,7 +180,7 @@ class TestMain:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SCAN_ARGS", "")
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
-            main()
+            main([])
         out = capsys.readouterr().out
         assert "2 indexed" in out
         assert "1 degraded" in out
@@ -200,7 +200,7 @@ class TestMain:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SCAN_ARGS", "")
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
-            main()
+            main([])
         out = capsys.readouterr().out
         assert "Symbols: 3" in out
 
@@ -218,7 +218,7 @@ class TestMain:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SCAN_ARGS", "")
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
-            main()
+            main([])
         assert "Calls:" in capsys.readouterr().out
 
     def test_calls_line_absent_when_no_call_edges(
@@ -235,7 +235,7 @@ class TestMain:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SCAN_ARGS", "")
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
-            main()
+            main([])
         assert "Calls:" not in capsys.readouterr().out
 
     def test_top_modules_ranked_by_rdep_count(
@@ -253,7 +253,7 @@ class TestMain:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SCAN_ARGS", "")
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
-            main()
+            main([])
         out = capsys.readouterr().out
         assert out.index("high") < out.index("low"), "highest rdep_count must appear first"
 
@@ -272,9 +272,41 @@ class TestMain:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SCAN_ARGS", "")
         with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
-            main()
+            main([])
         out = capsys.readouterr().out
         assert "Symbols: 1" in out
+
+
+# ---------------------------------------------------------------------------
+# argparse layer
+# ---------------------------------------------------------------------------
+
+
+class TestArgparse:
+    """CLI argument handling: --help and the real SCAN_ARGS call-site shape."""
+
+    def test_help_exits_0(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage and exits 0 (argparse default)."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["--help"])
+        assert exc_info.value.code == 0
+        assert "scan-stats.py" in capsys.readouterr().out
+
+    def test_golden_call_site_scan_args_env(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Real call site (``SCAN_ARGS`` env, no argv) still prints the summary."""
+        modules = [{"name": "m", "status": "ok", "rdep_count": 1, "symbols": [{}]}]
+        _write_index(tmp_path, modules)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SCAN_ARGS", "")
+        with patch("subprocess.check_output", return_value=str(tmp_path).encode()):
+            main([])
+        out = capsys.readouterr().out
+        assert "Modules: 1 indexed" in out
 
 
 # ---------------------------------------------------------------------------

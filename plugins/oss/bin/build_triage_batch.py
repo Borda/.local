@@ -15,12 +15,13 @@ Usage:
     N=$(python build_triage_batch.py CANDIDATE_FILE OUT_FILE)
 
 Exit codes:
-    0  on success (OUT_FILE written, even when empty → ``[]``)
-    1  on missing argument or I/O error
+    0 — on success (OUT_FILE written, even when empty → ``[]``)
+    1 — missing argument or I/O error
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -64,13 +65,20 @@ def main(argv: list[str] | None = None) -> int:
         argv: Argument list (defaults to sys.argv[1:]).
 
     Returns:
-        Exit code.
+        Exit code: 0 on success, 1 on wrong count/I/O error; argparse exits 2 on bad ``-h``/unknown flag.
     """
-    args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 2:
+    parser = argparse.ArgumentParser(
+        prog="build_triage_batch.py",
+        description="Turn thread-extracted identifiers into a scan-query batch spec.",
+    )
+    # nargs="*" keeps the legacy exit-1-on-wrong-count contract (vs argparse's exit 2).
+    parser.add_argument("paths", nargs="*", help="CANDIDATE_FILE OUT_FILE (2 paths).")
+    args = parser.parse_args(argv)
+
+    if len(args.paths) != 2:
         print("Usage: build_triage_batch.py CANDIDATE_FILE OUT_FILE", file=sys.stderr)
         return 1
-    cand_path, out_path = Path(args[0]), Path(args[1])
+    cand_path, out_path = Path(args.paths[0]), Path(args.paths[1])
     try:
         lines = cand_path.read_text().splitlines()
     except OSError as exc:

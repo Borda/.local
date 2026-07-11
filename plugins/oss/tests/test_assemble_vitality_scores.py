@@ -245,3 +245,20 @@ class TestMain:
         scores_file = tmp_path / "scores.json"
         rc = main(["/no/such/a.json", "/no/b.json", "/no/c.json", str(scoring_file), str(scores_file)])
         assert rc == 1
+
+    def test_help_flag_exits_zero(self, capsys) -> None:
+        """``--help`` prints usage and exits 0 (argparse)."""
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+        assert exc.value.code == 0
+        assert "usage:" in capsys.readouterr().out
+
+    def test_golden_invocation_five_positionals(
+        self, partials: tuple, scoring_file: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Documented 5-positional call site (PARTIAL_A B C SCORING SCORES) succeeds."""
+        pa, pb, pc = partials
+        scores_file = tmp_path / "scores.json"
+        rc = main([str(pa), str(pb), str(pc), str(scoring_file), str(scores_file)])
+        assert rc == 0
+        assert json.loads(scores_file.read_text())["health_score_pct"] >= 0.0

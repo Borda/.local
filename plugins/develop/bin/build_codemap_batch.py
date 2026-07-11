@@ -15,7 +15,7 @@ sanctioned home for this transform.
 Usage:
     build_codemap_batch.py <out.json>
 
-Output:
+Output (stdout):
     Batch request JSON written to ``<out.json>``; derived module names printed
     space-separated on stdout (empty line when no ``.py`` files changed).
 
@@ -26,6 +26,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -78,13 +79,29 @@ def build_batch_request(modules: list[str]) -> list[dict[str, object]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Derive changed modules, write the batch request JSON, print the module list."""
-    args = sys.argv[1:] if argv is None else argv
-    if len(args) != 1:
+    """Derive changed modules, write the batch request JSON, print the module list.
+
+    Args:
+        argv: Optional argv override (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        ``0`` on success; ``1`` when the output-path argument is missing.
+
+    No doctest — writes a file and shells out to git; covered by pytest with monkeypatch.
+    """
+    parser = argparse.ArgumentParser(
+        prog="build_codemap_batch.py",
+        description="Build the review pre-flight scan-query batch request for changed modules.",
+    )
+    # nargs="?" (not a plain required positional) so a missing path returns exit 1 — argparse's
+    # own missing-required exit is 2, but callers and tests rely on the legacy exit-1 contract.
+    parser.add_argument("out_json", nargs="?", help="Output path for the batch request JSON.")
+    args = parser.parse_args(argv)
+    if args.out_json is None:
         print("usage: build_codemap_batch.py <out.json>", file=sys.stderr)
         return 1
     modules = derive_modules_from_diff(_git_diff_files(), limit=FALLBACK_LIMIT)
-    Path(args[0]).write_text(json.dumps(build_batch_request(modules)), encoding="utf-8")
+    Path(args.out_json).write_text(json.dumps(build_batch_request(modules)), encoding="utf-8")
     print(" ".join(modules))
     return 0
 

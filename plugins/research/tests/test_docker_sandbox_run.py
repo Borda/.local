@@ -70,6 +70,97 @@ def captured_run(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     return calls
 
 
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_help_exits_0_without_docker(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
+    """``-h``/``--help`` prints usage and exits 0; no subprocess/docker ever runs."""
+    called: list[Any] = []
+    monkeypatch.setattr(ds.subprocess, "run", lambda *a, **k: called.append(a))
+    with pytest.raises(SystemExit) as exc:
+        ds.main([flag])
+    assert exc.value.code == 0
+    assert called == []
+
+
+def test_golden_explore_invocation_constructs_expected_docker_argv(captured_run: list[list[str]]) -> None:
+    """Exact compute-docker.md explore call-site argv → docker argv identical to pre-argparse baseline."""
+    rc = ds.main(
+        ["--mode", "explore", ".experiments/state/RID/scripts/probe.py"],
+        env={},
+        cwd="/proj",
+    )
+    assert rc == 0
+    assert captured_run == [
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--read-only",
+            "-v",
+            "/proj:/workspace:ro",
+            "--tmpfs",
+            ds.TMPFS_MOUNT,
+            "-w",
+            "/workspace",
+            ds.IMAGE,
+            "python",
+            "/workspace/.experiments/state/RID/scripts/probe.py",
+        ]
+    ]
+
+
+def test_golden_verify_invocation_constructs_expected_docker_argv(captured_run: list[list[str]]) -> None:
+    """Exact phase5-metric.md verify call-site argv → docker argv identical to pre-argparse baseline."""
+    rc = ds.main(["--mode", "verify", "pytest -q metric.py"], env={}, cwd="/proj")
+    assert rc == 0
+    assert captured_run == [
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--read-only",
+            "-v",
+            "/proj:/workspace:ro",
+            "-v",
+            "/proj/.experiments:/workspace/.experiments:rw",
+            "--tmpfs",
+            ds.TMPFS_MOUNT,
+            "-w",
+            "/workspace",
+            ds.IMAGE,
+            "sh",
+            "-c",
+            "pytest -q metric.py",
+        ]
+    ]
+
+
+def test_network_host_guard_rejects_before_docker(
+    captured_run: list[list[str]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """SANDBOX_NETWORK=host still rejected with exit 2, no docker spawned (SEC-R-2 unchanged)."""
+    rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_NETWORK": "host"}, cwd="/proj")
+    assert rc == 2
+    assert "SANDBOX_NETWORK" in capsys.readouterr().err
+    assert captured_run == []
+
+
+@pytest.mark.parametrize("network", ["none", "bridge", "internal"])
+def test_network_host_guard_still_allows_isolated_modes(captured_run: list[list[str]], network: str) -> None:
+    """The allowlisted isolated network modes still reach docker argv unchanged (SEC-R-2 boundary)."""
+    rc = ds.main(["--mode", "explore", "x.py"], env={"SANDBOX_NETWORK": network}, cwd="/proj")
+    assert rc == 0
+    cmd = captured_run[0]
+    assert cmd[cmd.index("--network") + 1] == network
+
+
 def test_main_missing_mode_returns_2(capsys: pytest.CaptureFixture[str]) -> None:
     rc = ds.main(["script.py"])
     assert rc == 2

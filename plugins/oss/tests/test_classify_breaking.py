@@ -103,3 +103,20 @@ def test_main_malformed_stdin_exits_2(monkeypatch: pytest.MonkeyPatch, capsys: p
     rc = cb.main([])
     assert rc == 2
     assert "error" in json.loads(capsys.readouterr().out)
+
+
+def test_help_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 without touching stdin (argparse)."""
+    with pytest.raises(SystemExit) as exc:
+        cb.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage:" in capsys.readouterr().out
+
+
+def test_golden_invocation_stdin_pipe(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """Documented call site (``scan-query batch | classify_breaking.py``) — stdin-only, no argv."""
+    entry = {"ok": True, "result": {"qname": "mypkg.core::Thing", "called_by": [_caller("app.svc")]}}
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(_batch([entry]))))
+    rc = cb.main([])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["breaking"][0]["symbol"] == "mypkg.core::Thing"

@@ -37,14 +37,24 @@ Flag spec types (each occupies 3 positional tokens after the type keyword):
     --int FLAG VAR DEFAULT      --FLAG N or --FLAG=N → VAR=N (integer)
     --str FLAG VAR DEFAULT      --FLAG VAL or --FLAG=VAL → VAR=VAL (string)
 
+The ``$ARGUMENTS`` blob and the trailing spec tokens both carry ``--``-shaped tokens that
+are consumed by this script's own spec loop and flag extractor — never by argparse's own
+matcher. argparse is present only to supply ``-h/--help``; the blob and specs are dispatched
+by inspecting ``argv`` directly.
+
+Usage:
+    dev_parse_args.py ARGUMENTS [SPEC...]
+    dev_parse_args.py --skill <name> --write-files ARGUMENTS
+
 Exit codes:
     0 — success
     1 — malformed spec, unknown skill, or missing ``--write-files`` argument
-    2 — --int flag received a non-integer value
+    2 — --int flag received a non-integer value (also argparse's bad-argument exit)
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -428,7 +438,40 @@ def write_skill_files(skill: str, arguments: str, tmp_dir: Path | None = None) -
     return values
 
 
-def main() -> None:
+def _run_skill_mode(argv: list[str]) -> int:
+    """Dispatch the ``--skill <name> --write-files ARGUMENTS`` invocation.
+
+    Args:
+        argv: The full argument list (``sys.argv[1:]``), containing ``--skill``.
+
+    Returns:
+        ``0`` on success; ``1`` on a missing name, missing ``--write-files``, or missing
+        ARGUMENTS string.
+
+    No doctest — writes temp files via :func:`write_skill_files`; covered by pytest.
+    """
+    try:
+        skill_idx = argv.index("--skill")
+        skill_name = argv[skill_idx + 1]
+    except (ValueError, IndexError):
+        print("dev_parse_args: --skill requires a name argument", file=sys.stderr)
+        return 1
+    if "--write-files" not in argv:
+        print(
+            "dev_parse_args: --skill requires --write-files (only mode supported)",
+            file=sys.stderr,
+        )
+        return 1
+    # Remaining positional after stripping both flag pairs is the ARGUMENTS string
+    remaining = [tok for i, tok in enumerate(argv) if i not in {skill_idx, skill_idx + 1} and tok != "--write-files"]
+    if not remaining:
+        print("dev_parse_args: --skill mode needs the ARGUMENTS string", file=sys.stderr)
+        return 1
+    write_skill_files(skill_name, remaining[0])
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     """CLI entry point.
 
     Two invocation forms:
@@ -437,47 +480,46 @@ def main() -> None:
       (legacy form used by ``eval "$(...)"`` callers).
     * ``dev_parse_args.py --skill <name> --write-files ARGUMENTS`` — parse using the
       registered skill specs and write each value to a temp file under ``${TMPDIR:-/tmp}``.
+
+    Args:
+        argv: Optional argv override (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        ``0`` on success; ``1`` on empty argv or a malformed ``--skill`` invocation.
+        Internal spec/skill errors exit ``1`` and ``--int`` errors exit ``2`` via SystemExit.
+
+    No doctest — dispatches to stdout-printing / temp-file-writing paths; covered by pytest.
     """
-    argv = sys.argv[1:]
-    if not argv:
+    args = list(sys.argv[1:] if argv is None else argv)
+
+    # argparse only supplies -h/--help; the blob and spec tokens are dispatched directly
+    # because they carry ``--``-shaped tokens argparse must never try to match.
+    if args and args[0] in {"-h", "--help"}:
+        parser = argparse.ArgumentParser(
+            prog="dev_parse_args.py",
+            description="Parse develop-skill flags from an $ARGUMENTS blob.",
+        )
+        parser.add_argument("arguments", nargs="?", help="Raw $ARGUMENTS blob (parsed internally).")
+        parser.add_argument("--skill", help="Registered skill name for the write-files mode.")
+        parser.add_argument("--write-files", action="store_true", help="Write parsed values to temp files.")
+        parser.parse_args(args)  # exits 0 after printing help
+
+    if not args:
         print(
             "usage:\n"
             "  dev_parse_args.py ARGUMENTS [SPEC...]\n"
             "  dev_parse_args.py --skill <name> --write-files ARGUMENTS",
             file=sys.stderr,
         )
-        sys.exit(1)
+        return 1
 
-    if "--skill" in argv:
-        # Skill-driven write-files invocation
-        try:
-            skill_idx = argv.index("--skill")
-            skill_name = argv[skill_idx + 1]
-        except (ValueError, IndexError):
-            print("dev_parse_args: --skill requires a name argument", file=sys.stderr)
-            sys.exit(1)
-        if "--write-files" not in argv:
-            print(
-                "dev_parse_args: --skill requires --write-files (only mode supported)",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        # Remaining positional after stripping both flag pairs is the ARGUMENTS string
-        remaining = [
-            tok for i, tok in enumerate(argv) if i not in {skill_idx, skill_idx + 1} and tok != "--write-files"
-        ]
-        if not remaining:
-            print("dev_parse_args: --skill mode needs the ARGUMENTS string", file=sys.stderr)
-            sys.exit(1)
-        arguments = remaining[0]
-        write_skill_files(skill_name, arguments)
-        return
+    if "--skill" in args:
+        return _run_skill_mode(args)
 
     # Legacy spec-driven invocation
-    arguments = argv[0]
-    spec_tokens = argv[1:]
-    print(run(arguments, spec_tokens))
+    print(run(args[0], args[1:]))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

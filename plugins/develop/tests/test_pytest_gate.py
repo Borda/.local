@@ -71,6 +71,21 @@ def test_allowlisted_poetry_run(captured_argv: list[list[str]]) -> None:
     assert captured_argv[0] == ["/fake/bin/poetry", "run", "pytest", "--tb=short", "tests/", "-v"]
 
 
+def test_help_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 before any pytest run."""
+    with pytest.raises(SystemExit) as exc:
+        pytest_gate.main(["--help"])
+    assert exc.value.code == 0
+    assert "pytest_gate.py" in capsys.readouterr().out
+
+
+def test_golden_invocation(captured_argv: list[list[str]]) -> None:
+    """Golden call site ``pytest_gate.py "$PYTEST_CMD" <node_id>`` preserves argv shape."""
+    rc = pytest_gate.main(["pytest", "tests/foo.py::test_bar"])
+    assert rc == 0
+    assert captured_argv[0] == ["/fake/bin/pytest", "--tb=short", "tests/foo.py::test_bar", "-v"]
+
+
 def test_default_cmd_and_target(captured_argv: list[list[str]]) -> None:
     """No args → ``pytest --tb=short . -v`` invoked with resolved binary."""
     rc = pytest_gate.main([])

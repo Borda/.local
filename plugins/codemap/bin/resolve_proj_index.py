@@ -18,10 +18,12 @@ Output (``--check``):
 Exit codes:
     0 — success
     1 — ``--check`` requested and index file missing
+    2 — bad/missing required argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import shutil
 import subprocess
@@ -94,11 +96,23 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         0 on success, 1 when ``--check`` is passed and the index is missing,
-        or 1 when ``CODEMAP_INDEX_DIR`` resolves outside allowed cache roots.
+        or 1 when ``CODEMAP_INDEX_DIR`` resolves outside allowed cache roots;
+        argparse exits 2 on bad arguments.
     """
+    parser = argparse.ArgumentParser(
+        prog="resolve_proj_index.py",
+        description="Compute project name and codemap index path.",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify the index file exists; exit 1 with a ✗ status line when missing.",
+    )
+    # argparse exits with code 2 on bad/missing args — matches legacy bash contract.
+    args = parser.parse_args(argv)
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
-    args = argv if argv is not None else sys.argv[1:]
-    check = "--check" in args
+    check = args.check
 
     try:
         proj, index = compute_proj_index()

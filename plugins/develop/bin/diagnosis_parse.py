@@ -1,22 +1,27 @@
 #!/usr/bin/env python
-"""Parse ``--diagnosis <path>`` (or ``--diagnosis=<path>``) from an ``$ARGUMENTS`` string.
+"""diagnosis_parse.py — parse ``--diagnosis <path>`` (or ``--diagnosis=<path>``) from an ``$ARGUMENTS`` string.
+
+Scans the single argument string for either form of the flag. Prints the resolved
+path to stdout (empty string when flag absent). When the flag is given but the path
+does not exist, exits 1 with a ``! BREAKING`` stderr block matching the bash original.
+No subprocess calls — pure string parsing.
+
+The single positional is an opaque ``$ARGUMENTS`` blob whose internal ``--diagnosis``
+token is consumed by :func:`parse_diagnosis`, never by argparse's own matcher — argparse
+is present only to supply ``-h/--help``.
 
 Usage:
     diagnosis_parse.py "$ARGUMENTS"
 
-Behaviour:
-    Scans the single argument string for either form of the flag. Prints the resolved
-    path to stdout (empty string when flag absent). When the flag is given but the path
-    does not exist, exits 1 with a ``! BREAKING`` stderr block matching the bash original.
-    No subprocess calls — pure string parsing.
-
 Exit codes:
     0 — flag absent, OR flag present and file exists (path printed to stdout).
     1 — flag present but file does not exist.
+    2 — bad/missing required argument (argparse default).
 """
 
 from __future__ import annotations
 
+import argparse
 import shlex
 import sys
 from pathlib import Path
@@ -74,8 +79,20 @@ def main(argv: list[str] | None = None) -> int:
         0 when the flag is absent or the resolved file exists; 1 when the file is missing.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
-    args = list(sys.argv[1:] if argv is None else argv)
-    arguments = args[0] if args else ""
+    raw = list(sys.argv[1:] if argv is None else argv)
+
+    # Handle -h/--help via argparse, then treat argv[0] as the opaque blob. The blob may
+    # itself be a bare ``--``-prefixed token (e.g. ``--diagnosis``), which argparse would
+    # otherwise reject as an unknown option — so it is NOT fed through parse_args.
+    if raw and raw[0] in {"-h", "--help"}:
+        parser = argparse.ArgumentParser(
+            prog="diagnosis_parse.py",
+            description="Parse --diagnosis <path> from an $ARGUMENTS blob.",
+        )
+        parser.add_argument("arguments", nargs="?", default="", help="Raw $ARGUMENTS blob (parsed internally).")
+        parser.parse_args(raw)  # exits 0 after printing help
+
+    arguments = raw[0] if raw else ""
 
     try:
         diag_file = parse_diagnosis(arguments)

@@ -10,15 +10,17 @@ Sentinel dir mirrors JS getSentinelDir(): ``/tmp`` on POSIX,
 Usage:
     python dev_run_dir.py [--sentinel <name>]
 
-Output:
+Output (stdout):
     Relative path of the created run directory.
 
 Exit codes:
     0 — always (matches bash behaviour)
+    2 — bad/missing required argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 import tempfile
@@ -44,17 +46,26 @@ def main(argv: list[str] | None = None) -> int:
         argv: Argument list (defaults to sys.argv[1:]).
 
     Returns:
-        Always 0.
+        ``0`` always; argparse exits ``2`` on bad args.
+
+    No doctest — creates directories and touches sentinel files; covered by pytest.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
-    args = argv if argv is not None else sys.argv[1:]
+    parser = argparse.ArgumentParser(
+        prog="dev_run_dir.py",
+        description="Create a timestamped .developments/ run directory, optionally with a sentinel.",
+    )
+    # nargs="?" so a bare ``--sentinel`` (no name) is accepted and simply skips the
+    # sentinel touch — preserves the legacy bash contract where the name was optional.
+    parser.add_argument("--sentinel", nargs="?", default="", help="Sentinel base name (sanitized to [a-zA-Z0-9_-]).")
+    args = parser.parse_args(argv)
 
     ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
     run_dir = Path(".developments") / ts
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    if len(args) >= 2 and args[0] == "--sentinel" and args[1]:
-        sentinel_name = _SAFE_NAME_RE.sub("", args[1])
+    if args.sentinel:
+        sentinel_name = _SAFE_NAME_RE.sub("", args.sentinel)
         if sentinel_name:
             (_sentinel_dir() / f"{sentinel_name}-{ts}").touch()
 

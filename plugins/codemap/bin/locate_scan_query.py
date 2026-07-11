@@ -7,7 +7,7 @@ Tiers (first hit wins):
     3. ``~/.claude/plugins/cache/*/codemap/*/bin/scan-query`` (newest semver)
 
 Usage:
-    python locate_scan_query.py
+    locate_scan_query.py
 
 Output:
     Resolved absolute path on stdout (LF-terminated); nothing else.
@@ -15,10 +15,12 @@ Output:
 Exit codes:
     0 — found and executable
     1 — not found (error message on stderr)
+    2 — bad/missing required argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shutil
@@ -110,11 +112,18 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point; returns exit code.
 
     Args:
-        argv: Unused (script takes no arguments).
+        argv: Optional argv override (defaults to ``sys.argv[1:]``). The script takes
+            no positional arguments; argparse provides ``-h``/``--help`` only.
 
     Returns:
         0 on success, 1 when scan-query is not found.
     """
+    parser = argparse.ArgumentParser(
+        prog="locate_scan_query.py",
+        description="Resolve the scan-query executable via three-tier fallback and print its path.",
+    )
+    parser.parse_args(argv)  # no arguments — enables -h/--help, argparse exits 2 on unexpected tokens
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     try:
         sq = locate_scan_query()

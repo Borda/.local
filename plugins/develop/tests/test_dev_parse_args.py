@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 
+import dev_parse_args
 from dev_parse_args import (
     SKILL_SPECS,
     FlagSpec,
     extract_flags,
+    main,
     parse_specs,
     run,
     write_skill_files,
@@ -373,3 +375,62 @@ class TestWriteSkillFiles:
         assert (tmp_path / "dev-team-mode").read_text() == "false"
         assert (tmp_path / "dev-refactor-repo").read_text() == ""
         assert (tmp_path / "dev-upstream").read_text() == ""
+
+
+# ---------------------------------------------------------------------------
+# main() — argparse gate + both call shapes preserved
+# ---------------------------------------------------------------------------
+
+
+class TestMainEntryPoint:
+    """main() supplies -h/--help without letting argparse touch the blob or spec tokens."""
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+        assert exc.value.code == 0
+        assert "usage" in capsys.readouterr().out.lower()
+
+    def test_empty_argv_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """No argv → usage on stderr, exit 1 (legacy contract preserved)."""
+        assert main([]) == 1
+        assert "usage" in capsys.readouterr().err.lower()
+
+    def test_legacy_blob_with_dash_tokens_reaches_spec_loop(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Legacy form: blob carrying ``--``-shaped tokens is parsed by the spec loop, not argparse.
+
+        argparse would reject the spec tokens (``--bool`` etc.) as unknown options. The script
+        must instead treat argv[0] as the blob and argv[1:] as spec tokens — proving the blob
+        and specs bypassed argparse entirely.
+        """
+        rc = main(["--semble --no-challenge fix auth.py", "--bool", "semble", "SEMBLE_ENABLED", "false"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "SEMBLE_ENABLED='true'" in out
+        assert "CLEAN_ARGS='--no-challenge fix auth.py'" in out
+
+    def test_skill_mode_blob_dash_tokens_written_to_files(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Skill form: the ``--write-files`` blob with ``--flag`` tokens is consumed internally.
+
+        ``--skill``/``--write-files`` are the only genuine outer flags; the trailing blob (which
+        contains ``--semble``/``--no-challenge``) must reach write_skill_files unmangled, not be
+        interpreted as argparse options.
+        """
+        monkeypatch.setenv("TMPDIR", str(tmp_path))
+        rc = main(["--skill", "feature", "--write-files", "--semble --no-challenge fix auth.py"])
+        assert rc == 0
+        assert (tmp_path / "dev-feature-semble").read_text() == "true"
+        assert (tmp_path / "dev-feature-no-challenge").read_text() == "false"
+
+    def test_skill_mode_missing_write_files_exits_1(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--skill`` without ``--write-files`` → exit 1 (only supported skill mode)."""
+        rc = main(["--skill", "feature", "some args"])
+        assert rc == 1
+        assert "--write-files" in capsys.readouterr().err
+
+    def test_module_exposes_main(self) -> None:
+        """``main`` is importable from the module namespace (entry-point contract)."""
+        assert callable(dev_parse_args.main)

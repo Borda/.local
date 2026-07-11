@@ -7,10 +7,16 @@ Phase 2 staging block (AI7).
 
 Usage:
     stage_item_changes.py <item_id>
+
+Exit codes:
+    0 — staged successfully
+    1 — missing item_id, invalid item_id format, or stash-pop conflict
+    2 — bad/missing required argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -80,12 +86,21 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — requires subprocess; covered by pytest with monkeypatch.
     """
+    parser = argparse.ArgumentParser(
+        prog="stage_item_changes.py",
+        description="Pop the pre-item stash for an item then stage changed files.",
+    )
+    # nargs="?" preserves the legacy exit-1 (not argparse's exit-2) on a missing
+    # item_id: argparse accepts zero positionals, and the manual check below emits
+    # the original "item_id required" message and returns 1.
+    parser.add_argument("item_id", nargs="?", default="", help="Review item identifier ([A-Za-z0-9_-]).")
+    args = parser.parse_args(argv)
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
-    args = list(sys.argv[1:] if argv is None else argv)
-    if not args:
+    if not args.item_id:
         print("stage_item_changes: item_id required", file=sys.stderr)
         return 1
-    item_id = args[0]
+    item_id = args.item_id
     # Reject control characters and any token outside the [A-Za-z0-9_-] alphabet —
     # the value is interpolated into the stash label below and a crafted
     # item_id containing newlines or shell metacharacters could otherwise

@@ -9,11 +9,12 @@ Usage:
 
 Exit codes:
     0 — always (success or "false" result)
-    2 — invalid plugin/agent name (non-alphanumeric characters)
+    2 — invalid/missing plugin or agent name (non-alphanumeric characters)
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -77,11 +78,19 @@ def main(argv: list[str] | None = None) -> int:
         No doctest — requires filesystem state; covered by pytest.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
-    args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) < 2:
+    parser = argparse.ArgumentParser(
+        prog="check_agent.py",
+        description="Probe whether a plugin agent is installed.",
+    )
+    # nargs="*" keeps the legacy "Usage: ..." stderr message + exit 2 on too-few args
+    # (vs argparse's lowercase "usage:" auto-message).
+    parser.add_argument("names", nargs="*", help="<plugin-name> <agent-name> (2 names).")
+    args = parser.parse_args(argv)
+
+    if len(args.names) < 2:
         print("Usage: check_agent.py <plugin-name> <agent-name>", file=sys.stderr)
         return 2
-    plugin, agent = args[0], args[1]
+    plugin, agent = args.names[0], args.names[1]
     try:
         result = check_agent(plugin, agent)
     except ValueError as exc:

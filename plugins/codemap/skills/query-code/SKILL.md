@@ -88,16 +88,15 @@ scan-query fn-rdeps "mypackage.auth::validate_token"  # timeout: 5000
 | callers / blast radius | `rdeps <mod> [--exclude-tests]` |
 | forward deps | `deps <mod>` |
 | central modules | `central --top 10` |
-| most-coupled | `coupled --top 10` |
 | import path | `path <from> <to>` |
 | symbol source | `symbol <name> [--with-imports]` |
 | all symbols in module | `symbols <mod>` |
 | symbol search | `find-symbol <pattern>` |
 | outgoing calls | `fn-deps module::function` |
 | incoming calls | `fn-rdeps module::function [--exclude-tests]` |
-| most-called functions | `fn-central --top 10` |
-| transitive callers | `fn-blast module::function` |
 | blast radius of current git change set | `diff-impact [--base REF]` |
+
+Anything not listed here — `scan-query --help` has the full reference.
 
 **tool_use_error / skill unavailable**: do NOT count as a query attempt. Run `$SQ <same-args>` via Bash directly (timeout: 5000). Apply STOP rule after Bash result.
 

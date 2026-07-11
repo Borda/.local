@@ -116,3 +116,21 @@ def test_rerun_overwrites_symlink(tmp_path: Path) -> None:
     assert rc == 0
     link = release_dir / "CHANGELOG.md"
     assert link.resolve() == changelog2.resolve()
+
+
+def test_help_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 (argparse)."""
+    with pytest.raises(SystemExit) as exc:
+        srd.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage:" in capsys.readouterr().out
+
+
+def test_golden_invocation_two_positionals(tmp_path: Path) -> None:
+    """Documented call site ``setup_release_dir.py RELEASE_DIR CHANGELOG_FILE`` (2 positional) succeeds."""
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text("# Changelog\n")
+    release_dir = tmp_path / "v2.0.0"
+    rc = srd.main([str(release_dir), str(changelog)])
+    assert rc == 0
+    assert (release_dir / "CHANGELOG.md").resolve() == changelog.resolve()

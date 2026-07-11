@@ -133,3 +133,24 @@ def test_main_prints_false(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -
         rc = check_agent.main(["oss", "missing-agent"])
     assert rc == 0
     assert capsys.readouterr().out.strip() == "false"
+
+
+def test_help_flag_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 (argparse)."""
+    with pytest.raises(SystemExit) as exc:
+        check_agent.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage:" in capsys.readouterr().out
+
+
+def test_golden_invocation_two_positionals(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Documented call site ``check_agent.py oss shepherd`` (2 positional) prints true/false, exits 0."""
+    import unittest.mock as mock
+
+    agents_dir = tmp_path / ".claude" / "plugins" / "cache" / "borda-ai-rig" / "oss" / "0.1.0" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / "shepherd.md").write_text("")
+    with mock.patch.object(check_agent.Path, "home", return_value=tmp_path):
+        rc = check_agent.main(["oss", "shepherd"])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "true"

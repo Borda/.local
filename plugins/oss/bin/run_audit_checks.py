@@ -22,6 +22,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import subprocess
@@ -180,8 +181,17 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — subprocess-dependent; covered by pytest.
     """
-    sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
+    # Honour only -h/--help via argparse; every other flag flows through the manual
+    # loop below (unknown arg → exit 1, gh/tag guards → exit 2). A broad parse_args
+    # would replace those custom exit codes with argparse's exit-2 — keep the loop.
+    if args in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="run_audit_checks.py",
+            description="Pre-release readiness data gathering for /oss:release audit.",
+        ).parse_args(["-h"])
+
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
 
     repo = ""
     tag = ""

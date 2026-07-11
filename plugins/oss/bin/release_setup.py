@@ -16,15 +16,18 @@ first-parent history, baseline is that tag; otherwise baseline is the
 most recent stable tag reachable from the common ancestor between HEAD
 and the source-tag commit.
 
-Exit: 0 always — caller validates resolved values.
-
 Usage:
-    python release_setup.py
+    release_setup.py
     SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR")
+
+Exit codes:
+    0 — always (caller validates resolved values)
+    2 — bad/missing required argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import sys
@@ -111,14 +114,19 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point — writes resolved vars to ${TMPDIR:-/tmp}/release-setup/<KEY> files.
 
     Args:
-        argv: Unused; script takes no positional arguments.
+        argv: Optional argument list (defaults to ``sys.argv[1:]``); no flags.
 
     Returns:
-        Always 0 — caller validates resolved values by reading the output files.
+        Always 0 — caller validates resolved values; argparse exits 2 on bad args.
 
     Examples:
         No doctest — subprocess-dependent; covered by pytest.
     """
+    argparse.ArgumentParser(
+        prog="release_setup.py",
+        description="Resolve shared setup vars (skill dir, repo root, branch, date, baseline tag) for /oss:release.",
+    ).parse_args(argv)
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     git = _resolve("git")
 

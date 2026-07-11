@@ -9,10 +9,15 @@ Covers:
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
 import compute_effect_size as ces
+
+_SCRIPT = Path(__file__).resolve().parent.parent / "bin" / "compute_effect_size.py"
 
 
 # ---------- Pure function: rank_biserial_r ----------
@@ -92,6 +97,16 @@ class TestComputeFromPayload:
 
 
 # ---------- CLI: main() ----------
+
+
+class TestArgparseCLI:
+    """Argparse-surface test: ``--help`` exits 0 without touching the stdin contract."""
+
+    def test_help_exits_zero(self) -> None:
+        """``--help`` prints usage and exits 0 (argparse contract); stdin is never read."""
+        result = subprocess.run([sys.executable, str(_SCRIPT), "--help"], capture_output=True, text=True)
+        assert result.returncode == 0
+        assert "usage" in result.stdout.lower()
 
 
 class TestMainCLI:

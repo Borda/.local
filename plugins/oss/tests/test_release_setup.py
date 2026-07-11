@@ -52,7 +52,7 @@ def test_stable_branch_all_keys_emitted(monkeypatch: pytest.MonkeyPatch, tmp_pat
         (0, "main"),  # branch --show-current
         (0, "v1.0.0"),  # describe --first-parent → branch tag
     )
-    rc = rs.main()
+    rc = rs.main([])
     assert rc == 0
     out_dir = tmp_path / "release-setup"
     for key in ("SKILL_DIR", "REPO_ROOT", "BRANCH", "DATE", "LAST_TAG", "CHERRY_PICK_SUBJECTS", "SOURCE_TAG_REF"):
@@ -68,7 +68,7 @@ def test_stable_branch_last_tag_value(monkeypatch: pytest.MonkeyPatch, tmp_path:
         (0, "main"),
         (0, "v2.3.1"),
     )
-    rs.main()
+    rs.main([])
     out_dir = tmp_path / "release-setup"
     assert (out_dir / "LAST_TAG").read_text() == "v2.3.1"
     assert (out_dir / "SOURCE_TAG_REF").read_text() == ""
@@ -83,7 +83,7 @@ def test_branch_slash_replaced_with_hyphen(monkeypatch: pytest.MonkeyPatch, tmp_
         (0, "feature/my-thing"),
         (0, "v1.0.0"),
     )
-    rs.main()
+    rs.main([])
     assert (tmp_path / "release-setup" / "BRANCH").read_text() == "feature-my-thing"
 
 
@@ -104,7 +104,7 @@ def test_fallback_path_emits_source_and_cherry(
         (0, "v0.8.0"),  # describe def456 → last tag
         (0, "cp1\ncp2"),  # git log v0.8.0..v0.9.0
     )
-    rc = rs.main()
+    rc = rs.main([])
     assert rc == 0
     out_dir = tmp_path / "release-setup"
     assert (out_dir / "LAST_TAG").read_text() == "v0.8.0"
@@ -124,7 +124,7 @@ def test_fallback_path_stderr_banner(monkeypatch: pytest.MonkeyPatch, capsys: py
         (0, "v0.8.0"),
         (0, ""),
     )
-    rs.main()
+    rs.main([])
     captured = capsys.readouterr()
     assert "Stable-branch mode" in captured.err
 
@@ -143,7 +143,7 @@ def test_no_tags_uses_initial_commit(monkeypatch: pytest.MonkeyPatch, capsys: py
         (1, ""),  # describe def456 → no tag
         (0, ""),  # git log
     )
-    rc = rs.main()
+    rc = rs.main([])
     assert rc == 0
     captured = capsys.readouterr()
     assert "No stable tags found" in captured.err
@@ -158,7 +158,7 @@ def test_all_output_files_written(monkeypatch: pytest.MonkeyPatch, tmp_path: pyt
         (0, "main"),
         (0, "v1.0.0"),
     )
-    rs.main()
+    rs.main([])
     out_dir = tmp_path / "release-setup"
     for key in ("SKILL_DIR", "REPO_ROOT", "BRANCH", "DATE", "LAST_TAG", "CHERRY_PICK_SUBJECTS", "SOURCE_TAG_REF"):
         assert (out_dir / key).exists(), f"output file missing: {key}"
@@ -170,4 +170,13 @@ def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """``which`` returns None → FileNotFoundError propagates."""
     monkeypatch.setattr(rs, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="git"):
-        rs.main()
+        rs.main([])
+
+
+def test_help_exits_0_no_git(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 before resolving git."""
+    monkeypatch.setattr(rs, "which", lambda _cmd: (_ for _ in ()).throw(AssertionError("which must not run on --help")))
+    with pytest.raises(SystemExit) as exc:
+        rs.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage: release_setup.py" in capsys.readouterr().out

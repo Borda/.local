@@ -16,10 +16,15 @@ Args:
 Caller pattern (shepherd.md):
     CHANGED_SYMBOLS=$(extract_changed_symbols.py "$RANGE")
     [ -z "$CHANGED_SYMBOLS" ] && echo "No changed symbols — skipping"
+
+Exit codes:
+    0 — always (empty output signals no changes or invalid range)
+    2 — bad/missing required argument (argparse default)
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -145,9 +150,23 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — subprocess-dependent; covered by pytest.
     """
+    parser = argparse.ArgumentParser(
+        prog="extract_changed_symbols.py",
+        description="Extract added/removed public Python symbols from an __init__.py diff range.",
+    )
+    # nargs="*" preserves the legacy contract: extra positional tokens are absorbed
+    # (only the first is used), and a missing range falls back to HEAD~1..HEAD —
+    # argparse never rejects surplus positionals the way nargs="?" would.
+    parser.add_argument(
+        "range_tokens",
+        nargs="*",
+        metavar="git_diff_range",
+        help="Git diff range (e.g. HEAD~1..HEAD, a..b). Defaults to HEAD~1..HEAD.",
+    )
+    args = parser.parse_args(argv)
+
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
-    args = list(sys.argv[1:] if argv is None else argv)
-    range_arg = args[0] if args else "HEAD~1..HEAD"
+    range_arg = args.range_tokens[0] if args.range_tokens else "HEAD~1..HEAD"
 
     git = _resolve("git")
 

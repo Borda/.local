@@ -16,6 +16,73 @@ import pytest
 import commit_action_item as cai
 
 
+# ---------------------------------------------------------------------------
+# --help + argparse migration (argv → variable mapping only; git logic untouched)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_help_exits_0_without_git(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
+    """``-h``/``--help`` prints usage and exits 0; no subprocess/git ever runs."""
+    called: list[Any] = []
+    monkeypatch.setattr(cai.subprocess, "run", lambda *a, **k: called.append(a))
+    with pytest.raises(SystemExit) as exc:
+        cai.main([flag])
+    assert exc.value.code == 0
+    assert called == []
+
+
+def test_golden_build_invocation_constructs_expected_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exact ``--build`` call-site argv → git add/commit argv identical to pre-argparse baseline."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
+    monkeypatch.setattr(cai.subprocess, "run", _make_git_mock(calls=calls))
+    rc = cai.main(
+        [
+            "--build",
+            "--summary",
+            "Fix off-by-one",
+            "--item-id",
+            "3",
+            "--author",
+            "octocat",
+            "--pr",
+            "42",
+            "--comment",
+            "full comment text",
+            "--challenge",
+            "evidence=VALID suggestion=VALID resolution=as-suggested",
+            "--codex",
+            "--files",
+            "src/a.py",
+            "docs/b.md",
+        ]
+    )
+    assert rc == 0
+    add_calls = [c for c in calls if len(c) > 1 and c[1] == "add"]
+    commit_calls = [c for c in calls if len(c) > 1 and c[1] == "commit"]
+    assert add_calls == [["/fake/git", "add", "--", "src/a.py", "docs/b.md"]]
+    assert len(commit_calls) == 1
+    assert commit_calls[0][:3] == ["/fake/git", "commit", "-F"]
+
+
+def test_golden_message_file_invocation_constructs_expected_commands(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Exact ``--message-file`` (grouped) call-site argv → identical git add/commit argv."""
+    msg = tmp_path / "COMMIT_MSG"
+    msg.write_text("style: combined summary\n")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(cai, "which", lambda _: "/fake/git")
+    monkeypatch.setattr(cai.subprocess, "run", _make_git_mock(calls=calls))
+    rc = cai.main(["--message-file", str(msg), "--files", "src/a.py", "docs/b.md"])
+    assert rc == 0
+    add_calls = [c for c in calls if len(c) > 1 and c[1] == "add"]
+    commit_calls = [c for c in calls if len(c) > 1 and c[1] == "commit"]
+    assert add_calls == [["/fake/git", "add", "--", "src/a.py", "docs/b.md"]]
+    assert commit_calls == [["/fake/git", "commit", "-F", str(msg)]]
+
+
 class _FakeCompleted:
     """Minimal stand-in for ``subprocess.CompletedProcess``."""
 

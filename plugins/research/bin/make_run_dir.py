@@ -4,7 +4,7 @@
 Prints the created directory path to stdout (LF-terminated, no CRLF).
 
 Usage:
-    python make_run_dir.py <skill-slug> <base-dir>
+    make_run_dir.py <skill-slug> <base-dir>
 
 Exit codes:
     0 — success
@@ -14,6 +14,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -53,11 +54,21 @@ def main(argv: list[str] | None = None) -> int:
         0 on success, 1 on argument error, 2 on validation error.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
-    args = argv if argv is not None else sys.argv[1:]
-    if len(args) != 2:
-        print("usage: make_run_dir.py <skill-slug> <base-dir>", file=sys.stderr)
+    parser = argparse.ArgumentParser(
+        prog="make_run_dir.py",
+        description="Create a slug-prefixed UTC-timestamped run directory.",
+        usage="make_run_dir.py <skill-slug> <base-dir>",
+    )
+    # nargs="?" so argparse never exits 2 on missing positionals — the legacy
+    # contract is exit 1 (usage on stderr) for a wrong argument count, enforced below.
+    parser.add_argument("skill_slug", nargs="?", help="Alphanumeric skill identifier; no path separators.")
+    parser.add_argument("base_dir", nargs="?", help="Strictly relative parent directory (created if absent).")
+    ns = parser.parse_args(argv)
+
+    if ns.skill_slug is None or ns.base_dir is None:
+        parser.print_usage(sys.stderr)
         return 1
-    skill_slug, base_dir = args
+    skill_slug, base_dir = ns.skill_slug, ns.base_dir
     if not _SLUG_RE.match(skill_slug):
         print(f"make_run_dir: invalid SKILL_SLUG: {skill_slug!r}", file=sys.stderr)
         return 2

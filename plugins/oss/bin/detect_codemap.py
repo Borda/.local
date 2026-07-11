@@ -30,6 +30,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -69,6 +70,15 @@ def main(argv: list[str] | None = None) -> int:
         Exit code.
     """
     args = list(sys.argv[1:] if argv is None else argv)
+
+    # Honour only -h/--help via argparse; every other flag flows through the manual
+    # loop below, which ignores unknowns and keeps the legacy exit-2-on-missing-prefix
+    # contract (argparse's native errors would change both behaviors).
+    if args in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="detect_codemap.py",
+            description="Detect codemap plugin availability, index presence, and currency.",
+        ).parse_args(["-h"])
 
     prefix: str | None = None
     force_off = False

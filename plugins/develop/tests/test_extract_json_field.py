@@ -178,3 +178,22 @@ class TestMain:
         out, _ = capsys.readouterr()
         assert rc == 0
         assert out.strip() == "5"
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage to stdout and exits 0 (argparse default)."""
+        with pytest.raises(SystemExit) as exc:
+            extract_json_field.main(["--help"])
+        assert exc.value.code == 0
+        assert "usage" in capsys.readouterr().out.lower()
+
+    def test_dash_leading_text_blob_handled_opaquely(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """A ``<json-or-text>`` blob beginning with ``--`` is captured, not parsed as an option.
+
+        argparse would reject a ``--``-leading second positional as an unknown option (exit 2).
+        The script hands positionals through directly, so the recovery scan still finds the
+        embedded object and prints the field.
+        """
+        rc = extract_json_field.main(["ok", '--flag noise {"ok":true} trailing'])
+        out, _ = capsys.readouterr()
+        assert rc == 0
+        assert out.strip() == "true"

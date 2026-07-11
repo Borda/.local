@@ -10,6 +10,11 @@ Sentinel name is sanitized to ``[a-zA-Z0-9_-]+`` to prevent path traversal.
 Sentinel dir mirrors JS getSentinelDir(): ``/tmp`` on POSIX,
 ``tempfile.gettempdir()`` on Windows.
 
+``--sentinel`` and its name are parsed by a direct ``argv`` check rather than argparse's
+matcher so that the legacy always-exit-0 contract is preserved — a missing name, an unknown
+extra token, or an all-unsafe name is silently ignored, never an argparse exit-2. argparse is
+present only to supply ``-h/--help``.
+
 Usage:
     python setup_worktree.py [--sentinel <name>]
 
@@ -18,11 +23,12 @@ Output (two lines):
     Line 2: Run directory path (e.g. ``.temp/develop/2026-05-22T10-00-00Z``)
 
 Exit codes:
-    0 — always (matches bash behaviour)
+    0 — always (matches bash behaviour); argparse exits 0 after printing ``--help``.
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 import tempfile
@@ -49,9 +55,23 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         Always 0.
+
+    No doctest — creates a run dir and reads argv; covered by pytest.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
-    args = argv if argv is not None else sys.argv[1:]
+    args = list(sys.argv[1:] if argv is None else argv)
+
+    # argparse supplies only -h/--help; --sentinel and its name are parsed directly below so
+    # the always-exit-0 contract holds (argparse's native exit-2 on bad args would break it).
+    if args and args[0] in {"-h", "--help"}:
+        parser = argparse.ArgumentParser(
+            prog="setup_worktree.py",
+            description="Create a team-mode subagent handoff run directory under .temp/develop/.",
+        )
+        parser.add_argument(
+            "--sentinel", metavar="NAME", help="Optional sentinel name to touch in the platform temp dir."
+        )
+        parser.parse_args(args)  # exits 0 after printing help
 
     ts = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
     run_dir = Path(".temp") / "develop" / ts

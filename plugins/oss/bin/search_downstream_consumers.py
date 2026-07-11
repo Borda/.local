@@ -18,6 +18,7 @@ Exit codes:
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -155,8 +156,17 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — requires subprocess; covered by pytest with monkeypatch.
     """
-    sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
+    # Honour only -h/--help via argparse; the manual loop below treats every other
+    # token as a symbol (or --package value), so a broad parse_args would misread
+    # symbol positionals — keep the legacy passthrough intact.
+    if args in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="search_downstream_consumers.py",
+            description="Find GitHub repos importing changed symbols via gh code search.",
+        ).parse_args(["-h"])
+
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     package = ""
     symbols: list[str] = []
     i = 0

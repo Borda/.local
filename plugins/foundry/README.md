@@ -825,6 +825,7 @@ Each test spawns `node <hook>.js` with a JSON payload on stdin and asserts files
 | `test_extract_code_blocks.py`     | `extract_code_blocks.py`     | 30    | Fence parsing, lang normalisation, heuristic code/prose classification, token filtering                 |
 | `test_check_bash_persistence.py`  | `check_bash_persistence.py`  | 28    | Cross-block variable reference detection, env-var filtering, multi-block files                          |
 | `test_find_polluter.py`           | `find_polluter.py`           | 24    | Safe/unsafe node-id validation, isolation test runner, bisect loop                                      |
+| `test_check_cli_flag_drift.py`    | `check_cli_flag_drift.py`    | 24    | AST flag extraction, invocation-scoped matching, REMAINDER passthrough, no-exec guarantee               |
 | `test_verify_perm.py`             | `verify_perm.py`             | 21    | Settings allow-entry detection, missing/malformed JSON, CLI exit codes                                  |
 | `test_check_orphaned_bin.py`      | `check_orphaned_bin.py`      | 21    | Orphaned bin/ script detection, consumer-reference parsing, multi-plugin scan                           |
 | `test_jq_write.py`                | `jq_write.py`                | 18    | Arg parsing, JSON path writes, merge semantics                                                          |

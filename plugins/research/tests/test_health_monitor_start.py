@@ -58,6 +58,31 @@ class TestPortabilityInvariants:
         assert "utcnow" not in src
 
 
+class TestArgparse:
+    """argparse-layer behaviour: --help and golden README invocation."""
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage and exits 0 (argparse SystemExit)."""
+        with pytest.raises(SystemExit) as exc:
+            health_monitor_start.main(["--help"])
+        assert exc.value.code == 0
+        assert "health_monitor_start.py" in capsys.readouterr().out
+
+    def test_golden_readme_invocation(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """README shape ``health_monitor_start.py <skill-id>`` → exit 0 with sentinel keys."""
+        sentinel_base = Path(tempfile.gettempdir()) if sys.platform == "win32" else Path("/tmp")
+        skill_id = "research-run"
+        try:
+            rc = health_monitor_start.main([skill_id])
+            assert rc == 0
+            kv = _parse_kv(capsys.readouterr().out)
+            assert kv["LAUNCH_AT"].isdigit()
+            assert Path(kv["SENTINEL"]).name.startswith(f"research-{skill_id}-check-")
+        finally:
+            for stale in sentinel_base.glob(f"research-{skill_id}-check-*"):
+                stale.unlink(missing_ok=True)
+
+
 class TestValidation:
     """Argument validation tests."""
 

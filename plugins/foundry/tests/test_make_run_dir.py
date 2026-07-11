@@ -107,6 +107,24 @@ class TestMain:
         out = capsys.readouterr().out.strip()
         assert Path(out).is_dir()
 
+    def test_golden_positional_invocation(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Regression: legacy ``make_run_dir.py <base-dir>`` positional shape → exit 0, path under base."""
+        monkeypatch.chdir(tmp_path)
+        rc = main(["runs"])
+        assert rc == 0
+        out = capsys.readouterr().out.strip()
+        assert Path(out).parent == Path("runs")
+        assert Path(out).is_dir()
+
+    def test_help_exits_zero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """``--help`` prints usage to stdout and exits 0 (argparse contract)."""
+        with pytest.raises(SystemExit) as exc:
+            main(["--help"])
+        assert exc.value.code == 0
+        assert "make_run_dir.py" in capsys.readouterr().out
+
     def test_no_args_exit_one(self, capsys: pytest.CaptureFixture[str]) -> None:
         """No args → exit 1 with usage message on stderr."""
         rc = main([])

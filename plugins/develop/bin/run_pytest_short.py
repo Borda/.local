@@ -1,25 +1,32 @@
 #!/usr/bin/env python
-"""Run ``pytest`` with ``--tb=short -v`` and emit only the last N lines of combined output.
+"""run_pytest_short.py — run ``pytest --tb=short -v`` and emit only the last N lines of output.
+
+Validates ``pytest_cmd`` against an allowlist
+(``pytest``, ``uv run pytest``, ``python -m pytest``, ``poetry run pytest``,
+``poetry run python -m pytest``) before any execution — the set must cover
+every runner ``runner-detection.md`` can emit.
+Captures combined stdout+stderr, then prints the last ``tail_n`` lines (default 20).
+Bad/non-integer ``tail_n`` silently falls back to 20.
+
+The three positional arguments carry pytest node-id tokens and runner strings with embedded
+spaces; they are sliced directly from ``argv`` rather than matched by argparse, which is present
+only to supply ``-h/--help``. This keeps the allowlist-rejection contract (exit 2), the
+target-containment guard (exit 1), and the silent ``tail_n`` fallback exactly as the legacy
+bash script defined them.
 
 Usage:
     run_pytest_short.py [pytest_cmd] [target] [tail_n]
 
-Behaviour:
-    Validates ``pytest_cmd`` against an allowlist
-    (``pytest``, ``uv run pytest``, ``python -m pytest``, ``poetry run pytest``,
-    ``poetry run python -m pytest``) before any execution — the set must cover
-    every runner ``runner-detection.md`` can emit.
-    Captures combined stdout+stderr, then prints the last ``tail_n`` lines (default 20).
-    Bad/non-integer ``tail_n`` silently falls back to 20.
-
 Exit codes:
     0 — pytest passed.
+    1 — target resolved outside the project directory (containment guard).
     1-5 — pytest reported failure/collection error (propagated unchanged).
-    2 — also used when ``pytest_cmd`` is not in the allowlist (before pytest runs).
+    2 — pytest_cmd not in the allowlist (before pytest runs); also argparse's bad-argument exit.
 """
 
 from __future__ import annotations
 
+import argparse
 import shlex
 import subprocess
 import sys
@@ -119,9 +126,31 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         Pytest's exit code, or 2 when ``pytest_cmd`` is rejected by the allowlist.
+
+    No doctest — spawns pytest via subprocess and reads argv; covered by pytest.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
+
+    # argparse supplies only -h/--help; the positional pytest_cmd/target/tail_n carry spaces and
+    # ``::`` node-id tokens that must be sliced directly, never matched by argparse.
+    if args and args[0] in {"-h", "--help"}:
+        parser = argparse.ArgumentParser(
+            prog="run_pytest_short.py",
+            description="Run pytest --tb=short -v and emit only the last N lines of combined output.",
+        )
+        parser.add_argument(
+            "pytest_cmd", nargs="?", default="pytest", help="Allowlisted pytest runner (default: pytest)."
+        )
+        parser.add_argument("target", nargs="?", default=".", help="Test path or node id (default: current directory).")
+        parser.add_argument(
+            "tail_n",
+            nargs="?",
+            default=str(_DEFAULT_TAIL_N),
+            help=f"Number of trailing output lines to print (default: {_DEFAULT_TAIL_N}).",
+        )
+        parser.parse_args(args)  # exits 0 after printing help
+
     pytest_cmd = args[0] if len(args) >= 1 else "pytest"
     target = args[1] if len(args) >= 2 else "."
     tail_n = _parse_tail_n(args[2] if len(args) >= 3 else "")

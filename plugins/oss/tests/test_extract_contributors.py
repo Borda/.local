@@ -150,3 +150,11 @@ def test_git_missing_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ec, "which", lambda _: None)
     with pytest.raises(FileNotFoundError, match="git"):
         ec.main(["--range", "v1..v2"])
+
+
+def test_help_exits_0(capsys: pytest.CaptureFixture[str]) -> None:
+    """``--help`` prints usage and exits 0 without running git."""
+    with pytest.raises(SystemExit) as exc:
+        ec.main(["--help"])
+    assert exc.value.code == 0
+    assert "usage: extract_contributors.py" in capsys.readouterr().out

@@ -1,29 +1,31 @@
 #!/usr/bin/env python
-"""Strip a leading ``#`` from an issue number and fetch the GitHub issue via ``gh``.
+"""issue_fetch.py — strip a leading ``#`` from an issue number and fetch the issue via ``gh``.
+
+Forwards ``gh issue view <num> --comments [--repo <owner/repo>]`` with
+stdout/stderr inherited from the caller. Validates that the stripped
+argument is digits-only and exits 1 with a stderr message otherwise.
+Propagates ``gh``'s exit code on success.
+
+The first positional argument is the raw ``$ARGUMENTS`` blob and may itself contain
+trailing ``--``-shaped tokens (e.g. ``"123 --repo owner/repo"``). Only the first
+whitespace-separated token is used as the issue number; the rest is ignored. The blob is
+kept opaque — it is sliced by this script's own token scan, never handed to argparse's
+matcher, so an embedded ``--repo`` inside the blob does not confuse flag parsing. Pass
+``--repo <owner/repo>`` as a separate argv element to route the request to an upstream
+repository (fork workflow). argparse is present only to supply ``-h/--help``.
 
 Usage:
     issue_fetch.py <issue-number-with-optional-hash> [--repo <owner/repo>]
 
-Behaviour:
-    Forwards ``gh issue view <num> --comments [--repo <owner/repo>]`` with
-    stdout/stderr inherited from the caller. Validates that the stripped
-    argument is digits-only and exits 1 with a stderr message otherwise.
-    Propagates ``gh``'s exit code on success.
-
-    The first positional argument may contain trailing flags (e.g. the full
-    ``$ARGUMENTS`` shell variable including ``--repo owner/repo``). Only the
-    first whitespace-separated token is used as the issue number; the rest is
-    ignored. Pass ``--repo <owner/repo>`` as a separate argument to route the
-    request to an upstream repository (fork workflow).
-
 Exit codes:
-    0   — success (``gh`` exited 0).
+    0   — success (``gh`` exited 0); also argparse's ``--help`` exit.
     1   — invalid (empty or non-numeric) issue number.
     *   — any other exit code reflects ``gh``'s own exit status.
 """
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from shutil import which
@@ -55,9 +57,22 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         Exit code: 1 on invalid input; ``gh``'s exit code otherwise.
+
+    No doctest — forwards to ``gh`` via subprocess and reads argv; covered by pytest.
     """
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     args = list(sys.argv[1:] if argv is None else argv)
+
+    # argparse supplies only -h/--help; the $ARGUMENTS blob carries ``--``-shaped tokens that
+    # must stay opaque, so --repo and the blob are dispatched by the direct scan below.
+    if args and args[0] in {"-h", "--help"}:
+        parser = argparse.ArgumentParser(
+            prog="issue_fetch.py",
+            description="Strip a leading # from an issue number and fetch the issue via gh.",
+        )
+        parser.add_argument("arguments", nargs="?", help="Raw $ARGUMENTS blob; first token is the issue number.")
+        parser.add_argument("--repo", metavar="OWNER/REPO", help="Optional upstream repo override (fork workflow).")
+        parser.parse_args(args)  # exits 0 after printing help
 
     # Extract --repo flag (supports fork/upstream workflow).
     repo: str | None = None

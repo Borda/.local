@@ -15,12 +15,13 @@ Variables emitted:
     AXIS{1-9}_STATUS, AXIS{1-9}_SIGNAL, WEIGHT_{1-9}
 
 Exit codes:
-    0  on success
-    1  on missing argument, I/O error, or JSON parse error
+    0 — on success
+    1 — missing argument, I/O error, or JSON parse error
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import shlex
 import sys
@@ -140,17 +141,25 @@ def main(argv: list[str] | None = None) -> int:
         argv: Argument list override for testing. Defaults to sys.argv[1:].
 
     Returns:
-        Exit code: 0 on success, 1 on error.
+        Exit code: 0 on success, 1 on error; argparse exits 2 on ``-h``/unknown flag.
 
     Examples:
         No doctest — requires on-disk fixture; covered by pytest.
     """
-    args = sys.argv[1:] if argv is None else argv
-    if not args:
-        print(f"Usage: {sys.argv[0]} SCORES_FILE", file=sys.stderr)
+    parser = argparse.ArgumentParser(
+        prog="extract_vitality_vars.py",
+        description="Emit shell variable assignments from a vitality scores JSON.",
+    )
+    # nargs="*" keeps the legacy exit-1-on-missing-arg contract and guarantees argparse
+    # writes nothing to stdout on the success path — the caller ``eval``s our stdout.
+    parser.add_argument("paths", nargs="*", help="SCORES_FILE (1 path).")
+    args = parser.parse_args(argv)
+
+    if not args.paths:
+        print("Usage: extract_vitality_vars.py SCORES_FILE", file=sys.stderr)
         return 1
 
-    scores_file = Path(args[0])
+    scores_file = Path(args.paths[0])
     try:
         scores = json.loads(_read_text_guarded(scores_file))
     except (OSError, ValueError, json.JSONDecodeError) as e:

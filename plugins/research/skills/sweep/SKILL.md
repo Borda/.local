@@ -239,14 +239,9 @@ Fix the issues above in <program path>, then:
 
 ### Step S5: Run
 
-Run Default Mode (R1–R7 from `$_RESEARCH_SKILLS/run/SKILL.md`) passing program file from S2 as the first positional argument, plus all flags:
+Run Default Mode (R1–R7 from `$_RESEARCH_SKILLS/run/SKILL.md`) passing program file from S2 as the first positional argument, plus all flags.
 
-- `--colab[=HW]` / `--compute`
-- `--team`
-- `--codex`
-- `--researcher` / `--architect` (combine for dual-agent pipeline)
-- `--journal` — forward when present in the original sweep invocation
-- `--hypothesis <path>` — forward when present in the original sweep invocation
+> Forward the same flags accepted at Step S1 (`--colab[=HW]`, `--compute`, `--team`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis <path>`).
 
 > **Flag-forwarding invariant**: any of `--journal` / `--hypothesis` set at sweep entry MUST appear in the S5 run invocation. Dropping them silently breaks resume continuity and the hypothesis queue.
 

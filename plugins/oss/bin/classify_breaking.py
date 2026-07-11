@@ -24,6 +24,10 @@ Usage:
     scan-query batch queries.json | classify_breaking.py
     classify_breaking.py < batch-output.json
 
+Exit codes:
+    0 — classification emitted
+    2 — stdin is not valid JSON
+
 Output (stdout, JSON):
     {
       "breaking": [{"symbol", "package", "external_callers": [...]}],
@@ -39,6 +43,7 @@ Caller pattern (classify-truth-check.md Breaking classification phase):
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 
@@ -202,7 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     """Entry point — read batch JSON from stdin, print classification to stdout.
 
     Args:
-        argv: Unused; present for a uniform ``main`` signature and testing.
+        argv: Optional argv override. Ignored except for an explicit ``-h``/``--help``
+            (preserves the legacy stdin-only, argv-ignored contract).
 
     Returns:
         ``0`` on success; ``2`` when stdin is not valid JSON.
@@ -210,7 +216,13 @@ def main(argv: list[str] | None = None) -> int:
     Examples:
         No doctest — reads stdin; covered by pytest.
     """
-    _ = argv
+    # Honour only -h/--help; any other argv is ignored (legacy stdin-only contract).
+    effective_argv = sys.argv[1:] if argv is None else argv
+    if effective_argv in (["-h"], ["--help"]):
+        argparse.ArgumentParser(
+            prog="classify_breaking.py",
+            description="Label changed public symbols Breaking vs internal (reads scan-query batch JSON on stdin).",
+        ).parse_args(["-h"])  # prints help, exits 0
     sys.stdout.reconfigure(encoding="utf-8", newline="\n")  # type: ignore[union-attr]
     raw = sys.stdin.read()
     try:

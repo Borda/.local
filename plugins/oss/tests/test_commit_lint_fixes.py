@@ -23,6 +23,38 @@ class _FakeCompleted:
         self.stdout = stdout
 
 
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_help_exits_0_without_git(monkeypatch: pytest.MonkeyPatch, flag: str) -> None:
+    """``-h``/``--help`` prints usage and exits 0; no subprocess/git ever runs."""
+    called: list[Any] = []
+    monkeypatch.setattr(clf.subprocess, "run", lambda *a, **k: called.append(a))
+    with pytest.raises(SystemExit) as exc:
+        clf.main([flag])
+    assert exc.value.code == 0
+    assert called == []
+
+
+def test_golden_zeroarg_invocation_constructs_expected_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exact zero-arg call-site (empty argv) → git add/commit argv identical to pre-argparse baseline."""
+    call_n = [0]
+    calls: list[list[str]] = []
+
+    def _fake_run(cmd: list[str], **_kwargs: Any) -> _FakeCompleted:
+        calls.append(list(cmd))
+        call_n[0] += 1
+        stdout = "src/a.py\ndocs/b.md\n" if call_n[0] == 1 else ""
+        return _FakeCompleted(returncode=0, stdout=stdout)
+
+    monkeypatch.setattr(clf.subprocess, "run", _fake_run)
+    monkeypatch.setattr(clf, "which", lambda _: "/fake/git")
+    rc = clf.main([])
+    assert rc == 0
+    add_calls = [c for c in calls if len(c) > 1 and c[1] == "add"]
+    commit_calls = [c for c in calls if len(c) > 1 and c[1] == "commit"]
+    assert add_calls == [["/fake/git", "add", "--", "src/a.py", "docs/b.md"]]
+    assert commit_calls == [["/fake/git", "commit", "-m", clf._COMMIT_MESSAGE]]
+
+
 def test_no_changed_files_prints_message(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """Empty ``git diff HEAD`` → prints no-op message and exits 0."""
     monkeypatch.setattr(
