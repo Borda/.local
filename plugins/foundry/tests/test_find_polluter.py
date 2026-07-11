@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -39,6 +40,20 @@ class _FakeResult:
 def _patch_run(monkeypatch: pytest.MonkeyPatch, responder: Any) -> None:
     """Replace ``subprocess.run`` inside the module under test."""
     monkeypatch.setattr(find_polluter.subprocess, "run", responder)
+
+
+def _batch_from_argsfile(argv: Sequence[str]) -> list[str]:
+    """Return the batch node IDs ``_contaminates`` passed to pytest via ``@file``.
+
+    ``_contaminates`` writes the candidate batch to a tempfile and hands pytest a
+    single ``@<path>`` args-from-file token instead of expanding the batch onto
+    argv (argv-cap safety). Resolve that token the way pytest would and return the
+    file's lines so a fake ``subprocess.run`` can inspect the batch.
+    """
+    for token in argv[1:]:
+        if token.startswith("@"):
+            return Path(token[1:]).read_text(encoding="utf-8").splitlines()
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +262,7 @@ class TestBinarySearch:
         polluter_idx = 1
 
         def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
-            batch = [a for a in argv[1:] if a.startswith("tests/test_x.py::t")]
+            batch = _batch_from_argsfile(argv)
             if candidates[polluter_idx] in batch:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
@@ -293,7 +308,7 @@ class TestBinarySearch:
         polluter = candidates[6]
 
         def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
-            batch = [a for a in argv[1:] if a.startswith("tests/test_x.py::t")]
+            batch = _batch_from_argsfile(argv)
             if polluter in batch:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
@@ -377,7 +392,7 @@ class TestMain:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
                 return _FakeResult(stdout=f"{polluter}\n{other}\n{failing}\n")
-            if polluter in argv:
+            if polluter in _batch_from_argsfile(argv):
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 
@@ -437,7 +452,7 @@ class TestArgparseCli:
             if "--collect-only" in argv:
                 assert "tests" in argv  # default test_dir applied
                 return _FakeResult(stdout=f"{polluter}\n{failing}\n")
-            if polluter in argv:
+            if polluter in _batch_from_argsfile(argv):
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 

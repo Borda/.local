@@ -1,9 +1,16 @@
 #!/usr/bin/env python
-"""retro_analyze.py — Wilcoxon signed-rank significance test for retro analysis.
+"""retro_analyze.py — one-sample signed-rank significance test for retro analysis.
 
 Reads an experiments JSONL file produced by /research:run, extracts metric values
-for kept iterations, and compares them against a baseline using the Wilcoxon
-signed-rank test from scipy.stats.
+for kept iterations, and tests whether they differ from a single baseline metric.
+
+This is a **one-sample** Wilcoxon signed-rank test (a signed-rank sign test of
+"kept iterations vs the baseline constant"), NOT a paired test: the run records a
+single baseline metric, so there is no per-iteration matched baseline to pair
+against. The baseline scalar is repeated across the kept iterations and passed to
+``scipy.stats.wilcoxon``, which reduces to the one-sample location test. Interpret
+results accordingly — the framing is "are kept iterations located above/below the
+baseline?", not "is each iteration paired-superior to its own baseline?".
 
 Usage:
     python "${CLAUDE_PLUGIN_ROOT}/bin/retro_analyze.py" \\
@@ -89,10 +96,14 @@ def run_wilcoxon(
     alpha: float = 0.05,
     direction: str = "higher",
 ) -> dict[str, Any]:
-    """Run a Wilcoxon signed-rank test comparing candidate scores to baseline.
+    """Run a Wilcoxon signed-rank test comparing candidate scores to baseline scores.
 
-    Pairs each candidate score against the corresponding baseline score (same index).
-    Uses the one-sided alternative matching ``direction``:
+    Compares candidate scores against ``baseline_scores`` element-wise (same index).
+    When ``baseline_scores`` is a repeated constant (the retro CLI case — a single
+    baseline metric repeated across kept iterations), this reduces to a **one-sample**
+    signed-rank test of "candidates differ from the baseline constant", not a paired
+    test with per-iteration matched baselines. Uses the one-sided alternative matching
+    ``direction``:
 
     - ``"higher"`` → ``alternative="greater"`` (improvement = candidate > baseline)
     - ``"lower"`` → ``alternative="less"`` (improvement = candidate < baseline)
@@ -275,6 +286,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"error": str(exc)}))
         return 2
 
+    # One-sample framing: the run has a single baseline metric, so we repeat it and
+    # test whether the kept iterations are located above/below that constant. This is a
+    # one-sample signed-rank test, not a paired Wilcoxon (no per-iteration matched
+    # baseline exists in the JSONL). See module docstring.
     baseline_repeated = [baseline_metric] * len(candidate_scores)
     result = run_wilcoxon(
         baseline_repeated,

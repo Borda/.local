@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from io import StringIO
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -44,6 +45,21 @@ class _FakeResult:
 def _patch_run(monkeypatch: pytest.MonkeyPatch, responder: Any) -> None:
     """Replace ``subprocess.run`` inside the module under test."""
     monkeypatch.setattr(find_polluter.subprocess, "run", responder)
+
+
+def _read_batch(argv: Sequence[str], prefix: str) -> list[str]:
+    """Return batch node IDs the module passed to pytest via ``@file`` args-from-file.
+
+    ``_contaminates`` writes the candidate batch to a tempfile and hands pytest a
+    single ``@<path>`` token instead of expanding the batch onto argv (argv-cap
+    safety). Mirror pytest's args-from-file resolution: read the referenced file
+    and keep the lines matching ``prefix``.
+    """
+    for token in argv[1:]:
+        if token.startswith("@"):
+            content = Path(token[1:]).read_text(encoding="utf-8")
+            return [line for line in content.splitlines() if line.startswith(prefix)]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +280,7 @@ class TestBinarySearch:
         polluter_idx = 1
 
         def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
-            batch = [a for a in argv[1:] if a.startswith("tests/test_x.py::t")]
+            batch = _read_batch(argv, "tests/test_x.py::t")
             if candidates[polluter_idx] in batch:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
@@ -309,7 +325,7 @@ class TestBinarySearch:
         polluter_idx = 3
 
         def fake_run(argv: Sequence[str], **_kw: Any) -> _FakeResult:
-            batch = [a for a in argv if a.startswith("tests/t.py::t")]
+            batch = _read_batch(argv, "tests/t.py::t")
             if candidates[polluter_idx] in batch:
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
@@ -400,7 +416,7 @@ class TestMain:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
                 return _FakeResult(stdout=f"{polluter}\n{other}\n{failing}\n")
-            if polluter in argv:
+            if polluter in _read_batch(argv, "tests/"):
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 
@@ -443,7 +459,7 @@ class TestMain:
                 return _FakeResult(stdout="1 passed in 0.01s\n")
             if "--collect-only" in argv:
                 return _FakeResult(stdout=f"{polluter}\n{failing}\n")
-            if polluter in argv:
+            if polluter in _read_batch(argv, "tests/"):
                 return _FakeResult(stdout="FAILED\n", returncode=1)
             return _FakeResult(stdout="ok\n")
 

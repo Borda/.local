@@ -92,6 +92,7 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Bash(cut:*)` | Extract fixed columns or delimited fields | Pull specific CSV/TSV columns, trim output fields |
 | `Bash(tr:*)` | Translate or delete characters | Normalise line endings, uppercase/lowercase transforms |
 | `Bash(xargs:*)` | Build and execute commands from stdin | Batch-apply command to list of files or arguments |
+| `Bash(eval:*)` | Evaluate a shell string | Sanctioned only for `eval "$(python "${CLAUDE_PLUGIN_ROOT}/bin/state.py" load <ns>)"` cross-block state reload and `eval "$(python health_sentinel.py ...)"` health-sentinel setup — both emit single-quote-escaped assignments, so `eval` is injection-safe (see `bin-authoring-guide.md`) |
 | `Bash(tee:*)` | Write stdin to stdout and file simultaneously | Capture command output while still piping downstream |
 | `Bash(jq:*)` | Query and transform JSON | Parse API responses, inspect settings.json, filter JSONL logs |
 | `Bash(date:*)` | Print or format current date/time | Timestamp log entries, generate dated filenames |
@@ -123,7 +124,7 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Bash(gh release view:*)` | Inspect existing release's notes and assets | `/release` reads previous release as baseline |
 | `Bash(gh release list:*)` | List releases | Find most recent tag to set changelog range |
 | `Bash(gh api graphql:*)` | Execute GitHub GraphQL API queries | `/analyse discussion` mode fetches Discussion threads via GraphQL API |
-| `Bash(gh api repos/*)` | GitHub REST API calls for repo resources | `/analyse`, `/oss:review`, `/resolve` fetch PR reviews, issue data via REST |
+| `Bash(gh api repos/*:*)` | GitHub REST API calls for repo resources | `/analyse`, `/oss:review`, `/resolve` fetch PR reviews, issue data via REST |
 | `Bash(gh api search/*)` | GitHub REST API search endpoint | `/resolve` searches for downstream usage of changed APIs |
 
 ## Git — read-only

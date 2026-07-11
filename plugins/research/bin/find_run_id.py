@@ -37,6 +37,26 @@ from pathlib import Path
 _COMPLETED_STATUSES: frozenset[str] = frozenset({"completed", "goal-achieved"})
 
 
+def _safe_mtime(path: Path) -> float:
+    """Return ``path``'s mtime, or ``-inf`` when it is unavailable.
+
+    Guards the sort key against a directory deleted between ``iterdir`` and ``stat``
+    (concurrent /research:run cleanup or the 30-day artifact TTL sweep). A vanished
+    entry sorts last (oldest) and is skipped by the later ``state.json`` read, so the
+    function still returns ``None`` on no-match rather than raising (exit-1 contract).
+
+    Args:
+        path: Candidate run directory.
+
+    Returns:
+        The directory mtime, or ``float("-inf")`` on any ``OSError``.
+    """
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return float("-inf")
+
+
 def _load_state(state_file: Path) -> dict | None:
     """Return parsed JSON from ``state_file`` or ``None`` on any read/parse error.
 
@@ -82,7 +102,8 @@ def find_run_id(state_dir: Path, match_program: str | None = None) -> str | None
     except OSError:
         return None
     # Sort by mtime descending — newest first; ties broken by name for determinism.
-    candidates.sort(key=lambda p: (p.stat().st_mtime, p.name), reverse=True)
+    # _safe_mtime guards against a dir removed between iterdir and stat (race/TTL sweep).
+    candidates.sort(key=lambda p: (_safe_mtime(p), p.name), reverse=True)
     for run_dir in candidates:
         state = _load_state(run_dir / "state.json")
         if state is None:

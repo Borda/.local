@@ -43,14 +43,17 @@ _WHOLE_OBJECT_ALIASES = frozenset({".", "_object", ""})
 
 
 def recover_json_object(text: str) -> dict[str, Any] | None:
-    """Return the outermost balanced JSON object embedded in ``text``.
+    """Return the last (rightmost) top-level balanced JSON object in ``text``.
 
-    Scans every ``{`` position from left to right (prefers the outermost,
-    i.e. largest, object) and at each position tries progressively shorter
+    Scans every ``{`` position and at each one tries progressively shorter
     truncations of the tail until :func:`json.loads` accepts a balanced
-    object. This tolerates prose preamble before the JSON, trailing prose
-    after it, and reasoning blocks that contain stray ``{`` characters
-    before the real object.
+    object. Nested objects are discarded (only top-level objects are kept);
+    when several sibling top-level objects are present, the one with the
+    largest start index — i.e. the last/rightmost — is returned. This
+    tolerates prose preamble before the JSON, trailing prose after it, and
+    reasoning blocks that contain stray ``{`` characters before the real
+    object. Returning the rightmost object suits recovering the final answer
+    envelope from an agent response that ends with the JSON.
 
     Pure function — no I/O, deterministic.
 
@@ -77,6 +80,8 @@ def recover_json_object(text: str) -> dict[str, Any] | None:
         {'nested': {'k': 1}}
         >>> recover_json_object('  {"ok": true}\\n\\nthen extra prose')
         {'ok': True}
+        >>> recover_json_object('{"a":1} and then {"b":2}')
+        {'b': 2}
     """
     open_positions = [i for i, ch in enumerate(text) if ch == "{"]
     valid_objects: list[tuple[int, int, dict[str, Any]]] = []

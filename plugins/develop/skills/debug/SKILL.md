@@ -13,7 +13,7 @@ Investigation-first debugging. Gather evidence, trace data flow, form confirmed 
 
 NOT for: production incidents without any CI run ID or local traceback (use `/foundry:investigate` (requires foundry plugin) for triage); `.claude/` config issues (use `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead. CI-only failures ARE supported — pass `--ci-run <run-id or URL>` to use GitHub Actions logs as evidence source.
 
-**Issue ID routing note**: bare numbers ≥1000 are treated as issue IDs only when `--issue` flag is present (same rule as `/develop:feature`). Pass `--issue <N>` for high-numbered issues to avoid ambiguity.
+**Issue ID routing note**: issue mode is selected when the `--issue` flag is present, or when the argument (after other flags are stripped) is a pure run of digits with an optional `#` prefix (e.g. `123` or `#123`). There is no numeric threshold. Pass `--issue <N>` to force issue mode for any argument.
 
 </objective>
 

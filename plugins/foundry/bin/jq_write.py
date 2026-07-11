@@ -14,6 +14,7 @@ Exit codes:
     1 — target file missing
     2 — jq subprocess error (non-zero exit or jq not on PATH)
     3 — bad args (odd number of --arg trailing tokens, or no target/filter)
+    4 — target outside allowed write roots (cwd or TMPDIR)
 """
 
 from __future__ import annotations
@@ -90,13 +91,14 @@ def _parse_jq_args(extras: list[str]) -> list[str] | None:
     return extras
 
 
-_ALLOWED_WRITE_ROOTS_ENV_VARS = ("CLAUDE_PLUGIN_ROOT", "TMPDIR")
-
-
 def _validate_target(target: Path) -> Path:
     """Resolve target and assert it lives under an allowed write root.
 
-    Allowed roots: cwd, TMPDIR, and common config paths (.claude/, .temp/, .reports/).
+    Allowed roots are the current working directory and ``TMPDIR`` (falling back
+    to the platform temp dir). Project subtrees such as ``.claude/``, ``.temp/``,
+    and ``.reports/`` are covered transitively when they live under cwd; they are
+    not independent roots. Paths outside cwd/tmpdir (e.g. ``$CLAUDE_PLUGIN_ROOT``
+    under ``~/.claude``) are rejected.
 
     Args:
         target: User-supplied target file path.
@@ -130,13 +132,14 @@ def run_jq_write(target: Path, jq_filter: str, extras: list[str]) -> int:
         extras: Additional jq CLI tokens (e.g. ``["--arg", "k", "v"]``).
 
     Returns:
-        0 on success, 1 if target missing, 2 on jq subprocess error.
+        0 on success, 1 if target missing, 2 on jq subprocess error, 4 if the
+        target resolves outside the allowed write roots.
     """
     try:
         target = _validate_target(target)
     except ValueError as exc:
         print(f"! {exc}", file=sys.stderr)
-        return 1
+        return 4
     if not target.is_file():
         print(f"! target not found: {target}", file=sys.stderr)
         return 1
@@ -189,8 +192,9 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns:
         ``0`` on success, ``1`` if target missing, ``2`` on jq error, ``3`` on
-        bad args; argparse exits ``2`` on malformed args (e.g. unknown flag
-        before the positionals).
+        bad args, ``4`` if the target is outside the allowed write roots;
+        argparse exits ``2`` on malformed args (e.g. unknown flag before the
+        positionals).
 
     No doctest — subprocess- and argv-dependent; covered by pytest.
     """

@@ -249,7 +249,7 @@ Gather full context before writing any code:
 
 > **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text, treat as feature description.
 >
-> **Issue ID parsing rule**: Issue IDs must be prefixed with `#`; bare numbers ≥1000 are treated as issue IDs only if the `--issue` flag is present. Bare numbers <1000 without `#` prefix are treated as issue IDs unconditionally (legacy behavior). To avoid ambiguity when numeric goals appear, prefer descriptive text arguments or use `#<N>` prefix for issue references.
+> **Issue ID parsing rule**: any argument whose leading characters are a run of digits (optionally prefixed with `#`, e.g. `123` or `#123`) is treated as a GitHub issue number — the leading digits are extracted and passed to `issue_fetch.py`. There is no numeric threshold and no `--issue` flag gate. To avoid a numeric feature goal being misread as an issue number, phrase the goal as descriptive text that does not start with digits.
 
 ```bash
 _RAW="${ARGUMENTS#\#}"

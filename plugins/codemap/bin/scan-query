@@ -86,6 +86,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _exclusions import Exclusions, _load_exclusions, _match_exclusion, is_excluded
 from _schema import (
+    CALL_GRAPH_MIN_VER,
     COVERAGE_MIN_VER,
     DEAD_SYMBOL_MIN_VER,
     DOCSTRING_MIN_VER,
@@ -93,7 +94,6 @@ from _schema import (
     IMPORT_GROUPS_MIN_VER,
     MOCK_PATCHES_MIN_VER,
     MODULE_ALIASES_MIN_VER,
-    SCAN_VERSION,
     SPHINX_XREFS_MIN_VER,
     SUBPROCESS_CALLS_MIN_VER,
     UNCOVERED_MIN_VER,
@@ -176,12 +176,17 @@ def _print(*args: object, **kwargs: object) -> None:
 def _has_call_graph(index: dict) -> bool:
     """Return True if the index was built with call graph data (schema v3+).
 
+    Gates on the fixed ``CALL_GRAPH_MIN_VER`` floor (3 — when the ``calls`` field
+    first shipped), NOT the live ``SCAN_VERSION``: any index at or above v3 carries
+    call edges, so a future ``SCAN_VERSION`` bump must not retroactively reject a
+    still-valid pre-current index for fn-deps/fn-rdeps/fn-central/fn-blast.
+
     Accepts both int and string values for ``scan_version`` — older index files
     may have been written by tools that serialised the field as a string.
     """
     raw = index.get("scan_version", 0)
     try:
-        return int(raw) >= SCAN_VERSION
+        return int(raw) >= CALL_GRAPH_MIN_VER
     except (TypeError, ValueError):
         return False
 

@@ -327,7 +327,7 @@ ______________________________________________________________________
 
 **Workflow**:
 
-1. **Scope and understand** (`foundry:sw-engineer`): reads the target code, maps the public API surface, identifies complexity hotspots and coupling. Uses codemap for blast-radius analysis when available. Scope gate: if target is directory-wide (10+ files), asks whether to narrow or proceed.
+1. **Scope and understand** (`foundry:sw-engineer`): reads the target code, maps the public API surface, identifies complexity hotspots and coupling. Uses codemap for blast-radius analysis when available. Scope gate: if target spans 3+ modules, 5+ files, or any public-API rename, asks whether to narrow or proceed.
 2. **Audit test coverage**: classifies each public function as covered / partially covered / uncovered. Falls back to "all uncovered" conservatively if `pytest-cov` is not installed.
 3. **Add characterization tests** (`foundry:qa-specialist`): for every uncovered or partially covered public API, generates tests that assert *current* behavior (not desired behavior). Gate: all characterization tests must pass on unmodified code before proceeding.
 4. **Refactor with safety net**: one focused change per cycle, run tests after each. Safety break: max 5 change-test cycles per inner session; max 10 total across all outer review cycles.

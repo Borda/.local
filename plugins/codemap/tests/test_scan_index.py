@@ -466,3 +466,33 @@ class TestAtomicIndexWrite:
 
         index = json.loads((tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json").read_text())
         assert any(m["name"] == "gamma" for m in index["modules"])
+
+    def test_concurrent_writers_leave_valid_index(self, tmp_path: Path, scan_index):
+        """Two writers racing on the same root must not corrupt the index (PID-qualified temp).
+
+        The bg refresh, post-commit hook, and self-heal all invoke scan-index
+        uncoordinated. A shared fixed ".json.tmp" would let two "w" opens interleave
+        into corrupt bytes; the PID-qualified temp gives each writer its own file so
+        every os.replace promotes a complete index. Whichever writer wins, the final
+        file must parse and no PID-suffixed temp may leak.
+        """
+        (tmp_path / "gamma.py").write_text("g = 1\n")
+
+        procs = [
+            subprocess.Popen(
+                [sys.executable, str(scan_index), "--root", str(tmp_path)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(tmp_path),
+            )
+            for _ in range(2)
+        ]
+        for proc in procs:
+            _, stderr = proc.communicate(timeout=60)
+            assert proc.returncode == 0, stderr
+
+        cache_dir = tmp_path / ".cache" / "codemap"
+        index = json.loads((cache_dir / f"{tmp_path.name}.json").read_text())  # never corrupt/truncated
+        assert any(m["name"] == "gamma" for m in index["modules"])
+        assert not list(cache_dir.glob(f"{tmp_path.name}.json.*.tmp"))  # no PID-suffixed temp leaked

@@ -1,6 +1,6 @@
 # 🏭 foundry — Claude Code Plugin
 
-OSS Claude Code config: 10 specialist agents, 8 skills, event-driven hooks, and a self-improvement loop for professional AI-assisted development.
+OSS Claude Code config: 10 specialist agents, 11 skills, event-driven hooks, and a self-improvement loop for professional AI-assisted development.
 
 > For OSS workflows, also install the `oss` plugin (`/oss:review`, `/oss:release`, ...). For development workflows, install `develop` (`/develop:feature`, `/develop:fix`, ...). For ML research, install `research` (`/research:run`, `/research:topic`, ...).
 
@@ -25,6 +25,7 @@ ______________________________________________________________________
   - [`/foundry:distill`](#foundrydistill)
   - [`/foundry:session`](#foundrysession)
   - [`/foundry:create`](#foundrycreate)
+  - [`/foundry:humanizer`](#foundryhumanizer)
 - [Agents reference](#agents-reference)
   - [foundry:sw-engineer](#foundrysw-engineer)
   - [foundry:solution-architect](#foundrysolution-architect)
@@ -139,7 +140,7 @@ What it does:
 
 - Detects Python 3.10+ (`python` / `py -3` / `python3`); installs `~/.local/bin/python` shim when `python` absent or resolves to Windows Store stub
 - Backs up `~/.claude/settings.json` before touching it
-- Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`
+- Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, and `advisorModel` (copied from project `.claude/settings.json` when pinned)
 - Copies `permissions-guide.md` to `.claude/` (only if absent — preserves project-local edits)
 - Symlinks all `plugins/foundry/rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks and removes rules no longer in current version\`
 - Removes stale `hooks` block from settings if present (hooks now register via plugin manifest)
@@ -442,6 +443,19 @@ Max 5 `AskUserQuestion` interactions for a well-specified brief (format, audienc
 
 ______________________________________________________________________
 
+### `/foundry:humanizer`
+
+Strips AI-writing tells from human-facing prose — docs, PR/commit bodies, reports, release notes, blog posts. Removes LLM-vocabulary clichés, banned constructions (rule-of-three triads, "not just X but Y"), and formatting tells (title-case headings, em-dash overuse). Applies as a final pass that preserves meaning and structure; it does not rewrite from scratch.
+
+```text
+/foundry:humanizer <text or file path>    # humanize in place
+/foundry:humanizer check <file>           # report tells without editing
+```
+
+Primarily a model-initiated self-review pass: foundry may invoke it before finalizing a substantial prose artifact drafted during a task. Best-effort, not a guaranteed intercept. Skips code, config, machine-parsed envelopes, and inter-agent handover files.
+
+______________________________________________________________________
+
 ## 🤖 Agents reference
 
 All ten agents are available by their full plugin-prefixed name. In spawn directives and `subagent_type` values, always use the full prefix (`foundry:sw-engineer`, not `sw-engineer`).
@@ -649,12 +663,13 @@ ______________________________________________________________________
 
 ### settings.json keys merged by `/foundry:setup`
 
-| Key                                    | What it does                                                                             |
-| -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `statusLine.command`                   | Runs `statusline.js` to display active agent count in the Claude Code status bar         |
-| `permissions.allow`                    | Adds pre-approved Bash commands, git operations, and WebFetch domains                    |
-| `permissions.deny`                     | Adds permanently denied write operations (public GitHub mutations, destructive git)      |
-| `enabledPlugins["codex@openai-codex"]` | Enables Codex plugin for adversarial review in `/foundry:calibrate` and `/foundry:audit` |
+| Key                                    | What it does                                                                                        |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `statusLine.command`                   | Runs `statusline.js` to display active agent count in the Claude Code status bar                    |
+| `permissions.allow`                    | Adds pre-approved Bash commands, git operations, and WebFetch domains                               |
+| `permissions.deny`                     | Adds permanently denied write operations (public GitHub mutations, destructive git)                 |
+| `enabledPlugins["codex@openai-codex"]` | Enables Codex plugin for adversarial review in `/foundry:calibrate` and `/foundry:audit`            |
+| `advisorModel`                         | Copied from project `.claude/settings.json` when pinned, so the advisor tool uses your chosen model |
 
 ### Optional flags and knobs
 
@@ -727,7 +742,7 @@ plugins/foundry/
 │   ├── permissions-allow.json   allow-list merged by /foundry:setup
 │   └── permissions-deny.json    deny-list merged by /foundry:setup
 ├── agents/                      10 specialist agent files
-├── skills/                      8 skill directories (audit, brainstorm, calibrate, create, distill, investigate, manage, session)
+├── skills/                      11 skill directories (audit, brainstorm, calibrate, create, distill, humanizer, investigate, manage, profile, session, setup)
 ├── rules/                       10 rule files symlinked to ~/.claude/rules/ by /foundry:setup
 ├── CLAUDE.src.md                workflow rules; /foundry:setup Step 10 copies → ~/.claude/CLAUDE.md
 ├── TEAM_PROTOCOL.md             AgentSpeak v2 inter-agent protocol

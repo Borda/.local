@@ -100,6 +100,32 @@ class TestFindRunIdNoFilter:
         _make_run(tmp_path, "good-run", "completed", mtime=now - 50)
         assert find_run_id(tmp_path) == "good-run"
 
+    def test_safe_mtime_returns_neg_inf_on_missing_dir(self, tmp_path: Path) -> None:
+        """The sort-key helper degrades a vanished dir to -inf instead of raising (M1)."""
+        assert _mod._safe_mtime(tmp_path / "gone") == float("-inf")
+
+    def test_dir_vanishing_during_sort_does_not_crash(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A dir removed after is_dir() but before the sort's stat must not raise (M1).
+
+        Faithfully models the race: is_dir() during enumeration succeeds (dir present),
+        then the sort key's stat raises FileNotFoundError for the vanished dir.
+        """
+        _make_run(tmp_path, "survivor", "completed")
+        vanished = _make_run(tmp_path, "vanished", "completed")
+        real_stat = Path.stat
+        seen: set[Path] = set()
+
+        def flaky_stat(self: Path, *args: object, **kwargs: object) -> os.stat_result:
+            # Let the first stat (is_dir during enumeration) pass; fail the sort-key stat.
+            if self == vanished and self in seen:
+                raise FileNotFoundError(self)
+            seen.add(self)
+            return real_stat(self, *args, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(Path, "stat", flaky_stat)
+        # No exception; the surviving completed run is still resolved.
+        assert find_run_id(tmp_path) == "survivor"
+
 
 class TestFindRunIdProgramFilter:
     """``find_run_id()`` with ``--match-program`` filter."""

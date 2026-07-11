@@ -210,10 +210,13 @@ def main(argv: list[str] | None = None) -> int:
     if cached.returncode == 0:
         print("commit_all_items: staging area empty — no commit created", file=sys.stderr)
         return 0
+    # No timeout on the commit: it triggers user-controlled pre-commit hooks whose
+    # duration is unbounded by design (ruff, mypy, custom checks routinely exceed a
+    # few seconds). A short timeout would kill git mid-hook, leaving a partial commit.
+    # Matches commit_action_item.py; short timeouts stay only on cheap plumbing calls.
     result = subprocess.run(  # noqa: S603
         [git, "commit", "-m", msg],
         check=False,
-        timeout=3,
     )
     return result.returncode
 

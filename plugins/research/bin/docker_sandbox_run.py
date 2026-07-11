@@ -3,8 +3,10 @@
 
 Two modes:
     ``--mode explore`` — read-only project mount; runs an exploratory script by path.
-    ``--mode verify``  — read-only project mount + read-write ``.experiments`` mount; runs an
-        arbitrary metric command.
+    ``--mode verify``  — read-only project mount + read-write ``.experiments`` mount; runs a
+        metric command. The command is rejected if it contains shell metacharacters or
+        destructive binaries (``rm``, ``dd``, ``truncate`` …) that could wipe the
+        read-write ``.experiments`` mount — run non-trivial logic via a script entry point.
 
 Network defaults to ``none``; override via ``SANDBOX_NETWORK`` environment variable.
 
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +39,43 @@ _ALLOWED_NETWORK_MODES: frozenset[str] = frozenset({"none", "bridge", "internal"
 # ``sh -c`` inside the container; ``SANDBOX_NETWORK=host`` would otherwise allow
 # network exfiltration via embedded ``$(...)``, backticks, redirection, etc.
 _VERIFY_FORBIDDEN_CHARS = frozenset(";&|$`<>\n\r\\")
+# Destructive binaries forbidden as bare command tokens in verify mode.  The
+# ``.experiments`` host dir is the one read-write mount (L143); the metachar filter
+# above blocks command *chaining* but not a single space-separated destructive
+# invocation (e.g. ``rm -rf /workspace/.experiments/state``), which would silently
+# wipe prior-iteration state that retro/significance analysis depends on (H1).
+# Defense-in-depth: reject these as whole-word tokens.  Legitimate metric commands
+# (``pytest``, ``python``, ``echo`` …) are unaffected.
+_VERIFY_FORBIDDEN_TOKENS: frozenset[str] = frozenset(
+    {"rm", "rmdir", "unlink", "shred", "truncate", "dd", "mv", "mkfs", "find", "chmod", "chown"}
+)
+
+
+def find_destructive_tokens(arg: str) -> list[str]:
+    """Return sorted destructive command tokens found in a verify-mode command string.
+
+    Splits on whitespace-equivalent word boundaries and matches whole tokens against
+    :data:`_VERIFY_FORBIDDEN_TOKENS`. Substrings never match (``pytest_rm`` is safe;
+    ``rm`` is not).
+
+    Args:
+        arg: The verify-mode command string destined for ``sh -c``.
+
+    Returns:
+        Sorted list of forbidden tokens present in ``arg`` (empty when none).
+
+    Examples:
+        >>> find_destructive_tokens("pytest -q metric.py")
+        []
+        >>> find_destructive_tokens("rm -rf /workspace/.experiments/state")
+        ['rm']
+        >>> find_destructive_tokens("truncate -s 0 log && dd of=x")
+        ['dd', 'truncate']
+        >>> find_destructive_tokens("python -c 'import armor'")
+        []
+    """
+    tokens = set(re.split(r"[^A-Za-z0-9_]+", arg))
+    return sorted(tokens & _VERIFY_FORBIDDEN_TOKENS)
 
 
 def build_explore_command(arg: str, network: str, workdir: str) -> list[str]:
@@ -243,6 +283,17 @@ def main(argv: list[str] | None = None, env: dict[str, str] | None = None, cwd: 
             print(
                 f"docker_sandbox_run.py: verify-mode command contains shell metacharacters {unsafe!r}; "
                 "use a script entry point instead of inline shell composition",
+                file=sys.stderr,
+            )
+            return 2
+        # The ``.experiments`` mount is read-write (L143); a single space-separated
+        # destructive command needs no metacharacter and would wipe prior-run state
+        # the retro/significance pipeline reads (H1).  Reject destructive binaries.
+        destructive = find_destructive_tokens(arg)
+        if destructive:
+            print(
+                f"docker_sandbox_run.py: verify-mode command uses destructive binaries {destructive!r} "
+                "that could wipe the read-write .experiments mount; run the metric via a script entry point",
                 file=sys.stderr,
             )
             return 2

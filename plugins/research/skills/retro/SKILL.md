@@ -101,7 +101,7 @@ echo "$RETRO_RESULT" > "${TMPDIR:-/tmp}/retro-result"  # persist for effect-size
 [ "$RETRO_EXIT" -eq 2 ] && { echo "retro: Input error (exit 2) — run-id '$RUN_ID' missing, malformed, or has no baseline record; re-run /research:run to create baseline"; exit 1; }
 ```
 
-**Contract** — script reads JSONL, extracts metric values for ALL iterations with `status == "kept"`, pairs each against the baseline record (`status == "baseline"`), runs a one-sided Wilcoxon signed-rank test, and prints a single line of JSON to stdout:
+**Contract** — script reads JSONL, extracts metric values for ALL iterations with `status == "kept"`, and runs a one-sided **one-sample** Wilcoxon signed-rank test of "kept iterations vs the single baseline metric" (`status == "baseline"`). This is not a paired test — the run records one baseline metric, so there is no per-iteration matched baseline; the baseline scalar is compared against each kept value. It prints a single line of JSON to stdout:
 
 - `{"significant": bool, "p_value": float, "statistic": float, "n": int}` on success
 - `{"significant": false, "p_value": null, "statistic": null, "n": <N>, "reason": "<msg>"}` when `N < 6` or scipy missing

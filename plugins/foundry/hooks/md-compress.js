@@ -69,6 +69,7 @@ function compressMarkdown(content) {
   const out = [];
   let inFence = false;
   let fenceChar = "";
+  let fenceLen = 0;
   let consecutiveBlanks = 0;
 
   for (const line of lines) {
@@ -80,15 +81,19 @@ function compressMarkdown(content) {
       if (m) {
         inFence = true;
         fenceChar = m[1][0];
+        fenceLen = m[1].length;
         consecutiveBlanks = 0;
         out.push(line); // preserve fence line as-is
         continue;
       }
     } else {
       const m = trimmed.match(/^(`{3,}|~{3,})/);
-      if (m && m[1][0] === fenceChar) {
+      // CommonMark: a closing fence must use the same char AND be at least as
+      // long as the opener — a 3-backtick line does NOT close a 4-backtick fence.
+      if (m && m[1][0] === fenceChar && m[1].length >= fenceLen) {
         inFence = false;
         fenceChar = "";
+        fenceLen = 0;
       }
       out.push(line); // preserve all content inside fence as-is
       continue;

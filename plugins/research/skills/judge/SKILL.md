@@ -314,8 +314,7 @@ Resolved rating values feed directly into J6 verdict table — no further source
 
 ## Step J6: Verdict and report
 
-<!-- Confidence threshold: 0.85 per quality-gates.md — update here if quality-gates.md changes -->
-<!-- Scoring weight constants (any/critical/high/methodology_rating) are duplicated inline below; if quality-gates.md thresholds change, sync this section too. -->
+<!-- Confidence score-bands are owned by rules/quality-gates.md (Confidence Block) — do not restate the numeric threshold here. The verdict table below keys on severity (critical/high) and *_rating strings only; it does not consume a numeric confidence threshold. -->
 
 **Verdict computation** (deterministic — design soundness, not outcome prediction):
 

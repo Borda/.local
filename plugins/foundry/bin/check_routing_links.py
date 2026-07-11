@@ -35,7 +35,7 @@ Options:
     --cache-dir DIR                Plugin cache root (default: ~/.claude/plugins/cache/borda-ai-rig/)
     --installed-plugins-json PATH  Path to installed_plugins.json (default: ~/.claude/plugins/installed_plugins.json)
     --check R1,R2,R3               Comma-separated checks to run (default: R1,R2,R3)
-    --timeout SECS                 Timeout for filesystem operations (default: 30)
+    --timeout SECS                 Timeout for the git rev-parse subprocess (default: 30)
 
 Output (stdout):
     One finding line per issue + hint line, or a pass line per check.
@@ -955,7 +955,7 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=30,
         metavar="SECS",
-        help="Timeout for filesystem operations in seconds (default: 30).",
+        help="Timeout in seconds for the git rev-parse subprocess (default: 30).",
     )
     args = parser.parse_args(argv)
 
@@ -973,6 +973,7 @@ def main(argv: list[str] | None = None) -> int:
             capture_output=True,
             text=True,
             cwd=str(plugins_dir),
+            timeout=args.timeout,
         )
         project_root = Path(_r.stdout.strip()).resolve() if _r.returncode == 0 else Path.cwd().resolve()
     except Exception:

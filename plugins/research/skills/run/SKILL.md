@@ -350,8 +350,10 @@ Then proceed to R5.
 eval "$(bash "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/git_slugs.sh")"  # timeout: 3000
 COMMIT_SENTINEL="${TMPDIR:-/tmp}/claude-commit-auth-${REPO_SLUG}-${BRANCH_SLUG}"
 touch "$COMMIT_SENTINEL"  # timeout: 3000
-# trap not effective across Bash calls — commit protection handled by commit-guard.js hook
+# trap not effective across Bash calls — commit protection handled by commit-guard.js hook (foundry-owned; see caveat below)
 ```
+
+> **Dependency — `commit-guard.js` (requires `foundry` plugin)**: the commit-sentinel dance above (touch at R5, re-touch each phase, `rm` at cleanup) is enforced by foundry's `commit-guard.js` `PreToolUse` hook. That hook ships with the `foundry` plugin only — research does not bundle it. **Standalone install (foundry absent): the sentinel touches become inert and `git commit` proceeds unguarded.** The sentinel logic is still safe to run (touch/`rm` on a temp file are harmless no-ops without the hook); it simply provides no protection. If you rely on atomic-commit guarding during `research:run`, install `foundry`.
 
 **Sentinel liveness**: touch `$COMMIT_SENTINEL` after each Phase 8 result write to extend monitoring window — do NOT rely solely on sentinel touched at loop start; slow iterations exceed 15-min TTL. Re-derive slug per SENTINEL_SLUG_FORMULA from `<constants>` (bash state lost between calls).
 

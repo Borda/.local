@@ -232,7 +232,10 @@ def _contaminates(
         batch_file.write("\n".join(batch))
         batch_file.write("\n")
         batch_file.flush()
-        args = [*batch, failing_test, "-q", "--tb=no"]
+        # Reference the batch via pytest's ``@file`` args-from-file syntax rather
+        # than expanding it onto argv, so early binary-search rounds on large
+        # suites never hit the OS argv-length cap (the reason the tempfile exists).
+        args = [f"@{batch_file.name}", failing_test, "-q", "--tb=no"]
         output = _run_pytest(pytest_cmd, args)
     return bool(FAILURE_RE.search(output))
 

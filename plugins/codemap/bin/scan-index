@@ -3451,10 +3451,20 @@ def main() -> None:
         ok = sum(1 for m in index["modules"] if m.get("status") == "ok")
         degraded = sum(1 for m in index["modules"] if m.get("status") == "degraded")
 
-        tmp_path = out_path.with_suffix(".json.tmp")
-        with tmp_path.open("w") as f:
-            json.dump(index, f, separators=(",", ":"))
-        tmp_path.replace(out_path)
+        # PID-qualify the temp name so concurrent writers (inject-preamble bg refresh,
+        # post-commit hook, scan-query self-heal) never share one ".json.tmp" and
+        # clobber each other's write phase — os.replace is atomic on rename but NOT on
+        # the write, so two writers on a shared temp name interleave into corrupt bytes.
+        # A live PID is unique among running processes, so each writer owns its own temp.
+        tmp_path = out_path.with_suffix(f".json.{os.getpid()}.tmp")
+        try:
+            with tmp_path.open("w") as f:
+                json.dump(index, f, separators=(",", ":"))
+            tmp_path.replace(out_path)
+        except BaseException:
+            # Never leak a PID-suffixed temp if the write/replace fails or is interrupted.
+            tmp_path.unlink(missing_ok=True)
+            raise
 
         print(f"[codemap] \u2713 {out_path}", file=sys.stderr)
         print(f"[codemap]   {ok} modules indexed, {degraded} degraded", file=sys.stderr)

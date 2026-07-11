@@ -129,10 +129,13 @@ def main(argv: list[str] | None = None) -> int:
     sentinel = _sentinel_path(git)
     sentinel.touch()
     atexit.register(lambda: sentinel.unlink(missing_ok=True))
+    # No timeout on the commit: it triggers user-controlled pre-commit hooks whose
+    # duration is unbounded by design (ruff, mypy, custom checks routinely exceed a
+    # few seconds). A short timeout would kill git mid-hook, leaving a partial commit.
+    # Matches commit_action_item.py; short timeouts stay only on cheap plumbing calls.
     result = subprocess.run(  # noqa: S603
         [git, "commit", "-m", _COMMIT_MESSAGE],
         check=False,
-        timeout=3,
     )
     return result.returncode
 

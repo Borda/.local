@@ -16,6 +16,8 @@ pre-existing anonymize test file:
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -278,3 +280,36 @@ def test_cli_subprocess_refusal_exit_code(tmp_path: Path) -> None:
     assert proc.returncode != 0
     assert proc.returncode == anonymize._EXIT_UNSAFE_OUT_DIR
     assert "refusing to write" in proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# Salt file permissions — the "opaque without salt" guarantee assumes secrecy
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file-mode bits are not meaningful on Windows")
+def test_salt_file_created_0600(tmp_path: Path) -> None:
+    """A freshly created salt file is owner-only (0o600) so no local user can reverse pseudonyms."""
+    salt_file = tmp_path / ".salt"
+    anonymize._load_salt(salt_file)
+    mode = stat.S_IMODE(salt_file.stat().st_mode)
+    assert mode == 0o600, f"salt file mode is {oct(mode)}, expected 0o600"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file-mode bits are not meaningful on Windows")
+def test_salt_file_0600_regardless_of_umask(tmp_path: Path) -> None:
+    """The 0o600 mode holds even under a permissive umask that would otherwise widen it."""
+    salt_file = tmp_path / ".salt"
+    old_umask = os.umask(0o000)  # most permissive — default write_text would yield 0o666
+    try:
+        anonymize._load_salt(salt_file)
+    finally:
+        os.umask(old_umask)
+    assert stat.S_IMODE(salt_file.stat().st_mode) == 0o600
+
+
+def test_load_salt_defers_to_existing_salt(tmp_path: Path) -> None:
+    """An existing salt is read as-is (never overwritten), so its value stays stable across calls."""
+    salt_file = tmp_path / ".salt"
+    salt_file.write_text(("ab" * 32))
+    assert anonymize._load_salt(salt_file) == bytes.fromhex("ab" * 32)

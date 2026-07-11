@@ -2,7 +2,7 @@
 
 ML research plugin: two specialist agents and nine slash-command skills for literature search, experiment design, methodology review, metric-driven improvement loops, automated research sweeps, and Kaggle competition notebook generation — built on a profile-first, judge-gated pipeline that spends compute only on experiments worth running.
 
-> Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, etc.) and is strongly recommended.
+> Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality), and the `research:run` commit-sentinel guard (foundry's `commit-guard.js` hook) is inert so atomic-commit protection is off. Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, etc.) and the commit guard, and is strongly recommended.
 
 ______________________________________________________________________
 
@@ -839,11 +839,25 @@ This plugin is part of the Borda-AI-Rig project. The skills and agents are in `p
 
 The skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) are the canonical source of truth — this README must stay in sync with them. Any change to a skill's behavior (flags, NOT-for scope, trigger conditions) requires an update here.
 
-Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.10.3`.
+Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.10.4`.
 
 **Mode-dispatch layout**: large conditional sections are externalised under `skills/<skill>/modes/*.md` and loaded on demand. Run's hypothesis pipeline, team, and report modes live under `skills/run/modes/`. The ML-concepts reference for `research:scientist` lives under `agents/scientist/ml-concepts.md` — loaded only when the task is ML-domain.
 
-**Shared bin/ scripts** (`plugins/research/bin/`): `resolve_shared.py`, `make_run_dir.py`, `health_monitor_start.py`, `git_slugs.sh` (emits sourceable `REPO_SLUG`/`BRANCH_SLUG` for the `research:run` commit-sentinel path), `docker_sandbox_run.py` (`--mode explore|verify` — sandboxed metric and script execution under `python:3.11-slim`).
+**Shared bin/ scripts** (`plugins/research/bin/`) — all 13 are referenced from at least one skill or agent:
+
+- `resolve_shared.py` — resolve the research plugin `_shared/` directory (Windows-portable).
+- `make_run_dir.py` — create a slug-prefixed, UTC-timestamped run directory.
+- `health_monitor_start.py` — create the research health-monitoring sentinel for background agents.
+- `git_slugs.sh` — emit sourceable `REPO_SLUG`/`BRANCH_SLUG` for the `research:run` commit-sentinel path (falls back to `no-repo`/`detached` sentinels outside a repo or on detached HEAD).
+- `docker_sandbox_run.py` — `--mode explore|verify`: sandboxed metric and script execution under `python:3.11-slim` (verify mode rejects shell metacharacters and destructive binaries that could wipe the read-write `.experiments` mount).
+- `check_output_within_root.py` — verify a candidate output path stays within the project root.
+- `codemap-resolve` — resolve `CODEMAP_ENABLED` (`auto`/`strict`/`off` → `true`/`false`) and record index currency.
+- `compute_effect_size.py` — rank-biserial correlation effect size for the retro signed-rank result (reads JSON on stdin).
+- `find_run_id.py` — locate the latest completed run id under a state-dir base.
+- `read_state_field.py` — read a dotted-path field from a JSON state file.
+- `resolve-quality-gates.sh` — resolve the path to foundry's `quality-gates.md` (project-local copy preferred, plugin cache fallback).
+- `retro_analyze.py` — one-sample signed-rank significance test of kept iterations vs the baseline metric for `research:retro`.
+- `verify_patient_split.py` — detect `patient_id` overlap between train/test CSV splits (leakage guard).
 
 ______________________________________________________________________
 

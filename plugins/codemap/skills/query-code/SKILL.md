@@ -4,7 +4,7 @@ description: |
   Query the codemap structural index — module deps/rdeps/central/coupled/path, symbol-level source extraction, function call graph (fn-deps, fn-rdeps, fn-central, fn-blast).
   TRIGGER: "what depends on", "who calls", "imports of", "dependency graph", "blast radius of", "list central modules".
   SKIP: rename intent (use /codemap:rename-refs); simple grep suffices; non-Python repo. Missing/stale index auto-builds — no manual scan-codebase needed.
-argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] [--with-imports] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>] [--exhaustive]>"
+argument-hint: "<central [--top N] [--exclude-tests] | coupled [--top N] [--exclude-tests] | deps <module> | rdeps <module> [--exclude-tests] | path <from> <to> | symbol <name> [--limit N] [--exclude-tests] [--with-imports] | symbols <module> | find-symbol <pattern> [--limit N] [--exclude-tests] | list | fn-deps <qname> | fn-rdeps <qname> [--exclude-tests] | fn-central [--top N] [--exclude-tests] | fn-blast <qname> [--index <path>]>"
 allowed-tools: Bash, Read, Write, Skill, AskUserQuestion
 model: haiku
 effort: low
@@ -95,6 +95,26 @@ scan-query fn-rdeps "mypackage.auth::validate_token"  # timeout: 5000
 | outgoing calls | `fn-deps module::function` |
 | incoming calls | `fn-rdeps module::function [--exclude-tests]` |
 | blast radius of current git change set | `diff-impact [--base REF]` |
+
+**Quality / coverage / test-graph queries** (each needs the index version noted — auto-build upgrades):
+
+| Goal | Command | Min index |
+| --- | --- | --- |
+| test files that mock a symbol via `patch()` | `mock-rdeps <mod::sym \ | mod>` | v4.1 |
+| public symbols missing a docstring | `undocumented [<mod>] [--all]` | v4.4 |
+| public symbols with no test callers and no mocks | `uncovered [<mod>] [--all] [--sort loc\ | name\ | module] [--top N]` | v4.2 |
+| stdlib / third-party / internal import groups | `import-types <mod>` | v4.3 |
+| doc xrefs for a symbol / find broken refs | `xrefs <qname>` · `xrefs <mod> --broken` | v4.5 |
+| public symbols with zero callers anywhere | `dead-symbols [--min-loc N]` | v4.6 |
+| modules with zero external importers | `dead-modules` | v4.6 |
+| what a module spawns as a subprocess | `subprocess-deps <mod>` | v5.2 |
+| what spawns a module as a subprocess | `subprocess-rdeps <mod>` | v5.2 |
+| test files that use a pytest fixture | `fixture-rdeps <fixture-name>` | v5.3 |
+| fixture dependency tree for a test file | `fixture-graph <test-file>` | v5.3 |
+| `coverage_pct` + `covered_by` for a symbol / module | `coverage <mod::sym \ | mod>` | v5.4 |
+| symbols below a coverage threshold | `coverage-gap [<mod>] [--all] [--threshold P]` | v5.4 |
+
+Missing/old index → a query needing a newer version exits with a "requires vN+ index" message; re-run auto-build (Step 0) or `/codemap:scan-codebase` to upgrade.
 
 Anything not listed here — `scan-query --help` has the full reference.
 

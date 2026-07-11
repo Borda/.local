@@ -90,6 +90,26 @@ class TestRunJqWriteErrorPaths:
         assert rc == 1
         assert "target not found" in capsys.readouterr().err
 
+    def test_outside_allowed_roots_returns_4(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        """Target outside cwd and TMPDIR → exit 4 (distinct from missing-target 1)."""
+        cwd = tmp_path / "cwd"
+        tmpdir = tmp_path / "tmp"
+        outside = tmp_path / "outside"
+        for d in (cwd, tmpdir, outside):
+            d.mkdir()
+        target = outside / "obj.json"
+        target.write_text("{}", encoding="utf-8")
+        monkeypatch.chdir(cwd)
+        monkeypatch.setenv("TMPDIR", str(tmpdir))
+        rc = jq_write.run_jq_write(target, ".", [])
+        assert rc == 4
+        assert "outside allowed roots" in capsys.readouterr().err
+
     def test_jq_nonzero_exit_returns_2(
         self,
         tmp_path: Path,

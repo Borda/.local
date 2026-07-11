@@ -47,7 +47,7 @@ fi
 
 If `$OSS_AVAILABLE` is `skip`: proceed to Step 1 normally (path / diff / dir mode).
 
-If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → strip develop-specific flags (`--team`, `--issue`, `--dry-run`, `--local`) from `$ARGUMENTS` before forwarding; call `Skill(skill="oss:review", args="<stripped-args>")`; (b) "No — review local code" → call `AskUserQuestion` immediately: "Provide the file path or directory to review:" — use the user's response as `$REVIEW_ARGS` and proceed to Step 1.
+If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → call `Skill(skill="oss:review", args="$ARGUMENTS")`; (b) "No — review local code" → call `AskUserQuestion` immediately: "Provide the file path or directory to review:" — use the user's response as `$REVIEW_ARGS` and proceed to Step 1.
 
 If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but the oss plugin is not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — review local code" → call `AskUserQuestion` again immediately: "Provide the file path or directory to review:" — use the user's response as `$REVIEW_ARGS` and proceed to Step 1; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
 

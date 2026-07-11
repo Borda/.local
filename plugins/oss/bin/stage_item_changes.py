@@ -122,13 +122,20 @@ def main(argv: list[str] | None = None) -> int:
     # crafted item_id smuggle a newline so an unrelated stash entry was treated
     # as ours; require an exact line-level match instead (F-130).
     stash_lines = [line.rstrip() for line in stash_proc.stdout.splitlines()]
-    matched = any(line.endswith(stash_label) or stash_label in line.split(": ") for line in stash_lines)
-    if matched:
-        pop = subprocess.run([git, "stash", "pop"], check=False, timeout=3)  # noqa: S603
+    matched_line = next(
+        (line for line in stash_lines if line.endswith(stash_label) or stash_label in line.split(": ")),
+        None,
+    )
+    if matched_line is not None:
+        # Pop the matched entry by its ``stash@{N}`` ref, not a bare ``stash pop``
+        # (which always pops ``stash@{0}``). If another stash was pushed after ours
+        # — nested resolve or a user stash — the newest is no longer ours, so a bare
+        # pop would apply the wrong entry and stage the wrong files.
+        stash_ref = matched_line.split(": ", 1)[0]
+        pop = subprocess.run([git, "stash", "pop", stash_ref], check=False, timeout=3)  # noqa: S603
         if pop.returncode != 0:
-            first_stash = stash_lines[0] if stash_lines else "stash"
             print(
-                f"⚠ stash pop conflict — resolve conflicts in {first_stash} before item #{item_id}",
+                f"⚠ stash pop conflict — resolve conflicts in {stash_ref} before item #{item_id}",
                 file=sys.stderr,
             )
             return 1

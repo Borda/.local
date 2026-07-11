@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import secrets
 import sys
@@ -63,6 +64,12 @@ def _load_salt(salt_file: Path) -> bytes:
     Args:
         salt_file: Path to the salt file (hex-encoded 32 bytes).
 
+    The salt file is created 0o600 (owner read/write only): the module guarantees
+    pseudonyms are "opaque to anyone without the salt", so a world/group-readable
+    salt on a multi-user host or shared CI runner would let any local user reverse
+    every pseudonym. ``O_CREAT | O_EXCL`` also closes the exists→create race — a
+    concurrent writer that wins the create is deferred to by re-reading the file.
+
     Returns:
         32-byte salt as raw bytes.
 
@@ -77,7 +84,15 @@ def _load_salt(salt_file: Path) -> bytes:
         return bytes.fromhex(salt_file.read_text().strip())
     salt = secrets.token_bytes(32)
     salt_file.parent.mkdir(parents=True, exist_ok=True)
-    salt_file.write_text(salt.hex())
+    try:
+        fd = os.open(salt_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        # A concurrent writer created the salt between our exists-check and open;
+        # defer to it rather than overwrite so both processes share one salt.
+        return bytes.fromhex(salt_file.read_text().strip())
+    with os.fdopen(fd, "w") as f:
+        os.fchmod(f.fileno(), 0o600)  # exact 0o600 regardless of the process umask
+        f.write(salt.hex())
     return salt
 
 

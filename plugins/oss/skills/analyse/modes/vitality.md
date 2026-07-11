@@ -142,7 +142,7 @@ QUICK_MODE=$(cat "${TMPDIR:-/tmp}/analyse-quick-mode" 2>/dev/null || echo false)
 
 ## Step 7 — Terminal Summary Output
 
-Read `$FOUNDRY_SHARED/terminal-summaries.md` for compact block format. File absent → warn "foundry:setup required — printing plain terminal output instead."
+Read `$FOUNDRY_SHARED/terminal-summaries.md` for compact block format. File absent → warn "run /foundry:setup — printing plain terminal output instead."
 
 Print compact block to terminal. Three sections: header, exec summary, simplified scorecard. Axis rows must appear in numeric order 1–9; never reorder by score, weight, or status:
 

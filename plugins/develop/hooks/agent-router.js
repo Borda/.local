@@ -177,6 +177,7 @@ function getEmbedding(text, apiKey) {
       },
     );
     req.on("error", reject);
+    req.setTimeout(5000, () => req.destroy(new Error("embedding request timeout")));
     req.write(body);
     req.end();
   });
@@ -285,116 +286,125 @@ async function buildIndex(cwd, openaiKey) {
   };
 }
 
+// ── Exports (test-only; no-op when run as a hook) ───────────────────────────────
+// Pure helpers are exported for unit testing. require.main guard below ensures the
+// stdin main path only runs when executed directly (always true in production).
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { cosine, findBestCosine, readDescription };
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-let raw = "";
-process.stdin.setEncoding("utf8");
-process.stdin.on("data", (d) => (raw += d));
-process.stdin.on("end", async () => {
-  try {
-    const data = JSON.parse(raw);
-    const event = data.hook_event_name;
-    const sessionId = data.session_id || "unknown";
-    if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) process.exit(0);
-    const stateDir = `${getSentinelDir()}/claude-state-${sessionId}`;
-    const indexPath = path.join(stateDir, "agent-router-index.json");
-    const cwd = process.cwd();
-    const openaiKey = process.env.OPENAI_API_KEY || null;
-    const anthropicKey = process.env.ANTHROPIC_API_KEY || null;
-
-    // ── SessionStart: build or merge into shared routing index ───────────────
-    if (event === "SessionStart") {
-      try {
-        fs.mkdirSync(stateDir, { recursive: true });
-        const fresh = await buildIndex(cwd, openaiKey);
-        let index;
-        if (fs.existsSync(indexPath)) {
-          index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
-          const knownPlugins = new Set(index.plugin_agents);
-          for (const a of fresh.plugin_agents) {
-            if (!knownPlugins.has(a)) index.plugin_agents.push(a);
-          }
-          const knownLocals = new Set(index.local_agents.map((a) => a.name));
-          for (const a of fresh.local_agents) {
-            if (!knownLocals.has(a.name)) index.local_agents.push(a);
-          }
-        } else {
-          index = fresh;
-        }
-        atomicWrite(indexPath, JSON.stringify(index));
-      } catch (_) {}
-      process.exit(0);
-    }
-
-    // ── PreToolUse: route Agent() calls ──────────────────────────────────────
-    if (event !== "PreToolUse" || data.tool_name !== "Agent") process.exit(0);
-
-    const subagentType = (data.tool_input && data.tool_input.subagent_type) || "";
-    const prompt = (data.tool_input && data.tool_input.prompt) || "";
-    if (!subagentType) process.exit(0);
-
-    if (BUILT_INS.has(subagentType)) process.exit(0);
-
-    // Load or build index on-demand
-    let index;
+if (require.main === module) {
+  let raw = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (d) => (raw += d));
+  process.stdin.on("end", async () => {
     try {
-      index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
-    } catch (_) {
-      index = await buildIndex(cwd, openaiKey);
-    }
+      const data = JSON.parse(raw);
+      const event = data.hook_event_name;
+      const sessionId = data.session_id || "unknown";
+      if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) process.exit(0);
+      const stateDir = `${getSentinelDir()}/claude-state-${sessionId}`;
+      const indexPath = path.join(stateDir, "agent-router-index.json");
+      const cwd = process.cwd();
+      const openaiKey = process.env.OPENAI_API_KEY || null;
+      const anthropicKey = process.env.ANTHROPIC_API_KEY || null;
 
-    // Tier 1: exact match
-    if (new Set(index.plugin_agents).has(subagentType)) process.exit(0);
-    if (!subagentType.includes(":") && new Set(index.local_agents.map((a) => a.name)).has(subagentType))
-      process.exit(0);
-
-    // Tier 2: semantic match
-    const queryText = `${subagentType.replace(/[:\-_]/g, " ")} ${prompt.slice(0, 300)}`;
-    let target = "general-purpose";
-    let routingNote = `[Router: '${subagentType}' no fit → general-purpose]`;
-
-    const hasEmbeddings = index.local_agents.some((a) => a.embedding);
-    if (openaiKey && hasEmbeddings) {
-      try {
-        const qEmb = await getEmbedding(queryText, openaiKey);
-        const best = findBestCosine(index, qEmb);
-        if (best.name && best.score >= COSINE_THRESHOLD) {
-          target = best.name;
-          routingNote = `[Router: '${subagentType}' → '${target}' (cosine: ${best.score.toFixed(3)})]`;
-        }
-      } catch (_) {
-        // fall through to LLM
+      // ── SessionStart: build or merge into shared routing index ───────────────
+      if (event === "SessionStart") {
+        try {
+          fs.mkdirSync(stateDir, { recursive: true });
+          const fresh = await buildIndex(cwd, openaiKey);
+          let index;
+          if (fs.existsSync(indexPath)) {
+            index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+            const knownPlugins = new Set(index.plugin_agents);
+            for (const a of fresh.plugin_agents) {
+              if (!knownPlugins.has(a)) index.plugin_agents.push(a);
+            }
+            const knownLocals = new Set(index.local_agents.map((a) => a.name));
+            for (const a of fresh.local_agents) {
+              if (!knownLocals.has(a.name)) index.local_agents.push(a);
+            }
+          } else {
+            index = fresh;
+          }
+          atomicWrite(indexPath, JSON.stringify(index));
+        } catch (_) {}
+        process.exit(0);
       }
-    }
 
-    if (target === "general-purpose" && anthropicKey && index.local_agents.length > 0) {
+      // ── PreToolUse: route Agent() calls ──────────────────────────────────────
+      if (event !== "PreToolUse" || data.tool_name !== "Agent") process.exit(0);
+
+      const subagentType = (data.tool_input && data.tool_input.subagent_type) || "";
+      const prompt = (data.tool_input && data.tool_input.prompt) || "";
+      if (!subagentType) process.exit(0);
+
+      if (BUILT_INS.has(subagentType)) process.exit(0);
+
+      // Load or build index on-demand
+      let index;
       try {
-        const picked = await Promise.race([
-          askLlm(index.local_agents, queryText, anthropicKey),
-          new Promise((resolve) => setTimeout(() => resolve("none"), 5000)),
-        ]);
-        if (picked && picked !== "none" && index.local_agents.some((a) => a.name === picked)) {
-          target = picked;
-          routingNote = `[Router: '${subagentType}' → '${target}' (llm)]`;
-        }
-      } catch (_) {}
-    }
+        index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+      } catch (_) {
+        index = await buildIndex(cwd, openaiKey);
+      }
 
-    process.stdout.write(
-      JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          updatedInput: {
-            description: (data.tool_input && data.tool_input.description) || prompt.slice(0, 100),
-            subagent_type: target,
-            prompt: prompt + " " + routingNote,
+      // Tier 1: exact match
+      if (new Set(index.plugin_agents).has(subagentType)) process.exit(0);
+      if (!subagentType.includes(":") && new Set(index.local_agents.map((a) => a.name)).has(subagentType))
+        process.exit(0);
+
+      // Tier 2: semantic match
+      const queryText = `${subagentType.replace(/[:\-_]/g, " ")} ${prompt.slice(0, 300)}`;
+      let target = "general-purpose";
+      let routingNote = `[Router: '${subagentType}' no fit → general-purpose]`;
+
+      const hasEmbeddings = index.local_agents.some((a) => a.embedding);
+      if (openaiKey && hasEmbeddings) {
+        try {
+          const qEmb = await getEmbedding(queryText, openaiKey);
+          const best = findBestCosine(index, qEmb);
+          if (best.name && best.score >= COSINE_THRESHOLD) {
+            target = best.name;
+            routingNote = `[Router: '${subagentType}' → '${target}' (cosine: ${best.score.toFixed(3)})]`;
+          }
+        } catch (_) {
+          // fall through to LLM
+        }
+      }
+
+      if (target === "general-purpose" && anthropicKey && index.local_agents.length > 0) {
+        try {
+          const picked = await Promise.race([
+            askLlm(index.local_agents, queryText, anthropicKey),
+            new Promise((resolve) => setTimeout(() => resolve("none"), 5000)),
+          ]);
+          if (picked && picked !== "none" && index.local_agents.some((a) => a.name === picked)) {
+            target = picked;
+            routingNote = `[Router: '${subagentType}' → '${target}' (llm)]`;
+          }
+        } catch (_) {}
+      }
+
+      process.stdout.write(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "allow",
+            updatedInput: {
+              description: (data.tool_input && data.tool_input.description) || prompt.slice(0, 100),
+              subagent_type: target,
+              prompt: prompt + " " + routingNote,
+            },
           },
-        },
-      }),
-    );
-    process.exit(0);
-  } catch (_) {
-    process.exit(0);
-  }
-});
+        }),
+      );
+      process.exit(0);
+    } catch (_) {
+      process.exit(0);
+    }
+  });
+}

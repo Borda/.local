@@ -49,6 +49,39 @@ def test_build_verify_command_network_override() -> None:
     assert cmd[idx + 1] == "host"
 
 
+# ---------- Destructive-token guard (H1) ----------
+
+
+@pytest.mark.parametrize(
+    "arg",
+    [
+        pytest.param("pytest -q metric.py", id="pytest"),
+        pytest.param("python -m eval", id="python"),
+        pytest.param("echo done", id="echo"),
+        pytest.param("./run_metric.sh", id="script-entry"),
+        pytest.param("pytest_rm_module -q", id="substring-not-token"),
+    ],
+)
+def test_find_destructive_tokens_allows_benign_commands(arg: str) -> None:
+    """Legitimate metric commands contain no destructive whole-word tokens."""
+    assert ds.find_destructive_tokens(arg) == []
+
+
+@pytest.mark.parametrize(
+    "arg,expected",
+    [
+        pytest.param("rm -rf /workspace/.experiments/state", ["rm"], id="rm"),
+        pytest.param("dd of=/workspace/.experiments/x", ["dd"], id="dd"),
+        pytest.param("truncate -s 0 log", ["truncate"], id="truncate"),
+        pytest.param("shred file", ["shred"], id="shred"),
+        pytest.param("mv a b", ["mv"], id="mv"),
+    ],
+)
+def test_find_destructive_tokens_flags_destructive_commands(arg: str, expected: list[str]) -> None:
+    """Bare destructive binaries are detected even without shell metacharacters."""
+    assert ds.find_destructive_tokens(arg) == expected
+
+
 # ---------- main() ----------
 
 
@@ -196,6 +229,16 @@ def test_main_verify_mode_dispatches_correctly(captured_run: list[list[str]]) ->
     cmd = captured_run[0]
     assert cmd[-3:] == ["sh", "-c", "pytest -q"]
     assert "/proj/.experiments:/workspace/.experiments:rw" in cmd
+
+
+def test_main_verify_rejects_destructive_command_before_docker(
+    captured_run: list[list[str]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A bare ``rm`` in verify mode wipes the rw .experiments mount → exit 2, no docker (H1)."""
+    rc = ds.main(["--mode", "verify", "rm -rf /workspace/.experiments/state"], env={}, cwd="/proj")
+    assert rc == 2
+    assert "destructive binaries" in capsys.readouterr().err
+    assert captured_run == []
 
 
 @pytest.mark.parametrize("network", ["host", "container:abc", "service:name", "unknown", " host "])

@@ -41,6 +41,7 @@ def _load_scan_query():
 
 _scan_query_mod = _load_scan_query()
 _require_feature = _scan_query_mod._require_feature
+_has_call_graph = _scan_query_mod._has_call_graph
 _find_index = _scan_query_mod.find_index
 
 
@@ -613,7 +614,7 @@ class TestRequireFeature:
 
     @pytest.fixture
     def index_v3(self) -> dict:
-        """Minimal index dict at scan_version=3 — matches current SCAN_VERSION."""
+        """Minimal index dict at scan_version=3 — the call-graph floor (CALL_GRAPH_MIN_VER)."""
         return {"scan_version": 3, "modules": []}
 
     def test_passes_when_version_meets_minimum(self, index_v3) -> None:
@@ -641,6 +642,58 @@ class TestRequireFeature:
         """Missing scan_version is treated as 0 and triggers SystemExit."""
         with pytest.raises(SystemExit):
             _require_feature({}, 1, "test_feature")
+
+
+class TestHasCallGraph:
+    """_has_call_graph: gates fn-* commands on the fixed v3 floor, not live SCAN_VERSION.
+
+    Regression guard for the bug where the check compared against the live
+    ``SCAN_VERSION`` (11), so every pre-current index (v3–v10) was falsely rejected
+    for fn-deps/fn-rdeps/fn-central/fn-blast. The floor must stay pinned to
+    ``CALL_GRAPH_MIN_VER`` (3) so future ``SCAN_VERSION`` bumps never re-break it.
+    """
+
+    @pytest.mark.parametrize(
+        "version",
+        [
+            pytest.param(3, id="floor-v3"),
+            pytest.param(10, id="pre-current-v10"),
+            pytest.param(11, id="current-v11"),
+            pytest.param(99, id="future-version"),
+        ],
+    )
+    def test_accepts_versions_at_or_above_floor(self, version: int) -> None:
+        """Any index at or above the v3 call-graph floor carries call edges — accept it."""
+        assert _has_call_graph({"scan_version": version}) is True
+
+    @pytest.mark.parametrize(
+        "version",
+        [
+            pytest.param(2, id="v2-no-call-graph"),
+            pytest.param(1, id="v1"),
+            pytest.param(0, id="v0"),
+        ],
+    )
+    def test_rejects_versions_below_floor(self, version: int) -> None:
+        """Indexes below v3 predate call edges — must be rejected."""
+        assert _has_call_graph({"scan_version": version}) is False
+
+    def test_not_coupled_to_live_scan_version(self) -> None:
+        """Guard against re-coupling: the current SCAN_VERSION index and a v3 index both pass.
+
+        If the check ever regresses to ``>= SCAN_VERSION``, the v3 case flips to
+        False while the current-version case stays True — this asserts both hold.
+        """
+        assert _has_call_graph({"scan_version": _scan_query_mod.CALL_GRAPH_MIN_VER}) is True
+        assert _has_call_graph({"scan_version": 3}) is True
+
+    def test_handles_string_version(self) -> None:
+        """Legacy indexes may serialise scan_version as a string — parse and accept."""
+        assert _has_call_graph({"scan_version": "3"}) is True
+
+    def test_missing_version_key_rejected(self) -> None:
+        """Missing scan_version defaults to 0 (below floor) — reject."""
+        assert _has_call_graph({}) is False
 
 
 class TestMockRdeps:

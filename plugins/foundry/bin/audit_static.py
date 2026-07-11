@@ -107,7 +107,20 @@ def run_checks(scope: Path) -> list[dict[str, object]]:
             results.append({"check": check["id"], "status": "skipped", "findings": 0, "lines": []})
             continue
         env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        proc = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=env)
+        except subprocess.TimeoutExpired:
+            # A runaway checker must not crash the whole audit (breaks the 0/1/2
+            # exit contract) — record it as an errored row and keep going.
+            results.append(
+                {
+                    "check": check["id"],
+                    "status": "error",
+                    "findings": 0,
+                    "lines": [f"checker timed out after 120s: {check['script']}"],
+                }
+            )
+            continue
         # Findings come from stdout only; a passing check has none by definition
         # (stderr carries benign runtime warnings, not audit findings).
         lines = _findings(proc.stdout) if proc.returncode != 0 else []
