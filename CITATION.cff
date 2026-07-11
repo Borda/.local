@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Borda's AI-Rig"
+type: software
+authors:
+  - family-names: Borovec
+    given-names: Jirka
+    alias: Borda
+license: Apache-2.0
+repository-code: "https://github.com/Borda/AI-Rig"

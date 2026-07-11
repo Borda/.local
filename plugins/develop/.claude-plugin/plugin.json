@@ -4,7 +4,7 @@
     "url": "https://github.com/Borda/AI-Rig"
   },
   "description": "Implementation workflow skills: feature, fix, refactor, plan, debug, review",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "name": "develop",
   "repository": "https://github.com/Borda/AI-Rig",
   "version": "0.15.1"

@@ -1,6 +1,6 @@
 # 🏠 Borda's AI-Rig
 
-![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg) [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-orange)](https://claude.ai/code) [![Codex CLI](https://img.shields.io/badge/Codex_CLI-config-green)](https://github.com/openai/codex)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-orange)](https://claude.ai/code) [![Codex CLI](https://img.shields.io/badge/Codex_CLI-config-green)](https://github.com/openai/codex)
 
 Specialist-agent infrastructure for Python/ML OSS — the scaffolding that lets you maintain at scale without becoming a full-time reviewer.
 

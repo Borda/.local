@@ -12,7 +12,7 @@
     "review",
     "maintenance"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "name": "oss",
   "repository": "https://github.com/Borda/AI-Rig",
   "version": "0.19.1"

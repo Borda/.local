@@ -14,7 +14,7 @@
     "python-only",
     "call-graph"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "name": "codemap",
   "repository": "https://github.com/Borda/AI-Rig",
   "version": "0.21.0"
