@@ -45,33 +45,44 @@
       "status": "shared-confidence-band-status"
     },
     "fanout_substituted": false,
+    "independence_required": true,
     "independence_satisfied": true,
     "review_decision": {
       "rationale": "why the recommendation follows from findings, gates, and scope",
       "recommendation": "accept-as-is|minor-changes|needs-more-work|reject|not-aligned",
       "summary": "1-3 sentence review outcome"
     },
+    "review_input_sha256": "sha256 of diff.patch",
+    "review_run_id": "stable ID for this review execution",
     "risk_tier": "TRIVIAL|LOCAL|BROAD|HIGH_RISK",
     "scope": "working-tree|path|commit|pr",
     "specialist_manifest": ".reports/codex/review/<timestamp>/specialist-manifest.json",
     "specialist_passes": [
       {
+        "attempts": [
+          {
+            "agent_path": "/root/qa_review",
+            "agent_thread_id": "child thread ID",
+            "attempt": 1,
+            "context_path": ".reports/codex/review/<timestamp>/specialists/qa-specialist-context.md",
+            "context_sha256": "sha256",
+            "effort": "high",
+            "event_id": "parent spawn event ID",
+            "model": "actual model from child turn_context",
+            "output_path": ".reports/codex/review/<timestamp>/specialists/qa-specialist.md",
+            "output_sha256": "sha256",
+            "status": "completed",
+            "turn_id": "child turn ID"
+          }
+        ],
         "axis": "tests",
         "blocking_findings": 0,
         "confidence": 0.0,
         "mode": "spawned|substituted",
         "output_path": ".reports/codex/review/<timestamp>/specialists/qa-specialist.md",
         "role": "qa-specialist",
-        "trigger": "required for LOCAL/BROAD/HIGH_RISK reviews"
-      },
-      {
-        "axis": "architecture",
-        "blocking_findings": 0,
-        "confidence": 0.0,
-        "mode": "not_triggered",
-        "output_path": null,
-        "role": "solution-architect",
-        "trigger": "not triggered: no public API, migration, or cross-subsystem coupling"
+        "selected_attempt": 1,
+        "trigger": "explicit risk reason from review-routing.json"
       }
     ]
   },

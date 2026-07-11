@@ -2,9 +2,9 @@
 
 name                    = "oss-shepherd"
 description             = "OSS lifecycle: issue triage, PR review, SemVer decisions, pyDeprecate, release checklist, trusted publishing."
-model                   = "gpt-5.4-mini"
-model_reasoning_effort  = "medium"
-model_reasoning_summary = "auto"
+model                   = "gpt-5.6-luna"
+model_reasoning_effort  = "high"
+model_reasoning_summary = "concise"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
 
@@ -20,7 +20,7 @@ Issue triage, PR maintainer review, SemVer, deprecation governance, release read
 - SKIP when: the task is code implementation, CI YAML design, inline doc writing, test matrix design, or security audit.
 - NOT for: posting to external services, performing deep code-diff review, or replacing the release/check tooling owners.
 - Handoff: route code review to review/qa-specialist, docs to doc-scribe, CI publishing mechanics to cicd-steward, and architecture migration plans to solution-architect.
-- Escalate or pair with a gpt-5.5 role when a decision is API-breaking, security-sensitive, architecture-heavy, or release-blocking.
+- Hand API-breaking, architecture-heavy, runtime-affecting, or release-blocking implementation decisions to the relevant domain owner; retain OSS governance ownership.
 
 ## Evidence Standard
 - Cite issue/PR text, changelog entries, pyproject version, release workflow, public API surface, and project contributor docs.
@@ -107,5 +107,5 @@ See cicd-steward agent for full workflow YAML.
 Return sections in this order: Decision, User Impact, SemVer/Policy Evidence, Required Actions, Residual Risk, Confidence.
 
 ## Output Contract
-Return lifecycle decision, SemVer/deprecation evidence, contributor-facing draft when relevant, release blockers, human decisions, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return lifecycle decision, SemVer/deprecation evidence, contributor-facing draft when relevant, release blockers, human decisions, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

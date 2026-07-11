@@ -1,0 +1,56 @@
+{
+  "routes": {
+    "luna-support-high": {
+      "baseline_model": "gpt-5.6-terra",
+      "candidate_model": "gpt-5.6-luna",
+      "effort": "high",
+      "max_cost_ratio": 1.0,
+      "max_quality_drop": 0.0,
+      "min_campaigns": 2,
+      "min_pairs": 10,
+      "min_quality_gain": 0.0,
+      "min_tool_use_pairs": 2,
+      "pairs_per_campaign": 5,
+      "required_evidence_scopes": [
+        "classification",
+        "tool-use"
+      ],
+      "selection_goal": "equal mixed-scope quality with no normalized-token regression"
+    },
+    "sol-critical-high": {
+      "baseline_model": "gpt-5.6-terra",
+      "candidate_model": "gpt-5.6-sol",
+      "effort": "high",
+      "max_cost_ratio": null,
+      "max_quality_drop": 0.0,
+      "min_campaigns": 2,
+      "min_pairs": 10,
+      "min_quality_gain": 0.01,
+      "min_tool_use_pairs": 2,
+      "pairs_per_campaign": 5,
+      "required_evidence_scopes": [
+        "classification",
+        "tool-use"
+      ],
+      "selection_goal": "mixed-scope quality gain justifies critical-only escalation"
+    },
+    "terra-general-high": {
+      "baseline_model": "gpt-5.6-sol",
+      "candidate_model": "gpt-5.6-terra",
+      "effort": "high",
+      "max_cost_ratio": 1.0,
+      "max_quality_drop": 0.0,
+      "min_campaigns": 2,
+      "min_pairs": 10,
+      "min_quality_gain": 0.0,
+      "min_tool_use_pairs": 2,
+      "pairs_per_campaign": 5,
+      "required_evidence_scopes": [
+        "classification",
+        "tool-use"
+      ],
+      "selection_goal": "equal mixed-scope quality without routine Sol use or normalized-token regression"
+    }
+  },
+  "schema_version": 1
+}

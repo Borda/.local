@@ -2,7 +2,7 @@
 
 name                    = "squeezer"
 description             = "Performance profiling and memory optimization: profile-first, benchmark before changing, ML throughput specialist."
-model                   = "gpt-5.5"
+model                   = "gpt-5.6-terra"
 model_reasoning_effort  = "high"
 model_reasoning_summary = "auto"
 approval_policy         = "on-request"
@@ -65,5 +65,5 @@ Never write "this is faster" without attaching numbers.
 Provide a complexity annotation (O(n), O(n²), etc.) for algorithmic changes.
 
 ## Output Contract
-Return before metrics, hotspot evidence, change recommendation, after metrics or hypothesis caveat, correctness checks, residual risk, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return before metrics, hotspot evidence, change recommendation, after metrics or hypothesis caveat, correctness checks, residual risk, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

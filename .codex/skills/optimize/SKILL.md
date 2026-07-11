@@ -126,33 +126,11 @@ Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
 
 ### 08: Run shared quality gates
 
-```bash
-.codex/skills/_shared/run-gates.sh \
-    --out "$OUT_DIR" \
-    --tests "${TESTS_CMD:-$GUARD_CMD}"
-```
+Inspect `run-gates.sh --help`. The tests gate must run the configured test command or guard command; supply real commands or explicit reasons for the other gates.
 
 ### 09: Write and validate the mandatory result artifact
 
-```bash
-.codex/skills/_shared/write-result.py \
-    --out "$OUT_DIR/result.candidate.json" \
-    --status "$STATUS" \
-    --checks-run "lint,format,types,tests,review" \
-    --checks-failed "$CHECKS_FAILED" \
-    --critical "$CRITICAL" \
-    --high "$HIGH" \
-    --medium "$MEDIUM" \
-    --low "$LOW" \
-    --confidence "$CONFIDENCE" \
-    --metadata "$OPTIMIZE_METADATA" \
-    --artifact-path "$OUT_DIR/result.json"
-python3 .codex/skills/_shared/validate-artifacts.py \
-    --skill optimize \
-    --out "$OUT_DIR" \
-    --result "$OUT_DIR/result.candidate.json"
-mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-```
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `OPTIMIZE_METADATA`, validate as skill `optimize`, and promote only the validated candidate.
 
 ## Fail-Fast Rules
 

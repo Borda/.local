@@ -5,8 +5,30 @@ SCOPE="working-tree"
 TARGET=""
 OUT_DIR=""
 
+usage() {
+  cat <<'EOF'
+Usage: collect-diff.sh --out DIR [--scope working-tree|path|commit] [--target VALUE]
+
+Collect a Git diff context pack. working-tree is the default scope. path and
+commit require --target. Outputs include status.txt, diff.patch, files.txt,
+diffstat.txt, numstat.txt, and untracked.txt.
+
+Options:
+  --out DIR       Required artifact directory
+  --scope SCOPE   working-tree, path, or commit
+  --target VALUE  Path for path scope or revision for commit scope
+  -h, --help      Show this help
+
+Exit 0 means collection succeeded; exit 2 means invalid input.
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
     --scope)
       SCOPE="$2"
       shift 2

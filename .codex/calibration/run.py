@@ -3,15 +3,22 @@
 
 from __future__ import annotations
 
+import argparse
+import hashlib
+import importlib.util
 import json
+import math
 import os
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from live_contract import build_prompt, candidate_findings, prompt_sha256, role_context, task_contract_sha256
 
 
 SKILLS = (
@@ -44,21 +51,18 @@ AGENTS = (
     "challenger",
     "scientist",
 )
-HIGH_MODEL_AGENTS = {
-    "sw-engineer",
-    "qa-specialist",
-    "squeezer",
-    "data-steward",
-    "cicd-steward",
+DEFAULT_MODEL = "gpt-5.6-terra"
+REVIEW_MODEL = "gpt-5.6-terra"
+CRITICAL_MODEL = "gpt-5.6-sol"
+SUPPORT_MODEL = "gpt-5.6-luna"
+SUPPORTED_ACTIVE_MODELS = {DEFAULT_MODEL, CRITICAL_MODEL, SUPPORT_MODEL}
+SOL_MODEL_AGENTS = {
     "security-auditor",
     "solution-architect",
-    "challenger",
-    "scientist",
 }
-MINI_MODEL_AGENTS = {"doc-scribe", "web-explorer", "oss-shepherd", "curator", "linting-expert"}
-XHIGH_EFFORT_AGENTS = {"challenger", "solution-architect", "security-auditor", "scientist"}
-HIGH_EFFORT_AGENTS = {"sw-engineer", "qa-specialist", "squeezer", "data-steward", "cicd-steward"}
-MEDIUM_EFFORT_AGENTS = {"doc-scribe", "web-explorer", "oss-shepherd", "curator", "linting-expert"}
+LUNA_MODEL_AGENTS = {"cicd-steward", "doc-scribe", "linting-expert", "oss-shepherd", "web-explorer"}
+TERRA_MODEL_AGENTS = set(AGENTS) - SOL_MODEL_AGENTS - LUNA_MODEL_AGENTS
+HIGH_EFFORT_AGENTS = set(AGENTS)
 
 
 @dataclass(slots=True)
@@ -75,16 +79,26 @@ class Paths:
     behavioral_cases: Path
     behavioral_observations: Path
     behavioral_scorer: Path
+    live_ab_runner: Path
+    live_ab_tasks: Path
+    live_contract: Path
+    live_route_policy: Path
+    accepted_route_evidence: Path
     behavioral_result: Path
     quality_gates: Path
+    helper_cli_contract: Path
     native_skill_contract: Path
     run_gates: Path
     run_py: Path
     write_result_py: Path
     collect_diff: Path
     collect_pr: Path
+    select_git_remote: Path
+    sync_manifest: Path
     find_review_report: Path
     validate_artifacts: Path
+    review_validate_artifacts: Path
+    codex_harness: Path
     checks: Path
     leaks: Path
     recommendations: Path
@@ -94,9 +108,18 @@ class Paths:
     def create(cls) -> "Paths":
         """Create the output directory and return resolved calibration paths."""
         root = Path(__file__).resolve().parents[2]
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-        out_dir = root / ".reports" / "codex" / "calibration" / timestamp
-        out_dir.mkdir(parents=True, exist_ok=True)
+        base_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S-%fZ")
+        reports_dir = root / ".reports" / "codex" / "calibration"
+        for attempt in range(100):
+            timestamp = base_timestamp if attempt == 0 else f"{base_timestamp}-{attempt:02d}"
+            out_dir = reports_dir / timestamp
+            try:
+                out_dir.mkdir(parents=True)
+            except FileExistsError:
+                continue
+            break
+        else:
+            raise RuntimeError("unable-to-create-unique-calibration-artifact-directory")
         return cls(
             root=root,
             timestamp=timestamp,
@@ -108,16 +131,26 @@ class Paths:
             behavioral_cases=root / ".codex" / "calibration" / "behavioral-cases.json",
             behavioral_observations=root / ".codex" / "calibration" / "behavioral-observations.jsonl",
             behavioral_scorer=root / ".codex" / "calibration" / "score_behavioral.py",
+            live_ab_runner=root / ".codex" / "calibration" / "run_live_ab.py",
+            live_ab_tasks=root / ".codex" / "calibration" / "live-ab-tasks.json",
+            live_contract=root / ".codex" / "calibration" / "live_contract.py",
+            live_route_policy=root / ".codex" / "calibration" / "live-route-policy.json",
+            accepted_route_evidence=root / ".codex" / "calibration" / "accepted-route-evidence.json",
             behavioral_result=out_dir / "behavioral.json",
             quality_gates=root / ".codex" / "skills" / "_shared" / "quality-gates.md",
+            helper_cli_contract=root / ".codex" / "skills" / "_shared" / "helper-cli-contract.md",
             native_skill_contract=root / ".codex" / "skills" / "_shared" / "native-skill-contract.md",
             run_gates=root / ".codex" / "skills" / "_shared" / "run-gates.sh",
             run_py=root / ".codex" / "calibration" / "run.py",
             write_result_py=root / ".codex" / "skills" / "_shared" / "write-result.py",
             collect_diff=root / ".codex" / "skills" / "_shared" / "collect-diff.sh",
             collect_pr=root / ".codex" / "skills" / "_shared" / "collect-pr.sh",
+            select_git_remote=root / ".codex" / "skills" / "_shared" / "select-git-remote.py",
+            sync_manifest=root / ".codex" / "sync-manifest.json",
             find_review_report=root / ".codex" / "skills" / "_shared" / "find-review-report.py",
             validate_artifacts=root / ".codex" / "skills" / "_shared" / "validate-artifacts.py",
+            review_validate_artifacts=root / ".codex" / "skills" / "review" / "validate_artifacts.py",
+            codex_harness=root / ".github" / "codex-harness.sh",
             checks=out_dir / "checks.txt",
             leaks=out_dir / "leaks.txt",
             recommendations=out_dir / "recommendations.md",
@@ -211,7 +244,7 @@ def top_level_setting(file: Path, key: str) -> str | None:
     return None
 
 
-def check_model(run: CalibrationRun, file: Path, label: str, check_id: str, expected: str = "gpt-5.5") -> None:
+def check_model(run: CalibrationRun, file: Path, label: str, check_id: str, expected: str) -> None:
     """Check the configured top-level model value."""
     if top_level_setting(file, "model") == expected:
         run.append_check(f"{label}:model=ok")
@@ -222,11 +255,11 @@ def check_model(run: CalibrationRun, file: Path, label: str, check_id: str, expe
 
 def check_review_model(run: CalibrationRun, file: Path, label: str) -> None:
     """Check the project review model policy."""
-    if re.search(r'^\s*review_model\s*=\s*"gpt-5\.5"', read_text(file), flags=re.MULTILINE):
+    if top_level_setting(file, "review_model") == REVIEW_MODEL:
         run.append_check(f"{label}:review_model=ok")
         return
     run.append_check(f"{label}:review_model=fail")
-    run.fail_and_leak("review-model-policy", f"review-model-not-gpt-5.5:{file}")
+    run.fail_and_leak("review-model-policy", f"review-model-not-{REVIEW_MODEL}:{file}")
 
 
 def check_reasoning_effort(run: CalibrationRun, file: Path, expected: str, label: str, check_id: str) -> None:
@@ -239,13 +272,95 @@ def check_reasoning_effort(run: CalibrationRun, file: Path, expected: str, label
     run.fail_and_leak(check_id, f"reasoning-effort-mismatch:{label}:expected={expected}:{file}")
 
 
-def check_no_deprecated_active_models(run: CalibrationRun) -> None:
-    """Reject active deprecated model names in project and agent configs."""
+def check_supported_active_models(run: CalibrationRun) -> None:
+    """Reject active model names outside the configured model policy."""
     files = [run.paths.project_cfg, *sorted((run.paths.root / ".codex" / "agents").glob("*.toml"))]
-    pattern = re.compile(r'^\s*(model|review_model)\s*=\s*"gpt-5\.(2|3-codex)"', flags=re.MULTILINE)
     for file in files:
-        if pattern.search(read_text(file)):
-            run.fail_and_leak("deprecated-model-policy", f"deprecated-active-model:{file}")
+        for setting in ("model", "review_model"):
+            value = top_level_setting(file, setting)
+            if value is not None and value not in SUPPORTED_ACTIVE_MODELS:
+                run.fail_and_leak("supported-model-policy", f"unsupported-active-model:{value}:{file}")
+
+
+def _sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest for a file."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _derive_role_assignments(
+    scores: dict[str, dict[str, Any]], route_policy: dict[str, Any], adjudication: dict[str, Any]
+) -> dict[str, str]:
+    """Derive active role models from accepted paired evidence."""
+    assignments = {agent: DEFAULT_MODEL for agent in AGENTS}
+    gain_threshold = float(adjudication["candidate_quality_gain_threshold"])
+    cost_ratio_max = float(adjudication["candidate_aggregate_cost_ratio_max"])
+
+    for route_id in ("sol-critical-high", "terra-general-high"):
+        comparisons = scores[route_id]["live_route_acceptance"]["routes"][route_id]["comparisons"]
+        by_role: dict[str, list[dict[str, Any]]] = {}
+        for comparison in comparisons:
+            by_role.setdefault(comparison["role"], []).append(comparison)
+        for role, rows in by_role.items():
+            quality_regressions = sum(not row["quality_ok"] for row in rows)
+            mean_gain = sum(row["candidate_f1"] - row["baseline_f1"] for row in rows) / len(rows)
+            aggregate_cost_ratio = math.prod(float(row["cost_ratio"]) for row in rows) ** (1 / len(rows))
+            candidate_wins = quality_regressions == 0 and (
+                mean_gain >= gain_threshold or aggregate_cost_ratio <= cost_ratio_max
+            )
+            model_key = "candidate_model" if candidate_wins else "baseline_model"
+            assignments[role] = route_policy[route_id][model_key]
+    for override in adjudication.get("human_overrides", []):
+        model = override["model"]
+        for role in override["roles"]:
+            assignments[role] = model
+    return assignments
+
+
+def check_accepted_route_evidence(run: CalibrationRun) -> None:
+    """Bind active model pins to hashed paid route evidence and adjudication."""
+    try:
+        payload = json.loads(run.paths.accepted_route_evidence.read_text(encoding="utf-8"))
+        if payload.get("schema_version") != 1 or payload.get("reasoning_effort") != "high":
+            raise ValueError("unsupported accepted-route evidence schema or effort")
+
+        scores: dict[str, dict[str, Any]] = {}
+        observed_rows = 0
+        for item in payload["evidence_files"]:
+            path = run.paths.root / ".codex" / item["path"]
+            if _sha256_file(path) != item["sha256"]:
+                raise ValueError(f"evidence hash mismatch: {item['path']}")
+            if "rows" in item:
+                row_count = sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+                if row_count != item["rows"]:
+                    raise ValueError(f"evidence row mismatch: {item['path']}")
+                observed_rows += row_count
+                continue
+            score = json.loads(path.read_text(encoding="utf-8"))
+            route_id = item["route"]
+            route_status = score["live_route_acceptance"]["routes"][route_id]["status"]
+            if route_status != item["strict_status"]:
+                raise ValueError(f"strict route status mismatch: {route_id}")
+            scores[route_id] = score
+
+        if observed_rows != payload["observed_live_calls"]:
+            raise ValueError("observed live call count mismatch")
+        if scores["luna-support-high"]["live_route_acceptance"]["routes"]["luna-support-high"]["status"] != "fail":
+            raise ValueError("Luna evidence must fail closed")
+
+        route_policy = json.loads(run.paths.live_route_policy.read_text(encoding="utf-8"))["routes"]
+        derived = _derive_role_assignments(scores, route_policy, payload["adjudication"])
+        declared = {agent: model for model, agents in payload["active_assignments"].items() for agent in agents}
+        configured = {agent: expected_agent_model(agent) for agent in AGENTS}
+        if set(declared) != set(AGENTS) or declared != derived or configured != derived:
+            raise ValueError("accepted route assignments do not match evidence or active pins")
+    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+        run.fail_and_leak("accepted-route-evidence", f"accepted-route-evidence-invalid:{exc}")
+        return
+
+    run.append_check(
+        "accepted-route-evidence=ok:"
+        f"live-calls={observed_rows}:luna-agents={len(LUNA_MODEL_AGENTS)}:sol-agents={len(SOL_MODEL_AGENTS)}"
+    )
 
 
 def check_behavioral_cases_version(run: CalibrationRun) -> None:
@@ -339,21 +454,19 @@ def check_skill_frontmatter(run: CalibrationRun, file: Path, skill: str) -> None
 
 def expected_agent_model(agent: str) -> str | None:
     """Return the expected model for an agent."""
-    if agent in HIGH_MODEL_AGENTS:
-        return "gpt-5.5"
-    if agent in MINI_MODEL_AGENTS:
-        return "gpt-5.4-mini"
+    if agent in SOL_MODEL_AGENTS:
+        return CRITICAL_MODEL
+    if agent in LUNA_MODEL_AGENTS:
+        return SUPPORT_MODEL
+    if agent in TERRA_MODEL_AGENTS:
+        return DEFAULT_MODEL
     return None
 
 
 def expected_agent_effort(agent: str) -> str | None:
     """Return the expected reasoning effort for an agent."""
-    if agent in XHIGH_EFFORT_AGENTS:
-        return "xhigh"
     if agent in HIGH_EFFORT_AGENTS:
         return "high"
-    if agent in MEDIUM_EFFORT_AGENTS:
-        return "medium"
     return None
 
 
@@ -381,11 +494,11 @@ def check_agent_effort(run: CalibrationRun, agent: str, file: Path) -> None:
 def check_core_configs(run: CalibrationRun) -> None:
     """Run project, skill, shared contract, and agent configuration checks."""
     run.paths.checks.write_text(f"calibration-start:{run.paths.timestamp}\n", encoding="utf-8")
-    check_model(run, run.paths.project_cfg, "project-config", "project-model-default")
-    check_model(run, run.paths.home_cfg, "home-config", "home-model-default")
+    check_model(run, run.paths.project_cfg, "project-config", "project-model-default", DEFAULT_MODEL)
     check_review_model(run, run.paths.project_cfg, "project-config")
     check_reasoning_effort(run, run.paths.project_cfg, "high", "project-config", "reasoning-effort-policy")
-    check_no_deprecated_active_models(run)
+    check_supported_active_models(run)
+    check_accepted_route_evidence(run)
 
     for skill in SKILLS:
         skill_file = run.paths.root / ".codex" / "skills" / skill / "SKILL.md"
@@ -403,6 +516,7 @@ def check_core_configs(run: CalibrationRun) -> None:
         check_contains(run, skill_file, "quality-gates", "skill-schema-all")
         check_contains(run, skill_file, f".reports/codex/{skill}/", "skill-schema-all")
         check_contains(run, skill_file, "result-template.json", "skill-schema-all")
+        check_contains(run, skill_file, "helper-cli-contract", "skill-schema-all")
         template_file = skill_file.with_name("result-template.json")
         if not template_file.exists():
             run.fail_and_leak("skill-schema-all", f"missing-result-template:{skill}")
@@ -415,7 +529,6 @@ def check_core_configs(run: CalibrationRun) -> None:
         for field_name in ("status", "checks_run", "checks_failed", "findings", "confidence", "artifact_path"):
             check_contains(run, template_file, f'"{field_name}"', "skill-schema-all")
         check_contains(run, run.paths.project_cfg, rf'path\s*=\s*"skills/{skill}"', "skill-registration-project")
-        check_contains(run, run.paths.home_cfg, rf'path\s*=\s*"(.*\/)?skills/{skill}"', "skill-registration-home")
 
     for file, check_id in (
         (run.paths.tasks, "fixed-task-set"),
@@ -423,14 +536,69 @@ def check_core_configs(run: CalibrationRun) -> None:
         (run.paths.behavioral_cases, "behavioral-metrics"),
         (run.paths.behavioral_observations, "behavioral-metrics"),
         (run.paths.behavioral_scorer, "behavioral-metrics"),
+        (run.paths.live_ab_runner, "behavioral-metrics"),
+        (run.paths.live_ab_tasks, "behavioral-metrics"),
+        (run.paths.live_contract, "behavioral-metrics"),
+        (run.paths.live_route_policy, "behavioral-metrics"),
+        (run.paths.accepted_route_evidence, "accepted-route-evidence"),
+        (run.paths.helper_cli_contract, "shared-script-selftests"),
+        (run.paths.sync_manifest, "shared-script-selftests"),
     ):
         if not file.exists():
             name = file.stem.replace("-", "_")
             run.fail_and_leak(check_id, f"missing-{name}:{file}")
 
     check_behavioral_cases_version(run)
+    check_fixed_task_and_behavioral_rosters(run)
     check_shared_confidence_contracts(run)
+    for helper_name in (
+        "run.py",
+        "run_live_ab.py",
+        "score_behavioral.py",
+        "run-gates.sh",
+        "collect-diff.sh",
+        "collect-pr.sh",
+        "find-review-report.py",
+        "select-git-remote.py",
+        "write-result.py",
+        "validate-artifacts.py",
+        "codex-harness.sh",
+    ):
+        check_contains(run, run.paths.helper_cli_contract, re.escape(helper_name), "shared-script-selftests")
     check_agents(run)
+
+
+def check_fixed_task_and_behavioral_rosters(run: CalibrationRun) -> None:
+    """Validate fixed task schema and behavioral coverage for every configured skill."""
+    try:
+        tasks_payload = json.loads(run.paths.tasks.read_text(encoding="utf-8"))
+        tasks = tasks_payload["tasks"]
+        if not isinstance(tasks, list) or not tasks:
+            raise ValueError("tasks must be a non-empty list")
+        ids: list[str] = []
+        task_skills: set[str] = set()
+        for index, task in enumerate(tasks):
+            if not isinstance(task, dict):
+                raise ValueError(f"task {index} is not an object")
+            for key in ("id", "skill", "goal", "success"):
+                if not isinstance(task.get(key), str) or not task[key].strip():
+                    raise ValueError(f"task {index} needs non-empty {key}")
+            ids.append(task["id"])
+            task_skills.add(task["skill"])
+        if len(ids) != len(set(ids)):
+            raise ValueError("task ids must be unique")
+        if task_skills != set(SKILLS):
+            raise ValueError(f"task skill roster mismatch: {sorted(task_skills ^ set(SKILLS))}")
+
+        cases_payload = json.loads(run.paths.behavioral_cases.read_text(encoding="utf-8"))
+        case_targets = {case.get("target") for case in cases_payload.get("cases", []) if isinstance(case, dict)}
+        missing_targets = sorted(set(SKILLS) - case_targets)
+        if missing_targets:
+            raise ValueError(f"behavioral skill targets missing: {missing_targets}")
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        run.fail_and_leak("fixed-task-set", f"fixed-task-roster-invalid:{exc}")
+        return
+    run.append_check("fixed-task-roster=ok")
 
 
 def check_shared_confidence_contracts(run: CalibrationRun) -> None:
@@ -451,7 +619,6 @@ def check_agents(run: CalibrationRun) -> None:
     """Run registration, schema, confidence, model, and effort checks for agents."""
     for agent in AGENTS:
         check_contains(run, run.paths.project_cfg, rf"\[agents\.{agent}\]", "agent-registration-project")
-        check_contains(run, run.paths.home_cfg, rf"\[agents\.{agent}\]", "agent-registration-home")
         agent_file = run.paths.root / ".codex" / "agents" / f"{agent}.toml"
         if not agent_file.exists():
             run.fail_and_leak("agent-schema-all", f"missing-agent-file:{agent}")
@@ -476,9 +643,7 @@ def check_agents(run: CalibrationRun) -> None:
                 pattern,
                 "agent-schema-all" if pattern in {r"^name\s*=", "developer_instructions"} else "native-agent-contract",
             )
-        check_contains(run, agent_file, "confidence-band status", "confidence-policy")
-        check_contains(run, agent_file, "confidence recovery", "confidence-policy")
-        check_contains(run, agent_file, "confidence-gap closures", "confidence-policy")
+        check_contains(run, agent_file, r"\.codex/AGENTS\.md confidence contract", "confidence-policy")
         check_agent_model(run, agent, agent_file)
         check_agent_effort(run, agent, agent_file)
 
@@ -545,17 +710,45 @@ def check_python_syntax(run: CalibrationRun, path: Path, label: str) -> None:
 
 def check_shared_scripts(run: CalibrationRun) -> None:
     """Check shared helper executability and smoke selftests."""
-    for script in (
-        run.paths.run_gates,
-        run.paths.run_py,
-        run.paths.write_result_py,
-        run.paths.collect_diff,
-        run.paths.collect_pr,
-        run.paths.find_review_report,
-        run.paths.validate_artifacts,
-    ):
+    cli_paths = {
+        "calibration-run": run.paths.run_py,
+        "calibration-live-ab": run.paths.live_ab_runner,
+        "calibration-score": run.paths.behavioral_scorer,
+        "collect-diff": run.paths.collect_diff,
+        "collect-pr": run.paths.collect_pr,
+        "find-review-report": run.paths.find_review_report,
+        "run-gates": run.paths.run_gates,
+        "review-validate-artifacts": run.paths.review_validate_artifacts,
+        "select-git-remote": run.paths.select_git_remote,
+        "validate-artifacts": run.paths.validate_artifacts,
+        "write-result": run.paths.write_result_py,
+    }
+    if run.paths.codex_harness.exists():
+        cli_paths["codex-harness"] = run.paths.codex_harness
+    elif (run.paths.root / ".git").exists():
+        run.fail_and_leak("shared-script-selftests", f"shared-script-missing:{run.paths.codex_harness}")
+    else:
+        run.append_check("shared-script-help:codex-harness=not-applicable:home-runtime")
+    for script in cli_paths.values():
         if not is_executable(script):
             run.fail_and_leak("shared-script-selftests", f"shared-script-not-executable:{script}")
+
+    discovered: set[Path] = set()
+    for pattern in (
+        ".codex/calibration/*.py",
+        ".codex/skills/_shared/*.py",
+        ".codex/skills/_shared/*.sh",
+        ".codex/skills/review/*.py",
+        ".github/*.sh",
+    ):
+        discovered.update(path for path in run.paths.root.glob(pattern) if read_text(path).startswith("#!"))
+    if discovered != set(cli_paths.values()):
+        missing = sorted(str(path.relative_to(run.paths.root)) for path in discovered - set(cli_paths.values()))
+        stale = sorted(str(path.relative_to(run.paths.root)) for path in set(cli_paths.values()) - discovered)
+        run.fail_and_leak(
+            "shared-script-selftests",
+            f"shared-script-help-roster-mismatch:missing={missing}:stale={stale}",
+        )
 
     embedded_python_marker = "python3" + " -"
     if embedded_python_marker in read_text(run.paths.run_py):
@@ -564,6 +757,15 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         run.fail_and_leak("shared-script-selftests", f"shared-script-embedded-python:{run.paths.write_result_py}")
     check_python_syntax(run, run.paths.run_py, "run.py")
     check_python_syntax(run, run.paths.write_result_py, "write-result.py")
+    check_python_syntax(run, run.paths.select_git_remote, "select-git-remote.py")
+    check_python_syntax(run, run.paths.behavioral_scorer, "score_behavioral.py")
+    check_python_syntax(run, run.paths.live_ab_runner, "run_live_ab.py")
+    check_python_syntax(run, run.paths.live_contract, "live_contract.py")
+    check_python_syntax(run, run.paths.review_validate_artifacts, "review/validate_artifacts.py")
+    for label, script in cli_paths.items():
+        result = run_command([script, "--help"])
+        if result.returncode != 0 or "usage" not in result.stdout.lower():
+            run.fail_and_leak("shared-script-selftests", f"shared-script-help-invalid:{label}")
     run_selftests(run)
 
 
@@ -593,6 +795,75 @@ def run_selftests(run: CalibrationRun) -> None:
         if result.returncode != 0 or not (selftest_dir / "gates" / "gates.json").exists():
             run.fail_and_leak("shared-script-selftests", "selftest-missing:gates.json")
 
+        failed_gates_dir = selftest_dir / "failed-gates"
+        failed_result = run_command(
+            [
+                run.paths.run_gates,
+                "--out",
+                failed_gates_dir,
+                "--lint",
+                "false",
+                "--format",
+                "true",
+                "--types",
+                "true",
+                "--tests",
+                "true",
+                "--review",
+                "true",
+            ]
+        )
+        failed_payload = json.loads((failed_gates_dir / "gates.json").read_text(encoding="utf-8"))
+        if failed_result.returncode == 0 or failed_payload.get("status") != "fail":
+            run.fail_and_leak("shared-script-selftests", "selftest-fail-open:run-gates")
+
+        exit_125_dir = selftest_dir / "exit-125-gates"
+        exit_125 = run_command(
+            [
+                run.paths.run_gates,
+                "--out",
+                exit_125_dir,
+                "--lint",
+                "exit 125",
+                "--format",
+                "true",
+                "--skip-types",
+                "synthetic no typed target",
+                "--tests",
+                "true",
+                "--review",
+                "true",
+            ]
+        )
+        exit_125_payload = json.loads((exit_125_dir / "gates.json").read_text(encoding="utf-8"))
+        lint_gate = next(item for item in exit_125_payload["checks"] if item["id"] == "lint")
+        if exit_125.returncode == 0 or lint_gate.get("status") != "fail" or lint_gate.get("exit_code") != 125:
+            run.fail_and_leak("shared-script-selftests", "selftest-fail-open:run-gates-exit-125")
+
+        timeout_dir = selftest_dir / "timeout-gates"
+        timed_out = run_command(
+            [
+                run.paths.run_gates,
+                "--out",
+                timeout_dir,
+                "--lint",
+                "sleep 2",
+                "--format",
+                "true",
+                "--skip-types",
+                "synthetic no typed target",
+                "--tests",
+                "true",
+                "--review",
+                "true",
+                "--timeout-seconds",
+                "1",
+            ]
+        )
+        timeout_payload = json.loads((timeout_dir / "gates.json").read_text(encoding="utf-8"))
+        if timed_out.returncode != 124 or timeout_payload.get("status") != "timeout":
+            run.fail_and_leak("shared-script-selftests", "selftest-fail-open:run-gates-timeout")
+
     if is_executable(run.paths.write_result_py):
         metadata = {
             "confidence_gaps": ["synthetic writer selftest does not execute project behavior"],
@@ -612,13 +883,28 @@ def run_selftests(run: CalibrationRun) -> None:
                 "remaining_limits": [],
             },
         }
-        result = run_write_result(run, selftest_dir / "result.json", metadata)
-        if result.returncode != 0 or not (selftest_dir / "result.json").exists():
+        writer_result = selftest_dir / "gates" / "result.json"
+        result = run_write_result(run, writer_result, metadata)
+        if result.returncode != 0 or not writer_result.exists():
             run.fail_and_leak("shared-script-selftests", "selftest-missing:result.json")
 
     if is_executable(run.paths.collect_diff):
+        diff_repo = selftest_dir / "collect-diff-repo"
+        diff_repo.mkdir(parents=True, exist_ok=True)
+        fixture = diff_repo / "fixture.txt"
+        fixture.write_text("before\n", encoding="utf-8")
+        setup_commands = (
+            ["git", "init", "-q"],
+            ["git", "config", "user.email", "codex-selftest@example.invalid"],
+            ["git", "config", "user.name", "Codex Selftest"],
+            ["git", "add", "fixture.txt"],
+            ["git", "commit", "-q", "-m", "selftest fixture"],
+        )
+        if any(run_command(command, cwd=diff_repo).returncode != 0 for command in setup_commands):
+            run.fail_and_leak("shared-script-selftests", "selftest-setup:collect-diff")
+        fixture.write_text("after\n", encoding="utf-8")
         result = run_command(
-            [run.paths.collect_diff, "--scope", "working-tree", "--out", selftest_dir / "diff"], cwd=run.paths.root
+            [run.paths.collect_diff, "--scope", "working-tree", "--out", selftest_dir / "diff"], cwd=diff_repo
         )
         expected_files = ("status.txt", "diff.patch", "files.txt", "diffstat.txt", "numstat.txt", "untracked.txt")
         for expected in expected_files:
@@ -629,12 +915,532 @@ def run_selftests(run: CalibrationRun) -> None:
         result = run_command(["bash", "-n", run.paths.collect_pr])
         if result.returncode != 0:
             run.fail_and_leak("shared-script-selftests", "selftest-syntax:collect-pr")
+    if run.paths.select_git_remote.exists():
+        selftest_select_git_remote(run, selftest_dir)
+    if run.paths.live_ab_runner.exists() and run.paths.live_route_policy.exists():
+        selftest_live_ab_contract(run, selftest_dir)
+    if run.paths.review_validate_artifacts.exists():
+        selftest_review_validator(run, selftest_dir)
 
     if is_executable(run.paths.find_review_report):
         selftest_find_review_report(run, selftest_dir)
 
     if is_executable(run.paths.validate_artifacts) and is_executable(run.paths.write_result_py):
         selftest_validate_artifacts(run, selftest_dir)
+        selftest_resolve_pr_identity(run)
+
+
+def selftest_select_git_remote(run: CalibrationRun, selftest_dir: Path) -> None:
+    """Verify authoritative PR URL matching in a multi-remote local repository."""
+    repo = selftest_dir / "remote-selection-repo"
+    repo.mkdir(parents=True, exist_ok=True)
+    commands = (
+        ["git", "init", "-q", repo],
+        ["git", "-C", repo, "remote", "add", "origin", "git@github.com:fork/repo.git"],
+        ["git", "-C", repo, "remote", "add", "upstream", "https://github.com/owner/repo.git"],
+    )
+    if any(run_command(command).returncode != 0 for command in commands):
+        run.fail_and_leak("shared-script-selftests", "selftest-setup:select-git-remote")
+        return
+    selected = run_command(
+        [
+            sys.executable,
+            run.paths.select_git_remote,
+            "--expected-url",
+            "https://github.com/owner/repo/pull/17",
+            "--cwd",
+            repo,
+        ]
+    )
+    if selected.returncode != 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:select-git-remote")
+        return
+    payload = json.loads(selected.stdout)
+    if payload.get("remote") != "upstream":
+        run.fail_and_leak("shared-script-selftests", "selftest-wrong:select-git-remote-fork-origin")
+    missing = run_command(
+        [
+            sys.executable,
+            run.paths.select_git_remote,
+            "--expected-url",
+            "https://github.com/owner/other/pull/1",
+            "--cwd",
+            repo,
+        ]
+    )
+    if missing.returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:select-git-remote")
+
+
+def selftest_live_ab_contract(run: CalibrationRun, selftest_dir: Path) -> None:
+    """Verify paid-run planning, meaningful tool fixtures, and mixed-scope scoring."""
+    live_dir = selftest_dir / "live-ab"
+    runner_text = read_text(run.paths.live_ab_runner)
+    for forbidden_or_required, should_exist in (
+        ('"uniqueItems"', False),
+        ("stdin=subprocess.DEVNULL", True),
+        ("live-call-failed", True),
+    ):
+        if (forbidden_or_required in runner_text) is not should_exist:
+            run.fail_and_leak(
+                "shared-script-selftests",
+                f"selftest-failed:live-ab-runner-safety:{forbidden_or_required}",
+            )
+    plan = run_command(
+        [
+            sys.executable,
+            run.paths.live_ab_runner,
+            "--cases",
+            run.paths.behavioral_cases,
+            "--tasks",
+            run.paths.live_ab_tasks,
+            "--route-policy",
+            run.paths.live_route_policy,
+            "--out",
+            live_dir / "planned-run",
+            "--root",
+            run.paths.root,
+        ]
+    )
+    try:
+        plan_payload = json.loads(plan.stdout)
+    except json.JSONDecodeError:
+        plan_payload = {}
+    scopes = plan_payload.get("evidence_scopes", {})
+    if (
+        plan.returncode != 0
+        or plan_payload.get("paid_model_calls") != 60
+        or plan_payload.get("campaigns") != 2
+        or plan_payload.get("strict_acceptance_possible") is not True
+        or any(value != ["classification", "tool-use"] for value in scopes.values())
+        or len(scopes) != 3
+    ):
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:live-ab-plan")
+        return
+
+    cases_payload = json.loads(run.paths.behavioral_cases.read_text(encoding="utf-8"))
+    cases = {case["id"]: case for case in cases_payload["cases"]}
+    tasks = json.loads(run.paths.live_ab_tasks.read_text(encoding="utf-8"))["routes"]
+    policy = json.loads(run.paths.live_route_policy.read_text(encoding="utf-8"))["routes"]
+    observed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    rows: list[dict[str, Any]] = []
+    for route_id, route in sorted(policy.items()):
+        for campaign_index in (1, 2):
+            campaign_id = f"selftest:c{campaign_index}"
+            for index, task in enumerate(tasks[route_id], start=1):
+                case = cases[task["case_id"]]
+                evidence_scope = task.get("evidence_scope", "classification")
+                if evidence_scope == "tool-use" and campaign_index == 1:
+                    fixture_dir = live_dir / "fixtures" / route_id
+                    fixture_dir.mkdir(parents=True, exist_ok=True)
+                    for relative, content in task["fixture_files"].items():
+                        destination = fixture_dir / relative
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_text(content, encoding="utf-8")
+                    gate = run_command(shlex.split(task["gate_command"]), cwd=fixture_dir)
+                    if gate.returncode == 0:
+                        run.fail_and_leak("shared-script-selftests", f"selftest-vacuous:live-ab-fixture:{route_id}")
+                pair_id = f"{campaign_id}:{route_id}:{index}"
+                expected_prompt_sha = prompt_sha256(
+                    build_prompt(
+                        case,
+                        candidate_findings(case["id"], cases),
+                        task,
+                        role_context(run.paths.root, task["role"]),
+                    )
+                )
+                for pair_role in ("baseline", "candidate"):
+                    expected = case["expected_findings"]
+                    reported = [] if route_id == "sol-critical-high" and pair_role == "baseline" else expected
+                    baseline_gate_failure = (
+                        route_id == "sol-critical-high"
+                        and campaign_index == 1
+                        and index == 1
+                        and pair_role == "baseline"
+                    )
+                    rows.append(
+                        {
+                            "case_id": case["id"],
+                            "target": case["target"],
+                            "source": "live-selftest",
+                            "run_id": pair_id,
+                            "observed_at": observed_at,
+                            "reported_findings": reported,
+                            "confidence": 0.0 if not reported else 1.0,
+                            "campaign_id": campaign_id,
+                            "pair_id": pair_id,
+                            "pair_role": pair_role,
+                            "route_id": route_id,
+                            "model": route[f"{pair_role}_model"],
+                            "reasoning_effort": route["effort"],
+                            "role": task["role"],
+                            "prompt_sha256": expected_prompt_sha,
+                            "task_type": task["task_type"],
+                            "task_contract_sha256": task_contract_sha256(task),
+                            "evidence_scope": evidence_scope,
+                            "input_tokens": 100,
+                            "cached_input_tokens": 0,
+                            "output_tokens": 10,
+                            "latency_ms": 1,
+                            "outcome": "fail" if baseline_gate_failure else "pass",
+                            "tool_failure_count": 0,
+                            "check_failure_count": 1 if baseline_gate_failure else 0,
+                            "estimated_cost_units": 140.0,
+                            "pricing_ref": "normalized-token-v1:uncached+0.1*cached+4*output",
+                        }
+                    )
+    observations = live_dir / "observations.jsonl"
+    observations.parent.mkdir(parents=True, exist_ok=True)
+    fixture_rows = run.paths.behavioral_observations.read_text(encoding="utf-8")
+    observations.write_text(fixture_rows + "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    scorer_args: list[str | Path] = [
+        sys.executable,
+        run.paths.behavioral_scorer,
+        "--cases",
+        run.paths.behavioral_cases,
+        "--observations",
+        observations,
+        "--route-policy",
+        run.paths.live_route_policy,
+        "--tasks",
+        run.paths.live_ab_tasks,
+        "--root",
+        run.paths.root,
+        "--require-live-routes",
+        "--out",
+        live_dir / "scored.json",
+    ]
+    scored = run_command(scorer_args)
+    if scored.returncode != 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:live-ab-mixed-scope-score")
+        return
+    classification_only = live_dir / "classification-only.jsonl"
+    classification_only.write_text(
+        fixture_rows + "".join(json.dumps({**row, "evidence_scope": "classification"}) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    scorer_args[scorer_args.index(observations)] = classification_only
+    scorer_args[-1] = live_dir / "classification-only-scored.json"
+    if run_command(scorer_args).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:live-ab-missing-tool-scope")
+    single_campaign = live_dir / "single-campaign.jsonl"
+    single_campaign.write_text(
+        fixture_rows + "".join(json.dumps(row) + "\n" for row in rows if row["campaign_id"].endswith(":c1")),
+        encoding="utf-8",
+    )
+    scorer_args[scorer_args.index(classification_only)] = single_campaign
+    scorer_args[-1] = live_dir / "single-campaign-scored.json"
+    if run_command(scorer_args).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:live-ab-single-campaign")
+    substituted_tasks = live_dir / "substituted-tasks.jsonl"
+    substituted_tasks.write_text(
+        fixture_rows
+        + "".join(
+            json.dumps({**row, "role": "qa-specialist"}) + "\n"
+            if row["route_id"] == "luna-support-high" and row["case_id"] == tasks["luna-support-high"][0]["case_id"]
+            else json.dumps(row) + "\n"
+            for row in rows
+        ),
+        encoding="utf-8",
+    )
+    scorer_args[scorer_args.index(single_campaign)] = substituted_tasks
+    scorer_args[-1] = live_dir / "substituted-tasks-scored.json"
+    if run_command(scorer_args).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:live-ab-task-substitution")
+    arbitrary_prompts = live_dir / "arbitrary-prompts.jsonl"
+    arbitrary_prompts.write_text(
+        fixture_rows + "".join(json.dumps({**row, "prompt_sha256": "f" * 64}) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    scorer_args[scorer_args.index(substituted_tasks)] = arbitrary_prompts
+    scorer_args[-1] = live_dir / "arbitrary-prompts-scored.json"
+    if run_command(scorer_args).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:live-ab-prompt-substitution")
+    arbitrary_contracts = live_dir / "arbitrary-task-contracts.jsonl"
+    arbitrary_contracts.write_text(
+        fixture_rows + "".join(json.dumps({**row, "task_contract_sha256": "e" * 64}) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    scorer_args[scorer_args.index(arbitrary_prompts)] = arbitrary_contracts
+    scorer_args[-1] = live_dir / "arbitrary-task-contracts-scored.json"
+    if run_command(scorer_args).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:live-ab-task-contract-substitution")
+
+
+def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
+    """Exercise rollout-bound review validation and TRIVIAL semantic routing."""
+    out = selftest_dir / "review-validator"
+    specialists = out / "specialists"
+    codex_home = out / "codex-home"
+    sessions = codex_home / "sessions"
+    specialists.mkdir(parents=True, exist_ok=True)
+    sessions.mkdir(parents=True, exist_ok=True)
+    (out / "files.txt").write_text("src/runtime.py\n", encoding="utf-8")
+    (out / "untracked.txt").write_text("", encoding="utf-8")
+    (out / "numstat.txt").write_text("5\t5\tsrc/runtime.py\n", encoding="utf-8")
+    diff = out / "diff.patch"
+    diff.write_text("diff --git a/src/runtime.py b/src/runtime.py\n", encoding="utf-8")
+    review_input_sha = hashlib.sha256(diff.read_bytes()).hexdigest()
+    context = specialists / "qa-specialist-context.md"
+    context.write_text("# QA context\n\nInspect the runtime behavior change.\n", encoding="utf-8")
+    context_sha = hashlib.sha256(context.read_bytes()).hexdigest()
+    agent_name = f"review_qa_specialist_{context_sha[:12]}_a1"
+    agent_path = f"/root/{agent_name}"
+    output = specialists / "qa-specialist.md"
+    message = (
+        f"<!-- codex-review-provenance role=qa-specialist run=selftest-review "
+        f"input={review_input_sha} context={context_sha} attempt=1 -->\nNo findings."
+    )
+    output.write_text(message + "\n", encoding="utf-8")
+    output_sha = hashlib.sha256(output.read_bytes()).hexdigest()
+    parent_id = "parent-selftest"
+    child_id = "child-selftest"
+    turn_id = "turn-selftest"
+    event_id = "event-selftest"
+    parent_rows = [
+        {
+            "type": "event_msg",
+            "payload": {
+                "type": "sub_agent_activity",
+                "event_id": event_id,
+                "agent_thread_id": child_id,
+                "agent_path": agent_path,
+                "kind": "started",
+            },
+        }
+    ]
+    (sessions / f"rollout-{parent_id}.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in parent_rows), encoding="utf-8"
+    )
+    child_rows = [
+        {"type": "session_meta", "payload": {"id": parent_id}},
+        {
+            "type": "session_meta",
+            "payload": {
+                "id": child_id,
+                "agent_path": agent_path,
+                "source": {
+                    "subagent": {
+                        "thread_spawn": {
+                            "parent_thread_id": parent_id,
+                            "agent_path": agent_path,
+                            "agent_role": None,
+                        }
+                    }
+                },
+            },
+        },
+        {
+            "type": "turn_context",
+            "payload": {"turn_id": turn_id, "model": DEFAULT_MODEL, "effort": "high"},
+        },
+        {
+            "type": "event_msg",
+            "payload": {"type": "task_complete", "turn_id": turn_id, "last_agent_message": message},
+        },
+    ]
+    child_rollout = sessions / f"rollout-{child_id}.jsonl"
+    child_rollout.write_text("".join(json.dumps(row) + "\n" for row in child_rows), encoding="utf-8")
+
+    signals = {
+        key: key == "behavior_change"
+        for key in (
+            "behavior_change",
+            "bug_fix",
+            "test_or_error_path",
+            "data_tensor_boundary",
+            "high_candidate",
+            "unresolved_material_assumption",
+            "material_no_finding",
+            "explicit_adversarial",
+            "axis_solution_architect",
+            "axis_security_auditor",
+            "axis_data_steward",
+            "axis_cicd_steward",
+            "axis_linting_expert",
+            "axis_doc_scribe",
+            "axis_oss_shepherd",
+            "axis_squeezer",
+            "axis_scientist",
+            "axis_web_explorer",
+        )
+    }
+    routing = {
+        "schema_version": 1,
+        "risk_tier": "TRIVIAL",
+        "mechanical_risk_tier": "TRIVIAL",
+        "mechanical_risk_evidence": ["files=1", "changed_lines=10", "unknown_size_rows=0"],
+        "signals": signals,
+        "signal_evidence": {
+            key: ["synthetic positive" if value else "synthetic negative"] for key, value in signals.items()
+        },
+        "triggered_roles": ["qa-specialist"],
+        "trigger_reasons": {"qa-specialist": ["behavior_change"]},
+    }
+    (out / "review-routing.json").write_text(json.dumps(routing, indent=2) + "\n", encoding="utf-8")
+    attempt = {
+        "agent_path": agent_path,
+        "agent_thread_id": child_id,
+        "attempt": 1,
+        "context_path": str(context),
+        "context_sha256": context_sha,
+        "effort": "high",
+        "event_id": event_id,
+        "model": DEFAULT_MODEL,
+        "output_path": str(output),
+        "output_sha256": output_sha,
+        "status": "completed",
+        "turn_id": turn_id,
+    }
+    specialist_pass = {
+        "role": "qa-specialist",
+        "axis": "tests",
+        "mode": "spawned",
+        "trigger": "behavior_change",
+        "confidence": 0.95,
+        "blocking_findings": 0,
+        "output_path": str(output),
+        "attempts": [attempt],
+        "selected_attempt": 1,
+    }
+    manifest = {
+        "schema_version": 2,
+        "review_run_id": "selftest-review",
+        "parent_thread_id": parent_id,
+        "review_input_sha256": review_input_sha,
+        "passes": [specialist_pass],
+    }
+    manifest_path = out / "specialist-manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    sections = (
+        "Decision Summary",
+        "Scope",
+        "Risk Tier",
+        "Files Inspected",
+        "Specialist Passes",
+        "Specialist Manifest",
+        "Findings",
+        "No-Finding Residual Risks",
+        "Confidence Gaps",
+        "Confidence Calibration",
+    )
+    (out / "review-notes.md").write_text(
+        "# Review\n\n" + "\n\n".join(f"## {section}\n\nSynthetic evidence." for section in sections) + "\n",
+        encoding="utf-8",
+    )
+    metadata = {
+        "scope": "working-tree",
+        "risk_tier": "TRIVIAL",
+        "review_decision": {"recommendation": "accept-as-is", "summary": "Clean.", "rationale": "Synthetic pass."},
+        "confidence_gaps": ["synthetic fixture does not inspect production code"],
+        "confidence_gap_closures": [
+            {
+                "gap": "synthetic fixture does not inspect production code",
+                "status": "unresolved",
+                "rationale": "This selftest validates provenance and routing only",
+            }
+        ],
+        "confidence_recovery": {
+            "initial_confidence": 0.9,
+            "final_confidence": 0.95,
+            "status": "fair",
+            "evidence": ["synthetic rollout-shaped fixture"],
+            "recovery_actions": ["validated parent, child, model, context, and output bindings"],
+            "remaining_limits": ["encrypted task plaintext cannot be inspected"],
+        },
+        "specialist_manifest": str(manifest_path),
+        "specialist_passes": [specialist_pass],
+        "review_run_id": "selftest-review",
+        "review_input_sha256": review_input_sha,
+        "fanout_substituted": False,
+        "independence_satisfied": True,
+        "independence_required": True,
+    }
+    result_path = out / "result.json"
+    result_path.write_text(
+        json.dumps({"status": "pass", "checks_failed": [], "confidence": 0.95, "metadata": metadata}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    command: list[str | Path] = [
+        sys.executable,
+        run.paths.review_validate_artifacts,
+        "--out",
+        out,
+        "--result",
+        result_path,
+        "--codex-home",
+        codex_home,
+        "--project-root",
+        run.paths.root,
+        "--parent-thread-id",
+        parent_id,
+    ]
+    if run_command(command).returncode != 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:review-validator-positive")
+        return
+    manifest["passes"][0]["attempts"][0]["agent_path"] = "/root/unbound_agent"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    if run_command(command).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:review-validator-context-binding")
+    manifest["passes"][0]["attempts"][0]["agent_path"] = agent_path
+    manifest["passes"][0]["attempts"][0]["model"] = CRITICAL_MODEL
+    child_rows[2]["payload"]["model"] = CRITICAL_MODEL
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    child_rollout.write_text("".join(json.dumps(row) + "\n" for row in child_rows), encoding="utf-8")
+    if run_command(command).returncode == 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-fail-open:review-validator-role-model")
+
+
+def selftest_resolve_pr_identity(run: CalibrationRun) -> None:
+    """Reject remote identity, base OID, and checkout head substitutions."""
+    spec = importlib.util.spec_from_file_location("shared_artifact_validator", run.paths.validate_artifacts)
+    if spec is None or spec.loader is None:
+        run.fail_and_leak("shared-script-selftests", "selftest-setup:resolve-pr-identity")
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    routing = {
+        "base_identity_source": "pr_url",
+        "base_host": "github.com",
+        "base_repo": "owner/repo",
+        "base_oid": "base-oid",
+        "head_oid": "head-oid",
+        "pr_url": "https://github.com/owner/repo/pull/1",
+    }
+    remote = {
+        "expected": {"host": "github.com", "repository": "owner/repo"},
+        "remote": "upstream",
+        "remote_url": "https://github.com/owner/repo.git",
+    }
+    target = {
+        "remote": "upstream",
+        "remote_url": "https://github.com/owner/repo.git",
+        "expected_base_oid": "base-oid",
+        "local_head": "base-oid",
+        "base_matches_pr_metadata": True,
+    }
+    checkout = {
+        "pr_url": "https://github.com/owner/repo/pull/1",
+        "expected_head": "head-oid",
+        "local_head": "head-oid",
+    }
+    module._validate_resolve_pr_identity(routing, remote, target, checkout)
+    mutations = (
+        (remote, "expected", {"host": "github.com", "repository": "other/repo"}),
+        (target, "local_head", "wrong-base"),
+        (checkout, "local_head", "wrong-head"),
+    )
+    for payload, key, bad_value in mutations:
+        original = payload[key]
+        payload[key] = bad_value
+        try:
+            module._validate_resolve_pr_identity(routing, remote, target, checkout)
+        except SystemExit:
+            pass
+        else:
+            run.fail_and_leak("shared-script-selftests", f"selftest-fail-open:resolve-pr-identity:{key}")
+        finally:
+            payload[key] = original
 
 
 def run_write_result(run: CalibrationRun, out_path: Path, metadata: dict[str, Any]) -> subprocess.CompletedProcess[str]:
@@ -644,6 +1450,8 @@ def run_write_result(run: CalibrationRun, out_path: Path, metadata: dict[str, An
             run.paths.write_result_py,
             "--out",
             out_path,
+            "--gates",
+            out_path.parent / "gates.json",
             "--status",
             "pass",
             "--checks-run",
@@ -765,6 +1573,26 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
             "remaining_limits": [],
         },
     }
+    gates = run_command(
+        [
+            run.paths.run_gates,
+            "--out",
+            validate_dir,
+            "--lint",
+            "true",
+            "--format",
+            "true",
+            "--types",
+            "true",
+            "--tests",
+            "true",
+            "--review",
+            "true",
+        ]
+    )
+    if gates.returncode != 0:
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:validate-artifacts-run-gates")
+        return
     result = run_write_result(run, validate_dir / "result.json", metadata)
     if result.returncode != 0:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:validate-artifacts-write-result")
@@ -782,6 +1610,68 @@ def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None
     )
     if validation.returncode != 0:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:validate-artifacts")
+
+    contradictory = run_command(
+        [
+            run.paths.write_result_py,
+            "--out",
+            validate_dir / "contradictory.json",
+            "--gates",
+            validate_dir / "gates.json",
+            "--status",
+            "pass",
+            "--checks-run",
+            "lint,format,types,tests,review",
+            "--checks-failed",
+            "tests",
+            "--critical",
+            "0",
+            "--high",
+            "0",
+            "--medium",
+            "0",
+            "--low",
+            "0",
+            "--confidence",
+            "0.95",
+            "--metadata",
+            json.dumps(metadata, separators=(",", ":")),
+            "--artifact-path",
+            validate_dir / "contradictory.json",
+        ]
+    )
+    if contradictory.returncode == 0 or (validate_dir / "contradictory.json").exists():
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:write-result-accepted-contradiction")
+
+    timeout_dir = selftest_dir / "gate-timeout"
+    timeout = run_command(
+        [
+            run.paths.run_gates,
+            "--out",
+            timeout_dir,
+            "--timeout-seconds",
+            "1",
+            "--lint",
+            "sleep 2",
+            "--format",
+            "true",
+            "--skip-types",
+            "synthetic configuration fixture has no typed target",
+            "--tests",
+            "true",
+            "--review",
+            "true",
+        ]
+    )
+    if timeout.returncode != 124:
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:run-gates-timeout-exit")
+    else:
+        timeout_payload = json.loads((timeout_dir / "gates.json").read_text(encoding="utf-8"))
+        statuses = {check["id"]: check["status"] for check in timeout_payload["checks"]}
+        if timeout_payload["status"] != "timeout" or statuses.get("lint") != "timeout":
+            run.fail_and_leak("shared-script-selftests", "selftest-failed:run-gates-timeout-status")
+        if statuses.get("types") != "not-applicable":
+            run.fail_and_leak("shared-script-selftests", "selftest-failed:run-gates-not-applicable")
 
 
 def run_benchmark_pattern_checks(run: CalibrationRun) -> None:
@@ -816,7 +1706,7 @@ def count_leak_prefix(path: Path, prefix: str) -> int:
     return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.startswith(prefix))
 
 
-def run_behavioral_scoring(run: CalibrationRun) -> None:
+def run_behavioral_scoring(run: CalibrationRun, require_live_routes: bool = False) -> None:
     """Run behavioral scoring and import failures into calibration status."""
     if not (
         run.paths.behavioral_cases.exists()
@@ -824,19 +1714,26 @@ def run_behavioral_scoring(run: CalibrationRun) -> None:
         and run.paths.behavioral_scorer.exists()
     ):
         return
-    result = run_command(
-        [
-            sys.executable,
-            run.paths.behavioral_scorer,
-            "--cases",
-            run.paths.behavioral_cases,
-            "--observations",
-            run.paths.behavioral_observations,
-            "--out",
-            run.paths.behavioral_result,
-        ]
-    )
-    if result.returncode != 0:
+    command: list[str | Path] = [
+        sys.executable,
+        run.paths.behavioral_scorer,
+        "--cases",
+        run.paths.behavioral_cases,
+        "--observations",
+        run.paths.behavioral_observations,
+        "--route-policy",
+        run.paths.live_route_policy,
+        "--tasks",
+        run.paths.live_ab_tasks,
+        "--root",
+        run.paths.root,
+        "--out",
+        run.paths.behavioral_result,
+    ]
+    if require_live_routes:
+        command.append("--require-live-routes")
+    result = run_command(command)
+    if result.returncode != 0 and not run.paths.behavioral_result.exists():
         run.fail_and_leak("behavioral-metrics", f"behavioral-scorer-error:{run.paths.behavioral_scorer}")
         return
 
@@ -849,7 +1746,8 @@ def run_behavioral_scoring(run: CalibrationRun) -> None:
         f"recall={overall['recall']}:"
         f"precision={overall['precision']}:"
         f"confidence_accuracy={overall['confidence_accuracy']}:"
-        f"live_observations={freshness.get('live_observations', 0)}"
+        f"live_observations={freshness.get('live_observations', 0)}:"
+        f"live_routes={payload.get('live_route_acceptance', {}).get('status', 'missing')}"
     )
     if payload["status"] != "fail":
         return
@@ -898,7 +1796,10 @@ def confidence_outliers(behavioral_payload: dict[str, Any] | None, limit: int = 
 
 
 def build_recommendations(
-    behavioral_payload: dict[str, Any] | None, failed_checks: list[str], leak_total: int
+    behavioral_payload: dict[str, Any] | None,
+    failed_checks: list[str],
+    leak_total: int,
+    accepted_route_evidence: bool,
 ) -> tuple[list[str], list[str]]:
     """Build calibration recommendations and follow-up items from metrics."""
     recommendations: list[str] = []
@@ -969,16 +1870,24 @@ def build_recommendations(
         )
 
     freshness = behavioral_payload.get("observation_freshness", {})
-    if int(freshness.get("live_observations", 0) or 0) == 0:
+    live_routes = behavioral_payload.get("live_route_acceptance", {})
+    if int(freshness.get("live_observations", 0) or 0) == 0 and not accepted_route_evidence:
         follow_up.append(
             "Add source=live-* observations from real Codex calibration prompts before treating fixture metrics as live model quality."
+        )
+    if live_routes.get("status") == "insufficient-evidence" and not accepted_route_evidence:
+        follow_up.append(
+            "Run the explicit paid paired campaign before promoting provisional Luna/Terra/Sol routes to measured acceptance."
         )
     if int(freshness.get("missing_observed_at", 0) or 0) > 0:
         follow_up.append("Backfill missing observed_at timestamps in behavioral observations.")
     if not recommendations:
-        recommendations.append(
-            "No blocking calibration fixes found; maintain the current gates and collect live observations next."
+        next_step = (
+            "rerun paid calibration before changing model allocation or cost policy"
+            if accepted_route_evidence
+            else "collect live observations next"
         )
+        recommendations.append(f"No blocking calibration fixes found; maintain the current gates and {next_step}.")
     return recommendations, follow_up
 
 
@@ -992,20 +1901,23 @@ def write_result(run: CalibrationRun) -> None:
         if run.paths.behavioral_result.exists()
         else None
     )
-    recommendations, follow_up = build_recommendations(behavioral, run.checks_failed, run.leaks)
+    accepted_route_evidence = (
+        run.paths.accepted_route_evidence.exists() and "accepted-route-evidence" not in run.checks_failed
+    )
+    recommendations, follow_up = build_recommendations(
+        behavioral, run.checks_failed, run.leaks, accepted_route_evidence
+    )
     payload = {
         "status": status,
         "timestamp": run.paths.timestamp,
         "checks_run": [
             "project-model-default",
-            "home-model-default",
             "review-model-policy",
-            "deprecated-model-policy",
+            "supported-model-policy",
+            "accepted-route-evidence",
             "skill-schema-all",
             "skill-registration-project",
-            "skill-registration-home",
             "agent-registration-project",
-            "agent-registration-home",
             "agent-schema-all",
             "agent-model-policy",
             "native-skill-contract",
@@ -1102,16 +2014,23 @@ def write_recommendations(
 
 def main() -> int:
     """Run all calibration checks and print the result path."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--require-live-routes",
+        action="store_true",
+        help="Fail unless current observation inputs satisfy every configured strict live route.",
+    )
+    args = parser.parse_args()
     paths = Paths.create()
     run = CalibrationRun(paths=paths)
     check_core_configs(run)
     check_native_runtime_leaks(run)
     check_shared_scripts(run)
     run_benchmark_pattern_checks(run)
-    run_behavioral_scoring(run)
+    run_behavioral_scoring(run, args.require_live_routes)
     write_result(run)
     print(run.paths.result)
-    return 0
+    return 1 if run.fails > 0 or run.leaks > 0 else 0
 
 
 if __name__ == "__main__":

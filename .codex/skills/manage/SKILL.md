@@ -69,26 +69,11 @@ Update relevant descriptions, mappings, routing text, and calibration notes in t
 
 ### 07: Run shared quality gates
 
-```bash
-.codex/skills/_shared/run-gates.sh \
-    --out "$OUT_DIR" \
-    --lint "${LINT_CMD:-true}" \
-    --format "${FORMAT_CMD:-true}" \
-    --types "${TYPES_CMD:-true}" \
-    --tests "${TESTS_CMD:-true}" \
-    --review "${REVIEW_CMD:-git diff --check}"
-```
+Inspect `run-gates.sh --help`. Supply real commands for affected surfaces and explicit reasons for every not-applicable gate; never use `true` as a substitute for a skip reason. Review must include a clean diff check.
 
 ### 08: Write mandatory result artifact
 
-For manage artifacts, include `ownership.md`, write the shared result JSON, and validate it with:
-
-```bash
-python3 .codex/skills/_shared/validate-artifacts.py \
-    --skill manage \
-    --out "$OUT_DIR" \
-    --result "$OUT_DIR/result.json"
-```
+For manage artifacts, include `ownership.md` and follow `../_shared/helper-cli-contract.md`. Write with `MANAGE_METADATA`, validate as skill `manage`, and promote only the validated candidate.
 
 ## Fail-Fast Rules
 

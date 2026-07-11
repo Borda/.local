@@ -41,10 +41,11 @@ Write `$OUT_DIR/symptom.md` with:
 ### 03: Gather signals before forming hypotheses
 
 ```bash
-.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
 git log --oneline -10 >"$OUT_DIR/recent-commits.txt" 2>/dev/null || true
 python --version >"$OUT_DIR/python-version.txt" 2>&1 || true
 ```
+
+Inspect `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`; record collection failure instead of treating it as an empty diff.
 
 Add tool-specific logs, CI excerpts, traceback snippets, config files, and changed source files as needed. Never treat absence of evidence as evidence of absence.
 
@@ -109,31 +110,11 @@ Write `$OUT_DIR/root-cause.md` with:
 
 ### 08: Run shared quality gates or targeted checks relevant to the failure
 
-```bash
-.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-```
+Inspect `run-gates.sh --help`, then run the full or targeted gate commands required to falsify the failure hypotheses.
 
 ### 09: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`
 
-```bash
-.codex/skills/_shared/write-result.py \
-    --out "$OUT_DIR/result.candidate.json" \
-    --status "$STATUS" \
-    --checks-run "lint,format,types,tests,review" \
-    --checks-failed "$CHECKS_FAILED" \
-    --critical "$CRITICAL" \
-    --high "$HIGH" \
-    --medium "$MEDIUM" \
-    --low "$LOW" \
-    --confidence "$CONFIDENCE" \
-    --metadata "$INVESTIGATE_METADATA" \
-    --artifact-path "$OUT_DIR/result.json"
-python3 .codex/skills/_shared/validate-artifacts.py \
-    --skill investigate \
-    --out "$OUT_DIR" \
-    --result "$OUT_DIR/result.candidate.json"
-mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-```
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `INVESTIGATE_METADATA`, validate as skill `investigate`, and promote only the validated candidate.
 
 ## Fail-Fast Rules
 

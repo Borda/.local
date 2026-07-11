@@ -69,10 +69,7 @@ Do not send full papers, entire repositories, or all search results to every spe
 
 ### 04: Map to codebase context when implementation is relevant
 
-```bash
-.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
-rg -n "$TOPIC_PATTERN" src tests docs >"$OUT_DIR/codebase-scan.txt" 2>/dev/null || true
-```
+Inspect `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`. Run the topic scan separately and record unavailable paths or collection failures as evidence gaps.
 
 ### 05: Produce `$OUT_DIR/research.md` with:
 
@@ -100,7 +97,11 @@ rg -n "$TOPIC_PATTERN" src tests docs >"$OUT_DIR/codebase-scan.txt" 2>/dev/null 
 git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
 ```
 
-### 08: Decide gate result and write `.reports/codex/research/<timestamp>/result.json`
+### 08: Run shared gates and write the validated result artifact
+
+Follow `../_shared/helper-cli-contract.md` and authoritative help. For research-only work, mark lint, format, types, and tests not applicable with concrete reasons; the review gate requires non-empty `research.md`, `sources.md`, and a clean diff check. Write with `RESEARCH_METADATA`, validate as skill `research`, and promote only the validated candidate.
+
+Replace an explicit skip with the relevant command when research includes executable validation.
 
 ## Fail-Fast Rules
 

@@ -1,11 +1,13 @@
 ---
 name: sync
-description: Minimal codex-native sync loop. Use to keep project and home Codex configs aligned and report drift.
+description: Agent-led project/home Codex mirror workflow. Use to report manifest-scoped drift and apply approved changes with backups.
 ---
 
 # Sync
 
-Run a dry-run-first project/home Codex configuration sync loop. This skill reports drift by default; writes outside the repository only after explicit approval.
+Run a dry-run-first, agent-led sync between the project `.codex` mirror and the active home `~/.codex`. No dedicated sync runtime is required. The agent reads the exact manifest, reasons about config differences, applies only approved actions, and produces auditable artifacts.
+
+The dry-run default is mandatory. Managed documentation includes `.codex/AGENTS.md` and `.codex/README.md`. Agents never delete home-only state; only explicitly approved manifest `retired_paths` may be retired after backup.
 
 ## Input Schema
 
@@ -21,99 +23,85 @@ Run a dry-run-first project/home Codex configuration sync loop. This skill repor
     "docs",
     "shared"
   ],
-  "done_when": "drift is reported and approved sync actions are applied safely"
+  "done_when": "manifest-scoped drift is recorded and every approved action is backed up and rechecked"
 }
 ```
 
 ## Workflow
 
-### 01: Create run directory
+### 01: Scope and artifact directory
 
-```bash
-TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/sync/$TS"
-mkdir -p "$OUT_DIR/backup"
-```
+Create `.reports/codex/sync/<timestamp>/` with `backup/`, `drift.json`, `drift.md`, `actions.json`, and `post-sync.json`. Read `.codex/sync-manifest.json` as JSON. Reject unknown target groups, wildcard paths, missing source files, symlinked roots/parents, and paths escaping either `.codex` root.
 
-### 02: Compare project and home targets
+The manifest is authoritative. Do not recursively inventory, compare, or copy either `.codex` tree. Never include `.system`, auth, secrets, projects/trust, plugins, marketplaces, sessions, history, databases, logs, caches, memories, goals, or desktop state.
 
-```bash
-find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/project-files.txt"
-find "$HOME/.codex" -maxdepth 4 -type f | sort >"$OUT_DIR/home-files.txt" 2>/dev/null || true
-```
+### 02: Agent-led dry run
 
-Write `$OUT_DIR/drift.md` with:
+For every exact file in the selected manifest groups:
 
-- identical files
-- project-only files
-- home-only files
-- changed files with hashes
-- recommended direction per file
+1. Verify source and destination containment.
+2. Record existence and SHA-256 on both sides.
+3. Classify `identical`, `changed`, `source-only`, or `destination-only`.
+4. Record the proposed direction and whether an overwrite, creation, retirement, or semantic merge would occur.
 
-### 03: Enforce dry-run default
+For `config.toml`, read both files and compare only the managed root keys, feature keys, registered agent names, and skill paths declared in the manifest. Treat TOML as structured configuration in reasoning; never use broad regex replacement. Preserve every destination-only key/table/registration unless the user explicitly selects it for removal.
 
-`mode=check` never writes outside `.reports/codex/sync/<timestamp>/`.
+For `hooks.json`, inspect only `retired_hook_command_substrings`. Preserve unrelated hook events, groups, and commands.
 
-### 04: For `mode=apply`, require explicit approval and allowlist
+Check every `retired_paths` entry and record `retired-present` or `retired-absent`. Check mode writes reports only and never changes home files.
 
-Allowed targets:
+### 03: Approval boundary
 
-- `.codex/config.toml`
-- `.codex/AGENTS.md`
-- `.codex/README.md`
-- `.codex/skills/**/SKILL.md`
-- `.codex/skills/_shared/**`
-- `.codex/agents/*.toml`
-- `.codex/calibration/**`
+Before `apply`, require explicit direction, selected target groups, home-write approval, and separate approval for every present retired path. Bootstrap of a missing home `.codex` requires a separate decision. Stop on ambiguous two-sided edits; show both versions and recommend one.
 
-Safety rules:
+### 04: Apply approved actions
 
-- back up each overwritten home file to `$OUT_DIR/backup/`
-- never delete home-only files automatically
-- never overwrite when both sides changed and no direction is explicit
-- never sync secrets or local credentials
+For every mutation:
 
-### 05: Apply approved actions only
+1. Copy the current destination to the matching path under `$OUT_DIR/backup/`.
+2. Verify the backup exists and its SHA-256 matches the pre-change destination.
+3. Copy exact ordinary files or generate a narrow semantic edit for `config.toml`/`hooks.json`.
+4. Re-read the destination immediately and record the action plus post-change hash in `actions.json`.
 
-Record every copy in `$OUT_DIR/actions.md` with source hash and destination hash.
+Only manifest-listed retired paths may be deleted, and only after backup plus explicit retirement approval. Never delete an unlisted home-only file.
 
-### 06: Validate after sync
+### 05: Post-check
 
-```bash
-diff -qr .codex "$HOME/.codex" >"$OUT_DIR/post-sync-diff.txt" 2>&1 || true
-git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
-```
+Repeat the exact dry-run comparison after apply. `post-sync.json` passes only when:
 
-### 07: Decide gate result and write `.reports/codex/sync/<timestamp>/result.json`
+- every selected ordinary managed file is identical
+- managed config keys, agents, features, and skills match the selected source
+- destination-only config and unrelated hooks remain present
+- every approved retired path is absent
+- every action has a verified backup and post-change hash
+- active-home calibration passes when agents, skills, shared helpers, or calibration changed
+
+Whole-tree equality is neither required nor desired.
+
+### 06: Quality gates and result
+
+Follow `../_shared/helper-cli-contract.md` and authoritative help. For an agent-led sync without implementation changes, mark lint, format, and types not applicable with concrete reasons; tests run calibration, and review requires non-empty drift/post-sync evidence plus a clean diff check. Write the candidate with sync metadata, validate as skill `sync`, and promote only the validated candidate. Include confidence gaps for any semantic merge the agent could not independently validate.
 
 ## Fail-Fast Rules
 
-1. Home `.codex` missing in `apply` mode => fail unless user requested bootstrap.
-2. Apply requested without explicit direction and allowlist => fail.
-3. Attempted deletion of home-only files => fail.
-4. Backup missing before overwrite => fail.
-5. Secrets detected in sync target => fail.
-6. Result artifact missing => fail.
+1. Missing/invalid manifest or source file => stop before mutation.
+2. Apply without explicit direction, targets, and approval => stop.
+3. Symlink/path escape or suspected credential material => stop.
+4. Missing or mismatched backup => stop.
+5. Ambiguous two-sided change => stop and ask.
+6. Unlisted deletion or broad recursive copy/diff => stop.
+7. Config merge that would drop destination-only state => stop.
+8. Retired path present without explicit retirement approval => stop.
+9. Post-check or active-home calibration failure => fail the result.
 
 ## Quality Gates
 
-Required checks:
-
-- `review`: drift matrix, action log, backup log, and `git diff --check`.
-
-Conditional checks:
-
-- `tests`: run calibration when synced files affect skills, agents, or calibration behavior.
+Required: manifest-scoped drift matrix, backup hashes, action log, semantic config/hook preservation review, post-check, active-home calibration when behavior changed, and `git diff --check`.
 
 ## Calibration Hooks
 
-Update calibration when sync policy changes:
-
-- behavioral cases: unsafe home overwrite, missing backup, home-only deletion, stale project/home drift
-- benchmark patterns: `sync`
+Update behavioral coverage when the manifest or agent-led safety contract changes. Calibration validates manifest presence and the shared artifact/result contracts; sync correctness is proven by each run's drift, backup, action, post-check, and home-calibration evidence.
 
 ## Output Contract
 
-Use shared gate schema from `../_shared/quality-gates.md`.
-
-Minimum artifact payload template: `result-template.json`.
+Use `../_shared/quality-gates.md` and `result-template.json`. Report exact changed paths, preserved home-only state, retired paths, backup locations, post-check status, confidence, and material limits.

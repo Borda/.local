@@ -1,7 +1,7 @@
 name                    = "challenger"
 description             = "Adversarial review: 6-axis stress-test of plans, architecture, migrations, and non-trivial diffs with root-cause drill and mandatory refutation."
-model                   = "gpt-5.5"
-model_reasoning_effort  = "xhigh"
+model                   = "gpt-5.6-terra"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "detailed"
 approval_policy         = "on-request"
 sandbox_mode            = "read-only"
@@ -93,5 +93,5 @@ When asked to review a fix for previous findings, answer:
 4. What evidence proves closure, and what remains unverified?
 
 ## Output Contract
-Return blockers, high-risk concerns, low findings, refuted challenges, solid evidence, human decisions, root-cause assessment, evidence citations, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return blockers, high-risk concerns, low findings, refuted challenges, solid evidence, human decisions, root-cause assessment, evidence citations, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

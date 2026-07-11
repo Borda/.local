@@ -428,11 +428,10 @@
         "ingested-entry-count-missing",
         "item-name-type-columns-missing",
         "resolved-how-column-missing",
-        "status-counts-missing",
-        "subset-table-overcompressed"
+        "status-counts-missing"
       ],
       "id": "resolve-final-table-incomplete",
-      "prompt": "Assess a resolve run that ingests a review report plus PR comments, fixes selected findings, but the final output only lists unresolved process items and changed code findings. It omits resolved, already-applied, duplicate, stale, and non-selected ingested rows, has no Final Resolution Summary, no Final Resolution Table Completeness section, no item name, item type, or resolved how columns, and provides no triage or resolution status counts covering every ingested entry.",
+      "prompt": "Assess a resolve run whose durable action-items artifact only lists unresolved process items and changed code findings. It omits resolved, already-applied, duplicate, stale, and non-selected ingested rows, has no Final Resolution Summary, no Final Resolution Table Completeness section, no item name, item type, or resolved how columns, and provides no triage or resolution status counts covering every ingested entry. A compact final chat summary is acceptable when it links the complete artifact.",
       "target": "resolve"
     },
     {
@@ -584,14 +583,111 @@
       "id": "agent-universal-confidence-policy",
       "prompt": "Assess agent and skill instructions where only review/develop define confidence bands, an agent output reports confidence 0.82 as complete, and no confidence recovery or confidence-gap closure record is required.",
       "target": "curator"
+    },
+    {
+      "expected_findings": [
+        "file-count-only-fanout",
+        "risk-signal-routing-missing"
+      ],
+      "id": "review-local-risk-routing",
+      "prompt": "Assess a LOCAL review where QA and challenger are always spawned solely because three files changed, even though the diff is documentation-only and has no behavior, test, error-path, high-finding, or unresolved-assumption signal.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "rollout-provenance-missing",
+        "output-hash-binding-missing"
+      ],
+      "id": "review-forged-specialist-independence",
+      "prompt": "Assess a review manifest that labels a markdown file as a spawned QA pass but does not bind it to a parent spawn event, child thread, actual model/effort, task completion message, context hash, or output hash.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "deterministic-specialist-retry",
+        "specialist-max-attempts-missing",
+        "checkpoint-substitutes-completion"
+      ],
+      "id": "review-specialist-retry-policy",
+      "prompt": "Assess a specialist workflow that retries any unsatisfactory answer indefinitely and treats a partial checkpoint as equivalent to a completed specialist output.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "pr-base-repo-not-authoritative",
+        "matching-remote-not-verified",
+        "base-oid-mismatch-not-fatal"
+      ],
+      "id": "review-pr-wrong-remote",
+      "prompt": "Assess a PR collector that derives repository identity from the current local checkout, always fetches origin even when it is a fork, and records but does not fail an expected base OID mismatch.",
+      "target": "review"
+    },
+    {
+      "expected_findings": [
+        "live-route-schema-missing",
+        "paired-ab-evidence-missing",
+        "insufficient-evidence-treated-pass"
+      ],
+      "id": "calibrate-model-route-evidence",
+      "prompt": "Assess a model routing calibration that calls fixture rows live evidence, does not record paired model/effort, prompt hash, tokens, latency, failures, or cost proxy, and reports route acceptance with zero matched A/B pairs.",
+      "target": "calibrate"
+    },
+    {
+      "expected_findings": [
+        "pass-result-with-failed-gates",
+        "mandatory-gate-reconciliation-missing",
+        "gate-timeout-missing"
+      ],
+      "id": "calibrate-result-gate-contradiction",
+      "prompt": "Assess a workflow where result.json says pass with failed checks, gates.json is optional and unreconciled, and a hung gate has no timeout or process-group termination.",
+      "target": "calibrate"
+    },
+    {
+      "expected_findings": [
+        "analysis-claim-evidence-missing",
+        "assumption-not-labeled"
+      ],
+      "id": "analyse-unsupported-conclusion",
+      "prompt": "Assess an analysis that states a root cause and recommends a broad refactor without a claim-to-evidence ledger, local references, or labeling the key inference as a hypothesis.",
+      "target": "analyse"
+    },
+    {
+      "expected_findings": [
+        "root-cause-evidence-missing",
+        "falsification-check-missing",
+        "workaround-presented-complete"
+      ],
+      "id": "investigate-workaround-as-root-fix",
+      "prompt": "Assess a symptom-first failure investigation that applies a retry workaround, records no root-cause evidence or falsification probe, and reports the issue fully resolved.",
+      "target": "investigate"
+    },
+    {
+      "expected_findings": [
+        "managed-scope-not-declared",
+        "destructive-change-approval-missing",
+        "verification-missing"
+      ],
+      "id": "manage-unbounded-config-change",
+      "prompt": "Assess a configuration-management change that deletes unlisted files, does not declare owned paths or request destructive approval, and provides no post-change verification.",
+      "target": "manage"
+    },
+    {
+      "expected_findings": [
+        "semver-decision-missing",
+        "release-gates-missing",
+        "migration-impact-missing"
+      ],
+      "id": "release-readiness-without-contract",
+      "prompt": "Assess a release declaration that omits the SemVer rationale, compatibility and migration impact, artifact checks, and release gate evidence.",
+      "target": "release"
     }
   ],
   "thresholds": {
     "max_confidence_mae": 0.2,
     "max_mean_overconfidence": 0.15,
-    "min_observations": 54,
+    "min_observations": 69,
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.4"
+  "version": "1.5"
 }

@@ -43,28 +43,13 @@ Shorthand rules:
 - If no matching review report exists, fail with a direct instruction to run `review <target>` first or provide an explicit report path.
 - If multiple matching reports exist, use the newest timestamped directory and record the selected path in `$OUT_DIR/findings-input.txt`.
 
-Discovery command for `latest-matching-review-report`:
-
-```bash
-FINDINGS_SOURCE="$(
-    .codex/skills/_shared/find-review-report.py \
-        --target "${PR_TARGET:-}" \
-        --reports-dir ".reports/codex/review"
-)"
-```
+For `latest-matching-review-report`, inspect `find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/review`, and assign the printed path to `FINDINGS_SOURCE`.
 
 ```bash
 cp "$FINDINGS_SOURCE" "$OUT_DIR/findings-input.txt"
 ```
 
-For `mode=pr`, also collect fresh online PR evidence, refresh the PR target branch, refresh the PR branch where possible, and update the local PR checkout:
-
-```bash
-.codex/skills/_shared/collect-pr.sh \
-    --target "${PR_TARGET:-}" \
-    --out "$OUT_DIR/pr" \
-    --checkout
-```
+For `mode=pr`, inspect `collect-pr.sh --help`, then collect `PR_TARGET` into `$OUT_DIR/pr` with checkout enabled so online evidence, target/head refresh, and the local checkout are current.
 
 The helper records `gh pr checkout` without `--force` in `$OUT_DIR/pr/local-checkout.json`.
 
@@ -329,9 +314,7 @@ If a triggered specialist is unavailable, write a labeled in-main substitute fil
 
 ### 09: Run Shared Quality Gates
 
-```bash
-.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-```
+Inspect `run-gates.sh --help`, then run every project-relevant closure gate with explicit commands or skip reasons.
 
 ### 10: Write Unresolved Findings
 
@@ -347,25 +330,7 @@ Use closure classes consistently: `local-code-or-doc`, `process-gate`, `independ
 
 ### 11: Write And Validate Result Artifact
 
-```bash
-.codex/skills/_shared/write-result.py \
-    --out "$OUT_DIR/result.candidate.json" \
-    --status "$STATUS" \
-    --checks-run "lint,format,types,tests,review" \
-    --checks-failed "$CHECKS_FAILED" \
-    --critical "$CRITICAL" \
-    --high "$HIGH" \
-    --medium "$MEDIUM" \
-    --low "$LOW" \
-    --confidence "$CONFIDENCE" \
-    --artifact-path "$OUT_DIR/result.json" \
-    --metadata "$RESOLVE_METADATA"
-python3 .codex/skills/_shared/validate-artifacts.py \
-    --skill resolve \
-    --out "$OUT_DIR" \
-    --result "$OUT_DIR/result.candidate.json"
-mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-```
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `RESOLVE_METADATA`, validate as skill `resolve`, and promote only the validated candidate.
 
 `RESOLVE_METADATA.mode` must be the normalized mode. `RESOLVE_METADATA.confidence_recovery` must include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `RESOLVE_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale. `RESOLVE_METADATA.resolution_scope` must summarize the requested scope, `selection_source`, whether a prompt was presented, `selection_confirmed_by_user` before editing, selected indexes, selected severity groups, deferred indexes, and omitted resolved-online count. `RESOLVE_METADATA.resolution_workplan` must summarize `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, and `workplan_path`. `RESOLVE_METADATA.review_report_intake` must summarize report-origin intake with `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, and `report_items_marked_out_of_scope`. `RESOLVE_METADATA.final_resolution_table` must summarize ingested entries, final table rows, omitted entries, selectable/non-selectable row totals, required columns, triage status counts, and resolution status counts. `RESOLVE_METADATA.out_of_scope_confirmation` must summarize `count`, `all_confirmed_by_user`, and one item per out-of-scope row with item id, source, rationale, evidence path, and confirmation status. `RESOLVE_METADATA.pr_relevance` must summarize `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, and `connected_items_marked_out_of_scope`. `RESOLVE_METADATA.unresolved_summary` must summarize selected item totals, unresolved closure-class counts, `all_local_actionable_items_closed`, and `unresolved_reason_groups` with reason, count, owner, next action, and evidence path. For `mode=pr`, include the selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, and `$OUT_DIR/merge-prestage.md`.
 
@@ -381,7 +346,7 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 08. Duplicate/stale/out-of-scope/already-fixed review thread/comment edited instead of recorded => fail.
 09. Result artifact validator failure => fail.
 10. Result artifact missing => fail.
-11. Final output or `$OUT_DIR/action-items.md` missing the review item resolution table => fail.
+11. `$OUT_DIR/action-items.md` missing the complete review item resolution table => fail.
 12. PR mode using `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots for code inspection or edits => fail.
 13. Missing `$OUT_DIR/resolution-scope.md` with `Resolution Scope Selection` before edits => fail.
 14. Editing a finding not selected in `resolution-scope.md` => fail.
@@ -408,7 +373,7 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 35. Final resolution table omits any ingested entry or records `omitted_entries_total` other than `0` => fail.
 36. Final resolution table status counts do not account for every table row => fail.
 37. Final resolution table missing `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, or `evidence` columns => fail.
-38. Final output missing `Final Resolution Summary` before detailed narrative => fail.
+38. Final chat missing the compact resolution summary, unresolved/deferred items, confidence with material limits, or artifact path => fail.
 
 ## Quality Gates
 
@@ -436,6 +401,8 @@ Use shared gate schema from `../_shared/quality-gates.md`.
 
 Apply the shared confidence band policy from `../_shared/quality-gates.md` for confidence score, confidence recovery, and confidence-gap closure output.
 
-The final terminal/chat output must start with a Markdown table under `Review Item Resolution Table` before narrative summary. This must be the full, unabridged final resolution ledger: every ingested report item requested by the user, every normalized report-origin failed check/follow-up/required-next-work/confidence gap from a review report, and every fetched PR review item considered during `mode=pr`. Do not replace it with an unresolved-only, changed-only, selected-only, or summary table. Each row must include `input item`, `item name`, `item type`, source, PR/diff relation, summary, triage status, resolution status, owner/status, `resolved how`, and evidence or unresolved rationale. `Resolved how` must directly answer if/how the item was resolved, for example implemented by code change, already applied in local code, resolved in online PR evidence, duplicate of another row, rejected with rationale, stale, not applicable, deferred by user, or still unresolved with blocker. Immediately after the table, include `Final Resolution Summary` with requested scope, ingested entries total, resolved/already-closed entries total, implemented entries total, unresolved entries total, deferred/not-selected entries total, not-applicable/stale/duplicate/rejected entries total, and whether all selected local actionable items are closed. Then include `Final Resolution Table Completeness` with ingested entries total, final table rows total, omitted entries total, selectable/non-selectable totals, triage status counts, and resolution status counts; omitted entries must be `0`, and status counts must cover every row. Use the same resolution vocabulary as `$OUT_DIR/action-items.md`: `implemented`, `resolved`, `rejected`, `stale`, `not-applicable`, `duplicate`, `already-fixed`, `already-applied`, `needs-clarification`, or `unresolved`. Do not use `resolved` without explaining how it was resolved in the `resolved how` and evidence columns. For PR comments or threads resolved in fetched online evidence, mark triage status and resolution `resolved`, cite the fetched evidence, and do not list any further action. For review items already applied in current local code, mark triage status and resolution `already-applied`, cite the code evidence, and do not list any further action. For report-origin review gates or follow-ups that cannot be closed locally, keep triage `valid` or `needs-clarification`, resolution `unresolved`, and cite the blocker; do not downgrade them to `out-of-scope`. Any `out-of-scope` row must cite the rationale and user confirmation. For `mode=pr`, include a `PR Relevance Summary`; connected unresolved or deferred items must be shown as selectable work or required follow-up so the user can rule them into this PR. After the table completeness section, include an `Unresolved Work Summary` whenever any selected item remains unresolved. This summary must say whether all local actionable code/doc findings are closed, how many selected process/gate/environment/external-owner obligations remain unresolved, why each class remains open, what Codex attempted, who owns the next action, and the evidence path. Do not write "resolved all" unless `selected_items_unresolved=0`. Include a `Resolution Scope Selection` summary with selection source, whether the prompt was presented, whether the selection was confirmed by the user, selected indexes, selected severities or `all`, omitted resolved-online count, and deferred critical/high items. Include a `Resolution Workplan Summary` with grouped selected items, primary owners, verifiers, specialist context packs, parent-owned items, and unassigned selected-item count. Include confidence score, confidence band status, recovery actions, remaining limits, confidence gaps or degradation reasons from `metadata.confidence_gaps`, and confidence-gap closures from `metadata.confidence_gap_closures`. For `mode=pr`, also include a compact `Merge Prestage Summary` that cites `$OUT_DIR/merge-prestage.md`, target branch refresh evidence, and any conflict/collision work completed before applying review/report findings.
+Keep the complete, unabridged resolution ledger in `$OUT_DIR/action-items.md`; it must cover every ingested item and retain the validated columns, counts, status vocabulary, closure evidence, scope selection, workplan, PR relevance, unresolved classes, and confidence recovery required above.
+
+The final terminal/chat output is intentionally compact. Start with `Resolution Summary` and include requested scope, ingested/selected/implemented/unresolved/deferred totals, whether all selected local actionable items are closed, gate status, confidence with material limits, and the artifact path. List only unresolved or user-deferred items with next owner/action; do not duplicate rows already closed in the artifact. State "resolved all" only when `selected_items_unresolved=0`. For `mode=pr`, add one compact merge-prestage line with the evidence path and remaining collision risk. The artifact validator, not chat repetition, proves full-ledger completeness.
 
 Minimum artifact payload template: `result-template.json`.

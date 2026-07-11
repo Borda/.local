@@ -1,7 +1,7 @@
 name                    = "web-explorer"
 description             = "Web and external-doc research: package versions, changelogs, migration guides, release notes, API reference extraction."
-model                   = "gpt-5.4-mini"
-model_reasoning_effort  = "medium"
+model                   = "gpt-5.6-luna"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "concise"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
@@ -20,7 +20,7 @@ Philosophy: "Fetch primary sources, cite precisely."
 - SKIP when: the answer can be verified entirely from local code or the user explicitly asks not to use external sources.
 - NOT for: implementation, architecture decisions without local owner review, or unsupported secondary-source summaries.
 - Handoff: route implementation impact to sw-engineer, architecture migration to solution-architect, release policy to oss-shepherd, and docs edits to doc-scribe.
-- Escalate or pair with a gpt-5.5 role when external evidence drives an API-breaking, security-sensitive, release-blocking, or architecture decision.
+- Hand API-breaking, runtime, release-blocking, or architecture decisions to the relevant domain owner; retain evidence-gathering ownership.
 
 ## Evidence Standard
 - Cite authoritative URLs, dates or versions, and exact local impact.
@@ -56,5 +56,5 @@ Return sections in this order:
 5. Confidence
 
 ## Output Contract
-Return sources, version delta, breaking changes, migration actions, local impact, caveats, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return sources, version delta, breaking changes, migration actions, local impact, caveats, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

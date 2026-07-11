@@ -2,7 +2,7 @@
 
 name                    = "sw-engineer"
 description             = "Core ML/backend implementation: SOLID, type-safety, doctest-driven, reproducible ML configs. Python 3.10+."
-model                   = "gpt-5.5"
+model                   = "gpt-5.6-terra"
 model_reasoning_effort  = "high"
 model_reasoning_summary = "auto"
 approval_policy         = "on-request"
@@ -72,5 +72,5 @@ Production code implementation, bug fixes, refactors, backend/ML behavior change
 Return sections in this order: Changed Files, Acceptance Evidence, Gates, Risks, Follow-Up Owners.
 
 ## Output Contract
-Return changed files, acceptance evidence, gates run, gates not run with reason, residual risks, required follow-up owners, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return changed files, acceptance evidence, gates run, gates not run with reason, residual risks, required follow-up owners, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

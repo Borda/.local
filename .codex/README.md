@@ -16,7 +16,7 @@ Core capabilities this Codex setup adds:
 
 **Confidence calibration and offline CI.** Skill and agent behavior is measured with fixed calibration fixtures plus live observations. The offline harness runs in CI without contacting Codex, OpenAI, GitHub, curl, or wget.
 
-**RTK token compression.** Bash output — `git log`, `pytest`, `cargo build` — is compressed 60–99% before reaching the model. A typical `resolve` or `review` run costs 40–60% fewer tokens than without RTK, with no quality difference.
+**RTK token compression.** Bash output from supported commands is reduced before reaching the model. Treat token-savings ranges as workload-specific until the same task passes the same quality gates with and without RTK.
 
 <details>
 <summary><strong>Contents</strong></summary>
@@ -42,21 +42,18 @@ Core capabilities this Codex setup adds:
 
 ## 🔄 Config Sync
 
-This repo (`.codex/`) is the source of truth. Home (`~/.codex/`) is a downstream copy. Most users only need to copy the directory when they want to activate or refresh the Codex setup:
+This repo (`.codex/`) is the source of truth. Home (`~/.codex/`) is a downstream runtime copy. Use the agent-led `sync` skill with `mode=check` first, then approve `mode=apply`, `source=project`, and the exact target allowlist. `.codex/sync-manifest.json` is the only portable surface; the agent backs up mutations, semantically merges managed TOML keys, and preserves home-only runtime state.
 
-```bash
-cp -r .codex/ ~/.codex/ # activate globally (config_file paths are relative)
-```
-
-The `sync` skill is optional maintenance tooling. It compares project `.codex/` with home `~/.codex/`, writes a drift report, and only applies copies after explicit approval and backups. Use it when you intentionally maintain both project and home configs; ordinary review/develop/resolve usage does not require it.
+The `sync` skill compares only manifest targets, writes drift/action/post-check artifacts, and applies changes only after explicit home-write approval and backups. It has no dedicated Python runtime or vendored dependencies. Retired managed paths need separate approval. Ordinary review/develop/resolve usage does not require a sync.
 
 <details>
 <summary><strong>Install</strong></summary>
 
 ```bash
 npm install -g @openai/codex # install Codex CLI
-cp -r .codex/ ~/.codex/      # activate globally
 ```
+
+Then run the guarded `sync` workflow; raw `cp -r .codex/ ~/.codex/` nests the source directory when `~/.codex/` already exists.
 
 </details>
 
@@ -64,24 +61,24 @@ cp -r .codex/ ~/.codex/      # activate globally
 
 ### Reference table
 
-Agents are tiered by task risk. High-stakes reasoning, implementation, verification, security, CI, data, performance, architecture, adversarial, and research roles use `gpt-5.5`. Bounded support roles use `gpt-5.4-mini`. Deprecated Codex model strings are rejected by calibration.
+Agents are tiered by task risk and explicit user routing preference. The daily default, review parent, implementation, verification, runtime, data, performance, research-method, curation, and adversarial-challenge roles use `gpt-5.6-terra`. Documentation, CI/CD stewardship, web-evidence, OSS, and static-analysis roles use `gpt-5.6-luna`. Only security and solution architecture use `gpt-5.6-sol`. Every role defaults to `high`.
 
-| Agent                  | Model        | Effort | Purpose                                                                 |
-| ---------------------- | ------------ | ------ | ----------------------------------------------------------------------- |
-| **sw-engineer**        | gpt-5.5      | high   | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
-| **qa-specialist**      | gpt-5.5      | high   | Edge-case matrix, project standard, adversarial test review             |
-| **squeezer**           | gpt-5.5      | high   | Profile-first optimization, GPU throughput, memory efficiency           |
-| **doc-scribe**         | gpt-5.4-mini | medium | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
-| **security-auditor**   | gpt-5.5      | xhigh  | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
-| **data-steward**       | gpt-5.5      | high   | Split leakage, DataLoader reproducibility, augmentation correctness     |
-| **cicd-steward**       | gpt-5.5      | high   | GitHub Actions permissions, trusted publishing, matrix/cache, flaky CI  |
-| **linting-expert**     | gpt-5.4-mini | medium | ruff, mypy, pre-commit config, rule progression, suppression discipline |
-| **oss-shepherd**       | gpt-5.4-mini | medium | Issue triage, PR review, SemVer, pyDeprecate, release checklist         |
-| **solution-architect** | gpt-5.5      | xhigh  | System design, ADRs, API compatibility, migration planning              |
-| **web-explorer**       | gpt-5.4-mini | medium | External docs/release-note extraction and evidence gathering            |
-| **curator**            | gpt-5.4-mini | medium | Config quality checks, drift/leak detection, workflow hygiene           |
-| **challenger**         | gpt-5.5      | xhigh  | 6-axis adversarial plan, architecture, migration, and diff review       |
-| **scientist**          | gpt-5.5      | xhigh  | Paper analysis, ML hypothesis design, ablations, experiment validation  |
+| Agent                  | Model         | Effort | Purpose                                                                 |
+| ---------------------- | ------------- | ------ | ----------------------------------------------------------------------- |
+| **sw-engineer**        | gpt-5.6-terra | high   | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
+| **qa-specialist**      | gpt-5.6-terra | high   | Edge-case matrix, project standard, adversarial test review             |
+| **squeezer**           | gpt-5.6-terra | high   | Profile-first optimization, GPU throughput, memory efficiency           |
+| **doc-scribe**         | gpt-5.6-luna  | high   | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
+| **security-auditor**   | gpt-5.6-sol   | high   | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
+| **data-steward**       | gpt-5.6-terra | high   | Split leakage, DataLoader reproducibility, augmentation correctness     |
+| **cicd-steward**       | gpt-5.6-luna  | high   | GitHub Actions permissions, trusted publishing, matrix/cache, flaky CI  |
+| **linting-expert**     | gpt-5.6-luna  | high   | ruff, mypy, pre-commit config, rule progression, suppression discipline |
+| **oss-shepherd**       | gpt-5.6-luna  | high   | Issue triage, PR review, SemVer, pyDeprecate, release checklist         |
+| **solution-architect** | gpt-5.6-sol   | high   | System design, ADRs, API compatibility, migration planning              |
+| **web-explorer**       | gpt-5.6-luna  | high   | External docs/release-note extraction and evidence gathering            |
+| **curator**            | gpt-5.6-terra | high   | Config quality checks, drift/leak detection, workflow hygiene           |
+| **challenger**         | gpt-5.6-terra | high   | 6-axis adversarial plan, architecture, migration, and diff review       |
+| **scientist**          | gpt-5.6-terra | high   | Paper analysis, ML hypothesis design, ablations, experiment validation  |
 
 ### Spawn rules
 
@@ -117,7 +114,7 @@ Every spawned or substituted specialist pass needs:
 
 High-benefit orchestrated skills:
 
-- `review`: QA and challenge are required for non-trivial risk tiers; architecture, security, CI, docs, data, performance, research, and web specialists trigger conditionally.
+- `review`: QA and challenge are mandatory for broad/high-risk diffs and risk-triggered for local diffs; architecture, security, CI, docs, data, performance, research, and web specialists trigger conditionally.
 - `develop`: public API, regression, CI/tooling, security, ML/data, docs, and broad changes get owner/verifier plans.
 - `resolve`: selected findings are grouped into work clusters, assigned to primary owners and verifiers, then closed with evidence.
 - `investigate`: broad symptoms split into hypothesis-specific specialist probes before root cause is claimed.
@@ -128,19 +125,22 @@ Conditional orchestration exists in `analyse`, `research`, `release`, `audit`, a
 
 Session defaults:
 
-- `model = "gpt-5.5"`
-- `review_model = "gpt-5.5"`
+- `model = "gpt-5.6-terra"`
+- `review_model = "gpt-5.6-terra"`
 - `model_reasoning_effort = "high"`
 - `approval_policy = "on-request"`
 - `sandbox_mode = "workspace-write"`
 
 Agent model allocation:
 
-- `gpt-5.5`: default and review model; use for implementation, tests, security, CI/tooling, data integrity, performance, architecture, adversarial challenge, and research-to-experiment reasoning.
-- `gpt-5.4-mini`: lower-cost support model; use for documentation, web evidence gathering, OSS lifecycle, config curation, and bounded static-analysis cleanup.
-- Effort is role-scoped: `medium` for bounded support/static work, `high` for implementation/verification/runtime specialists, and `xhigh` for adversarial, architecture, security, and research reasoning.
-- Escalate or pair a `gpt-5.4-mini` support role with a `gpt-5.5` owner when the decision becomes release-blocking, API-breaking, security-sensitive, architecture-heavy, or materially changes runtime behavior.
-- Deprecated model strings such as `gpt-5.3-codex` are not allowed in active Codex config.
+- `gpt-5.6-terra`: daily default and general specialist model; use for implementation, tests, curation, data integrity, performance, research-method reasoning, and adversarial challenge.
+- `gpt-5.6-sol`: restricted quality-first model; use only for security and solution architecture.
+- `gpt-5.6-luna`: user-selected model for documentation, CI/CD stewardship, web evidence, OSS triage, and static analysis at `high`; final acceptance remains with the parent or the relevant Terra/Sol owner.
+- Effort defaults to `high` for every role. Use `xhigh` or `max` only as an explicit task-level escalation after `high` proves insufficient.
+- Add Sol only for solution architecture or a concrete security signal; Challenger remains on Terra unless a future paired calibration shows a role-specific quality gain.
+- Preserve existing reasoning effort during migration. Test one level lower only on representative tasks, and accept it only when task success and required evidence do not regress.
+- Active model strings outside the configured GPT-5.6 allowlist are rejected by calibration.
+- The current GPT-5.6 mapping combines paid paired evidence with an explicit human Luna override. The strict Luna route remains recorded as failed; do not describe the override as evidence-derived or expand it beyond bounded support without a new campaign. Durable score files and observations live under `.codex/calibration/evidence/2026-07-11/`.
 
 ## 🧭 Skills In Codex
 
@@ -170,7 +170,7 @@ Each skill enforces a complete quality loop that prompt-style invocation does no
 | `analyse`     | Deep inspection of a scope (module, issue thread, PR) — surfaces structural findings that diff-level review misses                                                                     |
 | `optimize`    | Profile-first optimization: measures before and after, rejects changes that don't improve the target metric                                                                            |
 | `research`    | SOTA lookup anchored to the codebase — finds relevant techniques and maps them to concrete implementation entry points                                                                 |
-| `sync`        | Optional project/home `.codex` drift report and approved-copy helper; not needed for ordinary skill usage                                                                              |
+| `sync`        | Optional agent-led project/home `.codex` drift report and approved manifest-scoped copy; not needed for ordinary skill usage                                                           |
 
 ### Usage examples
 
@@ -207,30 +207,21 @@ use the curator to review .codex drift and weak gates
 
 ## 🪙 RTK Integration
 
-Codex hooks are enabled in `config.toml` with the canonical feature flag:
+Codex hook support remains enabled in `config.toml` for future state-changing safeguards:
 
 ```toml
 [features]
 hooks = true
 ```
 
-At ~60–99% Bash output compression, a typical `review` or `resolve` run costs 40–60% fewer tokens than without RTK — same quality gates, lower bill.
-
-Configured hook files:
-
-- `.codex/hooks.json`
-- `.codex/hooks/rtk-enforce.js`
-
-The hook launcher resolves the installed copy from `${CODEX_HOME:-$HOME/.codex}` so it still loads when Codex runs outside a Git repository.
+RTK reduces supported command output before it enters model context. Measure token savings on representative tasks and require identical quality-gate outcomes before treating the reduction as cost-neutral.
 
 Behavior:
 
-- If `rtk` is not installed, hook is a no-op
-- If command is already `rtk ...`, hook is a no-op
 - For known RTK-eligible prefixes, agents should invoke `rtk <cmd>` directly
-- The hook is fail-open for eligible commands to avoid turning missed RTK routing into visible tool failures
+- `.codex/hooks.json` intentionally has no RTK `PreToolUse` hook because current Codex cannot rewrite the command in place; running a fail-open process on every shell command adds latency without enforcement
 - Remote mutation is out of scope for Codex: `gh` may read PR/issue evidence and check out/update a PR locally, and `git` may run local operations plus read-only fetch needed to update a PR branch. Agents must not push, pull, clone, change upstream tracking or remote configuration, comment, merge, publish releases, dispatch workflows, or run write-mode remote APIs.
-- For excluded remote/online patterns (for example `git push`, upstream tracking changes, and write-mode `gh` commands), the hook is not the enforcement layer; `.codex/AGENTS.md` is the source of truth and agents must refuse those actions instead of requesting approval.
+- `.codex/AGENTS.md` is the enforcement source for routing and forbidden remote mutations.
 
 Note: current Codex `PreToolUse` parsing does not apply in-place command rewrites via `updatedInput`. RTK routing is therefore documented in `.codex/AGENTS.md` instead of enforced with deny-and-rerun.
 
@@ -263,6 +254,7 @@ Workflow backbone:
 Shared gate references:
 
 - `.codex/skills/_shared/quality-gates.md`
+- `.codex/skills/_shared/helper-cli-contract.md`
 - `.codex/skills/_shared/run-gates.sh`
 - `.codex/skills/_shared/write-result.py`
 - `.codex/skills/_shared/severity-map.md`
@@ -274,11 +266,7 @@ Artifact contract:
 
 - `.reports/codex/<skill>/<timestamp>/result.json`
 
-Calibration runner:
-
-```bash
-.codex/calibration/run.py
-```
+Calibration runner: inspect `.codex/calibration/run.py --help`, then choose default or strict-live mode from its authoritative CLI contract.
 
 Each run writes `result.json`, `behavioral.json`, and `recommendations.md`. Recommendations are generated from failed gates, leaks, behavioral false positives/negatives, confidence calibration gaps, and live-observation coverage.
 
@@ -291,11 +279,7 @@ Confidence policy:
 
 Every output that reports confidence must include degradation reasons and confidence-gap closures or explicit unresolved/deferred records.
 
-Offline CI harness:
-
-```bash
-.github/codex-harness.sh
-```
+Offline CI harness: inspect `.github/codex-harness.sh --help` before invocation.
 
 The GitHub Actions workflow `.github/workflows/ci-harness.yml` runs this wrapper for `.codex/**` changes. It does not invoke Codex or any LLM API: it clears common LLM API environment variables, runs with an isolated temporary `HOME`, and shadows `codex`, `openai`, `gh`, `curl`, and `wget` with blockers before executing `.codex/calibration/run.py`. The wrapper prints a compact result summary in the action log, appends it to `GITHUB_STEP_SUMMARY`, saves generated calibration artifacts under `.github/codex-harness-results/`, and uploads that folder as the `codex-harness-results` artifact only when the harness job fails.
 

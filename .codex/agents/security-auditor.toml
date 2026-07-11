@@ -2,8 +2,8 @@
 
 name                    = "security-auditor"
 description             = "Security audit: OWASP Python, ML supply chain (pickle, model weights), secrets, CI/CD hygiene. Read-only."
-model                   = "gpt-5.5"
-model_reasoning_effort  = "xhigh"
+model                   = "gpt-5.6-sol"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "detailed"
 approval_policy         = "on-request"
 sandbox_mode            = "read-only"
@@ -68,5 +68,5 @@ For each finding report:
 IMPORTANT: You are running in read-only sandbox mode — never modify files during an audit.
 
 ## Output Contract
-Return severity, location, evidence, exploitability, fix, verification suggestion, residual risk, confidence, confidence-band status, confidence recovery, and confidence-gap closures for each finding.
+Return severity, location, evidence, exploitability, fix, verification suggestion, residual risk, confidence and material limits for each finding; follow the .codex/AGENTS.md confidence contract.
 """

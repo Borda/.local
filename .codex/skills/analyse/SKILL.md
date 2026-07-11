@@ -39,10 +39,7 @@ Unsupported or ambiguous mode => fail with a usage note, unless the user supplie
 
 ### 03: Capture scope and source inventory before drawing conclusions
 
-```bash
-.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline" 2>/dev/null || true
-rg -n "$SCOPE_PATTERN" . >"$OUT_DIR/reference-scan.txt" 2>/dev/null || true
-```
+Use `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`. Run the reference scan separately and record failures instead of hiding a missing diff context.
 
 ### 04: Gather evidence with a ledger. Write `$OUT_DIR/evidence.md` with one row per claim:
 
@@ -95,7 +92,11 @@ git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
 - `pass`: findings are evidence-backed, ranked, and gaps are explicit.
 - `fail`: missing scope, missing evidence for a blocking claim, stale external claim presented as fact, or no result artifact.
 
-### 09: Write mandatory result artifact to `.reports/codex/analyse/<timestamp>/result.json`
+### 09: Run shared gates and write the validated result artifact
+
+Follow `../_shared/helper-cli-contract.md` and each helper's `--help`. For an analysis-only run, mark lint, format, types, and tests not applicable with concrete reasons; the review gate requires non-empty `analysis.md`, `self-review.md`, and a clean diff check. Write with `ANALYSE_METADATA`, validate as skill `analyse`, and promote only the validated candidate.
+
+Replace an explicit skip with the relevant command when the analysis includes code changes or executable probes.
 
 ## Self-Critical Gate
 

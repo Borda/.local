@@ -16,6 +16,9 @@ COMMON_RESULT_FIELDS = {
     "confidence",
     "artifact_path",
 }
+EXPECTED_GATE_IDS = {"lint", "format", "types", "tests", "review"}
+FAILING_GATE_STATUSES = {"fail", "missing-command", "timeout"}
+VALID_GATE_STATUSES = {"pass", "fail", "missing-command", "not-applicable", "timeout"}
 
 UNRESOLVED_REASON_GROUPS = {
     "local-code-or-doc",
@@ -73,6 +76,12 @@ RESOLVE_FINAL_TABLE_REQUIRED_COLUMNS = {
 }
 
 SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
+    "analyse": {"files": {}},
+    "audit": {"files": {}},
+    "calibrate": {"files": {}},
+    "research": {"files": {}},
+    "review": {"files": {}},
+    "sync": {"files": {}},
     "develop": {
         "files": {
             "development-notes.md": ["Scope", "Acceptance Criteria", "Evidence", "Specialist Policy", "Gates"],
@@ -150,6 +159,10 @@ def _require_result_shape(result: dict[str, Any]) -> None:
     confidence = result["confidence"]
     if not isinstance(confidence, int | float) or not 0.0 <= float(confidence) <= 1.0:
         raise SystemExit("invalid-confidence")
+    if result["status"] == "pass" and result["checks_failed"]:
+        raise SystemExit("pass-with-failed-checks")
+    if result["status"] == "pass" and findings["critical"] > 0:
+        raise SystemExit("pass-with-critical-findings")
 
 
 def _require_file_sections(path: Path, sections: list[str]) -> None:
@@ -172,27 +185,76 @@ def _validate_jsonl(path: Path) -> None:
             raise SystemExit(f"jsonl-row-not-object:{path}:{index}")
 
 
-def _validate_gates(out_dir: Path) -> None:
+def _validate_gates(out_dir: Path) -> dict[str, Any]:
     gates_path = out_dir / "gates.json"
     if not gates_path.exists():
-        return
+        raise SystemExit("missing-gates-json")
     gates = _load_json(gates_path)
     checks = gates.get("checks")
     if not isinstance(checks, list):
         raise SystemExit("gates-missing-check-details")
+    seen_ids: set[str] = set()
+    failing_ids: list[str] = []
     for index, check in enumerate(checks):
         if not isinstance(check, dict):
             raise SystemExit(f"gate-check-not-object:{index}")
         for key in ("id", "status", "command_path", "stdout", "stderr", "duration_seconds"):
             if key not in check:
                 raise SystemExit(f"gate-check-missing-field:{index}:{key}")
-        if check["status"] not in {"pass", "fail", "missing-command"}:
+        check_id = check["id"]
+        if not isinstance(check_id, str) or check_id not in EXPECTED_GATE_IDS:
+            raise SystemExit(f"gate-check-invalid-id:{index}:{check_id!r}")
+        if check_id in seen_ids:
+            raise SystemExit(f"gate-check-duplicate-id:{check_id}")
+        seen_ids.add(check_id)
+        if check["status"] not in VALID_GATE_STATUSES:
             raise SystemExit(f"gate-check-invalid-status:{index}:{check['status']!r}")
-        if check["status"] != "missing-command" and not isinstance(check.get("exit_code"), int):
+        if not isinstance(check.get("exit_code"), int):
             raise SystemExit(f"gate-check-invalid-exit-code:{index}")
+        if check["status"] in {"missing-command", "not-applicable", "timeout"}:
+            reason = check.get("reason")
+            if not isinstance(reason, str) or not reason.strip():
+                raise SystemExit(f"gate-check-missing-reason:{index}")
+        if check["status"] in FAILING_GATE_STATUSES:
+            failing_ids.append(check_id)
+        expected_exit_codes = {"pass": 0, "missing-command": 127, "not-applicable": 0, "timeout": 124}
+        expected_exit = expected_exit_codes.get(check["status"])
+        if expected_exit is not None and check["exit_code"] != expected_exit:
+            raise SystemExit(f"gate-check-exit-status-mismatch:{index}")
+        if check["status"] == "fail" and check["exit_code"] in {0, 124, 127}:
+            raise SystemExit(f"gate-check-invalid-fail-exit-code:{index}")
         for key in ("command_path", "stdout", "stderr"):
-            if not Path(str(check[key])).exists():
+            path = Path(str(check[key]))
+            if not path.is_absolute() and not path.exists():
+                path = out_dir / path
+            resolved = path.resolve()
+            if not resolved.is_relative_to(out_dir.resolve()):
+                raise SystemExit(f"gate-check-log-outside-output:{index}:{key}")
+            if path.is_symlink() or not resolved.is_file():
                 raise SystemExit(f"gate-check-missing-log:{index}:{key}")
+    if seen_ids != EXPECTED_GATE_IDS:
+        raise SystemExit("gate-check-id-set-mismatch")
+    expected_status = (
+        "timeout" if any(check["status"] == "timeout" for check in checks) else "fail" if failing_ids else "pass"
+    )
+    if gates.get("status") != expected_status:
+        raise SystemExit("gates-status-mismatch")
+    if gates.get("checks_failed") != failing_ids:
+        raise SystemExit("gates-failed-list-mismatch")
+    return gates
+
+
+def _reconcile_result_with_gates(result: dict[str, Any], gates: dict[str, Any]) -> None:
+    """Require result status and check fields to include gate outcomes."""
+    if set(result["checks_run"]) != EXPECTED_GATE_IDS:
+        raise SystemExit("result-checks-run-gate-mismatch")
+    gate_failures = set(gates["checks_failed"])
+    if not gate_failures.issubset(set(result["checks_failed"])):
+        raise SystemExit("result-checks-failed-gate-mismatch")
+    if gates["status"] == "fail" and result["status"] == "pass":
+        raise SystemExit("result-pass-with-failed-gates")
+    if gates["status"] == "timeout" and result["status"] != "timeout":
+        raise SystemExit("result-status-timeout-mismatch")
 
 
 def _validate_confidence_gaps(result: dict[str, Any], skill: str) -> None:
@@ -702,11 +764,46 @@ def _validate_resolve_unresolved_summary(metadata: dict[str, Any], out_dir: Path
             raise SystemExit(f"resolve-unresolved-summary-missing-{required_text.replace(' ', '-')}")
 
 
+def _validate_resolve_pr_identity(
+    routing: dict[str, Any],
+    remote_selection: dict[str, Any],
+    target_branch: dict[str, Any],
+    checkout: dict[str, Any],
+) -> None:
+    """Reconcile authoritative PR remote, base OID, and checkout head evidence."""
+    if routing.get("base_identity_source") != "pr_url":
+        raise SystemExit("resolve-pr-routing-base-identity-not-authoritative")
+    expected_identity = remote_selection.get("expected")
+    if not isinstance(expected_identity, dict):
+        raise SystemExit("resolve-pr-remote-selection-expected-missing")
+    if expected_identity.get("host") != routing.get("base_host"):
+        raise SystemExit("resolve-pr-remote-selection-host-mismatch")
+    if expected_identity.get("repository") != routing.get("base_repo"):
+        raise SystemExit("resolve-pr-remote-selection-repository-mismatch")
+    if target_branch.get("remote") != remote_selection.get("remote"):
+        raise SystemExit("resolve-pr-target-branch-remote-mismatch")
+    if target_branch.get("remote_url") != remote_selection.get("remote_url"):
+        raise SystemExit("resolve-pr-target-branch-remote-url-mismatch")
+    expected_base = target_branch.get("expected_base_oid")
+    local_base = target_branch.get("local_head")
+    if not expected_base or expected_base != routing.get("base_oid"):
+        raise SystemExit("resolve-pr-target-branch-expected-oid-missing")
+    if not local_base or local_base != expected_base or target_branch.get("base_matches_pr_metadata") is not True:
+        raise SystemExit("resolve-pr-target-branch-oid-mismatch")
+    if checkout.get("pr_url") != routing.get("pr_url"):
+        raise SystemExit("resolve-pr-local-checkout-url-mismatch")
+    if not checkout.get("expected_head") or checkout.get("expected_head") != routing.get("head_oid"):
+        raise SystemExit("resolve-pr-local-checkout-expected-head-missing")
+    if checkout.get("local_head") != checkout.get("expected_head"):
+        raise SystemExit("resolve-pr-local-checkout-oid-mismatch")
+
+
 def validate(skill: str, out_dir: Path, result_path: Path) -> None:
     result = _load_json(result_path)
     _require_result_shape(result)
     _validate_confidence_gaps(result, skill)
-    _validate_gates(out_dir)
+    gates = _validate_gates(out_dir)
+    _reconcile_result_with_gates(result, gates)
 
     requirement = SKILL_REQUIREMENTS.get(skill)
     if requirement is None:
@@ -747,6 +844,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
             for filename in (
                 "pr.json",
                 "pr-routing.json",
+                "remote-selection.json",
                 "target-branch.json",
                 "pr-head-fetch.json",
                 "local-checkout.json",
@@ -761,6 +859,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 if not (pr_dir / filename).exists():
                     raise SystemExit(f"missing-resolve-pr-artifact:{filename}")
             routing = _load_json(pr_dir / "pr-routing.json")
+            remote_selection = _load_json(pr_dir / "remote-selection.json")
             target_branch = _load_json(pr_dir / "target-branch.json")
             checkout = _load_json(pr_dir / "local-checkout.json")
             if routing.get("local_checkout_required") is not True:
@@ -771,8 +870,6 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 raise SystemExit("resolve-pr-routing-force-policy-missing")
             if target_branch.get("status") != "fetched":
                 raise SystemExit("resolve-pr-target-branch-not-fetched")
-            if not target_branch.get("local_head"):
-                raise SystemExit("resolve-pr-target-branch-head-missing")
             if checkout.get("status") != "checked-out":
                 raise SystemExit("resolve-pr-local-checkout-not-checked-out")
             if "--force" in str(checkout.get("command", "")):
@@ -781,6 +878,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 raise SystemExit("resolve-pr-local-checkout-force-policy-missing")
             if checkout.get("head_matches_pr") is not True:
                 raise SystemExit("resolve-pr-local-checkout-head-mismatch")
+            _validate_resolve_pr_identity(routing, remote_selection, target_branch, checkout)
             if (pr_dir / "head-files").exists():
                 raise SystemExit("resolve-pr-raw-head-file-snapshots-forbidden")
             _require_file_sections(
@@ -810,9 +908,11 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--skill", required=True, choices=sorted(SKILL_REQUIREMENTS))
-    parser.add_argument("--out", required=True, type=Path)
-    parser.add_argument("--result", required=True, type=Path)
+    parser.add_argument(
+        "--skill", required=True, choices=sorted(SKILL_REQUIREMENTS), help="Skill contract to validate."
+    )
+    parser.add_argument("--out", required=True, type=Path, help="Skill artifact directory.")
+    parser.add_argument("--result", required=True, type=Path, help="Candidate result JSON to validate.")
     args = parser.parse_args()
 
     validate(args.skill, args.out, args.result)

@@ -147,7 +147,8 @@
       "Self-Critical Gate",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "audit": [
       "## Input Schema",
@@ -155,7 +156,8 @@
       "merge-prune",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "calibrate": [
       "## Input Schema",
@@ -163,7 +165,6 @@
       "model",
       "model_reasoning_effort",
       "agent-effort-policy",
-      "medium",
       "high",
       "xhigh",
       "deprecated model",
@@ -174,14 +175,10 @@
       "behavioral-version-policy",
       "commit-relative version",
       "git show HEAD",
-      "collect-pr.sh",
-      "find-review-report.py",
-      "validate-artifacts.py",
-      "write-result.py",
-      "executable `write-result.py`",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "develop": [
       "## Input Schema",
@@ -206,10 +203,10 @@
       "degradation reasons",
       "objective evidence",
       "specialist policy",
-      "validate-artifacts.py",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "investigate": [
       "## Input Schema",
@@ -220,10 +217,10 @@
       "anti-rationalization gate",
       "rejected alternative",
       "targeted probe",
-      "validate-artifacts.py",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "manage": [
       "## Input Schema",
@@ -235,10 +232,10 @@
       "git show HEAD",
       "one version step",
       "ownership.md",
-      "validate-artifacts.py",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "optimize": [
       "## Input Schema",
@@ -247,19 +244,19 @@
       "experiments.jsonl",
       "rollback evidence",
       "min_delta",
-      "validate-artifacts.py",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "release": [
       "## Input Schema",
       "SemVer",
       "release evidence",
-      "validate-artifacts.py",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "research": [
       "## Input Schema",
@@ -267,7 +264,8 @@
       "paper/code-fidelity",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "resolve": [
       "## Input Schema",
@@ -338,7 +336,7 @@
       "omitted entries",
       "triage status counts",
       "resolution status counts",
-      "full, unabridged final resolution ledger",
+      "complete, unabridged resolution ledger",
       "confidence_gaps",
       "confidence_recovery",
       "confidence_gap_closures",
@@ -360,10 +358,10 @@
       "resolved evidence",
       "already-applied",
       "closure evidence",
-      "validate-artifacts.py",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "review": [
       "## Input Schema",
@@ -381,9 +379,11 @@
       "Online Review Triage",
       "review-threads.json",
       "unresolved-review-threads.json",
-      "T2 multi-axis specialist fan-out",
+      "T2 risk-routed specialist fan-out",
+      "review-routing.json",
+      "schema version 2",
+      "Codex rollout logs",
       "specialist-manifest.json",
-      "validate_artifacts.py",
       "independence_satisfied",
       "review-notes.md",
       "Project coding principles",
@@ -401,7 +401,7 @@
       "shared confidence band policy",
       "confidence_gaps",
       "confidence_gap_closures",
-      "degradation reasons",
+      "material limits",
       "objectively verifiable",
       "Decision Summary",
       "review_decision",
@@ -412,7 +412,8 @@
       "not-aligned",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ],
     "sync": [
       "## Input Schema",
@@ -423,7 +424,8 @@
       ".codex/README.md",
       "result-template.json",
       "## Quality Gates",
-      "## Calibration Hooks"
+      "## Calibration Hooks",
+      "helper-cli-contract.md"
     ]
   }
 }

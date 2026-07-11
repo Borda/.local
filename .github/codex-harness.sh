@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() {
+  cat <<'EOF'
+Usage: codex-harness.sh [--help]
+
+Run calibration in an isolated temporary HOME with network-capable and LLM
+commands blocked. Writes a compact summary and copies failure artifacts to
+.github/codex-harness-results or CODEX_HARNESS_RESULTS_DIR.
+
+Exit 0 means isolated calibration passed; nonzero means setup, calibration, or
+artifact validation failed.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    echo "unknown-arg:$1" >&2
+    exit 2
+    ;;
+esac
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMP_PARENT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
 TMP_HOME="$(mktemp -d "$TMP_PARENT/codex-offline-home.XXXXXX")"
@@ -39,8 +65,38 @@ cat >"$TMP_BIN/git" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 case "\${1:-}" in
-  status|diff|ls-files|show)
+  status|diff|ls-files|show|init|config|add|commit)
     exec "$REAL_GIT" "\$@"
+    ;;
+  remote)
+    case "\${2:-}" in
+      ""|get-url)
+        exec "$REAL_GIT" "\$@"
+        ;;
+      *)
+        echo "blocked by offline Codex harness: git \$*" >&2
+        exit 125
+        ;;
+    esac
+    ;;
+  -C)
+    case "\${3:-}" in
+      remote)
+        case "\${4:-}" in
+          add|get-url|"")
+            exec "$REAL_GIT" "\$@"
+            ;;
+          *)
+            echo "blocked by offline Codex harness: git \$*" >&2
+            exit 125
+            ;;
+        esac
+        ;;
+      *)
+        echo "blocked by offline Codex harness: git \$*" >&2
+        exit 125
+        ;;
+    esac
     ;;
   *)
     echo "blocked by offline Codex harness: git \$*" >&2

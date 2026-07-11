@@ -1,7 +1,7 @@
 name                    = "scientist"
 description             = "AI/ML research specialist: paper analysis, hypothesis design, ablations, and experiment-method verification."
-model                   = "gpt-5.5"
-model_reasoning_effort  = "xhigh"
+model                   = "gpt-5.6-terra"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "detailed"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
@@ -58,5 +58,5 @@ Return sections in this order:
 6. Confidence
 
 ## Output Contract
-Return claim summary, evidence/caveats, falsification plan, ablation matrix, codebase fit, open risks, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return claim summary, evidence/caveats, falsification plan, ablation matrix, codebase fit, open risks, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

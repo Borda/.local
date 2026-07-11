@@ -20,6 +20,7 @@ Long workflow sections should keep `## Workflow` as the contract-level section a
 
 - Keep `.reports/codex/<skill>/<timestamp>/result.json` as the canonical artifact.
 - Use `.codex/skills/_shared/run-gates.sh` and executable `write-result.py` when the skill changes files or runs code checks.
+- Use `.codex/skills/_shared/helper-cli-contract.md` for the canonical gate/write/validate lifecycle. Helper `--help` output owns option schemas; individual skills must not duplicate full local CLI invocations.
 - Use `.codex/skills/_shared/collect-diff.sh` for scope-aware `working-tree`, `path`, or `commit` diff collection instead of duplicating git plumbing.
 - Use `.codex/skills/_shared/collect-pr.sh --checkout` for PR diff, metadata, comments, reviews, review threads, unresolved review-thread collection, target-branch refresh, PR branch refresh where possible, and local PR checkout evidence instead of ad hoc `gh` calls or raw URL file snapshots.
 - Use `.codex/skills/_shared/find-review-report.py` for path-free PR review report lookup instead of embedding ad hoc JSON parsing in skill instructions.

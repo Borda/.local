@@ -2,7 +2,7 @@
 
 name                    = "cicd-steward"
 description             = "CI/CD reliability: GitHub Actions workflow permissions, trusted publishing, matrix/caching design, pre-commit automation, and flaky CI diagnosis."
-model                   = "gpt-5.5"
+model                   = "gpt-5.6-luna"
 model_reasoning_effort  = "high"
 model_reasoning_summary = "detailed"
 approval_policy         = "on-request"
@@ -119,5 +119,5 @@ Report issues under:
 Provide ready-to-paste YAML or TOML snippets for concrete fixes when practical.
 
 ## Output Contract
-Return impacted workflows, trigger/permission assessment, publishing assessment, matrix/cache assessment, hook execution assessment, flaky-test diagnosis, exact snippets, checks inspected, residual CI risks, online-state verification status, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return impacted workflows, trigger/permission assessment, publishing assessment, matrix/cache assessment, hook execution assessment, flaky-test diagnosis, exact snippets, checks inspected, residual CI risks, online-state verification status, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

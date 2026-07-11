@@ -42,8 +42,9 @@ Unknown mode or ambiguous range => fail before writing release docs.
 ```bash
 RELEASE_RANGE="${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null)..HEAD}"
 git log --oneline "$RELEASE_RANGE" >"$OUT_DIR/commits.txt" 2>/dev/null || true
-.codex/skills/_shared/collect-diff.sh --scope commit --target "$RELEASE_RANGE" --out "$OUT_DIR/range" 2>/dev/null || true
 ```
+
+Inspect `collect-diff.sh --help`, then collect `commit` scope for `RELEASE_RANGE` into `$OUT_DIR/range`; a collection failure is an evidence gap, not an empty release.
 
 Write `$OUT_DIR/change-table.md` with change type, user impact, breaking status, docs need, and verification evidence.
 
@@ -78,9 +79,7 @@ Stay single-agent for `notes` mode on a narrow, low-risk range unless SemVer or 
 
 ### 05: Run required checks from `../_shared/quality-gates.md`
 
-```bash
-.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-```
+Inspect `run-gates.sh --help`, then run every project-required release gate with explicit commands or skip reasons.
 
 ### 06: Classify blockers and warnings
 
@@ -91,25 +90,7 @@ Stay single-agent for `notes` mode on a narrow, low-risk range unless SemVer or 
 
 ### 07: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/release/<timestamp>/result.json`
 
-```bash
-.codex/skills/_shared/write-result.py \
-    --out "$OUT_DIR/result.candidate.json" \
-    --status "$STATUS" \
-    --checks-run "lint,format,types,tests,review" \
-    --checks-failed "$CHECKS_FAILED" \
-    --critical "$CRITICAL" \
-    --high "$HIGH" \
-    --medium "$MEDIUM" \
-    --low "$LOW" \
-    --confidence "$CONFIDENCE" \
-    --metadata "$RELEASE_METADATA" \
-    --artifact-path "$OUT_DIR/result.json"
-python3 .codex/skills/_shared/validate-artifacts.py \
-    --skill release \
-    --out "$OUT_DIR" \
-    --result "$OUT_DIR/result.candidate.json"
-mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-```
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `RELEASE_METADATA`, validate as skill `release`, and promote only the validated candidate.
 
 ## Fail-Fast Rules
 

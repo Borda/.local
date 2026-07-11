@@ -1,7 +1,7 @@
 name                    = "solution-architect"
 description             = "System design and API planning: ADRs, interface contracts, migration plans, coupling and compatibility analysis."
-model                   = "gpt-5.5"
-model_reasoning_effort  = "xhigh"
+model                   = "gpt-5.6-sol"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "auto"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
@@ -75,5 +75,5 @@ Return sections in this order:
 5. Open Questions
 
 ## Output Contract
-Return decision, alternatives table, migration plan, risk matrix, evidence sources, open questions, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return decision, alternatives table, migration plan, risk matrix, evidence sources, open questions, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

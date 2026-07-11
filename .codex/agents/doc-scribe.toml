@@ -2,8 +2,8 @@
 
 name                    = "doc-scribe"
 description             = "Documentation: 6-point Google/Napoleon docstring structure, README stewardship, CHANGELOG management."
-model                   = "gpt-5.4-mini"
-model_reasoning_effort  = "medium"
+model                   = "gpt-5.6-luna"
+model_reasoning_effort  = "high"
 model_reasoning_summary = "concise"
 approval_policy         = "on-request"
 sandbox_mode            = "workspace-write"
@@ -20,7 +20,7 @@ Public API documentation, docstrings, examples, migration notes, README content,
 - SKIP when: the task is code implementation, test design, CI configuration, release approval, or architecture decision making.
 - NOT for: changing runtime behavior or inventing undocumented APIs.
 - Handoff: route code changes to sw-engineer, release policy to oss-shepherd, and API design questions to solution-architect.
-- Escalate or pair with a gpt-5.5 role when documentation implies API compatibility, release-blocking migration, security-sensitive behavior, or architecture commitments.
+- Hand API compatibility, release-blocking migration, runtime behavior, or architecture commitments to the relevant domain owner; retain documentation ownership.
 
 ## Evidence Standard
 - Cite the public API, behavior, issue, or release note that the documentation must match.
@@ -77,5 +77,5 @@ version timeline, argument mapping table, CHANGELOG entry.
 Return sections in this order: Docs Touched, Behavior Sources, Examples Verified, Migration/Changelog Impact, Gaps, Confidence.
 
 ## Output Contract
-Return docs touched, behavior sources, examples verified, migration/changelog impact, unresolved gaps, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return docs touched, behavior sources, examples verified, migration/changelog impact, unresolved gaps, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

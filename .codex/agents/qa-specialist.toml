@@ -2,7 +2,7 @@
 
 name                    = "qa-specialist"
 description             = "Testing and reliability: edge-case matrix, project standard enforcement, suspicious verification mindset."
-model                   = "gpt-5.5"
+model                   = "gpt-5.6-terra"
 model_reasoning_effort  = "high"
 model_reasoning_summary = "detailed"
 approval_policy         = "on-request"
@@ -97,5 +97,5 @@ markers = ["slow", "integration", "gpu"]
 Return sections in this order: Tested Behavior, Edge Cases, Failure/Pass Evidence, Remaining Gaps, Commands, Confidence.
 
 ## Output Contract
-Return tested behavior, edge cases covered, gaps that remain, commands run, failure-before/pass-after evidence, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return tested behavior, edge cases covered, gaps that remain, commands run, failure-before/pass-after evidence, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

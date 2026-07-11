@@ -158,10 +158,52 @@ def split_csv(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def validate_gate_evidence(args: argparse.Namespace, checks_run: list[str], checks_failed: list[str]) -> None:
+    """Reconcile result inputs with mandatory five-gate evidence."""
+    try:
+        gates = json.loads(args.gates.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise SystemExit(f"missing-gates-json:{args.gates}") from exc
+    if not isinstance(gates, dict) or not isinstance(gates.get("checks"), list):
+        raise SystemExit("invalid-gates-json")
+    expected_ids = ["lint", "format", "types", "tests", "review"]
+    gate_ids = [check.get("id") for check in gates["checks"] if isinstance(check, dict)]
+    if gate_ids != expected_ids or checks_run != expected_ids:
+        raise SystemExit("result-gate-check-set-mismatch")
+    gate_failures = gates.get("checks_failed")
+    if not isinstance(gate_failures, list) or not set(gate_failures).issubset(checks_failed):
+        raise SystemExit("result-gate-failure-mismatch")
+    gate_status = gates.get("status")
+    if gate_status not in {"pass", "fail", "timeout"}:
+        raise SystemExit("invalid-gate-status")
+    if gate_status == "fail" and args.status == "pass":
+        raise SystemExit("pass-with-failed-gates")
+    if gate_status == "timeout" and args.status != "timeout":
+        raise SystemExit("result-status-timeout-mismatch")
+
+
+def validate_result_invariants(args: argparse.Namespace, checks_run: list[str], checks_failed: list[str]) -> None:
+    """Reject contradictory or ambiguous result status inputs."""
+    if not checks_run:
+        raise SystemExit("checks-run-required")
+    if len(checks_run) != len(set(checks_run)):
+        raise SystemExit("duplicate-checks-run")
+    if len(checks_failed) != len(set(checks_failed)):
+        raise SystemExit("duplicate-checks-failed")
+    if args.status == "pass" and checks_failed:
+        raise SystemExit("pass-with-failed-checks")
+    if args.status == "pass" and args.critical > 0:
+        raise SystemExit("pass-with-critical-findings")
+    if args.status == "timeout" and not checks_failed:
+        raise SystemExit("timeout-without-failed-check")
+
+
 def build_payload(args: argparse.Namespace) -> dict[str, Any]:
     """Build and validate the canonical result payload from parsed arguments."""
     checks_run = split_csv(args.checks_run)
     checks_failed = split_csv(args.checks_failed)
+    validate_result_invariants(args, checks_run, checks_failed)
+    validate_gate_evidence(args, checks_run, checks_failed)
     metadata = parse_metadata(args.metadata)
     validate_confidence_metadata(metadata, args.confidence, args.status, checks_failed)
 
@@ -186,19 +228,20 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments for result writing."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", required=True, type=Path)
-    parser.add_argument("--status", required=True, choices=("pass", "fail", "timeout"))
-    parser.add_argument("--checks-run", required=True)
-    parser.add_argument("--checks-failed", default="")
-    parser.add_argument("--critical", type=int, default=0)
-    parser.add_argument("--high", type=int, default=0)
-    parser.add_argument("--medium", type=int, default=0)
-    parser.add_argument("--low", type=int, default=0)
-    parser.add_argument("--confidence", required=True, type=float)
-    parser.add_argument("--artifact-path", required=True)
-    parser.add_argument("--recommendations", default="")
-    parser.add_argument("--follow-up", default="")
-    parser.add_argument("--metadata", default="")
+    parser.add_argument("--out", required=True, type=Path, help="Candidate or final result JSON to write.")
+    parser.add_argument("--gates", required=True, type=Path, help="Canonical gates.json evidence path.")
+    parser.add_argument("--status", required=True, choices=("pass", "fail", "timeout"), help="Overall result status.")
+    parser.add_argument("--checks-run", required=True, help="Comma-separated canonical gate IDs.")
+    parser.add_argument("--checks-failed", default="", help="Comma-separated failed check IDs.")
+    parser.add_argument("--critical", type=int, default=0, help="Critical finding count.")
+    parser.add_argument("--high", type=int, default=0, help="High finding count.")
+    parser.add_argument("--medium", type=int, default=0, help="Medium finding count.")
+    parser.add_argument("--low", type=int, default=0, help="Low finding count.")
+    parser.add_argument("--confidence", required=True, type=float, help="Final confidence in [0, 1].")
+    parser.add_argument("--artifact-path", required=True, help="Canonical result path recorded in the payload.")
+    parser.add_argument("--recommendations", default="", help="JSON list or ||-separated recommendations.")
+    parser.add_argument("--follow-up", default="", help="JSON list or ||-separated follow-up items.")
+    parser.add_argument("--metadata", default="", help="JSON object containing required confidence metadata.")
     return parser.parse_args()
 
 

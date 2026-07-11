@@ -64,15 +64,7 @@ Stay single-agent for narrow `scope=config`, `scope=skills`, or `scope=agents` a
 
 ### 04: Run shared quality gates
 
-```bash
-.codex/skills/_shared/run-gates.sh \
-    --out "$OUT_DIR" \
-    --lint "${LINT_CMD:-bash -lc 'if command -v ruff >/dev/null 2>&1; then ruff check .codex; else UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/codex-uv-cache} uv run --no-sync ruff check .codex; fi'}" \
-    --format "${FORMAT_CMD:-bash -lc 'if command -v ruff >/dev/null 2>&1; then ruff format --check .codex; else UV_CACHE_DIR=${UV_CACHE_DIR:-/tmp/codex-uv-cache} uv run --no-sync ruff format --check .codex; fi'}" \
-    --types "${TYPES_CMD:-true}" \
-    --tests "${TESTS_CMD:-true}" \
-    --review "${REVIEW_CMD:-git diff --check}"
-```
+Follow `../_shared/helper-cli-contract.md` and `run-gates.sh --help`. The default gate intent is ruff lint/format over `.codex`, an explicit no-typed-target reason, calibration as tests, and a clean diff review; project-specific commands may replace these defaults.
 
 ### 05: Detect drift and broken references
 
@@ -83,8 +75,8 @@ rg -n "config_file|skills/|quality-gates|run-gates.sh|write-result.py" .codex >"
 ### 06: Audit spawn-pattern coverage and overlap in `AGENTS.md` (instruction-level check)
 
 ```bash
-rg -n "^### Spawn $(.+) when:" .codex/AGENTS.md >"$OUT_DIR/spawn-sections.txt"
-rg -n "Automatic spawn patterns \\(all agents\\)|Collaboration team patterns" .codex/AGENTS.md >"$OUT_DIR/spawn-policy-sections.txt"
+rg -n "\[agents\.|description =" .codex/config.toml >"$OUT_DIR/spawn-sections.txt"
+rg -n "TRIGGER when|SKIP when|NOT for" .codex/agents >"$OUT_DIR/spawn-policy-sections.txt"
 ```
 
 ### 07: Review native skill and agent contract consistency
@@ -121,20 +113,7 @@ Classify overlap findings explicitly as `keep`, `sharpen`, or `merge-prune`:
 
 ### 10: Write mandatory result artifact
 
-```bash
-.codex/skills/_shared/write-result.py \
-    --out "$OUT_DIR/result.json" \
-    --status "$STATUS" \
-    --checks-run "lint,format,types,tests,review" \
-    --checks-failed "$CHECKS_FAILED" \
-    --critical "$CRITICAL" \
-    --high "$HIGH" \
-    --medium "$MEDIUM" \
-    --low "$LOW" \
-    --confidence "$CONFIDENCE" \
-    --metadata "$AUDIT_METADATA" \
-    --artifact-path "$OUT_DIR/result.json"
-```
+Use the shared helper lifecycle and authoritative help. Write with `AUDIT_METADATA`, validate as skill `audit`, and promote only the validated candidate.
 
 ## Fail-fast Rules
 

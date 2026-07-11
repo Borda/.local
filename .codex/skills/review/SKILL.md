@@ -47,23 +47,11 @@ mkdir -p "$OUT_DIR"
 
 For local scopes:
 
-```bash
-.codex/skills/_shared/collect-diff.sh \
-    --scope "$SCOPE" \
-    --target "${TARGET:-}" \
-    --out "$OUT_DIR"
-```
+Inspect `collect-diff.sh --help`, then collect the normalized `SCOPE`, optional `TARGET`, and `OUT_DIR`.
 
-For PR scope:
+For PR scope, inspect `collect-pr.sh --help`, then collect `TARGET` into `OUT_DIR` with checkout enabled.
 
-```bash
-.codex/skills/_shared/collect-pr.sh \
-    --target "${TARGET:-}" \
-    --out "$OUT_DIR" \
-    --checkout
-```
-
-In PR scope, GitHub data is evidence only: `gh pr view`, `gh pr diff`, and review-thread queries provide metadata, patch, and comments. Source inspection must use the local checkout recorded in `"$OUT_DIR/local-checkout.json"` after target-branch refresh evidence is written. Do not reconstruct changed source files with `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots. If local checkout fails or `local-checkout.json` does not prove `head_matches_pr=true`, fail the review instead of reviewing remote raw files. Do not retry with `--force` unless the user explicitly confirms after being told why force is needed and what it may overwrite.
+In PR scope, GitHub data is evidence only: `gh pr view`, `gh pr diff`, and review-thread queries provide metadata, patch, and comments. Source inspection must use the local checkout recorded in `"$OUT_DIR/local-checkout.json"` after target-branch refresh evidence is written. Checkout must use the authoritative PR URL, not a bare number that can resolve against the wrong local fork. Do not reconstruct changed source files with `curl`, `raw.githubusercontent.com`, or `head-files/` snapshots. If local checkout fails or `local-checkout.json` does not prove `head_matches_pr=true`, fail the review instead of reviewing remote raw files. Do not retry with `--force` unless the user explicitly confirms after being told why force is needed and what it may overwrite.
 
 Classify the diff and write the decision to `"$OUT_DIR/scope.txt"`:
 
@@ -72,7 +60,7 @@ Classify the diff and write the decision to `"$OUT_DIR/scope.txt"`:
 - `BROAD`: 8+ files, cross-subsystem changes, dependency/config changes, or unclear ownership.
 - `HIGH_RISK`: public API, release, security, auth, credentials, deserialization, data pipeline, ML tensor math, CI/CD, or migration behavior.
 
-If `scope=pr`, include `pr.json`, `pr-routing.json`, `target-branch.json`, `local-checkout.json`, comments, reviews, review threads, unresolved review threads, and `online-review-summary.json` in the review evidence. `pr-routing.json` and `local-checkout.json` must include `force_policy` proving no forced checkout was run automatically. Treat unresolved online review threads and comments as candidate findings until triaged as valid, duplicate, stale, out-of-scope, or already fixed.
+If `scope=pr`, include `pr.json`, `pr-routing.json`, `remote-selection.json`, `target-branch.json`, `local-checkout.json`, comments, reviews, review threads, unresolved review threads, and `online-review-summary.json` in the review evidence. The selected remote must match the base repository derived from the PR URL, and fetched base/head OIDs must exactly match PR metadata. `pr-routing.json` and `local-checkout.json` must include `force_policy` proving no forced checkout was run automatically. Treat unresolved online review threads and comments as candidate findings until triaged as valid, duplicate, stale, out-of-scope, or already fixed.
 
 If `files.txt` and `untracked.txt` are both empty and there is no explicit target, fail before running gates. If `scope=pr` and `pr-error.txt` exists, fail with the captured reason.
 
@@ -87,41 +75,46 @@ Review across these axes in order:
 - Security, data, ML, CI/CD, or release risks signaled by T0.
 - Documentation or migration gaps caused by behavior/API changes.
 
-### 04: T2 multi-axis specialist fan-out. For `LOCAL`, `BROAD`, and `HIGH_RISK` diffs, get specialist review before final severity classification
+### 04: T2 risk-routed specialist fan-out. Route independent review from explicit behavior signals, not the file-count tier alone
 
-Create `"$OUT_DIR/specialists"` and write one markdown file per spawned or substituted pass. Also write `"$OUT_DIR/specialist-manifest.json"` with a `passes` list containing every required and conditional role. Each entry must include role, axis, trigger rationale, mode (`spawned`, `substituted`, or `not_triggered`), output path for spawned/substituted passes, confidence, and blocking finding count. Do not continue to severity classification until required specialist outputs and the manifest exist.
+Always write `"$OUT_DIR/review-routing.json"` with `schema_version=1`, the declared risk tier, validator-derived `mechanical_risk_tier` and `mechanical_risk_evidence`, every exact boolean signal below, non-empty `signal_evidence` for every true or false decision, a sorted `triggered_roles` list, and non-empty `trigger_reasons` for only those roles. The declared tier cannot be lower than mechanical file/line, binary-size, config/dependency, CI, migration, or security-path evidence. Mechanically detected test, docs, data/tensor, CI, and security paths force their matching signals true. Always write `"$OUT_DIR/specialist-manifest.json"`, including an empty `passes` list when no role triggers. Never add untriggered roles to the manifest.
 
-Apply the shared orchestration policy from `../_shared/specialist-orchestration.md`. Before any specialist pass, write a narrow context pack to `"$OUT_DIR/specialists/<role>-context.md"` with:
+Required routing signals:
 
-- objective and axis
-- files, hunks, logs, PR comments, or docs that are relevant to that axis
-- explicitly excluded context that would add noise
-- concrete questions the specialist must answer
-- stop rule for when to ask the parent for more context instead of widening scope
+- QA risk: `behavior_change`, `bug_fix`, `test_or_error_path`, `data_tensor_boundary`.
+- Challenge risk: `high_candidate`, `unresolved_material_assumption`, `material_no_finding`, `explicit_adversarial`.
+- Conditional axes: `axis_solution_architect`, `axis_security_auditor`, `axis_data_steward`, `axis_cicd_steward`, `axis_linting_expert`, `axis_doc_scribe`, `axis_oss_shepherd`, `axis_squeezer`, `axis_scientist`, `axis_web_explorer`.
 
-Do not hand every specialist the whole PR, full report, or full repository by default. Prefer small independent passes that can run in parallel and produce comparable outputs. The parent review agent owns final severity, duplicate merging, conflict resolution between specialists, and the review decision.
+Routing rules:
 
-Required specialist passes:
+- `TRIVIAL`: no automatic QA or challenger pass; conditional axes may still trigger.
+- `LOCAL`: trigger QA only for a QA-risk signal and challenger only for a challenge-risk signal. A file-count-only LOCAL diff triggers neither.
+- `BROAD` and `HIGH_RISK`: always trigger real QA and challenger passes.
+- Trigger a conditional role only when its matching `axis_<role>` signal is true.
 
-- `qa-specialist`: test adequacy, edge cases, regression coverage, tensor/data boundaries when relevant.
-- `challenger`: adversarial stress test for non-trivial findings, assumptions, migration/API risks, and "no findings" conclusions on `BROAD` or `HIGH_RISK` diffs.
+Create `"$OUT_DIR/specialists"` and one markdown output per triggered spawned or substituted pass. Apply `../_shared/specialist-orchestration.md`. Before any pass, write a narrow `"$OUT_DIR/specialists/<role>-context.md"` with objective, axis, relevant evidence, excluded noise, concrete questions, output contract, and stop rule. Do not give every specialist the entire PR or repository. The parent owns final severity, duplicate merging, conflict resolution, and the decision.
 
-Conditional specialist passes:
+For a spawned attempt, hash the completed context file before spawning and use task name `review_<role_with_underscores>_<first_12_context_sha256>_a<attempt>`. Record the resulting full agent path. This binds the runtime child identity to the role, context artifact, and attempt even when the current rollout schema leaves `agent_role` null. The runtime encrypts the actual inter-agent task payload, so do not claim cryptographic proof that its plaintext exactly equals the saved context; record that residual limit in confidence metadata.
 
-- `solution-architect`: public API, architecture, migration, or cross-subsystem coupling.
-- `security-auditor`: auth, credentials, deserialization, external data, dependency/supply-chain, or CI permissions.
-- `data-steward`: datasets, splits, augmentation, leakage, DataLoader reproducibility.
-- `cicd-steward`: GitHub Actions, release automation, publishing, flaky CI.
-- `linting-expert`: ruff, mypy, pre-commit configuration, suppression hygiene, or type/lint rollout.
-- `doc-scribe`: public docs, changelog, migration text, examples, public docstrings, or code self-documentation policy.
-- `oss-shepherd`: SemVer, deprecation policy, release readiness, contributor-facing process.
-- `squeezer`: performance, memory, throughput, profiling claims, training/inference bottlenecks.
-- `scientist`: research-paper methods, benchmark claims, experiment design, metric validity.
-- `web-explorer`: current external docs, changelogs, migration guides, or volatile ecosystem behavior.
+Compute SHA-256 for `diff.patch` and each context pack. Require the spawned specialist to return this exact first line, with placeholders replaced:
 
-Use native subagents when runtime policy permits, especially when the user explicitly asks for multi-agent or specialist review. Do not claim specialist fan-out occurred unless separate specialist output exists. If runtime policy, model support, or tool availability prevents spawning, perform a clearly labeled in-main substitute pass for each required role, write it to that role's specialist file, and mark `fanout_substituted=true` in the review notes and result metadata. Substituted passes lower confidence; they do not satisfy independence for critical findings.
+```text
+<!-- codex-review-provenance role=<role> run=<review_run_id> input=<review_input_sha256> context=<context_sha256> attempt=<n> -->
+```
 
-`BROAD` and `HIGH_RISK` reviews require real independent `qa-specialist` and `challenger` outputs to return `status=pass`, especially for "no blocking findings" conclusions. If required independent outputs are unavailable, return `status=fail` or `status=timeout`, set `independence_satisfied=false`, and add `needs-independent-review` to follow-up. `LOCAL` reviews may pass with substituted required passes only when the substitutions are explicit, all triggered conditional axes are covered, and confidence is reduced.
+Routed specialist axes:
+
+- `qa-specialist`: tests, edges, regressions, and tensor/data boundaries.
+- `challenger`: adversarial assumptions, high findings, migration/API risks, and material no-finding conclusions.
+- Conditional roles: `solution-architect`, `security-auditor`, `data-steward`, `cicd-steward`, `linting-expert`, `doc-scribe`, `oss-shepherd`, `squeezer`, `scientist`, and `web-explorer` cover their named domains.
+
+Use native subagents when independence materially helps. If spawning is unavailable, write a labeled in-main substitute for every triggered role and set `fanout_substituted=true`. Substitution lowers confidence and does not satisfy independence for critical findings.
+
+`specialist-manifest.json` uses schema version 2 and records `review_run_id`, `parent_thread_id=$CODEX_THREAD_ID`, `review_input_sha256`, and only triggered passes. Every spawned attempt records the parent spawn event ID, child thread ID/path, turn ID, actual model/effort, context/output paths and hashes, status, and transient error type when applicable. `selected_attempt` identifies the completed output. The validator checks the hash-derived child name, parent spawn, child linkage, actual model/effort, final child message, hashes, and the provenance header against Codex rollout logs.
+
+Allow at most two attempts per role. Retry only `timeout`, `transport_error`, or `rate_limited`; never retry deterministic findings, validation failures, or completed work. Preserve completed outputs and context packs. A checkpoint is evidence only and cannot replace a completed output or provenance record.
+
+`BROAD` and `HIGH_RISK` reviews require real independent QA and challenger outputs to pass. Record `independence_required=true` only when QA or challenger is risk-triggered, and `independence_satisfied=true` only when every triggered required role has validated spawned provenance. If either required output is unavailable, fail or time out with `independence_satisfied=false` and `needs-independent-review`. A risk-triggered `LOCAL` review may pass with explicit substitutes only when every triggered axis is covered and confidence is reduced.
 
 ### 05: Cross-check every blocking finding against surrounding context and existing project patterns before reporting it. Critical/blocking findings require an independent second pass when feasible; if unconfirmed, downgrade or mark the evidence gap explicitly
 
@@ -143,9 +136,7 @@ Required sections:
 
 ### 07: Run shared quality gates
 
-```bash
-.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-```
+Inspect `run-gates.sh --help`, then run every project-relevant review gate with explicit commands or skip reasons.
 
 ### 08: Classify findings using `../_shared/severity-map.md`
 
@@ -192,27 +183,9 @@ Confidence must be honest and objectively verifiable. Do not raise confidence to
 
 ### 12: Write and validate the mandatory result artifact
 
-```bash
-.codex/skills/_shared/write-result.py \
-    --out "$OUT_DIR/result.candidate.json" \
-    --status "$STATUS" \
-    --checks-run "lint,format,types,tests,review" \
-    --checks-failed "$CHECKS_FAILED" \
-    --critical "$CRITICAL" \
-    --high "$HIGH" \
-    --medium "$MEDIUM" \
-    --low "$LOW" \
-    --confidence "$CONFIDENCE" \
-    --artifact-path "$OUT_DIR/result.json" \
-    --follow-up "$FOLLOW_UP" \
-    --metadata "$REVIEW_METADATA"
-python3 .codex/skills/review/validate_artifacts.py \
-    --out "$OUT_DIR" \
-    --result "$OUT_DIR/result.candidate.json"
-mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-```
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `REVIEW_METADATA` and `FOLLOW_UP`; run the review-specific validator before the shared validator for skill `review`, then promote only the candidate accepted by both.
 
-`REVIEW_METADATA.specialist_passes` must mirror every entry from `specialist-manifest.json`. `REVIEW_METADATA.scope` must match the normalized input scope. `REVIEW_METADATA.review_decision` must mirror the `Decision Summary` recommendation, summary, and rationale. `REVIEW_METADATA.confidence_recovery` must mirror the `Confidence Calibration` section and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `REVIEW_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
+`REVIEW_METADATA.specialist_passes` must mirror every triggered entry from `specialist-manifest.json`; `review_run_id` and `review_input_sha256` must mirror its top-level values. `REVIEW_METADATA.scope` must match the normalized input scope. `REVIEW_METADATA.review_decision` must mirror the `Decision Summary` recommendation, summary, and rationale. `REVIEW_METADATA.confidence_recovery` must mirror the `Confidence Calibration` section and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `REVIEW_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
 
 ## Fail-fast Rules
 
@@ -222,19 +195,21 @@ mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
 04. Review that skips changed-file inspection => fail.
 05. Blocking finding without local evidence or pattern check => fail.
 06. Missing T0 scope classification => fail.
-07. `LOCAL`, `BROAD`, or `HIGH_RISK` review without `qa-specialist` and `challenger` output files or explicitly labeled in-main substitute files => fail.
-08. Triggered conditional axis without a specialist output file, substitute file, or explicit non-trigger rationale => fail.
-09. Missing `specialist-manifest.json` for `LOCAL`, `BROAD`, or `HIGH_RISK` reviews => fail.
+07. Routing signals, triggered roles, manifest roles, and specialist files disagree => fail.
+08. Triggered axis without a spawned or explicit substitute output => fail.
+09. Missing review routing or schema-v2 specialist manifest => fail.
 10. `BROAD` or `HIGH_RISK` review that returns `status=pass` with substituted required specialists => fail.
 11. Result artifact validator failure => fail.
 12. Missing `review-notes.md` sections => fail.
-13. PR scope without `pr.json`, `pr-routing.json`, `target-branch.json`, `local-checkout.json`, `diff.patch`, `comments.json`, `reviews.json`, `review-threads.json`, `unresolved-review-threads.json`, and `online-review-summary.json` => fail.
+13. PR scope without `pr.json`, `pr-routing.json`, `remote-selection.json`, `target-branch.json`, `local-checkout.json`, `diff.patch`, `comments.json`, `reviews.json`, `review-threads.json`, `unresolved-review-threads.json`, and `online-review-summary.json` => fail.
 14. PR scope that ignores unresolved online reviews without triage => fail.
 15. Missing structured review decision summary or invalid recommendation value => fail.
 16. PR scope using `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots for source inspection instead of the local checkout => fail.
 17. PR scope running `git` or `gh` with `--force` before explicit user confirmation and overwrite-risk explanation => fail.
 18. Missing `Confidence Calibration` section, `metadata.confidence_recovery`, or `metadata.confidence_gap_closures` => fail.
 19. Shared confidence policy violation from `../_shared/quality-gates.md` => fail.
+20. Spawned specialist without validated parent/child rollout provenance, hashes, or exact output binding => fail.
+21. More than two attempts or retry after a non-transient outcome => fail.
 
 ## Quality Gates
 
@@ -259,6 +234,6 @@ Update calibration when review routing, severity discipline, decision vocabulary
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-The final chat output must start with a `Review Decision Summary` before detailed findings. Include recommendation, summary, blockers, minor changes, required next work, confidence, confidence band status, recovery actions, remaining limits, confidence gaps or degradation reasons, confidence-gap closures, and artifact path. The recommendation must be one of `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
+The final chat output must start with a compact `Review Decision Summary` before findings. Include recommendation, blockers, required next work, confidence with material limits, and artifact path. Keep full routing, recovery, and closure evidence in the artifact instead of duplicating it in chat. The recommendation must be one of `accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`.
 
 Minimum artifact payload template: `result-template.json`.

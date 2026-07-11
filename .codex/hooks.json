@@ -1,16 +1,3 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "node \"${CODEX_HOME:-$HOME/.codex}/hooks/rtk-enforce.js\"",
-            "statusMessage": "Checking RTK routing",
-            "type": "command"
-          }
-        ],
-        "matcher": "Bash"
-      }
-    ]
-  }
+  "hooks": {}
 }

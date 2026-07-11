@@ -34,11 +34,11 @@ For docs, dependencies, CI/CD, releases, security, and deprecations, prefer curr
 
 ## Runtime Effort Policy
 
-Default reasoning effort is `high`. Per-agent effort is scoped to expected work:
+The session default, review parent, implementation, verification, data, performance, research, curation, and adversarial-challenge specialists use `gpt-5.6-terra` at `high`. Documentation, CI/CD stewardship, web-evidence, OSS triage, and static-analysis specialists use `gpt-5.6-luna` at `high`; final behavior-changing and executable acceptance decisions remain parent-owned or transfer to the relevant Terra or Sol role. Use `gpt-5.6-sol` at `high` only for security and solution architecture. Luna activation is an explicit user preference retained separately from the recorded strict route failure.
 
-- `medium`: bounded support and static-analysis work (`doc-scribe`, `linting-expert`, `oss-shepherd`, `web-explorer`, `curator`)
-- `high`: implementation, verification, runtime, CI, data, and performance work (`sw-engineer`, `qa-specialist`, `squeezer`, `data-steward`, `cicd-steward`)
-- `xhigh`: adversarial, architecture, security, and research reasoning (`challenger`, `solution-architect`, `security-auditor`, `scientist`)
+Default reasoning effort is `high` for every configured role. Reserve `xhigh` or `max` for explicit task-level escalation after representative evidence shows that `high` is insufficient:
+
+- `high`: bounded support, static analysis, implementation, verification, runtime, CI, data, performance, adversarial, architecture, security, and research work.
 
 ______________________________________________________________________
 
@@ -88,6 +88,7 @@ Mandatory coverage: `None`, empty inputs, boundaries, negatives, ML tensors (NaN
 - Signal uncertainty: state confidence when unsure ("~75% confident...")
 - For any skill or agent output that reports confidence, list confidence gaps or degradation reasons. Each gap must either cite additional evidence that closes it or be recorded explicitly as unresolved/deferred with the reason it remains open.
 - Apply confidence bands to every skill and agent output: `<= 0.8` is not acceptable and must not be presented as complete; `0.8 < confidence < 0.85` is very questionable and requires serious recovery before any output; `0.85 <= confidence < 0.9` is cautious-low and may proceed only with objective evidence, recovery actions, and remaining limits; `>= 0.9` is fair but not automatic, so keep the score evidence-backed and name any material residual limits.
+- Shared confidence output contract: report the score and material limits in chat; keep objective evidence, recovery actions, gap closures, and unresolved/deferred rationale in the skill artifact when one exists.
 - Minimal blast radius: prefer targeted, reversible changes
 - Complex logic must emit logs — silent failure is forbidden
 - Cite specific files and line numbers in explanations
@@ -162,23 +163,6 @@ Parent agent responsibilities:
 - Before implementation for those tasks, record the root-cause claim, supporting evidence, a falsification check, and at least one rejected alternative. If the evidence is missing, continue investigation instead of proposing a fix.
 - After `investigate`, hand off to the relevant domain agent or `develop`/`resolve` with the evidence summary. Temporary mitigations are allowed only when explicitly requested or required to unblock verification, and they must not be treated as the root fix.
 
-### Automatic spawn patterns (all agents)
-
-- `sw-engineer`: implementation, refactors, ML/backend feature delivery
-- `qa-specialist`: bugfix verification, edge-case testing, regression hardening
-- `squeezer`: performance, memory, throughput, profiling-driven optimization
-- `doc-scribe`: API/docs/changelog updates and migration notes
-- `security-auditor`: auth, secrets, deserialization, dependency/supply-chain risk
-- `data-steward`: datasets, splits, augmentation, reproducibility and leakage checks
-- `cicd-steward`: CI workflows, release automation, trusted publishing, flaky pipelines
-- `linting-expert`: ruff/mypy/pre-commit configuration and suppression hygiene
-- `oss-shepherd`: issue triage, maintainer review, SemVer and release governance
-- `solution-architect`: architecture planning, API contracts, migration design
-- `web-explorer`: authoritative external docs/changelogs/API delta research
-- `curator`: configuration drift, instruction overlap, calibration/gate hygiene
-- `challenger`: adversarial stress-testing of significant plans, architecture, and non-trivial diffs
-- `scientist`: paper analysis, ML hypotheses, ablations, and experiment-method verification
-
 ### Collaboration team patterns
 
 - Architecture/public API changes: `solution-architect` + `sw-engineer` + `qa-specialist` + `doc-scribe`
@@ -193,117 +177,7 @@ Parent agent responsibilities:
 
 ### Model escalation policy
 
-Support roles may handle bounded evidence gathering, documentation, curation, OSS triage, and static-analysis cleanup. Pair or escalate to a high-capability implementation, architecture, security, QA, CI, or challenge role when the decision becomes release-blocking, API-breaking, security-sensitive, architecture-heavy, or materially changes runtime behavior.
-
-### Spawn `sw-engineer` when:
-
-- Implementing a multi-step feature or subsystem where isolated file ownership helps
-- Refactoring existing code for SOLID compliance or type safety across a broader surface
-- Designing a new ML pipeline, training loop, or data processing graph
-- A task materially benefits from interface-first design with doctests
-
-### Spawn `qa-specialist` when:
-
-- A bug has been fixed — verify with a failing-then-passing test
-- New behavior needs independent verification or an edge-case matrix
-- A PR is ready for review — apply the project standard scoring
-- Any tensor computation needs NaN/shape/dtype boundary tests
-
-### Spawn `squeezer` when:
-
-- A profiling task is requested or a bottleneck is suspected
-- A training loop, DataLoader, or inference pipeline needs throughput review
-- Memory usage is abnormal or OOM errors are reported
-- `torch.compile`, AMP, or DDP tuning is needed
-
-### Spawn `doc-scribe` when:
-
-- A new public API is added or materially changed
-- A CLI argument, config key, or environment variable changes and docs must be updated
-- A breaking change is made and migration docs are required
-- Any `.. deprecated::` notice must be written
-
-### Parallelize when:
-
-- Test, docs, or profiling scopes are independent and have disjoint ownership
-- A performance investigation is independent of functional work
-- Multiple independent modules need documentation updates
-
-### Spawn `security-auditor` when:
-
-- Any authentication, authorization, or credential-handling code is added or changed
-- A new dependency is added (supply chain check)
-- torch.load(), pickle, or deserialization of external data is used
-- Pre-release security sweep is requested
-- CI/CD permissions or secrets handling changes
-
-### Spawn `data-steward` when:
-
-- A new dataset or split strategy is introduced
-- DataLoader or augmentation pipeline is modified
-- Training instability or unexpected metrics are reported (leakage suspect)
-- Class distribution or data contract is undefined or unvalidated
-- Reproducibility of batches is in question
-
-### Spawn `cicd-steward` when:
-
-- A new GitHub Actions workflow is added or modified
-- CI is failing, flaky, or unexpectedly slow
-- A PyPI release workflow needs to be set up or audited
-- pre-commit hooks need updating or a new tool needs integrating
-- Trusted publishing (OIDC) needs to replace token-based publishing
-
-### Spawn `linting-expert` when:
-
-- ruff or mypy configuration needs to be added, changed, or debugged
-- Lint or type-check violations need to be fixed across the codebase
-- A new ruff rule category is being introduced (progressive rollout)
-- pre-commit hook versions need updating or a quality gate is being added to CI
-- Suppression comments (`# noqa`, `# type: ignore`) need auditing or justification
-
-### Spawn `oss-shepherd` when:
-
-- A new GitHub issue needs triage (labeling, reproduction request, scope check)
-- A PR is ready for maintainer-level review (correctness, compatibility, docs)
-- A SemVer decision is needed (major vs minor vs patch)
-- A deprecation cycle needs to be planned or verified (pyDeprecate)
-- A PyPI release is being prepared (version bump, CHANGELOG, tag, publish)
-- Contributor onboarding or CONTRIBUTING.md needs attention
-
-### Spawn `solution-architect` when:
-
-- An architecture or API contract decision is required before implementation
-- A compatibility or migration plan must be defined across modules
-- Refactor scope crosses subsystem boundaries with coupling risks
-- Multiple implementation options require explicit tradeoff analysis
-
-### Spawn `web-explorer` when:
-
-- The task depends on current external docs, release notes, or changelogs
-- Package/API migration deltas must be verified against primary sources
-- Exact references and source-backed evidence are required for decisions
-- Volatile ecosystem/tooling behavior could invalidate cached assumptions
-
-### Spawn `curator` when:
-
-- Config/skill/agent drift or duplication is suspected
-- Routing quality, calibration leakage, or weak gate coverage is reported
-- New skills/agents are added and consistency checks are needed
-- Prompt/instruction hygiene needs a focused quality pass
-
-### Spawn `challenger` when:
-
-- The user asks to challenge, stress-test, poke holes in, or get a devil's-advocate review
-- A plan affects public APIs, architecture, migrations, release safety, or multiple subsystems
-- A review needs independence from the implementation context to reduce confirmation bias
-- Claims or assumptions are plausible but not yet backed by code, tests, logs, or docs
-
-### Spawn `scientist` when:
-
-- The task depends on a research paper, formula, benchmark, or ML method claim
-- An experiment needs a falsifiable hypothesis, metric, guard, seed policy, or ablation matrix
-- Results look unstable or too good and need leakage, overfitting, or metric-gaming analysis
-- A paper implementation must be checked against equations, hyperparameters, and evaluation protocol
+Use registered agent descriptions plus each role TOML's `TRIGGER`, `SKIP`, and `NOT for` clauses as the detailed routing source. Luna support roles hand executable verification, release-blocking, and API/runtime-changing ownership to the appropriate domain owner; solution architecture and security use Sol, while adversarial challenge and ordinary behavior/API work use Terra at high. Parallelize only disjoint evidence, tests, docs, or profiling work with clear ownership.
 
 ______________________________________________________________________
 

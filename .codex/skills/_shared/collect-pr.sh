@@ -4,9 +4,34 @@ set -euo pipefail
 TARGET=""
 OUT_DIR=""
 CHECKOUT=false
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<'EOF'
+Usage: collect-pr.sh --out DIR [--target PR] [--checkout]
+
+Collect authoritative GitHub PR metadata, diff, comments, reviews, review
+threads, routing identity, and local status. With --checkout, fetch and update
+the local PR checkout after repository/OID validation.
+
+Options:
+  --out DIR       Required artifact directory
+  --target PR     PR number, URL, or gh-compatible selector; default current branch
+  --checkout      Fetch and update the validated local PR checkout
+  -h, --help      Show this help
+
+Requires gh authentication and a matching local repository remote. Exit 0
+means collection succeeded; exit 2 means invalid input or unavailable PR data.
+Remote mutation is never performed.
+EOF
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
     --target)
       TARGET="$2"
       shift 2
@@ -51,11 +76,24 @@ if ! gh pr view "${PR_ARGS[@]}" \
   exit 2
 fi
 
-REPO_NAME_WITH_OWNER="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
-if [[ -z "$REPO_NAME_WITH_OWNER" || "$REPO_NAME_WITH_OWNER" != */* ]]; then
-  echo "gh-repo-view-failed" >"$OUT_DIR/pr-error.txt"
+PR_URL="$(python3 - "$OUT_DIR/pr.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+url = payload.get("url")
+if not isinstance(url, str) or not url:
+    raise SystemExit("missing-pr-url")
+print(url)
+PY
+)"
+if ! BASE_IDENTITY_JSON="$(python3 "$SCRIPT_DIR/select-git-remote.py" --expected-url "$PR_URL" --identity-only)"; then
+  echo "invalid-pr-base-url:$PR_URL" >"$OUT_DIR/pr-error.txt"
   exit 2
 fi
+REPO_NAME_WITH_OWNER="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["repository"])' "$BASE_IDENTITY_JSON")"
+BASE_HOST="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["host"])' "$BASE_IDENTITY_JSON")"
 OWNER="${REPO_NAME_WITH_OWNER%%/*}"
 REPO="${REPO_NAME_WITH_OWNER#*/}"
 PR_NUMBER="$(python3 - "$OUT_DIR/pr.json" <<'PY'
@@ -126,7 +164,7 @@ if ! gh pr diff "${PR_ARGS[@]}" >"$OUT_DIR/diff.patch"; then
   exit 2
 fi
 
-python3 - "$OUT_DIR/pr.json" "$OUT_DIR/review-threads.raw.json" "$OUT_DIR/files.txt" "$OUT_DIR/comments.json" "$OUT_DIR/reviews.json" "$OUT_DIR/review-threads.json" "$OUT_DIR/unresolved-review-threads.json" "$OUT_DIR/online-review-summary.json" "$OUT_DIR/pr-routing.json" "$OUT_DIR/pr-error.txt" "$REPO_NAME_WITH_OWNER" <<'PY'
+python3 - "$OUT_DIR/pr.json" "$OUT_DIR/review-threads.raw.json" "$OUT_DIR/files.txt" "$OUT_DIR/comments.json" "$OUT_DIR/reviews.json" "$OUT_DIR/review-threads.json" "$OUT_DIR/unresolved-review-threads.json" "$OUT_DIR/online-review-summary.json" "$OUT_DIR/pr-routing.json" "$OUT_DIR/pr-error.txt" "$REPO_NAME_WITH_OWNER" "$BASE_HOST" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -141,7 +179,8 @@ unresolved_path = Path(sys.argv[7])
 summary_path = Path(sys.argv[8])
 routing_path = Path(sys.argv[9])
 error_path = Path(sys.argv[10])
-local_repo = sys.argv[11]
+base_repo = sys.argv[11]
+base_host = sys.argv[12]
 payload = json.loads(pr_path.read_text(encoding="utf-8"))
 threads_payload = json.loads(threads_raw_path.read_text(encoding="utf-8"))
 threads_container = (
@@ -197,9 +236,11 @@ head_repo = repo_name_with_owner(
     payload.get("headRepository"),
     payload.get("headRepositoryOwner"),
 )
-same_repo = bool(head_repo and local_repo and head_repo.lower() == local_repo.lower())
+same_repo = bool(head_repo and base_repo and head_repo.lower() == base_repo.lower())
 routing = {
-    "local_repo": local_repo,
+    "base_repo": base_repo,
+    "base_host": base_host,
+    "base_identity_source": "pr_url",
     "pr_number": payload.get("number"),
     "pr_url": payload.get("url"),
     "base_ref": payload.get("baseRefName"),
@@ -210,7 +251,7 @@ routing = {
     "is_cross_repository": bool(payload.get("isCrossRepository")),
     "same_repo": same_repo,
     "local_checkout_required": True,
-    "local_checkout_command": f"gh pr checkout {payload.get('number')}",
+    "local_checkout_command": f"gh pr checkout {payload.get('url')}",
     "force_policy": "never pass --force to git or gh automatically; stop and ask the user with a rationale if a forced checkout appears necessary",
     "source_policy": "inspect local checkout; use gh only for PR metadata, diff, and review-thread evidence",
 }
@@ -273,20 +314,23 @@ payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 print("true" if payload.get("same_repo") is True else "false")
 PY
 )"
-  REMOTE_NAME=""
-  if git remote | grep -qx "origin"; then
-    REMOTE_NAME="origin"
-  else
-    REMOTE_NAME="$(git remote | sed -n '1p')"
-  fi
-  printf '%s\n' "${REMOTE_NAME:-missing-remote}" >"$OUT_DIR/remote.txt"
-
-  if [[ -z "$REMOTE_NAME" ]]; then
-    echo "missing-git-remote-for-target-refresh" >"$OUT_DIR/target-branch-fetch-error.txt"
+  if ! python3 "$SCRIPT_DIR/select-git-remote.py" --expected-url "$PR_URL" >"$OUT_DIR/remote-selection.json" 2>"$OUT_DIR/remote-selection-error.txt"; then
+    echo "missing-matching-git-remote-for-pr-base" >"$OUT_DIR/target-branch-fetch-error.txt"
     exit 2
   fi
+  REMOTE_NAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["remote"])' "$OUT_DIR/remote-selection.json")"
+  REMOTE_URL="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["remote_url"])' "$OUT_DIR/remote-selection.json")"
+  printf '%s\n' "$REMOTE_NAME $REMOTE_URL" >"$OUT_DIR/remote.txt"
   if [[ -z "$BASE_REF" ]]; then
     echo "missing-pr-base-ref-for-target-refresh" >"$OUT_DIR/target-branch-fetch-error.txt"
+    exit 2
+  fi
+  if [[ -z "$BASE_OID" ]]; then
+    echo "missing-pr-base-oid-for-target-refresh" >"$OUT_DIR/target-branch-fetch-error.txt"
+    exit 2
+  fi
+  if [[ -z "$HEAD_OID" ]]; then
+    echo "missing-pr-head-oid-for-checkout" >"$OUT_DIR/pr-head-fetch-error.txt"
     exit 2
   fi
 
@@ -300,20 +344,22 @@ PY
     echo "target-branch-fetch-head-missing:${REMOTE_NAME}/${BASE_REF}" >"$OUT_DIR/target-branch-fetch-error.txt"
     exit 2
   fi
-  python3 - "$OUT_DIR/target-branch.json" "$REMOTE_NAME" "$BASE_REF" "$BASE_REMOTE_REF" "$BASE_LOCAL_HEAD" "$BASE_OID" <<'PY'
+  python3 - "$OUT_DIR/target-branch.json" "$REMOTE_NAME" "$REMOTE_URL" "$BASE_REF" "$BASE_REMOTE_REF" "$BASE_LOCAL_HEAD" "$BASE_OID" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 out_path = Path(sys.argv[1])
 remote = sys.argv[2]
-base_ref = sys.argv[3]
-remote_ref = sys.argv[4]
-local_head = sys.argv[5]
-expected_oid = sys.argv[6]
+remote_url = sys.argv[3]
+base_ref = sys.argv[4]
+remote_ref = sys.argv[5]
+local_head = sys.argv[6]
+expected_oid = sys.argv[7]
 payload = {
     "status": "fetched",
     "remote": remote,
+    "remote_url": remote_url,
     "base_ref": base_ref,
     "remote_ref": remote_ref,
     "local_head": local_head,
@@ -324,6 +370,10 @@ payload = {
 }
 out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
+  if [[ "$BASE_LOCAL_HEAD" != "$BASE_OID" ]]; then
+    echo "target-branch-oid-mismatch:${BASE_LOCAL_HEAD}:${BASE_OID}" >"$OUT_DIR/target-branch-fetch-error.txt"
+    exit 2
+  fi
 
   if [[ "$SAME_REPO" == true && -n "$HEAD_REF" ]]; then
     HEAD_REMOTE_REF="refs/remotes/${REMOTE_NAME}/${HEAD_REF}"
@@ -356,6 +406,10 @@ payload = {
 }
 out_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 PY
+    if [[ -z "$HEAD_FETCH_HEAD" || "$HEAD_FETCH_HEAD" != "$HEAD_OID" ]]; then
+      echo "pr-head-oid-mismatch:${HEAD_FETCH_HEAD:-missing}:${HEAD_OID}" >"$OUT_DIR/pr-head-fetch-error.txt"
+      exit 2
+    fi
   else
     python3 - "$OUT_DIR/pr-head-fetch.json" "$SAME_REPO" "$HEAD_REF" <<'PY'
 import json
@@ -380,7 +434,7 @@ PY
     exit 2
   fi
 
-  if ! gh pr checkout "$PR_NUMBER" >"$OUT_DIR/local-checkout.stdout.txt" 2>"$OUT_DIR/local-checkout.stderr.txt"; then
+  if ! gh pr checkout "$PR_URL" >"$OUT_DIR/local-checkout.stdout.txt" 2>"$OUT_DIR/local-checkout.stderr.txt"; then
     echo "gh-pr-checkout-failed:${TARGET:-$PR_NUMBER}" >"$OUT_DIR/local-checkout-error.txt"
     echo "forced-checkout-not-attempted" >>"$OUT_DIR/local-checkout-error.txt"
     echo "if --force appears necessary, stop and ask the user with a concrete explanation before retrying" >>"$OUT_DIR/local-checkout-error.txt"
@@ -403,7 +457,7 @@ PY
     CHECKOUT_MATCHES=true
   fi
 
-  python3 - "$OUT_DIR/local-checkout.json" "$PR_NUMBER" "$LOCAL_BRANCH" "$LOCAL_HEAD" "$EXPECTED_HEAD" "$CHECKOUT_MATCHES" <<'PY'
+  python3 - "$OUT_DIR/local-checkout.json" "$PR_NUMBER" "$PR_URL" "$LOCAL_BRANCH" "$LOCAL_HEAD" "$EXPECTED_HEAD" "$CHECKOUT_MATCHES" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -412,11 +466,12 @@ out_path = Path(sys.argv[1])
 payload = {
     "status": "checked-out",
     "pr_number": int(sys.argv[2]),
-    "local_branch": sys.argv[3],
-    "local_head": sys.argv[4],
-    "expected_head": sys.argv[5],
-    "head_matches_pr": sys.argv[6] == "true",
-    "command": f"gh pr checkout {sys.argv[2]}",
+    "pr_url": sys.argv[3],
+    "local_branch": sys.argv[4],
+    "local_head": sys.argv[5],
+    "expected_head": sys.argv[6],
+    "head_matches_pr": sys.argv[7] == "true",
+    "command": f"gh pr checkout {sys.argv[3]}",
     "target_branch_artifact": "target-branch.json",
     "pr_head_fetch_artifact": "pr-head-fetch.json",
     "force_policy": "no --force was used; if a forced checkout is required, ask the user before running it",

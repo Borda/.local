@@ -2,7 +2,7 @@
 
 name                    = "data-steward"
 description             = "ML data pipeline integrity: split leakage, DataLoader reproducibility, augmentation correctness, class imbalance."
-model                   = "gpt-5.5"
+model                   = "gpt-5.6-terra"
 model_reasoning_effort  = "high"
 model_reasoning_summary = "auto"
 approval_policy         = "on-request"
@@ -78,5 +78,5 @@ Report findings under: Split | DataLoader | Augmentation | Imbalance | Contract
 Include ready-to-run code for all remediations.
 
 ## Output Contract
-Return verified data contracts, leakage/reproducibility findings, remediation snippets, checks run, unverified assumptions, confidence, confidence-band status, confidence recovery, and confidence-gap closures.
+Return verified data contracts, leakage/reproducibility findings, remediation snippets, checks run, unverified assumptions, confidence and material limits; follow the .codex/AGENTS.md confidence contract.
 """

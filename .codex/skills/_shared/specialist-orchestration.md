@@ -55,7 +55,14 @@ The parent must consolidate specialist outputs into one decision and reconcile c
 
 Use native subagents when runtime policy permits and parallelism or independence materially helps. If subagents are unavailable, write a labeled in-main substitute pass. Substitution lowers independence and may lower confidence, especially for `BROAD`, `HIGH_RISK`, release, security, or no-finding conclusions.
 
-Do not claim "specialist fan-out" happened unless separate specialist outputs exist. Use `spawned`, `substituted`, or `not_triggered` status for every planned specialist axis.
+Do not claim "specialist fan-out" happened unless separate specialist outputs and runtime provenance exist. Record only triggered axes as `spawned` or `substituted`; keep non-trigger decisions in the compact routing artifact.
+
+## Retry And Checkpoint Policy
+
+- Allow at most two attempts per specialist.
+- Retry only a timeout, transport error, or rate limit. Do not retry deterministic findings, validation failures, or completed output.
+- Preserve completed output and narrow context packs. A checkpoint records evidence already gathered; it does not substitute for a completed specialist response.
+- Record the selected completed attempt and retain a failed transient attempt for auditability.
 
 ## Recommended Specialist Axes
 

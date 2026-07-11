@@ -34,8 +34,9 @@ mkdir -p "$OUT_DIR"
 
 ```bash
 git rev-parse --abbrev-ref HEAD >"$OUT_DIR/branch.txt"
-.codex/skills/_shared/collect-diff.sh --scope working-tree --out "$OUT_DIR/baseline"
 ```
+
+Inspect `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`.
 
 ### 03: Route the change type and define ownership
 
@@ -108,9 +109,7 @@ Required sections:
 
 ### 08: Run shared quality gates
 
-```bash
-.codex/skills/_shared/run-gates.sh --out "$OUT_DIR"
-```
+Inspect `run-gates.sh --help`, then run all project-relevant gates with explicit commands or skip reasons.
 
 ### 09: Review the changed files and the gate output before deciding pass/fail
 
@@ -135,25 +134,7 @@ Confidence must be honest and objectively verifiable. Do not inflate it to pass 
 
 ### 12: Write and validate the mandatory result artifact
 
-```bash
-.codex/skills/_shared/write-result.py \
-    --out "$OUT_DIR/result.candidate.json" \
-    --status "$STATUS" \
-    --checks-run "lint,format,types,tests,review" \
-    --checks-failed "$CHECKS_FAILED" \
-    --critical "$CRITICAL" \
-    --high "$HIGH" \
-    --medium "$MEDIUM" \
-    --low "$LOW" \
-    --confidence "$CONFIDENCE" \
-    --metadata "$DEVELOP_METADATA" \
-    --artifact-path "$OUT_DIR/result.json"
-python3 .codex/skills/_shared/validate-artifacts.py \
-    --skill develop \
-    --out "$OUT_DIR" \
-    --result "$OUT_DIR/result.candidate.json"
-mv "$OUT_DIR/result.candidate.json" "$OUT_DIR/result.json"
-```
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `DEVELOP_METADATA`, validate as skill `develop`, and promote only the validated candidate.
 
 `DEVELOP_METADATA.confidence_recovery` must mirror `confidence-calibration.md` and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `DEVELOP_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
 
