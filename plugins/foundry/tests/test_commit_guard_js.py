@@ -1,26 +1,26 @@
 """Subprocess tests for ``hooks/commit-guard.js``.
 
-The hook gates ``git commit`` Bash calls behind a per-repo / per-branch
-sentinel file under ``/tmp/claude-commit-auth-<repo-slug>-<branch-slug>``.
-Each test spins up a small disposable git repo so the hook can resolve
+The hook does NOT gate ``git commit`` at all — commit authorization is
+prompt-discipline only (see ``rules/git-commit.md``), no runtime check.
+The hook gates only ``git push``, behind a per-repo / per-branch sentinel
+file under ``/tmp/claude-push-auth-<repo-slug>-<branch-slug>``. Each test
+spins up a small disposable git repo so the hook can resolve
 ``git rev-parse --show-toplevel`` and ``git branch --show-current``.
 
-Three behavioural areas are covered:
+Behavioural areas covered:
 
-* **Sentinel gating** — missing / fresh / expired sentinel maps to
-  ``exit 2`` / ``exit 0`` / ``exit 2``.
-* **SessionStart wipe** — clears leftover sentinels from prior runs.
-* **UserPromptSubmit auto-arm** — explicit ``"commit this"``-style
-  prompts pre-create the sentinel so the next ``git commit`` passes
-  without an intervening manual ``touch``.
+* **Commit passthrough** — ``git commit`` always exits 0, sentinel or not;
+  the hook never inspects it.
+* **Push gating** — force-push is blocked unconditionally on any branch
+  (even with a valid sentinel); a regular push requires a fresh push
+  sentinel and is never auto-armed by a ``"push"``-mentioning prompt.
+* **SessionStart wipe** — clears leftover push sentinels from prior runs.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
-import time
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-SENTINEL_PATH = Path("/tmp/claude-commit-auth-myrepo-main")
+PUSH_SENTINEL_PATH = Path("/tmp/claude-push-auth-myrepo-main")
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -62,10 +62,10 @@ def git_repo(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def clean_sentinel() -> Iterator[None]:
-    """Remove any leftover sentinel before AND after each test."""
-    SENTINEL_PATH.unlink(missing_ok=True)
+    """Remove any leftover push sentinel before AND after each test."""
+    PUSH_SENTINEL_PATH.unlink(missing_ok=True)
     yield
-    SENTINEL_PATH.unlink(missing_ok=True)
+    PUSH_SENTINEL_PATH.unlink(missing_ok=True)
 
 
 # ── Payload helpers ──────────────────────────────────────────────────────────
@@ -73,6 +73,15 @@ def clean_sentinel() -> Iterator[None]:
 
 def _bash_commit(cmd: str = "git commit -m 'test'") -> dict:
     """Build a ``PreToolUse(Bash)`` payload for a commit-style command."""
+    return {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": cmd},
+    }
+
+
+def _bash_push(cmd: str = "git push") -> dict:
+    """Build a ``PreToolUse(Bash)`` payload for a push-style command."""
     return {
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
@@ -96,53 +105,64 @@ def _user_prompt(prompt_text: str) -> dict:
 @pytest.mark.skipif(sys.platform == "win32", reason="uses /tmp/")
 @pytest.mark.usefixtures("clean_sentinel")
 class TestCommitGuard:
-    """commit-guard.js: sentinel-based git-commit authorisation."""
+    """commit-guard.js: push-only sentinel gate; commit is prompt-discipline only."""
 
-    def test_blocks_commit_without_sentinel(self, git_repo: Path, run_hook) -> None:
-        """No sentinel → hook exits 2 and prints a 'no commit authorization' message."""
-        result = run_hook("commit-guard.js", _bash_commit(), cwd=git_repo)
-
-        assert result.returncode == 2
-        assert "no commit authorization" in result.stderr
-
-    def test_allows_commit_with_fresh_sentinel(self, git_repo: Path, run_hook) -> None:
-        """Fresh sentinel (< 15-min TTL) → hook exits 0."""
-        SENTINEL_PATH.touch()
-
+    def test_commit_always_passes_through(self, git_repo: Path, run_hook) -> None:
+        """git commit exits 0 unconditionally — the hook never inspects it, no sentinel involved."""
         result = run_hook("commit-guard.js", _bash_commit(), cwd=git_repo)
 
         assert result.returncode == 0, result.stderr
 
-    def test_blocks_expired_sentinel(self, git_repo: Path, run_hook) -> None:
-        """Sentinel with mtime 20 min ago is past the 15-min TTL → exit 2."""
-        SENTINEL_PATH.touch()
-        old = time.time() - 20 * 60
-        os.utime(SENTINEL_PATH, (old, old))
+    def test_non_push_bash_passes_through(self, git_repo: Path, run_hook) -> None:
+        """Non-push Bash command bypasses the gate regardless of sentinel state."""
+        result = run_hook("commit-guard.js", _bash_push(cmd="echo hello"), cwd=git_repo)
 
-        result = run_hook("commit-guard.js", _bash_commit(), cwd=git_repo)
+        assert result.returncode == 0, result.stderr
 
-        assert result.returncode == 2
-        assert "expired" in result.stderr
-
-    def test_session_start_clears_sentinel(self, git_repo: Path, run_hook) -> None:
-        """SessionStart wipes any leftover sentinel from a prior session."""
-        SENTINEL_PATH.touch()
-        assert SENTINEL_PATH.exists()
+    def test_session_start_clears_push_sentinel(self, git_repo: Path, run_hook) -> None:
+        """SessionStart wipes any leftover push sentinel from a prior session."""
+        PUSH_SENTINEL_PATH.touch()
+        assert PUSH_SENTINEL_PATH.exists()
 
         result = run_hook("commit-guard.js", _session_start(), cwd=git_repo)
 
         assert result.returncode == 0, result.stderr
-        assert not SENTINEL_PATH.exists()
+        assert not PUSH_SENTINEL_PATH.exists()
 
-    def test_user_prompt_commit_creates_sentinel(self, git_repo: Path, run_hook) -> None:
-        """UserPromptSubmit with 'commit this' auto-arms the per-branch sentinel."""
-        result = run_hook("commit-guard.js", _user_prompt("commit this"), cwd=git_repo)
+    def test_force_push_blocked_any_branch(self, git_repo: Path, run_hook) -> None:
+        """Force-push with no sentinel → exit 2 with a 'force'/'forbidden' message."""
+        result = run_hook("commit-guard.js", _bash_push(cmd="git push --force"), cwd=git_repo)
+
+        assert result.returncode == 2
+        assert "force" in result.stderr
+        assert "forbidden" in result.stderr
+
+    def test_force_push_blocked_even_with_sentinel(self, git_repo: Path, run_hook) -> None:
+        """A valid push sentinel does NOT bypass the force block — force check runs first → exit 2."""
+        PUSH_SENTINEL_PATH.touch()
+
+        result = run_hook("commit-guard.js", _bash_push(cmd="git push --force"), cwd=git_repo)
+
+        assert result.returncode == 2
+
+    def test_push_blocked_without_sentinel(self, git_repo: Path, run_hook) -> None:
+        """Plain push with no sentinel → exit 2 and stderr points at AskUserQuestion."""
+        result = run_hook("commit-guard.js", _bash_push(), cwd=git_repo)
+
+        assert result.returncode == 2
+        assert "AskUserQuestion" in result.stderr
+
+    def test_push_allowed_with_fresh_sentinel(self, git_repo: Path, run_hook) -> None:
+        """Plain push with a fresh push sentinel (< 15-min TTL) → exit 0."""
+        PUSH_SENTINEL_PATH.touch()
+
+        result = run_hook("commit-guard.js", _bash_push(), cwd=git_repo)
 
         assert result.returncode == 0, result.stderr
-        assert SENTINEL_PATH.exists()
 
-    def test_non_commit_bash_passes_through(self, git_repo: Path, run_hook) -> None:
-        """Non-commit Bash command bypasses the gate regardless of sentinel state."""
-        result = run_hook("commit-guard.js", _bash_commit(cmd="echo hello"), cwd=git_repo)
+    def test_push_not_auto_armed_by_prompt(self, git_repo: Path, run_hook) -> None:
+        """UserPromptSubmit mentioning 'push' must NOT auto-arm the push sentinel."""
+        result = run_hook("commit-guard.js", _user_prompt("push this"), cwd=git_repo)
 
         assert result.returncode == 0, result.stderr
+        assert not PUSH_SENTINEL_PATH.exists()

@@ -1,48 +1,38 @@
 // commit-guard.js — multi-event hook
 //
 // PURPOSE
-//   Claude must never commit autonomously. The commit discipline rule
-//   ("never commit without explicit user request in same message") lives in
-//   a prompt instruction — not enforced at runtime. This hook enforces it
-//   at the tool level: every `git commit` Bash call is blocked unless a
-//   skill explicitly opted in via a sentinel file for that repo+branch.
+//   Claude must never commit or push autonomously.
 //
-//   Sentinel path: /tmp/claude-commit-auth-<repo-slug>-<branch-slug>
-//   TTL: 15 min — auto-expires if a skill crashes before cleanup.
+//   COMMIT: prompt-discipline only, no hook enforcement. Claude must invoke
+//   AskUserQuestion before every `git commit`, any branch, no exceptions —
+//   this is a documented rule (rules/git-commit.md), not a runtime check.
+//   The hook does not intercept `git commit` at all.
 //
-// DEFAULT BRANCH PROTECTION (second gate)
-//   Commits to the repo's default branch require a second sentinel:
-//     /tmp/claude-commit-default-<repo-slug>-<branch-slug>
-//   TTL: 5 min — tighter window; must be created immediately before commit.
-//   Path B (ad-hoc): AskUserQuestion must explicitly confirm default branch
-//     commit; only then touch both sentinels.
-//   Path A (skill pre-auth): skill must touch both sentinels if it commits
-//     to the default branch (rare — most skills work on feature branches).
+// PUSH AUTHORIZATION (hook-enforced)
+//   Force-push is forbidden on every branch, always — a hard, unconditional
+//   block. No sentinel bypasses it: the force check runs before any sentinel
+//   lookup, so even a valid push sentinel cannot authorize `git push --force`.
 //
-//   Default branch resolved by priority:
-//     1. git symbolic-ref refs/remotes/origin/HEAD
-//     2. gh repo view --json defaultBranchRef
-//     3. git remote show origin | grep "HEAD branch:"
-//     4. null → skip default-branch gate (cannot determine)
+//   Regular (non-force) `git push` requires a per-branch sentinel:
+//     /tmp/claude-push-auth-<repo-slug>-<branch-slug>  (15-min TTL)
+//   There is no auto-arm shortcut — a "push"-mentioning prompt never creates
+//   it. The push sentinel can only be created by the user's own shell
+//   (`! touch ...`) after Claude has confirmed the push via AskUserQuestion.
+//   A Claude-run touch of an auth sentinel is read by the harness classifier
+//   as forging the guard, so Claude must never create it itself.
 //
 // HOW IT WORKS
-//   1. PreToolUse(Bash): only fires on `git commit` calls.
-//      Derives repo slug + branch slug → checks sentinel path present and fresh.
-//      Sentinel valid → check default branch → exit 0 or exit 2.
-//   2. SessionStart: wipes all /tmp/claude-commit-auth-* and
-//      /tmp/claude-commit-default-* sentinels so prior-session auth never carries over.
-//   3. UserPromptSubmit:
-//      a. /clear → wipes all sentinel files for the current repo.
-//      b. Explicit commit instruction detected ("commit", "commit this", "make a commit",
-//         etc.) → auto-creates Gate 1 sentinel for current repo+branch. This removes the
-//         touch/rm approval-click overhead: sentinel already exists when Claude calls
-//         `git commit`, so no intermediate Bash calls needed.
-//         Gate 2 (default-branch protection) is NOT auto-created — default branch commits
-//         still require AskUserQuestion confirmation from Claude.
+//   1. PreToolUse(Bash): fires only on `git push` calls.
+//      Force-push forbidden unconditionally (exit 2 before any sentinel
+//      check); otherwise checks the push sentinel present and fresh.
+//   2. SessionStart: wipes all /tmp/claude-push-auth-* sentinels so
+//      prior-session auth never carries over.
+//   3. UserPromptSubmit: /clear → wipes all sentinel files for the repo.
 //
 // EXIT CODES
-//   0  Allow (sentinel present and fresh, default-branch gate passed).
-//   2  Block — no sentinel, expired, or default-branch gate failed; stderr shown to Claude.
+//   0  Allow (push sentinel present and fresh, or command isn't `git push`).
+//   2  Block — push sentinel missing/expired, or push is a force-push
+//      (force-push blocked unconditionally); stderr shown to Claude.
 
 "use strict";
 
@@ -55,8 +45,7 @@ function getSentinelDir() {
   return process.platform === "win32" ? os.tmpdir() : "/tmp";
 }
 
-const TTL_MS = 15 * 60 * 1000; // 15 min — regular sentinel
-const DEFAULT_BRANCH_TTL_MS = 5 * 60 * 1000; // 5 min — default-branch sentinel
+const TTL_MS = 15 * 60 * 1000; // 15 min — push sentinel
 
 function toSlug(s) {
   return s
@@ -85,37 +74,16 @@ function getCurrentBranch() {
   }
 }
 
-// Resolve default branch by three methods in priority order.
-// Returns branch name string or null if unresolvable.
-function getDefaultBranch() {
-  // 1. git symbolic-ref — fastest, works offline, requires `git fetch` to have run
-  try {
-    const ref = runGit("git symbolic-ref refs/remotes/origin/HEAD");
-    if (ref) return ref.replace(/^refs\/remotes\/[^/]+\//, "");
-  } catch {}
-
-  // 2. gh CLI — accurate, requires auth; skip if gh not available
-  try {
-    const name = runGit("gh repo view --json defaultBranchRef --jq .defaultBranchRef.name");
-    if (name && name !== "null") return name;
-  } catch {}
-
-  // 3. git remote show — makes network call; slowest fallback
-  try {
-    const out = runGit("git remote show origin");
-    const m = out.match(/HEAD branch:\s+(\S+)/);
-    if (m) return m[1];
-  } catch {}
-
-  return null; // cannot determine — skip default-branch gate
+function getPushSentinelPath(repoSlug, branchSlug) {
+  return `${getSentinelDir()}/claude-push-auth-${repoSlug}-${branchSlug}`;
 }
 
-function getSentinelPath(repoSlug, branchSlug) {
-  return `${getSentinelDir()}/claude-commit-auth-${repoSlug}-${branchSlug}`;
-}
-
-function getDefaultBranchSentinelPath(repoSlug, branchSlug) {
-  return `${getSentinelDir()}/claude-commit-default-${repoSlug}-${branchSlug}`;
+// A push carrying -f / --force* can never be authorized — checked before any
+// sentinel so a valid push sentinel cannot bypass the force block.
+function isForcePush(command) {
+  const tokens = command.trim().split(/\s+/);
+  if (tokens[0] !== "git" || tokens[1] !== "push") return false;
+  return tokens.slice(2).some((t) => t === "-f" || t.startsWith("--force"));
 }
 
 function checkSentinel(sentinelPath, ttlMs) {
@@ -134,16 +102,13 @@ function checkSentinel(sentinelPath, ttlMs) {
   }
 }
 
-// Wipe all sentinel files for a given prefix pattern.
+// Wipe all push-auth sentinel files for a given prefix pattern.
 function wipeSentinels(prefix) {
   try {
     const files = fs.readdirSync(getSentinelDir());
     for (const f of files) {
-      const isAuth = prefix ? f.startsWith(`claude-commit-auth-${prefix}-`) : f.startsWith("claude-commit-auth-");
-      const isDefault = prefix
-        ? f.startsWith(`claude-commit-default-${prefix}-`)
-        : f.startsWith("claude-commit-default-");
-      if (isAuth || isDefault) {
+      const isPushAuth = prefix ? f.startsWith(`claude-push-auth-${prefix}-`) : f.startsWith("claude-push-auth-");
+      if (isPushAuth) {
         try {
           fs.unlinkSync(path.join(getSentinelDir(), f));
         } catch {}
@@ -171,99 +136,60 @@ process.stdin.on("end", () => {
     process.exit(0);
   }
 
-  // --- UserPromptSubmit: wipe on /clear; auto-sentinel on explicit commit request ---
+  // --- UserPromptSubmit: wipe on /clear ---
   if (hook_event_name === "UserPromptSubmit") {
     const prompt = (data.prompt || data.user_message || "").trim();
 
     if (/^\/clear\b/.test(prompt)) {
       const repoSlug = getRepoSlug();
       if (repoSlug) wipeSentinels(repoSlug);
-      process.exit(0);
-    }
-
-    // Auto-create Gate 1 sentinel when user explicitly requests a commit.
-    // Patterns: "commit [this/it/...]", "please commit", "make a commit", etc.
-    // Gate 2 (default-branch) is intentionally NOT auto-created — requires AskUserQuestion.
-    const COMMIT_RE = /^commit\b|\bplease\s+commit\b|\bmake\s+a\s+commit\b|\bgo\s+ahead\s+and\s+commit\b/i;
-    if (COMMIT_RE.test(prompt)) {
-      const repoSlug = getRepoSlug();
-      const branch = getCurrentBranch();
-      if (repoSlug && branch) {
-        const branchSlug = toSlug(branch);
-        const sentinel = getSentinelPath(repoSlug, branchSlug);
-        try {
-          fs.writeFileSync(sentinel, "");
-        } catch {}
-      }
     }
 
     process.exit(0);
   }
 
-  // --- PreToolUse: guard git commit ---
+  // --- PreToolUse: guard git push (git commit is prompt-discipline only) ---
   if (tool_name !== "Bash") process.exit(0);
 
   const command = (tool_input && tool_input.command) || "";
-  if (!/^\s*git commit\b/.test(command)) process.exit(0);
+  if (!/^\s*git push\b/.test(command)) process.exit(0);
 
-  // Resolve repo + branch slugs
+  // Force-push is forbidden on any branch, always — checked before any
+  // sentinel, so a valid push sentinel never bypasses it.
+  if (isForcePush(command)) {
+    process.stderr.write(
+      `git push blocked — force-push is forbidden on any branch. No override, no sentinel bypasses this.\n`,
+    );
+    process.exit(2);
+  }
+
   const repoSlug = getRepoSlug();
   const branch = getCurrentBranch();
 
   if (!repoSlug || !branch) {
     process.stderr.write(
-      "git commit blocked — could not determine repo/branch for authorization check.\n" +
+      "git push blocked — could not determine repo/branch for authorization check.\n" +
         "Ensure you are inside a git repository on a named branch (not detached HEAD).\n",
     );
     process.exit(2);
   }
 
   const branchSlug = toSlug(branch);
-  const sentinel = getSentinelPath(repoSlug, branchSlug);
-
-  // Gate 1: regular sentinel
-  const sentinelStatus = checkSentinel(sentinel, TTL_MS);
-  if (sentinelStatus === "missing") {
+  const pushSentinel = getPushSentinelPath(repoSlug, branchSlug);
+  const pushStatus = checkSentinel(pushSentinel, TTL_MS);
+  if (pushStatus !== "valid") {
+    const reason =
+      pushStatus === "expired" ? "authorization expired (15-min TTL)" : "no push authorization for this branch";
     process.stderr.write(
-      `git commit blocked — no commit authorization for this branch.\n` +
-        `Skills like /oss:resolve and /research:run set this automatically.\n` +
-        `For ad-hoc commits: invoke AskUserQuestion to confirm, ` +
-        `then touch ${sentinel} before git commit, rm -f ${sentinel} after.\n`,
+      `git push blocked — ${reason}.\n` +
+        `Pushes are never auto-armed. Invoke AskUserQuestion to confirm the push,\n` +
+        `then ask the user to authorize from their own shell (Claude may not touch the sentinel —\n` +
+        `the harness classifier reads a Claude-run touch as forging the guard):\n` +
+        `  ! touch ${pushSentinel}\n` +
+        `Then run git push. After push, the user removes it:\n` +
+        `  ! rm -f ${pushSentinel}\n`,
     );
     process.exit(2);
-  }
-  if (sentinelStatus === "expired") {
-    process.stderr.write(
-      `git commit blocked — authorization expired (15-min TTL).\n` +
-        `Re-run the skill or touch ${sentinel} after user confirmation.\n`,
-    );
-    process.exit(2);
-  }
-
-  // Gate 2: default-branch protection
-  const defaultBranch = getDefaultBranch();
-  if (defaultBranch && branch === defaultBranch) {
-    const dbSentinel = getDefaultBranchSentinelPath(repoSlug, branchSlug);
-    const dbStatus = checkSentinel(dbSentinel, DEFAULT_BRANCH_TTL_MS);
-    if (dbStatus === "missing") {
-      process.stderr.write(
-        `git commit blocked — committing to default branch '${branch}' requires explicit confirmation.\n` +
-          `Invoke AskUserQuestion to confirm committing directly to '${branch}',\n` +
-          `then touch both sentinels before git commit:\n` +
-          `  touch ${sentinel}\n` +
-          `  touch ${dbSentinel}\n` +
-          `Remove both after commit:\n` +
-          `  rm -f ${sentinel} ${dbSentinel}\n`,
-      );
-      process.exit(2);
-    }
-    if (dbStatus === "expired") {
-      process.stderr.write(
-        `git commit blocked — default-branch authorization expired (5-min TTL).\n` +
-          `Touch ${dbSentinel} immediately before git commit (5-min window).\n`,
-      );
-      process.exit(2);
-    }
   }
 
   process.exit(0);

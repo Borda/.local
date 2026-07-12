@@ -2,7 +2,7 @@
 
 Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and `.claude-plugin/permissions-deny.json` (deny list) — canonical sources merged into `~/.claude/settings.json` by `/foundry:setup`. Working copy lives at `.claude/permissions-guide.md`, kept in sync by `/audit` (Check 4 drift check) and `/manage add perm` / `/manage remove perm`.
 
-**Destructive git commands explicitly denied** — see Deny List below. Deny rules evaluated before allow rules; matching deny always blocks regardless of any allow entry. Remote-mutating ops (`git push`, `git remote`) not denied — prompt user for approval.
+**Destructive git commands explicitly denied** — see Deny List below. Deny rules evaluated before allow rules; matching deny always blocks regardless of any allow entry. Force-push (`git push --force`/`-f`/`--force-with-lease`) denied unconditionally via `.claude/settings.json` `deny` — no override, any branch. Regular `git push` is not settings.json-denied; it is gated by the `commit-guard.js` hook sentinel — every push requires a fresh `AskUserQuestion` confirmation (no auto-arm), Claude runs `git push` only after the user arms the sentinel from their own shell. `git remote` not denied — prompt user for approval.
 
 ## Deny List — always blocked
 

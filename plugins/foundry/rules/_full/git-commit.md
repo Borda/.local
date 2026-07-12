@@ -153,29 +153,18 @@ Default branch is repo-specific — do NOT hardcode `main` or `master`. Detect d
 
 Before any `git commit`, check current branch: `git branch --show-current`
 
-Feature branch: `commit-guard.js` hook enforces authorization via sentinel files — never bypass it. Default branch: `AskUserQuestion` always required before commit.
-
 ## Commit Authorization
 
-Hook `commit-guard.js` is the runtime enforcement layer. Claude's role is to trigger the right flow; the hook blocks unauthorized `git commit` calls.
+`commit-guard.js` does not intercept `git commit` at all — commit authorization is prompt-discipline only, no runtime/hook check. Two valid signals, no others:
 
-**Sentinel paths** (hook checks these):
-
-- Gate 1: `/tmp/claude-commit-auth-<repo-slug>-<branch-slug>` · TTL 15 min
-- Gate 2 (default branch only): `/tmp/claude-commit-default-<repo-slug>-<branch-slug>` · TTL 5 min
-
-**Feature branch — three authorization sources**:
-
-| Source | Gate 1 created by | Claude action |
+| Source | Authorization | Claude action |
 | --- | --- | --- |
-| **In-message** — user said "commit [this/it]", "make a commit", etc. | Hook auto-creates at `UserPromptSubmit` | Run `git commit` directly — sentinel already present |
-| **In-workflow** — skill commits as documented step (e.g. `/oss:resolve`) | Skill: `touch $SENTINEL` before commit, `rm -f $SENTINEL` after | Run `git commit` inside skill workflow |
-| **In-confirmation** — no explicit instruction; user confirmed via `AskUserQuestion` | Claude: `touch $SENTINEL` → `git commit` → `rm -f $SENTINEL` | Show branch + diff size + draft subject in question |
+| **Skill workflow** — a skill documented to commit as part of its flow (e.g. `/oss:resolve`, `/research:run`) | The user invoking that skill IS the authorization — covers however many commits the skill's documented commit strategy calls for (one-per-item, batched, etc.) | Run `git commit` inside the skill workflow; no `AskUserQuestion` per individual commit — asking N times for one already-approved skill run is pure friction, not a security signal |
+| **Ad-hoc / interactive** — anything else: user said "commit this", Claude decides a commit is warranted, no active skill workflow | `AskUserQuestion` confirmation, every time, any branch (feature or default) — no exceptions, no auto-arm shortcut | Show branch + diff size + draft subject in the question; only commit after explicit confirmation |
 
-**Default branch — always AskUserQuestion**: invoke before any commit. On confirmation: `touch $SENTINEL && touch $DEFAULT_SENTINEL` → `git commit` → `rm -f $SENTINEL $DEFAULT_SENTINEL`. Gate 2 TTL is 5 min — touch immediately before commit.
-
-**Never commit autonomously**: no commit without in-message signal, active skill workflow, or in-turn AskUserQuestion confirmation.
+**Never commit autonomously**: no commit without an active skill workflow step or an in-turn `AskUserQuestion` confirmation.
 - Each message is independent — prior messages in session containing "commit" do not authorize commits in later messages; pattern-matching on session history is not a valid signal source.
+- A skill's own documented workflow is the only exemption from per-commit `AskUserQuestion` — do not extend this exemption to ad-hoc commits by rationalizing them as "workflow-like."
 
 ## Staging and Hooks
 
@@ -185,25 +174,15 @@ Hook `commit-guard.js` is the runtime enforcement layer. Claude's role is to tri
 
 ## Push Authorization
 
-Same signal model as §Commit Authorization — no AskUserQuestion when signal present. Note: `git push` is not pre-allowed in settings; harness will prompt once regardless (by design).
+Two-tier design: force-push is an unconditional hard block; regular push is sentinel-gated per-invocation.
 
-**Feature branch — authorized when any signal present**:
+**Force-push** (`-f`, `--force`, `--force-with-lease`): forbidden on any branch, always — no override, even with explicit user instruction. Enforced twice (defense-in-depth): `commit-guard.js` checks this unconditionally, before any sentinel lookup; `.claude/settings.json` `permissions.deny` also deny-lists all three flag forms. Claude never runs a force-push variant regardless of signal.
 
-| Signal | What it looks like |
-| --- | --- |
-| **In-message** | Current user message contains unambiguous push instruction: "push", "push this", "push the branch" |
-| **In-workflow** | Running skill that names push as documented step AND user invoked that skill |
-| **In-confirmation** | User confirmed via `AskUserQuestion` in the current response turn |
+**Regular push**: gated by a dedicated push sentinel — `/tmp/claude-push-auth-<repo-slug>-<branch-slug>`, TTL 15 min. Claude invokes `AskUserQuestion` (state branch + what's being pushed) → user runs `! touch $PUSH_SENTINEL` from own shell → Claude runs `git push` → user runs `! rm -f $PUSH_SENTINEL` after.
 
-**When no signal present**: invoke `AskUserQuestion` before `git push`. Show: target branch, remote, whether default branch.
+**Deliberate asymmetry vs commit**: push has **no skill-workflow exemption**. Commit allows a documented skill workflow to self-authorize multiple commits per its own commit strategy, no `AskUserQuestion` per commit; push always requires a fresh in-turn `AskUserQuestion` confirmation, even from inside a skill workflow, even if the user said "push this" in the same message. This is intentional, not an oversight: push is a repo-visible, harder-to-undo action than a local commit.
 
-**Authorization scoped**: "commit this" does not authorize "push this" — push requires its own signal in the current message or turn.
-
-**Default branch**: `AskUserQuestion` always required — no signal overrides this.
-
-**Force-push**:
-- Main/master: forbidden even with explicit user instruction
-- Other branches: only with explicit user instruction in current message; never as autonomous "final step"
+The standard interactive Bash permission dialog still applies on top of the hook gate, unchanged — `.claude/settings.json` `permissions.allow` is not modified for push; there is no allow-list shortcut.
 
 ## History Safety
 
