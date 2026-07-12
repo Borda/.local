@@ -83,15 +83,6 @@
             "type": "command"
           }
         ],
-        "matcher": "Read"
-      },
-      {
-        "hooks": [
-          {
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/md-compress.js\"",
-            "type": "command"
-          }
-        ],
         "matcher": "Edit"
       }
     ],

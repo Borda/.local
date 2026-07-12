@@ -727,7 +727,7 @@ Agent Teams is Claude Code's experimental multi-agent feature. Teams are always 
 | ------------------- | --------------------------- | ----------- | ---------------------- |
 | task-log.js         | 9 events                    | all         | Session state tracking |
 | lint-on-save.js     | PostToolUse                 | Write, Edit | Lint on save           |
-| md-compress.js      | PreToolUse                  | Read (.md)  | Token compression      |
+| md-compress.js      | PreToolUse                  | Edit (.md)  | Token compression      |
 | rtk-rewrite.js      | PreToolUse                  | Bash        | CLI output compression |
 | teammate-quality.js | TeammateIdle, TaskCompleted | all         | Team quality gate      |
 | stats-reader.js     | (standalone)                | n/a         | Session stats          |
@@ -788,7 +788,7 @@ Registered alongside `task-log.js` in `settings.json`:
 
 **`lint-on-save.js`** (PostToolUse — Write, Edit) — closes the gap between "Claude edits a file" and "a human runs pre-commit" by linting every file the moment it is written. Runs `pre-commit run --files <path>` on each Write/Edit, exits 2 on failure so Claude sees the diagnostics and applies a fix immediately. No-op when `.pre-commit-config.yaml` is absent or pre-commit is not installed.
 
-**`md-compress.js`** (PreToolUse — Read, `.md` files only) — transparently compresses token-wasteful whitespace in Markdown files before Claude reads them, reducing context consumption without altering content. Collapses table column padding (2+ spaces → 1), consecutive blank lines, and trailing whitespace — all outside fenced code blocks. Writes to a stable temp file keyed by source-path hash; reused within a session when the source is unchanged.
+**`md-compress.js`** (PreToolUse — Edit only, `.md` files only) — normalizes token-wasteful whitespace in the file being edited, in place, right before the edit runs, and normalizes `old_string` the same way so a pre-normalization match still finds its target. Collapses table column padding (2+ spaces → 1), consecutive blank lines, and trailing whitespace — all outside fenced code blocks; write is atomic (write-then-rename). Deliberately does *not* run on Read: an earlier version did, to save Read-time tokens, but normalizing on every Read silently rewrote table alignment in any `.md` file Claude merely looked at, including files nobody asked to touch — dropped in favor of Edit-only scope, which only touches files someone is actually editing.
 
 **`rtk-rewrite.js`** (PreToolUse — Bash) — rewrites supported CLI calls to go through the RTK proxy (`git status` → `rtk git status`) for 60–99% token savings on build/test/git output. RTK is a *structural* compressor — it understands git diff, pytest, and build-log formats and removes tokens that are visually useful to humans but informationally redundant for an LLM, unlike generic truncation which can drop the relevant parts. No-op when RTK is not installed — see root [README → Token Savings](../README.md#-token-savings-rtk).
 

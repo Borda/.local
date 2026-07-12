@@ -756,7 +756,7 @@ plugins/foundry/
     ├── rtk-rewrite.js           transparently rewrites CLI calls for token compression
     ├── agent-router.js          PreToolUse Agent hook; 3-tier routing fallback (worktree → cache → local)
     ├── commit-guard.js          PreToolUse Bash guard; git commit is prompt-discipline only, not hook-gated; git push --force blocked unconditionally on any branch, regular push gated by a sentinel requiring AskUserQuestion each time (no auto-arm)
-    └── md-compress.js           compresses large markdown files before they enter context
+    └── md-compress.js           normalizes markdown whitespace/table-padding in place on Edit
 ```
 
 ______________________________________________________________________
