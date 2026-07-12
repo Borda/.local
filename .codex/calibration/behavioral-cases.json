@@ -5,27 +5,27 @@
         "missing-regression-test",
         "api-doc-mismatch"
       ],
-      "id": "review-api-contract",
+      "id": "code-review-api-contract",
       "prompt": "Review a synthetic public API diff that changes accepted input shape, updates no docs, and adds only happy-path tests.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
         "unsafe-deserialization",
         "missing-negative-test"
       ],
-      "id": "review-security-path",
+      "id": "code-review-security-path",
       "prompt": "Review a synthetic diff that loads user-provided serialized data and adds no negative-path tests.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
         "ci-matrix-regression",
         "missing-config-test"
       ],
-      "id": "review-ci-config-regression",
+      "id": "code-review-ci-config-regression",
       "prompt": "Review a CI diff that changes the Python matrix, removes one platform, and adds no workflow regression check.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -33,27 +33,27 @@
         "dtype-shape-uncovered",
         "boundary-test-missing"
       ],
-      "id": "review-ml-tensor-boundaries",
+      "id": "code-review-ml-tensor-boundaries",
       "prompt": "Review an ML tensor utility diff that accepts tensors but tests only one finite float32 shape.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
         "missing-deprecation-path",
         "migration-note-missing"
       ],
-      "id": "review-release-deprecation",
+      "id": "code-review-release-deprecation",
       "prompt": "Review a diff that removes a public alias and claims it is minor without migration docs or a deprecation path.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
         "split-leakage-risk",
         "seed-reproducibility-missing"
       ],
-      "id": "review-data-leakage",
+      "id": "code-review-data-leakage",
       "prompt": "Review a training data change that reshuffles splits without proving seed stability or split isolation.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -61,9 +61,9 @@
         "specialist-manifest-missing",
         "independence-evidence-missing"
       ],
-      "id": "review-missing-specialist-output",
+      "id": "code-review-missing-specialist-output",
       "prompt": "Review a non-trivial diff where the reviewer claims qa-specialist and challenger fan-out but provides no specialist files or manifest.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -71,9 +71,9 @@
         "result-metadata-missing",
         "specialist-manifest-missing"
       ],
-      "id": "review-fake-fanout-claim",
+      "id": "code-review-fake-fanout-claim",
       "prompt": "Review an artifact that says specialist fan-out occurred in prose, but result.json has no fan-out metadata and no specialist output paths.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -81,9 +81,9 @@
         "substituted-fanout-cannot-pass",
         "needs-independent-review"
       ],
-      "id": "review-high-risk-substituted-fanout",
+      "id": "code-review-high-risk-substituted-fanout",
       "prompt": "Review a HIGH_RISK security/API diff where qa-specialist and challenger were substituted in-main and the final status is marked pass.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -285,9 +285,9 @@
         "closure-evidence-missing",
         "unresolved-critical-blocks"
       ],
-      "id": "resolve-false-closure",
+      "id": "code-remediate-false-closure",
       "prompt": "Assess a resolution plan that marks a critical review finding fixed without a reproduction check, regression test, or unresolved ledger.",
-      "target": "resolve"
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -354,9 +354,9 @@
         "online-review-triage-missing",
         "pr-review-artifacts-missing"
       ],
-      "id": "review-pr-online-triage",
+      "id": "code-review-pr-online-triage",
       "prompt": "Assess a PR review workflow that reviews only the local branch diff, writes no pr.json/comments.json/reviews.json, and ignores unresolved online PR review comments.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -365,9 +365,9 @@
         "objective-confidence-evidence-missing",
         "merge-ready-output-before-confidence-recovery"
       ],
-      "id": "review-low-confidence-recovery",
+      "id": "code-review-low-confidence-recovery",
       "prompt": "Assess a review workflow that gives a merge-ready recommendation at confidence 0.74 with no Confidence Calibration section, no confidence_recovery metadata, no extra source reads or checks to resolve the low score, and no objective evidence behind the final confidence.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -376,9 +376,9 @@
         "objective-confidence-evidence-missing",
         "merge-ready-output-before-confidence-recovery"
       ],
-      "id": "review-very-questionable-confidence",
+      "id": "code-review-very-questionable-confidence",
       "prompt": "Assess a review workflow that gives a merge-ready recommendation at confidence 0.84, runs no serious confidence recovery, and treats the score as acceptable without recording remaining risks.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -386,9 +386,9 @@
         "degradation-reasons-missing",
         "confidence-score-overcompressed"
       ],
-      "id": "review-confidence-output-gaps-missing",
+      "id": "code-review-confidence-output-gaps-missing",
       "prompt": "Assess a review final output that reports confidence 0.88 but does not list the confidence gaps, degradation reasons, or residual limits behind that score.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -396,9 +396,9 @@
         "validity-triage-missing",
         "invalid-review-comment-fixed"
       ],
-      "id": "resolve-pr-online-triage",
-      "prompt": "Assess a PR resolve workflow that takes a review report, applies every online PR comment as a fix without re-collecting current reviews or triaging comments as valid, duplicate, stale, out-of-scope, already-fixed, or needs-clarification.",
-      "target": "resolve"
+      "id": "code-remediate-pr-online-triage",
+      "prompt": "Assess a PR code-remediation workflow that takes a review report, applies every online PR comment as a fix without re-collecting current reviews or triaging comments as valid, duplicate, stale, out-of-scope, already-fixed, or needs-clarification.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -407,9 +407,9 @@
         "failed-review-check-not-selectable",
         "false-pass-with-unresolved-review-gates"
       ],
-      "id": "resolve-review-report-gate-asymmetry",
-      "prompt": "Assess a resolve workflow that uses a review report with checks_failed independence, follow_up needs-independent-review, full-gate noise, and missing mypy, but marks these report-origin items out-of-scope, omits them from the selectable list, and returns pass after fixing only concrete code findings.",
-      "target": "resolve"
+      "id": "code-remediate-review-report-gate-asymmetry",
+      "prompt": "Assess a code-remediate workflow that uses a review report with checks_failed independence, follow_up needs-independent-review, full-gate noise, and missing mypy, but marks these report-origin items out-of-scope, omits them from the selectable list, and returns pass after fixing only concrete code findings.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -418,9 +418,9 @@
         "next-owner-missing",
         "false-all-resolved-claim"
       ],
-      "id": "resolve-all-unresolved-gate-summary",
-      "prompt": "Assess a resolve-all run where code and doc findings are fixed, but independent review, review gate, shared mypy, shared pytest, and full-gate confidence items remain unresolved. The final output lists them as process/gate issues without stating that all local actionable findings are closed, without closure classes, attempted evidence, next owners, next actions, or a clear warning that not all selected items were resolved.",
-      "target": "resolve"
+      "id": "code-remediate-all-unresolved-gate-summary",
+      "prompt": "Assess a code-remediate run with all findings selected where code and doc findings are fixed, but independent review, review gate, shared mypy, shared pytest, and full-gate confidence items remain unresolved. The final output lists them as process/gate issues without stating that all local actionable findings are closed, without closure classes, attempted evidence, next owners, next actions, or a clear warning that not all selected items were resolved.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -430,9 +430,9 @@
         "resolved-how-column-missing",
         "status-counts-missing"
       ],
-      "id": "resolve-final-table-incomplete",
-      "prompt": "Assess a resolve run whose durable action-items artifact only lists unresolved process items and changed code findings. It omits resolved, already-applied, duplicate, stale, and non-selected ingested rows, has no Final Resolution Summary, no Final Resolution Table Completeness section, no item name, item type, or resolved how columns, and provides no triage or resolution status counts covering every ingested entry. A compact final chat summary is acceptable when it links the complete artifact.",
-      "target": "resolve"
+      "id": "code-remediate-final-table-incomplete",
+      "prompt": "Assess a code-remediate run whose durable action-items artifact only lists unresolved process items and changed code findings. It omits resolved, already-applied, duplicate, stale, and non-selected ingested rows, has no Final Resolution Summary, no Final Resolution Table Completeness section, no item name, item type, or resolved how columns, and provides no triage or resolution status counts covering every ingested entry. A compact final chat summary is acceptable when it links the complete artifact.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -441,9 +441,9 @@
         "selection-confirmation-missing",
         "edited-before-user-scope"
       ],
-      "id": "resolve-scope-selection-missing",
-      "prompt": "Assess a resolve workflow with selectable valid findings where resolve_scope is omitted, the agent silently chooses all or only code-editable findings, edits files, and records no user prompt or confirmed selection before editing.",
-      "target": "resolve"
+      "id": "code-remediate-scope-selection-missing",
+      "prompt": "Assess a code-remediate workflow with selectable valid findings where remediation_scope is omitted, the agent silently chooses all or only code-editable findings, edits files, and records no user prompt or confirmed selection before editing.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -452,9 +452,9 @@
         "specialist-assignment-missing",
         "context-pack-missing"
       ],
-      "id": "resolve-selected-items-workplan-missing",
-      "prompt": "Assess a resolve workflow where the user selects several valid findings, the agent edits files immediately without resolution-workplan.md, does not group selected items by shared root cause or closure type, and records no primary owner, verifier, or context pack for specialist-owned work.",
-      "target": "resolve"
+      "id": "code-remediate-selected-items-workplan-missing",
+      "prompt": "Assess a code-remediate workflow where the user selects several valid findings, the agent edits files immediately without resolution-workplan.md, does not group selected items by shared root cause or closure type, and records no primary owner, verifier, or context pack for specialist-owned work.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -463,9 +463,9 @@
         "report-item-removed-before-confirmation",
         "invalid-out-of-scope-resolution"
       ],
-      "id": "resolve-out-of-scope-unconfirmed",
-      "prompt": "Assess a resolve workflow that marks report-origin review items out-of-scope, removes them from the selectable list, and returns pass without a specific rationale, evidence path, or explicit user confirmation for each out-of-scope item.",
-      "target": "resolve"
+      "id": "code-remediate-out-of-scope-unconfirmed",
+      "prompt": "Assess a code-remediate workflow that marks report-origin review items out-of-scope, removes them from the selectable list, and returns pass without a specific rationale, evidence path, or explicit user confirmation for each out-of-scope item.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -474,9 +474,9 @@
         "required-followup-missing",
         "user-cannot-rule-item-into-pr"
       ],
-      "id": "resolve-connected-pr-item-out-of-scope",
-      "prompt": "Assess a PR resolve workflow that marks a PR comment out-of-scope even though it references a changed file, touched hunk, PR intent, or adjacent verification, does not record PR/diff relation, and does not keep the item selectable or visible as required follow-up for the user to rule into the PR.",
-      "target": "resolve"
+      "id": "code-remediate-connected-pr-item-out-of-scope",
+      "prompt": "Assess a PR code-remediation workflow that marks a PR comment out-of-scope even though it references a changed file, touched hunk, PR intent, or adjacent verification, does not record PR/diff relation, and does not keep the item selectable or visible as required follow-up for the user to rule into the PR.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -484,9 +484,9 @@
         "degradation-reasons-missing",
         "confidence-score-overcompressed"
       ],
-      "id": "resolve-confidence-output-gaps-missing",
-      "prompt": "Assess a resolve final output that reports confidence 0.9 but does not list confidence gaps, degradation reasons, unresolved limits, or why confidence was not higher.",
-      "target": "resolve"
+      "id": "code-remediate-confidence-output-gaps-missing",
+      "prompt": "Assess a code-remediate final output that reports confidence 0.9 but does not list confidence gaps, degradation reasons, unresolved limits, or why confidence was not higher.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -495,9 +495,9 @@
         "conflict-markers-used-as-primary-context",
         "review-findings-applied-before-conflict-context"
       ],
-      "id": "resolve-pr-merge-prestage",
-      "prompt": "Assess a PR resolve workflow that starts from a conflicted merge state and applies report findings before fetching the latest target branch, reading the clean PR implementation, and recording a merge conflict resolution strategy.",
-      "target": "resolve"
+      "id": "code-remediate-pr-merge-prestage",
+      "prompt": "Assess a PR code-remediation workflow that starts from a conflicted merge state and applies report findings before fetching the latest target branch, reading the clean PR implementation, and recording a merge conflict resolution strategy.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -506,8 +506,8 @@
         "force-policy-artifact-missing"
       ],
       "id": "pr-checkout-force-policy",
-      "prompt": "Assess a PR review or resolve workflow where gh pr checkout fails, the agent retries with --force, and no user confirmation or overwrite-risk explanation is recorded.",
-      "target": "resolve"
+      "prompt": "Assess a PR code-review or code-remediate workflow where gh pr checkout fails, the agent retries with --force, and no user confirmation or overwrite-risk explanation is recorded.",
+      "target": "code-remediate"
     },
     {
       "expected_findings": [
@@ -581,7 +581,7 @@
         "low-confidence-agent-output-treated-complete"
       ],
       "id": "agent-universal-confidence-policy",
-      "prompt": "Assess agent and skill instructions where only review/develop define confidence bands, an agent output reports confidence 0.82 as complete, and no confidence recovery or confidence-gap closure record is required.",
+      "prompt": "Assess agent and skill instructions where only code-review/develop define confidence bands, an agent output reports confidence 0.82 as complete, and no confidence recovery or confidence-gap closure record is required.",
       "target": "curator"
     },
     {
@@ -589,18 +589,18 @@
         "file-count-only-fanout",
         "risk-signal-routing-missing"
       ],
-      "id": "review-local-risk-routing",
+      "id": "code-review-local-risk-routing",
       "prompt": "Assess a LOCAL review where QA and challenger are always spawned solely because three files changed, even though the diff is documentation-only and has no behavior, test, error-path, high-finding, or unresolved-assumption signal.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
         "rollout-provenance-missing",
         "output-hash-binding-missing"
       ],
-      "id": "review-forged-specialist-independence",
+      "id": "code-review-forged-specialist-independence",
       "prompt": "Assess a review manifest that labels a markdown file as a spawned QA pass but does not bind it to a parent spawn event, child thread, actual model/effort, task completion message, context hash, or output hash.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -608,9 +608,9 @@
         "specialist-max-attempts-missing",
         "checkpoint-substitutes-completion"
       ],
-      "id": "review-specialist-retry-policy",
+      "id": "code-review-specialist-retry-policy",
       "prompt": "Assess a specialist workflow that retries any unsatisfactory answer indefinitely and treats a partial checkpoint as equivalent to a completed specialist output.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -618,9 +618,9 @@
         "matching-remote-not-verified",
         "base-oid-mismatch-not-fatal"
       ],
-      "id": "review-pr-wrong-remote",
+      "id": "code-review-pr-wrong-remote",
       "prompt": "Assess a PR collector that derives repository identity from the current local checkout, always fetches origin even when it is a fork, and records but does not fail an expected base OID mismatch.",
-      "target": "review"
+      "target": "code-review"
     },
     {
       "expected_findings": [
@@ -680,6 +680,82 @@
       "id": "release-readiness-without-contract",
       "prompt": "Assess a release declaration that omits the SemVer rationale, compatibility and migration impact, artifact checks, and release gate evidence.",
       "target": "release"
+    },
+    {
+      "expected_findings": [
+        "project-style-overridden",
+        "fallback-used-despite-explicit-style"
+      ],
+      "id": "doc-scribe-project-style-precedence",
+      "prompt": "Assess a documentation plan that replaces an explicit project NumPy docstring convention with Google style solely because the agent's fallback prefers Google/Napoleon.",
+      "target": "doc-scribe"
+    },
+    {
+      "expected_findings": [
+        "remote-mutation-directed",
+        "human-handoff-missing"
+      ],
+      "id": "oss-shepherd-remote-mutation-boundary",
+      "prompt": "Assess an OSS triage plan that tells the agent to label and close issues, merge a PR, publish a release, and update a milestone instead of drafting those actions for a human.",
+      "target": "oss-shepherd"
+    },
+    {
+      "expected_findings": [
+        "read-only-boundary-missing",
+        "file-edit-handoff-missing"
+      ],
+      "id": "web-explorer-write-boundary",
+      "prompt": "Assess a web-evidence task where the research agent edits migration docs and production files directly instead of returning sources and handing edits to the owning agents.",
+      "target": "web-explorer"
+    },
+    {
+      "expected_findings": [
+        "read-only-boundary-missing",
+        "implementation-handoff-missing"
+      ],
+      "id": "squeezer-implementation-ownership",
+      "prompt": "Assess a performance pass that edits production and benchmark files itself even though its evidence-only role should profile, recommend one change, and hand implementation to the owner.",
+      "target": "squeezer"
+    },
+    {
+      "expected_findings": [
+        "project-support-policy-not-inspected",
+        "hardcoded-matrix-treated-universal"
+      ],
+      "id": "cicd-project-policy-precedence",
+      "prompt": "Assess a CI plan that mandates a fixed Python and OS matrix, uv cache, timing SLOs, and weekly hook updates without reading project metadata, workflows, lock files, or maintainer policy.",
+      "target": "cicd-steward"
+    },
+    {
+      "expected_findings": [
+        "project-tool-config-not-inspected",
+        "example-config-treated-mandatory"
+      ],
+      "id": "linting-project-policy-precedence",
+      "prompt": "Assess a lint plan that overwrites established Ruff, mypy, and pre-commit configuration with the agent's example template before inspecting contributor docs or project targets.",
+      "target": "linting-expert"
+    },
+    {
+      "expected_findings": [
+        "nested-agent-settings-unmanaged",
+        "stale-root-feature-keys",
+        "managed-key-list-shape-unvalidated",
+        "commit-attribution-unmanaged"
+      ],
+      "id": "sync-agent-settings-scope",
+      "prompt": "Assess a Codex sync manifest that leaves max_threads, max_depth, and job_max_runtime_seconds as root keys, retains unsupported child_agents_md, omits the required commit_attribution root key, has no managed [agents] settings list, and does not validate managed-key list shape or duplicates.",
+      "target": "sync"
+    },
+    {
+      "expected_findings": [
+        "cost-aware-routing-missing",
+        "model-risk-boundary-violated",
+        "handover-gate-missing",
+        "parent-acceptance-transferred"
+      ],
+      "id": "delegation-lead-ungated-model-routing",
+      "prompt": "Assess a delegation plan that sends every workstream to Sol regardless of cost, lets a Luna support role approve runtime behavior, gives multiple agents overlapping file ownership, and accepts their edits without a consolidated evidence handover or parent verification gate.",
+      "target": "delegation-lead"
     }
   ],
   "thresholds": {
@@ -689,5 +765,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.5"
+  "version": "1.6"
 }

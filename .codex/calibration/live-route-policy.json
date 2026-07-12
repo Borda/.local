@@ -7,10 +7,10 @@
       "max_cost_ratio": 1.0,
       "max_quality_drop": 0.0,
       "min_campaigns": 2,
-      "min_pairs": 10,
+      "min_pairs": 12,
       "min_quality_gain": 0.0,
       "min_tool_use_pairs": 2,
-      "pairs_per_campaign": 5,
+      "pairs_per_campaign": 6,
       "required_evidence_scopes": [
         "classification",
         "tool-use"

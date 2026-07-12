@@ -32,6 +32,11 @@
         "case_id": "curator-agent-contract",
         "role": "curator",
         "task_type": "configuration-curation"
+      },
+      {
+        "case_id": "delegation-lead-ungated-model-routing",
+        "role": "delegation-lead",
+        "task_type": "delegation-coordination"
       }
     ],
     "sol-critical-high": [
@@ -53,7 +58,7 @@
         "task_type": "adversarial-security"
       },
       {
-        "case_id": "review-security-path",
+        "case_id": "code-review-security-path",
         "role": "security-auditor",
         "task_type": "security-review"
       },

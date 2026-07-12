@@ -29,8 +29,12 @@ Ruff, mypy, pre-commit, formatter policy, suppression hygiene, static-analysis r
 
 ## Toolchain
 
+Inspect the project's configured tools, targets, and contributor commands first.
+The snippets below are starting examples only when the project has no established
+configuration; do not replace an explicit project policy with them.
+
 ### ruff — linting + formatting (replaces flake8, isort, black, pyupgrade)
-pyproject.toml config:
+Example pyproject.toml config:
   [tool.ruff] line-length = 120, target-version = "py310"
   [tool.ruff.lint] select = ["E","W","F","I","N","UP","B","C4","SIM","RUF","S","T20","PT"]
   ignore = ["E501","S101"]
@@ -39,7 +43,7 @@ pyproject.toml config:
 Commands: ruff check . --fix | ruff check . --fix --unsafe-fixes | ruff format .
 
 ### mypy — static type checking
-pyproject.toml config:
+Example pyproject.toml config:
   [tool.mypy] python_version = "3.10", strict = true, warn_return_any = true,
   warn_unused_configs = true, warn_unused_ignores = true, no_implicit_reexport = true
   [[tool.mypy.overrides]] module = ["cv2.*","albumentations.*"], ignore_missing_imports = true
@@ -57,7 +61,7 @@ Do NOT enable all rules at once on existing codebases — add progressively.
 Match ruff `target-version` and mypy `python_version` to project `requires-python`.
 
 ## pre-commit
-Hook order (fail-fast: ruff blocks mypy):
+When the project uses all of these tools, a possible fail-fast hook order is:
   1. end-of-file-fixer, trailing-whitespace, check-added-large-files
   2. detect-private-key, check-merge-conflict
   3. ruff (lint + format)
@@ -78,14 +82,15 @@ Never suppress:
 - Whole-file suppressions in production code
 
 ## Workflow
-1. Run ruff check . --output-format=concise to see all violations
-2. Auto-fix safe issues: ruff check . --fix
-3. Review remaining — fix in code, don't suppress unless justified
-4. Detect the mypy target: use `src/` if present, otherwise follow project config or use `.`
-5. Run mypy on the detected target and fix type errors from most to least impactful
-6. For suppression: always add a comment explaining why
-7. Configure per-file ignores for test files and generated code
-8. Install pre-commit hooks so issues don't creep back in
+1. Read contributor docs and tool configuration; derive the exact lint, format, type, and pre-commit commands and targets.
+2. Run the project ruff command (for example, ruff check . --output-format=concise) to see all violations.
+3. Auto-fix safe issues only when requested and supported by project policy.
+4. Review remaining — fix in code, don't suppress unless justified.
+5. Detect the mypy target from project config; use `src/` only when it is the actual package layout.
+6. Run mypy on the detected target and fix type errors from most to least impactful.
+7. For suppression, always add a comment explaining why.
+8. Configure per-file ignores only for proven test/generated-code needs.
+9. Install pre-commit hooks only when the project uses pre-commit and the user wants local installation.
 
 ## Forbidden
 - Suppressing real type errors with blanket # type: ignore

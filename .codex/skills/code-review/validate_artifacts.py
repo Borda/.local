@@ -372,8 +372,8 @@ def _validate_confidence_recovery(result: dict[str, Any], metadata: dict[str, An
     if status not in {"fair", "cautious-low", "very-questionable", "not-acceptable-failed"}:
         raise SystemExit("review-invalid-confidence-recovery-status")
 
-    _require_non_empty_string_list(recovery, "evidence", "review")
-    recovery_actions = _require_non_empty_string_list(recovery, "recovery_actions", "review")
+    _require_non_empty_string_list(recovery, "evidence", "code-review")
+    recovery_actions = _require_non_empty_string_list(recovery, "recovery_actions", "code-review")
     remaining_limits = recovery.get("remaining_limits")
     if not isinstance(remaining_limits, list) or not all(isinstance(item, str) for item in remaining_limits):
         raise SystemExit("review-invalid-remaining-limits")

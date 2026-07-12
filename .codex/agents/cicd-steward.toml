@@ -32,7 +32,7 @@ and flaky CI diagnosis.
 - Do not claim a check passes unless it was run or a cited CI artifact proves it.
 
 ## Workflow
-1. Inventory CI surfaces: .github/workflows, actionlint config, pre-commit config, pyproject tool sections, release scripts, and publishing docs.
+1. Inventory project policy first: contributor docs, supported versions, package manager/lock files, .github/workflows, actionlint config, pre-commit config, pyproject tool sections, release scripts, and publishing docs.
 2. Classify the change: security-sensitive, release/publishing, matrix/platform, cache/performance, hook/toolchain, or flaky failure.
 3. Inspect triggers, permissions, concurrency, matrix, cache keys, artifact upload/download, and dependency install commands.
 4. Verify local approximations when possible: parse YAML when tooling exists, inspect pre-commit hooks, and run targeted commands only when safe.
@@ -51,21 +51,21 @@ and flaky CI diagnosis.
 - Treat repository_dispatch, workflow_run, and reusable workflows as trust-boundary surfaces.
 
 ### Reliability
-- Concurrency: cancel in-progress runs on same branch
+- Derive the Python/OS matrix from project metadata and support policy. Cover the minimum and newest supported Python, then add intermediate versions and platforms according to compatibility risk.
+- Use concurrency cancellation only for non-release jobs where replacing an older run is safe. A common shape is:
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
-- Matrix: test Python 3.10 / 3.11 / 3.12 on ubuntu-latest + macos-latest minimum
-- Cache: actions/cache for uv venv and pytest cache; key on pyproject.toml hash
+- Derive caches from the project's package manager and lock/config files; never assume uv, a virtualenv path, pytest, or a single pyproject hash is sufficient.
 - Reusable workflows (workflow_call) to DRY repeated lint/test job definitions
 - Pin Python versions intentionally. Do not silently drop supported Python or OS targets.
 - Split slow, GPU, network, and integration tests from fast unit checks with explicit markers.
 - Upload artifacts for coverage, logs, and failure diagnostics only when useful and retention is bounded.
 
 ### Performance targets
-- Full CI: < 10 min for a typical OSS library
-- Unit tests: < 2 min (GPU/slow/integration tests excluded, run separately)
-- Lint: ruff < 30 sec; mypy < 60 sec with cache
+Establish project baselines and maintainer-approved SLOs before optimizing. Values such as
+full CI under 10 minutes, unit tests under 2 minutes, ruff under 30 seconds, or
+mypy under 60 seconds are triage heuristics only, never universal acceptance gates.
 
 ## Trusted Publishing (PyPI)
 - OIDC-based only — no PYPI_TOKEN stored in secrets
@@ -78,8 +78,8 @@ and flaky CI diagnosis.
 - Verify package metadata before publish: build, twine/check equivalent, version consistency, and artifact names.
 
 ## pre-commit
-- Keep hooks current: pre-commit autoupdate runs weekly in CI
-- Required hook order (fail-fast: ruff blocks mypy):
+- Follow the project's dependency-update policy. Suggest scheduled `pre-commit autoupdate` only when maintainers want automated update PRs.
+- When the project uses these tools, this is a common fail-fast hook order, not a requirement:
   1. end-of-file-fixer, trailing-whitespace, check-added-large-files
   2. detect-private-key, check-merge-conflict
   3. ruff (lint + format)
@@ -88,7 +88,7 @@ and flaky CI diagnosis.
 - Distinguish hook config ownership: linting-expert owns rule selection; cicd-steward owns when and how hooks execute in CI.
 
 ## Flaky Test Detection
-- Never silently retry — mark with @pytest.mark.flaky(reruns=3) and investigate
+- Never silently retry. If the project already uses a retry plugin, any temporary retry marker needs an issue, owner, expiry, and root-cause investigation.
 - Root causes: shared mutable state, timing assumptions, network calls in unit tests,
   non-deterministic dict/set ordering, GPU numerical non-determinism
 - GPU tests: torch.use_deterministic_algorithms(True) in test suite

@@ -1,9 +1,9 @@
 ---
-name: review
-description: Tiered codex-native multi-axis review loop. Use for local diff review or GitHub PR review, including in-session skill invocations like "$review #123" where a bare number means PR number, with mechanical scope gates, explicit specialist fan-out or labeled substitutes, measurable quality gates, and a JSON artifact.
+name: code-review
+description: Tiered codex-native multi-axis code review loop. Use for local diff review or GitHub PR review, including in-session skill invocations like "$code-review #123" where a bare number means PR number, with mechanical scope gates, explicit specialist fan-out or labeled substitutes, measurable quality gates, and a JSON artifact.
 ---
 
-# Review
+# Code Review
 
 Run a tiered review loop with strict output gates.
 
@@ -26,12 +26,12 @@ Run a tiered review loop with strict output gates.
 
 Input shorthand:
 
-- Canonical in-session invocation: `$review 123` or `$review #123` => `scope=pr`, `target=123`.
-- Natural-language aliases: `review 123`, `review #123`, and `review PR 123` => `scope=pr`, `target=123`.
-- `review <github-pr-url>` => `scope=pr`, `target=<github-pr-url>`.
+- Canonical in-session invocation: `$code-review 123` or `$code-review #123` => `scope=pr`, `target=123`.
+- Natural-language aliases: `code-review 123`, `code-review #123`, and `code-review PR 123` => `scope=pr`, `target=123`.
+- `code-review <github-pr-url>` => `scope=pr`, `target=<github-pr-url>`.
 - If the user supplies a bare number, treat it as a GitHub PR number for this skill. Do not ask for `scope=pr`.
 
-The skill never writes to the remote service. PR scope may update the local checkout to the PR head before inspection; otherwise it is read-only except for `.reports/codex/review/<timestamp>/` artifacts. Do not pass `--force` to `git` or `gh`; if a forced checkout appears necessary to align the local branch with the PR head, stop, explain the overwrite risk, and ask the user before retrying. If the user asks to fix findings, switch to `resolve` after the review artifact exists.
+The skill never writes to the remote service. PR scope may update the local checkout to the PR head before inspection; otherwise it is read-only except for `.reports/codex/code-review/<timestamp>/` artifacts. Do not pass `--force` to `git` or `gh`; if a forced checkout appears necessary to align the local branch with the PR head, stop, explain the overwrite risk, and ask the user before retrying. If the user asks to fix findings, switch to `code-remediate` after the review artifact exists.
 
 ## Workflow (Exact Commands)
 
@@ -39,7 +39,7 @@ The skill never writes to the remote service. PR scope may update the local chec
 
 ```bash
 TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/review/$TS"
+OUT_DIR=".reports/codex/code-review/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
@@ -162,7 +162,7 @@ Use exactly one recommendation:
 
 ### 10: Run confidence calibration and recovery before any user-facing output
 
-Before final chat output or `result.json`, write the `Confidence Calibration` section in `review-notes.md` and mirror it in `REVIEW_METADATA.confidence_recovery`.
+Before final chat output or `result.json`, write the `Confidence Calibration` section in `review-notes.md` and mirror it in `CODE_REVIEW_METADATA.confidence_recovery`.
 
 Required confidence calibration content:
 
@@ -175,7 +175,7 @@ Required confidence calibration content:
 
 Shared confidence policy:
 
-Apply the shared confidence band policy from `../_shared/quality-gates.md`. This skill records the required evidence in the `Confidence Calibration` section and mirrors it in `REVIEW_METADATA.confidence_recovery` before output.
+Apply the shared confidence band policy from `../_shared/quality-gates.md`. This skill records the required evidence in the `Confidence Calibration` section and mirrors it in `CODE_REVIEW_METADATA.confidence_recovery` before output.
 
 Confidence must be honest and objectively verifiable. Do not raise confidence to pass the gate; improve evidence, reduce claim scope, or fail with the missing evidence named.
 
@@ -183,9 +183,9 @@ Confidence must be honest and objectively verifiable. Do not raise confidence to
 
 ### 12: Write and validate the mandatory result artifact
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `REVIEW_METADATA` and `FOLLOW_UP`; run the review-specific validator before the shared validator for skill `review`, then promote only the candidate accepted by both.
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `CODE_REVIEW_METADATA` and `FOLLOW_UP`; run the review-specific validator before the shared validator for skill `code-review`, then promote only the candidate accepted by both.
 
-`REVIEW_METADATA.specialist_passes` must mirror every triggered entry from `specialist-manifest.json`; `review_run_id` and `review_input_sha256` must mirror its top-level values. `REVIEW_METADATA.scope` must match the normalized input scope. `REVIEW_METADATA.review_decision` must mirror the `Decision Summary` recommendation, summary, and rationale. `REVIEW_METADATA.confidence_recovery` must mirror the `Confidence Calibration` section and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `REVIEW_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
+`CODE_REVIEW_METADATA.specialist_passes` must mirror every triggered entry from `specialist-manifest.json`; `review_run_id` and `review_input_sha256` must mirror its top-level values. `CODE_REVIEW_METADATA.scope` must match the normalized input scope. `CODE_REVIEW_METADATA.review_decision` must mirror the `Decision Summary` recommendation, summary, and rationale. `CODE_REVIEW_METADATA.confidence_recovery` must mirror the `Confidence Calibration` section and include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `CODE_REVIEW_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale.
 
 ## Fail-fast Rules
 
@@ -226,7 +226,7 @@ Conditional checks:
 
 Update calibration when review routing, severity discipline, decision vocabulary, or output shape changes:
 
-- benchmark patterns: `review`
+- benchmark patterns: `code-review`
 - behavioral cases: false blocker, missing specialist pass, no-finding residual risk, substituted fan-out confidence, PR online review triage, missing project docstring-style detection, missing code self-documentation, long code blocks, deep branching, docstrings masking poor structure, low-confidence recovery loop, objective confidence evidence
 - PR routing cases: target-branch refresh required, local checkout required, stale local PR branch, and raw-file snapshot rejection
 

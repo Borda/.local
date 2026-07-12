@@ -1,6 +1,6 @@
 # 🤖 Codex CLI — Deep Reference
 
-Self-contained multi-agent configuration for OpenAI Codex CLI. This file covers agent spawn rules, specialist orchestration, model strategy, execution architecture, skill usage, calibration, PR review-to-resolve flow, and optional home sync.
+Self-contained multi-agent configuration for OpenAI Codex CLI. This file covers agent spawn rules, specialist orchestration, model strategy, execution architecture, skill usage, calibration, PR code-review-to-remediation flow, and optional home sync.
 
 ## What This Enables
 
@@ -10,9 +10,9 @@ Core capabilities this Codex setup adds:
 
 **Specialist orchestration without context flooding.** The shared orchestration policy splits broad work into narrow context packs. Specialists receive only the files, hunks, logs, comments, and questions relevant to their axis; the parent agent consolidates conflicts and owns the final decision.
 
-**Workflow backbone.** The `review`, `develop`, `resolve`, `audit`, `calibrate`, `release`, `investigate`, `manage`, `analyse`, `optimize`, `research`, and `sync` skills enforce the same discipline: quality gates run, findings are classified by severity, confidence gaps are recorded, and a structured artifact lands under `.reports/codex/<skill>/<timestamp>/`.
+**Workflow backbone.** The `code-review`, `develop`, `code-remediate`, `audit`, `calibrate`, `release`, `investigate`, `manage`, `analyse`, `optimize`, `research`, and `sync` skills enforce the same discipline: quality gates run, findings are classified by severity, confidence gaps are recorded, and a structured artifact lands under `.reports/codex/<skill>/<timestamp>/`.
 
-**PR review-to-resolve loop.** `$review #123` creates the review artifact. `$resolve #123 +review` finds the newest matching report, re-fetches current PR comments/reviews/threads, checks out the PR locally, fetches the target branch, records merge-conflict context, asks which findings to resolve, groups selected work, and assigns it to the right owner/verifier before editing.
+**PR code-review-to-remediation loop.** `$code-review #123` creates the review artifact. `$code-remediate #123 +review` finds the newest matching report, re-fetches current PR comments/reviews/threads, checks out the PR locally, fetches the target branch, records merge-conflict context, asks which findings to resolve, groups selected work, and assigns it to the right owner/verifier before editing.
 
 **Confidence calibration and offline CI.** Skill and agent behavior is measured with fixed calibration fixtures plus live observations. The offline harness runs in CI without contacting Codex, OpenAI, GitHub, curl, or wget.
 
@@ -44,7 +44,7 @@ Core capabilities this Codex setup adds:
 
 This repo (`.codex/`) is the source of truth. Home (`~/.codex/`) is a downstream runtime copy. Use the agent-led `sync` skill with `mode=check` first, then approve `mode=apply`, `source=project`, and the exact target allowlist. `.codex/sync-manifest.json` is the only portable surface; the agent backs up mutations, semantically merges managed TOML keys, and preserves home-only runtime state.
 
-The `sync` skill compares only manifest targets, writes drift/action/post-check artifacts, and applies changes only after explicit home-write approval and backups. It has no dedicated Python runtime or vendored dependencies. Retired managed paths need separate approval. Ordinary review/develop/resolve usage does not require a sync.
+The `sync` skill compares only manifest targets, writes drift/action/post-check artifacts, and applies changes only after explicit home-write approval and backups. It has no dedicated Python runtime or vendored dependencies. Retired managed paths need separate approval. Ordinary `code-review`/`develop`/`code-remediate` usage does not require a sync.
 
 <details>
 <summary><strong>Install</strong></summary>
@@ -61,24 +61,25 @@ Then run the guarded `sync` workflow; raw `cp -r .codex/ ~/.codex/` nests the so
 
 ### Reference table
 
-Agents are tiered by task risk and explicit user routing preference. The daily default, review parent, implementation, verification, runtime, data, performance, research-method, curation, and adversarial-challenge roles use `gpt-5.6-terra`. Documentation, CI/CD stewardship, web-evidence, OSS, and static-analysis roles use `gpt-5.6-luna`. Only security and solution architecture use `gpt-5.6-sol`. Every role defaults to `high`.
+Agents are tiered by task risk and explicit user routing preference. The daily default, review parent, implementation, verification, runtime, data, performance, research-method, curation, and adversarial-challenge roles use `gpt-5.6-terra`. Delegation coordination, documentation, CI/CD stewardship, web-evidence, OSS, and static-analysis roles use `gpt-5.6-luna`. Only security and solution architecture use `gpt-5.6-sol`. Every role defaults to `high`.
 
-| Agent                  | Model         | Effort | Purpose                                                                 |
-| ---------------------- | ------------- | ------ | ----------------------------------------------------------------------- |
-| **sw-engineer**        | gpt-5.6-terra | high   | SOLID implementation, doctest-driven dev, ML pipeline architecture      |
-| **qa-specialist**      | gpt-5.6-terra | high   | Edge-case matrix, project standard, adversarial test review             |
-| **squeezer**           | gpt-5.6-terra | high   | Profile-first optimization, GPU throughput, memory efficiency           |
-| **doc-scribe**         | gpt-5.6-luna  | high   | 6-point Google/Napoleon docstrings, README stewardship, CHANGELOG       |
-| **security-auditor**   | gpt-5.6-sol   | high   | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*     |
-| **data-steward**       | gpt-5.6-terra | high   | Split leakage, DataLoader reproducibility, augmentation correctness     |
-| **cicd-steward**       | gpt-5.6-luna  | high   | GitHub Actions permissions, trusted publishing, matrix/cache, flaky CI  |
-| **linting-expert**     | gpt-5.6-luna  | high   | ruff, mypy, pre-commit config, rule progression, suppression discipline |
-| **oss-shepherd**       | gpt-5.6-luna  | high   | Issue triage, PR review, SemVer, pyDeprecate, release checklist         |
-| **solution-architect** | gpt-5.6-sol   | high   | System design, ADRs, API compatibility, migration planning              |
-| **web-explorer**       | gpt-5.6-luna  | high   | External docs/release-note extraction and evidence gathering            |
-| **curator**            | gpt-5.6-terra | high   | Config quality checks, drift/leak detection, workflow hygiene           |
-| **challenger**         | gpt-5.6-terra | high   | 6-axis adversarial plan, architecture, migration, and diff review       |
-| **scientist**          | gpt-5.6-terra | high   | Paper analysis, ML hypothesis design, ablations, experiment validation  |
+| Agent                  | Model         | Effort | Purpose                                                                  |
+| ---------------------- | ------------- | ------ | ------------------------------------------------------------------------ |
+| **delegation-lead**    | gpt-5.6-luna  | high   | Cost-aware workstream routing and handover-gate consolidation            |
+| **sw-engineer**        | gpt-5.6-terra | high   | SOLID implementation, doctest-driven dev, ML pipeline architecture       |
+| **qa-specialist**      | gpt-5.6-terra | high   | Edge-case matrix, project standard, adversarial test review              |
+| **squeezer**           | gpt-5.6-terra | high   | Profile-first optimization evidence and recommendations *(read-only)*    |
+| **doc-scribe**         | gpt-5.6-luna  | high   | Project-style-first docstrings, executable examples, README, CHANGELOG   |
+| **security-auditor**   | gpt-5.6-sol   | high   | OWASP Python, ML supply chain, secrets, CI/CD hygiene *(read-only)*      |
+| **data-steward**       | gpt-5.6-terra | high   | Split leakage, DataLoader reproducibility, augmentation correctness      |
+| **cicd-steward**       | gpt-5.6-luna  | high   | GitHub Actions permissions, trusted publishing, matrix/cache, flaky CI   |
+| **linting-expert**     | gpt-5.6-luna  | high   | ruff, mypy, pre-commit config, rule progression, suppression discipline  |
+| **oss-shepherd**       | gpt-5.6-luna  | high   | OSS governance, contributor drafts, SemVer, release checks *(read-only)* |
+| **solution-architect** | gpt-5.6-sol   | high   | System design, ADRs, API compatibility, migration planning               |
+| **web-explorer**       | gpt-5.6-luna  | high   | External docs/release-note extraction and evidence *(read-only)*         |
+| **curator**            | gpt-5.6-terra | high   | Config quality checks, drift/leak detection, workflow hygiene            |
+| **challenger**         | gpt-5.6-terra | high   | 6-axis adversarial plan, architecture, migration, and diff review        |
+| **scientist**          | gpt-5.6-terra | high   | Paper analysis, ML hypothesis design, ablations, experiment validation   |
 
 ### Spawn rules
 
@@ -86,6 +87,7 @@ Codex selects agents autonomously based on task type (defined in `AGENTS.md`). Y
 
 Automatic spawn patterns (from `AGENTS.md`):
 
+- `delegation-lead` decomposes multi-workstream tasks, selects the lowest-cost capable Luna/Terra/Sol specialists, and returns one gated handover to the parent
 - Symptom-first failures route to `investigate` before implementation: failing tests, failing CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, and workaround requests without verified cause
 - `sw-engineer` handles core implementation; on completion Codex can fan out to `qa-specialist` + `doc-scribe`
 - `security-auditor` is used when tasks touch auth, credentials, external APIs, model weights, or deserialization
@@ -104,6 +106,8 @@ When to address by name vs letting Codex decide:
 
 The shared policy lives in `.codex/skills/_shared/specialist-orchestration.md`.
 
+For work that splits into two or more disjoint streams, the Luna-based `delegation-lead` first decides whether fan-out saves total model cost or wall time after handoff overhead. It routes bounded support work to Luna roles, implementation/runtime/testing work to Terra roles, and only architecture or security to Sol. Nested depth is limited to 2: parent → delegation lead → specialist. The leader consolidates ownership, evidence, checks, conflicts, confidence, and unresolved limits; the parent still owns executable and behavior-changing acceptance.
+
 Orchestration is used when work crosses multiple domains, needs independent verification, or can be split into parallel evidence gathering without sending every specialist the same full context. It stays single-agent when the task is narrow, local, and the handoff would duplicate the parent context.
 
 Every spawned or substituted specialist pass needs:
@@ -114,9 +118,9 @@ Every spawned or substituted specialist pass needs:
 
 High-benefit orchestrated skills:
 
-- `review`: QA and challenge are mandatory for broad/high-risk diffs and risk-triggered for local diffs; architecture, security, CI, docs, data, performance, research, and web specialists trigger conditionally.
+- `code-review`: QA and challenge are mandatory for broad/high-risk diffs and risk-triggered for local diffs; architecture, security, CI, docs, data, performance, research, and web specialists trigger conditionally.
 - `develop`: public API, regression, CI/tooling, security, ML/data, docs, and broad changes get owner/verifier plans.
-- `resolve`: selected findings are grouped into work clusters, assigned to primary owners and verifiers, then closed with evidence.
+- `code-remediate`: selected findings are grouped into work clusters, assigned to primary owners and verifiers, then closed with evidence.
 - `investigate`: broad symptoms split into hypothesis-specific specialist probes before root cause is claimed.
 
 Conditional orchestration exists in `analyse`, `research`, `release`, `audit`, and `optimize`. `sync`, `manage`, and `calibrate` stay mostly linear because serial safety and deterministic scoring matter more than fan-out.
@@ -130,6 +134,7 @@ Session defaults:
 - `model_reasoning_effort = "high"`
 - `approval_policy = "on-request"`
 - `sandbox_mode = "workspace-write"`
+- `commit_attribution = "Co-authored-by: Codex <codex@openai.com>"`
 
 Agent model allocation:
 
@@ -150,27 +155,27 @@ Codex built-in slash commands (for example `/fast`) work normally.
 
 Mirrored workflow skills in `.codex/skills/*` are instruction assets, not custom slash commands. That means:
 
-- `/investigate`, `/resolve`, `/review` are not recognized as Codex slash commands in this setup
+- `/investigate`, `/code-remediate`, `/code-review` are not recognized as Codex slash commands in this setup
 - Use prompt-based invocation instead
 
 ### Skill capabilities
 
 Each skill enforces a complete quality loop that prompt-style invocation does not: structured input schema, mandatory gates (lint, format, types, tests), severity classification, and a result artifact.
 
-| Skill         | What it enables                                                                                                                                                                        |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review`      | Diff-scoped, multi-axis review with measurable gates: classifies findings by severity, emits a structured recommendation, and writes comparable JSON artifacts                         |
-| `develop`     | TDD-first implementation with specialist owner/verifier planning for broad changes; requires root-cause evidence for symptom-first failures before implementation                      |
-| `resolve`     | Findings closure with current PR evidence: asks scope, groups selected items, assigns specialist owners/verifiers, applies fixes in priority order, reruns gates, and surfaces remains |
-| `audit`       | Config hygiene: detects broken refs, inventory drift, instruction overlap; produces a scored report with keep/sharpen/prune recommendations                                            |
-| `calibrate`   | Benchmarks recall vs confidence bias on a fixed task set and emits measured recommendations for the next fixes or improvements                                                         |
-| `release`     | SemVer-disciplined release: changelog entry, migration guide, and readiness check in one structured pass                                                                               |
-| `investigate` | Root-cause diagnosis for unknown failures and code debugging — tracebacks, failing tests, env, tools, hooks, CI divergence — with ranked hypotheses and a handoff artifact             |
-| `manage`      | Scaffolds agents, skills, and config with cross-ref propagation; prevents orphaned references                                                                                          |
-| `analyse`     | Deep inspection of a scope (module, issue thread, PR) — surfaces structural findings that diff-level review misses                                                                     |
-| `optimize`    | Profile-first optimization: measures before and after, rejects changes that don't improve the target metric                                                                            |
-| `research`    | SOTA lookup anchored to the codebase — finds relevant techniques and maps them to concrete implementation entry points                                                                 |
-| `sync`        | Optional agent-led project/home `.codex` drift report and approved manifest-scoped copy; not needed for ordinary skill usage                                                           |
+| Skill            | What it enables                                                                                                                                                                        |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code-review`    | Diff-scoped, multi-axis review with measurable gates: classifies findings by severity, emits a structured recommendation, and writes comparable JSON artifacts                         |
+| `develop`        | TDD-first implementation with specialist owner/verifier planning for broad changes; requires root-cause evidence for symptom-first failures before implementation                      |
+| `code-remediate` | Findings closure with current PR evidence: asks scope, groups selected items, assigns specialist owners/verifiers, applies fixes in priority order, reruns gates, and surfaces remains |
+| `audit`          | Config hygiene: detects broken refs, inventory drift, instruction overlap; produces a scored report with keep/sharpen/prune recommendations                                            |
+| `calibrate`      | Benchmarks recall vs confidence bias on a fixed task set and emits measured recommendations for the next fixes or improvements                                                         |
+| `release`        | SemVer-disciplined release: changelog entry, migration guide, and readiness check in one structured pass                                                                               |
+| `investigate`    | Root-cause diagnosis for unknown failures and code debugging — tracebacks, failing tests, env, tools, hooks, CI divergence — with ranked hypotheses and a handoff artifact             |
+| `manage`         | Scaffolds agents, skills, and config with cross-ref propagation; prevents orphaned references                                                                                          |
+| `analyse`        | Deep inspection of a scope (module, issue thread, PR) — surfaces structural findings that diff-level review misses                                                                     |
+| `optimize`       | Profile-first optimization: measures before and after, rejects changes that don't improve the target metric                                                                            |
+| `research`       | SOTA lookup anchored to the codebase — finds relevant techniques and maps them to concrete implementation entry points                                                                 |
+| `sync`           | Optional agent-led project/home `.codex` drift report and approved manifest-scoped copy; not needed for ordinary skill usage                                                           |
 
 ### Usage examples
 
@@ -180,22 +185,22 @@ Interactive prompt usage:
 run investigate on this branch and find root cause of failing CI
 run investigate before fixing this failing pytest; do not suggest a workaround unless it is explicitly temporary
 run investigate this traceback before changing the code
-run resolve on the current working tree and fix high-severity findings
-run review, then develop, then audit for issue #42
-$review #123
-$resolve #123 +review
+run code-remediate on the current working tree and fix high-severity findings
+run code-review, then develop, then audit for issue #42
+$code-review #123
+$code-remediate #123 +review
 ```
 
 One-shot shell usage:
 
 ```bash
 codex "run investigate for current failing pytest and write findings artifact"
-codex "run resolve on this diff and apply required quality gates"
-codex '$review #123'
-codex '$resolve #123 +review'
+codex "run code-remediate on this diff and apply required quality gates"
+codex '$code-review #123'
+codex '$code-remediate #123 +review'
 ```
 
-`$review` and `$resolve` are in-session skill invocation shorthands. Quote them in shell prompts so the shell does not expand `$review` or `$resolve` as environment variables.
+`$code-review` and `$code-remediate` are in-session skill invocation shorthands. Quote them in shell prompts so the shell does not expand `$code-review` or `$code-remediate` as environment variables.
 
 Agent targeting examples:
 
@@ -232,6 +237,7 @@ Note: current Codex `PreToolUse` parsing does not apply in-place command rewrite
 Configured in `config.toml`:
 
 ```toml
+[agents]
 max_threads = 4
 max_depth = 2
 job_max_runtime_seconds = 3600
@@ -239,16 +245,17 @@ job_max_runtime_seconds = 3600
 
 How Codex schedules agents:
 
-1. The lead agent (or base session) classifies the task and decides which specialists to spawn
+1. The parent classifies indivisible work directly or delegates multi-workstream routing to `delegation-lead`
 2. Agents spawn concurrently up to `max_threads`
-3. Agents at depth 2 cannot spawn further (`max_depth = 2`)
-4. Jobs exceeding `job_max_runtime_seconds` are stopped and surfaced to the orchestrator
+3. The delegation lead may spawn registered specialists one level below it (`max_depth = 2`); specialists do not create another orchestration layer
+4. Specialist handovers return through the delegation lead and then the parent acceptance gate
+5. `job_max_runtime_seconds` is the default per-worker timeout for `spawn_agents_on_csv`; ordinary spawned turns use their own runtime controls
 
 ### Skills and gates
 
 Workflow backbone:
 
-- Core loop: `review`, `develop`, `resolve`, `audit`
+- Core loop: `code-review`, `develop`, `code-remediate`, `audit`
 - Extended set: `calibrate`, `release`, `investigate`, `sync`, `manage`, `analyse`, `optimize`, `research`
 
 Shared gate references:
@@ -310,38 +317,42 @@ Run Codex as a cold reviewer when you want a separate pass over local changes or
 ```bash
 codex "review the current diff with no prior assumptions"
 codex "review the diff in src/mypackage/ and write a review artifact"
-codex '$review #123'
+codex '$code-review #123'
 ```
 
-Codex reads `git diff` or a locally checked-out PR branch with online review evidence, applies the full `review` skill workflow, classifies findings by severity, emits a decision recommendation (`accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`), and writes `.reports/codex/review/<timestamp>/result.json`. `$review #123` is the canonical in-session PR review invocation; when launching from a shell, wrap it in single quotes so `$review` is not expanded by the shell.
+Codex reads `git diff` or a locally checked-out PR branch with online review evidence, applies the full `code-review` skill workflow, classifies findings by severity, emits a decision recommendation (`accept-as-is`, `minor-changes`, `needs-more-work`, `reject`, or `not-aligned`), and writes `.reports/codex/code-review/<timestamp>/result.json`. `$code-review #123` is the canonical in-session PR review invocation; when launching from a shell, wrap it in single quotes so `$code-review` is not expanded by the shell.
 
-For PR review, Codex collects `gh pr view`, `gh pr diff`, PR comments, PR reviews, review threads, and unresolved review threads into the same report directory, fetches the PR target branch, then runs `gh pr checkout <number>` so code inspection uses the current local PR branch. It must not reconstruct changed files with raw GitHub URLs. Codex must not pass `--force` to any `git` or `gh` command automatically; if a forced checkout/update appears necessary, it stops and asks with the reason and overwrite risk. Resolve flow then starts from that report:
+For PR review, Codex collects `gh pr view`, `gh pr diff`, PR comments, PR reviews, review threads, and unresolved review threads into the same report directory, fetches the PR target branch, then runs `gh pr checkout <number>` so code inspection uses the current local PR branch. It must not reconstruct changed files with raw GitHub URLs. Codex must not pass `--force` to any `git` or `gh` command automatically; if a forced checkout/update appears necessary, it stops and asks with the reason and overwrite risk. The code-remediation flow then starts from that report:
 
 ```bash
-codex "resolve PR 123 using .reports/codex/review/<timestamp>/result.json; triage online review comments before editing"
-codex '$resolve #123 +review'
+codex "remediate PR 123 using .reports/codex/code-review/<timestamp>/result.json; triage online review comments before editing"
+codex '$code-remediate #123 +review'
 ```
 
-`$resolve #123 +review` auto-selects the newest `.reports/codex/review/*/result.json` whose sibling `pr.json` matches PR `123`, then re-collects current PR comments/reviews, fetches the latest target branch, updates the local PR checkout, and writes a merge-conflict pre-stage before applying report or online-review findings. That pre-stage records the clean PR intent, latest target-branch context, conflict risk, and collision resolution strategy so conflicts are resolved semantically instead of from noisy conflict markers alone.
+`$code-remediate #123 +review` auto-selects the newest `.reports/codex/code-review/*/result.json` whose sibling `pr.json` matches PR `123`, then re-collects current PR comments/reviews, fetches the latest target branch, updates the local PR checkout, and writes a merge-conflict pre-stage before applying report or online-review findings. That pre-stage records the clean PR intent, latest target-branch context, conflict risk, and collision resolution strategy so conflicts are resolved semantically instead of from noisy conflict markers alone.
 
-After that, resolve triages each item as `valid`, `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`, or `needs-clarification`, starts terminal output with a resolution table, and asks which selectable findings to resolve before editing unless the resolve scope was supplied up front. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, and residual risks are report-origin resolution items; they are not marked `out-of-scope` just because closure needs an independent reviewer, full gates, CI, or an installed tool. PR comments or review items connected to the PR purpose, changed diff, adjacent verification, or unknown relation remain selectable or visible as required follow-up so the user can rule them into the PR. Any `out-of-scope` item needs a specific rationale and explicit user confirmation before it is removed from the selectable list. The selection prompt supports `all`, severity groups such as `critical,high`, or indexed items such as `1,3,5-7`; online PR items already marked resolved are omitted from the selectable list but kept in the audit table. `$resolve #123 +report` remains a compatibility alias.
+After that, code-remediate triages each item as `valid`, `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`, or `needs-clarification`, starts terminal output with a resolution table, and asks which selectable findings to remediate before editing unless the remediation scope was supplied up front. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, and residual risks are report-origin resolution items; they are not marked `out-of-scope` just because closure needs an independent reviewer, full gates, CI, or an installed tool. PR comments or review items connected to the PR purpose, changed diff, adjacent verification, or unknown relation remain selectable or visible as required follow-up so the user can rule them into the PR. Any `out-of-scope` item needs a specific rationale and explicit user confirmation before it is removed from the selectable list. The selection prompt supports `all`, severity groups such as `critical,high`, or indexed items such as `1,3,5-7`; online PR items already marked resolved are omitted from the selectable list but kept in the audit table. `$code-remediate #123 +report` remains a compatibility alias.
 
-Before editing selected findings, resolve writes `.reports/codex/resolve/<timestamp>/resolution-workplan.md`. The workplan groups selected items by shared root cause, closure type, affected files, verification command, or merge risk. Each group records selected indexes, severity range, grouping rationale, primary owner, verifier, context pack path, expected closure evidence, dependencies, and execution status. Parent-owned tiny items stay in `Ungrouped Items`; specialist-owned groups get narrow context packs under `$OUT_DIR/specialists/`. The shared validator fails selected-item runs that lack workplan groups, leave selected items unassigned, or omit owner/verifier/context/closure evidence.
+Before editing selected findings, code-remediate writes `.reports/codex/code-remediate/<timestamp>/resolution-workplan.md`. The workplan groups selected items by shared root cause, closure type, affected files, verification command, or merge risk. Each group records selected indexes, severity range, grouping rationale, primary owner, verifier, context pack path, expected closure evidence, dependencies, and execution status. Parent-owned tiny items stay in `Ungrouped Items`; specialist-owned groups get narrow context packs under `$OUT_DIR/specialists/`. The shared validator fails selected-item runs that lack workplan groups, leave selected items unassigned, or omit owner/verifier/context/closure evidence.
 
-Path-free PR review-to-resolve flow:
+Path-free PR code-review-to-remediation flow:
 
 Inside an active Codex session:
 
 ```text
-$review #222222
-$resolve #222222 +review
+$code-review #222222
+$code-remediate #222222 +review
 ```
 
 From a shell, pass the same in-session invocations as quoted prompts:
 
 ```bash
-codex '$review #222222'
-codex '$resolve #222222 +review'
+codex '$code-review #222222'
+codex '$code-remediate #222222 +review'
 ```
 
-The resolve command finds the newest matching review report automatically; you do not need to paste `.reports/codex/review/<timestamp>/result.json`. Use single quotes around `$review` and `$resolve` only in shell examples so the shell does not expand them as environment variables.
+The code-remediate skill finds the newest matching review report automatically; you do not need to paste `.reports/codex/code-review/<timestamp>/result.json`. Use single quotes around `$code-review` and `$code-remediate` only in shell examples so the shell does not expand them as environment variables.
+
+### Skill rename compatibility
+
+`code-review` and `code-remediate` are the canonical Codex-native skill names. Historical artifacts under `.reports/codex/review/` and `.reports/codex/resolve/` remain read-only records; the review-report finder searches the legacy review directory as a fallback. Old `$review` and `$resolve` invocations are not canonical aliases and should be updated at their call sites.

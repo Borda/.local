@@ -7,7 +7,7 @@ description: Agent-led project/home Codex mirror workflow. Use to report manifes
 
 Run a dry-run-first, agent-led sync between the project `.codex` mirror and the active home `~/.codex`. No dedicated sync runtime is required. The agent reads the exact manifest, reasons about config differences, applies only approved actions, and produces auditable artifacts.
 
-The dry-run default is mandatory. Managed documentation includes `.codex/AGENTS.md` and `.codex/README.md`. Agents never delete home-only state; only explicitly approved manifest `retired_paths` may be retired after backup.
+The dry-run default is mandatory. Managed documentation includes `.codex/AGENTS.md` and `.codex/README.md`. Keep `commit_attribution` in the manifest-managed root config so project and home commit trailers remain aligned. Agents never delete home-only state; only explicitly approved manifest `retired_paths` may be retired after backup.
 
 ## Input Schema
 
@@ -44,7 +44,7 @@ For every exact file in the selected manifest groups:
 3. Classify `identical`, `changed`, `source-only`, or `destination-only`.
 4. Record the proposed direction and whether an overwrite, creation, retirement, or semantic merge would occur.
 
-For `config.toml`, read both files and compare only the managed root keys, feature keys, registered agent names, and skill paths declared in the manifest. Treat TOML as structured configuration in reasoning; never use broad regex replacement. Preserve every destination-only key/table/registration unless the user explicitly selects it for removal.
+For `config.toml`, read both files and compare only the managed root keys, feature keys, `[agents]` setting keys, registered agent names, and skill paths declared in the manifest. Treat TOML as structured configuration in reasoning; never use broad regex replacement. Preserve every destination-only key/table/registration unless the user explicitly selects it for removal.
 
 For `hooks.json`, inspect only `retired_hook_command_substrings`. Preserve unrelated hook events, groups, and commands.
 
@@ -70,7 +70,7 @@ Only manifest-listed retired paths may be deleted, and only after backup plus ex
 Repeat the exact dry-run comparison after apply. `post-sync.json` passes only when:
 
 - every selected ordinary managed file is identical
-- managed config keys, agents, features, and skills match the selected source
+- managed root keys, agent settings/registrations, features, and skills match the selected source
 - destination-only config and unrelated hooks remain present
 - every approved retired path is absent
 - every action has a verified backup and post-change hash

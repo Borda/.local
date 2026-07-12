@@ -12,16 +12,16 @@ personality                        = "pragmatic"
 suppress_unstable_features_warning = true
 project_doc_fallback_filenames     = ["CONTRIBUTING.md", "CONTRIBUTING", "docs/CONTRIBUTING.md"]
 commit_attribution                 = "Co-authored-by: Codex <codex@openai.com>"
-# agents
+
+[features]
+multi_agent = true
+personality = true
+hooks       = true
+
+[agents]
 max_threads             = 4
 max_depth               = 2
 job_max_runtime_seconds = 3600
-
-[features]
-multi_agent     = true
-child_agents_md = true  # propagate AGENTS.md scope to sub-agents
-personality     = true
-hooks           = true
 
 [tui]
 status_line = [
@@ -37,7 +37,7 @@ url = "https://developers.openai.com/mcp"
 [skills]
 
 [[skills.config]]
-path = "skills/review"
+path = "skills/code-review"
 enabled = true
 
 [[skills.config]]
@@ -45,7 +45,7 @@ path = "skills/develop"
 enabled = true
 
 [[skills.config]]
-path = "skills/resolve"
+path = "skills/code-remediate"
 enabled = true
 
 [[skills.config]]
@@ -97,7 +97,7 @@ description = "Performance profiling and memory optimization: profile-first, ben
 config_file = "agents/squeezer.toml"
 
 [agents.doc-scribe]
-description = "Documentation: 6-point Google/Napoleon docstring structure, README stewardship, CHANGELOG management."
+description = "Documentation: project-style-first docstrings, executable examples, README stewardship, and CHANGELOG management."
 config_file = "agents/doc-scribe.toml"
 
 [agents.security-auditor]
@@ -109,7 +109,7 @@ description = "ML data pipeline integrity: split leakage, DataLoader reproducibi
 config_file = "agents/data-steward.toml"
 
 [agents.cicd-steward]
-description = "CI/CD reliability: GitHub Actions permissions, trusted publishing, matrix/caching, pre-commit automation, flaky CI."
+description = "CI/CD reliability: GitHub Actions workflow permissions, trusted publishing, matrix/caching design, pre-commit automation, and flaky CI diagnosis."
 config_file = "agents/cicd-steward.toml"
 
 [agents.linting-expert]
@@ -133,9 +133,13 @@ description = "Configuration quality reviewer: detect duplication, drift, stale 
 config_file = "agents/curator.toml"
 
 [agents.challenger]
-description = "Adversarial review: 6-axis stress-test of plans, architecture, migrations, and non-trivial diffs with refutation."
+description = "Adversarial review: 6-axis stress-test of plans, architecture, migrations, and non-trivial diffs with root-cause drill and mandatory refutation."
 config_file = "agents/challenger.toml"
 
 [agents.scientist]
 description = "AI/ML research specialist: paper analysis, hypothesis design, ablations, and experiment-method verification."
 config_file = "agents/scientist.toml"
+
+[agents.delegation-lead]
+description = "Cost-aware orchestration leader: route bounded workstreams across Luna, Terra, and Sol specialists and enforce handover gates."
+config_file = "agents/delegation-lead.toml"

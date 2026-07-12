@@ -21,7 +21,7 @@ For docs, dependencies, CI/CD, releases, security, and deprecations, prefer curr
 - When multiple agents contribute, keep handoffs compact and ownership clear. Never redo another agent's work unless you are resolving a conflict or an explicit gap.
 - If progress stalls or the path starts to drift, re-plan instead of forcing the current approach through.
 - When confidence is limited, say so explicitly and separate verified facts from hypotheses.
-- Treat symptom-first failures as investigation tasks before implementation. Failing tests or CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, and user reports that describe symptoms without a verified cause must route through `investigate` or equivalent documented evidence before `develop`, `resolve`, or workaround recommendations.
+- Treat symptom-first failures as investigation tasks before implementation. Failing tests or CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, and user reports that describe symptoms without a verified cause must route through `investigate` or equivalent documented evidence before `develop`, `code-remediate`, or workaround recommendations.
 - Workarounds are temporary mitigations only. Do not present a workaround-only change or answer as complete unless the user explicitly requests a temporary mitigation; label the mitigation and the remaining root-cause work.
 
 ## Coordination Discipline
@@ -34,7 +34,7 @@ For docs, dependencies, CI/CD, releases, security, and deprecations, prefer curr
 
 ## Runtime Effort Policy
 
-The session default, review parent, implementation, verification, data, performance, research, curation, and adversarial-challenge specialists use `gpt-5.6-terra` at `high`. Documentation, CI/CD stewardship, web-evidence, OSS triage, and static-analysis specialists use `gpt-5.6-luna` at `high`; final behavior-changing and executable acceptance decisions remain parent-owned or transfer to the relevant Terra or Sol role. Use `gpt-5.6-sol` at `high` only for security and solution architecture. Luna activation is an explicit user preference retained separately from the recorded strict route failure.
+The session default, review parent, implementation, verification, data, performance, research, curation, and adversarial-challenge specialists use `gpt-5.6-terra` at `high`. Delegation coordination, documentation, CI/CD stewardship, web-evidence, OSS triage, and static-analysis specialists use `gpt-5.6-luna` at `high`; final behavior-changing and executable acceptance decisions remain parent-owned or transfer to the relevant Terra or Sol role. Use `gpt-5.6-sol` at `high` only for security and solution architecture. Luna activation is an explicit user preference retained separately from the recorded strict route failure.
 
 Default reasoning effort is `high` for every configured role. Reserve `xhigh` or `max` for explicit task-level escalation after representative evidence shows that `high` is insufficient:
 
@@ -142,26 +142,35 @@ ______________________________________________________________________
 
 ### Default execution mode
 
-Default to the main agent. Spawn specialists only when the expected gain from specialized depth or parallelism exceeds the coordination cost.
+Default to the main agent for indivisible work. Use `delegation-lead` when a task has multiple separable workstreams and routing them across the configured Luna, Terra, and Sol roles is expected to reduce total cost or elapsed time after coordination overhead.
 
 Stay in the main agent when:
 
-- The change is narrow, local, or single-subsystem
-- The task fits in roughly one to three files
+- The work cannot be split into disjoint ownership or evidence axes
 - The handoff would duplicate context the parent already has
-- Independent verification can be done directly without losing momentum
+- Preparing, waiting for, and validating delegation would cost more than direct execution
+- The next action is a single parent-owned acceptance or destructive-action decision
+
+Use the delegation lead when:
+
+- Two or more independent domains, file sets, evidence searches, or verification commands can proceed without overlapping ownership
+- A lower-cost registered Luna role can own bounded support work while Terra or Sol retains behavior, architecture, security, or executable acceptance
+- Parallel work is likely to reduce wall time without flooding every specialist with the same context
+- The task needs an explicit routing ledger and consolidated handover
 
 Parent agent responsibilities:
 
 - Scope the task, owned files, and acceptance criteria before delegation
 - Integrate subagent outputs back into one coherent change
+- Inspect the delegation lead's handover ledger, relevant diffs, and verification evidence before accepting work
+- Reject scope widening, unsupported completion claims, or final acceptance transferred to a support role
 - Make final judgment on conflicts, overlaps, and release readiness
 
 ### Required workflow routing
 
 - Unknown failure/root-cause work starts with `investigate`: failing tests, failing CI, flaky behavior, regressions, tool or environment failures, unexplained metric changes, and any symptom-only report where the cause is not already verified.
 - Before implementation for those tasks, record the root-cause claim, supporting evidence, a falsification check, and at least one rejected alternative. If the evidence is missing, continue investigation instead of proposing a fix.
-- After `investigate`, hand off to the relevant domain agent or `develop`/`resolve` with the evidence summary. Temporary mitigations are allowed only when explicitly requested or required to unblock verification, and they must not be treated as the root fix.
+- After `investigate`, hand off to the relevant domain agent or `develop`/`code-remediate` with the evidence summary. Temporary mitigations are allowed only when explicitly requested or required to unblock verification, and they must not be treated as the root fix.
 
 ### Collaboration team patterns
 
@@ -173,11 +182,11 @@ Parent agent responsibilities:
 - Release readiness: `oss-shepherd` + `cicd-steward` + `doc-scribe` + `qa-specialist`
 - Research-paper implementation: `scientist` + `solution-architect` + `sw-engineer` + `qa-specialist`
 - High-risk plan validation: `challenger` + the relevant domain specialist before implementation
-- PR review-to-resolution: `review` with `scope=pr` writes the report after collecting PR evidence, fetching the target branch, and checking out/updating the PR locally. Then `resolve` with `mode=pr` re-collects online PR reviews, fetches the latest target branch and PR branch, records clean PR/target implementation context plus merge-conflict risk before editing, triages each comment, and fixes only valid selected findings in local code.
+- PR review-to-resolution: `code-review` with `scope=pr` writes the report after collecting PR evidence, fetching the target branch, and checking out/updating the PR locally. Then `code-remediate` with `mode=pr` re-collects online PR reviews, fetches the latest target branch and PR branch, records clean PR/target implementation context plus merge-conflict risk before editing, triages each comment, and fixes only valid selected findings in local code.
 
 ### Model escalation policy
 
-Use registered agent descriptions plus each role TOML's `TRIGGER`, `SKIP`, and `NOT for` clauses as the detailed routing source. Luna support roles hand executable verification, release-blocking, and API/runtime-changing ownership to the appropriate domain owner; solution architecture and security use Sol, while adversarial challenge and ordinary behavior/API work use Terra at high. Parallelize only disjoint evidence, tests, docs, or profiling work with clear ownership.
+Use `delegation-lead` plus registered agent descriptions and each role TOML's `TRIGGER`, `SKIP`, and `NOT for` clauses as the detailed routing source. Prefer the lowest-cost capable registered role: Luna for coordination and bounded support domains, Terra for implementation/runtime/testing and final executable verification, and Sol only for solution architecture or security. Luna support roles hand executable verification, release-blocking, and API/runtime-changing ownership to the appropriate Terra or Sol owner. Parallelize only disjoint evidence, tests, docs, or profiling work with clear ownership. Every delegated workstream must pass the shared handover gate in `skills/_shared/specialist-orchestration.md` before parent acceptance.
 
 ______________________________________________________________________
 

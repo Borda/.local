@@ -5,7 +5,7 @@ description: Minimal codex-native investigation loop. Use for unknown failures, 
 
 # Investigate
 
-Run a diagnosis-first loop for unclear failures, including code debugging from failing tests, tracebacks, regressions, and surprising runtime behavior. This skill produces a root-cause claim with evidence, falsification checks, and rejected alternatives before any fix is attempted. Use `investigate` for debugging until the root cause is established; then hand off to `develop` or `resolve` for the fix.
+Run a diagnosis-first loop for unclear failures, including code debugging from failing tests, tracebacks, regressions, and surprising runtime behavior. This skill produces a root-cause claim with evidence, falsification checks, and rejected alternatives before any fix is attempted. Use `investigate` for debugging until the root cause is established; then hand off to `develop` or `code-remediate` for the fix.
 
 ## Input Schema
 

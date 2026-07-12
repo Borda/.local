@@ -4,7 +4,7 @@
 
 Specialist-agent infrastructure for Python/ML OSS — the scaffolding that lets you maintain at scale without becoming a full-time reviewer.
 
-**14 specialist agents · 20+ Claude workflows · 12 Codex-native skills · 5 domain plugins** — opinionated [Claude Code](https://claude.ai/code) + [Codex CLI](https://github.com/openai/codex) configuration for Python/ML OSS maintainers, version-controlled and self-calibrating.
+**16 specialist roles across Claude and Codex · 20+ Claude workflows · 12 Codex-native skills · 5 domain plugins** — opinionated [Claude Code](https://claude.ai/code) + [Codex CLI](https://github.com/openai/codex) configuration for Python/ML OSS maintainers, version-controlled and self-calibrating.
 
 <details>
 <summary><strong>Contents</strong></summary>
@@ -30,30 +30,30 @@ Things not possible with vanilla Claude Code:
 
 - **Parallel multi-specialist PR review with convergence callouts.** `/oss:review` fans six specialist agents — architecture, tests, perf, docs, lint, security — plus an independent Codex pre-pass, all running simultaneously. The consolidator flags every finding that two or more reviewers independently raised. You see both per-dimension analysis and the overlap, in one report.
 
-- **Codex-native specialist orchestration.** Codex skills now split broad work into specialist-owned context packs instead of flooding every agent with the whole repo or PR thread. `review`, `develop`, `resolve`, and `investigate` can fan out to focused QA, architecture, docs, CI, security, data, performance, research, and challenge passes, then consolidate evidence into one decision.
+- **Codex-native specialist orchestration.** Codex skills now split broad work into specialist-owned context packs instead of flooding every agent with the whole repo or PR thread. `code-review`, `develop`, `code-remediate`, and `investigate` can fan out to focused QA, architecture, docs, CI, security, data, performance, research, and challenge passes, then consolidate evidence into one decision.
 
-- **PR review-to-resolve without report-path hunting.** Inside Codex, `$review #123` writes the review artifact. Later, `$resolve #123 +review` finds the newest matching report, re-collects current PR evidence, checks out the PR locally, fetches the target branch, pre-stages merge/conflict context, asks which findings to resolve, then applies only the selected work.
+- **PR code-review-to-remediation without report-path hunting.** Inside Codex, `$code-review #123` writes the review artifact. Later, `$code-remediate #123 +review` finds the newest matching report, re-collects current PR evidence, checks out the PR locally, fetches the target branch, pre-stages merge/conflict context, asks which findings to resolve, then applies only the selected work.
 
-- **Resolve workplans that assign selected findings to the right owner.** Before editing, Codex groups selected findings by root cause, closure type, affected files, verification command, or merge risk. Each group gets a primary owner, verifier, context pack, and expected closure evidence, so several related review comments become one coherent fix instead of scattered edits.
+- **Remediation workplans that assign selected findings to the right owner.** Before editing, Codex groups selected findings by root cause, closure type, affected files, verification command, or merge risk. Each group gets a primary owner, verifier, context pack, and expected closure evidence, so several related review comments become one coherent fix instead of scattered edits.
 
 - **Feature development that cannot skip the demo test.** `/develop:feature` requires a failing demo test to exist and pass review before a single line of production code is written. The gate is structural — the workflow does not proceed to implementation without it.
 
 - **Metric-driven experiment loops that auto-rollback on regression.** `/research:run` proposes a change, applies it, measures the target metric, and automatically reverts if the metric regresses — then tries the next hypothesis. The loop runs unattended; you set the goal and the guard, and review the committed result.
 
-- **Agent and skill calibration that measures overconfidence and workflow leaks.** `/foundry:calibrate` and `.codex/calibration/run.py` score recall, precision, confidence accuracy, stale assumptions, missing gates, fake fan-out claims, and unsafe PR/resolve behavior. The offline Codex harness runs those checks in CI without contacting any LLM.
+- **Agent and skill calibration that measures overconfidence and workflow leaks.** `/foundry:calibrate` and `.codex/calibration/run.py` score recall, precision, confidence accuracy, stale assumptions, missing gates, fake fan-out claims, and unsafe PR-remediation behavior. The offline Codex harness runs those checks in CI without contacting any LLM.
 
 ### vs. vanilla Claude Code
 
-| Capability             | Vanilla Claude Code                   | Borda's AI-Rig                                                                                             |
-| ---------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Code review            | Generalist single pass                | 6 specialists in parallel + Codex pre-pass; convergence callouts                                           |
-| Context flooding       | Context fills up across long sessions | File-based handoff — agents write full output to disk, return compact envelopes                            |
-| Confidence calibration | No mechanism                          | Claude + Codex calibration benchmark recall, precision, confidence accuracy, and workflow leaks            |
-| Demo-test gate         | Skippable                             | Structural gate — `/develop:feature` cannot proceed without passing demo test                              |
-| ML experiment safety   | Manual rollback                       | `/research:run` auto-reverts regressions; goal + guard are explicit inputs                                 |
-| Release discipline     | Manual                                | SemVer-aware `/oss:release` with deprecation tracking, migration guide, readiness audit                    |
-| PR finding resolution  | Manual comment chasing                | `$resolve #123 +review` re-fetches PR evidence, asks scope, groups selected items, and assigns specialists |
-| Token efficiency       | Default verbosity                     | RTK hook compresses Bash output 60–99%; caveman plugin cuts response tokens ~75%                           |
+| Capability             | Vanilla Claude Code                   | Borda's AI-Rig                                                                                                    |
+| ---------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Code review            | Generalist single pass                | 6 specialists in parallel + Codex pre-pass; convergence callouts                                                  |
+| Context flooding       | Context fills up across long sessions | File-based handoff — agents write full output to disk, return compact envelopes                                   |
+| Confidence calibration | No mechanism                          | Claude + Codex calibration benchmark recall, precision, confidence accuracy, and workflow leaks                   |
+| Demo-test gate         | Skippable                             | Structural gate — `/develop:feature` cannot proceed without passing demo test                                     |
+| ML experiment safety   | Manual rollback                       | `/research:run` auto-reverts regressions; goal + guard are explicit inputs                                        |
+| Release discipline     | Manual                                | SemVer-aware `/oss:release` with deprecation tracking, migration guide, readiness audit                           |
+| PR finding resolution  | Manual comment chasing                | `$code-remediate #123 +review` re-fetches PR evidence, asks scope, groups selected items, and assigns specialists |
+| Token efficiency       | Default verbosity                     | RTK hook compresses Bash output 60–99%; caveman plugin cuts response tokens ~75%                                  |
 
 ## ⚡ Quick Start
 
@@ -91,8 +91,11 @@ OSS, develop, and research skills always use their plugin prefix (`/oss:review`,
 > ```bash
 > git clone https://github.com/Borda/AI-Rig Borda-AI-Rig
 > npm install -g @openai/codex
-> cp -r Borda-AI-Rig/.codex/ ~/.codex/   # Codex agents, skills, and config
+> cd Borda-AI-Rig
+> codex 'run sync with mode=check, source=project, targets=skills,agents,config,calibration,docs,shared'
 > ```
+>
+> Review the dry-run report, then rerun `sync` with `mode=apply` and explicitly approve the selected home writes and any first-time bootstrap.
 
 → See [Token Savings (RTK)](#-token-savings-rtk) for RTK install details.
 
@@ -127,7 +130,7 @@ Each command chains agents in a defined topology — see [Common Workflow Sequen
 
 **With AI-Rig**: each part of the loop has a dedicated skill backed by a calibrated specialist agent. The agents know your conventions, enforce discipline at every gate, and feed corrections back into their own instructions. The feedback loop is closed.
 
-Managing AI coding workflows for Python/ML OSS is complex — you need domain-aware agents, not generic chat. This config packages 14 specialist agents and 20+ slash-command skill workflows across five focused plugins, in a version-controlled, continuously benchmarked setup optimized for:
+Managing AI coding workflows for Python/ML OSS is complex — you need domain-aware agents, not generic chat. This config packages 16 specialist roles across the Claude and Codex runtimes plus 20+ slash-command skill workflows across five focused plugins, in a version-controlled, continuously benchmarked setup optimized for:
 
 - Python/ML OSS libraries requiring SemVer discipline and deprecation cycles
 - ML training and inference codebases needing GPU profiling and data pipeline validation
@@ -147,26 +150,28 @@ A typical maintainer morning — 15 issues, 3 PRs, a release due — handled in 
 ## 🧩 Agents
 
 <details>
-<summary><strong>14 specialist agents (expand)</strong></summary>
+<summary><strong>16 specialist roles across runtimes (expand)</strong></summary>
 
 Specialist roles with deep domain knowledge — requested by name, or auto-selected by Claude Code and Codex CLI.
 
-| Agent                  | Claude [plugins] | Codex | Purpose                                                                                                                                                                               |
-| ---------------------- | ---------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **doc-scribe**         | 🟠 foundry       | ✓     | Google/Napoleon docstrings, Sphinx/mkdocs, API references                                                                                                                             |
-| **linting-expert**     | 🟠 foundry       | ✓     | ruff, mypy, pre-commit, type annotations                                                                                                                                              |
-| **perf-optimizer**     | 🟠 foundry       | —     | Profile-first CPU/GPU/memory/I/O, torch.compile                                                                                                                                       |
-| **qa-specialist**      | 🟠 foundry       | ✓     | pytest, hypothesis, mutation testing, ML test patterns                                                                                                                                |
-| **curator**            | 🟠 foundry       | ✓     | Config quality review, duplication detection, cross-ref audit                                                                                                                         |
-| **solution-architect** | 🟠 foundry       | ✓     | System design, ADRs, API surface, migration plans                                                                                                                                     |
-| **sw-engineer**        | 🟠 foundry       | ✓     | Architecture, implementation, SOLID principles, type safety                                                                                                                           |
-| **web-explorer**       | 🟠 foundry       | ✓     | API version comparison, migration guides, PyPI tracking                                                                                                                               |
-| **challenger**         | 🟠 foundry       | —     | Adversarial plan/architecture/code review; default-on in all develop skills + oss:review (`--no-challenge` to skip)                                                                   |
-| **creator**            | 🟠 foundry       | —     | Blog posts, Marp slide decks, social threads, talk abstracts — four-beat narrative arc (Problem→Journey→Insight→Action) calibrated to audience; reads `/foundry:create` outline files |
-| **cicd-steward**       | 🟢 oss           | ✓     | GitHub Actions, test matrices, flaky test detection, caching                                                                                                                          |
-| **shepherd**           | 🟢 oss           | ✓     | Issue triage, PR review, SemVer, releases, trusted publishing                                                                                                                         |
-| **data-steward**       | 🟣 research      | ✓     | Dataset versioning, split validation, leakage detection                                                                                                                               |
-| **scientist**          | 🟣 research      | —     | Paper analysis, hypothesis generation, experiment design                                                                                                                              |
+| Agent                         | Claude [plugins] | Codex | Purpose                                                                                                                                                                               |
+| ----------------------------- | ---------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **delegation-lead**           | —                | ✓     | Cost-aware leader that routes disjoint workstreams across Luna, Terra, and Sol specialists, then enforces a parent handover gate                                                      |
+| **doc-scribe**                | 🟠 foundry       | ✓     | Project-style-first docstrings, executable examples, Sphinx/mkdocs, API references                                                                                                    |
+| **security-auditor**          | 🟠 foundry       | ✓     | Read-only trust-boundary, secrets, dependency, deserialization, and ML supply-chain audit                                                                                             |
+| **linting-expert**            | 🟠 foundry       | ✓     | ruff, mypy, pre-commit, type annotations                                                                                                                                              |
+| **perf-optimizer / squeezer** | 🟠 foundry       | ✓     | Profile-first CPU/GPU/memory/I/O, torch.compile; Codex role is `squeezer`                                                                                                             |
+| **qa-specialist**             | 🟠 foundry       | ✓     | pytest, hypothesis, mutation testing, ML test patterns                                                                                                                                |
+| **curator**                   | 🟠 foundry       | ✓     | Config quality review, duplication detection, cross-ref audit                                                                                                                         |
+| **solution-architect**        | 🟠 foundry       | ✓     | System design, ADRs, API surface, migration plans                                                                                                                                     |
+| **sw-engineer**               | 🟠 foundry       | ✓     | Architecture, implementation, SOLID principles, type safety                                                                                                                           |
+| **web-explorer**              | 🟠 foundry       | ✓     | API version comparison, migration guides, PyPI tracking                                                                                                                               |
+| **challenger**                | 🟠 foundry       | ✓     | Adversarial plan/architecture/code review; default-on in all develop skills + oss:review (`--no-challenge` to skip)                                                                   |
+| **creator**                   | 🟠 foundry       | —     | Blog posts, Marp slide decks, social threads, talk abstracts — four-beat narrative arc (Problem→Journey→Insight→Action) calibrated to audience; reads `/foundry:create` outline files |
+| **cicd-steward**              | 🟢 oss           | ✓     | GitHub Actions, test matrices, flaky test detection, caching                                                                                                                          |
+| **shepherd / oss-shepherd**   | 🟢 oss           | ✓     | Issue triage, PR review, SemVer, releases, trusted publishing; Codex role is `oss-shepherd`                                                                                           |
+| **data-steward**              | 🟣 research      | ✓     | Dataset versioning, split validation, leakage detection                                                                                                                               |
+| **scientist**                 | 🟣 research      | ✓     | Paper analysis, hypothesis generation, experiment design                                                                                                                              |
 
 </details>
 
@@ -282,16 +287,17 @@ Both `--reply` flags produce a two-part shepherd output: an overall PR comment (
 
 ## 🤖 Codex CLI
 
-Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.5`, with 14 specialist agents and a codex-native skill backbone (`review/develop/resolve/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`). Symptom-first failures route through `investigate` before implementation, broad work is split into specialist context packs, and calibration emits measured recommendations for what to fix or improve next.
+Multi-agent configuration for [OpenAI Codex CLI](https://github.com/openai/codex). Default session model is `gpt-5.6-terra`, with 15 specialist agents and a codex-native skill backbone (`code-review/develop/code-remediate/audit` + `calibrate/release/investigate/sync/manage/analyse/optimize/research`). Symptom-first failures route through `investigate` before implementation. A Luna-based `delegation-lead` splits broad work into disjoint context packs, routes each stream to the lowest-cost capable Luna/Terra/Sol role, and enforces a handover gate before parent acceptance.
 
 ### Install
 
 ```bash
-npm install -g @openai/codex          # install Codex CLI
-cp -r Borda-AI-Rig/.codex/ ~/.codex/ # activate globally from the project source of truth
+npm install -g @openai/codex
+cd Borda-AI-Rig
+codex 'run sync with mode=check, source=project, targets=skills,agents,config,calibration,docs,shared'
 ```
 
-This repo's `.codex/` directory is the source of truth; `~/.codex/` is a downstream copy. After pulling updates, re-apply: `cp -r Borda-AI-Rig/.codex/ ~/.codex/` — or `rsync -av` to preserve local customizations. The `sync` skill is only a dry-run-first maintenance helper for comparing project `.codex/` with home `~/.codex/`; average use does not require invoking it.
+This repo's `.codex/` directory is the source of truth; `~/.codex/` is a downstream copy. Use the dry-run-first `sync` skill for bootstrap and updates so manifest-scoped config merges preserve home-only state and every approved overwrite is backed up. After reviewing the check report, rerun with `mode=apply` and explicitly approve the selected home writes.
 
 ### Usage
 
@@ -306,14 +312,14 @@ codex "full security audit of src/api/"                      # ask for deeper re
 ```text
 run investigate on this branch and find root cause of failing CI
 run investigate before fixing this failing pytest; do not suggest a workaround unless it is explicitly temporary
-run resolve for the current working tree and fix high-severity findings
-$review #123
-$resolve #123 +review
+run code-remediate for the current working tree and fix high-severity findings
+$code-review #123
+$code-remediate #123 +review
 ```
 
-`$review` and `$resolve` are in-session skill invocations. From a shell, quote them so `$review` is not treated as an environment variable: `codex '$review #123'`.
+`$code-review` and `$code-remediate` are in-session skill invocations. From a shell, quote them so `$code-review` is not treated as an environment variable: `codex '$code-review #123'`.
 
-→ Deep reference — agents, specialist orchestration, PR review-to-resolve, calibration, RTK integration: [`.codex/README.md`](.codex/README.md)
+→ Deep reference — agents, specialist orchestration, PR code-review-to-remediation, calibration, RTK integration: [`.codex/README.md`](.codex/README.md)
 
 ## 🤝 Claude + Codex Integration
 
@@ -339,7 +345,7 @@ Cheaper tiers gate the expensive ones — this keeps full agent spawns reserved 
 
 2. **Codex reviewing staged work**
 
-   After Claude stages changes, `codex:review --wait` serves as a second pass over the diff. For PRs, Codex review and resolve can also run as a self-contained local loop: it reads PR evidence through `gh`, checks out the PR locally, refuses remote mutation, records merge-prestage context, and writes `.reports/codex/...` artifacts for follow-up.
+   After Claude stages changes, `codex:review --wait` serves as a second pass over the diff. For PRs, Codex `code-review` and `code-remediate` can also run as a self-contained local loop: they read PR evidence through `gh`, check out the PR locally, refuse remote mutation, record merge-prestage context, and write `.reports/codex/...` artifacts for follow-up.
 
    ```text
    /oss:resolve 42   # Claude coordinates, Codex applies selected review work locally
@@ -453,7 +459,7 @@ AI-Rig/
 ├── .codex/                 # OpenAI Codex CLI source of truth
 │   ├── README.md           # full reference: agents, skills, Claude integration
 │   ├── AGENTS.md           # global instructions and subagent spawn rules
-│   ├── config.toml         # multi-agent config (gpt-5.5 baseline)
+│   ├── config.toml         # multi-agent config (gpt-5.6-terra baseline)
 │   ├── agents/             # per-agent model and instruction overrides
 │   ├── calibration/        # self-calibration harness + fixed task set
 │   └── skills/             # codex-native workflow skills

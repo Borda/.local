@@ -2,8 +2,8 @@
   "tasks": [
     {
       "goal": "Catch blocking findings in working tree changes",
-      "id": "review-001",
-      "skill": "review",
+      "id": "code-review-001",
+      "skill": "code-review",
       "success": "severity mapping and gate result are present"
     },
     {
@@ -20,8 +20,8 @@
     },
     {
       "goal": "Apply findings and report unresolved items",
-      "id": "resolve-001",
-      "skill": "resolve",
+      "id": "code-remediate-001",
+      "skill": "code-remediate",
       "success": "unresolved handling and gate status are present"
     },
     {

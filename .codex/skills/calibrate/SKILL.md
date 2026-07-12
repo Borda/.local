@@ -71,7 +71,7 @@ Skill checks:
 - artifact path uses `.reports/codex/<skill>/`
 - output examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, and `artifact_path`
 - native skill files do not depend on external runner-only metadata or cache paths
-- CLI checks discover every local shebang Python/shell entry point across calibration, shared helpers, review, and the offline harness; each must be executable, registered in the fixed help roster, and return authoritative usage from `--help`
+- CLI checks discover every local shebang Python/shell entry point across calibration, shared helpers, code-review, and the offline harness; each must be executable, registered in the fixed help roster, and return authoritative usage from `--help`
 - every skill references `helper-cli-contract.md` instead of duplicating complete local CLI invocations
 - behavioral case-set version checks compare `.codex/calibration/behavioral-cases.json` against `HEAD`; the working tree may keep the same version or advance by exactly one commit-relative version step, but must not repeatedly bump versions inside one uncommitted change set
 
@@ -79,7 +79,7 @@ Agent checks:
 
 - each configured agent file exists and is registered
 - active `model` and `review_model` pins use supported model strings for the current Codex runtime
-- the project default, review parent, runtime, research, curation, and adversarial specialists use `gpt-5.6-terra`; documentation, CI/CD stewardship, web, OSS, and static-analysis roles use `gpt-5.6-luna`; only security and solution architecture use `gpt-5.6-sol`
+- the project default, review parent, runtime, research, curation, and adversarial specialists use `gpt-5.6-terra`; delegation coordination, documentation, CI/CD stewardship, web, OSS, and static-analysis roles use `gpt-5.6-luna`; only security and solution architecture use `gpt-5.6-sol`
 - Luna/high is an explicit human override for bounded simpler roles; calibration preserves its strict quality/cost failure and rejects any undocumented expansion
 - every configured role defaults to `high`; `xhigh` and `max` require explicit task-level escalation
 - `model_reasoning_effort` follows the agent-effort-policy: every configured role uses `high`; `xhigh` and `max` are explicit task-level overrides
@@ -97,7 +97,7 @@ Agent checks:
 - Treat behavioral metrics as measurement of supplied observations only. `fixture-selftest` observations validate the scoring contract; live Codex quality requires replacing or appending observations generated from live calibration prompts.
 - Treat missing route coverage as `insufficient-evidence`, never route acceptance. When `require_live_routes=true`, insufficient evidence exits nonzero.
 - Compare behavioral thresholds against `gate_metrics_raw`, not rounded display metrics.
-- Use `.codex/calibration/run_live_ab.py` for paid paired campaigns. It plans calls by default and executes only with `--confirm-paid-run`.
+- Use `.codex/calibration/run_live_ab.py` for paid paired campaigns. It plans calls by default and executes only with `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API-key environment, and no `CI`/`GITHUB_ACTIONS` marker.
 - Each live task names a registered role; the runner prepends the exact project `AGENTS.md` plus that role TOML's developer instructions to both paired prompts. Tool-use pairs may accept a candidate that passes the executable gate when a successfully invoked baseline fails that gate; infrastructure timeouts never count as a candidate win.
 - Keep Sol critical-only unless its paired candidate quality exceeds Terra by the configured minimum; a tie retains Terra.
 - Do not claim monetary savings from `normalized-token-v1`; use a dated authoritative model-specific price source before making a currency-cost claim.

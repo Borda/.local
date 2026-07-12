@@ -13,7 +13,7 @@ Shared helper option schemas live in `--help`, not in individual skills. Before 
 .codex/skills/_shared/select-git-remote.py --help
 .codex/skills/_shared/write-result.py --help
 .codex/skills/_shared/validate-artifacts.py --help
-.codex/skills/review/validate_artifacts.py --help
+.codex/skills/code-review/validate_artifacts.py --help
 .github/codex-harness.sh --help
 ```
 

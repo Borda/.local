@@ -7,6 +7,7 @@ Use specialist orchestration to improve quality or latency when the work can be 
 - Increase review, implementation, investigation, and release quality through independent specialist judgment.
 - Improve elapsed time by running disjoint evidence gathering or verification in parallel when runtime supports it.
 - Reduce context pollution by giving each specialist only the files, diffs, logs, and questions needed for its axis.
+- Minimize total model cost by routing each bounded workstream to the lowest-cost capable registered specialist.
 - Keep the parent agent responsible for final scope, conflicts, and user-facing conclusions.
 
 ## When To Orchestrate
@@ -24,6 +25,18 @@ Stay single-agent when:
 - A specialist would receive the same full context as the parent.
 - The overhead of packaging context, waiting for results, and consolidating outputs exceeds the likely quality gain.
 - The requested action is state-changing and serial safety matters more than speed.
+
+## Delegation Lead And Model Routing
+
+Use `delegation-lead` when a task has two or more separable workstreams and delegation is expected to reduce total cost or elapsed time after context-pack and consolidation overhead. The leader may coordinate nested specialists because project config allows depth 2, but it must return one consolidated handover to the parent rather than transferring final ownership.
+
+Choose the lowest-cost capable registered role:
+
+- Luna: delegation coordination, documentation, CI/CD stewardship, web evidence, OSS triage, and static analysis.
+- Terra: implementation, tests, runtime behavior, data/ML, performance, research method, curation, adversarial challenge, and final executable verification.
+- Sol: solution architecture and security only.
+
+Do not downgrade architecture, security, runtime/API behavior, release-blocking judgment, or executable acceptance to a cheaper support role. Do not escalate bounded support work to Sol. A task is a poor delegation candidate when the same context must be copied to every specialist or the parent could finish it before packaging and validating the handoff.
 
 ## Context Packs
 
@@ -50,6 +63,19 @@ Every specialist pass, whether a real subagent or an in-main substitute, must re
 - recommended next action
 
 The parent must consolidate specialist outputs into one decision and reconcile conflicts explicitly. Specialist outputs are evidence, not votes.
+
+## Handover Gate
+
+Before delegated work is accepted, the delegation lead and then the parent verify:
+
+- ownership stayed within the assigned file set or evidence axis
+- the requested output and objective evidence are complete
+- relevant checks passed, or each unavailable check has a specific reason
+- confidence follows the shared confidence contract and unresolved limits remain visible
+- scope widening and conflicting specialist conclusions are explicit
+- executable or behavior-changing acceptance returns to the parent or the relevant Terra/Sol owner
+
+Reject or re-scope handovers that lack evidence, cross ownership, hide failed checks, or transfer final acceptance to a support specialist. Keep accepted changes unstaged for parent review. A compact text handover is preferred; a patch under `.codex/handover/` is optional when it materially helps review.
 
 ## Substitution Rules
 

@@ -27,6 +27,63 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write one stable, human-readable JSON snapshot."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def _write_input_snapshot(
+    out_dir: Path,
+    cases_payload: dict[str, Any],
+    tasks_payload: dict[str, Any],
+    policy_payload: dict[str, Any],
+    root: Path,
+    roles: set[str],
+) -> Path:
+    """Persist the exact scoring inputs before a paid campaign begins.
+
+    The returned root contains the global and registered role instructions used
+    to build every prompt. Scoring against this snapshot remains reproducible
+    even when the project files change during a long-running campaign.
+    """
+    inputs_dir = out_dir / "inputs"
+    if inputs_dir.exists():
+        raise FileExistsError(f"calibration input snapshot already exists: {inputs_dir}")
+
+    snapshot_root = inputs_dir / "root"
+    snapshot_codex = snapshot_root / ".codex"
+    snapshot_agents = snapshot_codex / "agents"
+    snapshot_agents.mkdir(parents=True)
+    (snapshot_codex / "AGENTS.md").write_text(
+        (root / ".codex" / "AGENTS.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    for role in sorted(roles):
+        source = root / ".codex" / "agents" / f"{role}.toml"
+        (snapshot_agents / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    _write_json(inputs_dir / "behavioral-cases.json", cases_payload)
+    _write_json(inputs_dir / "live-ab-tasks.json", tasks_payload)
+    _write_json(inputs_dir / "live-route-policy.json", policy_payload)
+    _write_json(
+        inputs_dir / "manifest.json",
+        {
+            "schema_version": 1,
+            "roles": sorted(roles),
+            "score_inputs": {
+                "cases": "inputs/behavioral-cases.json",
+                "root": "inputs/root",
+                "route_policy": "inputs/live-route-policy.json",
+                "tasks": "inputs/live-ab-tasks.json",
+            },
+        },
+    )
+    for role in roles:
+        role_context(snapshot_root, role)
+    return snapshot_root
+
+
 def _response_schema() -> dict[str, Any]:
     """Return the strict response schema used for every paired model call."""
     return {
@@ -105,6 +162,23 @@ def _cost_units(usage: dict[str, int]) -> float:
     """Compute the conservative normalized token-cost proxy."""
     uncached = max(usage["input_tokens"] - usage["cached_input_tokens"], 0)
     return round(uncached + 0.1 * usage["cached_input_tokens"] + 4.0 * usage["output_tokens"], 3)
+
+
+def _require_local_subscription_run() -> None:
+    """Fail unless paid execution is local and uses ChatGPT subscription auth."""
+    if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
+        raise SystemExit("live-paid-run-disabled-in-ci")
+    if os.environ.get("OPENAI_API_KEY"):
+        raise SystemExit("live-paid-run-api-key-auth-disallowed")
+    status = subprocess.run(
+        ["codex", "login", "status"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    output = f"{status.stdout}\n{status.stderr}"
+    if status.returncode != 0 or "Logged in using ChatGPT" not in output:
+        raise SystemExit("live-paid-run-requires-chatgpt-subscription-login")
 
 
 def _run_model(
@@ -297,18 +371,23 @@ def main() -> int:
     parser.add_argument("--campaigns", type=int, help="Campaign count override; defaults to route policy.")
     parser.add_argument("--timeout-seconds", type=int, default=900, help="Timeout for each paid Codex call.")
     parser.add_argument(
-        "--confirm-paid-run", action="store_true", help="Execute paid calls. Without this flag, write a plan only."
+        "--confirm-paid-run",
+        choices=("chatgpt-subscription",),
+        help="Execute locally with ChatGPT subscription auth; omitted means plan only.",
     )
     args = parser.parse_args()
 
     cases_payload = _read_json(args.cases)
     cases = {case["id"]: case for case in cases_payload["cases"]}
-    tasks = _read_json(args.tasks)["routes"]
-    policy = _read_json(args.route_policy)["routes"]
+    tasks_payload = _read_json(args.tasks)
+    policy_payload = _read_json(args.route_policy)
+    tasks = tasks_payload["routes"]
+    policy = policy_payload["routes"]
     selected_routes = args.route or sorted(policy)
     unknown_routes = sorted(set(selected_routes) - set(policy))
     if unknown_routes:
         raise ValueError(f"unknown routes: {unknown_routes}")
+    roles: set[str] = set()
     for route_id in selected_routes:
         if route_id not in tasks:
             raise ValueError(f"live tasks missing route: {route_id}")
@@ -319,6 +398,7 @@ def main() -> int:
             if not isinstance(role, str) or not role:
                 raise ValueError(f"live task role missing: {route_id}:{index}")
             role_context(args.root, role)
+            roles.add(role)
     required_campaigns = max(policy[route]["min_campaigns"] for route in selected_routes)
     campaigns = args.campaigns if args.campaigns is not None else required_campaigns
     if campaigns < 1:
@@ -340,12 +420,23 @@ def main() -> int:
                         campaigns >= policy[route]["min_campaigns"] for route in selected_routes
                     ),
                     "evidence_scopes": scopes,
+                    "paid_run_input_snapshot": "inputs/manifest.json",
+                    "required_confirmation": "--confirm-paid-run=chatgpt-subscription",
                 }
             )
         )
         return 0
 
+    _require_local_subscription_run()
     args.out.mkdir(parents=True, exist_ok=True)
+    snapshot_root = _write_input_snapshot(
+        args.out,
+        cases_payload,
+        tasks_payload,
+        policy_payload,
+        args.root,
+        roles,
+    )
     (args.out / "response-schema.json").write_text(json.dumps(_response_schema(), indent=2) + "\n", encoding="utf-8")
     observations = args.out / "observations.jsonl"
     rows: list[dict[str, Any]] = []
@@ -362,7 +453,7 @@ def main() -> int:
                     case,
                     candidate_findings(case["id"], cases),
                     task,
-                    role_context(args.root, role),
+                    role_context(snapshot_root, role),
                 )
                 pair_id = f"{campaign_id}:{route_id}:{index}"
                 pair_roles = (

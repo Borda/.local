@@ -22,9 +22,9 @@ from live_contract import build_prompt, candidate_findings, prompt_sha256, role_
 
 
 SKILLS = (
-    "review",
+    "code-review",
     "develop",
-    "resolve",
+    "code-remediate",
     "audit",
     "calibrate",
     "release",
@@ -50,6 +50,7 @@ AGENTS = (
     "curator",
     "challenger",
     "scientist",
+    "delegation-lead",
 )
 DEFAULT_MODEL = "gpt-5.6-terra"
 REVIEW_MODEL = "gpt-5.6-terra"
@@ -60,7 +61,14 @@ SOL_MODEL_AGENTS = {
     "security-auditor",
     "solution-architect",
 }
-LUNA_MODEL_AGENTS = {"cicd-steward", "doc-scribe", "linting-expert", "oss-shepherd", "web-explorer"}
+LUNA_MODEL_AGENTS = {
+    "cicd-steward",
+    "delegation-lead",
+    "doc-scribe",
+    "linting-expert",
+    "oss-shepherd",
+    "web-explorer",
+}
 TERRA_MODEL_AGENTS = set(AGENTS) - SOL_MODEL_AGENTS - LUNA_MODEL_AGENTS
 HIGH_EFFORT_AGENTS = set(AGENTS)
 
@@ -97,7 +105,7 @@ class Paths:
     sync_manifest: Path
     find_review_report: Path
     validate_artifacts: Path
-    review_validate_artifacts: Path
+    code_review_validate_artifacts: Path
     codex_harness: Path
     checks: Path
     leaks: Path
@@ -149,7 +157,7 @@ class Paths:
             sync_manifest=root / ".codex" / "sync-manifest.json",
             find_review_report=root / ".codex" / "skills" / "_shared" / "find-review-report.py",
             validate_artifacts=root / ".codex" / "skills" / "_shared" / "validate-artifacts.py",
-            review_validate_artifacts=root / ".codex" / "skills" / "review" / "validate_artifacts.py",
+            code_review_validate_artifacts=root / ".codex" / "skills" / "code-review" / "validate_artifacts.py",
             codex_harness=root / ".github" / "codex-harness.sh",
             checks=out_dir / "checks.txt",
             leaks=out_dir / "leaks.txt",
@@ -399,6 +407,40 @@ def check_behavioral_cases_version(run: CalibrationRun) -> None:
     run.append_check(f"behavioral-version=ok:HEAD={head_version}:current={current_version}")
 
 
+def check_sync_manifest_config_scope(run: CalibrationRun) -> None:
+    """Validate that sync manages current nested agent settings without stale keys."""
+    try:
+        config_scope = json.loads(run.paths.sync_manifest.read_text(encoding="utf-8"))["config"]
+        for key in ("root_keys", "feature_keys", "agent_keys", "agent_names", "skill_paths"):
+            values = config_scope.get(key)
+            if (
+                not isinstance(values, list)
+                or not values
+                or not all(isinstance(value, str) and value for value in values)
+            ):
+                raise ValueError(f"{key} must be a non-empty string list")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{key} contains duplicates")
+        expected_agent_keys = {"max_threads", "max_depth", "job_max_runtime_seconds"}
+        if set(config_scope["agent_keys"]) != expected_agent_keys:
+            raise ValueError("agent_keys must manage current [agents] settings")
+        if "commit_attribution" not in config_scope["root_keys"]:
+            raise ValueError("commit_attribution must remain a managed root key")
+        expected_attribution = "Co-authored-by: Codex <codex@openai.com>"
+        if top_level_setting(run.paths.project_cfg, "commit_attribution") != expected_attribution:
+            raise ValueError("commit_attribution missing or changed")
+        stale_root = expected_agent_keys & set(config_scope["root_keys"])
+        if stale_root:
+            raise ValueError(f"stale root keys: {sorted(stale_root)}")
+        if "child_agents_md" in config_scope["feature_keys"]:
+            raise ValueError("stale feature key: child_agents_md")
+    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError) as exc:
+        run.fail_and_leak("sync-manifest-config-scope", f"sync-manifest-config-scope-invalid:{exc}")
+        return
+
+    run.append_check("sync-manifest-config-scope=ok")
+
+
 def read_json_version(path: Path) -> str:
     """Read a required string version from a JSON fixture file."""
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -549,6 +591,7 @@ def check_core_configs(run: CalibrationRun) -> None:
             run.fail_and_leak(check_id, f"missing-{name}:{file}")
 
     check_behavioral_cases_version(run)
+    check_sync_manifest_config_scope(run)
     check_fixed_task_and_behavioral_rosters(run)
     check_shared_confidence_contracts(run)
     for helper_name in (
@@ -685,9 +728,20 @@ def is_executable(path: Path) -> bool:
     return path.exists() and os.access(path, os.X_OK)
 
 
-def run_command(args: list[str | Path], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def run_command(
+    args: list[str | Path],
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run a command and return captured text output."""
-    return subprocess.run([str(arg) for arg in args], cwd=cwd, text=True, capture_output=True, check=False)
+    return subprocess.run(
+        [str(arg) for arg in args],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def check_python_syntax(run: CalibrationRun, path: Path, label: str) -> None:
@@ -718,7 +772,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         "collect-pr": run.paths.collect_pr,
         "find-review-report": run.paths.find_review_report,
         "run-gates": run.paths.run_gates,
-        "review-validate-artifacts": run.paths.review_validate_artifacts,
+        "code-review-validate-artifacts": run.paths.code_review_validate_artifacts,
         "select-git-remote": run.paths.select_git_remote,
         "validate-artifacts": run.paths.validate_artifacts,
         "write-result": run.paths.write_result_py,
@@ -738,7 +792,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
         ".codex/calibration/*.py",
         ".codex/skills/_shared/*.py",
         ".codex/skills/_shared/*.sh",
-        ".codex/skills/review/*.py",
+        ".codex/skills/code-review/*.py",
         ".github/*.sh",
     ):
         discovered.update(path for path in run.paths.root.glob(pattern) if read_text(path).startswith("#!"))
@@ -761,7 +815,7 @@ def check_shared_scripts(run: CalibrationRun) -> None:
     check_python_syntax(run, run.paths.behavioral_scorer, "score_behavioral.py")
     check_python_syntax(run, run.paths.live_ab_runner, "run_live_ab.py")
     check_python_syntax(run, run.paths.live_contract, "live_contract.py")
-    check_python_syntax(run, run.paths.review_validate_artifacts, "review/validate_artifacts.py")
+    check_python_syntax(run, run.paths.code_review_validate_artifacts, "code-review/validate_artifacts.py")
     for label, script in cli_paths.items():
         result = run_command([script, "--help"])
         if result.returncode != 0 or "usage" not in result.stdout.lower():
@@ -919,7 +973,7 @@ def run_selftests(run: CalibrationRun) -> None:
         selftest_select_git_remote(run, selftest_dir)
     if run.paths.live_ab_runner.exists() and run.paths.live_route_policy.exists():
         selftest_live_ab_contract(run, selftest_dir)
-    if run.paths.review_validate_artifacts.exists():
+    if run.paths.code_review_validate_artifacts.exists():
         selftest_review_validator(run, selftest_dir)
 
     if is_executable(run.paths.find_review_report):
@@ -927,7 +981,7 @@ def run_selftests(run: CalibrationRun) -> None:
 
     if is_executable(run.paths.validate_artifacts) and is_executable(run.paths.write_result_py):
         selftest_validate_artifacts(run, selftest_dir)
-        selftest_resolve_pr_identity(run)
+        selftest_code_remediate_pr_identity(run)
 
 
 def selftest_select_git_remote(run: CalibrationRun, selftest_dir: Path) -> None:
@@ -980,6 +1034,10 @@ def selftest_live_ab_contract(run: CalibrationRun, selftest_dir: Path) -> None:
         ('"uniqueItems"', False),
         ("stdin=subprocess.DEVNULL", True),
         ("live-call-failed", True),
+        ("live-paid-run-disabled-in-ci", True),
+        ('choices=("chatgpt-subscription",)', True),
+        ("_write_input_snapshot(", True),
+        ("role_context(snapshot_root, role)", True),
     ):
         if (forbidden_or_required in runner_text) is not should_exist:
             run.fail_and_leak(
@@ -1009,19 +1067,99 @@ def selftest_live_ab_contract(run: CalibrationRun, selftest_dir: Path) -> None:
     scopes = plan_payload.get("evidence_scopes", {})
     if (
         plan.returncode != 0
-        or plan_payload.get("paid_model_calls") != 60
+        or plan_payload.get("paid_model_calls") != 64
         or plan_payload.get("campaigns") != 2
         or plan_payload.get("strict_acceptance_possible") is not True
+        or plan_payload.get("required_confirmation") != "--confirm-paid-run=chatgpt-subscription"
         or any(value != ["classification", "tool-use"] for value in scopes.values())
         or len(scopes) != 3
     ):
         run.fail_and_leak("shared-script-selftests", "selftest-failed:live-ab-plan")
         return
+    if (live_dir / "planned-run").exists():
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:live-ab-plan-created-output")
+        return
+
+    paid_args = [
+        sys.executable,
+        run.paths.live_ab_runner,
+        "--cases",
+        run.paths.behavioral_cases,
+        "--tasks",
+        run.paths.live_ab_tasks,
+        "--route-policy",
+        run.paths.live_route_policy,
+        "--root",
+        run.paths.root,
+        "--confirm-paid-run",
+        "chatgpt-subscription",
+    ]
+    ci_out = live_dir / "ci-blocked-run"
+    ci_env = {**os.environ, "CI": "1", "GITHUB_ACTIONS": "1", "OPENAI_API_KEY": ""}
+    ci_blocked = run_command([*paid_args, "--out", ci_out], env=ci_env)
+    if ci_blocked.returncode == 0 or "live-paid-run-disabled-in-ci" not in ci_blocked.stderr or ci_out.exists():
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:live-ab-ci-paid-guard")
+        return
+
+    api_out = live_dir / "api-key-blocked-run"
+    api_env = {
+        **os.environ,
+        "CI": "",
+        "GITHUB_ACTIONS": "",
+        "OPENAI_API_KEY": "selftest-must-not-be-used",
+    }
+    api_blocked = run_command([*paid_args, "--out", api_out], env=api_env)
+    if (
+        api_blocked.returncode == 0
+        or "live-paid-run-api-key-auth-disallowed" not in api_blocked.stderr
+        or api_out.exists()
+    ):
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:live-ab-api-key-paid-guard")
+        return
 
     cases_payload = json.loads(run.paths.behavioral_cases.read_text(encoding="utf-8"))
     cases = {case["id"]: case for case in cases_payload["cases"]}
-    tasks = json.loads(run.paths.live_ab_tasks.read_text(encoding="utf-8"))["routes"]
-    policy = json.loads(run.paths.live_route_policy.read_text(encoding="utf-8"))["routes"]
+    tasks_payload = json.loads(run.paths.live_ab_tasks.read_text(encoding="utf-8"))
+    policy_payload = json.loads(run.paths.live_route_policy.read_text(encoding="utf-8"))
+    tasks = tasks_payload["routes"]
+    policy = policy_payload["routes"]
+    snapshot_roles = {task["role"] for route_tasks in tasks.values() for task in route_tasks}
+    snapshot_source = live_dir / "snapshot-source"
+    source_codex = snapshot_source / ".codex"
+    source_agents = source_codex / "agents"
+    source_agents.mkdir(parents=True)
+    (source_codex / "AGENTS.md").write_text(
+        (run.paths.root / ".codex" / "AGENTS.md").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    for role in snapshot_roles:
+        source = run.paths.root / ".codex" / "agents" / f"{role}.toml"
+        (source_agents / source.name).write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("calibration_live_ab_runner", run.paths.live_ab_runner)
+    if spec is None or spec.loader is None:
+        run.fail_and_leak("shared-script-selftests", "selftest-import:live-ab-runner")
+        return
+    live_runner = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(live_runner)
+    snapshot_root = live_runner._write_input_snapshot(
+        live_dir / "snapshot-run",
+        cases_payload,
+        tasks_payload,
+        policy_payload,
+        snapshot_source,
+        snapshot_roles,
+    )
+    snapshot_role = sorted(snapshot_roles)[0]
+    snapshotted_context = role_context(snapshot_root, snapshot_role)
+    (source_agents / f"{snapshot_role}.toml").write_text("changed after snapshot\n", encoding="utf-8")
+    manifest = json.loads((live_dir / "snapshot-run" / "inputs" / "manifest.json").read_text(encoding="utf-8"))
+    if (
+        role_context(snapshot_root, snapshot_role) != snapshotted_context
+        or manifest.get("roles") != sorted(snapshot_roles)
+        or manifest.get("score_inputs", {}).get("root") != "inputs/root"
+    ):
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:live-ab-input-snapshot")
+        return
     observed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     rows: list[dict[str, Any]] = []
     for route_id, route in sorted(policy.items()):
@@ -1363,7 +1501,7 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
     )
     command: list[str | Path] = [
         sys.executable,
-        run.paths.review_validate_artifacts,
+        run.paths.code_review_validate_artifacts,
         "--out",
         out,
         "--result",
@@ -1391,11 +1529,11 @@ def selftest_review_validator(run: CalibrationRun, selftest_dir: Path) -> None:
         run.fail_and_leak("shared-script-selftests", "selftest-fail-open:review-validator-role-model")
 
 
-def selftest_resolve_pr_identity(run: CalibrationRun) -> None:
+def selftest_code_remediate_pr_identity(run: CalibrationRun) -> None:
     """Reject remote identity, base OID, and checkout head substitutions."""
     spec = importlib.util.spec_from_file_location("shared_artifact_validator", run.paths.validate_artifacts)
     if spec is None or spec.loader is None:
-        run.fail_and_leak("shared-script-selftests", "selftest-setup:resolve-pr-identity")
+        run.fail_and_leak("shared-script-selftests", "selftest-setup:code-remediate-pr-identity")
         return
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -1424,7 +1562,7 @@ def selftest_resolve_pr_identity(run: CalibrationRun) -> None:
         "expected_head": "head-oid",
         "local_head": "head-oid",
     }
-    module._validate_resolve_pr_identity(routing, remote, target, checkout)
+    module._validate_code_remediate_pr_identity(routing, remote, target, checkout)
     mutations = (
         (remote, "expected", {"host": "github.com", "repository": "other/repo"}),
         (target, "local_head", "wrong-base"),
@@ -1434,11 +1572,11 @@ def selftest_resolve_pr_identity(run: CalibrationRun) -> None:
         original = payload[key]
         payload[key] = bad_value
         try:
-            module._validate_resolve_pr_identity(routing, remote, target, checkout)
+            module._validate_code_remediate_pr_identity(routing, remote, target, checkout)
         except SystemExit:
             pass
         else:
-            run.fail_and_leak("shared-script-selftests", f"selftest-fail-open:resolve-pr-identity:{key}")
+            run.fail_and_leak("shared-script-selftests", f"selftest-fail-open:code-remediate-pr-identity:{key}")
         finally:
             payload[key] = original
 
@@ -1477,7 +1615,7 @@ def run_write_result(run: CalibrationRun, out_path: Path, metadata: dict[str, An
 
 
 def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None:
-    """Check that find-review-report selects the newest matching report."""
+    """Check current report selection and historical-directory fallback."""
     fixture = selftest_dir / "review-reports"
     older = fixture / "2026-01-01T00-00-00Z"
     newer = fixture / "2026-01-02T00-00-00Z"
@@ -1498,6 +1636,21 @@ def selftest_find_review_report(run: CalibrationRun, selftest_dir: Path) -> None
     missing = run_command([run.paths.find_review_report, "--target", "#999", "--reports-dir", fixture])
     if missing.returncode == 0:
         run.fail_and_leak("shared-script-selftests", "selftest-failed:find-review-report:missing-target")
+
+    compatibility_root = selftest_dir / "review-report-compatibility"
+    current = compatibility_root / ".reports" / "codex" / "code-review" / "2026-01-01T00-00-00Z"
+    legacy = compatibility_root / ".reports" / "codex" / "review" / "2026-01-02T00-00-00Z"
+    for directory in (current, legacy):
+        directory.mkdir(parents=True)
+        (directory / "result.json").write_text("{}\n", encoding="utf-8")
+        (directory / "pr.json").write_text(
+            '{"number": 321, "url": "https://github.com/example/repo/pull/321"}\n',
+            encoding="utf-8",
+        )
+    compatibility = run_command([run.paths.find_review_report, "--target", "#321"], cwd=compatibility_root)
+    expected_legacy = legacy.relative_to(compatibility_root) / "result.json"
+    if compatibility.returncode != 0 or compatibility.stdout.strip() != str(expected_legacy):
+        run.fail_and_leak("shared-script-selftests", "selftest-failed:find-review-report:legacy-fallback")
 
 
 def selftest_validate_artifacts(run: CalibrationRun, selftest_dir: Path) -> None:

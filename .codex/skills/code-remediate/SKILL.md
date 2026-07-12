@@ -1,11 +1,11 @@
 ---
-name: resolve
-description: Minimal codex-native resolve loop. Use to apply review findings, rerun checks, and publish unresolved gaps with measurable gates, including in-session skill invocations like "$resolve #123 +review" that resolve a PR using the latest matching review artifact.
+name: code-remediate
+description: Codex-native code remediation loop. Use to triage and apply code-review findings, rerun checks, and publish unresolved gaps with measurable gates, including in-session skill invocations like "$code-remediate #123 +review" that remediate a PR using the latest matching code-review artifact.
 ---
 
-# Resolve
+# Code Remediate
 
-Run a linear resolve loop for findings closure.
+Run a linear code-remediation loop for findings closure.
 
 ## Input Schema
 
@@ -15,7 +15,7 @@ Run a linear resolve loop for findings closure.
   "mode": "optional report|pr|auto; infer pr for bare number, #number, or PR URL",
   "target": "optional shorthand target number, issue/PR URL, path, or current branch",
   "pr_target": "optional PR number, PR URL, or current branch PR when mode=pr",
-  "resolve_scope": "optional all|critical|high|medium|low|comma-separated severities|comma-separated selection indexes; ask before editing when omitted",
+  "remediation_scope": "optional all|critical|high|medium|low|comma-separated severities|comma-separated selection indexes; ask before editing when omitted",
   "target_scope": "required path/module",
   "done_when": "selected findings are fixed/resolved and unselected critical/high findings are explicitly deferred"
 }
@@ -27,7 +27,7 @@ Run a linear resolve loop for findings closure.
 
 ```bash
 TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
-OUT_DIR=".reports/codex/resolve/$TS"
+OUT_DIR=".reports/codex/code-remediate/$TS"
 mkdir -p "$OUT_DIR"
 ```
 
@@ -35,15 +35,15 @@ mkdir -p "$OUT_DIR"
 
 Shorthand rules:
 
-- Canonical in-session invocation: `$resolve #123 +review` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`.
-- Compatibility alias: `$resolve #123 +report` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`; `$resolve #123 +report compatibility alias` means the same report lookup behavior.
-- Natural-language aliases: `resolve 123 report`, `resolve #123 report`, and `resolve PR 123 report` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`.
-- `resolve <github-pr-url> report` => `mode=pr`, `PR_TARGET=<github-pr-url>`, and `FINDINGS_SOURCE=latest-matching-review-report`.
-- If `+review`, `+report`, `report`, `latest`, `latest-report`, or `review-report` is supplied instead of a path, find the newest `.reports/codex/review/*/result.json` whose sibling `pr.json` has the same PR number or URL as `PR_TARGET`.
-- If no matching review report exists, fail with a direct instruction to run `review <target>` first or provide an explicit report path.
+- Canonical in-session invocation: `$code-remediate #123 +review` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`.
+- Compatibility alias: `$code-remediate #123 +report` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`; `$code-remediate #123 +report compatibility alias` means the same report lookup behavior.
+- Natural-language aliases: `remediate 123 report`, `remediate #123 report`, and `remediate PR 123 report` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`.
+- `remediate <github-pr-url> report` => `mode=pr`, `PR_TARGET=<github-pr-url>`, and `FINDINGS_SOURCE=latest-matching-review-report`.
+- If `+review`, `+report`, `report`, `latest`, `latest-report`, or `review-report` is supplied instead of a path, find the newest `.reports/codex/code-review/*/result.json` whose sibling `pr.json` has the same PR number or URL as `PR_TARGET`.
+- If no matching code-review report exists, fail with a direct instruction to run `$code-review <target>` first or provide an explicit report path.
 - If multiple matching reports exist, use the newest timestamped directory and record the selected path in `$OUT_DIR/findings-input.txt`.
 
-For `latest-matching-review-report`, inspect `find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/review`, and assign the printed path to `FINDINGS_SOURCE`.
+For `latest-matching-review-report`, inspect `find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/code-review`, and assign the printed path to `FINDINGS_SOURCE`.
 
 ```bash
 cp "$FINDINGS_SOURCE" "$OUT_DIR/findings-input.txt"
@@ -150,7 +150,7 @@ Then write a `## Final Resolution Table Completeness` section with:
 - triage status counts
 - resolution status counts
 
-`RESOLVE_METADATA.final_resolution_table` must contain the same counts. If the final table omits any ingested entry, fails to account for every row in the triage or resolution status counts, or uses a row without triage status and resolution status, fail before final output. `RESOLVE_METADATA.final_resolution_table.required_columns` must list `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, and `evidence`.
+`CODE_REMEDIATE_METADATA.final_resolution_table` must contain the same counts. If the final table omits any ingested entry, fails to account for every row in the triage or resolution status counts, or uses a row without triage status and resolution status, fail before final output. `CODE_REMEDIATE_METADATA.final_resolution_table.required_columns` must list `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, and `evidence`.
 
 Closure evidence for report-origin review obligations must match the obligation type:
 
@@ -200,15 +200,15 @@ Selectable items:
 Present the selectable list to the user and ask:
 
 ```text
-Which findings should I resolve?
+Which findings should I remediate?
 - all
 - severity group: critical, high, medium, low, or comma-separated groups such as critical,high
 - indexes: comma-separated indexes or ranges such as 1,3,5-7
 ```
 
-If `resolve_scope` was supplied up front, treat that input as the user's selection, apply it without asking again, and still write `$OUT_DIR/resolution-scope.md`. If `resolve_scope` was omitted and selectable items exist, stop before editing and ask the user exactly which findings to resolve. Do not infer `all`, do not silently select only code-editable items, and do not proceed from a default selection. If the runtime cannot ask the user interactively, fail with `scope-selection-required` before editing. If no selectable items remain, write `none-selectable`, skip implementation, and proceed to gates/artifact output.
+If `remediation_scope` was supplied up front, treat that input as the user's selection, apply it without asking again, and still write `$OUT_DIR/resolution-scope.md`. If `remediation_scope` was omitted and selectable items exist, stop before editing and ask the user exactly which findings to resolve. Do not infer `all`, do not silently select only code-editable items, and do not proceed from a default selection. If the runtime cannot ask the user interactively, fail with `scope-selection-required` before editing. If no selectable items remain, write `none-selectable`, skip implementation, and proceed to gates/artifact output.
 
-Record in `$OUT_DIR/resolution-scope.md` and `RESOLVE_METADATA.resolution_scope`:
+Record in `$OUT_DIR/resolution-scope.md` and `CODE_REMEDIATE_METADATA.resolution_scope`:
 
 - selection source: `explicit-input`, `user-prompt`, or `none-selectable`
 - whether a prompt was presented
@@ -277,7 +277,7 @@ Owner assignment rules:
 
 Write one narrow context pack per non-parent cluster under `$OUT_DIR/specialists/<cluster-id>-context.md`. A context pack must include only the selected items in that cluster, relevant files/hunks/logs, closure question, stop rule, and expected evidence. Do not include unrelated selected items, full PR discussion, or full review reports by default.
 
-Record the workplan in `RESOLVE_METADATA.resolution_workplan` with `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, and `workplan_path`.
+Record the workplan in `CODE_REMEDIATE_METADATA.resolution_workplan` with `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, and `workplan_path`.
 
 ### 07: Apply Fixes In Selected Scope
 
@@ -326,17 +326,17 @@ When selected items remain unresolved, the file must distinguish what was actual
 - `Why Selected Items Remain Unresolved`: one row per unresolved selected item or reason group with selected indexes, severity, closure class, status, why it remains unresolved, attempted evidence, next owner, and next action.
 - `Next Action`: the smallest concrete action that would close each unresolved reason group.
 
-Use closure classes consistently: `local-code-or-doc`, `process-gate`, `independent-review`, `environment-blocked`, `external-ci`, `user-deferred`, `already-closed`, or `other`. If `resolve_scope=all`, never summarize the run as "resolved all" while any selected item remains unresolved. Say "all local actionable findings are closed" only when local code/doc findings are closed, then list the remaining selected gate/process obligations separately.
+Use closure classes consistently: `local-code-or-doc`, `process-gate`, `independent-review`, `environment-blocked`, `external-ci`, `user-deferred`, `already-closed`, or `other`. If `remediation_scope=all`, never summarize the run as "resolved all" while any selected item remains unresolved. Say "all local actionable findings are closed" only when local code/doc findings are closed, then list the remaining selected gate/process obligations separately.
 
 ### 11: Write And Validate Result Artifact
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `RESOLVE_METADATA`, validate as skill `resolve`, and promote only the validated candidate.
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `CODE_REMEDIATE_METADATA`, validate as skill `code-remediate`, and promote only the validated candidate.
 
-`RESOLVE_METADATA.mode` must be the normalized mode. `RESOLVE_METADATA.confidence_recovery` must include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `RESOLVE_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale. `RESOLVE_METADATA.resolution_scope` must summarize the requested scope, `selection_source`, whether a prompt was presented, `selection_confirmed_by_user` before editing, selected indexes, selected severity groups, deferred indexes, and omitted resolved-online count. `RESOLVE_METADATA.resolution_workplan` must summarize `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, and `workplan_path`. `RESOLVE_METADATA.review_report_intake` must summarize report-origin intake with `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, and `report_items_marked_out_of_scope`. `RESOLVE_METADATA.final_resolution_table` must summarize ingested entries, final table rows, omitted entries, selectable/non-selectable row totals, required columns, triage status counts, and resolution status counts. `RESOLVE_METADATA.out_of_scope_confirmation` must summarize `count`, `all_confirmed_by_user`, and one item per out-of-scope row with item id, source, rationale, evidence path, and confirmation status. `RESOLVE_METADATA.pr_relevance` must summarize `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, and `connected_items_marked_out_of_scope`. `RESOLVE_METADATA.unresolved_summary` must summarize selected item totals, unresolved closure-class counts, `all_local_actionable_items_closed`, and `unresolved_reason_groups` with reason, count, owner, next action, and evidence path. For `mode=pr`, include the selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, and `$OUT_DIR/merge-prestage.md`.
+`CODE_REMEDIATE_METADATA.mode` must be the normalized mode. `CODE_REMEDIATE_METADATA.confidence_recovery` must include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `CODE_REMEDIATE_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale. `CODE_REMEDIATE_METADATA.resolution_scope` must summarize the requested scope, `selection_source`, whether a prompt was presented, `selection_confirmed_by_user` before editing, selected indexes, selected severity groups, deferred indexes, and omitted resolved-online count. `CODE_REMEDIATE_METADATA.resolution_workplan` must summarize `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, and `workplan_path`. `CODE_REMEDIATE_METADATA.review_report_intake` must summarize report-origin intake with `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, and `report_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.final_resolution_table` must summarize ingested entries, final table rows, omitted entries, selectable/non-selectable row totals, required columns, triage status counts, and resolution status counts. `CODE_REMEDIATE_METADATA.out_of_scope_confirmation` must summarize `count`, `all_confirmed_by_user`, and one item per out-of-scope row with item id, source, rationale, evidence path, and confirmation status. `CODE_REMEDIATE_METADATA.pr_relevance` must summarize `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, and `connected_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.unresolved_summary` must summarize selected item totals, unresolved closure-class counts, `all_local_actionable_items_closed`, and `unresolved_reason_groups` with reason, count, owner, next action, and evidence path. For `mode=pr`, include the selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, and `$OUT_DIR/merge-prestage.md`.
 
 ## Fail-fast Rules
 
-01. Missing findings source => fail. 01a. `+review`, `+report`, or `report` shorthand without a matching review report for the target => fail with "run `$review <target>` first or provide a report path".
+01. Missing findings source => fail. 01a. `+review`, `+report`, or `report` shorthand without a matching code-review report for the target => fail with "run `$code-review <target>` first or provide a report path".
 02. Shared gate script missing => fail.
 03. Selected critical findings left unresolved => fail. Unselected critical/high findings are allowed only when explicitly recorded as deferred by user selection.
 04. Finding marked fixed without closure evidence => fail.
@@ -358,7 +358,7 @@ Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `R
 20. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, or residual risks omitted from `action-items.md` => fail.
 21. Report-origin review obligation marked `out-of-scope` before user scope selection without cited evidence that it is unrelated to the requested report/PR/target => fail.
 22. Selected review gate or follow-up item marked resolved without matching closure evidence => fail.
-23. Selectable findings exist and `resolve_scope` was omitted, but no user prompt and confirmed user selection were recorded before editing => fail.
+23. Selectable findings exist and `remediation_scope` was omitted, but no user prompt and confirmed user selection were recorded before editing => fail.
 24. Any item marked `out-of-scope` without specific rationale and explicit user confirmation => fail.
 25. PR item connected to PR intent, changed diff, adjacent verification, or unknown relation marked `out-of-scope` => fail.
 26. Connected PR item omitted from selectable scope or required follow-up without closure evidence => fail.
@@ -366,7 +366,7 @@ Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `R
 28. Selected item missing from both `Selected Finding Groups` and `Ungrouped Items` => fail.
 29. Specialist-owned group without a context pack path and owner/verifier assignment => fail.
 30. Selected unresolved items exist but `$OUT_DIR/unresolved.txt` lacks `Unresolved Work Summary`, `Why Selected Items Remain Unresolved`, or `Next Action` => fail.
-31. `resolve_scope=all` with unresolved selected items but final output says or implies all selected work is resolved => fail.
+31. `remediation_scope=all` with unresolved selected items but final output says or implies all selected work is resolved => fail.
 32. Any unresolved selected item missing closure class, attempted evidence, next owner, or next action => fail.
 33. Selected local code/doc item remains unresolved without blocker evidence and status fail/timeout => fail.
 34. Final resolution table row count does not match the total ingested entries => fail.
@@ -392,8 +392,8 @@ Conditional checks:
 
 Update calibration when resolution policy or output shape changes:
 
-- benchmark patterns: `resolve`
-- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted from all workplan groups, specialist-owned group missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, review-to-resolve gate symmetry, unresolved selected-item closure summary, complete final resolution table, gate failure disclosure, artifact validator bypass, PR online review triage, PR target-branch refresh, PR merge/conflict prestage, PR local checkout before edits
+- benchmark patterns: `code-remediate`
+- behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted from all workplan groups, specialist-owned group missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, gate failure disclosure, artifact validator bypass, PR online review triage, PR target-branch refresh, PR merge/conflict prestage, PR local checkout before edits
 
 ## Output Contract
 
@@ -403,6 +403,6 @@ Apply the shared confidence band policy from `../_shared/quality-gates.md` for c
 
 Keep the complete, unabridged resolution ledger in `$OUT_DIR/action-items.md`; it must cover every ingested item and retain the validated columns, counts, status vocabulary, closure evidence, scope selection, workplan, PR relevance, unresolved classes, and confidence recovery required above.
 
-The final terminal/chat output is intentionally compact. Start with `Resolution Summary` and include requested scope, ingested/selected/implemented/unresolved/deferred totals, whether all selected local actionable items are closed, gate status, confidence with material limits, and the artifact path. List only unresolved or user-deferred items with next owner/action; do not duplicate rows already closed in the artifact. State "resolved all" only when `selected_items_unresolved=0`. For `mode=pr`, add one compact merge-prestage line with the evidence path and remaining collision risk. The artifact validator, not chat repetition, proves full-ledger completeness.
+The final terminal/chat output is intentionally compact. Start with `Remediation Summary` and include requested scope, ingested/selected/implemented/unresolved/deferred totals, whether all selected local actionable items are closed, gate status, confidence with material limits, and the artifact path. List only unresolved or user-deferred items with next owner/action; do not duplicate rows already closed in the artifact. State "resolved all" only when `selected_items_unresolved=0`. For `mode=pr`, add one compact merge-prestage line with the evidence path and remaining collision risk. The artifact validator, not chat repetition, proves full-ledger completeness.
 
 Minimum artifact payload template: `result-template.json`.

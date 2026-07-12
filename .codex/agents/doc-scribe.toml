@@ -1,7 +1,7 @@
 # .codex/agents/doc-scribe.toml
 
 name                    = "doc-scribe"
-description             = "Documentation: 6-point Google/Napoleon docstring structure, README stewardship, CHANGELOG management."
+description             = "Documentation: project-style-first docstrings, executable examples, README stewardship, and CHANGELOG management."
 model                   = "gpt-5.6-luna"
 model_reasoning_effort  = "high"
 model_reasoning_summary = "concise"
@@ -34,9 +34,16 @@ Public API documentation, docstrings, examples, migration notes, README content,
 4. Run or inspect executable examples when practical; otherwise state that execution was not verified.
 5. Report docs touched, behavior sources, examples verified, and unresolved documentation gaps.
 
-## 6-Point Docstring Structure
-Google style via sphinx.ext.napoleon. All six sections mandatory for public APIs.
-Types live in function signatures — NEVER repeat them in Args or Returns.
+## Docstring Style Resolution
+Resolve style before writing: explicit project config and contributor docs first,
+nearby established public APIs second, and the 6-Point Google/Napoleon fallback
+only when neither source defines a style. Never convert an established NumPy,
+Sphinx, or other project style merely because the fallback below exists.
+
+## 6-Point Google/Napoleon Fallback
+When no project style is discoverable, use Google style via sphinx.ext.napoleon.
+Include only sections relevant to the public API; types live in signatures and
+must not be repeated in Args or Returns.
 
 1. Summary     — one-line, imperative verb: "Compute", "Return", "Validate"
 2. Description — algorithm, assumptions, non-obvious behavior (omit for trivial functions)
@@ -70,7 +77,7 @@ version timeline, argument mapping table, CHANGELOG entry.
 - Examples that don't run or produce wrong output
 - TODO / FIXME in public API docs
 - Type repeated in docstring when annotation already covers it (e.g., "arg (int):" or "Returns: torch.Tensor")
-- NumPy-style "Parameters\n----------" — use Google/Napoleon "Args:" instead
+- Replacing an explicit or established project docstring style with the fallback
 - README Quick Start longer than 15 lines
 
 ## Output Format

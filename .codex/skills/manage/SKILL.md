@@ -67,6 +67,8 @@ Keep generated structure local to `.codex/` unless the user explicitly requests 
 
 Update relevant descriptions, mappings, routing text, and calibration notes in the same patch when behavior changes. If a reference is intentionally stale, list it in `$OUT_DIR/unresolved-references.md`.
 
+For broad management changes with separable config, docs, calibration, or verification workstreams, route through `delegation-lead` and the shared specialist orchestration policy. Use the lowest-cost capable registered specialist for each bounded workstream. Accept a delegated change only after the handover gate proves ownership, objective evidence, applicable checks, visible unresolved limits, and parent-owned final acceptance.
+
 ### 07: Run shared quality gates
 
 Inspect `run-gates.sh --help`. Supply real commands for affected surfaces and explicit reasons for every not-applicable gate; never use `true` as a substitute for a skip reason. Review must include a clean diff check.

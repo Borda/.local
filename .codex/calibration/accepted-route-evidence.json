@@ -3,6 +3,7 @@
   "active_assignments": {
     "gpt-5.6-luna": [
       "cicd-steward",
+      "delegation-lead",
       "doc-scribe",
       "linting-expert",
       "oss-shepherd",
@@ -27,6 +28,14 @@
     "candidate_quality_gain_threshold": 0.01,
     "description": "Accept an evidence-derived role candidate only with zero pair quality regressions and either mean F1 gain >= 0.01 or geometric-mean normalized cost ratio <= 1.0. Human overrides remain explicit and do not change the recorded strict route result.",
     "human_overrides": [
+      {
+        "decided_at": "2026-07-12",
+        "model": "gpt-5.6-luna",
+        "rationale": "User explicitly requests a cost-aware delegation leader that uses Luna for coordination while routing implementation and executable acceptance to Terra and architecture/security to Sol; the strict Luna route failure remains preserved.",
+        "roles": [
+          "delegation-lead"
+        ]
+      },
       {
         "decided_at": "2026-07-11",
         "model": "gpt-5.6-luna",

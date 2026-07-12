@@ -1,5 +1,5 @@
 {
-  "artifact_path": ".reports/codex/review/<timestamp>/result.json",
+  "artifact_path": ".reports/codex/code-review/<timestamp>/result.json",
   "checks_failed": [],
   "checks_run": [
     "lint",
@@ -56,7 +56,7 @@
     "review_run_id": "stable ID for this review execution",
     "risk_tier": "TRIVIAL|LOCAL|BROAD|HIGH_RISK",
     "scope": "working-tree|path|commit|pr",
-    "specialist_manifest": ".reports/codex/review/<timestamp>/specialist-manifest.json",
+    "specialist_manifest": ".reports/codex/code-review/<timestamp>/specialist-manifest.json",
     "specialist_passes": [
       {
         "attempts": [
@@ -64,12 +64,12 @@
             "agent_path": "/root/qa_review",
             "agent_thread_id": "child thread ID",
             "attempt": 1,
-            "context_path": ".reports/codex/review/<timestamp>/specialists/qa-specialist-context.md",
+            "context_path": ".reports/codex/code-review/<timestamp>/specialists/qa-specialist-context.md",
             "context_sha256": "sha256",
             "effort": "high",
             "event_id": "parent spawn event ID",
             "model": "actual model from child turn_context",
-            "output_path": ".reports/codex/review/<timestamp>/specialists/qa-specialist.md",
+            "output_path": ".reports/codex/code-review/<timestamp>/specialists/qa-specialist.md",
             "output_sha256": "sha256",
             "status": "completed",
             "turn_id": "child turn ID"
@@ -79,7 +79,7 @@
         "blocking_findings": 0,
         "confidence": 0.0,
         "mode": "spawned|substituted",
-        "output_path": ".reports/codex/review/<timestamp>/specialists/qa-specialist.md",
+        "output_path": ".reports/codex/code-review/<timestamp>/specialists/qa-specialist.md",
         "role": "qa-specialist",
         "selected_attempt": 1,
         "trigger": "explicit risk reason from review-routing.json"

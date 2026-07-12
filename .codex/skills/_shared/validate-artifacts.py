@@ -40,7 +40,7 @@ UNRESOLVED_NEXT_OWNERS = {
     "external-reviewer",
 }
 
-RESOLVE_TRIAGE_STATUSES = {
+CODE_REMEDIATE_TRIAGE_STATUSES = {
     "valid",
     "resolved",
     "duplicate",
@@ -51,7 +51,7 @@ RESOLVE_TRIAGE_STATUSES = {
     "needs-clarification",
 }
 
-RESOLVE_RESOLUTION_STATUSES = {
+CODE_REMEDIATE_RESOLUTION_STATUSES = {
     "implemented",
     "resolved",
     "rejected",
@@ -64,7 +64,7 @@ RESOLVE_RESOLUTION_STATUSES = {
     "unresolved",
 }
 
-RESOLVE_FINAL_TABLE_REQUIRED_COLUMNS = {
+CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS = {
     "input item",
     "item name",
     "item type",
@@ -80,7 +80,7 @@ SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
     "audit": {"files": {}},
     "calibrate": {"files": {}},
     "research": {"files": {}},
-    "review": {"files": {}},
+    "code-review": {"files": {}},
     "sync": {"files": {}},
     "develop": {
         "files": {
@@ -95,7 +95,7 @@ SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
             ],
         },
     },
-    "resolve": {
+    "code-remediate": {
         "files": {
             "action-items.md": ["Review Item Resolution Table"],
             "resolution-scope.md": ["Resolution Scope Selection"],
@@ -367,18 +367,18 @@ def _validate_confidence_recovery(result: dict[str, Any], skill: str) -> None:
         raise SystemExit(f"{skill}-confidence-status-should-be-fair")
 
 
-def _validate_resolve_report_intake(result: dict[str, Any], out_dir: Path) -> None:
-    """Validate source-aware review report intake metadata for resolve artifacts."""
+def _validate_code_remediate_report_intake(result: dict[str, Any], out_dir: Path) -> None:
+    """Validate source-aware review report intake metadata for code-remediation artifacts."""
     metadata = result.get("metadata", {})
     if not isinstance(metadata, dict):
-        raise SystemExit("resolve-missing-metadata")
+        raise SystemExit("code-remediate-missing-metadata")
     intake = metadata.get("review_report_intake")
     if not isinstance(intake, dict):
-        raise SystemExit("resolve-missing-review-report-intake")
+        raise SystemExit("code-remediate-missing-review-report-intake")
 
     requested_report = intake.get("requested_report")
     if not isinstance(requested_report, bool):
-        raise SystemExit("resolve-invalid-review-report-requested")
+        raise SystemExit("code-remediate-invalid-review-report-requested")
     for key in (
         "report_items_total",
         "review_gate_items_total",
@@ -387,7 +387,7 @@ def _validate_resolve_report_intake(result: dict[str, Any], out_dir: Path) -> No
     ):
         value = intake.get(key)
         if not isinstance(value, int) or value < 0:
-            raise SystemExit(f"resolve-invalid-review-report-intake:{key}")
+            raise SystemExit(f"code-remediate-invalid-review-report-intake:{key}")
 
     if not requested_report:
         return
@@ -396,72 +396,72 @@ def _validate_resolve_report_intake(result: dict[str, Any], out_dir: Path) -> No
     review_gate_items_total = intake["review_gate_items_total"]
     review_gate_items_selectable = intake["review_gate_items_selectable"]
     if report_items_total < review_gate_items_total:
-        raise SystemExit("resolve-review-gates-exceed-report-items")
+        raise SystemExit("code-remediate-review-gates-exceed-report-items")
     if review_gate_items_total > 0 and review_gate_items_selectable == 0:
-        raise SystemExit("resolve-review-gates-not-selectable")
+        raise SystemExit("code-remediate-review-gates-not-selectable")
 
     action_text = (out_dir / "action-items.md").read_text(encoding="utf-8").lower()
     scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
     if "review report intake" not in action_text:
-        raise SystemExit("resolve-review-report-intake-section-missing")
+        raise SystemExit("code-remediate-review-report-intake-section-missing")
     if review_gate_items_total > 0 and not any(
         token in action_text for token in ("checks_failed", "follow_up", "review-gate", "review gate")
     ):
-        raise SystemExit("resolve-review-gate-items-missing")
+        raise SystemExit("code-remediate-review-gate-items-missing")
     if review_gate_items_total > 0 and "review-gate" not in scope_text and "review gate" not in scope_text:
-        raise SystemExit("resolve-review-gate-scope-missing")
+        raise SystemExit("code-remediate-review-gate-scope-missing")
 
 
-def _validate_resolve_scope_selection(metadata: dict[str, Any], out_dir: Path) -> None:
-    """Validate user-confirmed resolve scope selection metadata."""
+def _validate_code_remediate_scope_selection(metadata: dict[str, Any], out_dir: Path) -> None:
+    """Validate user-confirmed code-remediation scope selection metadata."""
     resolution_scope = metadata.get("resolution_scope")
     if not isinstance(resolution_scope, dict):
-        raise SystemExit("resolve-missing-resolution-scope-metadata")
+        raise SystemExit("code-remediate-missing-resolution-scope-metadata")
 
     selection_source = resolution_scope.get("selection_source")
     if selection_source not in {"explicit-input", "user-prompt", "none-selectable"}:
-        raise SystemExit("resolve-invalid-selection-source")
+        raise SystemExit("code-remediate-invalid-selection-source")
     prompt_presented = resolution_scope.get("prompt_presented")
     if not isinstance(prompt_presented, bool):
-        raise SystemExit("resolve-invalid-prompt-presented")
+        raise SystemExit("code-remediate-invalid-prompt-presented")
     selection_confirmed = resolution_scope.get("selection_confirmed_by_user")
     if not isinstance(selection_confirmed, bool):
-        raise SystemExit("resolve-invalid-selection-confirmation")
+        raise SystemExit("code-remediate-invalid-selection-confirmation")
 
     selected_indexes = resolution_scope.get("selected_indexes")
     deferred_indexes = resolution_scope.get("deferred_indexes")
     selected_groups = resolution_scope.get("selected_severity_groups")
     if not isinstance(selected_indexes, list) or not all(isinstance(item, int) for item in selected_indexes):
-        raise SystemExit("resolve-invalid-selected-indexes")
+        raise SystemExit("code-remediate-invalid-selected-indexes")
     if not isinstance(deferred_indexes, list) or not all(isinstance(item, int) for item in deferred_indexes):
-        raise SystemExit("resolve-invalid-deferred-indexes")
+        raise SystemExit("code-remediate-invalid-deferred-indexes")
     if not isinstance(selected_groups, list) or not all(isinstance(item, str) for item in selected_groups):
-        raise SystemExit("resolve-invalid-selected-severity-groups")
+        raise SystemExit("code-remediate-invalid-selected-severity-groups")
 
     scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
     has_selectable = "none-selectable" not in scope_text and "selectable: 0" not in scope_text
     if has_selectable and selection_source == "none-selectable":
-        raise SystemExit("resolve-selection-source-incorrectly-none-selectable")
+        raise SystemExit("code-remediate-selection-source-incorrectly-none-selectable")
     if has_selectable and selection_source == "user-prompt" and not (prompt_presented and selection_confirmed):
-        raise SystemExit("resolve-user-prompt-not-confirmed")
+        raise SystemExit("code-remediate-user-prompt-not-confirmed")
     if has_selectable and selection_source == "explicit-input" and not selection_confirmed:
-        raise SystemExit("resolve-explicit-selection-not-confirmed")
+        raise SystemExit("code-remediate-explicit-selection-not-confirmed")
     if has_selectable and selection_source not in {"explicit-input", "user-prompt"}:
-        raise SystemExit("resolve-selection-required")
+        raise SystemExit("code-remediate-selection-required")
 
 
-def _validate_resolve_workplan(metadata: dict[str, Any], out_dir: Path) -> None:
+def _validate_code_remediate_workplan(metadata: dict[str, Any], out_dir: Path) -> None:
     """Validate selected-item grouping and specialist assignment metadata."""
     resolution_scope = metadata.get("resolution_scope")
     if not isinstance(resolution_scope, dict):
-        raise SystemExit("resolve-missing-resolution-scope-metadata")
+        raise SystemExit("code-remediate-missing-resolution-scope-metadata")
     selected_indexes = resolution_scope.get("selected_indexes")
     if not isinstance(selected_indexes, list) or not all(isinstance(item, int) for item in selected_indexes):
-        raise SystemExit("resolve-invalid-selected-indexes")
+        raise SystemExit("code-remediate-invalid-selected-indexes")
 
     workplan = metadata.get("resolution_workplan")
     if not isinstance(workplan, dict):
-        raise SystemExit("resolve-missing-resolution-workplan")
+        raise SystemExit("code-remediate-missing-resolution-workplan")
 
     for key in (
         "groups_total",
@@ -472,28 +472,28 @@ def _validate_resolve_workplan(metadata: dict[str, Any], out_dir: Path) -> None:
     ):
         value = workplan.get(key)
         if not isinstance(value, int) or value < 0:
-            raise SystemExit(f"resolve-invalid-resolution-workplan:{key}")
+            raise SystemExit(f"code-remediate-invalid-resolution-workplan:{key}")
 
     workplan_path_value = workplan.get("workplan_path")
     if not isinstance(workplan_path_value, str) or not workplan_path_value.strip():
-        raise SystemExit("resolve-invalid-resolution-workplan:workplan_path")
+        raise SystemExit("code-remediate-invalid-resolution-workplan:workplan_path")
 
     if not selected_indexes:
         return
 
     if workplan["groups_total"] <= 0:
-        raise SystemExit("resolve-selected-items-without-workplan-groups")
+        raise SystemExit("code-remediate-selected-items-without-workplan-groups")
     if workplan["unassigned_selected_items"] != 0:
-        raise SystemExit("resolve-selected-items-unassigned-in-workplan")
+        raise SystemExit("code-remediate-selected-items-unassigned-in-workplan")
     if workplan["parent_owned_groups"] + workplan["specialist_owned_groups"] != workplan["groups_total"]:
-        raise SystemExit("resolve-workplan-owner-count-mismatch")
+        raise SystemExit("code-remediate-workplan-owner-count-mismatch")
     if workplan["verifier_groups"] > workplan["groups_total"]:
-        raise SystemExit("resolve-workplan-verifier-count-exceeds-groups")
+        raise SystemExit("code-remediate-workplan-verifier-count-exceeds-groups")
 
     workplan_path = out_dir / "resolution-workplan.md"
     declared_path = Path(workplan_path_value)
     if declared_path.name != "resolution-workplan.md":
-        raise SystemExit("resolve-workplan-path-name-invalid")
+        raise SystemExit("code-remediate-workplan-path-name-invalid")
     _require_file_sections(
         workplan_path,
         ["Selected Finding Groups", "Specialist Assignments", "Execution Order", "Ungrouped Items"],
@@ -502,11 +502,11 @@ def _validate_resolve_workplan(metadata: dict[str, Any], out_dir: Path) -> None:
     workplan_text = workplan_path.read_text(encoding="utf-8").lower()
     for required_text in ("primary", "verifier", "context", "closure"):
         if required_text not in workplan_text:
-            raise SystemExit(f"resolve-workplan-missing-{required_text}")
+            raise SystemExit(f"code-remediate-workplan-missing-{required_text}")
 
 
 def _count_out_of_scope_items(action_text: str) -> int:
-    """Count concrete out-of-scope rows in a resolve action ledger."""
+    """Count concrete out-of-scope rows in a code-remediation action ledger."""
     count = 0
     for line in action_text.lower().splitlines():
         stripped = line.strip()
@@ -517,52 +517,52 @@ def _count_out_of_scope_items(action_text: str) -> int:
     return count
 
 
-def _validate_resolve_out_of_scope_confirmation(metadata: dict[str, Any], out_dir: Path) -> None:
-    """Validate user confirmation metadata for every out-of-scope resolve item."""
+def _validate_code_remediate_out_of_scope_confirmation(metadata: dict[str, Any], out_dir: Path) -> None:
+    """Validate user confirmation metadata for every out-of-scope code-remediation item."""
     confirmation = metadata.get("out_of_scope_confirmation")
     if not isinstance(confirmation, dict):
-        raise SystemExit("resolve-missing-out-of-scope-confirmation")
+        raise SystemExit("code-remediate-missing-out-of-scope-confirmation")
     count = confirmation.get("count")
     all_confirmed = confirmation.get("all_confirmed_by_user")
     items = confirmation.get("items")
     if not isinstance(count, int) or count < 0:
-        raise SystemExit("resolve-invalid-out-of-scope-count")
+        raise SystemExit("code-remediate-invalid-out-of-scope-count")
     if not isinstance(all_confirmed, bool):
-        raise SystemExit("resolve-invalid-out-of-scope-confirmed")
+        raise SystemExit("code-remediate-invalid-out-of-scope-confirmed")
     if not isinstance(items, list):
-        raise SystemExit("resolve-invalid-out-of-scope-items")
+        raise SystemExit("code-remediate-invalid-out-of-scope-items")
     if count != len(items):
-        raise SystemExit("resolve-out-of-scope-count-mismatch")
+        raise SystemExit("code-remediate-out-of-scope-count-mismatch")
 
     action_text = (out_dir / "action-items.md").read_text(encoding="utf-8")
     observed_count = _count_out_of_scope_items(action_text)
     if observed_count > count:
-        raise SystemExit("resolve-out-of-scope-items-not-recorded")
+        raise SystemExit("code-remediate-out-of-scope-items-not-recorded")
     if count == 0:
         if not all_confirmed:
-            raise SystemExit("resolve-zero-out-of-scope-not-confirmed")
+            raise SystemExit("code-remediate-zero-out-of-scope-not-confirmed")
         return
     if not all_confirmed:
-        raise SystemExit("resolve-out-of-scope-not-confirmed")
+        raise SystemExit("code-remediate-out-of-scope-not-confirmed")
     for index, item in enumerate(items):
         if not isinstance(item, dict):
-            raise SystemExit(f"resolve-out-of-scope-item-not-object:{index}")
+            raise SystemExit(f"code-remediate-out-of-scope-item-not-object:{index}")
         for key in ("item_id", "source", "rationale", "evidence_path"):
             value = item.get(key)
             if not isinstance(value, str) or not value.strip():
-                raise SystemExit(f"resolve-out-of-scope-item-missing-{key}:{index}")
+                raise SystemExit(f"code-remediate-out-of-scope-item-missing-{key}:{index}")
         if item.get("user_confirmed") is not True:
-            raise SystemExit(f"resolve-out-of-scope-item-not-confirmed:{index}")
+            raise SystemExit(f"code-remediate-out-of-scope-item-not-confirmed:{index}")
 
 
-def _validate_resolve_pr_relevance(metadata: dict[str, Any], out_dir: Path) -> None:
+def _validate_code_remediate_pr_relevance(metadata: dict[str, Any], out_dir: Path) -> None:
     """Validate PR relevance triage for report and PR-review items."""
     relevance = metadata.get("pr_relevance")
     if not isinstance(relevance, dict):
-        raise SystemExit("resolve-missing-pr-relevance")
+        raise SystemExit("code-remediate-missing-pr-relevance")
     evaluated = relevance.get("evaluated")
     if not isinstance(evaluated, bool):
-        raise SystemExit("resolve-invalid-pr-relevance-evaluated")
+        raise SystemExit("code-remediate-invalid-pr-relevance-evaluated")
 
     for key in (
         "connected_open_items_total",
@@ -572,11 +572,11 @@ def _validate_resolve_pr_relevance(metadata: dict[str, Any], out_dir: Path) -> N
     ):
         value = relevance.get(key)
         if not isinstance(value, int) or value < 0:
-            raise SystemExit(f"resolve-invalid-pr-relevance:{key}")
+            raise SystemExit(f"code-remediate-invalid-pr-relevance:{key}")
 
     is_pr_mode = metadata.get("mode") == "pr" or (out_dir / "pr").exists()
     if is_pr_mode and not evaluated:
-        raise SystemExit("resolve-pr-relevance-not-evaluated")
+        raise SystemExit("code-remediate-pr-relevance-not-evaluated")
     if not evaluated:
         return
 
@@ -585,18 +585,18 @@ def _validate_resolve_pr_relevance(metadata: dict[str, Any], out_dir: Path) -> N
     connected_followup = relevance["connected_required_followup_total"]
     connected_out_of_scope = relevance["connected_items_marked_out_of_scope"]
     if connected_out_of_scope > 0:
-        raise SystemExit("resolve-connected-item-marked-out-of-scope")
+        raise SystemExit("code-remediate-connected-item-marked-out-of-scope")
     if connected_open > 0 and connected_selectable + connected_followup < connected_open:
-        raise SystemExit("resolve-connected-items-not-selectable-or-followup")
+        raise SystemExit("code-remediate-connected-items-not-selectable-or-followup")
 
     action_text = (out_dir / "action-items.md").read_text(encoding="utf-8").lower()
     scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
     if "pr relevance summary" not in action_text or "pr relevance summary" not in scope_text:
-        raise SystemExit("resolve-pr-relevance-summary-missing")
+        raise SystemExit("code-remediate-pr-relevance-summary-missing")
     if connected_open > 0 and not any(
         relation in action_text for relation in ("direct-diff", "pr-intent", "adjacent", "unknown")
     ):
-        raise SystemExit("resolve-connected-relation-missing")
+        raise SystemExit("code-remediate-connected-relation-missing")
 
 
 def _validate_status_counts(
@@ -624,11 +624,11 @@ def _validate_status_counts(
         raise SystemExit(f"{error_prefix}-total-mismatch")
 
 
-def _validate_resolve_final_resolution_table(metadata: dict[str, Any], out_dir: Path) -> None:
-    """Validate the final resolve table covers every ingested entry."""
+def _validate_code_remediate_final_resolution_table(metadata: dict[str, Any], out_dir: Path) -> None:
+    """Validate the final code-remediation table covers every ingested entry."""
     table = metadata.get("final_resolution_table")
     if not isinstance(table, dict):
-        raise SystemExit("resolve-missing-final-resolution-table")
+        raise SystemExit("code-remediate-missing-final-resolution-table")
 
     count_keys = (
         "ingested_entries_total",
@@ -641,36 +641,36 @@ def _validate_resolve_final_resolution_table(metadata: dict[str, Any], out_dir: 
     for key in count_keys:
         value = table.get(key)
         if not isinstance(value, int) or value < 0:
-            raise SystemExit(f"resolve-invalid-final-resolution-table:{key}")
+            raise SystemExit(f"code-remediate-invalid-final-resolution-table:{key}")
         counts[key] = value
 
     if counts["omitted_entries_total"] != 0:
-        raise SystemExit("resolve-final-table-omitted-entries")
+        raise SystemExit("code-remediate-final-table-omitted-entries")
     if counts["ingested_entries_total"] != counts["table_rows_total"]:
-        raise SystemExit("resolve-final-table-row-count-mismatch")
+        raise SystemExit("code-remediate-final-table-row-count-mismatch")
     if counts["selectable_rows_total"] + counts["nonselectable_rows_total"] != counts["table_rows_total"]:
-        raise SystemExit("resolve-final-table-selectable-count-mismatch")
+        raise SystemExit("code-remediate-final-table-selectable-count-mismatch")
 
     _validate_status_counts(
         table.get("triage_status_counts"),
-        RESOLVE_TRIAGE_STATUSES,
+        CODE_REMEDIATE_TRIAGE_STATUSES,
         counts["table_rows_total"],
-        "resolve-triage-status-counts",
+        "code-remediate-triage-status-counts",
     )
     _validate_status_counts(
         table.get("resolution_status_counts"),
-        RESOLVE_RESOLUTION_STATUSES,
+        CODE_REMEDIATE_RESOLUTION_STATUSES,
         counts["table_rows_total"],
-        "resolve-resolution-status-counts",
+        "code-remediate-resolution-status-counts",
     )
 
     required_columns = table.get("required_columns")
     if not isinstance(required_columns, list) or not all(isinstance(item, str) for item in required_columns):
-        raise SystemExit("resolve-final-table-required-columns-invalid")
+        raise SystemExit("code-remediate-final-table-required-columns-invalid")
     normalized_columns = {item.strip().lower() for item in required_columns}
-    missing_columns = sorted(RESOLVE_FINAL_TABLE_REQUIRED_COLUMNS - normalized_columns)
+    missing_columns = sorted(CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS - normalized_columns)
     if missing_columns:
-        raise SystemExit("resolve-final-table-required-columns-missing:" + ",".join(missing_columns))
+        raise SystemExit("code-remediate-final-table-required-columns-missing:" + ",".join(missing_columns))
 
     if counts["table_rows_total"] == 0:
         return
@@ -680,9 +680,9 @@ def _validate_resolve_final_resolution_table(metadata: dict[str, Any], out_dir: 
         out_dir / "action-items.md",
         ["Review Item Resolution Table", "Final Resolution Summary", "Final Resolution Table Completeness"],
     )
-    for required_column in sorted(RESOLVE_FINAL_TABLE_REQUIRED_COLUMNS):
+    for required_column in sorted(CODE_REMEDIATE_FINAL_TABLE_REQUIRED_COLUMNS):
         if required_column not in action_text:
-            raise SystemExit(f"resolve-final-table-column-missing:{required_column}")
+            raise SystemExit(f"code-remediate-final-table-column-missing:{required_column}")
     for required_text in (
         "ingested entries",
         "table rows",
@@ -691,14 +691,14 @@ def _validate_resolve_final_resolution_table(metadata: dict[str, Any], out_dir: 
         "resolution status counts",
     ):
         if required_text not in action_text:
-            raise SystemExit(f"resolve-final-table-missing-{required_text.replace(' ', '-')}")
+            raise SystemExit(f"code-remediate-final-table-missing-{required_text.replace(' ', '-')}")
 
 
-def _validate_resolve_unresolved_summary(metadata: dict[str, Any], out_dir: Path) -> None:
+def _validate_code_remediate_unresolved_summary(metadata: dict[str, Any], out_dir: Path) -> None:
     """Validate selected unresolved work is actionable and not overclaimed."""
     summary = metadata.get("unresolved_summary")
     if not isinstance(summary, dict):
-        raise SystemExit("resolve-missing-unresolved-summary")
+        raise SystemExit("code-remediate-missing-unresolved-summary")
 
     count_keys = (
         "selected_items_total",
@@ -714,43 +714,43 @@ def _validate_resolve_unresolved_summary(metadata: dict[str, Any], out_dir: Path
     for key in count_keys:
         value = summary.get(key)
         if not isinstance(value, int) or value < 0:
-            raise SystemExit(f"resolve-invalid-unresolved-summary:{key}")
+            raise SystemExit(f"code-remediate-invalid-unresolved-summary:{key}")
         counts[key] = value
 
     if counts["selected_items_resolved"] + counts["selected_items_unresolved"] != counts["selected_items_total"]:
-        raise SystemExit("resolve-unresolved-summary-total-mismatch")
+        raise SystemExit("code-remediate-unresolved-summary-total-mismatch")
     if not isinstance(summary.get("all_local_actionable_items_closed"), bool):
-        raise SystemExit("resolve-invalid-local-actionable-closed")
+        raise SystemExit("code-remediate-invalid-local-actionable-closed")
     if summary["all_local_actionable_items_closed"] and counts["local_actionable_items_unresolved"] > 0:
-        raise SystemExit("resolve-local-actionable-contradiction")
+        raise SystemExit("code-remediate-local-actionable-contradiction")
 
     reason_groups = summary.get("unresolved_reason_groups")
     if not isinstance(reason_groups, list):
-        raise SystemExit("resolve-invalid-unresolved-reason-groups")
+        raise SystemExit("code-remediate-invalid-unresolved-reason-groups")
     if counts["selected_items_unresolved"] > 0 and not reason_groups:
-        raise SystemExit("resolve-unresolved-reason-groups-missing")
+        raise SystemExit("code-remediate-unresolved-reason-groups-missing")
 
     grouped_count = 0
     for index, group in enumerate(reason_groups):
         if not isinstance(group, dict):
-            raise SystemExit(f"resolve-unresolved-reason-group-not-object:{index}")
+            raise SystemExit(f"code-remediate-unresolved-reason-group-not-object:{index}")
         reason = group.get("reason")
         if reason not in UNRESOLVED_REASON_GROUPS:
-            raise SystemExit(f"resolve-invalid-unresolved-reason:{index}")
+            raise SystemExit(f"code-remediate-invalid-unresolved-reason:{index}")
         count = group.get("count")
         if not isinstance(count, int) or count <= 0:
-            raise SystemExit(f"resolve-invalid-unresolved-reason-count:{index}")
+            raise SystemExit(f"code-remediate-invalid-unresolved-reason-count:{index}")
         grouped_count += count
         owner = group.get("owner")
         if owner not in UNRESOLVED_NEXT_OWNERS:
-            raise SystemExit(f"resolve-invalid-unresolved-owner:{index}")
+            raise SystemExit(f"code-remediate-invalid-unresolved-owner:{index}")
         for key in ("next_action", "evidence_path"):
             value = group.get(key)
             if not isinstance(value, str) or not value.strip():
-                raise SystemExit(f"resolve-unresolved-reason-missing-{key}:{index}")
+                raise SystemExit(f"code-remediate-unresolved-reason-missing-{key}:{index}")
 
     if grouped_count != counts["selected_items_unresolved"]:
-        raise SystemExit("resolve-unresolved-reason-count-mismatch")
+        raise SystemExit("code-remediate-unresolved-reason-count-mismatch")
     if counts["selected_items_unresolved"] == 0:
         return
 
@@ -761,10 +761,10 @@ def _validate_resolve_unresolved_summary(metadata: dict[str, Any], out_dir: Path
     unresolved_text = (out_dir / "unresolved.txt").read_text(encoding="utf-8").lower()
     for required_text in ("closure class", "next owner", "attempted evidence"):
         if required_text not in unresolved_text:
-            raise SystemExit(f"resolve-unresolved-summary-missing-{required_text.replace(' ', '-')}")
+            raise SystemExit(f"code-remediate-unresolved-summary-missing-{required_text.replace(' ', '-')}")
 
 
-def _validate_resolve_pr_identity(
+def _validate_code_remediate_pr_identity(
     routing: dict[str, Any],
     remote_selection: dict[str, Any],
     target_branch: dict[str, Any],
@@ -772,30 +772,30 @@ def _validate_resolve_pr_identity(
 ) -> None:
     """Reconcile authoritative PR remote, base OID, and checkout head evidence."""
     if routing.get("base_identity_source") != "pr_url":
-        raise SystemExit("resolve-pr-routing-base-identity-not-authoritative")
+        raise SystemExit("code-remediate-pr-routing-base-identity-not-authoritative")
     expected_identity = remote_selection.get("expected")
     if not isinstance(expected_identity, dict):
-        raise SystemExit("resolve-pr-remote-selection-expected-missing")
+        raise SystemExit("code-remediate-pr-remote-selection-expected-missing")
     if expected_identity.get("host") != routing.get("base_host"):
-        raise SystemExit("resolve-pr-remote-selection-host-mismatch")
+        raise SystemExit("code-remediate-pr-remote-selection-host-mismatch")
     if expected_identity.get("repository") != routing.get("base_repo"):
-        raise SystemExit("resolve-pr-remote-selection-repository-mismatch")
+        raise SystemExit("code-remediate-pr-remote-selection-repository-mismatch")
     if target_branch.get("remote") != remote_selection.get("remote"):
-        raise SystemExit("resolve-pr-target-branch-remote-mismatch")
+        raise SystemExit("code-remediate-pr-target-branch-remote-mismatch")
     if target_branch.get("remote_url") != remote_selection.get("remote_url"):
-        raise SystemExit("resolve-pr-target-branch-remote-url-mismatch")
+        raise SystemExit("code-remediate-pr-target-branch-remote-url-mismatch")
     expected_base = target_branch.get("expected_base_oid")
     local_base = target_branch.get("local_head")
     if not expected_base or expected_base != routing.get("base_oid"):
-        raise SystemExit("resolve-pr-target-branch-expected-oid-missing")
+        raise SystemExit("code-remediate-pr-target-branch-expected-oid-missing")
     if not local_base or local_base != expected_base or target_branch.get("base_matches_pr_metadata") is not True:
-        raise SystemExit("resolve-pr-target-branch-oid-mismatch")
+        raise SystemExit("code-remediate-pr-target-branch-oid-mismatch")
     if checkout.get("pr_url") != routing.get("pr_url"):
-        raise SystemExit("resolve-pr-local-checkout-url-mismatch")
+        raise SystemExit("code-remediate-pr-local-checkout-url-mismatch")
     if not checkout.get("expected_head") or checkout.get("expected_head") != routing.get("head_oid"):
-        raise SystemExit("resolve-pr-local-checkout-expected-head-missing")
+        raise SystemExit("code-remediate-pr-local-checkout-expected-head-missing")
     if checkout.get("local_head") != checkout.get("expected_head"):
-        raise SystemExit("resolve-pr-local-checkout-oid-mismatch")
+        raise SystemExit("code-remediate-pr-local-checkout-oid-mismatch")
 
 
 def validate(skill: str, out_dir: Path, result_path: Path) -> None:
@@ -821,24 +821,24 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
     for filename in jsonl_files:
         _validate_jsonl(out_dir / str(filename))
     _validate_confidence_recovery(result, skill)
-    if skill == "resolve":
+    if skill == "code-remediate":
         metadata = result.get("metadata", {})
         if not isinstance(metadata, dict):
-            raise SystemExit("resolve-missing-metadata")
+            raise SystemExit("code-remediate-missing-metadata")
         resolution_scope = metadata.get("resolution_scope")
         if not isinstance(resolution_scope, dict):
-            raise SystemExit("resolve-missing-resolution-scope-metadata")
-        _validate_resolve_scope_selection(metadata, out_dir)
-        _validate_resolve_workplan(metadata, out_dir)
-        _validate_resolve_out_of_scope_confirmation(metadata, out_dir)
-        _validate_resolve_report_intake(result, out_dir)
-        _validate_resolve_final_resolution_table(metadata, out_dir)
-        _validate_resolve_pr_relevance(metadata, out_dir)
-        _validate_resolve_unresolved_summary(metadata, out_dir)
+            raise SystemExit("code-remediate-missing-resolution-scope-metadata")
+        _validate_code_remediate_scope_selection(metadata, out_dir)
+        _validate_code_remediate_workplan(metadata, out_dir)
+        _validate_code_remediate_out_of_scope_confirmation(metadata, out_dir)
+        _validate_code_remediate_report_intake(result, out_dir)
+        _validate_code_remediate_final_resolution_table(metadata, out_dir)
+        _validate_code_remediate_pr_relevance(metadata, out_dir)
+        _validate_code_remediate_unresolved_summary(metadata, out_dir)
         scope_text = (out_dir / "resolution-scope.md").read_text(encoding="utf-8").lower()
         for required_text in ("selectable", "selected", "deferred"):
             if required_text not in scope_text:
-                raise SystemExit(f"resolve-scope-missing-{required_text}")
+                raise SystemExit(f"code-remediate-scope-missing-{required_text}")
         pr_dir = out_dir / "pr"
         if metadata.get("mode") == "pr" or pr_dir.exists():
             for filename in (
@@ -857,30 +857,30 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 "merge-tree.txt",
             ):
                 if not (pr_dir / filename).exists():
-                    raise SystemExit(f"missing-resolve-pr-artifact:{filename}")
+                    raise SystemExit(f"missing-code-remediate-pr-artifact:{filename}")
             routing = _load_json(pr_dir / "pr-routing.json")
             remote_selection = _load_json(pr_dir / "remote-selection.json")
             target_branch = _load_json(pr_dir / "target-branch.json")
             checkout = _load_json(pr_dir / "local-checkout.json")
             if routing.get("local_checkout_required") is not True:
-                raise SystemExit("resolve-pr-routing-local-checkout-not-required")
+                raise SystemExit("code-remediate-pr-routing-local-checkout-not-required")
             if "--force" in str(routing.get("local_checkout_command", "")):
-                raise SystemExit("resolve-pr-routing-force-checkout-forbidden")
+                raise SystemExit("code-remediate-pr-routing-force-checkout-forbidden")
             if "force_policy" not in routing:
-                raise SystemExit("resolve-pr-routing-force-policy-missing")
+                raise SystemExit("code-remediate-pr-routing-force-policy-missing")
             if target_branch.get("status") != "fetched":
-                raise SystemExit("resolve-pr-target-branch-not-fetched")
+                raise SystemExit("code-remediate-pr-target-branch-not-fetched")
             if checkout.get("status") != "checked-out":
-                raise SystemExit("resolve-pr-local-checkout-not-checked-out")
+                raise SystemExit("code-remediate-pr-local-checkout-not-checked-out")
             if "--force" in str(checkout.get("command", "")):
-                raise SystemExit("resolve-pr-local-checkout-force-forbidden")
+                raise SystemExit("code-remediate-pr-local-checkout-force-forbidden")
             if "force_policy" not in checkout:
-                raise SystemExit("resolve-pr-local-checkout-force-policy-missing")
+                raise SystemExit("code-remediate-pr-local-checkout-force-policy-missing")
             if checkout.get("head_matches_pr") is not True:
-                raise SystemExit("resolve-pr-local-checkout-head-mismatch")
-            _validate_resolve_pr_identity(routing, remote_selection, target_branch, checkout)
+                raise SystemExit("code-remediate-pr-local-checkout-head-mismatch")
+            _validate_code_remediate_pr_identity(routing, remote_selection, target_branch, checkout)
             if (pr_dir / "head-files").exists():
-                raise SystemExit("resolve-pr-raw-head-file-snapshots-forbidden")
+                raise SystemExit("code-remediate-pr-raw-head-file-snapshots-forbidden")
             _require_file_sections(
                 out_dir / "merge-prestage.md",
                 [
@@ -903,7 +903,7 @@ def validate(skill: str, out_dir: Path, result_path: Path) -> None:
                 "needs-clarification",
             )
             if not any(status in action_text for status in required):
-                raise SystemExit("resolve-pr-triage-status-missing")
+                raise SystemExit("code-remediate-pr-triage-status-missing")
 
 
 def main() -> int:
