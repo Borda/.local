@@ -45,6 +45,10 @@ Tier 2 — Weak (requires ≥3 independent sources OR experimental validation): 
 4. Tier upgrade: if tracing reveals a Tier 1 source (official doc, spec, changelog) that the Tier 2 source cited but wasn't found directly — read that Tier 1 source; if it confirms the claim, the premise is now Tier 1 verified (sufficient alone)
 5. If after tracing, distinct-origin count < 3 and no Tier 1 found → require experimental validation
 
+## Adversarial Pass (all generation)
+
+While producing output — not only after — ask "what would make this wrong?". Code: trace failure path, not just happy path (off-by-one, stale API, edge case real data hits). Claims: separate "verified" from "pattern-matched" — verify or hedge the latter explicitly.
+
 ## Confidence Block (required on all analysis tasks)
 
 Every analysis agent **must** end with:

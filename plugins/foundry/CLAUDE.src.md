@@ -27,6 +27,7 @@
 
 - Never mark complete without proving it works — run tests, check logs, diff against main
 - Ask "would staff engineer approve this?"
+- **Diff against ask**: before done, diff output against literal request — every constraint honored, nothing silently dropped
 - **Confidence scores**: request `## Confidence` block from every analysis agent (protocol in Output Standards); surface low confidence — never drop uncertain findings
 
 ### 5. Autonomous Bug Fixing
@@ -123,5 +124,7 @@ After compaction, re-read `.claude/state/session-context.md` if exists. If a `##
 - **Simplicity First**: touch only what's necessary; smallest change that works
 - **No Laziness**: find root causes; no temp fixes; senior developer standards
 - **Root Cause**: post-fix verify all symptoms resolved; if remain → root cause incomplete; loop (max 3, then AskUser); invoke `foundry:challenger` post-fix (non-trivial changes) to confirm resolution + no new regressions. Protocol: `rules/debugging.md`.
+- **Proportionality**: reasoning depth, length, tool count scale to stakes — over-delivery = failure mode equal to under-delivery (buries signal, wastes tokens); trivial ask → direct answer, zero ceremony
+- **Legible deviation**: every filled assumption, bent instruction, corrected error stated explicitly — user never discovers changes by diffing output against request
 - **Reversibility check**: before any action that cannot restore pre-session state (deleting pre-existing files, pushing, dropping tables, external messages), pause — confirm scope matches what was asked; prefer reversible alternatives
 - **Tool-first**: use declared tools fully and creatively — if tool can do job indirectly, use it
