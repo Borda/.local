@@ -110,13 +110,22 @@ Set `SENSITIVE_FLAGS=()` array; add one entry per class found (e.g., `"credentia
 
 ### Step R3: Spawn agent (only when `HAS_REPRO=true`)
 
-Extract minimal reproduction code or steps from thread. Choose agent by content:
+Extract minimal reproduction code or steps from thread. Bind `REPRO_AGENT` — **default `foundry:sw-engineer`**; switch only on explicit signal. Never leave `subagent_type` to the tool default (`general-purpose`): an unbound spawn silently downgrades to a generic agent, which then spawns generic children (it has the `Agent` tool; `foundry:sw-engineer` does not) — a cascade of non-specialist agents on code.
 
-- Code uses pytest / unittest / Python testing patterns → `foundry:qa-specialist`
-- General Python / CLI / config reproduction → `foundry:sw-engineer`
-- Language ambiguous or no code → `foundry:sw-engineer`
+- Code uses pytest / unittest / Python testing patterns → `REPRO_AGENT=foundry:qa-specialist`
+- Everything else (general Python / CLI / config / ambiguous / no code) → `REPRO_AGENT=foundry:sw-engineer` (default)
 
-Spawn chosen agent with this prompt (all context must be self-contained — runs in forked context):
+> Foundry absent (per **Agent Resolution** above): `REPRO_AGENT=general-purpose` and prepend the `foundry:sw-engineer` role prefix from `agent-resolution.md` to the prompt. This is the **only** path to `general-purpose`.
+
+Issue the spawn as a literal bound call — `subagent_type` **must** be the `REPRO_AGENT` value, never inferred (all context self-contained — runs in forked context):
+
+```text
+Agent(subagent_type="<REPRO_AGENT>", description="Reproduce issue #<NUMBER>", prompt="""
+<the reproduction prompt below>
+""")
+```
+
+Reproduction prompt:
 
 ```markdown
 Attempt to reproduce the issue in GitHub #<NUMBER>.
@@ -267,6 +276,6 @@ Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.
 - **Cache check**: `$CACHE_FILE` keyed per item number — always set by parent SKILL.md before mode file executes; never fetch on cache hit
 - **Discussion pagination cap**: 200-comment limit is safety rail; threads >200 exceptional; always note cap in Summary if hit
 - **Sensitive pattern scan**: flag presence only, never include actual values — GDPR/PII risk; if `"credentials"` flagged, add advisory to Suggested Response
-- **Reproduction agent**: choose `qa-specialist` for pytest patterns, `sw-engineer` for all others; don't spawn if `HAS_REPRO=false`
+- **Reproduction agent**: default `foundry:sw-engineer`; `qa-specialist` only on pytest patterns. Bind `subagent_type` in the literal `Agent()` call — never let it default to `general-purpose` (unbound spawn downgrades + cascades generic children). Don't spawn if `HAS_REPRO=false`
 
 </notes>
