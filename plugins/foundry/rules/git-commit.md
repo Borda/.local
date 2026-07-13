@@ -15,6 +15,7 @@ paths:
 Always-on constraints (apply even without reading full rule):
 
 - Subject `type(scope): detail` ≤50 chars; classify ALL changes from `git diff HEAD` + `git diff --stat HEAD` into tiers — subject names highest-tier change; **never draft from session memory**
+- **Evidence-only body**: every clause must trace to a `+`/`-` line in `git diff HEAD` — pick a distinctive token per bullet, confirm it's in the diff, before finalizing. Conversation context may explain *why* a diff-confirmed change happened; it may never assert a change, action, or removal that isn't actually in the diff (reverted-then-narrated edits are the classic trap)
 - No line wrapping in body; no GitHub auto-links (`#N`, `@name`); no non-VCS paths (`/tmp/`, `~/.claude/`)
 - Co-author trailers on EVERY commit, after `---` separator: `Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>`; add `Co-authored-by: OpenAI Codex <codex@openai.com>` when Codex shaped the outcome
 - **Never commit autonomously** — `commit-guard.js` does not hook-enforce commit; prompt-discipline only. Two valid signals: documented skill workflow step (self-authorizes however many commits the skill's commit strategy calls for, no per-commit question) OR same-turn AskUserQuestion confirmation, required for every ad-hoc/interactive commit on any branch (feature or default), no exceptions, no auto-arm

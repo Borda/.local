@@ -5,7 +5,7 @@ For every ``bin/*.py`` script that defines an ``argparse`` parser, extract the e
 set of option strings it registers (via static AST parsing — the target script is
 never imported or executed). Then scan every ``skills/*/SKILL.md`` for a literal
 ``python .../bin/<script>.py`` invocation and collect the ``--long-flag`` tokens on
-that same shell command (following ``\`` line-continuations, stopping at a
+that same shell command (following ``\\`` line-continuations, stopping at a
 pipe/``;``/``&&``/``$(`` boundary). A documented ``--long-flag`` that the script's
 argparse does NOT define is a finding: the doc drifted (flag renamed, removed, or
 typo'd). This is a flag-ACCURACY check, not an enumeration-completeness one — a real
