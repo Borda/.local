@@ -18,9 +18,11 @@ For docs, dependencies, CI/CD, releases, security, and deprecations, prefer curr
 - Prefer the smallest reversible change that solves the actual problem. If a fix feels speculative, stop and re-scope before widening the blast radius.
 - Use subagents when a task splits cleanly into disjoint file ownership or parallel verification. Keep the prompt tight and task-specific; do not duplicate the main thread's full context.
 - Treat verification as part of the work, not a follow-up. Do not mark a task complete until the relevant lint, tests, or other gates have been run and the result can be explained concretely.
+- After a failed tool call, retry unchanged only if external state may have changed; otherwise diagnose and adapt.
 - When multiple agents contribute, keep handoffs compact and ownership clear. Never redo another agent's work unless you are resolving a conflict or an explicit gap.
 - If progress stalls or the path starts to drift, re-plan instead of forcing the current approach through.
 - When confidence is limited, say so explicitly and separate verified facts from hypotheses.
+- Before final output, compare the result with the request; within its output contract, disclose unmet constraints, filled material assumptions, corrected prior claims, and deliberate deviations.
 - Treat symptom-first failures as investigation tasks before implementation. Failing tests or CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, and user reports that describe symptoms without a verified cause must route through `investigate` or equivalent documented evidence before `develop`, `code-remediate`, or workaround recommendations.
 - Workarounds are temporary mitigations only. Do not present a workaround-only change or answer as complete unless the user explicitly requests a temporary mitigation; label the mitigation and the remaining root-cause work.
 

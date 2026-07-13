@@ -8,7 +8,7 @@ All codex-native skills must emit the same gate fields.
 2. `format`: formatter check or formatter run result
 3. `types`: `mypy` (or project type check command)
 4. `tests`: impacted tests at minimum, full suite for broad changes
-5. `review`: explicit self-review of diff and risks
+5. `review`: explicit self-review of diff and risks; check request conformance for the deliverable, constraints, and disclosed deviations
 
 ## Required gate output
 
