@@ -99,6 +99,30 @@ Compliant example — only valid form:
 - Max 4 questions per call; group related sub-questions into one option set rather than asking sequentially
 - **Recommended option placement**: place recommended option **second** in options list, not first and not last. First slot = most natural/neutral default; second = recommended; last = skip/abort.
 
+### Confidence Bars
+
+Before every `AskUserQuestion` multiple-choice call, emit a green-bar confidence legend in the response body — quick visual of where the model leans. Legend is a visual aid, **not** a prose question; exempt from the no-prose-before-question constraint above.
+
+Format — one line per option, 5-cell bar, each cell = 20%:
+
+```
+Confidence:
+
+A  🟩🟩⬜⬜⬜  40%
+B  🟩🟩🟩🟩⬜  75%  ←
+C  🟩⬜⬜⬜⬜  15%
+```
+
+Rules:
+
+- 🟩 filled, ⬜ empty — **Unicode emoji only, never ANSI** (consistent with Reply Visibility no-ANSI rule)
+- Cells = `round(pct / 20)` filled; label exact `pct%` after bar
+- Percentages = model's own estimate that each option is the right choice; span options, need not sum to exactly 100
+- Mark highest-confidence option with trailing `←` (aligns with second-slot recommended option per placement rule above)
+- Legend precedes the `AskUserQuestion` tool call; option letters (A/B/…) map to option order in the call
+- **Genuine-recommendation gate**: show bars when model has a real leaning (a correct/better answer exists). Pure user-taste questions with no right answer (theme, naming preference) → flatten bars to near-even or skip legend — never fake a recommendation
+- Applies globally — all skills, agents, model-generated questions
+
 ## Output Routing
 
 Full rules (including anti-overwrite counter-suffix and branch-slug format) and breaking-findings format: see `quality-gates.md`.

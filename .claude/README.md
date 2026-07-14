@@ -594,7 +594,7 @@ _Empty rows = no direct agent dispatches (intentional, not an omission). ✓ = a
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `artifact-lifecycle.md` | (global)                        | Canonical dot-prefixed artifact layout, run-dir naming, TTL policy                                                       |
 | `claude-config.md`      | (global)                        | Universal ops rules: no hardcoded paths, Bash timeouts, two-separate-calls navigation pattern                            |
-| `communication.md`      | (global)                        | Re: anchor format, progress narration, tone, output routing, terminal color conventions                                  |
+| `communication.md`      | (global)                        | Re: anchor format, progress narration, tone, output routing, terminal color conventions, confidence bars                 |
 | `external-data.md`      | (global)                        | Pagination and completeness rules for REST, GraphQL, `gh` CLI — never work on partial result sets                        |
 | `foundry-config.md`     | `.claude/**`                    | Plan mode gate for `.claude/` edits, post-edit checklist, XML tag conventions, cleanup hook, settings.json allow entries |
 | `git-commit.md`         | (global)                        | Commit message format, push safety (explicit confirmation required), branch safety                                       |
