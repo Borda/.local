@@ -39,7 +39,7 @@ Runs on full draft after adversarial review, before writing to disk. Check for e
 | **Verbatim duplication** | Identical or near-identical sentence appearing in ≥2 sections (Summary, Spotlight, Notable changes, Migration guide) | `VERBATIM-DUP: "<sentence>" appears in <section A> and <section B>` |
 | **Misclassified scope** | Internal-only change (dead code removal, doc reformat, test-only, CI config) appearing in user-facing section | `SCOPE: "<entry>" is internal-only — move to Internal or remove` |
 
-For each finding: emit one flag line with location (`§<section-name>`, item text). Collect all findings before taking action — do not fix inline during scan.
+For each finding: emit one flag line with location (`§<section-name>`, item text). Collect all findings before taking action — don't fix inline during scan.
 
 **After scan**: zero findings → proceed to Polish. Findings present → list all; fix each; re-scan once; proceed only when clean.
 
@@ -82,6 +82,6 @@ Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == true`):
 - **`--summary`** (if set): no shepherd (internal) → Draft executive summary saved to `.temp/output-release-summary-$BRANCH-$DATE.md` — confirm written. Notify: `→ saved to .temp/output-release-summary-<branch>-<date>.md`
 - **`--migration`** (if set): shepherd review (public-facing) → save to `.temp/output-release-migration-$BRANCH-$DATE.md`. Notify: `→ saved to .temp/output-release-migration-<branch>-<date>.md`
 
-**Human gate** — stop and hand off after writing files. GitHub release must be created with project-level tooling (`gh release create`). See `$_OSS_SHARED/release-checklist.md` for exact release steps.
+**Human gate** — stop, hand off after writing files. GitHub release must be created with project-level tooling (`gh release create`). See `$_OSS_SHARED/release-checklist.md` for exact release steps.
 
 > Confidence block — notes mode: end response here with `## Confidence` block per CLAUDE.md output standards.

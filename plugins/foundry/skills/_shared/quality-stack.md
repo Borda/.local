@@ -171,6 +171,6 @@ Replace bare agent names in spawn prompts with `foundry:` prefixed equivalents: 
 
 Read `.claude/skills/_shared/codex-delegation.md` and apply delegation criteria. Delegate mechanical follow-up tasks to Codex when accurate specific brief writable.
 
-Distinct from Codex pre-pass — pre-pass checks implementation diff for correctness; mechanical delegation outsources low-level follow-up work (scaffolding, boilerplate, migration scripts, etc.) after review loop closes.
+Distinct from Codex pre-pass — pre-pass checks implementation diff for correctness; mechanical delegation outsources low-level follow-up work (scaffolding, boilerplate, migration scripts) after review loop closes.
 
 Include `### Codex Delegation` section in final report only when tasks delegated — omit entirely if nothing delegated.

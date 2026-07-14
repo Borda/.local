@@ -6,7 +6,7 @@ Thresholds: agents > 300 lines (~4 k tokens) · skill SKILL.md > 600 lines (~8 k
 
 > **`bin/` scripts are exempt** — executables run via subprocess, never loaded into LLM context; size irrelevant to token budget. Check 12 applies to `.md` config files only.
 
-> **Line count = human-readable proxy; token count = true measure.** Thresholds guide human review — not actual context budget. Short sentences + short lines preferred: easier to read AND cheaper per logical unit. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines not a fix.
+> **Line count = human-readable proxy; token count = true measure.** Thresholds guide human review — not actual context budget. Short sentences + short lines preferred: easier to read AND cheaper per logical unit. Collapsing multiple short lines into one long line does NOT reduce token cost and destroys readability. Fix = remove or distill content. Collapsing lines is not a fix.
 
 ```bash
 # bytes / 4 ≈ tokens (1 token ≈ 4 bytes in English markdown)
@@ -77,7 +77,6 @@ fi
 Checks two failure modes: (1) empty blocks — `<tag></tag>` with only whitespace between open and close; (2) unbalanced tags — open count differs from close count. Both leave files structurally broken.
 
 Scan all agent and skill files via deterministic bin/ script:
-
 ```bash
 printf "=== Check 14a: Structural tag symmetry ===\n"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_tag_symmetry.py" \
@@ -111,7 +110,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_fence_symmetry.py" \
 
 ## Check 14c — README drift
 
-Detects README facts that have drifted from disk: (1) a literal `Current version: `X.Y.Z`` marker not matching the plugin's `plugin.json` version; (2) a `.py`/`.sh` script named on a README line mentioning `bin/` (or as an explicit `plugins/<plugin>/bin/<name>` path) that exists nowhere in the plugin. Arbitrary version-shaped strings (release examples, historical benchmark tags) are ignored — only the explicit marker is checked.
+Detects README facts drifted from disk: (1) a literal `Current version: `X.Y.Z`` marker not matching the plugin's `plugin.json` version; (2) a `.py`/`.sh` script named on a README line mentioning `bin/` (or as an explicit `plugins/<plugin>/bin/<name>` path) existing nowhere in the plugin. Arbitrary version-shaped strings (release examples, historical benchmark tags) ignored — only the explicit marker checked.
 
 Scan all plugins via deterministic bin/ script:
 
@@ -130,7 +129,6 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_readme_drift.py" \
 ## Check 14d — Mode dispatch integrity
 
 Detects dangling mode-dispatch references: a SKILL.md line routing control to a named section (e.g. `go to "Mode: Lessons Distillation"` or `skip to **Mode: X**`) with no matching `## Mode: X` header in the same file — the half-done-rename bug class where the header was renamed but a dispatch line still points at the old name.
-
 Scan all plugins via deterministic bin/ script:
 
 ```bash
@@ -146,7 +144,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_mode_dispatch.py" \
 
 ## Check 14e — Cross-plugin shared-file drift
 
-Detects byte-level drift in files that must be identical across plugins because each plugin ships its own copy of a shared mechanism (a plugin cannot depend on another being installed). The canonical copy lives in one plugin; the others must track it byte-for-byte. Source of truth is the `MANIFEST` in the script (currently the `agent-router.js` fallback hook: foundry canonical → oss/develop/research copies). Files that legitimately vary per plugin (e.g. `agent-resolution.md` fallback tables, per-plugin `rules/quality-gates.md`) are intentionally NOT in the manifest.
+Detects byte-level drift in files that must be identical across plugins because each plugin ships its own copy of a shared mechanism (a plugin cannot depend on another being installed). The canonical copy lives in one plugin; others must track it byte-for-byte. Source of truth is the `MANIFEST` in the script (currently the `agent-router.js` fallback hook: foundry canonical → oss/develop/research copies). Files that legitimately vary per plugin (e.g. `agent-resolution.md` fallback tables, per-plugin `rules/quality-gates.md`) intentionally NOT in the manifest.
 
 Scan via deterministic bin/ script:
 
@@ -166,7 +164,7 @@ Use Grep tool (pattern `/Users/|/home/`, glob `{agents/*.md,skills/*/SKILL.md}`,
 
 **Important**: run on every file regardless of prior critical/high findings — path portability orthogonal to other severity classes, must not deprioritize.
 
-Also grep for bare `plugins/<name>/` prefix as primary path in skill/agent bodies — source-tree paths that work during authoring but break post-install. See Check C32 for full scan.
+Also grep for bare `plugins/<name>/` prefix as primary path in skill/agent bodies — source-tree paths working during authoring but breaking post-install. See Check C32 for full scan.
 
 ## Check 16 — Example value vs. token cost
 
@@ -228,7 +226,6 @@ For 17a (step-level prose overlap, ≥40% consecutive steps): flag pair, name ca
 ## Check C32 — Hardcoded source-tree paths (install-path regression)
 
 Plugin skill and agent files must not contain bare `plugins/<name>/` paths as primary references. Resolve in source tree but break post-install where `plugins/` absent. Install-path resolution pattern (cache + fallback) mandatory.
-
 ```bash
 printf "=== Check C32: Hardcoded source-tree paths ===\n"
 # C32 inherently scans plugin source tree — LOCAL mode only
@@ -299,7 +296,7 @@ Severity: 18b = **high**; 18a/18c/18d = **medium**.
 
 ## Check 25 — Implicit agent references (missing plugin prefix)
 
-All agent dispatch calls must use fully-qualified plugin-prefixed form (`foundry:sw-engineer`, `oss:shepherd`, etc.). Bare names like `sw-engineer` ambiguous: rely on `~/.claude/agents/` symlinks being present, break if symlinks stale, missing, or pointing to wrong plugin.
+All agent dispatch calls must use fully-qualified plugin-prefixed form (`foundry:sw-engineer`, `oss:shepherd`, etc.). Bare names like `sw-engineer` ambiguous: rely on `~/.claude/agents/` symlinks present, break if symlinks stale, missing, or pointing to wrong plugin.
 
 Scan agent files, skill files, CLAUDE.md for `subagent_type=` patterns:
 
@@ -418,8 +415,7 @@ Via model reasoning: extract (symbol, concept) pairs from legend. Per concept, s
 
 ## Check 41 — LLM-first formatting conventions
 
-Config files consumed primarily by LLM at inference time. Formatting inconsistencies force the LLM to resolve ambiguity before parsing content — wasted tokens, degraded reliability.
-
+Config files consumed primarily by LLM at inference time. Formatting inconsistencies force LLM to resolve ambiguity before parsing content — wasted tokens, degraded reliability.
 **Principle**: compact + robust + minimal variation. One canonical form per pattern type per file.
 
 **Scan targets**: all `*.md` files under `.claude/` and `plugins/`, excluding any file named `README.md`.

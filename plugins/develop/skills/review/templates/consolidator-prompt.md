@@ -7,7 +7,7 @@ Pre-expansion required: before building Agent spawn call, substitute these bare 
 - $DATE — from `date +%Y-%m-%d` output
 - $REVIEW_CHECKLIST — resolved checklist path or empty string
 
-`$RUN_DIR` is the exception — do NOT substitute it. The run-dir preamble (prepended by SKILL.md §Step 5) makes the consolidator self-resolve `$RUN_DIR` via `cat "${TMPDIR:-/tmp}/dev-review-run-dir"`; leave `$RUN_DIR` literal in the prompt text.
+`$RUN_DIR` is the exception — do NOT substitute it. Run-dir preamble (prepended by SKILL.md §Step 5) makes consolidator self-resolve `$RUN_DIR` via `cat "${TMPDIR:-/tmp}/dev-review-run-dir"`; leave `$RUN_DIR` literal in prompt text.
 
 ## Full Prompt
 

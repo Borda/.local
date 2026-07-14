@@ -23,7 +23,7 @@ Subject line format: `type(scope): detail` — ≤50 chars total; name up to 3 m
 | `refine` | Improvement to existing behaviour (not pure fix, not new feature) |
 | `compress` | Compression / caveman reformatting pass |
 
-**scope** — affected area: `plugins`, `oss`, `foundry`, `docs`, `cli`, `<module_name>`, etc. Omit only when change is truly cross-cutting.
+**scope** — affected area: `plugins`, `oss`, `foundry`, `docs`, `cli`, `<module_name>`, etc. Omit only when change cross-cutting.
 
 **Subject priority — classify before drafting**
 
@@ -46,7 +46,6 @@ Rules:
 - Blank line, then bullet list — one bullet per logical change; extended description of top changes plus all other notable changes
   - Skip: typos, linting, whitespace-only edits
   - All changes skip-worthy → omit bullet list; subject-only commit — still include co-author block separated by blank line and `---`:
-
   ```markdown
   Fix typo in config key name
 
@@ -56,7 +55,7 @@ Rules:
 
 - **No line wrapping** — bullets and prose single continuous lines; never hard-break at any column width. Overrides any skill-level `Wrap at N chars` instruction (e.g. caveman-commit).
 - **No GitHub auto-links** — never use `#N`, `@name`, or `@org` in commit messages; GitHub renders these as issue/PR links and user/org mentions, creating unintended cross-references in any repo that picks up the commit
-- **No non-VCS paths** — never reference files or paths not tracked in the repo (e.g. `/tmp/`, `~/.claude/`, local cache dirs, machine-specific paths); commit message must be meaningful on any machine that clones the repo
+- **No non-VCS paths** — never reference files or paths not tracked in repo (e.g. `/tmp/`, `~/.claude/`, local cache dirs, machine-specific paths); commit message must be meaningful on any machine that clones the repo
 
 ## Gathering Diff Context
 
@@ -66,11 +65,10 @@ Before writing commit, run three in parallel:
 - `git diff HEAD` — **not** bare `git diff`; bare shows only unstaged, misses staged new files; `git diff HEAD` captures staged and unstaged vs HEAD
 - `git log --oneline -5` — reference repo's existing commit style
 
-**Truncated diff — mandatory follow-up**: when `git diff HEAD` output large and Bash tool saves to file (showing only 2 KB preview), read saved file completely before writing commit. Don't write from preview alone — most significant changes often past truncation point. Also run `git diff --stat HEAD` (always fits in context) for complete file-by-file change map; use stat output to identify which files changed most and whether any missed in preview. If saved diff file exceeds ~2000 lines, escalate to subagent summarization — see Large diff rule below.
-
+**Truncated diff — mandatory follow-up**: when `git diff HEAD` output large and Bash tool saves to file (showing only 2 KB preview), read saved file completely before writing commit. Don't write from preview alone — most significant changes often past truncation point. Also run `git diff --stat HEAD` (always fits in context) for complete file-by-file change map; use stat output to identify which files changed most and whether any missed in preview. Saved diff file exceeds ~2000 lines → escalate to subagent summarization — see Large diff rule below.
 **Large diff — subagent summarization**: when diff file exceeds ~2000 lines OR `git diff --stat HEAD` shows >10 files spanning >2 plugins/concerns, spawn one Agent task per logical file group — one agent per top-level directory in stat output (e.g. one per `plugins/<name>/`, one collective for everything outside `plugins/`); max 5 agents, group smallest partitions until ≤5. Each task runs inline (not background); **use `model: haiku`** — diff summarisation is bounded, low-complexity output; receives `git diff HEAD -- <file> [<file> ...]` and returns compact bullet summary: what changed and highest tier classification. Orchestrator aggregates summaries, writes commit from aggregated evidence only — never from session memory. After aggregation, cross-check every file in `git diff --stat HEAD` appears in at least one summary; missing file → spawn one additional Agent task for that file before drafting. On agent failure or timeout: fall back to direct `git diff HEAD -- <files>` read for that group; surface unread group as a gap in commit message.
 
-**Grouped commit — resolve/verify flow**: when committing grouped changes, any post-commit verification step (`/oss:resolve`, lint gate, test run) is also batched — one delegated agent covers the entire grouped commit, not one agent per change. Agent writes full findings to `.temp/`; returns compact JSON envelope to orchestrator. Orchestrator reads envelope verdict; reads full file only on FAIL. Never spawn N resolve agents for N grouped changes in the same commit.
+**Grouped commit — resolve/verify flow**: when committing grouped changes, any post-commit verification step (`/oss:resolve`, lint gate, test run) is also batched — one delegated agent covers entire grouped commit, not one agent per change. Agent writes full findings to `.temp/`; returns compact JSON envelope to orchestrator. Orchestrator reads envelope verdict; reads full file only on FAIL. Never spawn N resolve agents for N grouped changes in same commit.
 
 **Large diff — agent handover format**: before spawning, create run dir: `RUN_TS=".temp/commit-diff/$(date -u +%Y-%m-%dT%H-%M-%SZ)"; mkdir -p "$RUN_TS"`. Each agent task writes to `$RUN_TS/group-<dir-slug>.md` using this fixed structure:
 
@@ -96,34 +94,33 @@ Agent returns ONLY this JSON envelope (no prose after it):
 
 `theme` — one-phrase pattern visible across ≥2 files in this group (e.g. `"python→python3 migration"`, `"TRIGGER/SKIP added to all agents"`); `null` when no pattern.
 
-Orchestrator: collect envelopes, verify coverage (every file in `git diff --stat HEAD` in at least one `files_covered`), then read `.md` files directly — ≤5 small files is within direct-read threshold (file-handoff-protocol.md). Draft commit from `.md` file content only — never from envelope `summary` strings (too lossy). `status: "done_with_concerns"` → flag that group as uncertain in commit message.
+Orchestrator: collect envelopes, verify coverage (every file in `git diff --stat HEAD` in at least one `files_covered`), then read `.md` files directly — ≤5 small files within direct-read threshold (file-handoff-protocol.md). Draft commit from `.md` file content only — never from envelope `summary` strings (too lossy). `status: "done_with_concerns"` → flag that group as uncertain in commit message.
 
-**Compound synthesis step** (mandatory before drafting): after reading all group `.md` files, scan across all groups for repeated themes — same concept changed in N **codebase** files across different groups each classified T3–T4 individually. If ≥3 codebase files share a theme (same pattern replaced, same flag added everywhere, same agent property updated system-wide), elevate the aggregate to T2 minimum and name the cross-cutting change in the commit subject. Per-group tiers are local signal only — aggregate tier governs the subject line. Exclude docs/supplementary files (README, CHANGELOG, comments, docstrings) from the ≥3 threshold count — they do not compound.
+**Compound synthesis step** (mandatory before drafting): after reading all group `.md` files, scan across all groups for repeated themes — same concept changed in N **codebase** files across different groups each classified T3–T4 individually. If ≥3 codebase files share a theme (same pattern replaced, same flag added everywhere, same agent property updated system-wide), elevate aggregate to T2 minimum and name cross-cutting change in commit subject. Per-group tiers are local signal only — aggregate tier governs subject line. Exclude docs/supplementary files (README, CHANGELOG, comments, docstrings) from ≥3 threshold count — they do not compound.
 
 **High-churn files — mandatory diff read**: any file with >50 lines changed in `git diff --stat` NOT already in planned bullets — read actual diff before writing message. Don't assume from session memory or prior context; post-compaction sessions have no reliable recall. User/developer-facing changes (command syntax, CLI argument names, invocation patterns, API surface, usage examples) must be identified and prioritised regardless of earlier discussion — outrank internal restructuring of equal line count.
-
 **Ranking rule — diff first, recency last**: classify all changes into tiers (see Subject priority table above) before writing title.
 - Conversational recency bias must not dominate — last task in session ≠ most significant
 - Title must reflect highest-tier change in diff, not most recent one
 
-**Same-tier tie-breaking — session work over bundled pre-existing**: when multiple T1 items exist in the diff, the item explicitly produced in the current session takes subject priority. If one T1 item was the explicit focus of conversation, design, and iteration in this session, it leads — even if a different T1 item appears first in subagent output or has more lines. This does NOT override the "never draft from session memory" rule — still classify from diff; use session context only to rank among same-tier items, not to skip diff analysis. Ask: "which T1 item did this session set out to produce?" — that one leads.
+**Same-tier tie-breaking — session work over bundled pre-existing**: when multiple T1 items exist in diff, item explicitly produced in current session takes subject priority. If one T1 item was explicit focus of conversation, design, and iteration this session, it leads — even if a different T1 item appears first in subagent output or has more lines. This does NOT override "never draft from session memory" rule — still classify from diff; use session context only to rank among same-tier items, not to skip diff analysis. Ask: "which T1 item did this session set out to produce?" — that one leads.
 
-**New files — classify by content, not by `A` marker**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list. But tier depends on content origin:
+**New files — classify by content, not by `A` marker**: any file marked `A` in `git status` must be explicitly mentioned in commit bullet list. Tier depends on content origin:
 - Content is genuinely new capability/behaviour → tier 1
 - Content extracted/refactored from existing file → tier 4 (maintenance); mention as "extracted from X", not "added"
 - Test-only new file (adds tests, no source change) → tier 4; `test` type; not tier 1 even though content is new
 - New file + new content = tier 1. New file + moved content = tier 3. New file + tests only = tier 4.
 
-**Semantic novelty beats diff verbosity**: new capability/interface/script outranks verbose-but-routine config edit even if config diff has more lines. Ask "what would reviewer need to know first?" — that most significant change.
+**Semantic novelty beats diff verbosity**: new capability/interface/script outranks verbose-but-routine config edit even if config diff has more lines. Ask "what would reviewer need to know first?" — that's the most significant change.
 
-**Compound change detection**: when ≥3 **codebase** files share a common theme in their changes (same concept replaced, same flag added, same pattern adopted everywhere), treat the aggregate as potentially higher tier than any individual file suggests. Signals: same function/string replaced across N files → migration pattern; same trigger/description updated in N agents → routing change (T2 minimum); same convention adopted across all plugins → new standard. Rule: after reading all per-file diffs (or all subagent `.md` summaries), ask "do these individually small changes form a coordinated pattern?" — if yes, classify the whole at the aggregate tier, not the per-file tier. Name the pattern in the commit subject, not the individual files. **Docs/supplementary exempt**: README, CHANGELOG, inline comments, docstrings, and other documentation-only files are standalone entities — repeated small doc tweaks do not compound into a higher tier regardless of count.
+**Compound change detection**: when ≥3 **codebase** files share a common theme in their changes (same concept replaced, same flag added, same pattern adopted everywhere), treat aggregate as potentially higher tier than any individual file suggests. Signals: same function/string replaced across N files → migration pattern; same trigger/description updated in N agents → routing change (T2 minimum); same convention adopted across all plugins → new standard. Rule: after reading all per-file diffs (or all subagent `.md` summaries), ask "do these individually small changes form a coordinated pattern?" — if yes, classify the whole at aggregate tier, not per-file tier. Name the pattern in commit subject, not individual files. **Docs/supplementary exempt**: README, CHANGELOG, inline comments, docstrings, and other documentation-only files are standalone entities — repeated small doc tweaks do not compound into a higher tier regardless of count.
 
-**Evidence-only body — mandatory, not situational**: the diff is the only evidence. Conversation/session context may be used **exclusively** to explain the *why* behind a change already confirmed present in `git diff HEAD` — never to assert that a change, action, or removal happened. If a sentence describes something not backed by a `+`/`-` line, it does not go in the message, no matter how confidently the conversation discussed it as done. This covers two failure modes, both forbidden equally:
+**Evidence-only body — mandatory, not situational**: the diff is the only evidence. Conversation/session context may be used **exclusively** to explain the *why* behind a change already confirmed present in `git diff HEAD` — never to assert that a change, action, or removal happened. If a sentence describes something not backed by a `+`/`-` line, it does not go in the message, no matter how confidently conversation discussed it as done. Covers two failure modes, both forbidden equally:
 
 - **Reverted-change leak**: content introduced then rolled back before commit (e.g. via `git checkout HEAD -- <file>` or a later overwrite) — visible in chat history, absent from `git diff HEAD`. Distinct from content removed BY this commit, which appears as `-` lines and IS valid to mention.
 - **Narrated-but-unlanded change**: conversation describes an edit as accomplished (e.g. "removed the X section") but the actual diff hunk shows different content than narrated (e.g. it removed Y, not X — because X was reverted earlier and the removal script actually matched Y). Session narrative describing *what* was done is not evidence of *what the diff contains* — only the diff is.
 
-**Verification step — required before finalizing every commit body, no exceptions**: for each bullet or clause, pick one distinctive token from it (identifier, section heading, filename, error string, config key) and confirm it appears in the actual `git diff HEAD` output for that file — not in a subagent summary, not in session memory of an earlier tool result. A claim with no matching `+`/`-` line gets rewritten to match what the diff actually shows, or dropped. If subagent summarization was used instead of full inline read, re-run `git diff HEAD -- <file>` for that specific file before including the change in any bullet — the subagent's prose summary is not itself sufficient evidence for the final wording.
+**Verification step — required before finalizing every commit body, no exceptions**: for each bullet or clause, pick one distinctive token from it (identifier, section heading, filename, error string, config key) and confirm it appears in actual `git diff HEAD` output for that file — not in a subagent summary, not in session memory of an earlier tool result. A claim with no matching `+`/`-` line gets rewritten to match what the diff actually shows, or dropped. If subagent summarization was used instead of full inline read, re-run `git diff HEAD -- <file>` for that specific file before including the change in any bullet — the subagent's prose summary is not itself sufficient evidence for final wording.
 
 ## Co-authors
 
@@ -146,6 +143,7 @@ Co-authored-by: claude[bot] <209825114+claude[bot]@users.noreply.github.com>
 Co-author trailer on every Claude Code commit — not conditional on user mentioning involvement.
 
 **Skill commit templates — trailers not optional**: when skill or workflow step provides `git commit -m "..."` template (heredoc or one-liner), template is **message body scaffold only**. `---` separator and co-author block must always be appended regardless of whether template shows them:
+
 
 - **Heredoc** (`cat <<'EOF' ... EOF`): insert `---` block and trailers before closing `EOF`
 - **One-liner `-m "string"`**: convert to heredoc — one-liners cannot carry multi-line trailers
@@ -185,9 +183,9 @@ Two-tier design: force-push is an unconditional hard block; regular push is sent
 
 **Regular push**: gated by a dedicated push sentinel — `/tmp/claude-push-auth-<repo-slug>-<branch-slug>`, TTL 15 min. Claude invokes `AskUserQuestion` (state branch + what's being pushed) → user runs `! touch $PUSH_SENTINEL` from own shell → Claude runs `git push` → user runs `! rm -f $PUSH_SENTINEL` after.
 
-**Deliberate asymmetry vs commit**: push has **no skill-workflow exemption**. Commit allows a documented skill workflow to self-authorize multiple commits per its own commit strategy, no `AskUserQuestion` per commit; push always requires a fresh in-turn `AskUserQuestion` confirmation, even from inside a skill workflow, even if the user said "push this" in the same message. This is intentional, not an oversight: push is a repo-visible, harder-to-undo action than a local commit.
+**Deliberate asymmetry vs commit**: push has **no skill-workflow exemption**. Commit allows a documented skill workflow to self-authorize multiple commits per its own commit strategy, no `AskUserQuestion` per commit; push always requires a fresh in-turn `AskUserQuestion` confirmation, even from inside a skill workflow, even if user said "push this" in same message. Intentional, not oversight: push is repo-visible, harder-to-undo than local commit.
 
-The standard interactive Bash permission dialog still applies on top of the hook gate, unchanged — `.claude/settings.json` `permissions.allow` is not modified for push; there is no allow-list shortcut.
+Standard interactive Bash permission dialog still applies on top of hook gate, unchanged — `.claude/settings.json` `permissions.allow` not modified for push; no allow-list shortcut.
 
 ## History Safety
 

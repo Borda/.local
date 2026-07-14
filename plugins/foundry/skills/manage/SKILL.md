@@ -32,7 +32,7 @@ Manage lifecycle of agents, skills, rules, hooks in `.claude/`. Handles creation
 - Descriptions must be quoted when containing spaces
 - Permission rules use Claude Code format: `WebSearch`, `Bash(cmd:*)`, `WebFetch(domain:example.com)`
 - `--skip-audit` — optional flag: skip Step 9 `/audit` validation (use inside `audit fix` loop to avoid recursion)
-- **Spec-file paths must be quoted** — `update <name> <spec-file.md>` requires the spec path to be quoted if it contains any whitespace (e.g. `update my-agent "docs/My Spec.md"`); unquoted paths with spaces are split into multiple arguments and trigger argument-shape mismatch. Recommended: keep spec filenames free of spaces.
+- **Spec-file paths must be quoted** — `update <name> <spec-file.md>` requires the spec path quoted if it contains any whitespace (e.g. `update my-agent "docs/My Spec.md"`); unquoted paths with spaces split into multiple arguments and trigger argument-shape mismatch. Recommended: keep spec filenames free of spaces.
 
 **Update/delete mode** — name looked up across agents, skills, rules automatically:
 
@@ -123,7 +123,7 @@ For `create`, check only relevant type's path.
 jq -e --arg rule '<rule>' '.permissions.allow | index($rule) != null' .claude/settings.json >/dev/null 2>&1  # timeout: 5000
 ```
 
-**Update second-argument discrimination** — apply after type resolved. Set the shell variable `MODE` from the parsed operation; it is consumed by the delete confirmation gate above, the edit-complexity classifier below, and the per-mode workflow branches in Step 4. Recognised values: `create`, `rename`, `content-edit`, `delete`, `add-perm`, `remove-perm`.
+**Update second-argument discrimination** — apply after type resolved. Set shell variable `MODE` from the parsed operation; consumed by the delete confirmation gate above, the edit-complexity classifier below, and the per-mode workflow branches in Step 4. Recognised values: `create`, `rename`, `content-edit`, `delete`, `add-perm`, `remove-perm`.
 
 | Argument shape | `MODE` |
 | --- | --- |
@@ -212,7 +212,7 @@ Extract names inline from Glob results — strip `.claude/agents/` prefix and `.
    - `sonnet` — focused execution roles (research:data-steward (requires `research` plugin), foundry:web-explorer, foundry:doc-scribe, foundry:creator, foundry:qa-specialist, oss:cicd-steward)
    - `haiku` — high-frequency diagnostics ONLY (e.g. linting-expert); NOT for analysis/auditing roles that require substantive reasoning
 
-4. Resolve template path (cascade primary → project-local → cache scan; only the cache scan runs if neither of the cheaper paths exists, since each candidate must satisfy `-d` before being assigned):
+4. Resolve template path (cascade primary → project-local → cache scan; only the cache scan runs if neither cheaper path exists, since each candidate must satisfy `-d` before being assigned):
 
 ```bash
 MANAGE_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" manage templates) || { printf "! BREAKING: manage templates not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
@@ -636,11 +636,11 @@ rg --fixed-strings -n '\b<old-name>\b' plugins/ .claude/ README.md docs/ 2>/dev/
   | grep -v ".git/" | grep -v "__pycache__"  # timeout: 10000
 ```
 
-If the grep returns **zero hits**: report "✓ No remaining occurrences of `<old-name>` found." and proceed.
+Grep returns **zero hits**: report "✓ No remaining occurrences of `<old-name>` found." and proceed.
 
-**Large hit set gate** — if hits exceed 50, invoke `AskUserQuestion` before classifying: "Found N occurrences of `<old-name>` — this name may be too generic for safe automated classification. Proceed with classification or abort?" Options: (a) Proceed · (b) Abort. On abort: stop and report to user.
+**Large hit set gate** — hits exceed 50: invoke `AskUserQuestion` before classifying: "Found N occurrences of `<old-name>` — this name may be too generic for safe automated classification. Proceed with classification or abort?" Options: (a) Proceed · (b) Abort. On abort: stop and report to user.
 
-If hits are within limit: read a 5-line context window (2 lines before + matched line + 2 lines after) for every hit using the Read tool, assign each hit a stable integer `id` (1…N). Then spawn a **`haiku`-model** `Agent` to classify in batches of ≤30 hits — pass `model="haiku"` explicitly. Before spawning, resolve the entity's canonical surface forms from the rename context: slash-command form (`` `/foundry:<old-name>` `` or `` `/<old-name>` ``), `subagent_type` value, file-path pattern (`.claude/agents/<old-name>.md`, `.claude/skills/<old-name>/`). Include these in the prompt as `<entity_context>`.
+Hits within limit: read a 5-line context window (2 lines before + matched line + 2 lines after) for every hit using the Read tool, assign each hit a stable integer `id` (1…N). Then spawn a **`haiku`-model** `Agent` to classify in batches of ≤30 hits — pass `model="haiku"` explicitly. Before spawning, resolve the entity's canonical surface forms from the rename context: slash-command form (`` `/foundry:<old-name>` `` or `` `/<old-name>` ``), `subagent_type` value, file-path pattern (`.claude/agents/<old-name>.md`, `.claude/skills/<old-name>/`). Include these in the prompt as `<entity_context>`.
 
 Haiku agent prompt (one spawn per batch of ≤30 hits):
 
@@ -668,7 +668,7 @@ context:
   {line+2}: ...
 ```
 
-**JSON parse fallback**: if returned output contains malformed JSON or missing `id` fields, retry once with the parse error appended to the prompt. On second failure, mark all unresolved hits `"ambiguous"` and escalate to the user.
+**JSON parse fallback**: returned output contains malformed JSON or missing `id` fields → retry once with the parse error appended to the prompt. On second failure, mark all unresolved hits `"ambiguous"` and escalate to the user.
 
 Collect all batch results. Classify each hit:
 
@@ -811,7 +811,7 @@ Print challenger's `findings` count and confidence; note any HIGH findings that 
 - **README.md tables**: agent/skill tables in project `README.md`; rules table in `.claude/README.md` — keep row format consistent with existing rows
 - **No auto-edit for agent/skill/rule operations**: skill does not mutate settings.json for non-perm operations
 - **Color pool**: AVAILABLE_COLORS lists unused colors; if exhausted, reuse with note
-- **Inline bash / extraction gate + prose compression**: before writing any fenced bash block directly into a `.md` file (agent, skill, rule) via Edit/Write, apply two checks from `bin-authoring-guide.md`: (1) extraction gate — verdict MEDIUM or HIGH → write a `bin/` script instead; verdict LOW → inline is acceptable; (2) Prose over Code — if `tokens(block) > tokens(equivalent prose/table/schema)` at identical precision → write prose/table instead. Exempt: examples, templates, exact-syntax blocks. The same rules are enforced in spawn prompts to foundry:curator and foundry:sw-engineer (see Content-Edit Agent/Skill modes). This note applies to orchestrator-level inline edits.
+- **Inline bash / extraction gate + prose compression**: before writing any fenced bash block directly into a `.md` file (agent, skill, rule) via Edit/Write, apply two checks from `bin-authoring-guide.md`: (1) extraction gate — verdict MEDIUM or HIGH → write a `bin/` script instead; verdict LOW → inline is acceptable; (2) Prose over Code — if `tokens(block) > tokens(equivalent prose/table/schema)` at identical precision → write prose/table instead. Exempt: examples, templates, exact-syntax blocks. Same rules enforced in spawn prompts to foundry:curator and foundry:sw-engineer (see Content-Edit Agent/Skill modes). This note applies to orchestrator-level inline edits.
 - **Cycle detection**: sub-tasks spawned by manage (foundry:sw-engineer, foundry:curator, foundry:doc-scribe) must not invoke manage again. Circular dispatch — manage→sw-engineer→curator→manage — causes infinite loops. If a sub-task needs manage capabilities, surface the need back to the orchestrator; never chain manage from inside a manage-spawned sub-agent.
 - Follow-up chains:
   - create or non-trivial update of agent/skill → `Skill(skill="foundry:audit", args="--skip-gate")` → `Skill(skill="foundry:calibrate", args="<name>")` (mandatory) → `Skill(skill="foundry:calibrate", args="routing --fast")`

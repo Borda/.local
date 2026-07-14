@@ -46,7 +46,7 @@ echo "$CODEMAP_CONTEXT_STAGE"  > "${TMPDIR:-/tmp}/oss-review-codemap-context-sta
 ## Structural Context (codemap, codemap_available=true)
 <content of $RUN_DIR/codemap-context.md>
 
-Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast`, trust the codemap output; skip redundant Grep/Read on the same data. Fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
+Read this section first. For symbols listed in `uncovered`/`mock-rdeps`/`undocumented`/`xrefs --broken`/`fn-blast`, trust codemap output; skip redundant Grep/Read on same data. Fall back to file reads only when codemap output empty for symbol needed or verifying specific finding.
 ```
 
 `codemap_available=false`: omit the block; agents proceed with current file-read behaviour.

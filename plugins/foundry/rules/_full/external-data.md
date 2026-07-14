@@ -9,7 +9,6 @@ paths:
 **Never work on partial result set.** Paginated APIs return subset by default — request full dataset before drawing conclusions, counting, filtering, or ranking.
 
 Silent truncation (30 of 300 items) worse than error — produces wrong answer.
-
 ## GitHub CLI (`gh`)
 
 Default page size 30. Override:
@@ -41,7 +40,7 @@ Rules:
 - Loop until no next-page signal; never stop after one response
 - No pagination signals + round item count (10, 20, 25, 50, 100…) → likely default page size
   - Verify by fetching page 2 (e.g. `?page=2` or `?offset=<count>`); if page 2 returns items, first response truncated — fetch all pages before proceeding
-  - No substitute structural inspection for actual page-2 request
+  - No substitute for actual page-2 request
 
 ## GraphQL APIs
 

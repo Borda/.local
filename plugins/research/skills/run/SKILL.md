@@ -51,8 +51,8 @@ SENTINEL_SLUG_FORMULA: |
 
 **Auto-inference keyword heuristics** (when `agent_strategy: auto` or omitted; checked against `## Goal` text AND metric command):
 
-**Precedence order** (first match wins; ML keywords take priority over test-framework keywords). ML-specific compound terms (not bare tokens) required to prevent over-triggering on `eval`/`train`/`val` as common words:
-- contains `accuracy`, `loss` (when paired with `train_loss`/`val_loss`/`eval_loss`), `f1_score`, `auc_roc`, `auroc`, `train_step`, `val_acc`, `eval_loss`, `epoch`, `gradient`, `tensor`, `overfit`, `generaliz`, `regulariz`, `validation`, `dropout`, `weight_decay`, `lr_schedule`, `cross_val`, `precision`, `recall`, OR explicit `--scientist` flag → `ml` → `research:scientist`
+**Precedence order** (first match wins; ML keywords beat test-framework keywords). ML-specific compound terms (not bare tokens) required — prevents over-triggering on `eval`/`train`/`val` as common words:
+- contains `accuracy`, `loss` (paired with `train_loss`/`val_loss`/`eval_loss`), `f1_score`, `auc_roc`, `auroc`, `train_step`, `val_acc`, `eval_loss`, `epoch`, `gradient`, `tensor`, `overfit`, `generaliz`, `regulariz`, `validation`, `dropout`, `weight_decay`, `lr_schedule`, `cross_val`, `precision`, `recall`, OR explicit `--scientist` flag → `ml` → `research:scientist`
 - contains `time`, `latency`, `bench`, `throughput`, `memory` → `perf` → `foundry:perf-optimizer`
 - contains `pytest`, `coverage`, `complexity` → `code` → `foundry:sw-engineer`
 - no keyword match → `perf` (default fallback) — **WARN**: print `⚠ No keyword match — defaulting to 'perf' strategy. If this is an ML task, set agent_strategy: ml in program.md.` Log resolved agent + reason in state.json `strategy_resolution`.
@@ -61,7 +61,7 @@ Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml`
 
 **Stuck escalation sequence** (at STUCK_THRESHOLD consecutive discards):
 
-1. Switch to different agent type. Rotation by current strategy:
+1. Switch agent type. Rotation by current strategy:
 
    | Current strategy | Next strategy | Escalation agent |
    | --- | --- | --- |
@@ -70,7 +70,7 @@ Bare tokens `eval`, `train`, `val` (without compound suffix) do NOT trigger `ml`
    | `perf` | `code` | `foundry:sw-engineer` |
    | `arch` | `code` | `foundry:sw-engineer` (fallback `foundry:solution-architect` if sw-engineer unavailable) |
    | `auto` | infer from resolved strategy | follow rotation row for whichever concrete strategy `auto` heuristics resolved to at Step R3 (e.g. `auto` → resolved `ml` → next `perf` → `foundry:perf-optimizer`) |
-2. Spawn 2 agents parallel with competing strategies; each writes full analysis to `.experiments/state/<run-id>/stuck-escalation-<i>-<agent-type>.md`, returns ONLY compact JSON envelope. Use this spawn prompt verbatim (substitute `<run-id>`, `<i>`, and strategy):
+2. Spawn 2 agents parallel, competing strategies; each writes full analysis to `.experiments/state/<run-id>/stuck-escalation-<i>-<agent-type>.md`, returns ONLY compact JSON envelope. Use this spawn prompt verbatim (substitute `<run-id>`, `<i>`, and strategy):
 
    ```text
    Stuck-escalation handoff — iteration <i> after STUCK_THRESHOLD consecutive discards.
@@ -128,7 +128,7 @@ Triggered by `run <goal|file.md>`.
 
 If no `--researcher`/`--architect`, skip to R1.
 
-**Flag combination guard**: if `--researcher` is set but `--architect` is NOT, print `⚠ --researcher without --architect: hypotheses will NOT be validated for architectural feasibility before execution — infeasible hypotheses may waste iterations. Add --architect for feasibility filtering.` then continue (this is advisory, not blocking). If only `--architect` is set without `--researcher`, the feasibility filter applies to oracle-generated hypotheses — valid combination.
+**Flag combination guard**: if `--researcher` set but `--architect` NOT set, print `⚠ --researcher without --architect: hypotheses will NOT be validated for architectural feasibility before execution — infeasible hypotheses may waste iterations. Add --architect for feasibility filtering.` then continue (advisory, not blocking). If only `--architect` set without `--researcher`, feasibility filter applies to oracle-generated hypotheses — valid combination.
 
 Read `${CLAUDE_SKILL_DIR}/modes/hypothesis-pipeline.md`
 
@@ -143,14 +143,14 @@ Journals record kept and reverted iterations so ideation agent learns failed app
 
 **`--resume` flag detection**: if `--resume` in args, extract optional program.md path. Jump to `## Resume Mode`. Rest of R1 and R2–R7 skipped.
 
-**`--hypothesis <path>` parsing**: if `--hypothesis` in args, extract path token following it. Verify file exists: `[ -f "$HYPOTHESIS_PATH" ]`. If not found: print `! --hypothesis <path>: file not found` and stop. If found: set `hypothesis_override = true`. In R5 Phase 2 (Propose change), replace the oracle-generated hypothesis with the loaded file content — prepend to the ideation agent prompt: "Use this pre-specified hypothesis as your starting hypothesis for iteration N: <contents of HYPOTHESIS_PATH>. Validate, refine, and implement it. Do not generate a new hypothesis from scratch."
+**`--hypothesis <path>` parsing**: if `--hypothesis` in args, extract path token following it. Verify file exists: `[ -f "$HYPOTHESIS_PATH" ]`. If not found: print `! --hypothesis <path>: file not found` and stop. If found: set `hypothesis_override = true`. In R5 Phase 2 (Propose change), replace oracle-generated hypothesis with loaded file content — prepend to ideation agent prompt: "Use this pre-specified hypothesis as your starting hypothesis for iteration N: <contents of HYPOTHESIS_PATH>. Validate, refine, and implement it. Do not generate a new hypothesis from scratch."
 
 **Auto-detect**: first non-flag arg ends in `.md` → parse as program file. Otherwise → text goal.
 
 **Clarification prompt** (`.md` file only): after extracting `.md` path, inspect next token (before `--` flags):
 
-- If absent or starts with `--` → `clarification_prompt = null`
-- Quoted string (starts and ends with `"`) → extract as `clarification_prompt`, strip quotes
+- Absent or starts with `--` → `clarification_prompt = null`
+- Quoted string (starts/ends with `"`) → extract as `clarification_prompt`, strip quotes
 - Bare unquoted token (no `--`, no `"`) → accept as `clarification_prompt`; print: `ℹ clarification set to "<token>" (tip: quote multi-word hints — e.g. "/research:run program.md \"focus on sort\" --codex")`
 
 After clarification extraction, remaining non-flag tokens (not starting `--`) are unrecognized. For each, print:
@@ -176,7 +176,7 @@ echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/research-run-keep-items"  # persist fo
 
 **Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`, `--keep`.
 
-**Codemap auto-detection** — structural blast-radius context for the modules the experiment edits; on by default when codemap installed + index found. `--no-codemap` opts out; `--codemap` is strict (fail if unavailable).
+**Codemap auto-detection** — structural blast-radius context for modules the experiment edits; on by default when codemap installed + index found. `--no-codemap` opts out; `--codemap` is strict (fail if unavailable).
 
 ```bash
 # timeout: 5000
@@ -280,7 +280,7 @@ Run all checks before touching code. Fail fast with clear message:
 
 Set `CODEX_DELEGATION_AVAILABLE=true` if found, `false` otherwise. Continue regardless.
 
-**Initialize sandbox + timeout variables** (after all checks pass — constants YAML block is not auto-exported to bash; assign explicitly with `${VAR:-default}` to honour environment overrides; ADV-L15 / ADV-M20):
+**Initialize sandbox + timeout variables** (after all checks pass — constants YAML block not auto-exported to bash; assign explicitly with `${VAR:-default}` to honour environment overrides; ADV-L15 / ADV-M20):
 
 ```bash
 SANDBOX_NETWORK="${SANDBOX_NETWORK:-none}"  # override via program.md Config or environment variable
@@ -417,7 +417,7 @@ else
 fi
 ```
 
-**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled`): read `$_RESEARCH_SHARED/codemap-context.md` and execute its block. Leave `TARGET_MODULE`/`TARGET_FN` empty for the global `central` blast-radius baseline, or set `TARGET_MODULE` to the module the experiment edits (from `## Config`) for importer/coverage queries. Append the output to `context-${I}.md` under a `## Structural Context (codemap)` heading so the Phase 2 ideation agent sees blast-radius before proposing edits.
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled`): read `$_RESEARCH_SHARED/codemap-context.md` and execute its block. Leave `TARGET_MODULE`/`TARGET_FN` empty for the global `central` blast-radius baseline, or set `TARGET_MODULE` to the module the experiment edits (from `## Config`) for importer/coverage queries. Append output to `context-${I}.md` under a `## Structural Context (codemap)` heading so the Phase 2 ideation agent sees blast-radius before proposing edits.
 
 Prepend header block to `context-<i>.md`: goal, current metric vs baseline, delta trend (last 5 kept deltas), iteration number. Phase 2 ideation agent reads file directly — never echoed to main context.
 

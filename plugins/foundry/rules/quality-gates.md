@@ -16,7 +16,7 @@ Every claim, finding, URL, or stated fact — read source, run command, check fi
 
 **Design premises — gate fires at design entry, not post-delivery**
 
-Every assumption, hypothesis, constraint claim, or stated fact used as a pillar for a design or implementation decision must be grounded in evidence read now. This gate fires when the premise first enters the design — not at delivery. A false premise caught before the first line is written costs nothing; caught after layers of implementation it may make the entire design infeasible.
+Every assumption, hypothesis, constraint claim, or stated fact used as pillar for design or implementation decision must be grounded in evidence read now. Gate fires when premise first enters design — not at delivery. A false premise caught before first line written costs nothing; caught after layers of implementation it may make entire design infeasible.
 
 **Scope — any of:**
 - Technical constraints: "X cannot do Y", "not supported by", "requires workaround"
@@ -27,22 +27,22 @@ Every assumption, hypothesis, constraint claim, or stated fact used as a pillar 
 **Rules:**
 - Memory and training knowledge are **never** evidence — not for constraints, not for behavior, not for API shape; read the source
 - Provenance question first: "Where is this documented?" — no answer = unverified = no design built on it
-- Layers of implementation bury false premises; the only reliable catch point is before any layer exists
+- Layers of implementation bury false premises; only reliable catch point is before any layer exists
 
 **Evidence authority — not all sources are equal**
 
 Tier 1 — Authoritative (sufficient alone): official documentation (versioned), source code read from disk, official release notes / changelogs, specification or RFC from governing body, test suite output from this session.
 
-Tier 2 — Weak (requires ≥3 independent sources OR experimental validation): blog posts, tutorials, Stack Overflow, forum posts, social media, third-party summaries, training knowledge. When only Tier 2 available: find ≥3 genuinely independent corroborating sources, OR run a minimal experiment that empirically confirms or refutes the premise. Document which path was taken.
+Tier 2 — Weak (requires ≥3 independent sources OR experimental validation): blog posts, tutorials, Stack Overflow, forum posts, social media, third-party summaries, training knowledge. When only Tier 2 available: find ≥3 genuinely independent corroborating sources, OR run minimal experiment that empirically confirms or refutes premise. Document which path taken.
 
-**Independence requirement**: sources are independent only when they derive from different authors and different primary research — not when they cite each other or all trace back to a common origin. N posts all referencing the same blog post = 1 source, not N. Count unique origin nodes, not surface-level citations.
+**Independence requirement**: sources independent only when they derive from different authors and different primary research — not when they cite each other or all trace back to common origin. N posts all referencing same blog post = 1 source, not N. Count unique origin nodes, not surface-level citations.
 
 **Citation tracing — mandatory before counting sources**:
 
 1. For each Tier 2 source: follow its citations and references one level deep
 2. Map each source to its origin: `source → cites → origin`
-3. Singleton detection: if ≥2 sources share the same origin → merge them into one; count distinct origins only
-4. Tier upgrade: if tracing reveals a Tier 1 source (official doc, spec, changelog) that the Tier 2 source cited but wasn't found directly — read that Tier 1 source; if it confirms the claim, the premise is now Tier 1 verified (sufficient alone)
+3. Singleton detection: if ≥2 sources share same origin → merge into one; count distinct origins only
+4. Tier upgrade: if tracing reveals Tier 1 source (official doc, spec, changelog) that Tier 2 source cited but wasn't found directly — read that Tier 1 source; if it confirms claim, premise now Tier 1 verified (sufficient alone)
 5. If after tracing, distinct-origin count < 3 and no Tier 1 found → require experimental validation
 
 ## Adversarial Pass (all generation)
@@ -67,7 +67,7 @@ Every analysis agent **must** end with:
 
 - Omit **Refinements** if 0 passes (don't write "0 passes") — omit individual **Gaps** bullets if none, but keep **Gaps** header
 - **Score**, **Gaps**, **Refinements** = peer top-level fields — never nest Refinements under Gaps; blank line before **Refinements** required
-- Score < 0.85 → ⚠ on score line AND on the line immediately after (standalone line, not a Gaps bullet): "orchestrator may re-run with the specific gap addressed"
+- Score < 0.85 → ⚠ on score line AND on line immediately after (standalone line, not a Gaps bullet): "orchestrator may re-run with the specific gap addressed"
 - Gaps = primary signal — surfaces implicit limitations for re-run decisions
 
 ## Internal Quality Loop (analysis tasks only)
@@ -89,29 +89,29 @@ Before delivering any Python function or class, verify all limits:
 - **Statements ≤50** — more than 50 logical lines in one function → split responsibility
 - **Return points ≤6** — more than 6 `return` statements → consolidate early-return paths
 
-Violation → refactor before delivering. `# noqa: PLR...` / `# noqa: C901` permitted only when refactoring is genuinely impossible (generated code, protocol-mandated signature) — always pair with an inline comment explaining why.
+Violation → refactor before delivering. `# noqa: PLR...` / `# noqa: C901` permitted only when refactoring genuinely impossible (generated code, protocol-mandated signature) — always pair with inline comment explaining why.
 
 Applies to all Python written or reviewed by any agent. Run `ruff check --select C901,PLR` to verify.
 
 ## Pre-Handover Check
 
-Confidence < 0.9 → push back on the analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → also spawn `Agent(subagent_type="codex:codex-rescue")` naming the low-confidence area for adversarial review — incorporate findings before handover. After re-examination (and codex review if available): if confidence still < 0.9 → state the specific gap explicitly so user can decide to re-run.
+Confidence < 0.9 → push back on analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → also spawn `Agent(subagent_type="codex:codex-rescue")` naming low-confidence area for adversarial review — incorporate findings before handover. After re-examination (and codex review if available): if confidence still < 0.9 → state specific gap explicitly so user can decide to re-run.
 
 ## Write-Delegation Checklist (`codex:codex-rescue --write`)
 
-Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write access): clean git tree first (`git status -sb` — dirty tree blocks; a dirty tree makes Codex's diff impossible to isolate or cleanly revert). After it returns: read the **full diff** yourself — Codex's own report is advisory, not proof; run the actual test/proof command yourself, don't trust pasted output. Repeated fix rounds on the same issue (2+) → stop delegating, finish by hand — ping-ponging trivia through delegation burns more than it saves. Commit only after your own diff read + your own proof run; Codex never commits.
+Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write access): clean git tree first (`git status -sb` — dirty tree blocks; dirty tree makes Codex's diff impossible to isolate or cleanly revert). After it returns: read **full diff** yourself — Codex's own report is advisory, not proof; run actual test/proof command yourself, don't trust pasted output. Repeated fix rounds on same issue (2+) → stop delegating, finish by hand — ping-ponging trivia through delegation burns more than it saves. Commit only after your own diff read + your own proof run; Codex never commits.
 
 ## Link Verification
 
 **Never add URL without all three steps:**
 
-1. **Fetch** — call WebFetch (or equivalent); URL must return non-error (not 4xx/5xx). HTTP 200 is necessary but not sufficient — steps 2 and 3 are still mandatory even when Fetch succeeds
+1. **Fetch** — call WebFetch (or equivalent); URL must return non-error (not 4xx/5xx). HTTP 200 necessary but not sufficient — steps 2 and 3 still mandatory even when Fetch succeeds
 
 2. **Read** — read actual page content; don't rely on URL structure or HTTP status alone
 
 3. **Match** — confirm content matches intended description; no match = don't add link
 
-4. **Independent** — every URL requires its own Fetch+Read+Match pass regardless of domain, protocol, or path similarity; no URL is ever exempt because another URL on any domain was already verified; skipping any step (including inferring validity from URL structure or HTTP status alone) is violation
+4. **Independent** — every URL requires its own Fetch+Read+Match pass regardless of domain, protocol, or path similarity; no URL ever exempt because another URL on any domain already verified; skipping any step (including inferring validity from URL structure or HTTP status alone) is violation
 
 - Applies to: agent files, skill files, CLAUDE.md, any markdown
 
@@ -119,9 +119,9 @@ Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write ac
 
 - **Long output** (multi-item analysis, 5+ findings — including lists of 5+ items: module names, issues, files —, or prose >~10 lines) → two mandatory steps in order:
 
-1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content** — **execute the Write tool call; do not narrate intent and proceed without calling it** — this Write step is never skipped; pipeline/background mode only exempts the AskUserQuestion gate (step 2.iv), not this Write step. This is a **distinct, additional Write call** — writing to any other path (e.g. a run-directory response file, a report file) does not satisfy this step. Two writes are expected: one to `.temp/output-*.md` (this step) and any other file writes for the task.
+1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content** — **execute the Write tool call; do not narrate intent and proceed without calling it** — this Write step never skipped; pipeline/background mode only exempts AskUserQuestion gate (step 2.iv), not this Write step. This is a **distinct, additional Write call** — writing to any other path (e.g. run-directory response file, report file) does not satisfy this step. Two writes expected: one to `.temp/output-*.md` (this step) and any other file writes for task.
 2. Print to terminal in this order:
-   1. **YAML header block** — print the `---` metadata block verbatim from the top of the report file (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: NEEDS_WORK · findings: 8 · ...`
+   1. **YAML header block** — print `---` metadata block verbatim from top of report file (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: NEEDS_WORK · findings: 8 · ...`
    2. **Report path** — `→ <filepath>`
    3. **Executive summary** — prose: 2–3 sentence overview + each critical/high finding listed individually; omit medium/low detail unless ≤2 total findings
    4. **Follow-up gate** — invoke `AskUserQuestion` as final step; skip when: spawned via `Agent()` tool, running inside another skill's pipeline, or prompt explicitly states background/pipeline mode — when in doubt, invoke
@@ -133,7 +133,7 @@ Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write ac
   - `foundry:audit` → (a) `/foundry:setup` (sync clean config) · (b) fix all findings · (c) skip
   - `foundry:distill` → (a) `/foundry:manage create` (scaffold suggestion) · (b) edit existing · (c) skip
 - **Follow-up gate follow-through**: when `AskUserQuestion` returns with skill-invocation option selected — call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
-- **Don't ask what you can't honor**: if selected option cannot trigger automatic action (e.g. skill has `disable-model-invocation: true`, or output is intermediate with a downstream AskUserQuestion coming anyway) — do NOT use AskUserQuestion for that option; print the suggestion as plain text instead so user can copy-paste it. Hollow question = worse UX than no question.
+- **Don't ask what you can't honor**: if selected option cannot trigger automatic action (e.g. skill has `disable-model-invocation: true`, or output is intermediate with downstream AskUserQuestion coming anyway) — do NOT use AskUserQuestion for that option; print suggestion as plain text instead so user can copy-paste it. Hollow question = worse UX than no question.
 
 ## Prose Compression — Output Files
 
@@ -148,9 +148,9 @@ Estimate file size: `$(( $(wc -c < file) / 4 ))` tokens. Over budget → drop LO
 
 ## Report File Format
 
-**Universal terminal-print rule**: when a skill or agent writes a report file whose first non-whitespace line is `---` (a YAML metadata block), that block MUST be printed verbatim in terminal as the **first content of the reply** — before the report path line, before the executive summary, before anything else. Optionally followed by: `→ <path>`, executive summary, skill-specific details. Applies to ALL skills and agents producing such reports — no per-skill duplication of this rule needed (per-skill wording may be kept for emphasis). The `---` block IS the reply header; omit the `╔═╗` Re:Anchor box when leading with it (see `communication.md` exemption).
+**Universal terminal-print rule**: when skill or agent writes report file whose first non-whitespace line is `---` (YAML metadata block), that block MUST be printed verbatim in terminal as **first content of reply** — before report path line, before executive summary, before anything else. Optionally followed by: `→ <path>`, executive summary, skill-specific details. Applies to ALL skills and agents producing such reports — no per-skill duplication of this rule needed (per-skill wording may be kept for emphasis). The `---` block IS reply header; omit `╔═╗` Re:Anchor box when leading with it (see `communication.md` exemption).
 
-Every report file created via output routing must begin with a YAML metadata block between `---` delimiter lines. This block is the canonical meta summary — printed verbatim to terminal before the executive summary, machine-parseable by downstream skills.
+Every report file created via output routing must begin with YAML metadata block between `---` delimiter lines. This block is canonical meta summary — printed verbatim to terminal before executive summary, machine-parseable by downstream skills.
 
 **Required minimum fields** (all reports):
 
@@ -168,7 +168,7 @@ Path:       → .reports/<skill>/<timestamp>/<name>.md
 ---
 ```
 
-After the required fields, add **skill-specific fields** relevant to the report type (e.g. Verdict, CI, Risk, Blockers for `develop:review`; Best method, Papers for `research:topic`; Methodology, Findings for `research:judge`). `develop:review` report template is the canonical reference. Skills with dedicated output routing (audit, review, resolve, analyse, release) must include an equivalent `---` block at the top of their report files.
+After required fields, add **skill-specific fields** relevant to report type (e.g. Verdict, CI, Risk, Blockers for `develop:review`; Best method, Papers for `research:topic`; Methodology, Findings for `research:judge`). `develop:review` report template is canonical reference. Skills with dedicated output routing (audit, review, resolve, analyse, release) must include equivalent `---` block at top of their report files.
 
 ## Reporting Findings
 
@@ -183,4 +183,4 @@ Fix: <concrete action to resolve>
 
 - Severity markers: `!` = critical · `⚠` = warnings · `✓` = pass · hint = fix hint
 - **Block merge integrity**: after merging two blocks (combining e.g. `<antipatterns>` + `<quality_checks>` into one), diff combined output against both originals; every named rule (`##` heading or bold title) must survive; zero silent drops
-- **Deferred work must appear in delivered artifact**: if any analysis, rubric definition, or implementation is deferred, approximated, or left incomplete, document it explicitly in the output file — "Phase 2 / requires X / not yet implemented" notes must appear in the artifact, not only in conversation
+- **Deferred work must appear in delivered artifact**: if any analysis, rubric definition, or implementation is deferred, approximated, or left incomplete, document it explicitly in output file — "Phase 2 / requires X / not yet implemented" notes must appear in artifact, not only in conversation

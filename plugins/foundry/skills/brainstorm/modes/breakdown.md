@@ -114,7 +114,7 @@ For each blocking question: call `AskUserQuestion` — one at a time, in order. 
 
 #### Step B2: Generate the action plan
 
-**Idempotency pre-check**: before generating plan, call `TaskList` and scan for active `/develop:feature` tasks naming this spec's slug. If found, surface existing task to user and ask whether to re-generate plan (which will not re-dispatch — see Step B3) or skip; do not silently double-dispatch.
+**Idempotency pre-check**: before generating plan, call `TaskList` and scan for active `/develop:feature` tasks naming this spec's slug. If found, surface existing task to user, ask whether to re-generate plan (will not re-dispatch — see Step B3) or skip; do not silently double-dispatch.
 
 1. Parse spec into discrete action items from "Proposed design" and "Success criteria"
 2. For each item, write ready-to-run invocation:
@@ -148,6 +148,6 @@ Call `AskUserQuestion` tool — do NOT write options as plain text first. Map op
 - (b) label: `Copy plan` — description: output plan table as clean markdown block, then stop
 - (c) label: `Revise spec first` — description: stop; revise spec and re-run `/brainstorm breakdown <spec>`
 
-On **(a)** (requires `develop` plugin): before dispatching, verify no active `/develop:feature` task for this spec already exists in TaskList — call `TaskList` and scan for tasks naming the spec slug or referencing `/develop:feature` against same spec file; if found, surface existing task to user and skip dispatch (prevents double-dispatch on re-entry). Otherwise proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
+On **(a)** (requires `develop` plugin): before dispatching, verify no active `/develop:feature` task for this spec exists in TaskList — call `TaskList` and scan for tasks naming the spec slug or referencing `/develop:feature` against same spec file; if found, surface existing task to user and skip dispatch (prevents double-dispatch on re-entry). Otherwise proceed immediately with invocation from task 1. On **(b)**: output plan table as clean markdown block, then stop. On **(c)**: stop and tell user to revise spec and re-run `/brainstorm breakdown <spec>`.
 
 End with `## Confidence` block per CLAUDE.md output standards.

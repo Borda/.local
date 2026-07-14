@@ -26,7 +26,7 @@ Write to `.reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/directives.json`:
   {
     "directive_id": "dir-1",
     "text": "<directive text verbatim>",
-    "expected_behavior": "<observable property of a compliant response \u2014 what must be present or absent>"
+    "expected_behavior": "<observable property of a compliant response — what must be present or absent>"
   }
 ]
 ```
@@ -91,7 +91,7 @@ Write complete response to `<RUN_DIR>/response-<PROBLEM_ID>.md` using Write tool
 
 <!-- END SPAWN PROMPT -->
 
-**Context discipline**: subagents write to disk and return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. Receiving only `Wrote: <PROBLEM_ID>` per agent is correct and expected.
+**Context discipline**: subagents write to disk, return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. Receiving only `Wrote: <PROBLEM_ID>` per agent is correct and expected.
 
 **Phase timeout**: every 5 min run `find .reports/calibrate/<TIMESTAMP>/rules/<RULE_DIR>/ -newer /tmp/calibrate-rules-<TIMESTAMP>-<RULE_BASENAME> -name "response-*.md" | wc -l` — new files = alive; zero = stalled. Hard cutoff: 15 min of no new files → mark remaining as `{"timed_out": true}` in scores.json; grant one +5 min extension if last response file shows active content.
 

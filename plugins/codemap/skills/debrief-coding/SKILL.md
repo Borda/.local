@@ -8,9 +8,9 @@ effort: low
 
 <objective>
 
-Reads `.cache/codemap/logs/` JSONL telemetry, analyses usage patterns, and writes a diagnostic report.
+Reads `.cache/codemap/logs/` JSONL telemetry, analyses usage patterns, writes diagnostic report.
 
-NOT for: validating codemap installation health or integration (use `/codemap:integration check`); building or querying the structural index (use `/codemap:scan-codebase` or `/codemap:query-code`).
+NOT for: validating codemap installation health/integration (use `/codemap:integration check`); building/querying structural index (use `/codemap:scan-codebase` or `/codemap:query-code`).
 
 </objective>
 
@@ -31,7 +31,7 @@ ls .cache/codemap/logs/*.jsonl 2>/dev/null  # timeout: 5000
 
 No files → stop: "No codemap telemetry found. Run any `/codemap:*` skill or `scan-query` command to start collecting logs."
 
-Telemetry is **sharded per session** (`_telemetry.py` + `log-skill-start.js` + `log-tool-use.js`): CLI records land in `cli_<session>.jsonl`, skill records in `skills_<session>.jsonl`, and Grep/Read/Glob records in `tools_<session>.jsonl`; runs with no seeded session id fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Collect **all** matching files, not just the legacy names:
+Telemetry **sharded per session** (`_telemetry.py` + `log-skill-start.js` + `log-tool-use.js`): CLI records in `cli_<session>.jsonl`, skill records in `skills_<session>.jsonl`, Grep/Read/Glob records in `tools_<session>.jsonl`; runs with no seeded session id fall back to unsuffixed `cli.jsonl` / `skills.jsonl` / `tools.jsonl`. Collect **all** matching files, not just legacy names:
 
 ```bash
 CLI_LOGS=$(ls .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl 2>/dev/null)  # timeout: 5000
@@ -43,7 +43,7 @@ TOOLS_LOGS=$(ls .cache/codemap/logs/tools_*.jsonl .cache/codemap/logs/tools.json
 
 If `--anonymize` flag given:
 
-**Guard**: anonymize every present shard — never assume the legacy `cli.jsonl` / `skills.jsonl` exist (per-session sharding means they usually don't). Loop over the `$CLI_LOGS` / `$SKILLS_LOGS` sets from Step 0; anonymized copies land in `.cache/codemap/export/` (anonymize.py refuses to write next to `.salt` — never target the logs dir); do not mix anonymized and original data in Step 2.
+**Guard**: anonymize every present shard — never assume legacy `cli.jsonl` / `skills.jsonl` exist (per-session sharding means they usually don't). Loop over `$CLI_LOGS` / `$SKILLS_LOGS` sets from Step 0; anonymized copies land in `.cache/codemap/export/` (anonymize.py refuses to write next to `.salt` — never target logs dir); don't mix anonymized and original data in Step 2.
 
 ```bash
 for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
@@ -55,30 +55,30 @@ for f in .cache/codemap/logs/cli_*.jsonl .cache/codemap/logs/cli.jsonl \
 done
 ```
 
-If neither set has any file: print `⚠ --anonymize: no CLI or skill logs found — cannot produce anonymized report.` and stop. If only one layer is present, anonymize it and note the gap.
+If neither set has any file: print `⚠ --anonymize: no CLI or skill logs found — cannot produce anonymized report.` and stop. If only one layer present, anonymize it and note gap.
 
-Use the `-anon` variants under `.cache/codemap/export/` as source in Step 2. If anonymize.py not found, warn and proceed with originals.
+Use `-anon` variants under `.cache/codemap/export/` as source in Step 2. anonymize.py not found → warn, proceed with originals.
 
 ## Step 2: Read log files
 
-Read **every** CLI shard (`cli_*.jsonl` plus legacy `cli.jsonl`), **every** skill shard (`skills_*.jsonl` plus legacy `skills.jsonl`), and **every** tool shard (`tools_*.jsonl` plus legacy `tools.jsonl`) with the Read tool — use the `$CLI_LOGS` / `$SKILLS_LOGS` / `$TOOLS_LOGS` lists from Step 0 (or the `-anon` siblings when anonymized). Concatenate their records before analysing; a single-file read misses all per-session shards and reports a near-empty dataset.
+Read **every** CLI shard (`cli_*.jsonl` plus legacy `cli.jsonl`), **every** skill shard (`skills_*.jsonl` plus legacy `skills.jsonl`), **every** tool shard (`tools_*.jsonl` plus legacy `tools.jsonl`) with Read tool — use `$CLI_LOGS` / `$SKILLS_LOGS` / `$TOOLS_LOGS` lists from Step 0 (or `-anon` siblings when anonymized). Concatenate records before analysing; single-file read misses per-session shards, reports near-empty dataset.
 
 Each line is one JSON record. Filter by `--since` (compare `ts` field) and `--session` if given.
 
-**`--session` guard**: when `--session <id>` given, a session UUID may be absent from one or both log files (e.g., skills.jsonl records only skill events, not all CLI events). Filtering an absent session ID returns an empty set for that file — this is expected, not an error. Report "session not found in <file>" rather than treating empty result as a data loss.
+**`--session` guard**: when `--session <id>` given, session UUID may be absent from one or both log files (e.g., skills.jsonl records only skill events, not all CLI events). Filtering absent session ID returns empty set for that file — expected, not error. Report "session not found in <file>" rather than treating empty result as data loss.
 
 CLI record fields: `ts`, `layer`, `session`, `cmd`, `argv`, `result` (nested: `count`, `exhaustive`, `stale`, `method`, `not_covered`, `error`), `timing_ms`, `stderr` (optional), `exit_code` (optional).
 
 Skill record fields: `ts`, `layer`, `session`, `skill`, `event`, `intent`, `hook_session`.
 
-Tool record fields (`layer: "tool"`, from `log-tool-use.js`): `ts`, `layer`, `session`, `tool` (`Grep`|`Read`|`Glob`), `target` (Grep/Glob pattern or search path, Read file_path). These count raw grep/read volume per session — the signal codemap's context-injection aims to reduce.
+Tool record fields (`layer: "tool"`, from `log-tool-use.js`): `ts`, `layer`, `session`, `tool` (`Grep`|`Read`|`Glob`), `target` (Grep/Glob pattern or search path, Read file_path). Count raw grep/read volume per session — the signal codemap's context-injection aims to reduce.
 
 ## Step 3: Analyse
 
 Compute from filtered records:
 
 **CLI layer:**
-- Total invocations, success vs error rate — `exit_code: 0` means the tool ran cleanly (success); `exit_code` present AND non-zero = error; `exit_code` absent = field not logged (treat as success unless `result.error` non-empty)
+- Total invocations, success vs error rate — `exit_code: 0` = tool ran cleanly (success); `exit_code` present AND non-zero = error; `exit_code` absent = field not logged (treat as success unless `result.error` non-empty)
 - Subcommand distribution: count per `cmd` value
 - Timing: median, p95, max `timing_ms`; compute p95 as sorted index: `sorted_ms = sorted(r["timing_ms"] for r in cli_records if r.get("timing_ms") is not None); p95 = sorted_ms[int(len(sorted_ms) * 0.95)] if sorted_ms else 0`
 - Coverage: fraction of results with `"not_covered": true` or non-empty `not_covered`
@@ -96,13 +96,13 @@ Compute from filtered records:
 
 **Avoidance join (guard-chain leak rate):**
 
-Join the tool layer against the CLI layer: a Grep/Read/Glob whose target names a module that codemap already answered completely (`query_complete: true`) within the window is an **avoidance event** — the agent re-derived by hand what the index had already returned exhaustively, so the guard chain leaked. `join_avoidance.py` runs the join (module-match is word-boundary safe, ported from `guard-redundant-scan.js`) and reports the rate per session and per skill:
+Join tool layer against CLI layer: a Grep/Read/Glob whose target names a module codemap already answered completely (`query_complete: true`) within window is an **avoidance event** — agent re-derived by hand what index had already returned exhaustively, guard chain leaked. `join_avoidance.py` runs the join (module-match word-boundary safe, ported from `guard-redundant-scan.js`), reports rate per session and per skill:
 
 ```bash
 python "${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/join_avoidance.py" --logs .cache/codemap/logs --window-min 10 --json  # timeout: 15000
 ```
 
-Interpret the `rate` field: a **high avoidance rate is a dead-chain signal** — the guard is not firing, the injected context is not being read, or the model is ignoring both. Feed the count into both the product telemetry (is the index earning its keep?) and stranger self-diagnosis (did I re-grep what I already knew?). Add the count and rate to the report's Overview and, when non-zero, list the flagged modules from the `events` array.
+Interpret `rate` field: **high avoidance rate is dead-chain signal** — guard not firing, injected context not read, or model ignoring both. Feed count into product telemetry (is index earning its keep?) and self-diagnosis (did I re-grep what I already knew?). Add count and rate to report's Overview; when non-zero, list flagged modules from `events` array.
 
 ## Step 4: Write report
 
@@ -175,6 +175,6 @@ Print report path on completion.
 
 ## Security note
 
-All logs are local to `.cache/codemap/logs/`. Salt file `.cache/codemap/logs/.salt` must stay local — never share it alongside anonymized output. The anonymized log files themselves are safe to share; without the salt, pseudonyms are not reversible.
+All logs local to `.cache/codemap/logs/`. Salt file `.cache/codemap/logs/.salt` must stay local — never share alongside anonymized output. Anonymized log files themselves safe to share; without salt, pseudonyms not reversible.
 
 </workflow>

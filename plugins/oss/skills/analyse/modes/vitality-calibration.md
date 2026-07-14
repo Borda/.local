@@ -1,4 +1,4 @@
-Validate scoring range + sensitivity across known archetypes. Run `/oss:analyse vitality` on each repo below; compare output Health Score % against expected range.
+Validate scoring range + sensitivity across known archetypes. Run `/oss:analyse vitality` on each repo below; compare output Health Score % against expected range
 
 ## Scenario Matrix
 

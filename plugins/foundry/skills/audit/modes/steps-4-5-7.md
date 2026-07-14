@@ -93,7 +93,7 @@ Main context receives only that one-liner. Orchestrator MUST NOT read `aggregate
 
 Parse confidence scores from each file's `## Confidence` block in `<RUN_DIR>/<slug>.md` output files (use Glob + Read — batch envelopes carry aggregate confidence, not per-file scores; individual file reports are the authoritative source). For each slug where `Score` < **0.80**, run three parallel passes:
 
-**Fan-out ceiling**: when MORE THAN 8 slugs score <0.80, do NOT run per-slug passes (4 spawns × N is unbounded) — instead spawn ONE consolidated **foundry:curator** re-run covering all low-confidence slugs (batched prompt listing every slug + its `Gaps:` block, one combined `<RUN_DIR>/lowconf-batch-rerun.md`) plus one Codex pass over the same batch when available; run pass B (docs check) only for slugs whose gaps explicitly cite schema/docs uncertainty. Systematically low confidence signals a rubric or curator problem, not N independent file problems — remediate once, not N×4 times.
+**Fan-out ceiling**: when MORE THAN 8 slugs score <0.80, do NOT run per-slug passes (4 spawns × N is unbounded) — instead spawn ONE consolidated **foundry:curator** re-run covering all low-confidence slugs (batched prompt listing every slug + its `Gaps:` block, one combined `<RUN_DIR>/lowconf-batch-rerun.md`) plus one Codex pass over same batch when available; run pass B (docs check) only for slugs whose gaps explicitly cite schema/docs uncertainty. Systematically low confidence signals a rubric or curator problem, not N independent file problems — remediate once, not N×4 times.
 
 **Health monitoring** (CLAUDE.md §6): apply the honest protocol in `$_FS/agent-spawn-protocol.md` — passes A–C return on completion; read each pass's output file afterwards. For a background probe, a single `find $RUN_DIR -newer "$SENTINEL" \( -name "*-rerun.md" -o -name "docs-recheck-*.md" -o -name "codex-recheck-*.md" \) | wc -l` per turn (`health_sentinel.py` §8b) — no sleep loop. On empty/missing output: mark `timed_out`, surface with ⏱ in final report.
 
@@ -166,6 +166,6 @@ Before emitting, read current `$RUN_DIR/summary.jsonl` (may have been updated by
 |---|---------|------|-----------|
 ```
 
-After report → fire **Follow-up gate**. If user picks fix option (a–c), proceed inline to the fix mode (Steps 8–10, loaded from `modes/fix.md`). Otherwise skip to Step 11.
+After report → fire **Follow-up gate**. If user picks fix option (a–c), proceed inline to fix mode (Steps 8–10, loaded from `modes/fix.md`). Otherwise skip to Step 11.
 
 Returns to SKILL.md Steps 8–10 (fix dispatch, gated) / Step 11 (final report).

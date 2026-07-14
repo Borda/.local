@@ -3,7 +3,7 @@
 
 **Trigger**: `/release prepare <version>` (e.g., `prepare v1.3.0` or `prepare 1.3.0`)
 
-**Purpose**: Full release pipeline — audit first, generate all artifacts. Use when cutting release; use individual modes for drafting.
+**Purpose**: Full release pipeline — audit first, generate all artifacts. Use when cutting release; individual modes for drafting.
 
 ```bash
 # fresh shell loses vars; Mode Detection persists REST to tmpdir
@@ -16,7 +16,7 @@ RANGE="${RANGE:-$LAST_TAG..HEAD}"
 
 ### Phase 1: Readiness audit
 
-Run all checks from **Mode: audit** with `$VERSION` as target. The `| Check | Status | Detail |` readiness table must appear inline in the terminal before proceeding — audit-checks.md requires this even in sub-phase context. If the table is absent from the response after running audit, re-execute the terminal output step from audit-checks.md before continuing.
+Run all checks from **Mode: audit** with `$VERSION` as target. `| Check | Status | Detail |` readiness table must appear inline in terminal before proceeding — audit-checks.md requires this even in sub-phase context. If table absent from response after running audit, re-execute terminal output step from audit-checks.md before continuing.
 
 **If verdict is BLOCKED**: stop. List blockers, tell user to resolve before re-running `/release prepare $VERSION`. Write no artifacts.
 
@@ -24,7 +24,7 @@ Run all checks from **Mode: audit** with `$VERSION` as target. The `| Check | St
 
 ### Phase 2: Gather, classify, and changelog
 
-**a. Gather and classify** — spawn gather subagent per **Delegation strategy** for `$RANGE`; write findings to `GATHER_FILE`. Read returned JSON envelope; pass file path downstream. Don't read gather file into main context. Note `breaking` count from envelope — gates Phase 3b (migration guide). After envelope validation, check `unconfirmed_breaking` from envelope: if > 0, apply the post-validation truth-check gate from **Delegation strategy** (partial `[UNCONFIRMED]` read + `AskUserQuestion` per breaking item) before proceeding to 2b.
+**a. Gather and classify** — spawn gather subagent per **Delegation strategy** for `$RANGE`; write findings to `GATHER_FILE`. Read returned JSON envelope; pass file path downstream. Don't read gather file into main context. Note `breaking` count from envelope — gates Phase 3b (migration guide). After envelope validation, check `unconfirmed_breaking` from envelope: if > 0, apply post-validation truth-check gate from **Delegation strategy** (partial `[UNCONFIRMED]` read + `AskUserQuestion` per breaking item) before proceeding to 2b.
 
 **b. Audit changelog** — apply **Audit changelog** logic inline: locate `$CHANGELOG_FILE` (per search order in Audit changelog section), cross-check classified changes from `$GATHER_FILE`, add missing entries, stamp unreleased section as `## [$VERSION] — $DATE`. Report: "N items added, M flagged."
 
@@ -37,7 +37,7 @@ RELEASE_DIR="releases/$VERSION"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/setup_release_dir.py" "$RELEASE_DIR" "$CHANGELOG_FILE"  # timeout: 5000
 ```
 
-**a. Identify highlights** — apply **Identify highlights** logic using classified changes from `$GATHER_FILE`: rank top 3–5 most significant changes (breaking > new public API > major UX > notable fixes), pull one concrete code example per highlight from diff. Write to `releases/$VERSION/HIGHLIGHTS.md`. Source of truth for demo, executive summary, release draft spotlights.
+**a. Identify highlights** — apply **Identify highlights** logic using classified changes from `$GATHER_FILE`: rank top 3–5 most significant changes (breaking > new public API > major UX > notable fixes), pull one concrete code example per highlight from diff. Write to `releases/$VERSION/HIGHLIGHTS.md`. Source of truth for demo, executive summary, release draft spotlights
 
 **b. Draft migration guide** — apply **Draft migration guide** logic using breaking/deprecated changes from `$GATHER_FILE`. No breaking changes → single line: `No breaking changes in this release.` Shepherd voice review applies. Write to `releases/$VERSION/MIGRATION.md`.
 

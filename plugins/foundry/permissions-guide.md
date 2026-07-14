@@ -1,8 +1,8 @@
 # Permissions Reference
 
-Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and `.claude-plugin/permissions-deny.json` (deny list) — canonical sources merged into `~/.claude/settings.json` by `/foundry:setup`. Working copy lives at `.claude/permissions-guide.md`, kept in sync by `/audit` (Check 4 drift check) and `/manage add perm` / `/manage remove perm`.
+Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and `.claude-plugin/permissions-deny.json` (deny list) — canonical sources merged into `~/.claude/settings.json` by `/foundry:setup`. Working copy at `.claude/permissions-guide.md`, kept in sync by `/audit` (Check 4 drift check) and `/manage add perm` / `/manage remove perm`.
 
-**Destructive git commands explicitly denied** — see Deny List below. Deny rules evaluated before allow rules; matching deny always blocks regardless of any allow entry. Force-push (`git push --force`/`-f`/`--force-with-lease`) denied unconditionally via `.claude/settings.json` `deny` — no override, any branch. Regular `git push` is not settings.json-denied; it is gated by the `commit-guard.js` hook sentinel — every push requires a fresh `AskUserQuestion` confirmation (no auto-arm), Claude runs `git push` only after the user arms the sentinel from their own shell. `git remote` not denied — prompt user for approval.
+**Destructive git commands explicitly denied** — see Deny List below. Deny rules evaluated before allow rules; matching deny always blocks regardless of any allow entry. Force-push (`git push --force`/`-f`/`--force-with-lease`) denied unconditionally via `.claude/settings.json` `deny` — no override, any branch. Regular `git push` not settings.json-denied; gated by `commit-guard.js` hook sentinel — every push requires fresh `AskUserQuestion` confirmation (no auto-arm), Claude runs `git push` only after user arms sentinel from own shell. `git remote` not denied — prompt user for approval.
 
 ## Deny List — always blocked
 
@@ -20,7 +20,7 @@ Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and 
 
 ## Built-in tool permissions
 
-Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates access frequently as part of their own config or runtime state. Without these, agents prompted to confirm accessing own config files or writing output to skill run dirs.
+Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates access frequently as own config or runtime state. Without these, agents prompted to confirm accessing own config files or writing output to skill run dirs.
 
 | Permission | Description | Typical use case |
 | --- | --- | --- |

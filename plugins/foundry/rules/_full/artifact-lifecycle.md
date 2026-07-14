@@ -56,8 +56,7 @@ Format: `YYYY-MM-DDTHH-MM-SSZ` (UTC, dashes throughout, filesystem-safe).
 Example: `.reports/calibrate/2026-03-27T20-06-22Z/`.
 
 Completed run always has `result.jsonl`.
-Incomplete runs (crashed, timed out) lack it — TTL hook skips them (keeps for debugging).
-
+Incomplete runs (crashed, timed out) lack it — TTL hook skips them (kept for debugging).
 ## TTL policy
 
 | Location | TTL | Condition |

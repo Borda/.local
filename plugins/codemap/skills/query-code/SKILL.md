@@ -34,7 +34,7 @@ INDEX=$(cat "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-resolve-index" 2>/dev/null || e
 [ -n "$INDEX" ] && { [ -f "$INDEX" ] && STATE="present" || STATE="missing"; } || STATE="unresolved"
 ```
 
-Branch on `$STATE`. Auto-build is opt-out via `SCAN_NO_AUTOBUILD=1` (set it to run queries against the index exactly as-is — no refresh, no full build); when a build does run, its wall-time is echoed so build cost stays separable from query cost.
+Branch on `$STATE`. Auto-build opt-out via `SCAN_NO_AUTOBUILD=1` (set to run queries against index exactly as-is — no refresh, no full build); build wall-time echoed when it runs, keeps build cost separable from query cost.
 
 - `present` → refresh in place (honors the opt-out, echoes build time):
 
@@ -70,7 +70,7 @@ If not refused → `Skill(skill="codemap:scan-codebase")`, then re-read INDEX fr
 - `rdeps <mod>` — callers: what imports X, blast radius of X
 - `deps <mod>` — forward: what X imports
 
-Common mistake: "modules affected if X changes" = `rdeps` (callers), NOT `deps`.
+Common mistake: "modules affected if X changes" = `rdeps` (callers), not `deps`.
 
 Missing binary fallback:
 ```bash
@@ -114,25 +114,25 @@ scan-query fn-rdeps "mypackage.auth::validate_token"  # timeout: 5000
 | `coverage_pct` + `covered_by` for a symbol / module | `coverage <mod::sym \ | mod>` | v5.4 |
 | symbols below a coverage threshold | `coverage-gap [<mod>] [--all] [--threshold P]` | v5.4 |
 
-Missing/old index → a query needing a newer version exits with a "requires vN+ index" message; re-run auto-build (Step 0) or `/codemap:scan-codebase` to upgrade.
+Missing/old index → query needing newer version exits with "requires vN+ index" message; re-run auto-build (Step 0) or `/codemap:scan-codebase` to upgrade.
 
-Anything not listed here — `scan-query --help` has the full reference.
+Anything not listed here — `scan-query --help` has full reference.
 
-**tool_use_error / skill unavailable**: do NOT count as a query attempt. Run `$SQ <same-args>` via Bash directly (timeout: 5000). Apply STOP rule after Bash result.
+**tool_use_error / skill unavailable**: do NOT count as query attempt. Run `$SQ <same-args>` via Bash directly (timeout: 5000). Apply STOP rule after Bash result.
 
-**`query_complete: true` → STOP ALL TOOL CALLS.** List complete and authoritative for THIS query's direction. Write answer immediately. Do NOT call codemap again. Do NOT grep/glob/bash to verify. (`query_complete` is direction-scoped: a `deps`/`symbols` query on a healthy module can be complete even while another file is degraded, but `rdeps`/`central`/`path` are complete only when `degraded: 0`. The legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle — prefer `query_complete`.) (Enforced: a guard hook denies import-greps for any module already returned complete this session — a re-grep wastes a turn and is blocked. Trust the index; this holds for every model tier.)
+**`query_complete: true` → STOP ALL TOOL CALLS.** List complete and authoritative for THIS query's direction. Write answer immediately. Do NOT call codemap again. Do NOT grep/glob/bash to verify. (`query_complete` direction-scoped: a `deps`/`symbols` query on healthy module can be complete even while another file degraded, but `rdeps`/`central`/`path` complete only when `degraded: 0`. Legacy `exhaustive` field mirrors `query_complete` for one deprecation cycle — prefer `query_complete`.) (Enforced: guard hook denies import-greps for any module already returned complete this session — re-grep wastes turn, blocked. Trust index; holds for every model tier.)
 
-**`query_complete: false`** → the result is direction-incomplete. Check `degraded_files` (files that failed to parse — may hide edges), `untracked_py` (new files not yet `git add`-ed — invisible to the staleness diff), and `stale`; verify with grep only for those named gaps.
+**`query_complete: false`** → result direction-incomplete. Check `degraded_files` (files failed to parse — may hide edges), `untracked_py` (new files not yet `git add`-ed — invisible to staleness diff), `stale`; verify with grep only for those named gaps.
 
 Truncation check: result count = 20 AND `--limit 0` not passed → re-run once with `--limit 0` (1 budget slot), then apply STOP rule.
 
 Budget: max 3 calls. Non-exhaustive after 3 → report what found, stop.
 
-`find-symbol`: Python regex — `^Auth.*Handler$` (anchored) or `auth` (substring). Escape `.` for literal dot. Always use `--limit 0` when counting or ranking to avoid 20-item truncation.
+`find-symbol`: Python regex — `^Auth.*Handler$` (anchored) or `auth` (substring). Escape `.` for literal dot. Always use `--limit 0` when counting/ranking to avoid 20-item truncation.
 
 Symbol staleness: `stale: true` + empty source → `Read(path)` fallback. `stale: false` + empty → `[source not available — re-run /codemap:scan-codebase]`.
 
-Targeted edit (known symbol, file >~300 lines): `symbol <mod::name>` → take line span → `Read(offset=span_start−10, limit=span_len+20)` → Edit. Slice Read suffices — Edit needs only a slice containing the target, not the whole file. Spans come from the index; file changed since scan → spans may drift (self-heal usually covers it). Edit errors "Found N matches" (`old_string` not file-wide unique) or no-match (drifted out of slice) → do a full `Read`, then Edit with a larger unique `old_string`.
+Targeted edit (known symbol, file >~300 lines): `symbol <mod::name>` → take line span → `Read(offset=span_start−10, limit=span_len+20)` → Edit. Slice Read suffices — Edit needs only slice containing target, not whole file. Spans come from index; file changed since scan → spans may drift (self-heal usually covers it). Edit errors "Found N matches" (`old_string` not file-wide unique) or no-match (drifted out of slice) → do full `Read`, then Edit with larger unique `old_string`.
 
 ## Step 2: Parse JSON + render
 
@@ -151,7 +151,7 @@ Targeted edit (known symbol, file >~300 lines): `symbol <mod::name>` → take li
 | `fn-blast` | `blast_radius` | `depth module::fn`, sorted by depth then name |
 | `diff-impact` | `changed_modules` array | `module (risk) — changed symbols`, one per line; end with `test_impact.pytest_cmd` |
 
-`index.stale: true` → scan-query already attempted a bounded inline self-heal (`scan-index --incremental`) before answering; `stale` remaining true means the heal was skipped (change set over cap, or git unavailable). Re-run `/codemap:scan-codebase --incremental` manually, then retry.
+`index.stale: true` → scan-query already attempted bounded inline self-heal (`scan-index --incremental`) before answering; `stale` remaining true means heal was skipped (change set over cap, or git unavailable). Re-run `/codemap:scan-codebase --incremental` manually, then retry.
 `index.not_covered` non-empty → note scope caveat in response.
 `index.degraded > 0` → caveat some modules unparsable; `path` results may be incomplete.
 `index.confidence == "exact"` → skip verification caveats.

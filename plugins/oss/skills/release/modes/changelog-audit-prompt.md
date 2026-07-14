@@ -1,6 +1,6 @@
 <!-- file: changelog-audit-prompt.md — consumers: release/SKILL.md (Delegation strategy, Phases 5-6 parallel delegation) -->
 
-Spawn both in same response turn (two Agent() calls, one response — parallel). Expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE`, `$CHANGELOG_AUDIT_FILE`, `$CONTRIBUTORS_FILE` to literal values before spawning.
+Spawn both in same response turn (two Agent() calls, one response — parallel). Expand `$REPO_ROOT`, `$RANGE`, `$GATHER_FILE`, `$CHANGELOG_AUDIT_FILE`, `$CONTRIBUTORS_FILE` to literal values before spawning
 
 Agent A — Audit changelog (`subagent_type="foundry:doc-scribe"` — mechanical cross-check/insertion, no opus reasoning needed):
 ```text

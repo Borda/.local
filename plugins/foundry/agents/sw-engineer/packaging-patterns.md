@@ -17,8 +17,8 @@ mypackage/
 ## Deprecation (mandatory for public API changes)
 
 Use `typing_extensions.deprecated` (PEP 702) —
-verify current project preference with maintainer or `oss:shepherd` (requires `oss` plugin) for full release patterns.
-Prefer dedicated library over raw `warnings.warn` — handles argument forwarding, "warn once" deduplication, automatic call delegation.
+verify project preference with maintainer or `oss:shepherd` (requires `oss` plugin) for full release patterns.
+Prefer dedicated library over raw `warnings.warn` — handles argument forwarding, "warn once" dedup, automatic call delegation.
 
 **Key rules**: set `deprecated_in` + `remove_in`, add `.. deprecated:: X.Y.Z` Sphinx directive in docstring.
 

@@ -2,7 +2,7 @@
 
 ## ADR (Architecture Decision Record)
 
-> Write ADR only when all three hold: (1) hard to reverse — cost of changing mind later is real; (2) surprising without context — future reader would ask "why this way?"; (3) result of genuine trade-off — real alternatives existed. Missing any one → skip, no ADR needed.
+> Write ADR only when all three hold: (1) hard to reverse — cost of changing mind later is real; (2) surprising without context — future reader asks "why this way?"; (3) result of genuine trade-off — real alternatives existed. Missing any one → skip, no ADR needed.
 
 ```markdown
 # ADR-NNN: [Decision Title]
@@ -37,7 +37,7 @@
 
 ## API Design Proposal
 
-> **Template note**: Public Surface section lists signatures with type annotations only — no docstrings (docstrings are `foundry:sw-engineer`'s responsibility). Remove this note before publishing the artifact.
+> **Template note**: Public Surface section lists signatures with type annotations only — no docstrings (docstrings are `foundry:sw-engineer`'s responsibility). Remove this note before publishing artifact.
 
 ```markdown
 # API Design: [Feature/Module Name]
@@ -70,7 +70,6 @@ Canonical usage pattern:
 
 **Spacing critical** — every box must have uniform content width (pad all rows same length with spaces).
 Misaligned walls or jagged padding breaks diagram. Count characters; don't eyeball.
-
 ```text
 
 ┌─────────────────┐     ┌─────────────────┐

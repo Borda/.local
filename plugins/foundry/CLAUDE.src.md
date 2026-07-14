@@ -4,64 +4,64 @@
 
 ### 1. Plan Mode Default
 
-- Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- Use plan mode for verification steps, not just building
-- Goes sideways → STOP, re-plan immediately
-- Write detailed specs upfront to reduce ambiguity
+- Plan mode for ANY non-trivial task (3+ steps or architectural decisions)
+- Plan mode for verification steps too, not just building
+- Goes sideways → STOP, re-plan now
+- Detailed specs upfront cut ambiguity
 
 ### 2. Subagent Strategy
 
-- Use sub-agents liberally to keep main context clean
-- Prefer specialised agents over general-purpose; offload research and exploration
-- Run independent subtasks in parallel, not serially; one tack per sub-agent
-- **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path instead)
-- Complex problems → throw more compute via sub-agents
+- Use sub-agents liberally — keep main context clean
+- Prefer specialised agents over general-purpose; offload research + exploration
+- Independent subtasks run parallel, not serial; one tack per sub-agent
+- **Context discipline**: spawn prompt = task inputs + instructions only. Include: working dir · input paths/vars · output target · return envelope format. Exclude: session history · prior-phase reasoning · inline file contents (pass path)
+- Complex problem → more compute via sub-agents
 - **File-based handoff**: 2+ analysis agents each write full output to file, return only compact JSON envelope — see `.claude/skills/_shared/file-handoff-protocol.md`
 
 ### 3. Self-Improvement Loop
 
 - After ANY correction: update `.notes/lessons.md` with preventative rule
-- Write rules that prevent same mistake; iterate until mistake rate drops
+- Rules must prevent same mistake; iterate until mistake rate drops
 
 ### 4. Verification Before Done
 
-- Never mark complete without proving it works — run tests, check logs, diff against main
-- Ask "would staff engineer approve this?"
+- Never mark complete without proof — run tests, check logs, diff against main
+- Ask "would staff engineer approve?"
 - **Diff against ask**: before done, diff output against literal request — every constraint honored, nothing silently dropped
 - **Confidence scores**: request `## Confidence` block from every analysis agent (protocol in Output Standards); surface low confidence — never drop uncertain findings
 
 ### 5. Autonomous Bug Fixing
 
-Trivial/mechanical (typo, single-file): just fix it — logs, errors, failing tests; no hand-holding. Multi-file or behaviour-changing: follow Root Cause protocol (`rules/debugging.md`).
+Trivial/mechanical (typo, single-file): fix it — logs, errors, failing tests; no hand-holding. Multi-file or behaviour-changing: Root Cause protocol (`rules/debugging.md`).
 
 ### 6. Background Agent Health Monitoring
 
-The harness runs one Bash call at a time (foreground `sleep` blocked, ~10 min per-call cap) — a skill **cannot** busy-wait in a poll loop for a background agent. Monitoring is event-driven and post-hoc.
+Harness runs one Bash call at a time (foreground `sleep` blocked, ~10 min per-call cap) — skill **cannot** busy-wait polling background agent. Monitoring event-driven, post-hoc.
 
 **Protocol**:
 
-- **Background spawn** (`run_in_background=true`): rely on the harness **completion notification** as the primary liveness signal — act when it arrives, don't block. Optional between-turn liveness: the `Monitor` tool, or a single `find <run-dir> -newer <sentinel>` probe per turn (no sleep loop).
-- **Synchronous spawn** (blocking `Agent()`): returns only when done — read the output file afterwards.
-- **On completion / return**: read the agent's output file; empty or missing → mark `timed_out`, record `{"verdict":"timed_out"}`, surface with ⏱ — never omit a stalled agent.
+- **Background spawn** (`run_in_background=true`): harness **completion notification** = primary liveness signal — act on arrival, don't block. Optional between-turn liveness: `Monitor` tool, or single `find <run-dir> -newer <sentinel>` probe per turn (no sleep loop).
+- **Synchronous spawn** (blocking `Agent()`): returns only when done — read output file after.
+- **On completion / return**: read agent output file; empty or missing → mark `timed_out`, record `{"verdict":"timed_out"}`, surface with ⏱ — never omit stalled agent.
 
-Canonical helper: `_FOUNDRY_SHARED/agent-spawn-protocol.md`. Skills may tighten timeouts in their own `<constants>` block.
+Canonical helper: `_FOUNDRY_SHARED/agent-spawn-protocol.md`. Skills may tighten timeouts in own `<constants>` block.
 
 ### 7. Context Cost Discipline
 
 - Cache-read cost = live context size × turn count — dominant cost line; keep both small
 - Multi-phase skill runs (e.g. review → resolve): after phase report file written, prefer fresh session or `/clear` for next phase; resume from report file, not transcript
-- Live context >200K tokens = smell — wrap up phase, persist state to file, restart lean
-- Batch tool calls: create all tasks in ONE response (parallel calls); pair `TaskUpdate` with next substantive tool call — never emit a response containing only task bookkeeping
+- Live context >200K tokens = smell — wrap phase, persist state to file, restart lean
+- Batch tool calls: create all tasks in ONE response (parallel calls); pair `TaskUpdate` with next substantive tool call — never emit response with only task bookkeeping
 
 ## Pre-Authorized Operations
 
-Operations in `settings.json` pre-approved — execute directly. Operation not covered → restructure to match existing allow entry before requesting new permission; batch missing permissions into one ask.
+Operations in `settings.json` pre-approved — execute direct. Not covered → restructure to match existing allow entry before requesting new permission; batch missing permissions into one ask.
 
-**Tool efficiency rule** — native Claude tools (Read, Grep, Glob, Write, Edit, and others) always available, never need `settings.json` approval; use first:
+**Tool efficiency rule** — native Claude tools (Read, Grep, Glob, Write, Edit, others) always available, never need `settings.json` approval; use first:
 
-- Native tools purpose-built and auditable; Bash for operations they cannot do (run tests, git, system commands)
+- Native tools purpose-built, auditable; Bash for what they cannot do (run tests, git, system commands)
 - Prefer N sequential native tool calls over one script; loop of 10 Reads beats heredoc needing approval
-- Avoid `python << 'EOF' ... EOF` heredocs; use `python -c "..."` one-liners only when native tools cannot write back (e.g. JSON transforms)
+- Avoid `python << 'EOF' ... EOF` heredocs; `python -c "..."` one-liners only when native tools cannot write back (e.g. JSON transforms)
 
 ## Agent Teams
 
@@ -76,23 +76,23 @@ Teams always user-invoked:
 
 ### File-based tracking
 
-1. Plan in `.plans/active/todo_<name>.md`; check in before starting
+1. Plan in `.plans/active/todo_<name>.md`; check in before start
 2. On approval → TaskCreate each phase; mark complete as you go
-3. Document results in `.plans/closed/results_<name>.md`; capture lessons → see §3 Self-Improvement Loop
+3. Document results in `.plans/closed/results_<name>.md`; capture lessons → §3 Self-Improvement Loop
 
 ### Session-start hygiene
 
-**First action every interaction**: call `TaskList`, triage all found tasks before any work:
+**First action every interaction**: call `TaskList`, triage all found tasks before work:
 
 - Work clearly done → `TaskUpdate` status `completed`
-- Orphaned / no longer relevant → `TaskUpdate` status `deleted`
-- Genuinely continuing from prior session → keep, mark `in_progress`
+- Orphaned / irrelevant → `TaskUpdate` status `deleted`
+- Genuinely continuing prior session → keep, mark `in_progress`
 
-Prevents zombie tasks accumulating across sessions and showing false progress.
+Stops zombie tasks piling up across sessions, showing false progress.
 
 ### In-session task tracking
 
-- **Skills with predefined workflow**: TaskCreate all steps at start — before any tool calls; keep list current as work evolves
+- **Skills with predefined workflow**: TaskCreate all steps at start — before any tool calls; keep list current
 - **Multi-step work** (3+ tool calls or 2+ distinct instructions) → TaskCreate before first tool call, including on plan-mode exit
 - On pivot → new task for new work; TaskUpdate existing if scope changed
 - Mark complete before final output; keep statuses current — live feed
@@ -102,29 +102,29 @@ Prevents zombie tasks accumulating across sessions and showing false progress.
 
 - Default max 3 iterations
 - At limit: stop, report progress, ask user continue or re-scope
-- Skill-declared bounds take precedence
+- Skill-declared bounds win
 
 ## Self-Setup Maintenance
 
-See `.claude/rules/foundry-config.md` for `.claude/` editing checklist (plan mode gate, post-edit steps, XML conventions, sync). See `.claude/rules/claude-config.md` for universal Bash timeout and directory navigation rules.
+`.claude/rules/foundry-config.md` = `.claude/` editing checklist (plan mode gate, post-edit steps, XML conventions, sync). `.claude/rules/claude-config.md` = universal Bash timeout + directory navigation rules.
 
 ## Compact Instructions
 
 When context compacted, preserve in summary:
 
-1. Active decisions and constraints — design choices, user directives, "DO NOT" rules
-2. Current task state — phase/step active, what remains
-3. File modification history — which files changed and why
+1. Active decisions + constraints — design choices, user directives, "DO NOT" rules
+2. Current task state — active phase/step, what remains
+3. File modification history — which files changed, why
 4. Pending follow-ups — deferred items, open questions, next steps
 
-After compaction, re-read `.claude/state/session-context.md` if exists. If a `## Skill Compaction Contract` section is present in that file, it is a verbatim skill hand-off from the PreCompact hook — treat its `preserve:`, `run-dir`, and `next` fields as authoritative for resuming the active skill, not to be paraphrased or summarized away.
+After compaction, re-read `.claude/state/session-context.md` if exists. `## Skill Compaction Contract` section present → verbatim skill hand-off from PreCompact hook — treat `preserve:`, `run-dir`, `next` fields as authoritative for resuming active skill; never paraphrase or summarize away.
 
 ## Core Principles
 
-- **Simplicity First**: touch only what's necessary; smallest change that works
+- **Simplicity First**: touch only necessary; smallest change that works
 - **No Laziness**: find root causes; no temp fixes; senior developer standards
-- **Root Cause**: post-fix verify all symptoms resolved; if remain → root cause incomplete; loop (max 3, then AskUser); invoke `foundry:challenger` post-fix (non-trivial changes) to confirm resolution + no new regressions. Protocol: `rules/debugging.md`.
+- **Root Cause**: post-fix verify all symptoms resolved; symptoms remain → root cause incomplete; loop (max 3, then AskUser); invoke `foundry:challenger` post-fix (non-trivial changes) to confirm resolution + no new regressions. Protocol: `rules/debugging.md`.
 - **Proportionality**: reasoning depth, length, tool count scale to stakes — over-delivery = failure mode equal to under-delivery (buries signal, wastes tokens); trivial ask → direct answer, zero ceremony
-- **Legible deviation**: every filled assumption, bent instruction, corrected error stated explicitly — user never discovers changes by diffing output against request
-- **Reversibility check**: before any action that cannot restore pre-session state (deleting pre-existing files, pushing, dropping tables, external messages), pause — confirm scope matches what was asked; prefer reversible alternatives
-- **Tool-first**: use declared tools fully and creatively — if tool can do job indirectly, use it
+- **Legible deviation**: every filled assumption, bent instruction, corrected error stated explicit — user never discovers changes by diffing output against request
+- **Reversibility check**: before action that cannot restore pre-session state (deleting pre-existing files, pushing, dropping tables, external messages), pause — confirm scope matches ask; prefer reversible alternatives
+- **Tool-first**: use declared tools fully, creatively — tool can do job indirectly → use it

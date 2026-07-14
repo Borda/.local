@@ -2,13 +2,13 @@
 
 ## Plan Mode
 
-Only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode).
+Only when first token of `$ARGUMENTS` is exactly `plan` (not prefix match — "planning algorithms" must NOT trigger this mode).
 
 Produce sequenced, dependency-ordered implementation plan from SOTA research findings, mapped against current codebase. Use after research run identified recommended method — needed before `/develop:feature` (requires `develop` plugin).
 
 **Input detection** (parse argument after `plan`):
 
-- No argument → **auto-detect**: use Glob (pattern `topic-*.md`, path `.reports/research/`) to find recent research outputs; exclude paths containing `-plan-` or `-codebase-`; sort by modification time descending; pick most recent. Print `→ Using: <path>` before proceeding. If no file found, stop: "No recent research output found — run `/research:topic <topic>` first."
+- No argument → **auto-detect**: use Glob (pattern `topic-*.md`, path `.reports/research/`) to find recent research outputs; exclude paths containing `-plan-` or `-codebase-`; sort by modification time descending; pick most recent. Print `→ Using: <path>` before proceeding. No file found → stop: "No recent research output found — run `/research:topic <topic>` first."
 - Ends in `.md` → treat as path to existing research output file; skip to Step P1-B
 
 ### Step P1: Gather research findings
@@ -17,7 +17,7 @@ Produce sequenced, dependency-ordered implementation plan from SOTA research fin
 
 **P1-B — From existing output**: Read file at given path directly. Extract same sections.
 
-**Validation**: file must contain clear **Recommendation** section naming specific method. If missing or ambiguous, stop: "Research output does not contain a clear method recommendation — run `/research:topic <topic>` first, then pass the output path."
+**Validation**: file must contain clear **Recommendation** section naming specific method. Missing or ambiguous → stop: "Research output does not contain a clear method recommendation — run `/research:topic <topic>` first, then pass the output path."
 
 Before spawning in Steps P2–P3, pre-compute output path components:
 ```bash

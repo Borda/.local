@@ -2,7 +2,7 @@
 
 <!-- file: external.md — consumers: distill/SKILL.md -->
 
-Triggered when `$ARGUMENTS` begins with `external`. Analyse external plugin, skill, or agentic resource and produce structured adoption proposal for local Claude Code setup.
+Triggered when `$ARGUMENTS` begins with `external`. Analyse external plugin, skill, or agentic resource; produce structured adoption proposal for local Claude Code setup.
 
 ```bash
 EXT_RUN_DIR=".temp/distill/$(date -u +%Y-%m-%dT%H-%M-%SZ)"
@@ -85,9 +85,9 @@ After scoring, apply this judgement:
 
 **E12a: Challenger adversarial review**
 
-Before presenting proposals to the user, spawn **foundry:challenger** to adversarially review the adoption table. Challenger surfaces: claimed benefits that are already covered locally, cost/benefit miscalculations, proposals that add complexity without measurable gain.
+Before presenting proposals to user, spawn **foundry:challenger** to adversarially review adoption table. Challenger surfaces: claimed benefits already covered locally, cost/benefit miscalculations, proposals adding complexity without measurable gain.
 
-Substitute `$EXT_RUN_DIR` with its actual computed value (from the `EXT_RUN_DIR=` block at top of this mode file) before issuing the Agent call — spawned agents receive text, not shell context.
+Substitute `$EXT_RUN_DIR` with its computed value (from `EXT_RUN_DIR=` block at top of this mode file) before issuing Agent call — spawned agents receive text, not shell context.
 
 ```text
 Agent(subagent_type="foundry:challenger", prompt="
@@ -109,7 +109,7 @@ Return ONLY compact JSON as final line: {\"status\":\"done\",\"verdicts\":{\"<it
 ")
 ```
 
-After challenger returns: read `$EXT_RUN_DIR/challenger-review.md`. Annotate each adoption table row with challenger verdict — add **Verdict** column. Rows marked `DISCARD`: move to separate **Discarded by challenger** section below table with one-line reason. Rows marked `ADOPT_WITH_MODIFICATION`: update **Action** cell to `Tweak*` and add footnote with challenger's modification requirement. Confidence < 0.85 → flag that group's findings with ⚠ and surface the named gap.
+After challenger returns: read `$EXT_RUN_DIR/challenger-review.md`. Annotate each adoption table row with challenger verdict — add **Verdict** column. Rows marked `DISCARD`: move to separate **Discarded by challenger** section below table with one-line reason. Rows marked `ADOPT_WITH_MODIFICATION`: update **Action** cell to `Tweak*`, add footnote with challenger's modification requirement. Confidence < 0.85 → flag that group's findings with ⚠, surface the named gap.
 
 **Fallback when challenger is unavailable or fails** — if `$EXT_RUN_DIR/challenger-review.md` does not exist after the spawn returns, OR the returned JSON envelope has `status != "done"`, OR the agent itself is missing (`foundry:challenger` not installed):
 
@@ -140,16 +140,16 @@ When install-as-is is NOT recommended, omit (b) and re-label to avoid gaps:
 
 **E15: Verify and report**
 
-Print changed files. Run `git diff HEAD -- <files>` (`# timeout: 5000`) and show output. Surface unresolved Group B items as open questions for future distill runs. End with `## Confidence` block per CLAUDE.md output standards.
+Print changed files. Run `git diff HEAD -- <files>` (`# timeout: 5000`), show output. Surface unresolved Group B items as open questions for future distill runs. End with `## Confidence` block per CLAUDE.md output standards.
 
 **E16: quality review — by file type**
 
-Split the changed file list from E14 into two groups; dispatch each to the right reviewer (curator's NOT-for excludes hook/`.js` files):
+Split changed file list from E14 into two groups; dispatch each to right reviewer (curator's NOT-for excludes hook/`.js` files):
 
 - **`.md` files** (agents, skills, rules, READMEs, modes/templates): spawn `foundry:curator`
 - **`.js` files** (hooks, helpers) and other code files (`.py`, `.ts`, `.sh`): spawn `foundry:sw-engineer` with the hook-authoring specialization
 
-Substitute `$EXT_RUN_DIR` with its actual computed path from the `EXT_RUN_DIR=` block above. Issue both spawns in a single response when both groups are non-empty (parallel review):
+Substitute `$EXT_RUN_DIR` with its computed path from `EXT_RUN_DIR=` block above. Issue both spawns in a single response when both groups non-empty (parallel review):
 
 ```text
 # .md files only

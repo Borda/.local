@@ -26,7 +26,7 @@ Trusted Publishing uses GitHub OpenID Connect (OIDC) — no `API_TOKEN` or `TWIN
    - Workflow filename: `publish.yml`
    - Environment: `pypi`
 
-3. **Verify `pyproject.toml` metadata complete** PyPI requires minimum: `[project]` with `name`, `version`, `description`, `requires-python`, and `[project.urls]` with `Homepage`.
+3. **Verify `pyproject.toml` metadata complete** PyPI requires minimum: `[project]` with `name`, `version`, `description`, `requires-python`, `[project.urls]` with `Homepage`.
 
 4. **Create GitHub release** Tag commit (`git tag vX.Y.Z && git push --tags`), create GitHub release from tag. `publish.yml` triggers on `release: published`, handles rest.
 

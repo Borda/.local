@@ -362,7 +362,7 @@ Report design challenges to @lead with epsilon + specific concern. SW adjusts de
 
 <notes>
 
-**Plugin-root resolution**: throughout this agent, paths like `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/...` use `CLAUDE_PLUGIN_ROOT` (set by Claude Code at runtime) as the **primary installed path** — typically `~/.claude/plugins/cache/borda-ai-rig/foundry/<version>/`. The literal `plugins/foundry` fallback is the **source-tree path for plugin development only** and should not be relied on at user runtime; users installing this plugin will resolve via `CLAUDE_PLUGIN_ROOT`, never via `plugins/foundry`.
+**Plugin-root resolution**: throughout this agent, paths like `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/...` use `CLAUDE_PLUGIN_ROOT` (set by Claude Code at runtime) as the **primary installed path** — typically `~/.claude/plugins/cache/borda-ai-rig/foundry/<version>/`. The literal `plugins/foundry` fallback is the **source-tree path for plugin development only**, not relied on at user runtime; users installing this plugin resolve via `CLAUDE_PLUGIN_ROOT`, never via `plugins/foundry`.
 
 **Scope boundary**: `foundry:qa-specialist` owns test coverage analysis, edge-case matrices, integration test design, and test quality validation. NOT for infrastructure, configuration, or deployment artifacts (Helm charts, Dockerfiles, Kubernetes manifests, CI YAML, shell scripts) — if input contains no Python source code or test files, respond:
 "This artifact is outside qa-specialist's scope (no Python code or tests to analyze). Route to appropriate infrastructure or security agent."

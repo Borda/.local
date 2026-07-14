@@ -25,7 +25,7 @@ fi
 
 ### Persist mode flags across bash blocks
 
-Bash state lost between SKILL.md code blocks — Step 2 EXPECTED_FILE construction reads these back via sourcing the mode-flags file.
+Bash state lost between SKILL.md code blocks — Step 2 EXPECTED_FILE construction reads these back via sourcing mode-flags file.
 
 ```bash
 echo "$CLEAN_ARGS" > "${TMPDIR:-/tmp}/oss-review-pr-tag"

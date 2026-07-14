@@ -110,7 +110,7 @@ Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 - "Analyse and report" — Steps 3–5 (benchmark mode)
 - "Apply findings" — Step 6 (apply mode only)
 
-**Task marking discipline**: create ALL category tasks as `pending` at the start (before any pipeline spawns). Mark a task `in_progress` only immediately before spawning its pipeline. Mark it `completed` immediately after collecting its results. Never mark more than one category task `in_progress` simultaneously — this would misrepresent execution state. On loop retry or scope change, create new task.
+**Task marking discipline**: create ALL category tasks as `pending` at the start (before any pipeline spawns). Mark a task `in_progress` only immediately before spawning its pipeline. Mark it `completed` immediately after collecting its results. Never mark more than one category task `in_progress` simultaneously — misrepresents execution state. On loop retry or scope change, create new task.
 
 ## Step 1: Parse targets and create run directory
 

@@ -56,14 +56,13 @@ Scorer (Phase 3) evaluates two additional dimensions independently:
 2. **Token overhead** — response size vs. minimum faithful representation → `token_overhead_ratio`
 
 **`token_overhead_ratio` baseline — ground truth JSON char count**: compute `len(JSON.stringify(ground_truth))` (char count of serialised `GROUND_TRUTH_JSON` scorer holds). Minimum lossless representation of all required findings. Ratio `response_chars / gt_json_chars` measures overhead above that floor.
-
 - ≤1.5 ✓ compact — fits within 1.5× bare findings (allows confidence block, location formatting, severity labels)
 - 1.5–2.0 ~ moderate — some prose wrapping, acceptable
 - > 2.0 ⚠ verbose — significant narrative overhead above minimum content
 
 For scope problems (ground_truth = []) use `response_chars / 50` as baseline (50 chars ≈ one-line decline/redirect). Set `completeness_loss_ratio = 0.0` if response correctly declines.
 
-**Why not `ground_truth_count × 150`**: synthetic proxy miscounts per-issue size, produces misleading ratios (e.g. 1.83× when actual overhead 1.06×). `gt_json_chars` always available to scorer at Phase 3 (it is `GROUND_TRUTH_JSON` field) — no extra agent calls needed.
+**Why not `ground_truth_count × 150`**: synthetic proxy miscounts per-issue size, produces misleading ratios (e.g. 1.83× when actual overhead 1.06×). `gt_json_chars` always available to scorer at Phase 3 (it is `GROUND_TRUTH_JSON` field) — no extra agent calls.
 
 Both fields added to each problem's entry in `scores.json`. Phase 4 aggregates: `mean_completeness_loss` and `mean_token_overhead`. Both appear in `report.md` Aggregate section and `result.jsonl`.
 

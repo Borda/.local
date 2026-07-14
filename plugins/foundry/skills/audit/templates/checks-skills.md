@@ -2,7 +2,7 @@
 
 ## Check 21 — Skill frontmatter conflicts
 
-`context:fork + disable-model-invocation:true` is broken combination.
+`context:fork + disable-model-invocation:true` is broken.
 
 ```bash
 # LOCAL_MODE-aware globs — reused across checks in this file
@@ -72,7 +72,6 @@ printf "✓: Check 23 scan complete\n"
 ```
 
 After scan, apply model reasoning to each match — exclude cases where shell command genuinely necessary. Flag only where native tool is direct drop-in.
-
 | Shell command | Preferred native tool | Severity |
 | --- | --- | --- |
 | `cat <file>` | Read tool | medium |
@@ -83,7 +82,7 @@ After scan, apply model reasoning to each match — exclude cases where shell co
 
 ### Sub-check 23a — python inline policy (CLAUDE.md / MEMORY.md violation)
 
-`Bash(python:*)` IS in the allow list, covering bare `python script.py` calls. However, `python -c "..."` does NOT match `Bash(python:*)` — Claude Code's permission matcher tokenizes the full prefix, so `python -c` requires a separate `Bash(python -c:*)` entry (intentionally absent). Any `python -c` in a skill body still pauses for a permission prompt mid-workflow; user deny = phase fails. This is the enforcement mechanism for the inline-Python antipattern, not a coverage gap.
+`Bash(python:*)` in allow list, covers bare `python script.py`. But `python -c "..."` does NOT match `Bash(python:*)` — Claude Code's permission matcher tokenizes the full prefix, so `python -c` needs a separate `Bash(python -c:*)` entry (intentionally absent). Any `python -c` in a skill body pauses for a permission prompt mid-workflow; user deny = phase fails. Enforcement mechanism for the inline-Python antipattern, not a coverage gap.
 
 ```bash
 printf "=== Check 23a: python inline policy ===\n"
@@ -108,7 +107,7 @@ Severity: **high** — permission prompt mid-workflow blocks automation; user de
 
 ### Sub-check 23b — `# timeout:` annotation without shell enforcement
 
-`# timeout: N` on a bash line is a hint to Claude Code's Bash tool — it has no effect when the command runs outside the tool (bin/ scripts, CI, direct shell). Hard enforcement requires `timeout S <cmd>` prefix (bash) or `--timeout S` via argparse + passed to every blocking call (Python subprocess). See `bin-authoring-guide.md` §Timeout Policy for canonical patterns and ms→s conversion table.
+`# timeout: N` on a bash line is a hint to Claude Code's Bash tool — no effect when the command runs outside the tool (bin/ scripts, CI, direct shell). Hard enforcement needs `timeout S <cmd>` prefix (bash) or `--timeout S` via argparse passed to every blocking call (Python subprocess). See `bin-authoring-guide.md` §Timeout Policy for patterns and ms→s conversion table.
 
 Rules:
 - **Bash call sites**: line with `# timeout: N` must have `timeout S` shell prefix (S = N ÷ 1000); no internal fallback exists.
@@ -142,7 +141,6 @@ printf "✓: Check 23b scan complete\n"  # timeout: 5000
 ```
 
 After scan, apply model reasoning — exclude lines inside illustration/example code blocks (marked `# ✗`, surrounded by explanatory prose, or not reachable as actual tool-call commands). Flag only live executable lines.
-
 Severity: **medium** — bash comment-only timeout silently ignored at runtime; Python script missing `--timeout` default has no internal enforcement.
 
 | Sub-check | Pattern | Severity |
@@ -155,7 +153,7 @@ Severity: **medium** — bash comment-only timeout silently ignored at runtime; 
 
 ### Sub-check 23c — `eval` for multi-value data output
 
-Skill uses `eval "$(...)"` or `eval "$(python ...)"` to capture data values from a bin/ script, rather than writing to TMPDIR files. Distinct from shell-setup eval (health_sentinel.py, ssh-agent) — those patterns are exempt.
+Skill uses `eval "$(...)"` or `eval "$(python ...)"` to capture data values from a bin/ script, rather than writing to TMPDIR files. Distinct from shell-setup eval (health_sentinel.py, ssh-agent) — those exempt.
 
 ```bash
 # timeout: 10000
@@ -179,7 +177,7 @@ False-positive exemption: `eval "$(python .../health_sentinel.py ...)"` — heal
 
 ## Check 24 — Skill sequence compatibility
 
-Skill `<notes>` and `<workflow>` sections frequently document multi-skill chains (e.g., `→ /audit`, `suggested next: /brainstorm breakdown <file>`). Check verifies documented sequences internally consistent:
+Skill `<notes>` and `<workflow>` sections often document multi-skill chains (e.g., `→ /audit`, `suggested next: /brainstorm breakdown <file>`). Check verifies documented sequences internally consistent:
 
 - **24a (target existence)**: every skill referenced in documented chain exists on disk — root skills under `.claude/skills/<name>/`, plugin skills under `plugins/<plugin>/skills/<skill>/`
 - **24b (argument plausibility)**: when suggestion includes explicit argument (e.g., `→ /audit fix`), that argument must appear as substring in target skill's `argument-hint:` frontmatter (case-insensitive)
@@ -232,9 +230,9 @@ Build directed graph from (source-file, skill-reference) pairs collected in Step
 
 ## Check 27 — Cross-plugin shared-file reference integrity
 
-Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inline references to `.claude/skills/_shared/<file>` unless that exact file ships inside `plugins/foundry/skills/_shared/`. Path only available at runtime via `foundry:setup` symlink — any file absent from foundry's `_shared/` = broken reference when foundry installed, entirely unreachable when not installed.
+Plugin SKILL.md files (non-foundry plugins) must not contain `Read` calls or inline references to `.claude/skills/_shared/<file>` unless that exact file ships inside `plugins/foundry/skills/_shared/`. Path only available at runtime via `foundry:setup` symlink — any file absent from foundry's `_shared/` = broken reference when foundry installed, unreachable when not installed.
 
-**Special antipattern — foundry-dependency catch-22**: when referenced file's purpose is to describe fallback behaviour for users without foundry (e.g. `agent-resolution.md` listing `general-purpose` substitutes), reference is **critical** — file explaining how to work without foundry is only accessible via foundry.
+**Special antipattern — foundry-dependency catch-22**: when referenced file describes fallback behaviour for users without foundry (e.g. `agent-resolution.md` listing `general-purpose` substitutes), reference is **critical** — file explaining how to work without foundry only accessible via foundry.
 
 **Step 1 — Collect cross-plugin shared-file references**:
 
@@ -292,7 +290,6 @@ done
 ## Check 28 — Cross-plugin agent dispatch fallback
 
 Skills dispatching agents via `Agent(subagent_type="<plugin>:<name>", ...)` depend on that plugin being installed. When dispatched agent belongs to different plugin from skill's own plugin, and no fallback declared for absent-plugin case, skill fails at runtime.
-
 **Exempt**: `general-purpose` (built-in, always available); `codex:*` agents (conditional dispatch tracked by Check 7).
 
 **Step 1 — Map skills to owning plugin:**
@@ -391,7 +388,6 @@ Fix: append `(requires \`<plugin>\` plugin)` immediately after cross-plugin skil
 ## Check 30 — Plugin skill bash operational correctness
 
 Four static-grep patterns catching silent failures in skill SKILL.md bash blocks. Run across both `.claude/skills/` and `plugins/*/skills/` — bugs appear in any skill.
-
 ### 30a — Pipe exit code capture (PIPESTATUS)
 
 ```bash

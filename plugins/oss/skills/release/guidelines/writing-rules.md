@@ -15,7 +15,7 @@ Write for reader, not commit author.
 | Deprecated items | Name old API and replacement; omit removal version if unknown |
 | Removed items | State deprecated-since version and migration target |
 
-> **Breaking vs Deprecated**: Normal flow is deprecate → announce removal version → Removed. Breaking Changes = rare case where **public API or user-facing behaviour** breaks **immediately** on upgrade, no prior warning, no fallback — including dependency version incompatibilities affecting users directly. Private API and test changes never Breaking Changes. Old behaviour still works (even with deprecation warning) → belongs in Deprecated, not here. When in doubt, not Breaking Changes.
+> **Breaking vs Deprecated**: Normal flow is deprecate → announce removal version → Removed. Breaking Changes = rare case where **public API or user-facing behaviour** breaks **immediately** on upgrade, no prior warning, no fallback — including dependency version incompatibilities affecting users directly. Private API and test changes never Breaking Changes. Old behaviour still works (even with deprecation warning) → belongs in Deprecated, not here. When in doubt, not Breaking Changes
 
 Bad/good examples:
 
@@ -25,11 +25,11 @@ Bad/good examples:
 **Contributors rules:**
 
 - List **every** PR author in range — human and bot alike; community acknowledgement essential for growth
-- **Bots**: collect all bot handles (accounts ending in `[bot]` or known bots like `dependabot`, `renovate`, `github-actions`) and render as single italic line at bottom of section: `*Automated contributions: @bot1, @bot2*` — never list bots individually
+- **Bots**: collect all bot handles (accounts ending in `[bot]` or known bots like `dependabot`, `renovate`, `github-actions`), render as single italic line at bottom of section: `*Automated contributions: @bot1, @bot2*` — never list bots individually
 - **NEVER guess or hallucinate real name.** Wrong name in public release notes = serious error. When in doubt, omit name entirely.
 - **Name lookup protocol** — run for every human contributor @handle before writing entry:
   1. `gh api /users/<handle> --jq '.name'` — if non-null and non-empty, use as real name (high confidence)
-  2. Look up LinkedIn from GitHub profile: `gh api /users/<handle> --jq '.blog'` — if result is a `linkedin.com/in/` URL, use it directly. If blog field is not LinkedIn, spawn `foundry:web-explorer` to fetch `https://github.com/<handle>` and extract any `linkedin.com/in/` URL from the profile bio or Social accounts section. Use only URLs directly found on their GitHub profile — never search by name, never construct or guess from handle or name.
+  2. Look up LinkedIn from GitHub profile: `gh api /users/<handle> --jq '.blog'` — if result is `linkedin.com/in/` URL, use directly. If blog field not LinkedIn, spawn `foundry:web-explorer` to fetch `https://github.com/<handle>` and extract any `linkedin.com/in/` URL from profile bio or Social accounts section. Use only URLs directly found on their GitHub profile — never search by name, never construct or guess from handle or name.
   3. If still uncertain or foundry plugin unavailable: use `@handle` only — no name field
 - Format when name confirmed: `* **Full Name** (@handle) ([LinkedIn](url)) – *noun phrase*`
 - Format when name not confirmed: `* @handle – *noun phrase*`

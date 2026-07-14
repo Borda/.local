@@ -3,7 +3,7 @@
 
 **Trigger**: `/release audit [version]`
 
-**Purpose**: Pre-release readiness check — surfaces outstanding work, alignment gaps, blockers before cutting release.
+**Purpose**: Pre-release readiness check — surfaces outstanding work, alignment gaps, blockers before cutting release
 
 ```bash
 # LAST_TAG, REPO_ROOT, SKILL_DIR from Shared setup above
@@ -13,7 +13,7 @@ RANGE="${RANGE:-$LAST_TAG..HEAD}"
 
 ### Phase A: Gather and explore changes
 
-Use **Delegation strategy** above — spawn gather subagent for `$RANGE`, run gather/explore/validate phases, write findings to `GATHER_FILE`. Read returned JSON envelope only. Audit agent (Phase B) reads `GATHER_FILE` directly — do not pull into main context.
+Use **Delegation strategy** above — spawn gather subagent for `$RANGE`, run gather/explore/validate phases, write findings to `GATHER_FILE`. Read returned JSON envelope only. Audit agent (Phase B) reads `GATHER_FILE` directly — don't pull into main context.
 
 ### Phase A.5: Deprecation-removal check
 

@@ -2,7 +2,7 @@
 
 ## Unsupported Flag Protocol
 
-After all supported flags extracted from `$ARGUMENTS`, scan remaining tokens for any `--<token>`.
+After supported flags extracted from `$ARGUMENTS`, scan remaining tokens for any `--<token>`.
 
 Found → print:
 

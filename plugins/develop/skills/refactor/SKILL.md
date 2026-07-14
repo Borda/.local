@@ -18,7 +18,7 @@ NOT for:
 - non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead
 - mixed refactor+feature tasks — run /develop:refactor first, then /develop:feature; do not attempt both in single skill run
 
-Quality stack (Branch Safety Guard, Codex Pre-pass, Progressive Review) requires `foundry` plugin; when absent, Step 5 quality stack is skipped with a visible warning — output is lower quality but workflow still completes.
+Quality stack (Branch Safety Guard, Codex Pre-pass, Progressive Review) requires `foundry` plugin; when absent, Step 5 quality stack skipped with a visible warning — output lower quality but workflow still completes.
 
 </objective>
 
@@ -51,7 +51,7 @@ _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 # loads: compaction-contract.md
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -179,23 +179,23 @@ Spawn **foundry:sw-engineer** agent to analyze code and identify:
 - Dependencies and coupling between modules
 - **Complexity smell**: directory or cross-module scope — flag it; consider team mode
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **refactor** context from the Skill contexts table.
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **refactor** context from Skill contexts table.
 
 **Goal classification gate**: after sw-engineer analysis completes, scan goal text for mixed signals — if goal contains both refactor keywords (rename, extract, restructure, decouple, consolidate) AND feature keywords (add, implement, new, support), invoke `AskUserQuestion`: "Goal mixes refactoring and feature work — split into two runs." · (a) Abort — run refactor first, then feature · (b) Continue as refactor-only — treat feature additions as out of scope.
 
 **Scope gate**: if target spans 3+ modules OR 5+ files OR goal mentions any public-API rename — flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
 
-Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **refactor** context from the Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
+Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **refactor** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 ## Challenger gate
 
 **Decision — three states** (default is NOT "skip": it runs on substantial refactors and auto-skips only small contained ones):
 
-1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
 2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small change.
-3. else **default** → **run when the refactor is substantial** (spans multiple files, ≳50 lines, or changes public API / an exported symbol); **auto-skip when small** (single file, ≲50 lines, no API change) — a contained refactor has little design surface to challenge.
+3. else **default** → **run when refactor is substantial** (spans multiple files, ≳50 lines, or changes public API / an exported symbol); **auto-skip when small** (single file, ≲50 lines, no API change) — a contained refactor has little design surface to challenge.
 
-The two flags are opposites for the two regimes, which is why both exist: `--no-challenge` suppresses the gate on the *substantial* changes where it would otherwise fire; `--challenge` forces it on the *small* changes where it would otherwise auto-skip.
+Two flags are opposites for two regimes, which is why both exist: `--no-challenge` suppresses gate on *substantial* changes where it would otherwise fire; `--challenge` forces it on *small* changes where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with scope analysis from Step 1 (affected files, dependencies, coupling, risks):
 
@@ -229,7 +229,7 @@ $PYTEST_CMD --co -q 2>&1 | grep -i "<module_name>" || echo "No tests found for <
 [ "${SKIP_COV}" -eq 0 ] && { $PYTEST_CMD --cov=<target_module> -q --cov-report=term-missing || true; }
 ```
 
-If `SKIP_COV=1`: skip coverage classification entirely — do not classify any function as UNCOVERED; note "coverage tool absent — coverage audit skipped" in the audit output. **Step 3 qa-specialist spawn behavior when `SKIP_COV=1`**: spawn qa-specialist with all public functions listed as `coverage: unknown` and instruction to write characterization tests for every public function (cannot prioritize uncovered functions when coverage unknown — test all to ensure safety net). Proceed to Step 3 with unknown coverage state.
+If `SKIP_COV=1`: skip coverage classification entirely — do not classify any function as UNCOVERED; note "coverage tool absent — coverage audit skipped" in audit output. **Step 3 qa-specialist spawn behavior when `SKIP_COV=1`**: spawn qa-specialist with all public functions listed as `coverage: unknown` and instruction to write characterization tests for every public function (cannot prioritize uncovered functions when coverage unknown — test all to ensure safety net). Proceed to Step 3 with unknown coverage state.
 
 Classify each public function/method (only when `SKIP_COV=0`):
 
@@ -266,19 +266,19 @@ echo "$RUN_DIR" > ${TMPDIR:-/tmp}/dev-refactor-run-dir
 trap 'rm -f ${TMPDIR:-/tmp}/refactor-team-check-$TS' EXIT
 ```
 
-**IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with the actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
+**IMPORTANT**: in spawn prompts below, substitute `$RUN_DIR_LITERAL` with actual resolved path before constructing each Agent call — agents receive literal resolved strings, not shell variable references. Same applies to `$TS` substitution.
 
-**Note on `model=` assignments**: `model=opus`/`model=sonnet` in the spawn prompts below are advisory hints — effective only when the actual foundry agents are installed. When falling back to `general-purpose` (foundry absent), the prompt-prepend `model=` does not reliably override the agent-resolution fallback tier; effective model is set by `agent-resolution.md`'s fallback table, not the spawn prompt. This is intentional — sonnet is sufficient for the qa-specialist characterization-test task and opus for sw-engineer refactor implementation; on fallback, expect tier degradation noted in Final Report.
+**Note on `model=` assignments**: `model=opus`/`model=sonnet` in spawn prompts below are advisory hints — effective only when actual foundry agents installed. When falling back to `general-purpose` (foundry absent), prompt-prepend `model=` does not reliably override agent-resolution fallback tier; effective model set by `agent-resolution.md`'s fallback table, not spawn prompt. Intentional — sonnet sufficient for qa-specialist characterization-test task and opus for sw-engineer refactor implementation; on fallback, expect tier degradation noted in Final Report.
 
-Serialize teammates — qa-specialist writes and gates characterization tests against the **pre-refactor** source first, then sw-engineer applies the refactor. Spawning sw-engineer first inverts the safety net: the characterization tests would be written against already-mutated code, so any behaviour change the refactor introduces becomes undetectable (tests pin the new behaviour instead of the original). This mirrors the solo Step 3 gate (`GATE OK: all characterization tests pass on unmodified code`).
+Serialize teammates — qa-specialist writes and gates characterization tests against **pre-refactor** source first, then sw-engineer applies refactor. Spawning sw-engineer first inverts safety net: characterization tests would be written against already-mutated code, so any behaviour change refactor introduces becomes undetectable (tests pin new behaviour instead of original). Mirrors solo Step 3 gate (`GATE OK: all characterization tests pass on unmodified code`).
 
 **Step T1 — Spawn foundry:qa-specialist (model=sonnet) against the pre-refactor source and wait for completion**. Prompt: "You are a foundry:qa-specialist teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: write characterization tests (Step 3) to build a safety net BEFORE any refactor — test the CURRENT (unmodified, pre-refactor) source and assert its existing behaviour. Scope constraint: only create/edit files under `tests/`. Do NOT edit source files. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-qa-specialist.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
 
-**Gate T1 — characterization tests must pass on unmodified code before spawning sw-engineer**. Run the qa-specialist's tests (`$PYTEST_CMD <char_test_file> -v`; check exit via the persisted-exit pattern in Step 3). Exit 0 → safety net green; proceed to T2. Exit ≠ 0 (including 5 — no tests collected) → no valid safety net; do NOT refactor. Invoke `AskUserQuestion` — (a) re-spawn qa-specialist with corrected assertions/path (recommended) · (b) proceed without safety net (record acceptance in `checkpoint.md`) · (c) abort.
+**Gate T1 — characterization tests must pass on unmodified code before spawning sw-engineer**. Run qa-specialist's tests (`$PYTEST_CMD <char_test_file> -v`; check exit via persisted-exit pattern in Step 3). Exit 0 → safety net green; proceed to T2. Exit ≠ 0 (including 5 — no tests collected) → no valid safety net; do NOT refactor. Invoke `AskUserQuestion` — (a) re-spawn qa-specialist with corrected assertions/path (recommended) · (b) proceed without safety net (record acceptance in `checkpoint.md`) · (c) abort.
 
 **Step T2 — Only after Gate T1 is green, spawn foundry:sw-engineer (model=opus) to apply the refactor**. Prompt: "You are a foundry:sw-engineer teammate refactoring: [target]. Read ~/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Your task: apply the refactoring steps (Steps 4–5: change with safety net, review). Scope constraint: only edit source files (not under `tests/`) — do NOT modify the characterization tests in `$RUN_DIR_LITERAL/refactor-qa-specialist.md`'s test file. Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>, safety_net: $RUN_DIR_LITERAL/refactor-qa-specialist.md}. Compact Instructions: preserve file paths, test results, coverage numbers. Discard verbose tool output. Task tracking: do NOT call TaskCreate or TaskUpdate — the lead owns all task state. Signal completion in final delta message: 'Status: complete | blocked — <reason>'. Write your full analysis to $RUN_DIR_LITERAL/refactor-sw-engineer.md using the Write tool. Return ONLY compact JSON: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N,\"summary\":\"<one-line>\"}."
 
-**Gate T2 — re-run the same characterization tests against the post-refactor source**. Green→green proves the refactor preserved behaviour. Any test that now fails means the refactor changed observable behaviour — surface it with ⚠ and do NOT accept the refactor until reconciled (fix the source, or confirm the behaviour change is intended and update the test deliberately).
+**Gate T2 — re-run the same characterization tests against the post-refactor source**. Green→green proves refactor preserved behaviour. Any test now failing means refactor changed observable behaviour — surface with ⚠ and do NOT accept refactor until reconciled (fix source, or confirm behaviour change intended and update test deliberately).
 
 Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files the spawn block persisted):
 
@@ -334,7 +334,7 @@ $PYTEST_CMD <test_file> -v; GATE_EXIT=$?
 echo "$GATE_EXIT" > ${TMPDIR:-/tmp}/dev-gate-exit
 ```
 
-**Gate**: all characterization tests must pass before proceeding. Check exit code from persisted file (`$?` in a fresh shell is unrelated to the prior pytest run):
+**Gate**: all characterization tests must pass before proceeding. Check exit code from persisted file (`$?` in a fresh shell is unrelated to prior pytest run):
 
 ```bash
 GATE_EXIT=$(cat ${TMPDIR:-/tmp}/dev-gate-exit 2>/dev/null || echo 1)
@@ -347,7 +347,7 @@ else
 fi
 ```
 
-If `GATE_EXIT -ne 0` (including exit 5): characterization tests are missing or wrong — **cannot proceed to Step 4 without a passing safety net**. Invoke `AskUserQuestion` — "Characterization test gate failed (exit `$GATE_EXIT`). How to proceed?" · (a) **Fix test collection path / fix test assertions** (recommended — re-spawn qa-specialist with corrected path or assertions) · (b) **Proceed without safety net** (accept risk — record decision in `$DEV_DIR/checkpoint.md`) · (c) **Abort**. On (b): document explicit acceptance in `checkpoint.md` (`step: 3 — gate exit $GATE_EXIT — proceed without safety net (user accepted)`) before continuing.
+If `GATE_EXIT -ne 0` (including exit 5): characterization tests missing or wrong — **cannot proceed to Step 4 without a passing safety net**. Invoke `AskUserQuestion` — "Characterization test gate failed (exit `$GATE_EXIT`). How to proceed?" · (a) **Fix test collection path / fix test assertions** (recommended — re-spawn qa-specialist with corrected path or assertions) · (b) **Proceed without safety net** (accept risk — record decision in `$DEV_DIR/checkpoint.md`) · (c) **Abort**. On (b): document explicit acceptance in `checkpoint.md` (`step: 3 — gate exit $GATE_EXIT — proceed without safety net (user accepted)`) before continuing.
 
 ## Step 4: Refactor with safety net
 

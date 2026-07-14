@@ -9,7 +9,7 @@ effort: high
 
 <objective>
 
-Comprehensive code review of local files or working-tree diff. Spawn specialized sub-agents in parallel, consolidate findings into structured feedback with severity levels.
+Comprehensive code review of local files or working-tree diff. Spawns specialized sub-agents in parallel, consolidates findings into structured feedback with severity levels.
 
 NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHub thread analysis or PR reply drafting (use `/oss:analyse <PR#>` (requires oss plugin)); implementation (use `/develop:feature` or `/develop:fix`); `.claude/` config changes (use `/foundry:manage` (requires foundry plugin) or `/foundry:audit` (requires foundry plugin)); non-Python-only projects (zero Python source files — pure JS/TS/Go/Rust) — review toolchain assumes Python/pytest; Python test-only targets where diff contains only test files (no `src/` or top-level `.py` source outside `tests/`) — review will be uninformative; for polyglot projects with Python source, reviews Python files only.
 
@@ -22,7 +22,7 @@ NOT for: GitHub PR review (use `/oss:review <PR#>` (requires oss plugin)); GitHu
   - Omitted: review current git diff (`git diff HEAD` — staged + unstaged vs HEAD)
   - **Scope**: Python source only. Non-Python file (YAML, JSON, shell script, etc.) → state out of scope, suggest appropriate tool. No findings.
   - `--no-challenge`: skip adversarial review (challenger runs by default)
-  - `--challenge`: force the challenger (Agent 7) even on a small diff that the small-diff auto-skip would otherwise skip
+  - `--challenge`: force challenger (Agent 7) even on small diff that small-diff auto-skip would otherwise skip
   - `--codemap`: strict mode — stop and report if codemap not installed (on by default when installed; use `--no-codemap` to opt out)
   - `--semble`: enable semble semantic search companion (off by default)
 
@@ -47,9 +47,9 @@ fi
 
 If `$OSS_AVAILABLE` is `skip`: proceed to Step 1 normally (path / diff / dir mode).
 
-If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → call `Skill(skill="oss:review", args="$ARGUMENTS")`; (b) "No — review local code" → call `AskUserQuestion` immediately: "Provide the file path or directory to review:" — use the user's response as `$REVIEW_ARGS` and proceed to Step 1.
+If `$OSS_AVAILABLE` is `true`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number. Did you mean to run `/oss:review $ARGUMENTS` (requires oss plugin) to review that PR?" Options: (a) "Yes — launch `/oss:review $ARGUMENTS`" → call `Skill(skill="oss:review", args="$ARGUMENTS")`; (b) "No — review local code" → call `AskUserQuestion` immediately: "Provide the file path or directory to review:" — use user's response as `$REVIEW_ARGS` and proceed to Step 1.
 
-If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but the oss plugin is not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — review local code" → call `AskUserQuestion` again immediately: "Provide the file path or directory to review:" — use the user's response as `$REVIEW_ARGS` and proceed to Step 1; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
+If `$OSS_AVAILABLE` is `false`: call `AskUserQuestion` tool: "Looks like you passed a PR/issue number, but oss plugin not installed — `/oss:review` unavailable. Did you mean to review local code instead?" Options: (a) "Yes — review local code" → call `AskUserQuestion` again immediately: "Provide the file path or directory to review:" — use user's response as `$REVIEW_ARGS` and proceed to Step 1; (b) "I need oss plugin" → inform user: install with `claude plugin install oss@borda-ai-rig`.
 
 </inputs>
 
@@ -88,7 +88,7 @@ _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 # loads: compaction-contract.md
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -120,7 +120,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" --skill re
 # values → ${TMPDIR:-/tmp}/dev-review-{no-challenge,semble,codemap} + legacy paths
 # CLEAN_ARGS → ${TMPDIR:-/tmp}/dev-review-clean-args
 REVIEW_ARGS=$(cat "${TMPDIR:-/tmp}/dev-review-clean-args" 2>/dev/null || echo "$ARGUMENTS")
-# Strip --keep "<items>" so it does not leak into the target path used by find/git diff
+# Strip --keep "<items>" so it does not leak into target path used by find/git diff
 REVIEW_ARGS=$(echo "$REVIEW_ARGS" | sed -E 's/ *--keep +"[^"]+"//' | xargs 2>/dev/null || echo "$REVIEW_ARGS")
 CHALLENGE_ENABLED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-enabled" 2>/dev/null || echo "true")
 CHALLENGE_FORCED=$(cat "${TMPDIR:-/tmp}/dev-review-challenge-forced" 2>/dev/null || echo "false")  # --challenge: force Agent 7 even on small diffs
@@ -220,7 +220,7 @@ Skip optional agents by classification:
 
 - FIX → skip Agent 3 (perf-optimizer) and Agent 6 (solution-architect)
 - REFACTOR → skip Agent 6 (solution-architect)
-- CHORE (config/deps, no logic) → skip Agent 2 (qa-specialist), Agent 3 (perf-optimizer), and Agent 6 (solution-architect); keep Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 5 (linting-expert). No logic means no test-gap, perf, or architecture surface — mirrors the DOCS/TESTS pre-classification saving.
+- CHORE (config/deps, no logic) → skip Agent 2 (qa-specialist), Agent 3 (perf-optimizer), and Agent 6 (solution-architect); keep Agent 1 (sw-engineer), Agent 4 (doc-scribe), Agent 5 (linting-expert). No logic means no test-gap, perf, or architecture surface — mirrors DOCS/TESTS pre-classification saving.
 - FEATURE/MIXED → spawn all agents
 - **Small-diff challenger skip** (any classification) — unless `--challenge` was passed (`CHALLENGE_FORCED=true`): diff is single file, <50 lines changed, and introduces no new public API / exported symbol → also skip Agent 7 (challenger). Multi-file, ≥50 lines, or any new public API → challenger runs. `--no-challenge` (`CHALLENGE_ENABLED=false`) disables Agent 7 entirely regardless.
 
@@ -228,7 +228,7 @@ Skip optional agents by classification:
 
 **Skip entire section if `CODEMAP_ENABLED=false`** — sets `codemap_available=false` for downstream agent prompts; agents fall back to file reads.
 
-Extended scan for changed modules — runs the v4 pre-flight queries per module, persists structured output to `$RUN_DIR/codemap-context.md`, and sets `codemap_available` flag for Step 3 agent spawns:
+Extended scan for changed modules — runs v4 pre-flight queries per module, persists structured output to `$RUN_DIR/codemap-context.md`, and sets `codemap_available` flag for Step 3 agent spawns:
 
 ```bash
 codemap_available=false
@@ -268,7 +268,7 @@ Codemap context propagation in Step 3:
   - sw-engineer (Agent 1): `fn-rdeps` first (direct callers), then `fn-blast` (transitive)
   - challenger (Agent 7): unchanged — always reads source directly
   ```
-- `codemap_available=false` → omit the block; agents proceed with current file-read behaviour.
+- `codemap_available=false` → omit block; agents proceed with current file-read behaviour.
 
 > Per-agent consumption guidance kept in sync with `$_DEV_SHARED/codemap-context.md` §Review-pipeline injection — update both on change.
 
@@ -300,7 +300,7 @@ Check availability:
 claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && echo "codex (openai-codex) available" || echo "⚠ codex (openai-codex) not found — skipping co-review"  # timeout: 15000
 ```
 
-Materialize codemap context into the run directory (`$RUN_DIR` now exists):
+Materialize codemap context into run directory (`$RUN_DIR` now exists):
 
 ```bash
 codemap_available=$(cat "${TMPDIR:-/tmp}/dev-review-codemap-available" 2>/dev/null || echo "false")
@@ -316,11 +316,11 @@ CODEX_OUT="$RUN_DIR/codex.md"
 echo "$CODEX_OUT" > ${TMPDIR:-/tmp}/dev-review-codex-out  # Step 6 re-reads — bash state lost
 ```
 
-If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as the spawn prompt; inline prompt below is fallback when shared file absent.
+If `$_FOUNDRY_SHARED/codex-prepass.md` exists, read it for Codex pass instructions — use those instructions as spawn prompt; inline prompt below is fallback when shared file absent.
 
 Spawn `codex:codex-rescue` agent (requires `codex` plugin): "Adversarial review of $TARGET: look for bugs, missed edge cases, incorrect logic, and inconsistencies with existing code patterns. Read-only: do not apply fixes. Write findings to $RUN_DIR/codex.md."
 
-Note: Agent spawns are synchronous and cannot be timeout-wrapped via Bash `timeout:`. If hang risk is unacceptable, spawn with `run_in_background=true` — when doing so, implement health-monitoring per CLAUDE.md §6: create sentinel file, poll every 5 min for file activity in `$RUN_DIR`, hard cutoff 15 min. Without background spawning, move on after a reasonable wait (observe if Codex output file grows; no growth after ~2 min → treat as timed out).
+Note: Agent spawns are synchronous and cannot be timeout-wrapped via Bash `timeout:`. If hang risk unacceptable, spawn with `run_in_background=true` — when doing so, implement health-monitoring per CLAUDE.md §6: create sentinel file, poll every 5 min for file activity in `$RUN_DIR`, hard cutoff 15 min. Without background spawning, move on after reasonable wait (observe if Codex output file grows; no growth after ~2 min → treat as timed out).
 
 After Codex writes `$RUN_DIR/codex.md` (or times out), extract compact seed list (≤10 items, `[{"loc":"file:line","note":"..."}]`) to inject into agent prompts in Step 3 as pre-flagged issues to verify or dismiss. Codex skipped, timed out, or found nothing → proceed with empty seed.
 
@@ -344,11 +344,11 @@ Prepend this to every agent spawn prompt (Agents 1–7 and the Step 5 consolidat
 
 > "First run Bash `RUN_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-run-dir")` to obtain the exact run-dir path. Use `$RUN_DIR` verbatim for every file you read or write — never retype the path literally (the leading `.` in `.temp` is easy to drop, scattering output into a stray `temp/` dir)."
 
-Inside agent prompt strings, leave `$RUN_DIR` literal — the agent resolves it via the preamble. The orchestrator must NOT hand-substitute the run-dir path.
+Inside agent prompt strings, leave `$RUN_DIR` literal — agent resolves it via preamble. Orchestrator must NOT hand-substitute run-dir path.
 
 ### $VAR_LITERAL pre-expansion rule (canonical)
 
-Any OTHER shell variable inserted into an Agent spawn prompt string — `$REPORT_DIR_LITERAL`, `$REVIEW_CHECKLIST`, `$DATE`, `$_REVIEW_TEMPLATE` — must be substituted with its literal resolved value **before** building the Agent call. A bare variable name inside a quoted Agent prompt will NOT expand — the spawned agent receives the literal dollar-sign text, causing path mismatches. Resolve each to its value first; never pass the bare `$VAR` name. (`$RUN_DIR` is the deliberate exception above — agents self-resolve it.)
+Any OTHER shell variable inserted into an Agent spawn prompt string — `$REPORT_DIR_LITERAL`, `$REVIEW_CHECKLIST`, `$DATE`, `$_REVIEW_TEMPLATE` — must be substituted with its literal resolved value **before** building the Agent call. Bare variable name inside a quoted Agent prompt will NOT expand — spawned agent receives literal dollar-sign text, causing path mismatches. Resolve each to its value first; never pass bare `$VAR` name. (`$RUN_DIR` is the deliberate exception above — agents self-resolve it.)
 
 Resolve develop:review checklist path (version-agnostic):
 
@@ -381,22 +381,22 @@ Replace `$REVIEW_CHECKLIST` in Agent 1 and consolidator spawn prompts with resol
 
 > See [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical) — `$REVIEW_CHECKLIST` follows it; substitute its resolved value before inserting into any Agent spawn prompt.
 
-**Visible-degradation rule** — `$REVIEW_CHECKLIST` empty → print `⚠ REVIEW_CHECKLIST is empty — review scope undefined` at the TOP of the review output (before Findings), and consolidator prompt (Step 5) **must** insert into the report header (YAML `---` block or first line before Findings): "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides gap from reviewers, makes severity drift invisible.
+**Visible-degradation rule** — `$REVIEW_CHECKLIST` empty → print `⚠ REVIEW_CHECKLIST is empty — review scope undefined` at TOP of review output (before Findings), and consolidator prompt (Step 5) **must** insert into report header (YAML `---` block or first line before Findings): "Review checklist not applied (oss plugin not available) — severity anchors may be inconsistent." Silent degradation hides gap from reviewers, makes severity drift invisible.
 
 **Finding evidence standard — applies to every agent, every finding:**
 
-- Every finding must cite specific `file:line` from the diff as primary evidence — "I know this typically causes issues" without a diff citation is not a valid finding
-- Training knowledge and memory are never sufficient evidence — read the actual code in the diff
+- Every finding must cite specific `file:line` from diff as primary evidence — "I know this typically causes issues" without a diff citation is not a valid finding
+- Training knowledge and memory never sufficient evidence — read actual code in diff
 - Claims referencing external standards (OWASP, PEP, language spec, CVE) must cite the specific authoritative document — official spec, CVE entry, PEP text; a blog post or Stack Overflow answer referencing the standard is Tier 2 only
-- Tier 2 sources (blog, tutorial, forum, memory) require ≥3 genuinely independent sources OR experimental validation before the claim becomes a finding; independent means different authors, different primary research with distinct origins — N posts all citing the same original = 1 source
-- Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) that confirms the claim, treat as Tier 1 verified; if multiple Tier 2 sources share one origin, merge them into one; count distinct origins only
+- Tier 2 sources (blog, tutorial, forum, memory) require ≥3 genuinely independent sources OR experimental validation before claim becomes a finding; independent means different authors, different primary research with distinct origins — N posts all citing same original = 1 source
+- Citation tracing mandatory: for each Tier 2 source, follow its citations one level; if tracing reveals a Tier 1 source (official doc, CVE, spec) confirming the claim, treat as Tier 1 verified; if multiple Tier 2 sources share one origin, merge into one; count distinct origins only
 - When only Tier 2 available, distinct-origin count < 3, and no experiment run: downgrade finding to LOW or drop it; never raise MEDIUM/HIGH/CRITICAL on Tier 2 alone
 
 Launch agents simultaneously with Agent tool (security augmentation folded into Agent 1 — not separate spawn; Agent 6 optional). Every agent prompt must begin with the [run-dir preamble (canonical)](#run-dir-preamble-canonical) and end with:
 
 > "Write your FULL findings (all sections, Confidence block) to `$RUN_DIR/<agent-name>.md` using the Write tool — where `<agent-name>` is e.g. `sw-engineer`, `qa-specialist`, `perf-optimizer`, `doc-scribe`, `linting-expert`, `solution-architect`. Then return to the caller ONLY a compact JSON envelope on your final line — nothing else after it: `{\"status\":\"done\",\"findings\":N,\"severity\":{\"critical\":0,\"high\":1,\"medium\":2,\"low\":0},\"file\":\"$RUN_DIR/<agent-name>.md\",\"confidence\":0.88}`"
 
-**Codemap context preamble (substituted by orchestrator)**: rehydrate `codemap_available=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-available 2>/dev/null || echo false)`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with the `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per the propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) is unchanged.
+**Codemap context preamble (substituted by orchestrator)**: rehydrate `codemap_available=$(cat ${TMPDIR:-/tmp}/dev-review-codemap-available 2>/dev/null || echo false)`. When `codemap_available=true`, every dimension-agent prompt (Agents 1–6) is prefixed with `## Structural Context (codemap, codemap_available=true)` block from `$RUN_DIR/codemap-context.md` per propagation rules in Step 1. Agents must read that block first and skip redundant Grep/Read on symbols already covered by codemap output. Block absent → fall back to current file-read behaviour. Challenger (Agent 7) unchanged.
 
 **Agent 1 — foundry:sw-engineer**: Review architecture, SOLID adherence, type safety, error handling, code structure. Check Python anti-patterns (bare `except:`, `import *`, mutable defaults). Flag blocking issues vs suggestions. `codemap_available=true`: read `fn-blast` first — skip caller-walk Reads on listed callers; verify only when needed for a specific finding.
 
@@ -413,7 +413,7 @@ Flag rules:
 
 Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIGH patterns as severity anchors. Respect suppressions list.
 
-**Agent 2 — foundry:qa-specialist**: Audit test coverage. Identify untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. `codemap_available=true`: read `uncovered` + `mock-rdeps` sections from the codemap context block first — symbols listed in `uncovered` lack any test rdep; symbols listed in `mock-rdeps` are tested via mock (not falsely "untested"). Skip manual grep/Read of `tests/` for symbols codemap already classifies; fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding. Explicitly check for missing tests in these patterns (GT-level findings, not afterthoughts):
+**Agent 2 — foundry:qa-specialist**: Audit test coverage. Identify untested paths, missing edge cases, test quality issues. Check ML-specific issues (non-deterministic tests, missing seed pinning). List top 5 missing tests. `codemap_available=true`: read `uncovered` + `mock-rdeps` sections from codemap context block first — symbols listed in `uncovered` lack any test rdep; symbols listed in `mock-rdeps` are tested via mock (not falsely "untested"). Skip manual grep/Read of `tests/` for symbols codemap already classifies; fall back to file reads only when codemap output empty for a symbol needed or when verifying a specific finding. Explicitly check for missing tests in these patterns (GT-level findings, not afterthoughts):
 
 - Concurrent access to shared state (locks or shared variables present)
 - Error paths: calling methods in wrong order (e.g., `log()` before `start()`)
@@ -425,7 +425,7 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Agent 3 — foundry:perf-optimizer**: Analyze performance issues. Algorithmic complexity, Python loops that should be NumPy/torch ops, repeated computation, unnecessary I/O. ML code: check DataLoader config, mixed precision. Prioritize by impact.
 
-**Agent 4 — foundry:doc-scribe**: Check documentation completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run. `codemap_available=true`: read `undocumented` + `xrefs --broken` sections from the codemap context block first — `undocumented` enumerates symbols missing docstrings; `xrefs --broken` enumerates stale Sphinx refs. Skip docstring-scan Reads on listed symbols; fall back to file reads only when codemap output is empty for a symbol you need or when verifying a specific finding.
+**Agent 4 — foundry:doc-scribe**: Check documentation completeness. Public APIs without docstrings, missing Google style sections, outdated README, CHANGELOG gaps. Verify examples run. `codemap_available=true`: read `undocumented` + `xrefs --broken` sections from codemap context block first — `undocumented` enumerates symbols missing docstrings; `xrefs --broken` enumerates stale Sphinx refs. Skip docstring-scan Reads on listed symbols; fall back to file reads only when codemap output empty for a symbol needed or when verifying a specific finding.
 
 - **Algorithmic accuracy check**: Functions computing mathematical results (moving averages, statistics, transforms, distances) — verify docstring behavioral claims match implementation. Deviation from conventional definition → MEDIUM; docstring must document deviation, not state standard definition. **Deprecation check**: Check deprecated stdlib usage in public API surface only — skip private functions, classes, constants, and modules starting with `_`. E.g., `datetime.utcnow()` deprecated in 3.12, `os.path` vs `pathlib`. Flag deprecated stdlib as MEDIUM with replacement.
 
@@ -435,11 +435,11 @@ Read review checklist (Read tool → `$REVIEW_CHECKLIST`) — apply CRITICAL/HIG
 
 **Agent 6 — foundry:solution-architect (optional, for changes touching public API boundaries)**: Target touches `__init__.py` exports, adds/modifies Protocols or ABCs, changes module structure, or introduces new public classes → evaluate API design quality, coupling impact, backward compatibility. Skip for internal implementation changes.
 
-**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`, or per the Small-diff challenger skip in Scope pre-check when `CHALLENGE_FORCED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
+**Agent 7 — foundry:challenger (skip if `CHALLENGE_ENABLED=false`, or per Small-diff challenger skip in Scope pre-check when `CHALLENGE_FORCED=false`)**: Adversarial review of design decisions in diff. Attacks assumptions, missing edge cases, security risks, architectural concerns, complexity creep with mandatory refutation step. File-handoff: write full findings to `$RUN_DIR/challenger.md`. Return JSON: `{"status":"done","findings":N,"severity":{"critical":0,"high":0,"medium":0,"low":0},"file":"$RUN_DIR/challenger.md","confidence":0.88}`. Severity mapping: blockers → `high`; concerns → `medium`.
 
-**Challenger severity propagation**: when consolidator (Step 5) reads `challenger.md`, map challenger severity labels to review severity labels before merging — CRITICAL → `critical`, HIGH → `high`, MEDIUM → `medium`, LOW → `low`. Do not drop severity; if challenger uses non-standard labels (e.g. "blocker", "concern"), apply the mapping: blockers → `high`, concerns → `medium`.
+**Challenger severity propagation**: when consolidator (Step 5) reads `challenger.md`, map challenger severity labels to review severity labels before merging — CRITICAL → `critical`, HIGH → `high`, MEDIUM → `medium`, LOW → `low`. Do not drop severity; if challenger uses non-standard labels (e.g. "blocker", "concern"), apply mapping: blockers → `high`, concerns → `medium`.
 
-**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. If an agent returns partial results or errors, use Read tool on `$RUN_DIR/<agent-name>.md` for details. Mark agents that returned empty or error with ⏱ in final report. Never silently omit agents that **failed** (returned error/partial) — they must appear with ⏱ marker. Agents that are **not spawned** (skipped due to mode flags, docs-only, CHORE mode) may be absent from RUN_DIR; consolidator "skip missing" applies only to legitimately-not-spawned agents.
+**Health monitoring**: Agent calls are synchronous — framework awaits each response natively. No Bash checkpoint polling possible during active Agent call. If agent returns partial results or errors, use Read tool on `$RUN_DIR/<agent-name>.md` for details. Mark agents that returned empty or error with ⏱ in final report. Never silently omit agents that **failed** (returned error/partial) — they must appear with ⏱ marker. Agents that are **not spawned** (skipped due to mode flags, docs-only, CHORE mode) may be absent from RUN_DIR; consolidator "skip missing" applies only to legitimately-not-spawned agents.
 
 ```bash
 # Compaction contract — boundary 1: after fan-out, before consolidation (compaction-contract.md §Lifecycle)
@@ -484,7 +484,7 @@ Extract branch and date before constructing output path: `BRANCH=$(git branch --
 Spawn consolidator agent (general-purpose — synthesis only, no engineering specialization needed):
 
 <!-- loads: consolidator-prompt.md -->
-Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Prepend the [run-dir preamble (canonical)](#run-dir-preamble-canonical) so the consolidator self-resolves `$RUN_DIR`. Summary: read all finding files in `$RUN_DIR/`, apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical); leave `$RUN_DIR` literal (agent self-resolves). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
+Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Prepend the [run-dir preamble (canonical)](#run-dir-preamble-canonical) so consolidator self-resolves `$RUN_DIR`. Summary: read all finding files in `$RUN_DIR/`, apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical); leave `$RUN_DIR` literal (agent self-resolves). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
 
 Main context receives only one-liner verdict.
 
@@ -518,7 +518,7 @@ _REPORT_DIR=$(cat "${TMPDIR:-/tmp}/dev-review-report-dir" 2>/dev/null || echo ""
 
 ## Step 6: Delegate implementation follow-up (optional)
 
-Re-hydrate `CODEX_OUT` from persisted temp file (Bash() state does not survive between calls): `CODEX_OUT=$(cat ${TMPDIR:-/tmp}/dev-review-codex-out 2>/dev/null || echo "")`. Skip Step 6 if `$CODEX_OUT` is empty or the file at that path does not exist.
+Re-hydrate `CODEX_OUT` from persisted temp file (Bash() state does not survive between calls): `CODEX_OUT=$(cat ${TMPDIR:-/tmp}/dev-review-codex-out 2>/dev/null || echo "")`. Skip Step 6 if `$CODEX_OUT` empty or file at that path does not exist.
 
 After consolidating, identify tasks Codex can implement directly — not style violations (pre-commit handles those), but work requiring meaningful code or documentation grounded in actual implementation.
 
@@ -544,7 +544,7 @@ Print `### Codex Delegation` section to terminal only when tasks actually delega
 - (c) label: `walk through findings` — description: go through each finding interactively
 - (d) label: `skip` — description: no action
 
-**Confidence block** — emitted by the consolidator agent in `$REPORT_DIR/review-report.md`, not at skill level (DMI skill: top-level model invocation is disabled, so any skill-level instruction would be unreachable).
+**Confidence block** — emitted by consolidator agent in `$REPORT_DIR/review-report.md`, not at skill level (DMI skill: top-level model invocation disabled, so any skill-level instruction would be unreachable).
 
 ```bash
 rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000
@@ -563,6 +563,6 @@ rm -f .claude/state/skill-contract.md  # clear contract — skill complete (comp
   - Security findings in auth/input/deps → run `pip-audit` for dependency CVEs; address OWASP issues inline via `/develop:fix`
   - Mechanical issues beyond Step 5 findings → `/codex:codex-rescue <task>` to delegate (requires `codex` plugin)
   - Contributor-facing review of GitHub PR → use `/oss:review <PR#>` (requires oss plugin) instead
-- **Parallel agent cleanup**: after all 7 agents complete, review `TaskList` — delete any tasks created by sub-agents (not by lead orchestrator). Sub-agent task creation is unintended, can leave zombie tasks.
+- **Parallel agent cleanup**: after all 7 agents complete, review `TaskList` — delete any tasks created by sub-agents (not by lead orchestrator). Sub-agent task creation unintended, can leave zombie tasks.
 
 </notes>

@@ -6,8 +6,8 @@
 
 > **Cost-bounded gate.** Run when `--codex` confirmed at R2 AND both gates pass:
 >
-> 1. **Cost ceiling** — `CODEX_ITER < MAX_CODEX_RUNS` (default `MAX_CODEX_RUNS=10`; even with `MAX_ITERATIONS=20` Codex runs at most 10 times).
-> 2. **Diminishing returns** — last 2 Codex passes did NOT both produce no code changes. After 2 consecutive no-op Codex passes, skip Codex for remaining iterations and append note to `diary.md`: `"Codex skipped from iter N — 2 consecutive no-ops"`.
+> 1. **Cost ceiling** — `CODEX_ITER < MAX_CODEX_RUNS` (default `MAX_CODEX_RUNS=10`; even with `MAX_ITERATIONS=20`, Codex runs max 10 times).
+> 2. **Diminishing returns** — last 2 Codex passes both produced no code changes → skip Codex remaining iterations, append note to `diary.md`: `"Codex skipped from iter N — 2 consecutive no-ops"`.
 >
 > Init before R5 loop: `CODEX_ITER=0`, `CODEX_NOOP_STREAK=0`, `CODEX_DISABLED=false`.
 > After each Phase 2c: increment `CODEX_ITER`; no-op → `((CODEX_NOOP_STREAK++))`, changes → `CODEX_NOOP_STREAK=0`. If `CODEX_NOOP_STREAK >= 2` set `CODEX_DISABLED=true`.
@@ -22,7 +22,7 @@ Else print narration, update R5b before Agent call:
 
 TaskUpdate R5b subject: `R5b: Codex co-pilot — iter N/max_iterations running`, status: `in_progress`
 
-Codex runs second pass when active, building on Claude's kept change or fresh attempt after revert/no-op. Codex commit evaluated by Phase 7 against `best_metric` (same rule as any iteration); "delta ≥ 0.1%" = delta against `best_metric`, not previous Claude iteration. Codex wins only if delta ≥ 0.1% AND guard passes.
+Codex runs second pass when active — builds on Claude's kept change or fresh attempt after revert/no-op. Codex commit evaluated by Phase 7 against `best_metric` (same rule as any iteration); "delta ≥ 0.1%" = delta against `best_metric`, not previous Claude iteration. Codex wins only if delta ≥ 0.1% AND guard passes.
 
 - Claude Phase 2 **kept**: Codex second pass on current state — builds on Claude's work.
 - Claude Phase 2 **reverted/no-op**: working tree restored; Codex fresh attempt on clean tree.

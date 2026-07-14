@@ -2,7 +2,7 @@
 
 ← [Back to root README](../README.md) · [Codex deep reference](../.codex/README.md)
 
-Configuration for [Claude Code](https://claude.ai/code) (Anthropic's AI coding CLI). This file covers agent relationships, skill orchestration flows, implementation architecture, and operational internals. For the high-level overview and workflow sequences, see the root README.
+Configuration for [Claude Code](https://claude.ai/code) (Anthropic's AI coding CLI). Covers agent relationships, skill orchestration flows, implementation architecture, operational internals. For high-level overview and workflow sequences, see root README.
 
 <details>
 <summary><strong>Contents</strong></summary>
@@ -39,18 +39,18 @@ Configuration for [Claude Code](https://claude.ai/code) (Anthropic's AI coding C
 
 ## ⚡ What this setup enables
 
-Things that are not possible with vanilla Claude Code:
+Not possible with vanilla Claude Code:
 
-- **Parallel multi-specialist PR review with convergence callouts.** `/oss:review` fans six specialist agents — architecture, tests, perf, docs, lint, security — plus an independent Codex pre-pass, all running simultaneously. The consolidator flags every finding that two or more reviewers independently raised. You see both per-dimension analysis and the overlap, in one report.
-- **Feature development that cannot skip the demo test.** `/develop:feature` requires a failing demo test to exist and pass review before a single line of production code is written. The gate is structural — the workflow does not proceed to implementation without it.
-- **Metric-driven experiment loops that auto-rollback on regression.** `/research:run` proposes a change, applies it, measures the target metric, and automatically reverts if the metric regresses — then tries the next hypothesis. The loop runs unattended; you set the goal and the guard, and review the committed result.
-- **Agent calibration benchmarks that measure overconfidence and fix it.** `/foundry:calibrate` generates synthetic problems, scores each agent's responses against ground truth, and computes the gap between stated confidence and actual recall. Agents that are systematically overconfident get concrete fix proposals — applied automatically with `--apply`.
+- **Parallel multi-specialist PR review with convergence callouts.** `/oss:review` fans six specialist agents — architecture, tests, perf, docs, lint, security — plus independent Codex pre-pass, all running simultaneously. Consolidator flags every finding two or more reviewers independently raised. Per-dimension analysis and overlap, one report.
+- **Feature development that cannot skip the demo test.** `/develop:feature` requires failing demo test exist and pass review before a single line of production code written. Gate is structural — workflow doesn't proceed to implementation without it.
+- **Metric-driven experiment loops that auto-rollback on regression.** `/research:run` proposes change, applies it, measures target metric, auto-reverts if metric regresses — then tries next hypothesis. Loop runs unattended; set goal and guard, review committed result.
+- **Agent calibration benchmarks that measure overconfidence and fix it.** `/foundry:calibrate` generates synthetic problems, scores each agent's responses against ground truth, computes gap between stated confidence and actual recall. Systematically overconfident agents get concrete fix proposals — applied automatically with `--apply`.
 
 ## ♻️ Restore This Setup
 
-`.claude/` is entirely restored from the installed plugins — there is nothing to manually copy or edit. After a fresh install or machine setup:
+`.claude/` entirely restored from installed plugins — nothing to manually copy or edit. After fresh install or machine setup:
 
-**Step 1** — install the plugins:
+**Step 1** — install plugins:
 
 ```bash
 claude plugin marketplace add Borda/AI-Rig
@@ -67,15 +67,15 @@ claude plugin install codemap@borda-ai-rig
 /foundry:setup
 ```
 
-This merges `statusLine`, `permissions.allow`, `enabledPlugins` (codex plugin), and `advisorModel` into `~/.claude/settings.json`; symlinks `rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Agents, skills, and hooks are exposed natively by the Claude Code plugin system — no symlinks needed.
+Merges `statusLine`, `permissions.allow`, `enabledPlugins` (codex plugin), `advisorModel` into `~/.claude/settings.json`; symlinks `rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`. Agents, skills, hooks exposed natively by Claude Code plugin system — no symlinks needed.
 
-**What is restored:** `~/.claude/rules/*.md` and `~/.claude/TEAM_PROTOCOL.md` become symlinks into the installed foundry plugin. `~/.claude/settings.json` is updated in-place. All other plugin files (agents, skills, hooks, CLAUDE.md) are served directly by the plugin system. The only local-machine files are `settings.local.json` and `settings.json` (project prefs + permissions).
+**What is restored:** `~/.claude/rules/*.md` and `~/.claude/TEAM_PROTOCOL.md` become symlinks into installed foundry plugin. `~/.claude/settings.json` updated in-place. All other plugin files (agents, skills, hooks, CLAUDE.md) served directly by plugin system. Only local-machine files: `settings.local.json` and `settings.json` (project prefs + permissions).
 
-Re-run `/foundry:setup` after any plugin upgrade — rule symlinks point to versioned cache paths and go stale after reinstall.
+Re-run `/foundry:setup` after any plugin upgrade — rule symlinks point to versioned cache paths, go stale after reinstall.
 
 ## 🔄 Distribution
 
-`plugins/foundry/` is the **source of truth** for all foundry configuration. The Claude Code plugin system natively exposes agents and skills; `/foundry:setup` symlinks rules and `TEAM_PROTOCOL.md` into `~/.claude/` so they load on every session.
+`plugins/foundry/` is **source of truth** for all foundry configuration. Claude Code plugin system natively exposes agents and skills; `/foundry:setup` symlinks rules and `TEAM_PROTOCOL.md` into `~/.claude/` so they load every session.
 
 ```text
 plugins/foundry/           ← source of truth
@@ -96,9 +96,9 @@ plugins/foundry/           ← source of truth
                 # (re-run after plugin upgrade to refresh stale rule symlinks)
 ```
 
-**What is NOT distributed:** `settings.local.json` (machine-local overrides — API keys, MCP server activation, local permissions).
+**Not distributed:** `settings.local.json` (machine-local overrides — API keys, MCP server activation, local permissions).
 
-**statusLine path:** home `settings.json` uses `$HOME` prefix (`node $HOME/.claude/hooks/statusline.js`) — `/foundry:setup` sets this automatically.
+**statusLine path:** home `settings.json` uses `$HOME` prefix (`node $HOME/.claude/hooks/statusline.js`) — `/foundry:setup` sets automatically.
 
 ## 📦 Plugin Architecture
 
@@ -135,15 +135,15 @@ plugins/foundry/           ← source of truth
    {name} = uses foundry agent (not defined in plugin)
 ```
 
-Each plugin is fully self-contained and can be installed in any order or combination — every `SKILL.md` carries inline agent fallback tables so that, without foundry, agent dispatches resolve to a `general-purpose` model prefixed with a role description. Installing foundry replaces those fallbacks with purpose-built specialized agents (each tuned to the right model tier and domain constraints), which is the recommended setup. The four plugins are composable: install only what you need, and add foundry whenever you want the quality upgrade.
+Each plugin fully self-contained, installable in any order or combination — every `SKILL.md` carries inline agent fallback tables so, without foundry, agent dispatches resolve to a `general-purpose` model prefixed with role description. Installing foundry replaces fallbacks with purpose-built specialized agents (each tuned to right model tier and domain constraints) — recommended setup. Four plugins composable: install what you need, add foundry for quality upgrade.
 
 ## 🔌 Recommended Add-ons
 
-Optional external tools that integrate with this setup. All are **disabled by default** and must be enabled per-machine.
+Optional external tools integrating with this setup. All **disabled by default**, must be enabled per-machine.
 
 ### Codex plugin
 
-The [Codex plugin](https://github.com/openai/codex-plugin-cc) adds a local OpenAI Codex agent as a Tier 1 pre-pass reviewer and autonomous executor. Used by `/develop:fix`, `/develop:feature`, `/oss:review`, `/oss:resolve`, `/calibrate`, and `/research:run`.
+[Codex plugin](https://github.com/openai/codex-plugin-cc) adds local OpenAI Codex agent as Tier 1 pre-pass reviewer and autonomous executor. Used by `/develop:fix`, `/develop:feature`, `/oss:review`, `/oss:resolve`, `/calibrate`, `/research:run`.
 
 Install inside Claude Code:
 
@@ -157,13 +157,13 @@ Install inside Claude Code:
 
 ### OpenSpace (MCP)
 
-[HKUDS/OpenSpace](https://github.com/HKUDS/OpenSpace) is a local MCP server exposing skill-evolving tools (`execute_task`, `search_skills`, `fix_skill`, `upload_skill`) — skills auto-improve through use (~46% fewer tokens on warm reruns). Enable by adding `"openspace"` to `enabledMcpjsonServers` in `settings.local.json`.
+[HKUDS/OpenSpace](https://github.com/HKUDS/OpenSpace) is local MCP server exposing skill-evolving tools (`execute_task`, `search_skills`, `fix_skill`, `upload_skill`) — skills auto-improve through use (~46% fewer tokens on warm reruns). Enable by adding `"openspace"` to `enabledMcpjsonServers` in `settings.local.json`.
 
 ### Colab MCP
 
 Used by `/research:run --colab` for GPU workloads via Google Colab. Enable by adding `"colab-mcp"` to `enabledMcpjsonServers` in `settings.local.json`.
 
-MCP servers are defined in `.mcp.json` at the repo root — copy to home: `cp .mcp.json ~/.claude/.mcp.json`.
+MCP servers defined in `.mcp.json` at repo root — copy to home: `cp .mcp.json ~/.claude/.mcp.json`.
 
 ## 🧩 Agents
 
@@ -187,20 +187,20 @@ MCP servers are defined in `.mcp.json` at the repo root — copy to home: `cp .m
 
 ### Agent relationship map
 
-Agents are picked in two ways: **by name** (you write "use the qa-specialist to…") or **automatically** when Claude Code spawns subagents via the Task/Agent tool. The selection heuristic matches the task description against each agent's `description:` frontmatter — `/calibrate routing` benchmarks this accuracy.
+Agents picked two ways: **by name** (write "use the qa-specialist to…") or **automatically** when Claude Code spawns subagents via Task/Agent tool. Selection heuristic matches task description against each agent's `description:` frontmatter — `/calibrate routing` benchmarks this accuracy.
 
 Key relationships:
 
-- `linting-expert` is always downstream of `sw-engineer` — never lints code that hasn't been implemented yet
-- `qa-specialist` is often parallel to `sw-engineer` (reviews) or downstream (validates implementation)
-- `doc-scribe` is always downstream — documents finalized code; never shapes design
-- `curator` is orthogonal — audits config files, not user code; spawned by `/audit` and `/brainstorm`
+- `linting-expert` always downstream of `sw-engineer` — never lints code not yet implemented
+- `qa-specialist` often parallel to `sw-engineer` (reviews) or downstream (validates implementation)
+- `doc-scribe` always downstream — documents finalized code; never shapes design
+- `curator` orthogonal — audits config files, not user code; spawned by `/audit` and `/brainstorm`
 - `web-explorer` feeds `scientist` — fetches current docs/papers; scientist interprets and designs experiments
 - `challenger` is **pre-implementation** — adversarially reviews plans and proposals before implementation starts; use before `sw-engineer`
-- `shepherd` is the external interface — PR replies, releases, contributor communication; no code implementation
-- `gh-scraper` → `repo-warden` (3× parallel) — internal pipeline for `/oss:analyse` vitality; `gh-scraper` fetches raw GitHub data, three `repo-warden` instances score axis groups A/B/C in parallel; neither is called directly
+- `shepherd` is external interface — PR replies, releases, contributor communication; no code implementation
+- `gh-scraper` → `repo-warden` (3× parallel) — internal pipeline for `/oss:analyse` vitality; `gh-scraper` fetches raw GitHub data, three `repo-warden` instances score axis groups A/B/C in parallel; neither called directly
 
-**Model tiering**: reasoning agents (`sw-engineer`, `qa-specialist`, `perf-optimizer`, `scientist`) default to `opus`; plan-gated agents (`solution-architect`, `shepherd`, `curator`, `challenger`) use `opusplan` (plan-gated Opus — pays for reasoning only when the task warrants it); execution agents (`doc-scribe`, `linting-expert`, `cicd-steward`, `data-steward`, `web-explorer`, `gh-scraper`, `repo-warden`) default to `sonnet`.
+**Model tiering**: reasoning agents (`sw-engineer`, `qa-specialist`, `perf-optimizer`, `scientist`) default to `opus`; plan-gated agents (`solution-architect`, `shepherd`, `curator`, `challenger`) use `opusplan` (plan-gated Opus — pays for reasoning only when task warrants it); execution agents (`doc-scribe`, `linting-expert`, `cicd-steward`, `data-steward`, `web-explorer`, `gh-scraper`, `repo-warden`) default to `sonnet`.
 
 ## ⚡ Skills
 
@@ -212,8 +212,8 @@ Key relationships:
 | **manage**           | 🟠 foundry  | `/manage <op> <type>`                                                             | Create, update, delete agents/skills/rules; manage `settings.json` permissions (`add perm`/`remove perm`); auto type-detection and cross-ref propagation                                                                                                                                                                  |
 | **calibrate**        | 🟠 foundry  | `/calibrate [<scope>...] [--fast \| --full] [--ab-test \| --apply] [--skip-gate]` | Synthetic benchmarks measuring recall vs confidence bias; `--apply` applies proposals; `--ab-test` compares A/B; `routing` and `communication` modes available                                                                                                                                                            |
 | **brainstorm**       | 🟠 foundry  | `/brainstorm <idea> \| breakdown <tree-or-spec>`                                  | Two modes: (1) **idea** — clarifying questions → build divergent branch tree (deepen, close, merge, up to 10 ops) → save tree doc → curator review → gate; (2) **breakdown** — auto-detects input: tree (`Status: tree`) → distillation questions → section-by-section spec; spec (`Status: draft`) → ordered action plan |
-| **investigate**      | 🟠 foundry  | `/investigate <symptom>`                                                          | Systematic diagnosis for unknown failures — env, tools, hooks, CI divergence; ranks hypotheses and hands off to the right skill                                                                                                                                                                                           |
-| **session**          | 🟠 foundry  | `/session [resume\|archive\|summary]`                                             | Parking lot for diverging ideas — auto-parks unanswered questions and deferred threads; `resume` shows pending, `archive` closes, `summary` digests the session                                                                                                                                                           |
+| **investigate**      | 🟠 foundry  | `/investigate <symptom>`                                                          | Systematic diagnosis for unknown failures — env, tools, hooks, CI divergence; ranks hypotheses and hands off to right skill                                                                                                                                                                                               |
+| **session**          | 🟠 foundry  | `/session [resume\|archive\|summary]`                                             | Parking lot for diverging ideas — auto-parks unanswered questions and deferred threads; `resume` shows pending, `archive` closes, `summary` digests session                                                                                                                                                               |
 | **distill**          | 🟠 foundry  | `/distill`                                                                        | One-time snapshot: suggest new agents/skills, review roster, prune memory, or consolidate lessons                                                                                                                                                                                                                         |
 | **oss:review**       | 🟢 oss      | `/oss:review [file\|PR#] [--reply]`                                               | Parallel review across arch, tests, perf, docs, lint, security, API; `--reply` drafts contributor comment                                                                                                                                                                                                                 |
 | **oss:analyse**      | 🟢 oss      | `/oss:analyse <N\|health\|ecosystem\|path/to/report.md> [--reply]`                | GitHub thread analysis (auto-detects issue/PR/discussion); `health` = repo overview + duplicate clustering                                                                                                                                                                                                                |
@@ -233,7 +233,7 @@ Key relationships:
 
 ### Orchestration flow by skill
 
-Each skill follows a defined topology for how it composes agents:
+Each skill follows defined topology for how it composes agents:
 
 <details>
 <summary><strong>`/oss:review`</strong> — parallel fan-out, then consolidation</summary>
@@ -420,7 +420,7 @@ per-config-file: curator (reads file, writes findings to /tmp/audit-<ts>/<file>.
 
 **`/develop:feature`, `/develop:fix`, `/develop:refactor`, `/develop:plan`, `/develop:debug` — Development workflows**
 
-Each mode enforces a validation gate *before* writing implementation code:
+Each mode enforces validation gate *before* writing implementation code:
 
 - `/develop:plan` — scope analysis; produces structured plan in `.plans/active/plan_<slug>.md`
 - `/develop:feature` — TDD demo validation before writing code
@@ -467,21 +467,21 @@ Each mode enforces a validation gate *before* writing implementation code:
 
 ## 🧭 Native Claude Code skills
 
-Two capabilities below ship **natively with Claude Code** — they are not part of this repo's plugins (foundry / oss / develop / research / codemap). They work in any project, including this one, alongside the plugin skills above.
+Two capabilities below ship **natively with Claude Code** — not part of this repo's plugins (foundry / oss / develop / research / codemap). Work in any project, including this one, alongside plugin skills above.
 
 ### Skill auto-selection (the "skills advisor")
 
-Every skill — native or plugin — carries a `description` with `TRIGGER` / `SKIP` routing signals. Claude Code reads those descriptions and **auto-selects the matching skill** when your request lines up with one, so you don't have to remember the exact slash command. The `description` field is what does the advising: it is the routing signal that decides which skill (if any) fits the task. You can always override it by invoking a skill explicitly with `/<skill-name>`.
+Every skill — native or plugin — carries a `description` with `TRIGGER` / `SKIP` routing signals. Claude Code reads those descriptions and **auto-selects matching skill** when request lines up with one, so no need to remember exact slash command. `description` field is what does advising: routing signal deciding which skill (if any) fits task. Always overridable by invoking skill explicitly with `/<skill-name>`.
 
 **When to rely on it**
 
-- **Discovery / "which skill fits this?"** — describe the task in plain language and let auto-selection surface the right skill (e.g. "review this PR" -> `/oss:review`, "why is CI failing but local passes" -> `/investigate`). This is the intended path when you don't know the exact command.
-- **Explicit control** — when you already know which skill you want, type the slash command directly (`/develop:fix ...`); the explicit invocation always wins over auto-selection.
-- **Caveat** — auto-selection only fires when a description clearly matches; vague requests may match nothing (Claude answers inline) or the wrong skill. Sharpen the request, or invoke explicitly, if the wrong thing triggers. Auto-selection never runs a skill silently — the invocation is visible.
+- **Discovery / "which skill fits this?"** — describe task in plain language, let auto-selection surface right skill (e.g. "review this PR" -> `/oss:review`, "why is CI failing but local passes" -> `/investigate`). Intended path when exact command unknown.
+- **Explicit control** — when you already know which skill you want, type slash command directly (`/develop:fix ...`); explicit invocation always wins over auto-selection.
+- **Caveat** — auto-selection only fires when description clearly matches; vague requests may match nothing (Claude answers inline) or wrong skill. Sharpen request, or invoke explicitly, if wrong thing triggers. Auto-selection never runs a skill silently — invocation is visible.
 
 ### `/deep-research` — multi-source, fact-checked research report
 
-A native research harness for questions that need real sourcing rather than a single answer. It **fans out parallel web searches, fetches the sources, adversarially verifies each claim, and synthesizes a cited report** — the verification pass is what separates it from a plain search: claims that can't be corroborated are dropped or flagged rather than repeated.
+Native research harness for questions needing real sourcing rather than single answer. **Fans out parallel web searches, fetches sources, adversarially verifies each claim, synthesizes cited report** — verification pass separates it from plain search: claims that can't be corroborated dropped or flagged rather than repeated.
 
 **Invocation**
 
@@ -491,9 +491,9 @@ A native research harness for questions that need real sourcing rather than a si
 
 **When to use it**
 
-- **Use it** for a deep, multi-source, fact-checked write-up on a topic — comparisons, state-of-the-art surveys, "what's actually true about X" where you want citations and cross-checking, not a quick recall.
-- **Don't use it** for a single-fact lookup (a normal web search or an inline answer is faster) or for anything answerable from the codebase (use `/codemap:query-code`, grep, or a direct read).
-- **Scope first** — if the question is underspecified (e.g. "what car should I buy" with no budget / use-case / region), it will ask 2-3 clarifying questions before spending the search budget. Giving those constraints up front produces a sharper report.
+- **Use it** for deep, multi-source, fact-checked write-up on a topic — comparisons, state-of-the-art surveys, "what's actually true about X" where citations and cross-checking wanted, not quick recall.
+- **Don't use it** for single-fact lookup (normal web search or inline answer faster) or anything answerable from codebase (use `/codemap:query-code`, grep, or direct read).
+- **Scope first** — if question underspecified (e.g. "what car should I buy" with no budget / use-case / region), asks 2-3 clarifying questions before spending search budget. Giving constraints up front produces sharper report.
 
 ## 🗺️ Plugin dependency matrix
 
@@ -551,7 +551,7 @@ A native research harness for questions that need real sourcing rather than a si
 - **✓** — skill actively spawns this agent (primary expected call)
 - **→** — agent actively spawns another agent at runtime (real sub-task delegation)
 - **°** — scope boundary: description says "use this agent for X", never spawns directly
-- **?** — conditional spawn: which agent is selected depends on runtime strategy
+- **?** — conditional spawn: which agent selected depends on runtime strategy
 - _(empty cell)_ — no dependency
 
 </details>
@@ -594,8 +594,8 @@ _Empty rows = no direct agent dispatches (intentional, not an omission). ✓ = a
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `artifact-lifecycle.md` | (global)                        | Canonical dot-prefixed artifact layout, run-dir naming, TTL policy                                                       |
 | `claude-config.md`      | (global)                        | Universal ops rules: no hardcoded paths, Bash timeouts, two-separate-calls navigation pattern                            |
-| `communication.md`      | (global)                        | Re: anchor format, progress narration, tone, output routing, and terminal color conventions                              |
-| `external-data.md`      | (global)                        | Pagination and completeness rules for REST, GraphQL, and the `gh` CLI — never work on partial result sets                |
+| `communication.md`      | (global)                        | Re: anchor format, progress narration, tone, output routing, terminal color conventions                                  |
+| `external-data.md`      | (global)                        | Pagination and completeness rules for REST, GraphQL, `gh` CLI — never work on partial result sets                        |
 | `foundry-config.md`     | `.claude/**`                    | Plan mode gate for `.claude/` edits, post-edit checklist, XML tag conventions, cleanup hook, settings.json allow entries |
 | `git-commit.md`         | (global)                        | Commit message format, push safety (explicit confirmation required), branch safety                                       |
 | `python-code.md`        | `**/*.py`                       | Python style: docstrings, deprecation (pyDeprecate), library API freshness checks, version policy, PyTorch AMP           |
@@ -605,7 +605,7 @@ _Empty rows = no direct agent dispatches (intentional, not an omission). ✓ = a
 
 ### How rules are auto-loaded
 
-Each rule file has `paths:` frontmatter listing glob patterns. Claude Code loads matching rule files automatically when you open or edit a file that matches — no explicit invocation needed. Global rules (no `paths:` restriction, or `paths: "*"`) load in every session. Rules are additive: multiple rules can apply to the same file.
+Each rule file has `paths:` frontmatter listing glob patterns. Claude Code loads matching rule files automatically when you open or edit a file matching it — no explicit invocation needed. Global rules (no `paths:` restriction, or `paths: "*"`) load every session. Rules additive: multiple rules can apply to same file.
 
 Example: editing `tests/test_transforms.py` auto-loads `testing.md` (matches `tests/**/*.py`) and `python-code.md` (matches `**/*.py`). Editing `.claude/agents/sw-engineer.md` loads `foundry-config.md` (matches `.claude/**`).
 
@@ -613,19 +613,19 @@ Example: editing `tests/test_transforms.py` auto-loads `testing.md` (matches `te
 
 ### File-based handoff protocol
 
-*When multiple analysis agents return findings inline, the orchestrator's context window fills with intermediate output it never uses directly — file-based handoff keeps the orchestrator clean for decision-making.*
+*When multiple analysis agents return findings inline, orchestrator's context window fills with intermediate output it never uses directly — file-based handoff keeps orchestrator clean for decision-making.*
 
 **When it applies:**
 
 - Any skill spawning **2+ agents in parallel** for analysis or review
 - Any **single agent** expected to produce >500 tokens of findings
-- Exception: implementation agents (writing code) return inline — their output is the deliverable
-- Exception: single-agent single-question spawns where output is inherently short (\<200 tokens)
+- Exception: implementation agents (writing code) return inline — output is the deliverable
+- Exception: single-agent single-question spawns where output inherently short (\<200 tokens)
 
-**Agent contract** — the spawned agent must:
+**Agent contract** — spawned agent must:
 
-1. Write full output to `<RUN_DIR>/<agent-name>.md` using the Write tool
-2. Return to the orchestrator **only** a compact JSON envelope on the final line:
+1. Write full output to `<RUN_DIR>/<agent-name>.md` using Write tool
+2. Return to orchestrator **only** compact JSON envelope on final line:
 
 ```json
 {
@@ -644,9 +644,9 @@ Example: editing `tests/test_transforms.py` auto-loads `testing.md` (matches `te
 
 **Orchestrator contract:**
 
-1. Do NOT read agent files back into main context — delegate to a consolidator agent instead
-2. Collect the compact envelopes (tiny — stay in context)
-3. Spawn a consolidator to read all `<RUN_DIR>/*.md` files and write the final report
+1. Do NOT read agent files back into main context — delegate to consolidator agent instead
+2. Collect compact envelopes (tiny — stay in context)
+3. Spawn consolidator to read all `<RUN_DIR>/*.md` files and write final report
 
 **Threshold:** 4+ agent files → mandatory consolidator; 2–3 files → orchestrator may read directly if total content \<2K tokens.
 
@@ -661,7 +661,7 @@ ______________________________________________________________________
 
 ### Tiered review pipeline
 
-Every review skill gates cheap work before spawning expensive agents — cheaper tiers short-circuit the pipeline when the diff is trivial or issues are already clear:
+Every review skill gates cheap work before spawning expensive agents — cheaper tiers short-circuit pipeline when diff trivial or issues already clear:
 
 | Tier                     | What it does                                                           | Cost |
 | ------------------------ | ---------------------------------------------------------------------- | ---- |
@@ -679,13 +679,13 @@ Which tiers each skill uses:
 | `/audit` (fix via gate)                                 |  ✓  |  ✓  |  ✓  |
 | `/oss:resolve`                                          |     |     |  ✓  |
 
-‡ For `/oss:review`, Codex runs as a full **co-reviewer** alongside T2 agents — its findings are independently consolidated rather than seeding agent prompts (unbiased review).
+‡ For `/oss:review`, Codex runs as full **co-reviewer** alongside T2 agents — findings independently consolidated rather than seeding agent prompts (unbiased review).
 
 ______________________________________________________________________
 
 ### Agent Teams
 
-Agent Teams is Claude Code's experimental multi-agent feature. Teams are always **user-invoked** — nothing auto-spawns. Auto-spawning teams would multiply token costs 5-10x on routine tasks; explicit invocation lets you make the cost/benefit call per run. Enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `settings.json`.
+Agent Teams is Claude Code's experimental multi-agent feature. Teams always **user-invoked** — nothing auto-spawns. Auto-spawning teams would multiply token costs 5-10x on routine tasks; explicit invocation lets you make cost/benefit call per run. Enabled via `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` in `settings.json`.
 
 **When to use teams vs subagents:**
 
@@ -713,9 +713,9 @@ Agent Teams is Claude Code's experimental multi-agent feature. Teams are always 
 
 **Model tiering:** Lead uses `opusplan`/`opus`. Deep reasoning teammates (`sw-engineer`, `qa-specialist`, `scientist`, `perf-optimizer`) use `opus`. Execution teammates (`doc-scribe`, `linting-expert`, `cicd-steward`) use `sonnet`. Keep teams to 3–5 teammates (~7× token cost vs single session).
 
-**Communication protocol:** Inter-agent messages use AgentSpeak v2 (defined in `TEAM_PROTOCOL.md`) — ~60% token savings vs natural language. Status codes (`alpha`/`beta`/`gamma`/`delta`/`epsilon`/`omega`), action symbols (`+`/`-`/`~`/`!`), file locking (`+lock`/`-lock`), and priority prefixes (`!!` urgent, `..` FYI). Lead-to-human communication uses normal English.
+**Communication protocol:** Inter-agent messages use AgentSpeak v2 (defined in `TEAM_PROTOCOL.md`) — ~60% token savings vs natural language. Status codes (`alpha`/`beta`/`gamma`/`delta`/`epsilon`/`omega`), action symbols (`+`/`-`/`~`/`!`), file locking (`+lock`/`-lock`), priority prefixes (`!!` urgent, `..` FYI). Lead-to-human communication uses normal English.
 
-**Security in teams:** No standalone security agent. `qa-specialist` automatically embeds OWASP Top 10 security checks when the task touches auth, payment flows, or user data.
+**Security in teams:** No standalone security agent. `qa-specialist` automatically embeds OWASP Top 10 security checks when task touches auth, payment flows, or user data.
 
 **Quality hooks:** `hooks/teammate-quality.js` handles `TeammateIdle` (redirects to pending tasks) and `TaskCompleted` (reserved for future quality gates).
 
@@ -735,21 +735,21 @@ Agent Teams is Claude Code's experimental multi-agent feature. Teams are always 
 
 ### task-log.js state machine
 
-`task-log.js` is the central event handler. It handles nine Claude Code hook events and maintains runtime state read by `statusline.js`:
+`task-log.js` is the central event handler. Handles nine Claude Code hook events, maintains runtime state read by `statusline.js`:
 
 **Event → action mapping:**
 
-| Event                | Action                                                                                                                                                                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PreToolUse`         | Logs Task/Agent and Skill invocations to `logs/invocations.jsonl`; opens codex plugin session file; increments per-tool-type state file                                                                                                          |
-| `PostToolUse`        | Closes codex plugin session file when any Skill(codex:\*) completes; computes wall-clock timing delta from the PreToolUse start marker and appends to `~/.claude/logs/timings.jsonl`                                                             |
-| `PostToolUseFailure` | Records timing with error status to timings.jsonl (same timing path as PostToolUse)                                                                                                                                                              |
-| `UserPromptSubmit`   | Writes a queue marker to `state/queue/` to light the processing badge 💬 in statusline                                                                                                                                                           |
-| `SubagentStart`      | Creates `state/agents/<id>.json` with agent type, model, color, start timestamp — one file per agent (no race)                                                                                                                                   |
-| `SubagentStop`       | Deletes per-agent file; appends completion entry to `invocations.jsonl`                                                                                                                                                                          |
-| `PreCompact`         | Appends to `logs/compactions.jsonl`; extracts modified file paths from transcript; writes `state/session-context.md`                                                                                                                             |
-| `Stop`               | Clears `state/tools/` — resets the 🔧 row between turns (agents intentionally NOT cleared — may still be running); clears `state/queue/` processing markers (dismisses 💬 badge) and removes orphaned timing start markers from `state/timings/` |
-| `SessionEnd`         | Deletes entire `/tmp/claude-state-<session>/` directory (agents, tools, codex, queue, timings, dedup locks); runs `git worktree prune`; removes orphaned worktrees >2h                                                                           |
+| Event                | Action                                                                                                                                                                                                                                       |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PreToolUse`         | Logs Task/Agent and Skill invocations to `logs/invocations.jsonl`; opens codex plugin session file; increments per-tool-type state file                                                                                                      |
+| `PostToolUse`        | Closes codex plugin session file when any Skill(codex:\*) completes; computes wall-clock timing delta from PreToolUse start marker and appends to `~/.claude/logs/timings.jsonl`                                                             |
+| `PostToolUseFailure` | Records timing with error status to timings.jsonl (same timing path as PostToolUse)                                                                                                                                                          |
+| `UserPromptSubmit`   | Writes queue marker to `state/queue/` to light processing badge 💬 in statusline                                                                                                                                                             |
+| `SubagentStart`      | Creates `state/agents/<id>.json` with agent type, model, color, start timestamp — one file per agent (no race)                                                                                                                               |
+| `SubagentStop`       | Deletes per-agent file; appends completion entry to `invocations.jsonl`                                                                                                                                                                      |
+| `PreCompact`         | Appends to `logs/compactions.jsonl`; extracts modified file paths from transcript; writes `state/session-context.md`                                                                                                                         |
+| `Stop`               | Clears `state/tools/` — resets 🔧 row between turns (agents intentionally NOT cleared — may still be running); clears `state/queue/` processing markers (dismisses 💬 badge) and removes orphaned timing start markers from `state/timings/` |
+| `SessionEnd`         | Deletes entire `/tmp/claude-state-<session>/` directory (agents, tools, codex, queue, timings, dedup locks); runs `git worktree prune`; removes orphaned worktrees >2h                                                                       |
 
 **State files layout:**
 
@@ -774,25 +774,25 @@ Agent Teams is Claude Code's experimental multi-agent feature. Teams are always 
 
 **Age-out rules:**
 
-- Agents: 10-minute safety-net — files older than 10 min with no corresponding Stop event indicate a crashed agent; statusline excludes them
-- Codex plugin sessions: 30-minute cutoff — stalled plugin sessions are treated as timed out
+- Agents: 10-minute safety-net — files older than 10 min with no corresponding Stop event indicate crashed agent; statusline excludes them
+- Codex plugin sessions: 30-minute cutoff — stalled plugin sessions treated as timed out
 - Worktrees: 2-hour cutoff in SessionEnd cleanup
 
-**`PostCompact` over-registration:** `PostCompact` is registered in `settings.json` for `task-log.js` but is handled as a no-op — the code handles `PreCompact` instead.
+**`PostCompact` over-registration:** `PostCompact` registered in `settings.json` for `task-log.js` but handled as no-op — code handles `PreCompact` instead.
 
-**Inline `SessionStart` hooks** (shell commands, not JS files): (1) `claude auth status > ~/.claude/state/subscription.json` — snapshots billing plan for the status line billing indicator, async; (2) `rm -f .claude/state/session-context.md` — clears last session's breadcrumb on fresh startup.
+**Inline `SessionStart` hooks** (shell commands, not JS files): (1) `claude auth status > ~/.claude/state/subscription.json` — snapshots billing plan for status line billing indicator, async; (2) `rm -f .claude/state/session-context.md` — clears last session's breadcrumb on fresh startup.
 
 ### Supplementary hooks
 
 Registered alongside `task-log.js` in `settings.json`:
 
-**`lint-on-save.js`** (PostToolUse — Write, Edit) — closes the gap between "Claude edits a file" and "a human runs pre-commit" by linting every file the moment it is written. Runs `pre-commit run --files <path>` on each Write/Edit, exits 2 on failure so Claude sees the diagnostics and applies a fix immediately. No-op when `.pre-commit-config.yaml` is absent or pre-commit is not installed.
+**`lint-on-save.js`** (PostToolUse — Write, Edit) — closes gap between "Claude edits a file" and "a human runs pre-commit" by linting every file the moment it's written. Runs `pre-commit run --files <path>` on each Write/Edit, exits 2 on failure so Claude sees diagnostics and applies fix immediately. No-op when `.pre-commit-config.yaml` absent or pre-commit not installed.
 
-**`md-compress.js`** (PreToolUse — Edit only, `.md` files only) — normalizes token-wasteful whitespace in the file being edited, in place, right before the edit runs, and normalizes `old_string` the same way so a pre-normalization match still finds its target. Collapses table column padding (2+ spaces → 1), consecutive blank lines, and trailing whitespace — all outside fenced code blocks; write is atomic (write-then-rename). Deliberately does *not* run on Read: an earlier version did, to save Read-time tokens, but normalizing on every Read silently rewrote table alignment in any `.md` file Claude merely looked at, including files nobody asked to touch — dropped in favor of Edit-only scope, which only touches files someone is actually editing.
+**`md-compress.js`** (PreToolUse — Edit only, `.md` files only) — normalizes token-wasteful whitespace in file being edited, in place, right before edit runs, and normalizes `old_string` same way so pre-normalization match still finds its target. Collapses table column padding (2+ spaces → 1), consecutive blank lines, trailing whitespace — all outside fenced code blocks; write is atomic (write-then-rename). Deliberately does *not* run on Read: earlier version did, to save Read-time tokens, but normalizing on every Read silently rewrote table alignment in any `.md` file Claude merely looked at, including files nobody asked to touch — dropped in favor of Edit-only scope, which only touches files someone is actually editing.
 
-**`rtk-rewrite.js`** (PreToolUse — Bash) — rewrites supported CLI calls to go through the RTK proxy (`git status` → `rtk git status`) for 60–99% token savings on build/test/git output. RTK is a *structural* compressor — it understands git diff, pytest, and build-log formats and removes tokens that are visually useful to humans but informationally redundant for an LLM, unlike generic truncation which can drop the relevant parts. No-op when RTK is not installed — see root [README → Token Savings](../README.md#-token-savings-rtk).
+**`rtk-rewrite.js`** (PreToolUse — Bash) — rewrites supported CLI calls to go through RTK proxy (`git status` → `rtk git status`) for 60–99% token savings on build/test/git output. RTK is a *structural* compressor — understands git diff, pytest, build-log formats and removes tokens visually useful to humans but informationally redundant for an LLM, unlike generic truncation which can drop relevant parts. No-op when RTK not installed — see root [README → Token Savings](../README.md#-token-savings-rtk).
 
-**Session stats utility** — `hooks/stats-reader.js` is a standalone script (not a hook event) for inspecting session token and tool usage from JSONL history. Run directly:
+**Session stats utility** — `hooks/stats-reader.js` is standalone script (not a hook event) for inspecting session token and tool usage from JSONL history. Run directly:
 
 ```bash
 node .claude/hooks/stats-reader.js --latest              # most recent session
@@ -801,43 +801,43 @@ node .claude/hooks/stats-reader.js --date 2026-04-08     # all sessions on a dat
 node .claude/hooks/stats-reader.js <session-uuid>        # specific session by UUID prefix
 ```
 
-Output: JSON with token usage by model (input/output/cache), tool call counts, turn count, duration, and optional timing percentiles (`count`, `mean_ms`, `p95_ms`) per tool.
+Output: JSON with token usage by model (input/output/cache), tool call counts, turn count, duration, optional timing percentiles (`count`, `mean_ms`, `p95_ms`) per tool.
 
 ## 📊 Status Line
 
-A lightweight hook (`hooks/statusline.js`) adds a persistent two-row status bar to every Claude Code session:
+Lightweight hook (`hooks/statusline.js`) adds persistent two-row status bar to every Claude Code session:
 
 ```text
 Row 1:  claude-sonnet-4-6 │ Borda.AI-Rig │ Pro ~$1.20 │ ████░░░░░░ 38% │ 💬
 Row 2:  🕵 2 agents (curator, sw-engineer) │ 🤖 codex-rescue │ 🔧 Bash ×3 · Edit · Read ×12
 ```
 
-**Row 1** — model name · project directory · billing indicator · 10-segment context bar (green → yellow → red) · processing badge `💬` (cyan; shown while Claude is handling the current turn; disappears when done)
+**Row 1** — model name · project directory · billing indicator · 10-segment context bar (green → yellow → red) · processing badge `💬` (cyan; shown while Claude handling current turn; disappears when done)
 
 **Row 2** — native agent count · Codex sessions (separate) · active tools (last 30 seconds)
 
 **Agent row (`🕵`) details:**
 
-- Specialized agents (have a `.claude/agents/` file) → shown by type name in their declared `color:` from frontmatter
+- Specialized agents (have a `.claude/agents/` file) → shown by type name in declared `color:` from frontmatter
 - General-purpose agents → shown by model name in gray (`opus`, `sonnet`)
 - Same-type agents grouped with `×N` count
-- **`codex:*` subagents are excluded here** — they appear in `🤖` instead
+- **`codex:*` subagents excluded here** — appear in `🤖` instead
 
 **Codex row (`🤖`) details:**
 
-- Shows the short name of each active codex session, without the `codex:` prefix (e.g., `codex-rescue`, `review`, `adversarial-review`)
+- Shows short name of each active codex session, without `codex:` prefix (e.g., `codex-rescue`, `review`, `adversarial-review`)
 - Sources: both `Skill(codex:*)` invocations and `Agent(subagent_type="codex:*")` subagents
-- Multiple sessions of the same type grouped as `<name> ×N`
-- Safety-net: sessions older than 30 min are treated as timed out and excluded
+- Multiple sessions of same type grouped as `<name> ×N`
+- Safety-net: sessions older than 30 min treated as timed out and excluded
 
 **Tool row colors:** `Read` (blue) · `Write` (bright green) · `Edit` (green) · `Bash` (yellow) · `Grep` (cyan) · `Glob` (bright cyan) · `WebFetch` (magenta) · `WebSearch` (bright magenta) · `Task`/`Agent` (bright blue) · `Skill` (bright yellow)
 
 **Billing indicator:**
 
-- **Subscription (Pro/Max):** `Max/Pro/Sub ~$X.XX` in cyan — plan from `~/.claude/state/subscription.json`; `~$X.XX` is theoretical API-rate cost (tokens × list price), not an actual charge
+- **Subscription (Pro/Max):** `Max/Pro/Sub ~$X.XX` in cyan — plan from `~/.claude/state/subscription.json`; `~$X.XX` is theoretical API-rate cost (tokens × list price), not actual charge
 - **API key:** `API $X.XX` in yellow — actual spend at pay-per-token rates
 
-**Hook mechanics:** `statusline.js` reads `state/agents/`, `state/codex/`, `state/tools/`, and `state/queue/` on each render. `task-log.js` writes those files (including `UserPromptSubmit` → queue markers, `Stop` → queue drain); `statusline.js` only reads. Configured via `statusLine` in `settings.json`. Zero external dependencies — stdlib `path` and `fs` only.
+**Hook mechanics:** `statusline.js` reads `state/agents/`, `state/codex/`, `state/tools/`, `state/queue/` on each render. `task-log.js` writes those files (including `UserPromptSubmit` → queue markers, `Stop` → queue drain); `statusline.js` only reads. Configured via `statusLine` in `settings.json`. Zero external dependencies — stdlib `path` and `fs` only.
 
 ## 🤝 Integration with Codex
 
@@ -847,7 +847,7 @@ Row 2:  🕵 2 agents (curator, sw-engineer) │ 🤖 codex-rescue │ 🔧 Bash
 
 ### Skills digestion
 
-Skills check availability at runtime: `claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'`. If the plugin is absent, each skill skips its Codex step gracefully rather than failing.
+Skills check availability at runtime: `claude plugin list 2>/dev/null | grep -q 'codex@openai-codex'`. If plugin absent, each skill skips its Codex step gracefully rather than failing.
 
 **Invocation map** — every place Claude dispatches to Codex and why:
 
@@ -856,7 +856,7 @@ Skills check availability at runtime: `claude plugin list 2>/dev/null | grep -q 
 | `/develop:fix`, `/develop:feature` | `_shared/codex-prepass.md`    | Tier 1 pre-pass: review staged diff for bugs before Claude's review cycle            | `codex:review --wait`                     |
 | `/oss:review`                      | Step 2 co-review              | Adversarial diff review seeding agent prompts with pre-flagged issues                | `codex:adversarial-review --wait <focus>` |
 | `/oss:review`, `/research:run`     | `_shared/codex-delegation.md` | Delegate mechanical follow-up: docstrings, type annotations, test stubs              | `codex:codex-rescue` (agent)              |
-| `/oss:resolve`                     | Step 8 action items           | Apply PR review feedback to the codebase                                             | `codex:codex-rescue` (agent)              |
+| `/oss:resolve`                     | Step 8 action items           | Apply PR review feedback to codebase                                                 | `codex:codex-rescue` (agent)              |
 | `/oss:resolve`                     | Step 12a comment dispatch     | Apply a specific review comment                                                      | `codex:codex-rescue` (agent)              |
 | `/oss:resolve`                     | Step 12 review loop           | Review applied changes for issues before committing                                  | `codex:review --wait`                     |
 | `/research:run --codex`            | Phase 2b ideation             | Fallback: generate + apply one atomic optimization when Claude's change was reverted | `codex:codex-rescue` (agent)              |
@@ -870,11 +870,11 @@ Skills check availability at runtime: `claude plugin list 2>/dev/null | grep -q 
 - Judgment calls: design decisions, spec approval, test validity assessment
 - Final validation: Claude always verifies Codex output via `git diff HEAD` before accepting changes
 
-**Why the division works:** Claude has a mental model of which files are "in scope" for a task; Codex reads the diff and codebase independently, without that context. Their blind spots are complementary — the union of both passes catches more than either alone.
+**Why the division works:** Claude has mental model of which files are "in scope" for a task; Codex reads diff and codebase independently, without that context. Blind spots complementary — union of both passes catches more than either alone.
 
 ## 📂 Artifact Layout
 
-Runtime artifacts live at the project root in dot-prefixed dirs — separate from versioned config in `.claude/`. The dot-prefix signals "generated output, not source".
+Runtime artifacts live at project root in dot-prefixed dirs — separate from versioned config in `.claude/`. Dot-prefix signals "generated output, not source".
 
 ```text
 .plans/blueprint/        ← /brainstorm spec and tree files
@@ -890,4 +890,4 @@ Runtime artifacts live at the project root in dot-prefixed dirs — separate fro
 .temp/                   ← long output from any skill (quality-gates rule)
 ```
 
-Each skill creates a timestamped run dir: `.reports/<skill>/YYYY-MM-DDTHH-MM-SSZ/`. Completed runs contain `result.jsonl`; the `SessionEnd` hook deletes completed runs older than 30 days automatically. Incomplete runs (crashed/timed-out) are kept for debugging. All dot-prefixed dirs are gitignored — see `.claude/rules/artifact-lifecycle.md` for TTL policy and full details.
+Each skill creates timestamped run dir: `.reports/<skill>/YYYY-MM-DDTHH-MM-SSZ/`. Completed runs contain `result.jsonl`; `SessionEnd` hook deletes completed runs older than 30 days automatically. Incomplete runs (crashed/timed-out) kept for debugging. All dot-prefixed dirs gitignored — see `.claude/rules/artifact-lifecycle.md` for TTL policy and full details.

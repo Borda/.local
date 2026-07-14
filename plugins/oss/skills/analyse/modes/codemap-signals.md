@@ -1,12 +1,12 @@
 # Codemap structural signals (analyse)
 
-> Optional. Gated on codemap plugin + fresh index. Absent → skip; caller flags "structural context unavailable", never blocks. codemap is a separate opt-in plugin (`requires codemap plugin`).
+> Optional. Gated on codemap plugin + fresh index. Absent → skip; caller flags "structural context unavailable", never blocks. codemap separate opt-in plugin (`requires codemap plugin`).
 
 Consumers: `modes/thread.md` (issue triage — stale-symbol check), `modes/vitality.md` (Structural Constraints block). Both read `$_OSS_ANALYSE` (installed analyse skill dir, set by caller) and this file.
 
 ## Detect — sets `CM_ENABLED`
 
-Reuse the oss shared detector — same helper review/resolve use. scan-query on PATH AND index for this project both required.
+Reuse oss shared detector — same helper review/resolve use. scan-query on PATH AND index for this project both required.
 
 ```bash
 # Resolve analyse skill dir if caller did not (cache first, source fallback)
@@ -26,7 +26,7 @@ CM_CURRENCY=$(cat "${TMPDIR:-/tmp}/analyse-codemap-currency" 2>/dev/null || echo
 
 Thread names symbols/modules that may no longer exist. Extract candidate identifiers from thread body + comments, then existence-check via one `batch` process.
 
-**Extract candidates** — dotted module paths (`a.b.c`) and CamelCase/snake symbol names appearing in backticks, tracebacks, or `import`/`from` lines. Cap at 8 candidates (highest-signal: those in code fences or import lines first). Skip stdlib/third-party names (`os`, `numpy`, `torch`, …) — only project-internal identifiers matter for staleness.
+**Extract candidates** — dotted module paths (`a.b.c`) and CamelCase/snake symbol names appearing in backticks, tracebacks, or `import`/`from` lines. Cap at 8 candidates (highest-signal: those in code fences or import lines first). Skip stdlib/third-party names (`os`, `numpy`, `torch`, …) — only project-internal identifiers matter for staleness
 
 **Existence-check** — write the extracted candidates one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates.txt` (bash arrays do not survive a fresh shell — use a file), then build a batch of one query per candidate: module-shaped (`a.b.c`, has a dot) → `rdeps`; bare symbol → `find-symbol`. Run once:
 
@@ -51,7 +51,7 @@ Set `STALE_ISSUE=true` when ≥1 candidate is a stale-issue hit; list the missin
 
 ## Signal B — PR-set conflict/duplicate candidates (vitality mode)
 
-Open PRs touching overlapping code are merge-conflict or duplicate-effort risks. Two layers:
+Open PRs touching overlapping code are merge-conflict or duplicate-effort risks. Two layers
 
 1. **Direct overlap** (no codemap needed) — pairwise intersection of changed-file lists. Shared file(s) between two open PRs → conflict/duplicate candidate.
 2. **Structural overlap** (codemap) — two PRs touch *different* files that map to *tightly coupled* modules → hidden-conflict candidate the file-name intersection misses.

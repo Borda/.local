@@ -31,6 +31,5 @@ Upgrading dependency in PyTorch ecosystem:
 # (do not use hardcoded URLs — search the project's GitHub releases or README via WebSearch first)
 ```
 
-2. Build cross-reference table from fetched docs — no hardcoded version numbers, go stale in one release cycle. Fetch + parse current matrix from each library's official compatibility page. Add 1–2 second delay between WebFetch calls for different packages to avoid rate limiting.
-
+2. Build cross-reference table from fetched docs — no hardcoded version numbers, go stale in one release cycle. Fetch + parse current matrix from each library's official compatibility page. Add 1–2s delay between WebFetch calls per package — avoid rate limiting.
 3. Cross-check against `pyproject.toml` constraints before recommending upgrade

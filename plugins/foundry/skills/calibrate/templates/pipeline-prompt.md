@@ -7,13 +7,13 @@ Run dir: `.reports/calibrate/<TIMESTAMP>/<TARGET>/`
 
 ### Graceful-exit protocol
 
-Before returning for ANY reason — crash, context limit, unhandled error, or early exit — always write a minimal `result.jsonl` to the run dir. Even if phases are incomplete, the orchestrator must receive a signal.
+Before returning for ANY reason — crash, context limit, unhandled error, or early exit — always write minimal `result.jsonl` to run dir. Even if phases incomplete, orchestrator must receive signal.
 
-Write this line to `.reports/calibrate/<TIMESTAMP>/<TARGET>/result.jsonl` if the file does not already exist:
+Write this line to `.reports/calibrate/<TIMESTAMP>/<TARGET>/result.jsonl` if file does not already exist:
 
 `{"ts":"<TIMESTAMP>","target":"<TARGET>","verdict":"incomplete","mean_recall":null,"mean_confidence":null,"calibration_bias":null,"mean_f1":null,"severity_accuracy":null,"format_score":null,"problems":null,"scope_fp":null,"gaps":["pipeline exited before Phase 4 — re-run individually: /calibrate <TARGET> --fast"],"source_mode":null,"scoring":null,"scorer_agreement":null}`
 
-This is a safety net — Phase 4 always overwrites this with full results when it runs successfully.
+Safety net — Phase 4 always overwrites this with full results when it runs successfully.
 
 ### Pre-flight — Codex availability
 
@@ -171,7 +171,7 @@ Prompt for each subagent:
 >
 > **Write your complete response** (including the Confidence block) to `.reports/calibrate/<TIMESTAMP>/<TARGET>/response-<problem_id>.md` using the Write tool. Then end your reply with exactly one line: `Wrote: <problem_id>`
 
-**Context discipline**: subagents write to disk and return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. `Wrote: <problem_id>` per agent = correct.
+**Context discipline**: subagents write to disk, return single-line acknowledgment. Pipeline agent must NOT accumulate their full analyses in context — scorers read from disk in Phase 3. `Wrote: <problem_id>` per agent = correct.
 
 **Phase timeout**: after 5 min no acknowledgment, run `find .reports/calibrate/<TIMESTAMP>/<TARGET>/ -newer /tmp/calibrate-<TARGET>-phase2-<TIMESTAMP> -name "response-*.md" | wc -l` — non-zero = alive, grant one +5-min extension. Hard cutoff at 15 min no new file activity: mark problem as `{"timed_out": true}` in scores.json and proceed. Never block indefinitely on single response.
 

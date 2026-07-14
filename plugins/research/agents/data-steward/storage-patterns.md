@@ -51,7 +51,7 @@ ds = load_from_disk("data/processed/")
 
 Patch-based 3D Dataset: `self.volumes` + `self.patch_size` in init; `__getitem__` = random patch (train), center crop (val/test) — returns `{"image": patch_array}`.
 
-Key considerations for volumetric data:
+Key considerations, volumetric data:
 
 - **Memory**: volumes = GBs — use lazy loading:
 

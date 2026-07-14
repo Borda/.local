@@ -6,8 +6,8 @@ Generate ONLY sections 1–3 below. Do not generate Dataset/DataModule, Model, T
 
 ### Section 1: Header + Setup
 `# %% [markdown]` cell:
-  - Title: `# 🔬 <Competition Title> — EDA` (emoji fitting the domain)
-  - 2–3 sentences: what the competition is about, approach chosen
+  - Title: `# 🔬 <Competition Title> — EDA` (emoji fitting domain)
+  - 2–3 sentences: what competition is about, approach chosen
   - Link: `Competition: <url-if-known>`
 
 `# %%` cell (setup — EDA online; downloads packages to `frozen_packages/` for offline reuse):
@@ -25,7 +25,7 @@ Single `# %%` cell — global imports and paths only; **EDA config lives JIT in 
   - Version print block: `print(f"PyTorch: {torch.__version__}")`, `print(f"Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")`
 
 ### Section 3: EDA
-`# %% [markdown]` header: `## EDA` — include explanation of what/why/how it contributes to the solution.
+`# %% [markdown]` header: `## EDA` — include explanation of what/why/how it contributes to solution.
 
 **EDA config block** — first `# %%` in this section (JIT constants):
 ```python
@@ -49,7 +49,7 @@ display(df_train.describe())
 
 **3b. Label / target distribution** — bar or pie chart with axis labels, grid, legend when >1 class; `_=` suppression.
 
-**3c. Hypothesis validation** — `# %% [markdown]` cell listing hypotheses that gate design decisions, then one `# %%` per hypothesis:
+**3c. Hypothesis validation** — `# %% [markdown]` cell listing hypotheses gating design decisions, then one `# %%` per hypothesis:
 
 Generate from `problem_type` + `input_modality` — examples:
 - *class balance* → affects loss choice; code: `df_train[TARGET_COL].value_counts(normalize=True)`
@@ -67,13 +67,13 @@ Each hypothesis cell pattern:
 print(f"→ <finding> — design implication: <implication>")
 ```
 
-**3d. Helper definition (JIT)** — define visualization helpers in a `# %%` cell immediately before the cell that uses them. Never at top of notebook.
+**3d. Helper definition (JIT)** — define visualization helpers in `# %%` cell immediately before cell that uses them. Never at top of notebook.
 
 **3e. Sample display** — dispatch by `input_modality`; see `modality-dispatch.md`; uses helper from 3d.
 
 > loads: modality-dispatch.md
 
-**Sample display dispatch** — read `modality-dispatch.md` and apply the branch matching `input_modality`:
+**Sample display dispatch** — read `modality-dispatch.md`, apply branch matching `input_modality`:
 - `image` → 2D image grid helper
 - `image-3d` → volumetric 3-plane viewer + stats (adds tifffile/ipywidgets to setup cell)
 - `tabular` → describe + correlation heatmap + target distribution
@@ -81,7 +81,7 @@ print(f"→ <finding> — design implication: <implication>")
 
 **3f. Dimension / size analysis** (image modalities) — scatter of (width, height); axis labels + grid.
 
-Any modality-specific installs required by the chosen branch go at the top of the setup `# %%` cell, not inline in Section 3.
+Modality-specific installs required by chosen branch go at top of setup `# %%` cell, not inline in Section 3.
 
 ## Style enforcement rules for the generator
 
@@ -91,15 +91,15 @@ Apply all 11 base rules from `style-rules.md`.
 
 ## Output format
 
-Write the file at: `.experiments/kaggle/<competition-name>.py`
+Write file at: `.experiments/kaggle/<competition-name>.py`
 
 **Stop after Section 3 (EDA). Do not generate model, training, inference, or submission sections.**
 
-Use the Write tool. The file must start with:
+Use Write tool. File must start with:
 ```python
 # %% [markdown]
 # # 🔬 <Title>
-# Short description of the competition and the chosen approach.
+# Short description of the competition and chosen approach.
 ```
 
 Return ONLY on the final line:

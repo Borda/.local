@@ -2,17 +2,17 @@
 
 # Demo mode — methodology notes
 
-Reference detail for `modes/demo.md`. Not required to execute the demo happy path — read when a step needs the deeper rationale (scoring formulas, diagnostic root causes, honest caveats, scenario matrix).
+Reference detail for `modes/demo.md`. Not required to execute demo happy path — read when step needs deeper rationale (scoring formulas, diagnostic root causes, honest caveats, scenario matrix).
 
 ## D5a — SQ_DELTA=0 root causes (diagnostic detail)
 
-When the real-skill probe records `SQ_DELTA = 0`, the injection block is present but scan-query never fired. Root causes to check:
+When real-skill probe records `SQ_DELTA = 0`, injection block present but scan-query never fired. Root causes to check:
 
 - Binary not on PATH inside the skill's bash context
 - Index guard `[ -f ".cache/codemap/${PROJ}.json" ]` failing (wrong `PROJ` name or `CODEMAP_INDEX_DIR` set)
 - Skill's injection block inside a branch never taken for this target
 
-Flag as ⚠ in the D8 report. Print diagnostic: "Injection block present but SQ_DELTA=0. Check: `command -v scan-query` inside skill context; verify index path matches `resolve_index_env.py` output."
+Flag as ⚠ in D8 report. Print diagnostic: "Injection block present but SQ_DELTA=0. Check: `command -v scan-query` inside skill context; verify index path matches `resolve_index_env.py` output."
 
 ## D5b — Synthetic A/B methodology
 
@@ -58,11 +58,11 @@ If present: `AskUserQuestion` — "Rigorous token-measured benchmark available."
 
 ## D7 — Sk=0 explanation (printed when skills.jsonl empty)
 
-> "skills.jsonl empty. Expected when tasks run via scan-query binary directly — PreToolUse hook fires only on explicit `/codemap:*` Skill() calls. D4 seeded one entry; if missing, check hook registration: `claude hooks list`."
+> "skills.jsonl empty. Expected when tasks run via scan-query binary directly — PreToolUse hook fires only on explicit `/codemap:*` Skill() calls. D4 seeded one entry; missing → check hook registration: `claude hooks list`."
 
 ## D8 — report template
 
-Write with the Write tool. Fill `<...>` placeholders from D2–D7 values; omit the Real-skill probe section when `DEMO_MODE=synthetic`.
+Write with Write tool. Fill `<...>` placeholders from D2–D7 values; omit Real-skill probe section when `DEMO_MODE=synthetic`.
 
 ```markdown
 ---

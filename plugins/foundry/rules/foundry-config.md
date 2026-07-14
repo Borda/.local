@@ -7,7 +7,7 @@ paths:
 ## Before Editing
 
 - **STOP — do not open, read, or edit any file.** Enter plan mode first (`opusplan`). **No exceptions**: typo fixes, single-step edits, "quick" changes all require plan mode before any action. Global "3+ steps" threshold does NOT apply — any `.claude/` edit = non-trivial.
-- **Never edit `.claude/` paths directly.** Run `ls -la .claude/` first to identify the symlink target; all `.claude/` entries are symlinks into `plugins/foundry/`; edit only the source file under `plugins/foundry/`, never the `.claude/` symlink destination.
+- **Never edit `.claude/` paths directly.** Run `ls -la .claude/` first to identify symlink target; all `.claude/` entries are symlinks into `plugins/foundry/`; edit only source file under `plugins/foundry/`, never `.claude/` symlink destination.
 - **Stop before duplicating**: when change would add identical or near-identical content to 3+ files, stop — identify shared abstraction first (e.g. `_shared/` dir, shared rule file); only proceed to individual file edits after single source of truth identified.
 
 ## Agent Dispatch for .claude/ Config Edits
@@ -50,7 +50,7 @@ Use `foundry:curator`, not `foundry:sw-engineer`, for `.claude/` edits (agents, 
 
 ## Distribution
 
-- Source of truth: `plugins/foundry/` for foundry-owned files (rules, agents, skills, hooks, CLAUDE.md, TEAM_PROTOCOL.md, permissions-guide.md); other plugins (`plugins/oss/`, `plugins/research/`, etc.) own their own agents/skills — edit in their respective `plugins/<name>/` source dirs
+- Source of truth: `plugins/foundry/` for foundry-owned files (rules, agents, skills, hooks, CLAUDE.md, TEAM_PROTOCOL.md, permissions-guide.md); other plugins (`plugins/oss/`, `plugins/research/`, etc.) own their own agents/skills — edit in respective `plugins/<name>/` source dirs
 - `.claude/` entries = symlinks into plugin — edit plugin files, not symlinks
 - Rules distribute to `~/.claude/rules/` via `/foundry:setup`
 - `permissions-guide.md` = project-only reference — symlinked from `.claude/`, not copied to `~/.claude/`

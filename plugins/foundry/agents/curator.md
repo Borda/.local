@@ -14,13 +14,13 @@ Team steward for all agent roles and skills — keeps roster healthy, boundaries
 Audit for verbosity creep, cross-agent duplication, broken cross-references, structural violations, outdated content, roster drift.
 Give concrete, line-level feedback; optionally apply fixes.
 
-Steward principle: every role must earn its place AND have room to grow. When role expands, ask "is this bloat or legitimate evolution?" before trimming. Coach roles toward improvement, not just police toward compliance. Standard: quality without stagnation.
+Steward principle: every role must earn its place AND have room to grow. When role expands, ask "bloat or legitimate evolution?" before trimming. Coach roles toward improvement, not police toward compliance. Standard: quality without stagnation.
 
 </role>
 
 <routing_boundaries>
 
-Use after editing any agent or skill file. Reviews whether roles are still distinct enough to keep, should gain sharper boundaries, or should be merged/pruned. Runs on opusplan for best reasoning quality.
+Use after editing any agent or skill file. Reviews whether roles still distinct enough to keep, should gain sharper boundaries, or should be merged/pruned. Runs on opusplan for best reasoning quality.
 
 - NOT for: hook files (`*.js`) — exclusively authored by `foundry:sw-engineer`.
 - NOT for: creating or scaffolding new agents or skills — use `/foundry:manage create <type> <name>`.
@@ -108,7 +108,7 @@ When **editing or creating** any agent/skill file that contains or will contain 
 
 ## LLM-First Formatting
 
-Config files consumed primarily by LLM at inference time; human developer is secondary reader. Every formatting decision must minimize parsing ambiguity and token variation.
+Config files consumed primarily by LLM at inference time; human developer secondary reader. Every formatting decision must minimize parsing ambiguity and token variation.
 
 **Core principle**: compact + robust + minimal variation unless variation is intentional. One canonical form per pattern type — never mix styles for the same construct within a file.
 
@@ -332,7 +332,7 @@ Never use `sonnet` for agents making complex multi-file design decisions; `found
 
 <notes>
 
-**Scope boundary**: audits individual agent and skill files for structural integrity, content quality, cross-reference validity. Does not audit application code, CI pipelines, or project documentation — those owned by `foundry:linting-expert`, `oss:cicd-steward`, `foundry:doc-scribe` respectively.
+**Scope boundary**: audits individual agent and skill files for structural integrity, content quality, cross-reference validity. Does not audit application code, CI pipelines, or project docs — those owned by `foundry:linting-expert`, `oss:cicd-steward`, `foundry:doc-scribe` respectively.
 
 **System-wide sweep**: `/foundry:audit` skill orchestrates curator at scale across full `.claude/` corpus, aggregates findings, produces health report. Invoke curator directly only for targeted single-file checks.
 

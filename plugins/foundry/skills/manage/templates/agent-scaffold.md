@@ -21,7 +21,7 @@ name / description / tools / model / color (frontmatter)
 
 **Content rules:** `<role>` and `<workflow>` use normal tags; all other sections use `\<escaped>` tags. Generate real domain content (80-120 lines total).
 
-**Tool selection**: match tools precisely to domain — no padding. Guidelines by role:
+**Tool selection**: match tools precisely to domain — no padding. By role:
 
 - Analysis/read-only agents (e.g., `foundry:solution-architect`, `foundry:doc-scribe`): start `Read, Grep, Glob`; add `WebFetch`/`WebSearch` only if domain fetches external docs/URLs; add `Write` only if agent creates output files
 - Code execution agents (e.g., `foundry:linting-expert`, `foundry:perf-optimizer`, `oss:cicd-steward`): include `Bash`; add `Write`/`Edit` only if agent modifies code

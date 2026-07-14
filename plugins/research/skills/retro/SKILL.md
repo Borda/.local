@@ -11,7 +11,7 @@ disable-model-invocation: true
 
 Post-run retrospective analysis. After `/research:run` completes, reads `.experiments/state/<run-id>/experiments.jsonl`, computes statistical significance, detects dead iterations, flags suspicious metric jumps, generates learning summary with next-hypothesis queue.
 
-NOT for: running experiments (use `/research:run`); designing experiments (use `/research:plan`); validating methodology (use `/research:judge`); verifying paper implementation (use `/research:verify`); comparing runs from different programs or goals — `--compare` is valid only for same-program, same-metric runs. Read-only — never modifies code, commits, or experiment state.
+NOT for: running experiments (use `/research:run`); designing experiments (use `/research:plan`); validating methodology (use `/research:judge`); verifying paper implementation (use `/research:verify`); comparing runs from different programs/goals — `--compare` valid only for same-program, same-metric runs. Read-only — never modifies code, commits, or experiment state.
 
 </objective>
 
@@ -24,7 +24,7 @@ _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_s
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:retro from project root."; exit 1; }
 ```
 
-Read `$_RESEARCH_SHARED/agent-resolution.md` (use the path printed by the bash block above — substitute the resolved value, do not pass the literal `$_RESEARCH_SHARED` string to the Read tool). Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
+Read `$_RESEARCH_SHARED/agent-resolution.md` (use path printed by bash block above — substitute resolved value, don't pass literal `$_RESEARCH_SHARED` string to Read tool). Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
 
 ## Retro Mode (Steps T1–T7)
 
@@ -40,14 +40,14 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 
 **Input resolution** (priority order):
 
-1. Explicit `<run-id>` argument → read `.experiments/state/<run-id>/`
-2. No argument → scan `.experiments/state/`, pick latest dir where `state.json` has `status: completed` or `status: goal-achieved`
+1. Explicit `<run-id>` arg → read `.experiments/state/<run-id>/`
+2. No arg → scan `.experiments/state/`, pick latest dir where `state.json` has `status: completed` or `status: goal-achieved`
 3. None found → stop with error:
    ```text
    No completed run found. Run /research:run first, or provide: /research:retro <run-id>
    ```
 
-**Newer-in-progress check** (only when path 2 was used — no explicit run-id given): after selecting the completed run, scan `.experiments/state/` for any directory with `status: running` and mtime newer than the selected dir. If found, surface a warning but do not stop — the user may intentionally retro the prior completed run:
+**Newer-in-progress check** (only when path 2 used — no explicit run-id given): after selecting completed run, scan `.experiments/state/` for any dir with `status: running` and mtime newer than selected dir. If found, surface warning but don't stop — user may intentionally retro prior completed run:
 
 ```text
 ⚠ Newer in-progress run found: <newer-run-id> (status: running, started <ISO timestamp>). Retro will analyse <selected-run-id> instead. Use /research:retro <run-id> to override.
@@ -55,8 +55,8 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 
 **Load files** from `.experiments/state/<run-id>/`:
 
-- `state.json`: extract `goal`, `best_metric`, `config` (including `metric.direction`), `iteration` count, `best_commit`. Compute `baseline_metric` from iteration 0 in `experiments.jsonl`.
-- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and **rewrite a sanitized copy to `$RUN_DIR/experiments-clean.jsonl`** (skip the truncated last line). All downstream steps (T2 retro_analyze.py, T3 dead-iter scan, T5 scientist) must read the sanitized copy — never the raw file — so every step sees the same iteration set. Persist the sanitized path: `echo "$RUN_DIR/experiments-clean.jsonl" > "${TMPDIR:-/tmp}/retro-jsonl-path"` (consumers re-hydrate from this file). If the JSONL is untruncated, the sanitized copy is byte-identical to the raw file.
+- `state.json`: extract `goal`, `best_metric`, `config` (incl. `metric.direction`), `iteration` count, `best_commit`. Compute `baseline_metric` from iteration 0 in `experiments.jsonl`.
+- `experiments.jsonl`: full iteration history — validate each line parses as JSON. If last line truncated, warn and **rewrite sanitized copy to `$RUN_DIR/experiments-clean.jsonl`** (skip truncated last line). All downstream steps (T2 retro_analyze.py, T3 dead-iter scan, T5 scientist) must read sanitized copy — never raw file — so every step sees same iteration set. Persist sanitized path: `echo "$RUN_DIR/experiments-clean.jsonl" > "${TMPDIR:-/tmp}/retro-jsonl-path"` (consumers re-hydrate from this file). If JSONL untruncated, sanitized copy byte-identical to raw file.
 - `diary.md`: if present, read for qualitative context in T5.
 
 If `--compare <run-id-2>` present: load second run identically from `.experiments/state/<run-id-2>/`. If not found, stop: `"Compare target not found: .experiments/state/<run-id-2>/. Check run ID and retry."`
@@ -70,7 +70,7 @@ RUN_ID_ARG="${RUN_ID_ARG:-}"
 echo "$RUN_ID_ARG" > "${TMPDIR:-/tmp}/retro-run-id"  # persist for T3 (vars lost between Bash calls)
 ```
 
-**Pre-compute run directory** — also fix `$RUN_ID` (resolved from input resolution above) and persist `$RUN_DIR` for T3 (ADV-H18 + ADV-L16):
+**Pre-compute run directory** — also fix `$RUN_ID` (resolved from input resolution above), persist `$RUN_DIR` for T3 (ADV-H18 + ADV-L16):
 
 ```bash
 RUN_ID="${RUN_ID_ARG:-$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/find_run_id.py" .experiments/state 2>/dev/null)}"  # loads: find_run_id.py
@@ -101,7 +101,7 @@ echo "$RETRO_RESULT" > "${TMPDIR:-/tmp}/retro-result"  # persist for effect-size
 [ "$RETRO_EXIT" -eq 2 ] && { echo "retro: Input error (exit 2) — run-id '$RUN_ID' missing, malformed, or has no baseline record; re-run /research:run to create baseline"; exit 1; }
 ```
 
-**Contract** — script reads JSONL, extracts metric values for ALL iterations with `status == "kept"`, and runs a one-sided **one-sample** Wilcoxon signed-rank test of "kept iterations vs the single baseline metric" (`status == "baseline"`). This is not a paired test — the run records one baseline metric, so there is no per-iteration matched baseline; the baseline scalar is compared against each kept value. It prints a single line of JSON to stdout:
+**Contract** — script reads JSONL, extracts metric values for ALL iterations with `status == "kept"`, runs one-sided **one-sample** Wilcoxon signed-rank test of "kept iterations vs single baseline metric" (`status == "baseline"`). Not a paired test — run records one baseline metric, no per-iteration matched baseline; baseline scalar compared against each kept value. Prints single line of JSON to stdout:
 
 - `{"significant": bool, "p_value": float, "statistic": float, "n": int}` on success
 - `{"significant": false, "p_value": null, "statistic": null, "n": <N>, "reason": "<msg>"}` when `N < 6` or scipy missing
@@ -114,7 +114,7 @@ Exit codes: `0` = significant · `1` = not significant (or insufficient data) ·
 - `higher` → `alternative = "greater"` (improvement = candidate > baseline)
 - `lower` → `alternative = "less"` (improvement = candidate < baseline — for loss, latency, error)
 
-Read `direction` from `state.json` config (or infer from goal text); pass via `$METRIC_DIRECTION`.
+Read `direction` from `state.json` config (or infer from goal text), pass via `$METRIC_DIRECTION`.
 
 **Effect size** — script does not return rank-biserial `r` directly. Compute via the bundled bin/ script:
 
@@ -123,7 +123,7 @@ RETRO_RESULT=$(cat "${TMPDIR:-/tmp}/retro-result" 2>/dev/null)  # re-hydrate fro
 EFFECT_R=$(echo "$RETRO_RESULT" | python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/compute_effect_size.py")  # timeout: 5000
 ```
 
-**If `--compare`**: invoke the script a second time on the second run's `experiments.jsonl`; downstream report renders a second row.
+**If `--compare`**: invoke script second time on second run's `experiments.jsonl`; downstream report renders second row.
 
 Write the combined results (parsed JSON plus computed `r`) to `$RUN_DIR/stats-results.json` via Write tool.
 
@@ -139,7 +139,7 @@ Write the combined results (parsed JSON plus computed `r`) to `$RUN_DIR/stats-re
 ```
 Apply advisory threshold automatically only when `--threshold` not explicitly provided by user.
 
-**Timeout detection**: when scanning reverted iterations, check `status` field. If `status == "timeout"`: classify as `timeout-as-revert` (see Notes). Otherwise: flag any reverted iteration where `delta` is in the correct improvement direction (i.e., metric moved toward goal) as "possible timeout — verify commit [sha]"; do not count delta as valid.
+**Timeout detection**: when scanning reverted iterations, check `status` field. If `status == "timeout"`: classify as `timeout-as-revert` (see Notes). Else: flag any reverted iteration where `delta` is in correct improvement direction (metric moved toward goal) as "possible timeout — verify commit [sha]"; don't count delta as valid.
 
 Scan `experiments.jsonl` sequentially, skipping iteration 0 (baseline). For each window of 3+ consecutive iterations where `abs(delta) < threshold`:
 
@@ -190,7 +190,7 @@ For each flagged jump, record:
 - Label: `"suspicious — investigate"` — NEVER auto-label `"data leakage"` or imply causation
 - Include corresponding `diary.md` entry for that iteration if present
 
-**Minimum data**: require at least 6 kept iterations before flagging (need 5 for window + 1 to test). Fewer → skip suspicious-jump detection entirely and write `"⚠ Insufficient data for trend analysis (need ≥6 data points, have <N>)"` in the Suspicious Metric Jumps section of the report.
+**Minimum data**: require ≥6 kept iterations before flagging (need 5 for window + 1 to test). Fewer → skip suspicious-jump detection entirely, write `"⚠ Insufficient data for trend analysis (need ≥6 data points, have <N>)"` in Suspicious Metric Jumps section of report.
 
 Write to `$RUN_DIR/suspicious-jumps.json` via Write tool.
 
@@ -223,7 +223,7 @@ Include ## Confidence block per quality-gates rules.
 Return ONLY: {"status":"done","hypotheses":N,"file":"<RUN_DIR>/retrospective.md","confidence":0.N}
 ```
 
-**Health monitoring note** (CLAUDE.md §6 deviation): the research:scientist agent here is spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. Health monitoring is approximated post-hoc: if the Agent() call returns after >15 min with no output file, treat as timed out. CLAUDE.md §6 full protocol applies only to background agents.
+**Health monitoring note** (CLAUDE.md §6 deviation): research:scientist agent here spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. Health monitoring approximated post-hoc: if Agent() call returns after >15 min with no output file, treat as timed out. CLAUDE.md §6 full protocol applies only to background agents.
 
 **Post-call timeout check**: after Agent() returns, verify:
 - File `$RUN_DIR/retrospective.md` exists and has content → success
@@ -364,11 +364,11 @@ Call `AskUserQuestion` tool after summary — do NOT write options as plain text
 - `--compare` requires both runs use same metric; if metric names differ, stop: `"Cannot compare runs with different metrics: <metric-1> vs <metric-2>"`
 - Dead iteration threshold (`--threshold`) should match metric's noise floor — default 0.001 for normalized metrics; adjust for raw values (e.g. `--threshold 0.1` for loss in hundreds)
 - Statistical tests assume metric values are independent samples — if iterations highly correlated (e.g. cumulative optimization), note limitation in report
-- **Requires `scipy` in active Python environment** (`pip install scipy`) — `retro_analyze.py` runs the Wilcoxon signed-rank test via `scipy.stats`. Without scipy, the test is skipped and `retro_analyze.py` returns `{"significant": false, "p_value": null, "reason": "scipy not installed"}`; report includes descriptive stats only (mean/median/min/max/std). Install: `pip install scipy` or `uv add scipy`.
+- **Requires `scipy` in active Python environment** (`pip install scipy`) — `retro_analyze.py` runs Wilcoxon signed-rank test via `scipy.stats`. Without scipy, test skipped and `retro_analyze.py` returns `{"significant": false, "p_value": null, "reason": "scipy not installed"}`; report includes descriptive stats only (mean/median/min/max/std). Install: `pip install scipy` or `uv add scipy`.
 - **Named anomaly patterns** (use consistently across reports):
-  - `kept-regression`: a kept iteration where metric moved in wrong direction (positive delta for higher-is-better, negative delta for lower-is-better)
-  - `reverted-improvement`: a reverted iteration where metric moved in correct direction — reverted for non-metric reasons (performance, OOM, instability); flag as "improvement-when-reverted — consider revisiting with adjusted constraints"
-  - `timeout-as-revert`: a reverted iteration with `status: "timeout"` — metric value unreliable; never count delta as valid improvement
+  - `kept-regression`: kept iteration where metric moved in wrong direction (positive delta for higher-is-better, negative delta for lower-is-better)
+  - `reverted-improvement`: reverted iteration where metric moved in correct direction — reverted for non-metric reasons (performance, OOM, instability); flag as "improvement-when-reverted — consider revisiting with adjusted constraints"
+  - `timeout-as-revert`: reverted iteration with `status: "timeout"` — metric value unreliable; never count delta as valid improvement
   - `config-repetition`: same agent + same file(s) attempted 3+ times without crossing threshold — flag as "repeated-failure pattern"
 
 </notes>

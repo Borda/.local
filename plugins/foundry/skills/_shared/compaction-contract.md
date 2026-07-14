@@ -4,7 +4,7 @@
 
 ## What
 
-`.claude/state/skill-contract.md` — terse block skill (re)writes at expanding-phase boundaries. PreCompact hook (`task-log.js`) appends it **verbatim** under `## Skill Compaction Contract` in `session-context.md`. Post-compaction re-read restores it losslessly into context.
+`.claude/state/skill-contract.md` — terse block skill (re)writes at expanding-phase boundaries. PreCompact hook (`task-log.js`) appends it **verbatim** under `## Skill Compaction Contract` in `session-context.md`. Post-compaction re-read restores it losslessly.
 
 ## Block format (emit this template exactly)
 
@@ -18,7 +18,7 @@
 
 ## Placement rule
 
-Refresh at boundary **after** an expanding phase (parallel fan-out / iteration loop / large gather), **before** next phase begins.
+Refresh at boundary **after** expanding phase (parallel fan-out / iteration loop / large gather), **before** next phase begins.
 
 - Only at phase boundaries — not after every step
 - `preserve:` = only what next phase consumes; drop raw expanded material

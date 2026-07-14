@@ -3,11 +3,11 @@
 
 Shared spawn-prompt templates for develop skill team-mode branches. Replace `<ROLE>`, `<TASK>`, `<SCOPE>`, `<RUN_DIR>`, `<OUTPUT_NAME>`, `<HYPOTHESIS_LABEL>`, and `<TS>` placeholders before insertion.
 
-The canonical hypothesis-style spawn prompt for foundry:sw-engineer teammates also lives in `preflight-helpers.md` §Team Spawn Template — that template is the right choice for debug + fix hypothesis investigation. Use the templates below when feature, fix, or refactor need full role-specialised spawn prompts (sw-engineer + qa-specialist + doc-scribe).
+Canonical hypothesis-style spawn prompt for foundry:sw-engineer teammates also lives in `preflight-helpers.md` §Team Spawn Template — right choice for debug + fix hypothesis investigation. Use templates below when feature, fix, or refactor need full role-specialised spawn prompts (sw-engineer + qa-specialist + doc-scribe).
 
 ## Common envelope (applies to every teammate prompt)
 
-Every team spawn prompt closes with the same envelope. Insert this verbatim at the end of each `<ROLE>`-specific body.
+Every team spawn prompt closes with the same envelope. Insert verbatim at end of each `<ROLE>`-specific body.
 
 ```
 Compact Instructions: preserve file paths, test results, API signatures. Discard verbose tool output.
@@ -19,7 +19,7 @@ Return ONLY compact JSON: {"status":"done","file":"<path>","summary":"<one-line>
 
 ## Hypothesis-investigation prompt (fix, debug)
 
-Use for parallel root-cause hypothesis investigation. Replace `<HYPOTHESIS_LABEL>` with `A`, `B`, etc. — each teammate claims a distinct hypothesis.
+Use for parallel root-cause hypothesis investigation. Replace `<HYPOTHESIS_LABEL>` with `A`, `B`, etc. — each teammate claims distinct hypothesis.
 
 ```
 You are a foundry:sw-engineer teammate investigating: <TASK>.
@@ -31,7 +31,7 @@ Your task: investigate hypothesis <HYPOTHESIS_LABEL> — claim one distinct root
 
 ## Role-specialised prompt (feature)
 
-Use when feature mode spawns three differentiated teammates in parallel — sw-engineer implements, qa-specialist writes tests, doc-scribe prepares docs.
+Use when feature mode spawns three differentiated teammates in parallel — sw-engineer implements, qa-specialist writes tests, doc-scribe preps docs.
 
 ### foundry:sw-engineer (model=opus) — implementation
 
@@ -89,7 +89,6 @@ Broadcast context: {target: <path>, coverage: <summary>, goal: <stated goal>}.
 ## Health monitoring (CLAUDE.md §6)
 
 After spawn, lead must monitor — protocol (canonical: orchestrator owns sentinel + 5-min file poll + 15-min hard cutoff):
-
 ```bash
 touch /tmp/<skill>-team-check-<TS>
 find <RUN_DIR> -newer /tmp/<skill>-team-check-<TS> -type f | wc -l

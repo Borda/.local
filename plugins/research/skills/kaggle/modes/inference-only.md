@@ -2,18 +2,18 @@
 
 ## Required sections — INFERENCE ONLY (--inference-only mode)
 
-Generate sections 1–7 below. Skip EDA, Dataset/DataModule training setup, and Training sections.
-Assume a trained checkpoint already exists (either from a prior training run or a Kaggle input dataset).
+Generate sections 1–7 below. Skip EDA, Dataset/DataModule training setup, Training sections.
+Assume trained checkpoint already exists (prior training run or Kaggle input dataset).
 
-> **Package API note**: patterns below are based on past notebooks — some packages may be at older API versions
+> **Package API note**: patterns below based on past notebooks — some packages may be at older API versions
 > (rfdetr, older pytorch_lightning, MONAI). Use most current available API; prefer `pytorch_lightning` over
-> `lightning` for Kaggle kernel compatibility. Check with `! pip list | grep -E 'torch|lightning|monai'` in the setup cell.
+> `lightning` for Kaggle kernel compatibility. Check with `! pip list | grep -E 'torch|lightning|monai'` in setup cell.
 
 ### Section 1: Header + Setup
 
 `# %% [markdown]` cell:
   - Title: `# 🔬 <Competition Title> — Inference` (no PTL/model tag in title for inference-only)
-  - 1–2 sentences: checkpoint being loaded, what this notebook produces
+  - 1–2 sentences: checkpoint being loaded, what notebook produces
   - `Checkpoint: <path-or-input-dataset>`
 
 `# %%` cell (setup — inference-only subset):
@@ -43,14 +43,14 @@ Single `# %%` cell:
 
 `# %% [markdown]` header: `## Load Model`
 
-**First: check for `{COMPETITION_NAME}_model.py`** — if the training notebook used `%%writefile`, import from it instead of redefining the class:
+**First: check for `{COMPETITION_NAME}_model.py`** — training notebook used `%%writefile` → import from it instead of redefining class:
 
 ```python
 # %%
 from {competition_name}_model import <Name>Model  # written by training notebook %%writefile cell
 ```
 
-If `{COMPETITION_NAME}_model.py` exists: use this import — do NOT redefine the class inline. If absent: choose a pattern below and define the class fully in this notebook (with all required imports).
+`{COMPETITION_NAME}_model.py` exists: use this import — do NOT redefine class inline. Absent: choose pattern below, define class fully in this notebook (all required imports).
 
 Choose ONE pattern based on `<recommended_model>` and checkpoint format:
 
@@ -64,7 +64,7 @@ print(f"Loading: {PATH_CHECKPOINT}")
 model = <Name>Model.load_from_checkpoint(PATH_CHECKPOINT)
 model.eval().to(DEVICE)
 ```
-(Use when model class is defined in this notebook or importable; `load_from_checkpoint` restores hparams automatically.)
+(Use when model class defined in this notebook or importable; `load_from_checkpoint` restores hparams automatically.)
 
 **Pattern B — bare torch.load (`.pt` or `.pth`):**
 ```python
@@ -292,16 +292,16 @@ print(f"Saved {len(predictions_clean)} masks to {PATH_OUTPUT}")
 
 Apply all 11 base rules from `style-rules.md`, plus:
 
-12. `# ! head submission.csv` at the very end (or equivalent output confirmation for non-CSV formats)
+12. `# ! head submission.csv` at very end (or equivalent output confirmation for non-CSV formats)
 13. **Package API note**: verify API compatibility before use — prefer `pytorch_lightning` over `lightning` for Kaggle; MONAI transforms dict-key API (`keys=["image"]`) is current; rfdetr/custom libs — check `# ! pip show <lib>` for installed version
 
 ## Output format
 
-Write the file at: `.experiments/kaggle/<competition-name>-inference.py`
+Write file at: `.experiments/kaggle/<competition-name>-inference.py`
 
 Suffix `-inference` distinguishes from training notebook.
 
-Use the Write tool. The file must start with:
+Use Write tool. File must start with:
 ```python
 # %% [markdown]
 # # 🔬 <Title> — Inference

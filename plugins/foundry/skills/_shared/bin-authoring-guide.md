@@ -1,14 +1,14 @@
 <!-- R3: placeholder paths below (e.g. /Users/<name>/, /path/to/) are illustrative examples, not hardcoded user paths — Check R3 false positives -->
 # bin/ Authoring Guide
 
-Reference from any skill or scaffolding step that needs to decide whether to write a `bin/` script vs keep code inline, which language to use, and how to structure it.
+Reference from any skill or scaffolding step deciding whether to write a `bin/` script vs keep code inline, which language to use, how to structure it.
 
 Two audiences:
 
-1. **Check 33 auto-fix** — when a HIGH verdict is reached, reference this doc for how to perform the extraction
-2. **`foundry:manage create skill`** — reference when scaffolding any new skill that needs code blocks, to prevent inline blocks that will later need extraction
+1. **Check 33 auto-fix** — on HIGH verdict, reference this doc for how to perform extraction
+2. **`foundry:manage create skill`** — reference when scaffolding any new skill needing code blocks, to prevent inline blocks that later need extraction
 
-See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plugins/README.md for the authoring motivations behind these rules.
+See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plugins/README.md for authoring motivations behind these rules.
 
 ---
 
@@ -26,7 +26,7 @@ See also: [bin/ Script Principles](../../README.md#bin-script-principles) in plu
 
 ## Cross-OS Compatibility
 
-`bin/` scripts run on macOS, Linux, and Windows (WSL/git-bash). Python scripts are preferred over bash for any logic beyond the three allowed bash cases — Python is portable by design; bash is not.
+`bin/` scripts run on macOS, Linux, Windows (WSL/git-bash). Python preferred over bash for any logic beyond the three allowed bash cases — Python portable by design; bash not.
 
 **Bash: banned constructs** (GNU-only or platform-divergent):
 
@@ -84,11 +84,11 @@ Before writing ANY inline code block, first apply the Prose check (§Prose over 
 
 Prefer plain language, a table, or a schema over a code block when prose is **precision-equivalent** and shorter in tokens. Applies at authoring time and retrospectively.
 
-**Exempt** (fenced code blocks in `.md` files): examples, templates, and blocks whose purpose is to carry exact syntax for copy-paste or reproducible execution.
+**Exempt** (fenced code blocks in `.md` files): examples, templates, blocks whose purpose is to carry exact syntax for copy-paste or reproducible execution.
 
-**Precision-equivalent** means the prose expresses the logic with **100% precision and 100% reproducibility**: every input produces the same output from the prose description as from the code, with no ambiguity. This holds for: routing/switch logic with a fixed, bounded, enumerable input set (e.g. mode flags, classification labels, small enum dispatch). It does NOT hold for: free-form inputs, numeric ranges, regex pattern matching, file-system state checks, or any logic where edge cases cannot be fully enumerated in plain language. When uncertain, keep code.
+**Precision-equivalent** means the prose expresses the logic with **100% precision and 100% reproducibility**: every input produces the same output from the prose description as from the code, with no ambiguity. Holds for: routing/switch logic with a fixed, bounded, enumerable input set (e.g. mode flags, classification labels, small enum dispatch). Does NOT hold for: free-form inputs, numeric ranges, regex pattern matching, file-system state checks, or any logic where edge cases cannot be fully enumerated in plain language. When uncertain, keep code.
 
-Tests and linting on a bin/ script are anti-regression tools — they are NOT a reason to keep a script that is fully replaceable with plain language. Delete the script and the tests with it when precision-equivalent prose is possible.
+Tests and linting on a bin/ script are anti-regression tools — NOT a reason to keep a script fully replaceable with plain language. Delete the script and its tests when precision-equivalent prose is possible.
 
 ### Case 1 — inline fenced code block in any `.md` file
 
@@ -112,12 +112,12 @@ Token test (apply only when all REPLACE conditions hold): `tokens(block) > token
 `bin/` scripts enforce reproducibility and stay as executables. Deletion candidate only when ALL hold:
 
 - Logic is precision-equivalent (see definition above) — routing/switch with bounded input set; NOT free-form or range inputs
-- If a test file exists (`tests/test_<name>.py` or `tests/test_<name>_sh.py`): the test file is evidence that precision was non-obvious at authoring time. Before deleting, verify the prose covers every non-happy-path test scenario — if any test case produces an ambiguous prose answer, keep the script. Delete the test file only after this verification passes.
+- If a test file exists (`tests/test_<name>.py` or `tests/test_<name>_sh.py`): the test file is evidence precision was non-obvious at authoring time. Before deleting, verify prose covers every non-happy-path test scenario — if any test case produces an ambiguous prose answer, keep the script. Delete the test file only after this verification passes.
 - No cross-plugin consumers (not listed in `Known cross-plugin utilities` or any `<!-- file: ... consumers: ... -->` header)
 - Single consumer — called from exactly one `.md` file within the plugin; verify with `grep -rn "<script-basename>" plugins/*/skills/ plugins/*/agents/`
 - Token test: `tokens(call-site description in .md) > tokens(equivalent prose in .md)` — strict savings required
 
-Linting on the script is not a blocker. Tests are not a veto — but they document the precision cases the author considered non-obvious. Verify prose covers every test scenario before deleting. Delete the test file together with the script after verification.
+Linting on the script is not a blocker. Tests are not a veto — but they document precision cases the author considered non-obvious. Verify prose covers every test scenario before deleting. Delete the test file together with the script after verification.
 
 When all hold: delete script (and its test file if present), replace call-site with prose, run `check_orphaned_bin.py` (must exit 0).
 
@@ -167,11 +167,11 @@ RESULT=$(python "${CLAUDE_PLUGIN_ROOT}/bin/<script-name>.py" arg1 arg2)
 
 **Multi-value DATA output: write to TMPDIR files — never `eval` stdout.**
 
-Shell variables set in one Bash tool call do not persist to the next separate Bash tool call — they only survive within a single invocation. TMPDIR files survive across all invocations. Any script returning 2+ values (e.g. `PROJ` + `INDEX`) must write each to its own file and exit 0/1. The skill checks exit code; downstream steps `cat` what they need.
+Shell variables set in one Bash tool call do not persist to the next separate Bash tool call — they survive only within a single invocation. TMPDIR files survive across all invocations. Any script returning 2+ values (e.g. `PROJ` + `INDEX`) must write each to its own file and exit 0/1. The skill checks exit code; downstream steps `cat` what they need.
 
 **Preferred idiom for cross-block persistence: `bin/state.py`.** Instead of hand-rolling a per-skill temp file + reload, use the tested helper — `python "${CLAUDE_PLUGIN_ROOT}/bin/state.py" set <namespace> RUN_DIR="$RUN_DIR" SCOPE="$SCOPE"` in the producing block, then `eval "$(python "${CLAUDE_PLUGIN_ROOT}/bin/state.py" load <namespace>)"` at the top of each consuming block. Values are single-quote-escaped so `eval` is injection-safe. Include a run-unique component in `<namespace>` (timestamp / run-id) when concurrent sessions of the same skill could collide. This is what `check_bash_persistence` recognizes as a valid reload — the `eval "$(…)"` form suppresses the cross-block-loss finding.
 
-> **Scope**: this rule applies to DATA output (returning computed values to the skill). Shell-setup eval — e.g. `eval "$(python health_sentinel.py ...)"` that injects `SENTINEL=...` into the calling shell for health monitoring — is a different pattern and remains valid.
+> **Scope**: this rule applies to DATA output (returning computed values to the skill). Shell-setup eval — e.g. `eval "$(python health_sentinel.py ...)"` injecting `SENTINEL=...` into the calling shell for health monitoring — is a different pattern and remains valid.
 
 **Naming convention**: `${TMPDIR:-/tmp}/<plugin>-<script-slug>-<value-name>`. When a script has more than one consumer (e.g. a shared `resolve-shared.py`), the calling skill passes a unique prefix: `--out-prefix <skill>-<run-id>`; the script writes `<prefix>-proj`, `<prefix>-index`. Never hardcode a prefix in a shared script — consumers will collide.
 
@@ -516,4 +516,4 @@ When Check 33 surfaces HIGH findings, reference this doc for:
 - Caller pattern to replace the inline block with — see Caller Pattern section
 - Test location (`bin/tests/`)
 
-**Surgical edit constraint** — when replacing an inline block in a source `.md` file, modify ONLY the target block. Do NOT edit surrounding prose, frontmatter, other code blocks, check tables, or any other content. If incidental issues are noticed, record them in the extraction summary — do not fix them inline. After each file edit, run `git diff HEAD -- <file>` and verify only target-block lines appear in the diff; revert and re-apply if non-target lines changed.
+**Surgical edit constraint** — when replacing an inline block in a source `.md` file, modify ONLY the target block. Do NOT edit surrounding prose, frontmatter, other code blocks, check tables, or any other content. Notice incidental issues → record them in the extraction summary; do not fix inline. After each file edit, run `git diff HEAD -- <file>` and verify only target-block lines appear in the diff; revert and re-apply if non-target lines changed.

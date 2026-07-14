@@ -1,8 +1,8 @@
 # 🔬 research — Claude Code Plugin
 
-ML research plugin: two specialist agents and nine slash-command skills for literature search, experiment design, methodology review, metric-driven improvement loops, automated research sweeps, and Kaggle competition notebook generation — built on a profile-first, judge-gated pipeline that spends compute only on experiments worth running.
+ML research plugin: two specialist agents, nine slash-command skills — literature search, experiment design, methodology review, metric-driven improvement loops, automated research sweeps, Kaggle competition notebook generation. Profile-first, judge-gated pipeline: compute spent only on experiments worth running.
 
-> Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality), and the `research:run` commit-sentinel guard (foundry's `commit-guard.js` hook) is inert so atomic-commit protection is off. Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, etc.) and the commit guard, and is strongly recommended.
+> Works standalone — `foundry` not required. Without it: agent dispatches fall back to `general-purpose` with role descriptions (lower quality); `research:run` commit-sentinel guard (foundry's `commit-guard.js` hook) inert — atomic-commit protection off. Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, etc.) plus commit guard — strongly recommended.
 
 ______________________________________________________________________
 
@@ -39,27 +39,27 @@ ______________________________________________________________________
 
 ## 🤔 What is research?
 
-`research` turns the messy, iterative cycle of ML improvement into a structured pipeline. You start with evidence from the literature, write a machine-readable experiment spec, get a methodology review before you spend any GPU time, and run an automated improvement loop that commits every change atomically and rolls back anything that regresses your target metric.
+`research` turns messy iterative ML improvement into structured pipeline. Start with literature evidence, write machine-readable experiment spec, get methodology review before spending GPU time, run automated improvement loop — commits every change atomically, rolls back anything that regresses target metric.
 
-It is for ML engineers and researchers who are tired of ad-hoc experiment management — running things that were never properly scoped, losing track of what was tried, or discovering after 20 GPU-hours that the experiment design had a flaw that could have been caught in 5 minutes.
+For ML engineers and researchers tired of ad-hoc experiment management — runs never properly scoped, no record of what was tried, 20 GPU-hours lost to design flaw catchable in 5 minutes.
 
 ______________________________________________________________________
 
 ## 🎯 Why research?
 
-Without it, a typical improvement cycle looks like this: you have an intuition, you run an experiment, it does not help, you are not sure why, and the next person on the team does not know what was tried. Baselines drift. GPU hours disappear. Papers get implemented with subtle hyperparameter mismatches that invalidate the results.
+Without: intuition → experiment → no help → unclear why → next person blind to what was tried. Baselines drift. GPU hours vanish. Papers implemented with subtle hyperparameter mismatches that invalidate results.
 
-With `research`, the loop looks like this instead:
+With `research`:
 
-1. You search the literature before writing a single line of code (`/research:topic`).
-2. You write down the hypothesis, metric, and success criterion in a single file (`/research:plan`).
-3. A methodology reviewer checks whether the experiment is well-formed before it runs (`/research:judge`).
-4. An automated loop proposes changes, commits them, measures the metric, and rolls back regressions — without you watching it (`/research:run`).
-5. After the run, you get statistical significance, dead iteration detection, and a queue of next hypotheses (`/research:retro`).
-6. You verify that your implementation actually matches the paper it came from (`/research:verify`).
-7. You run ablations to find out which components actually mattered (`/research:fortify`).
+1. Search literature before writing code (`/research:topic`).
+2. Write hypothesis, metric, success criterion in one file (`/research:plan`).
+3. Methodology reviewer checks experiment well-formed before run (`/research:judge`).
+4. Automated loop proposes changes, commits, measures metric, rolls back regressions — unattended (`/research:run`).
+5. Post-run: statistical significance, dead iteration detection, next-hypothesis queue (`/research:retro`).
+6. Verify implementation matches source paper (`/research:verify`).
+7. Ablations reveal which components mattered (`/research:fortify`).
 
-Nothing is lost. Every iteration is logged. Every rollback is a reversible `git revert`. You can stop, resume, hand off to a teammate, and the full history is in `.experiments/`.
+Nothing lost. Every iteration logged. Every rollback reversible `git revert`. Stop, resume, hand off — full history in `.experiments/`.
 
 ______________________________________________________________________
 
@@ -72,7 +72,7 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install research@borda-ai-rig
 ```
 
-Install the full suite for best results (`foundry` unlocks specialist agents):
+Full suite best (`foundry` unlocks specialist agents):
 
 ```bash
 claude plugin install foundry@borda-ai-rig
@@ -101,26 +101,26 @@ claude plugin uninstall research
 
 </details>
 
-All skills are invoked with the `research:` prefix: `/research:topic`, `/research:plan`, `/research:judge`, `/research:run`, `/research:sweep`, `/research:verify`, `/research:fortify`, `/research:retro`, `/research:kaggle`.
+All skills use `research:` prefix: `/research:topic`, `/research:plan`, `/research:judge`, `/research:run`, `/research:sweep`, `/research:verify`, `/research:fortify`, `/research:retro`, `/research:kaggle`.
 
 ______________________________________________________________________
 
 ## ⚡ Quick start
 
-The one command that gives you immediate value on an existing project:
+One command, immediate value on existing project:
 
 ```text
 /research:plan "improve F1 from 0.82 to 0.87"
 ```
 
-This runs an interactive wizard that scans your codebase, proposes a metric command, guard command, and iteration budget, and writes `program.md` at your project root. From there:
+Interactive wizard: scans codebase, proposes metric command, guard command, iteration budget, writes `program.md` at project root. Then:
 
 ```text
 /research:judge          # validate methodology before spending compute
 /research:run program.md # run the improvement loop
 ```
 
-You will see output like this as the run progresses:
+Run output:
 
 ```text
 Baseline: f1_score = 0.820
@@ -130,7 +130,7 @@ Baseline: f1_score = 0.820
 [✓ Iter 2/20 — reverted · metric=0.818 (D-0.2%) · agent=research:scientist]
 ```
 
-Every kept iteration is a commit. Every reverted iteration is a `git revert` — the history is preserved and the baseline is never damaged.
+Every kept iteration = commit. Every reverted iteration = `git revert` — history preserved, baseline never damaged.
 
 ______________________________________________________________________
 
@@ -138,7 +138,7 @@ ______________________________________________________________________
 
 ### `/research:topic` — SOTA literature search
 
-Searches the AI/ML literature for a topic, builds a comparison table of methods, and produces a recommendation with an implementation plan mapped to your codebase. Handles broad SOTA literature search end-to-end via `foundry:web-explorer`; delegates codebase mapping to `foundry:solution-architect`. For deep single-paper analysis with a named paper anchor, use `research:scientist` directly.
+Searches AI/ML literature for topic, builds method comparison table, produces recommendation plus implementation plan mapped to your codebase. Broad SOTA search end-to-end via `foundry:web-explorer`; codebase mapping delegated to `foundry:solution-architect`. Deep single-paper analysis with named paper anchor → use `research:scientist` directly.
 
 **Invocation**:
 
@@ -151,12 +151,12 @@ Searches the AI/ML literature for a topic, builds a comparison table of methods,
 
 **Flags**:
 
-- `--team`: spawn 2–3 researcher instances on competing method families in parallel. Use when 3+ distinct method families exist and there is no clear SOTA consensus. Expect roughly 7x token cost versus single-agent mode.
-- `--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract so they survive auto-compaction during the Step 2 literature gather.
+- `--team`: spawn 2–3 researcher instances on competing method families in parallel. Use when 3+ distinct method families, no clear SOTA consensus. ~7x token cost vs single-agent.
+- `--keep "<items>"`: preserve extra items through context compaction. Named items appended to compaction contract — survive auto-compaction during Step 2 literature gather.
 
-**Output**: full report written to `.temp/output-research-<branch>-<date>.md`; compact summary printed to terminal.
+**Output**: full report → `.temp/output-research-<branch>-<date>.md`; compact summary → terminal.
 
-**Plan mode**: after running `/research:topic`, run `/research:topic plan` to produce a phased implementation roadmap (written to `.temp/output-research-plan-<branch>-<date>.md`) ready to hand off to `/develop:feature`.
+**Plan mode**: after `/research:topic`, run `/research:topic plan` → phased implementation roadmap (written to `.temp/output-research-plan-<branch>-<date>.md`), ready for `/develop:feature`.
 
 **Realistic example**:
 
@@ -173,7 +173,7 @@ ______________________________________________________________________
 
 ### `/research:plan` — experiment configuration wizard
 
-Interactive wizard that scans your codebase, proposes a `metric_cmd`, `guard_cmd`, and experiment config, and writes `program.md`. Also accepts a Python file path to profile first — it runs `cProfile`, shows the top bottlenecks, and asks what you want to optimize.
+Interactive wizard: scans codebase, proposes `metric_cmd`, `guard_cmd`, experiment config, writes `program.md`. Also accepts Python file path — profile-first: runs `cProfile`, shows top bottlenecks, asks what to optimize.
 
 **Invocation**:
 
@@ -195,9 +195,9 @@ Interactive wizard that scans your codebase, proposes a `metric_cmd`, `guard_cmd
 ## Notes       <- human-readable hints for the ideation agent
 ```
 
-The wizard dry-runs both commands before writing the file and dispatches expert agents (architect, scientist, perf-optimizer depending on goal type) to review the config before it is written.
+Wizard dry-runs both commands before writing file; dispatches expert agents (architect, scientist, perf-optimizer per goal type) to review config first.
 
-After writing, the wizard suggests:
+After writing, wizard suggests:
 
 ```text
 Next steps:
@@ -218,7 +218,7 @@ ______________________________________________________________________
 
 ### `/research:judge` — methodology gate
 
-Validates `program.md` before the expensive run. Acts as a research supervisor reviewing an experimental protocol across seven dimensions. Never modifies code or state — read-only.
+Validates `program.md` before expensive run. Research supervisor reviewing experimental protocol across seven dimensions. Read-only — never modifies code or state.
 
 **Invocation**:
 
@@ -229,29 +229,29 @@ Validates `program.md` before the expensive run. Acts as a research supervisor r
 /research:judge --keep "<items>"           # persist named items through compaction
 ```
 
-Use `--skip-validation` when writing `program.md` on one machine but planning to run on a remote GPU where the commands are not locally executable.
+Use `--skip-validation` when writing `program.md` on one machine, running on remote GPU where commands not locally executable.
 
-`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract so they survive auto-compaction during the J3 parallel review agent fan-out.
+`--keep "<items>"`: preserve extra items through compaction. Named items appended to compaction contract — survive auto-compaction during J3 parallel review agent fan-out.
 
 **What it checks**:
 
-- **Completeness audit** (12 items): Goal present, Metric has command and direction, Guard has command, scope_files exist on disk, max_iterations in bounds, and more.
+- **Completeness audit** (12 items): Goal present, Metric has command + direction, Guard has command, scope_files exist on disk, max_iterations in bounds, more.
 - **Methodology review** (7 dimensions via `foundry:solution-architect`): hypothesis clarity, measurement validity, control adequacy, experimental scope, protocol consistency, stopping criteria, reproducibility.
 - **Scientific rigor** (4 dimensions via `research:scientist`): hypothesis falsifiability, Goodhart's Law risk, missing baselines, reproducibility risks.
-- **Dry-run validation**: executes `metric_cmd` and `guard_cmd` once to confirm they produce numeric output and exit 0.
-- **Codex adversarial review**: if the `codex` plugin is installed, runs a second adversarial pass on the top findings.
+- **Dry-run validation**: runs `metric_cmd` + `guard_cmd` once — must produce numeric output, exit 0.
+- **Codex adversarial review**: `codex` plugin installed → second adversarial pass on top findings.
 
 **Verdicts**:
 
-| Verdict          | Meaning                                             |
-| ---------------- | --------------------------------------------------- |
-| `APPROVED`       | Protocol is sound — proceed to `/research:run`      |
-| `NEEDS-REVISION` | Fixable issues found — see Required Changes section |
-| `BLOCKED`        | Fundamental design flaw — redesign before running   |
+| Verdict          | Meaning                                       |
+| ---------------- | --------------------------------------------- |
+| `APPROVED`       | Protocol sound — proceed to `/research:run`   |
+| `NEEDS-REVISION` | Fixable issues — see Required Changes section |
+| `BLOCKED`        | Fundamental design flaw — redesign before run |
 
-The verdict is deterministic: computed from finding counts and methodology rating, not inferred from prose.
+Verdict deterministic: computed from finding counts + methodology rating, not inferred from prose.
 
-**Output**: full report to `.temp/output-judge-<branch>-<date>.md`.
+**Output**: full report → `.temp/output-judge-<branch>-<date>.md`.
 
 **Example**:
 
@@ -267,7 +267,7 @@ ______________________________________________________________________
 
 ### `/research:run` — metric-improvement loop
 
-The core loop. Reads `program.md`, establishes a baseline, then iterates: spawn ideation agent, implement change, commit, measure metric, run guard, keep or revert. All changes are atomic git commits. Regressions are `git revert`ed automatically — the history is preserved and the baseline is never damaged.
+Core loop. Reads `program.md`, establishes baseline, iterates: spawn ideation agent, implement change, commit, measure metric, run guard, keep or revert. All changes atomic git commits. Regressions `git revert`ed automatically — history preserved, baseline never damaged.
 
 **Invocation**:
 
@@ -290,7 +290,7 @@ The core loop. Reads `program.md`, establishes a baseline, then iterates: spawn 
 /research:run program.md --keep "<items>"              # persist named items through compaction
 ```
 
-**Agent strategy** (set via `agent_strategy` in `program.md` or auto-detected from goal/metric keywords):
+**Agent strategy** (via `agent_strategy` in `program.md` or auto-detected from goal/metric keywords):
 
 | Strategy | Agent                        | Use when goal contains         |
 | -------- | ---------------------------- | ------------------------------ |
@@ -309,21 +309,21 @@ The core loop. Reads `program.md`, establishes a baseline, then iterates: spawn 
 | Improvement < 0.1% AND change > 50 lines | Discard (simplicity override)          |
 | No improvement                           | Revert                                 |
 
-**Stuck detection**: after 5 consecutive discards, the skill rotates to a different agent type automatically. If still stuck after two rotations, it surfaces to you and stops — no blind looping.
+**Stuck detection**: 5 consecutive discards → skill rotates to different agent type automatically. Still stuck after two rotations → surfaces to you, stops — no blind looping.
 
-**State**: default run state goes into `.experiments/state/<run-id>/` — `state.json`, `experiments.jsonl` (one JSONL record per iteration), and `diary.md` (human-readable hypothesis-outcome log). Hypothesis-pipeline artifacts are separate: when `--researcher`, `--architect`, `--hypothesis`, or `--journal` is active, queue and learning files live in `.experiments/<run-id>/` as `hypotheses.jsonl`, `checkpoint.json`, and optionally `journal.md`. Resume uses both locations: state for iteration progress, checkpoint entries to skip already-tested hypotheses.
+**State**: default run state → `.experiments/state/<run-id>/` — `state.json`, `experiments.jsonl` (one JSONL record per iteration), `diary.md` (human-readable hypothesis-outcome log). Hypothesis-pipeline artifacts separate: with `--researcher`, `--architect`, `--hypothesis`, or `--journal` active, queue + learning files live in `.experiments/<run-id>/` as `hypotheses.jsonl`, `checkpoint.json`, optionally `journal.md`. Resume uses both: state for iteration progress, checkpoint entries to skip already-tested hypotheses.
 
 **Hypothesis pipeline** (`--researcher`, `--architect`, `--hypothesis`, `--journal`):
 
-- `--researcher`: spawns `research:scientist` to write 5-10 ML experiment hypotheses grounded in SOTA literature and the metric goal.
-- `--architect`: spawns `foundry:solution-architect` to write 5-10 architecture/refactoring hypotheses; when used alone, feasibility is considered already validated.
-- `--researcher --architect`: runs both generators, merges their JSONL queues by priority, then runs a feasibility annotation pass.
-- `--hypothesis <path>`: reads a pre-built `hypotheses.jsonl` queue and skips oracle generation.
-- `--journal`: requires `--researcher` or `--architect`; appends every kept and reverted iteration to `.experiments/<run-id>/journal.md` so future ideation can avoid repeating failed approaches.
+- `--researcher`: spawns `research:scientist` — 5-10 ML experiment hypotheses grounded in SOTA literature + metric goal.
+- `--architect`: spawns `foundry:solution-architect` — 5-10 architecture/refactoring hypotheses; used alone, feasibility considered already validated.
+- `--researcher --architect`: runs both generators, merges JSONL queues by priority, then feasibility annotation pass.
+- `--hypothesis <path>`: reads pre-built `hypotheses.jsonl` queue, skips oracle generation.
+- `--journal`: requires `--researcher` or `--architect`; appends every kept + reverted iteration to `.experiments/<run-id>/journal.md` — future ideation avoids repeating failed approaches.
 
-**Limits**: default 20 iterations; maximum 50 (never exceeded without explicit override in `program.md`).
+**Limits**: default 20 iterations; max 50 (never exceeded without explicit override in `program.md`).
 
-`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract written after each Phase 8 iteration, so they survive auto-compaction during long loops.
+`--keep "<items>"`: preserve extra items through compaction. Named items appended to compaction contract written after each Phase 8 iteration — survive auto-compaction during long loops.
 
 **Example**:
 
@@ -339,7 +339,7 @@ ______________________________________________________________________
 
 ### `/research:sweep` — non-interactive end-to-end pipeline
 
-Chains plan, judge (with auto-refinement), and run into a single non-interactive command. Designed for unattended runs — safe to kick off overnight.
+Chains plan, judge (with auto-refinement), run into single non-interactive command. For unattended runs — safe overnight.
 
 **Invocation**:
 
@@ -352,15 +352,15 @@ Chains plan, judge (with auto-refinement), and run into a single non-interactive
 /research:sweep "<goal>" --skip-validation --out path/to/program.md
 ```
 
-**Flags**: sweep passes through the run flags that are supported in sweep mode: `--team`, `--colab[=HW]`, `--compute`, `--codex`, `--researcher`, and `--architect`. `--journal` and `--hypothesis` are run-only flags; use `/research:run` directly when you need them. Additional sweep-specific flags:
+**Flags**: sweep passes through run flags supported in sweep mode: `--team`, `--colab[=HW]`, `--compute`, `--codex`, `--researcher`, `--architect`. `--journal` and `--hypothesis` run-only — use `/research:run` directly when needed. Sweep-specific:
 
-- `--skip-validation`: skip dry-run in judge step (useful for cross-machine workflows)
-- `--out <path>`: write `program.md` to a specific path instead of project root
-- `--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contracts written after S2 (plan written) and S3 (judge verdict), so they survive auto-compaction during unattended runs.
+- `--skip-validation`: skip dry-run in judge step (cross-machine workflows)
+- `--out <path>`: write `program.md` to specific path instead of project root
+- `--keep "<items>"`: preserve extra items through compaction. Named items appended to compaction contracts written after S2 (plan written) and S3 (judge verdict) — survive auto-compaction during unattended runs.
 
-**Judge refinement loop**: sweep runs judge up to 3 times, applying Required Changes between iterations. If the plan reaches `APPROVED`, the run starts automatically. If it hits `BLOCKED`, sweep stops and shows you the critical findings. If it cannot resolve `NEEDS-REVISION` after 3 iterations, it asks whether to proceed anyway or abort.
+**Judge refinement loop**: judge runs up to 3 times, applying Required Changes between iterations. `APPROVED` → run starts automatically. `BLOCKED` → sweep stops, shows critical findings. `NEEDS-REVISION` unresolved after 3 iterations → asks proceed or abort.
 
-**When to use sweep vs manual pipeline**: use sweep when you want a single command and are comfortable with auto-configured defaults. Use `/research:plan` + `/research:judge` + `/research:run` when you want to review and tune the config yourself.
+**Sweep vs manual pipeline**: sweep = single command, auto-configured defaults OK. `/research:plan` + `/research:judge` + `/research:run` = review and tune config yourself.
 
 **Example**:
 
@@ -378,7 +378,7 @@ ______________________________________________________________________
 
 ### `/research:verify` — paper-vs-code consistency audit
 
-After implementing a method from a paper, verify that the implementation actually matches the paper's claims. Audits across five dimensions, produces a fidelity score, and flags mismatches with severity and specific fix instructions.
+After implementing method from paper, verify implementation matches paper claims. Audits five dimensions, produces fidelity score, flags mismatches with severity + fix instructions.
 
 **Invocation**:
 
@@ -396,10 +396,10 @@ After implementing a method from a paper, verify that the implementation actuall
 | Code | Dimension             | What it checks                                                                                 |
 | ---- | --------------------- | ---------------------------------------------------------------------------------------------- |
 | F    | Formula matching      | Every equation — loss functions, forward passes, reductions (mean vs sum)                      |
-| H    | Hyperparameter parity | LR, batch size, weight decay, scheduler, warmup steps — do code defaults match paper values?   |
+| H    | Hyperparameter parity | LR, batch size, weight decay, scheduler, warmup steps — code defaults match paper values?      |
 | E    | Eval protocol         | Same metric (e.g. mAP@0.5 vs mAP@[0.5:0.95]), same test split, same preprocessing at inference |
 | N    | Notation consistency  | Variable names in code vs paper notation — confusing mappings flagged                          |
-| C    | Citation chain        | Does code implement the cited paper, or a derivative from a different paper?                   |
+| C    | Citation chain        | Code implements cited paper, or derivative from different paper?                               |
 
 **Fidelity score**: `(MATCH + 0.5 * PARTIAL) / total_verified_claims`
 
@@ -409,11 +409,11 @@ After implementing a method from a paper, verify that the implementation actuall
 | 0.7 – 0.9 | MODERATE fidelity |
 | < 0.7     | LOW fidelity      |
 
-**Strict mode** (`--strict`): if any HIGH severity mismatch exists in dimensions F or E, stops immediately with a BREAKING notice. Use before running expensive experiments.
+**Strict mode** (`--strict`): any HIGH severity mismatch in F or E → stops immediately with BREAKING notice. Use before expensive experiments.
 
-**Codemap** (`run`, `verify`): on by default when the `codemap` plugin is installed and a project index exists — supplies blast-radius, importer, and coverage context to the ideation agent (`run`) and the fidelity auditor (`verify`). A missing or stale index prompts you to build/rebuild it (Gate A/B); `--no-codemap` skips silently, `--codemap` makes it strict.
+**Codemap** (`run`, `verify`): on by default when `codemap` plugin installed and project index exists — supplies blast-radius, importer, coverage context to ideation agent (`run`) and fidelity auditor (`verify`). Missing/stale index → prompt to build/rebuild (Gate A/B); `--no-codemap` skips silently, `--codemap` strict.
 
-**Output**: full report to `.temp/output-verify-<branch>-<date>.md`.
+**Output**: full report → `.temp/output-verify-<branch>-<date>.md`.
 
 **Example**:
 
@@ -428,7 +428,7 @@ ______________________________________________________________________
 
 ### `/research:fortify` — ablation study runner
 
-After `/research:run` finds improvements, fortify identifies which components actually mattered. It detects component candidates from the git diff and run diary, creates an isolated git worktree per ablation (main repo never touched), runs the metric and guard in each worktree, ranks components by importance, and optionally generates reviewer Q&A for a conference submission.
+After `/research:run` finds improvements, fortify identifies which components actually mattered. Detects component candidates from git diff + run diary, creates isolated git worktree per ablation (main repo never touched), runs metric + guard in each worktree, ranks components by importance, optionally generates reviewer Q&A for conference submission.
 
 **Invocation**:
 
@@ -444,23 +444,23 @@ After `/research:run` finds improvements, fortify identifies which components ac
 /research:fortify --keep "<items>"              # persist named items through compaction
 ```
 
-**Prerequisites**: requires a completed `/research:run` AND an APPROVED `/research:judge` verdict for the same `program.md`. Fortify will refuse to run without both.
+**Prerequisites**: completed `/research:run` AND `APPROVED` `/research:judge` verdict for same `program.md`. Refuses to run without both.
 
 **Importance classification**:
 
-| Class       | Condition                                          |
-| ----------- | -------------------------------------------------- |
-| CRITICAL    | Removing this component costs > 50% of full metric |
-| SIGNIFICANT | 10–50% of full metric                              |
-| MARGINAL    | < 10% of full metric                               |
+| Class       | Condition                                     |
+| ----------- | --------------------------------------------- |
+| CRITICAL    | Removing component costs > 50% of full metric |
+| SIGNIFICANT | 10–50% of full metric                         |
+| MARGINAL    | < 10% of full metric                          |
 
-`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contracts written after F2 (candidates identified) and F4 (worktrees complete), so they survive auto-compaction during the parallel worktree loop.
+`--keep "<items>"`: preserve extra items through compaction. Named items appended to compaction contracts written after F2 (candidates identified) and F4 (worktrees complete) — survive auto-compaction during parallel worktree loop.
 
-Each ablation runs in its own git worktree created from `best_commit`. The main working tree is never modified. If `git revert` conflicts arise (two components touched the same lines), the variant is recorded as `revert-conflict` and reported — not treated as an error.
+Each ablation runs in own git worktree from `best_commit`. Main working tree never modified. `git revert` conflicts (two components touched same lines) → variant recorded `revert-conflict`, reported — not treated as error.
 
-A `full` variant (all components present) runs as a sanity check and must reproduce `best_metric` within 2%. A divergence warning appears in the report — this catches non-deterministic metrics or environment changes between runs.
+`full` variant (all components present) runs as sanity check — must reproduce `best_metric` within 2%. Divergence warning in report — catches non-deterministic metrics or environment drift between runs.
 
-**Output**: full report to `.temp/output-fortify-<branch>-<date>.md`.
+**Output**: full report → `.temp/output-fortify-<branch>-<date>.md`.
 
 **Example**:
 
@@ -478,7 +478,7 @@ ______________________________________________________________________
 
 ### `/research:retro` — post-run retrospective
 
-Analyzes the experiment history after `/research:run` completes. Computes statistical significance (Wilcoxon signed-rank test), detects dead iteration windows, flags suspicious metric jumps, and generates a next-hypothesis queue compatible with the `--hypothesis` flag of `/research:run`.
+Analyzes experiment history after `/research:run` completes. Computes statistical significance (Wilcoxon signed-rank test), detects dead iteration windows, flags suspicious metric jumps, generates next-hypothesis queue compatible with `--hypothesis` flag of `/research:run`.
 
 **Invocation**:
 
@@ -492,13 +492,13 @@ Analyzes the experiment history after `/research:run` completes. Computes statis
 
 **What it produces**:
 
-- **Statistical significance**: Wilcoxon signed-rank test comparing kept iteration metrics against the baseline. Direction-aware: higher-is-better metrics use standard direction; lower-is-better metrics (e.g. loss, latency) flip the comparison. Requires N >= 6 kept iterations; falls back to descriptive stats otherwise. Requires `scipy` — install with `pip install scipy` if missing.
-- **Dead iteration detection**: windows of 3+ consecutive iterations where `abs(delta) < threshold`. Classified as `dead-plateau` (kept iterations going nowhere) or `dead-churn` (mixed kept/reverted with no progress).
-- **Suspicious jump detection**: single-iteration improvements more than 2 standard deviations above the running mean. Flagged as "suspicious — investigate"; never auto-labeled as data leakage.
-- **Strategy effectiveness**: which agent type (perf/code/ml/arch) had the highest keep-rate and mean delta.
-- **Next hypotheses**: 3–5 concrete hypotheses written to `.experiments/retro-<ts>/hypotheses.jsonl`, compatible with `/research:run program.md --hypothesis <path>`.
+- **Statistical significance**: Wilcoxon signed-rank, kept iteration metrics vs baseline. Direction-aware: lower-is-better metrics (loss, latency) flip comparison. Needs N >= 6 kept iterations; else descriptive stats. Requires `scipy` — `pip install scipy` if missing.
+- **Dead iteration detection**: windows of 3+ consecutive iterations with `abs(delta) < threshold`. Classes: `dead-plateau` (kept iterations going nowhere) or `dead-churn` (mixed kept/reverted, no progress).
+- **Suspicious jump detection**: single-iteration improvement > 2 standard deviations above running mean. Flagged "suspicious — investigate"; never auto-labeled data leakage.
+- **Strategy effectiveness**: which agent type (perf/code/ml/arch) had highest keep-rate + mean delta.
+- **Next hypotheses**: 3–5 concrete hypotheses → `.experiments/retro-<ts>/hypotheses.jsonl`, compatible with `/research:run program.md --hypothesis <path>`.
 
-**Output**: full report to `.temp/output-retro-<branch>-<date>.md`.
+**Output**: full report → `.temp/output-retro-<branch>-<date>.md`.
 
 **Example**:
 
@@ -516,7 +516,7 @@ ______________________________________________________________________
 
 ### `/research:kaggle` — Kaggle competition notebook
 
-Generates a Kaggle competition notebook as a Jupytext `# %%` Python script (compatible with VS Code Jupyter, JupyterLab, and `jupytext --to notebook`). Distills competition context from the Kaggle API or a URL, asks for missing facts via grounding protocol, then generates a fully structured notebook using `foundry:sw-engineer`.
+Generates Kaggle competition notebook as Jupytext `# %%` Python script (compatible with VS Code Jupyter, JupyterLab, `jupytext --to notebook`). Distills competition context from Kaggle API or URL, asks for missing facts via grounding protocol, generates structured notebook via `foundry:sw-engineer`.
 
 **Invocation**:
 
@@ -530,11 +530,11 @@ Generates a Kaggle competition notebook as a Jupytext `# %%` Python script (comp
 /research:kaggle <competition-name> --keep "<items>"     # persist named items through compaction
 ```
 
-**What it generates** (depends on mode):
+**What it generates** (per mode):
 
 Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + DataModule, Model, Training, Inference, Submission.
 
-`--eda-only` (`<name>.py`): Header, Imports, EDA. For 3D volumetric data (`image-3d`) adds interactive `ipywidgets` slice viewer with 3 orthogonal planes + 3D wireframe + multi-class mask overlay.
+`--eda-only` (`<name>.py`): Header, Imports, EDA. 3D volumetric data (`image-3d`) adds interactive `ipywidgets` slice viewer — 3 orthogonal planes + 3D wireframe + multi-class mask overlay.
 
 `--inference-only` (`<name>-inference.py`): Header, Imports, Load Checkpoint (PTL `load_from_checkpoint` / bare `torch.load` / custom constructor), Test DataLoader (no labels), Inference Loop (classification, detection+NMS, or 3D segmentation), Post-processing, Submission. Patterns grounded in past notebooks (`amia-x-ray`, `plant-pathology`, `surface-3d-segm`).
 
@@ -546,13 +546,13 @@ Full mode (`<name>.py`): Header + Setup, Imports + Constants, EDA, Dataset + Dat
 - Commented-out hyperparameter alternatives for every tunable value
 - `del` + `gc.collect()` + `time.sleep(9)` for GPU memory management
 
-**Grounding protocol**: all competition-specific facts (input modality, eval metric, submission format) must be sourced from a fetched URL, user answer, or past notebook. The skill asks via `AskUserQuestion` for any required facts it cannot ground — it never hallucinates competition details.
+**Grounding protocol**: all competition-specific facts (input modality, eval metric, submission format) must come from fetched URL, user answer, or past notebook. Skill asks via `AskUserQuestion` for ungroundable required facts — never hallucinates competition details.
 
-**Competitor context**: if `resources/competitors/` contains any `.ipynb` or `.py` files, the skill reads each and summarises the approach (model choice, preprocessing, augmentation strategy) before profiling the problem. Findings inform detection method and domain-specific preprocessing decisions.
+**Competitor context**: `resources/competitors/` contains `.ipynb` or `.py` files → skill reads each, summarises approach (model choice, preprocessing, augmentation strategy) before profiling problem. Findings inform detection method + domain-specific preprocessing.
 
-**Package distillation gate**: after the notebook is verified, the skill offers to extract reusable helpers (data loading, submission builder, metric utilities) into `src/<package>/` with Google-style docstrings and tests. The refactored notebook is written as a new file (`notebooks/01_<name>_pkg.py`) — the validated baseline is never modified.
+**Package distillation gate**: after notebook verified, skill offers to extract reusable helpers (data loading, submission builder, metric utilities) into `src/<package>/` with Google-style docstrings + tests. Refactored notebook written as new file (`notebooks/01_<name>_pkg.py`) — validated baseline never modified.
 
-`--keep "<items>"`: preserve extra items through context compaction. Named items are appended to the compaction contract written after Step 3 (notebook generated), so they survive auto-compaction if the `foundry:sw-engineer` spawn takes a long time.
+`--keep "<items>"`: preserve extra items through compaction. Named items appended to compaction contract written after Step 3 (notebook generated) — survive auto-compaction if `foundry:sw-engineer` spawn takes long.
 
 **Requires**: `foundry` plugin (`foundry:sw-engineer`).
 
@@ -575,22 +575,22 @@ ______________________________________________________________________
 
 ### `research:scientist`
 
-**Role**: AI/ML researcher bridging theory and practice. Reads papers critically, implements methods from descriptions, generates falsifiable hypotheses, designs rigorous experiments, and reasons about whether results support conclusions.
+**Role**: AI/ML researcher bridging theory and practice. Reads papers critically, implements methods from descriptions, generates falsifiable hypotheses, designs rigorous experiments, reasons whether results support conclusions.
 
 **Model**: `opus`
 
 **When to use directly**:
 
-- Deep analysis of a specific paper — extracting method details, checking reproducibility, finding what the appendix says about hyperparameters
-- Generating a falsifiable hypothesis and designing ablations to test it
-- Implementing a method from a publication, including non-obvious details (gradient clipping, weight init, EMA decay) that papers often omit
-- Reviewing whether a reported result is meaningful — did they report mean ± std over multiple seeds, or just the best run?
+- Deep analysis of specific paper — method details, reproducibility check, appendix hyperparameters
+- Falsifiable hypothesis generation + ablation design
+- Implementing method from publication, including non-obvious details (gradient clipping, weight init, EMA decay) papers often omit
+- Reviewing whether reported result meaningful — mean ± std over multiple seeds, or just best run?
 
 **When NOT to use**:
 
-- Broad SOTA landscape survey across multiple methods -> `/research:topic`
+- Broad SOTA survey across methods -> `/research:topic`
 - Dataset acquisition, split validation, leakage detection -> `research:data-steward`
-- General Python implementation unrelated to a paper -> `foundry:sw-engineer`
+- General Python unrelated to paper -> `foundry:sw-engineer`
 - Fetching library docs or web content -> `foundry:web-explorer`
 
 **Example dispatch**:
@@ -599,23 +599,23 @@ ______________________________________________________________________
 use scientist to analyze the methodology in this paper and suggest ablations
 ```
 
-The scientist enforces strict experiment design: every experiment tests exactly one hypothesis, random seed averaging over >= 3 runs, ablation for each component, mean ± std reported (never best run alone). It will flag cherry-picked results, missing confidence intervals, and test set reuse.
+Scientist enforces strict experiment design: one hypothesis per experiment, random seed averaging over >= 3 runs, ablation per component, mean ± std reported (never best run alone). Flags cherry-picked results, missing confidence intervals, test set reuse.
 
 ______________________________________________________________________
 
 ### `research:data-steward`
 
-**Role**: Data lifecycle specialist. Handles everything between "I need this dataset" and "the data feeding the experiment is correct." That includes acquiring datasets from external sources, verifying completeness from paginated APIs, versioning with DVC, auditing train/val/test splits, and detecting data leakage.
+**Role**: Data lifecycle specialist. Everything between "I need this dataset" and "data feeding experiment is correct": dataset acquisition from external sources, completeness verification from paginated APIs, DVC versioning, train/val/test split audits, data leakage detection.
 
 **Model**: `sonnet`
 
 **When to use directly**:
 
-- Verifying that your train/val/test splits do not overlap (especially critical for patient-level or session-level grouped data)
-- Detecting leakage — normalizer fit on the full dataset before splitting, stochastic augmentation on val/test, SMOTE applied before split
-- Acquiring a dataset from an external API with completeness verification (not just the first page)
-- Setting up DVC for dataset versioning and provenance tracking
-- Auditing a DataLoader for correctness (num_workers seeding, pin_memory, shuffle disabled on val/test)
+- Verify train/val/test splits don't overlap (critical for patient-level or session-level grouped data)
+- Detect leakage — normalizer fit on full dataset before split, stochastic augmentation on val/test, SMOTE before split
+- Acquire dataset from external API with completeness verification (not just first page)
+- Set up DVC for dataset versioning + provenance
+- Audit DataLoader correctness (num_workers seeding, pin_memory, shuffle disabled on val/test)
 
 **When NOT to use**:
 
@@ -629,7 +629,7 @@ ______________________________________________________________________
 use data-steward to verify train/val split integrity and check for data leakage
 ```
 
-The data-steward runs six parallel grep patterns against your codebase to surface the top ML data bugs that general code review misses:
+Data-steward runs six parallel grep patterns against codebase — top ML data bugs general code review misses:
 
 | Pattern searched                   | Bug class                                                 |
 | ---------------------------------- | --------------------------------------------------------- |
@@ -644,7 +644,7 @@ ______________________________________________________________________
 
 ## 🗺️ Workflow overview
 
-The skills chain naturally. Here is the standard pipeline for a full research session:
+Skills chain naturally. Standard full-session pipeline:
 
 ```markdown
 1. /research:topic "<method>"          <- understand SOTA before coding
@@ -656,9 +656,9 @@ The skills chain naturally. Here is the standard pipeline for a full research se
 7. /research:fortify                   <- run ablations to find what mattered
 ```
 
-You do not need all seven steps every time. The most common paths:
+Not all seven steps every time. Common paths:
 
-**Fast iteration** (you have a clear goal, no paper to verify):
+**Fast iteration** (clear goal, no paper to verify):
 
 ```text
 /research:plan "reduce inference latency by 30%"
@@ -697,19 +697,19 @@ You do not need all seven steps every time. The most common paths:
 
 ### How the loop works inside `/research:run`
 
-Each iteration follows this fixed sequence:
+Each iteration, fixed sequence:
 
-1. Build context from git log, JSONL history, and recent diff — written to a file, not accumulated in memory
-2. Spawn specialist agent with context, scope files, and program constraints — agent proposes one atomic change
-3. Verify that files actually changed (skip no-ops)
-4. Commit the change before measuring (enables clean revert)
+1. Build context from git log, JSONL history, recent diff — written to file, not accumulated in memory
+2. Spawn specialist agent with context, scope files, program constraints — agent proposes one atomic change
+3. Verify files actually changed (skip no-ops)
+4. Commit before measuring (enables clean revert)
 5. Measure `metric_cmd`
 6. Run `guard_cmd` (tests, lint, type check)
 7. Keep if metric improved AND guard passes; rework up to 2 times if guard fails; revert otherwise
-8. Write diary entry and JSONL record
-9. Check for stuck runs, diminishing returns, and early stop
+8. Write diary entry + JSONL record
+9. Check stuck runs, diminishing returns, early stop
 
-The key design choice is commit before verify. This means every revert is a clean `git revert HEAD --no-edit` that preserves history. You never lose track of what was tried.
+Key design choice: commit before verify. Every revert = clean `git revert HEAD --no-edit`, history preserved. Never lose track of what was tried.
 
 ______________________________________________________________________
 
@@ -717,7 +717,7 @@ ______________________________________________________________________
 
 ### `program.md` — the research contract
 
-All skills read this file. Write it with `/research:plan`, or by hand. Required sections:
+All skills read this file. Write with `/research:plan`, or by hand. Required sections:
 
 ```markdown
 ## Goal        one paragraph describing what to improve and why
@@ -750,7 +750,7 @@ Config fields:
 
 ### Colab MCP integration (`--colab`)
 
-Routes metric verification and GPU code testing to a Google Colab runtime via the `colab-mcp` server. Use for ML training metrics, CUDA benchmarks, and any workload that requires a GPU.
+Routes metric verification + GPU code testing to Google Colab runtime via `colab-mcp` server. Use for ML training metrics, CUDA benchmarks, any GPU workload.
 
 Setup (before running `--colab`):
 
@@ -762,14 +762,14 @@ Setup (before running `--colab`):
      ]
    }
    ```
-2. Ensure `colab-mcp` is defined in `.mcp.json` under `mcpServers`.
-3. Open a Colab notebook with the runtime connected and execute the MCP connection cell.
+2. Ensure `colab-mcp` defined in `.mcp.json` under `mcpServers`.
+3. Open Colab notebook with runtime connected, execute MCP connection cell.
 
-When `--colab=H100` is specified, the run validates GPU identity via `torch.cuda.get_device_name()` at each iteration and halts if the actual hardware does not match what was requested.
+`--colab=H100` specified → run validates GPU identity via `torch.cuda.get_device_name()` each iteration; halts on hardware mismatch.
 
 ### Artifact layout
 
-All outputs go under `.experiments/` and `.temp/` at your project root. These directories are gitignored.
+All outputs under `.experiments/` and `.temp/` at project root. Gitignored.
 
 ```text
 .experiments/
@@ -787,7 +787,7 @@ All outputs go under `.experiments/` and `.temp/` at your project root. These di
   output-retro-*.md        <- retro reports
 ```
 
-Directories without `result.jsonl` (judge, verify, fortify, retro run dirs) are exempt from the automated 30-day TTL cleanup. Remove them manually when no longer needed: `rm -rf .experiments/judge-*/`.
+Directories without `result.jsonl` (judge, verify, fortify, retro run dirs) exempt from automated 30-day TTL cleanup. Remove manually when done: `rm -rf .experiments/judge-*/`.
 
 ______________________________________________________________________
 
@@ -803,31 +803,31 @@ ______________________________________________________________________
 
 **"No program.md found" when running `/research:judge` or `/research:run`**
 
-Run `/research:plan "<goal>"` first. The plan skill writes `program.md` to your project root by default. If you wrote it manually or saved it elsewhere, pass the path explicitly: `/research:judge path/to/plan.md`.
+Run `/research:plan "<goal>"` first — writes `program.md` to project root by default. Wrote manually or saved elsewhere → pass path explicitly: `/research:judge path/to/plan.md`.
 
 **"Metric command failed or produced no numeric output" during judge or run**
 
-Your `metric_cmd` must print a single float to stdout. Test it in your terminal first. If the command prints a label alongside the number (e.g., `F1: 0.82`), the skill can parse it. If it prints a table or structured output, you need a wrapper that extracts the number: `python eval.py | grep f1 | awk '{print $2}'`.
+`metric_cmd` must print single float to stdout. Test in terminal first. Label alongside number (e.g., `F1: 0.82`) — skill parses it. Table or structured output — need wrapper extracting number: `python eval.py | grep f1 | awk '{print $2}'`.
 
 **"Guard command exited non-zero" in judge**
 
-Your `guard_cmd` is failing on the current codebase before any changes. Fix the underlying issue first. Use `--skip-validation` if you are writing `program.md` on one machine but planning to run on another.
+`guard_cmd` failing on current codebase before any changes. Fix underlying issue first. Use `--skip-validation` when writing `program.md` on one machine, running on another.
 
 **`--colab` check fails: "Colab MCP not available"**
 
-The Colab MCP server is not enabled. Follow the three-step setup in the Configuration section. The most common miss is forgetting to execute the MCP connection cell in the Colab notebook after connecting the runtime.
+Colab MCP server not enabled. Follow three-step setup in Configuration section. Most common miss: MCP connection cell not executed in Colab notebook after connecting runtime.
 
 **Run stops after 5 consecutive reverts (stuck detection triggered)**
 
-The skill will rotate to a different agent type automatically on the first occurrence, then surface to you if still stuck after two rotations. This is intentional — the skill does not loop indefinitely. Review `.experiments/state/<run-id>/diary.md` to see what has been tried, then consider adjusting `scope_files`, changing `agent_strategy` in `program.md`, or refining the goal.
+Skill rotates to different agent type automatically on first occurrence, then surfaces to you if still stuck after two rotations. Intentional — no infinite looping. Review `.experiments/state/<run-id>/diary.md` for what was tried, then adjust `scope_files`, change `agent_strategy` in `program.md`, or refine goal.
 
 **"fortify: BLOCKED — no APPROVED judge verdict found"**
 
-Run `/research:judge <program.md>` and get an `APPROVED` verdict before running fortify. This gate exists to prevent ablation studies on methodologically unsound baselines.
+Run `/research:judge <program.md>`, get `APPROVED` verdict before fortify. Gate prevents ablation studies on methodologically unsound baselines.
 
 **`/research:verify` returns LOW fidelity for a correct implementation**
 
-Some paper claims are unverifiable from code alone — training infrastructure decisions, dataset-specific tuning, details documented only in a supplementary appendix. Unverifiable claims are excluded from the fidelity denominator. If many claims are unverifiable, the score may not be representative. Check the Dimension Summary table in the report for the proportion of unverifiable claims per dimension.
+Some paper claims unverifiable from code alone — training infrastructure decisions, dataset-specific tuning, supplementary-appendix-only details. Unverifiable claims excluded from fidelity denominator. Many unverifiable claims → score may not be representative. Check Dimension Summary table in report for proportion of unverifiable claims per dimension.
 
 ______________________________________________________________________
 
@@ -835,36 +835,36 @@ ______________________________________________________________________
 
 ## 🙏 Contributing and feedback
 
-This plugin is part of the Borda-AI-Rig project. The skills and agents are in `plugins/research/` in the repository.
+Plugin part of Borda-AI-Rig project. Skills + agents in `plugins/research/` in repository.
 
-The skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) are the canonical source of truth — this README must stay in sync with them. Any change to a skill's behavior (flags, NOT-for scope, trigger conditions) requires an update here.
+Skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) = canonical source of truth — README must stay in sync. Any skill behavior change (flags, NOT-for scope, trigger conditions) requires update here.
 
-Version bumps follow the project policy: new capability bumps the minor version; fixes, wording, and refactors bump the patch version. Current version: `0.10.4`.
+Version bumps per project policy: new capability → minor bump; fixes, wording, refactors → patch bump. Current version: `0.10.5`.
 
-**Mode-dispatch layout**: large conditional sections are externalised under `skills/<skill>/modes/*.md` and loaded on demand. Run's hypothesis pipeline, team, and report modes live under `skills/run/modes/`. The ML-concepts reference for `research:scientist` lives under `agents/scientist/ml-concepts.md` — loaded only when the task is ML-domain.
+**Mode-dispatch layout**: large conditional sections externalised under `skills/<skill>/modes/*.md`, loaded on demand. Run's hypothesis pipeline, team, report modes under `skills/run/modes/`. ML-concepts reference for `research:scientist` under `agents/scientist/ml-concepts.md` — loaded only for ML-domain tasks.
 
-**Shared bin/ scripts** (`plugins/research/bin/`) — all 13 are referenced from at least one skill or agent:
+**Shared bin/ scripts** (`plugins/research/bin/`) — all 13 referenced from at least one skill or agent:
 
-- `resolve_shared.py` — resolve the research plugin `_shared/` directory (Windows-portable).
-- `make_run_dir.py` — create a slug-prefixed, UTC-timestamped run directory.
-- `health_monitor_start.py` — create the research health-monitoring sentinel for background agents.
-- `git_slugs.sh` — emit sourceable `REPO_SLUG`/`BRANCH_SLUG` for the `research:run` commit-sentinel path (falls back to `no-repo`/`detached` sentinels outside a repo or on detached HEAD).
-- `docker_sandbox_run.py` — `--mode explore|verify`: sandboxed metric and script execution under `python:3.11-slim` (verify mode rejects shell metacharacters and destructive binaries that could wipe the read-write `.experiments` mount).
-- `check_output_within_root.py` — verify a candidate output path stays within the project root.
-- `codemap-resolve` — resolve `CODEMAP_ENABLED` (`auto`/`strict`/`off` → `true`/`false`) and record index currency.
-- `compute_effect_size.py` — rank-biserial correlation effect size for the retro signed-rank result (reads JSON on stdin).
-- `find_run_id.py` — locate the latest completed run id under a state-dir base.
-- `read_state_field.py` — read a dotted-path field from a JSON state file.
-- `resolve-quality-gates.sh` — resolve the path to foundry's `quality-gates.md` (project-local copy preferred, plugin cache fallback).
-- `retro_analyze.py` — one-sample signed-rank significance test of kept iterations vs the baseline metric for `research:retro`.
+- `resolve_shared.py` — resolve research plugin `_shared/` directory (Windows-portable).
+- `make_run_dir.py` — create slug-prefixed, UTC-timestamped run directory.
+- `health_monitor_start.py` — create research health-monitoring sentinel for background agents.
+- `git_slugs.sh` — emit sourceable `REPO_SLUG`/`BRANCH_SLUG` for `research:run` commit-sentinel path (falls back to `no-repo`/`detached` sentinels outside repo or on detached HEAD).
+- `docker_sandbox_run.py` — `--mode explore|verify`: sandboxed metric + script execution under `python:3.11-slim` (verify mode rejects shell metacharacters + destructive binaries that could wipe read-write `.experiments` mount).
+- `check_output_within_root.py` — verify candidate output path stays within project root.
+- `codemap-resolve` — resolve `CODEMAP_ENABLED` (`auto`/`strict`/`off` → `true`/`false`), record index currency.
+- `compute_effect_size.py` — rank-biserial correlation effect size for retro signed-rank result (reads JSON on stdin).
+- `find_run_id.py` — locate latest completed run id under state-dir base.
+- `read_state_field.py` — read dotted-path field from JSON state file.
+- `resolve-quality-gates.sh` — resolve path to foundry's `quality-gates.md` (project-local copy preferred, plugin cache fallback).
+- `retro_analyze.py` — one-sample signed-rank significance test, kept iterations vs baseline metric, for `research:retro`.
 - `verify_patient_split.py` — detect `patient_id` overlap between train/test CSV splits (leakage guard).
 
 ______________________________________________________________________
 
 ## 🙏 Acknowledgments
 
-This plugin draws on two open-source research automation projects:
+Plugin draws on two open-source research automation projects:
 
-- **fcakyon/phd-skills** — Claude Code plugin built from real PhD mistakes. Its hook-first guardrail philosophy and visual output inspection directly influenced the design of `verify` and `fortify`. The `--venue` reviewer Q&A in fortify is a direct port of its `fortify` command concept.
+- **fcakyon/phd-skills** — Claude Code plugin built from real PhD mistakes. Hook-first guardrail philosophy + visual output inspection directly influenced `verify` and `fortify` design. `--venue` reviewer Q&A in fortify = direct port of its `fortify` command concept.
 
-- **karpathy/autoresearch** — Autonomous overnight ML experiment runner that inverts the human/agent role: agents touch code, humans shape direction via `program.md`. The core loop design of `run` (single metric, atomic commits, wall-clock budgets, `program.md` as the research contract) traces directly to this work.
+- **karpathy/autoresearch** — Autonomous overnight ML experiment runner inverting human/agent roles: agents touch code, humans shape direction via `program.md`. Core loop design of `run` (single metric, atomic commits, wall-clock budgets, `program.md` as research contract) traces directly to this work.

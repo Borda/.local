@@ -413,16 +413,16 @@ Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/ex
 
 - Invoke periodically (e.g., monthly) or after burst of correction/feedback; one-time snapshot, not continuous monitor
 
-- Suggestions are proposals — always review before creating new files
+- Suggestions are proposals — review before creating new files
 
-- After creating new agent/skill based on suggestion, re-run skill once to confirm gap resolved, then stop
+- After creating new agent/skill from suggestion, re-run skill once to confirm gap resolved, then stop
 
-- **`memory` mode is primary consolidation path** — run after any session with significant corrections to prevent lesson drift back into MEMORY.md noise
+- **`memory` mode is primary consolidation path** — run after any session with significant corrections to prevent lesson drift into MEMORY.md noise
 
 - **Agent Teams signal tracking**: when reviewing patterns, also look for:
 
   - Skills using `--team` or team-mode heuristics more/less than expected → flag over/under-use relative to decision matrix in `CLAUDE.md § Agent Teams`
-  - Security findings appearing in reviews for non-auth code → suggests foundry:qa-specialist teammate scope too broad; narrow it
+  - Security findings in reviews for non-auth code → foundry:qa-specialist teammate scope too broad; narrow it
   - Model tier mismatches (e.g., heavy analysis assigned to `sonnet` teammates) → flag for tier adjustment
 
 - **`external` mode calibration**: two concrete GT fixture cases defined in calibrate skills mode file — find via `find "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}" -maxdepth 5 -path "*/calibrate/modes/skills.md" 2>/dev/null | head -1` with fallback to `plugins/foundry/skills/calibrate/modes/skills.md`:

@@ -8,9 +8,9 @@ Use Glob (`agents/*.md`, path `.claude/`) to list agent files; extract basenames
 ls .claude/agents/*.md 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.md$//' | sort >/tmp/agents_disk.txt || true # timeout: 5000
 ```
 
-Read `- Agents:` and `- Skills:` roster lines from MEMORY.md content injected in conversation context (available as auto-memory at session start). Don't Grep file path — MEMORY.md not stored under `.claude/` but in Claude Code's auto-memory system. Repeat with Glob (`skills/*/`, path `.claude/`) for skills on disk — write to `/tmp/skills_disk.txt`.
+Read `- Agents:` and `- Skills:` roster lines from MEMORY.md content injected in conversation context (auto-memory at session start). Don't Grep file path — MEMORY.md not under `.claude/` but in Claude Code's auto-memory system. Repeat with Glob (`skills/*/`, path `.claude/`) for skills on disk — write to `/tmp/skills_disk.txt`.
 
-**macOS caution**: BSD grep treats args starting with `-` as option flags. When constructing bash comparison from MEMORY.md roster via grep, always use `grep -E 'Agents:'` (no leading `- `) or `grep -- '- Agents:'` not `grep '- Agents:'` — latter exits 2 on macOS, silently produces empty result. Safest: use Read tool (not grep) for MEMORY.md as stated above.
+**macOS caution**: BSD grep treats args starting with `-` as option flags. When building bash comparison from MEMORY.md roster via grep, use `grep -E 'Agents:'` (no leading `- `) or `grep -- '- Agents:'` not `grep '- Agents:'` — latter exits 2 on macOS, silently produces empty result. Safest: use Read tool (not grep) for MEMORY.md.
 
 ## Check 2 — README vs disk
 
@@ -81,7 +81,6 @@ fi
 **Severity**: **low** per stale entry. Fix: remove stale entry from `settings.json` (report only — `settings.json` never auto-edited per audit policy).
 
 **Important**: some allow entries intentionally grant broad patterns (e.g., `Bash(mkdir -p .reports/audit/*)`) not appearing verbatim in config files — exercised at runtime. Flag only entries whose command fragment appears nowhere in any `.claude/` file.
-
 ## Check 7 — codex plugin integration check
 
 Skip if codex (openai-codex) plugin not installed.
@@ -103,7 +102,7 @@ fi
 
 ## Check 8 — foundry plugin correctness
 
-Verify repo's `foundry` plugin structure at `plugins/foundry/`. Skip if `plugins/foundry/` not found.
+Verify repo's `foundry` plugin structure at `plugins/foundry/`. Skip if not found.
 
 ```bash
 printf "=== Check 8: foundry plugin correctness ===\n"
@@ -373,7 +372,8 @@ Severity: invalid prefix entries = **high**; missing filterable commands = **med
 
 MEMORY.md has 200-line truncation limit. Three sub-checks:
 
-**Check 11a — Duplicate with CLAUDE.md**: Read both MEMORY.md and CLAUDE.md. For each MEMORY.md section, check if same rule or directive exists verbatim or near-verbatim in CLAUDE.md. Flag duplicates as **low**.
+**Check 11a — Duplicate with CLAUDE.md**: Read both MEMORY.md and CLAUDE.md. For each MEMORY.md section, check if same rule or directive exists verbatim or near-verbatim in CLAUDE.md. Flag duplicates **low**.
+
 
 **11b — Stale version pins**:
 
@@ -401,7 +401,7 @@ All three sub-checks produce only **low** findings — auto-fixed when user pick
 
 ## Check 34 — Config token overhead
 
-Rules files in `.claude/rules/` load **entirely at session start**, regardless of relevance. Agents and skills are lazy-loaded (zero cost until invoked). Measures always-loaded byte count, flags oversized components.
+Rules files in `.claude/rules/` load **entirely at session start**, regardless of relevance. Agents and skills lazy-loaded (zero cost until invoked). Measures always-loaded byte count, flags oversized components.
 
 ```bash
 # timeout: 5000
@@ -456,7 +456,6 @@ Note: `agents/` and `skills/` lazy-loaded — never flag for token overhead.
 `plugins/CLAUDE.md` versioning policy requires bumping `plugin.json` version in every commit that modifies plugin files. A frozen version misrepresents what changed and defeats changelog reconstruction.
 
 Skip if `LOCAL_MODE != true` (no git history accessible).
-
 ```bash
 printf "=== Check 39: Plugin version freeze ===\n"
 if [ "$LOCAL_MODE" != "true" ]; then

@@ -42,7 +42,7 @@ Score: `floor(checkpoints_met / 5 × 10)`; 🟢 ≥4/5 | 🟡 2–3/5 | 🔴 ≤
 
 ### Axis 11 — Ecosystem Criticality & Reach
 
-(signals how embedded this project is in the dependency graph; changes interpretation of other axis scores — a 🟡-health package with 100k dependents deserves different urgency than a 🟡 hobby project)
+(signals how embedded project is in dependency graph; changes interpretation of other axis scores — 🟡-health package with 100k dependents deserves different urgency than 🟡 hobby project)
 
 **Data requirements** (new gh-scraper fetches needed — see Phase 2 note):
 - GitHub dependency network: `GET https://github.com/{owner}/{repo}/network/dependents` HTML parse → dependent repository count (no official API; use Accept: `application/json` undocumented endpoint OR deps.dev REST: `GET https://api.deps.dev/v3alpha/systems/{system}/packages/{name}/dependents` if package known)
@@ -74,7 +74,7 @@ Score — **impact tier** (not a health failure; 🔴 = low-impact, not broken):
 
 ### Axis 12 — Dependency Health (Libyears)
 
-(current design only checks "Dependabot config present" — no actual dep freshness signal; leading indicator where Axis 8 Dependabot alerts are lagging)
+(current design only checks "Dependabot config present" — no actual dep freshness signal; leading indicator where Axis 8 Dependabot alerts lagging)
 
 **Data requirements** (new gh-scraper fetches needed — see Phase 2 note):
 - Package manifest files via GitHub contents API: `requirements.txt`, `pyproject.toml`, `setup.cfg`, `setup.py`, `package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock`, `go.mod`, `go.sum`; parse pinned version per dep
@@ -114,7 +114,7 @@ Score:
 
 ### Axis 13 — Interface Stability & Community Engagement
 
-(two grouped signal sets, each scored 0–5; axis score = sum 0–10; split enables separate reporting of stability vs community health while keeping combined weight light)
+(two grouped signal sets, each scored 0–5; axis score = sum 0–10; split enables separate reporting of stability vs community health, keeping combined weight light)
 
 #### Group A — Interface Stability (scored 0–5)
 

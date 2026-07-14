@@ -24,12 +24,12 @@ paths:
 
 - **Arrange-Act-Assert (AAA)**: one setup block, one `act`, one assertion group per test
   - Never second `act` in same test
-  - Exception: logically-unified multi-step operations (e.g. cache set+get round-trip, encode+decode) count as one act when the test scenario is a single contract; split when each step is an independently testable behavior
+  - Exception: logically-unified multi-step operations (e.g. cache set+get round-trip, encode+decode) count as one act when test scenario is a single contract; split when each step is independently testable behavior
 - Each test validates exactly one scenario
 - No `if`/`for` logic in test bodies
   - Exception: list-comprehension/generator inside `@pytest.mark.parametrize(...)` to build args — allowed if it spans <30% of the decorator's own lines (lines inside the outer parentheses only, not the test body)
 - Parametrize aggressively — 3+ test functions same structure → `@pytest.mark.parametrize`
-- Test case IDs: use `pytest.param(..., id="slug")` per case — never `ids=[...]` on the decorator; keeps ID and args co-located, survives reordering
+- Test case IDs: use `pytest.param(..., id="slug")` per case — never `ids=[...]` on decorator; keeps ID and args co-located, survives reordering
 - Group topic-related tests into class; class name carries unit (and optionally condition) so method names describe expected outcome only
 
 ## File Layout

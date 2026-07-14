@@ -55,7 +55,7 @@ cd /path || uv run pytest tests/
 
 Working directory persists between Bash calls — two sequential calls equivalent.
 
-**Worktrees**: same rule applies inside `isolation: "worktree"` agents (CWD = worktree root — no `cd` prefix needed). Settings in worktrees are a snapshot from worktree-creation time — permissions added to main project after worktree created are NOT reflected; worktree agent hitting unexpected permission prompts → check if `settings.local.json` was updated since worktree creation.
+**Worktrees**: same rule applies inside `isolation: "worktree"` agents (CWD = worktree root — no `cd` prefix needed). Settings in worktrees are snapshot from worktree-creation time — permissions added to main project after worktree created are NOT reflected; worktree agent hitting unexpected permission prompts → check if `settings.local.json` was updated since worktree creation.
 
 ## List Range Label Discipline
 
@@ -71,6 +71,6 @@ When user asks "why" about something (deleted content, unexpected state, missing
 
 - **Never act** — do not restore, revert, or modify anything
 - State clearly cause unknown and why (e.g. "pre-session change not made by me")
-- Call the `AskUserQuestion` tool directly — prose questions in brackets (`[AskUserQuestion: ...]`, `[Invoking AskUserQuestion: ...]`) do NOT satisfy this requirement; only an actual tool invocation does
+- Call `AskUserQuestion` tool directly — prose questions in brackets (`[AskUserQuestion: ...]`, `[Invoking AskUserQuestion: ...]`) do NOT satisfy this requirement; only actual tool invocation does
 
 Restoring without being asked = overstepping. "Why" = question, not request to fix.

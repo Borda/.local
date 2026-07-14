@@ -49,7 +49,7 @@ No PR# in header → skip Steps 3b and 4; work on current branch as-is. Before s
 
 **Report mode — Step 8 behavior**: `SELECTED_ITEMS` initialized above; Step 3d (user selection) is skipped; Step 8 proceeds with all report-derived items. If report produces zero action items: `SELECTED_ITEMS=[]` → Step 8 skipped, jump to Step 9.
 
-**`BASE_REF` derivation (no-PR path)** — when Step 3b is skipped (report mode without PR#, or comment-dispatch mode), Step 9's lint-qa gate still needs `BASE_REF` for `git merge-base HEAD "origin/$BASE_REF"`. Without this, `BASE_REF` expands empty → `origin/` is an invalid ref → linting sees no changes → workflow pushes silently with vacuous QA gate. Set it from the local default-branch symbolic-ref before Step 8, and guard the downstream `git merge-base` against shallow-clone empty output (CI checkouts frequently use `--depth=1` and `merge-base` returns nothing — linting again sees no changes):
+**`BASE_REF` derivation (no-PR path)** — when Step 3b skipped (report mode without PR#, or comment-dispatch mode), Step 9's lint-qa gate still needs `BASE_REF` for `git merge-base HEAD "origin/$BASE_REF"`. Without this, `BASE_REF` expands empty → `origin/` invalid ref → linting sees no changes → workflow pushes silently with vacuous QA gate. Set from local default-branch symbolic-ref before Step 8, guard downstream `git merge-base` against shallow-clone empty output (CI checkouts frequently use `--depth=1`, `merge-base` returns nothing — linting again sees no changes):
 
 ```bash
 BASE_REF=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||' || echo "main")  # timeout: 3000

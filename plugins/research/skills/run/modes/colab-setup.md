@@ -4,7 +4,7 @@ Execute this section only when `--colab` flag is set. Skip entirely for local or
 
 **Purpose**: route metric verification and GPU code testing to Colab runtime instead of local. Essential for ML training metrics, CUDA benchmarks, GPU-required workloads.
 
-**Hardware selection** (`--colab=HW`): optionally specify GPU type. Known: `H100`, `L4`, `T4`, `A100`. If omitted, Colab picks default. Advisory — actual hardware configured in notebook UI. Claude Code validates GPU identity at Phase 5 via `torch.cuda.get_device_name()` assertion; halts if mismatch.
+**Hardware selection** (`--colab=HW`): specify GPU type (optional). Known: `H100`, `L4`, `T4`, `A100`. Omitted → Colab picks default. Advisory — actual hardware configured in notebook UI. Claude Code validates GPU identity at Phase 5 via `torch.cuda.get_device_name()` assertion; halts if mismatch.
 
 **Setup** (before running `--colab`):
 

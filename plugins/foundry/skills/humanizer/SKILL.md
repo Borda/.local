@@ -73,7 +73,7 @@ One line per category with hit count and net edits made (e.g. "vocabulary: 4 rem
 
 <notes>
 
-- Source of the checklist: Wikipedia's `Wikipedia:Signs of AI writing` essay — a living document; the vocabulary list drifts as models change ("delve" was the 2023-24 tell, largely purged by 2025). Treat the table above as a snapshot, not gospel — if a word reads natural and specific in context, don't force a cut just because it once trended in AI output.
+- Source of the checklist: Wikipedia's `Wikipedia:Signs of AI writing` essay — a living document; the vocabulary list drifts as models change ("delve" was the 2023-24 tell, largely purged by 2025). Treat the table above as a snapshot, not gospel — if a word reads natural and specific in context, don't force a cut because it once trended in AI output.
 - This skill governs **artifacts** headed for human eyes, not conversational chat turns or ultra-caveman-tier handover files — see the SKIP list in `description:` for the exact destination-based cutoff.
 - Never invent facts while trimming a vague-attribution sentence — either name the real source (if known from context) or cut the claim entirely. Don't launder a weasel-worded claim into a confident unsourced one.
 - Dense co-occurrence (5+ flagged patterns in one passage) is the real signal — a single "robust" or one bolded term is not worth flagging in isolation; don't over-trigger on incidental matches.

@@ -1,6 +1,6 @@
 <!-- file: codemap-gates.md — consumers: develop/skills/fix, feature, refactor, debug, plan, review -->
 
-**Wrapper** — the Gate A / Gate B machinery lives in the codemap-shipped gates contract. Resolve and read it:
+**Wrapper** — Gate A / Gate B machinery lives in codemap-shipped gates contract. Resolve and read it:
 
 ```bash
 _CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/_shared 2>/dev/null | head -1)"
@@ -14,6 +14,6 @@ Read `$_CM_SHARED/codemap-gates.md` (contract `v2`) and follow both gates with d
 - **Gate A — missing index**: fire when `CODEMAP_ENABLED=false` and `CODEMAP_RAW=auto`.
 - **Gate B — stale index**: fire when `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`.
 
-Each gate's `AskUserQuestion` prompt, options, and on-choice actions (build via `codemap:scan-codebase`, continue, abort/skip) are in the contract — apply verbatim.
+Each gate's `AskUserQuestion` prompt, options, and on-choice actions (build via `codemap:scan-codebase`, continue, abort/skip) in contract — apply verbatim.
 
-**Fallback when the codemap plugin is absent** (`$_CM_SHARED/codemap-gates.md` missing): skip both gates and proceed with `CODEMAP_ENABLED` as-is — no structural gating, file-read context only. Never break the load.
+**Fallback when codemap plugin absent** (`$_CM_SHARED/codemap-gates.md` missing): skip both gates, proceed with `CODEMAP_ENABLED` as-is — no structural gating, file-read context only. Never break load.

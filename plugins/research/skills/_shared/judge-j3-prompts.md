@@ -2,7 +2,7 @@
 
 # J3 review prompt templates
 
-Loaded once at J3 start via `Read $_RESEARCH_SHARED/judge-j3-prompts.md`; supplies both templates. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` to concrete values before passing to `Agent(...)` — see substitution requirement in judge/SKILL.md.
+Loaded once at J3 start via `Read $_RESEARCH_SHARED/judge-j3-prompts.md`; supplies both templates. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` to concrete values before passing to `Agent(...)` — see substitution requirement, judge/SKILL.md.
 
 ## J3_ARCH_PROMPT (foundry:solution-architect)
 

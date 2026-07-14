@@ -2,9 +2,9 @@
 
 # Codemap gates contract — v2
 
-Plugin-agnostic Gate A / Gate B machinery for the missing-index and stale-index decisions. Consumer wrappers reference this file and supply only their **skip flag** (the per-plugin flag that disables the gates, e.g. `CODEMAP_RAW=auto` for develop, `CODEMAP_FORCE_OFF=false` for oss).
+Plugin-agnostic Gate A / Gate B machinery for missing-index and stale-index decisions. Consumer wrappers reference this file, supply only their **skip flag** (per-plugin flag disabling gates, e.g. `CODEMAP_RAW=auto` for develop, `CODEMAP_FORCE_OFF=false` for oss).
 
-Read currency first: `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/dev-codemap-currency" 2>/dev/null || echo "no_index")` (consumers may point at their own currency file).
+Read currency first: `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/dev-codemap-currency" 2>/dev/null || echo "no_index")` (consumers may point at own currency file).
 
 ## Gate A — missing index
 

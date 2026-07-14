@@ -12,7 +12,6 @@ disable-model-invocation: true
 Research-supervisor review of `program.md` — validates experimental methodology, emits APPROVED / NEEDS-REVISION / BLOCKED verdict before expensive run loop. Read-only; never modifies code or state.
 
 NOT for: running experiments (use `/research:run`); designing hypotheses (use `research:scientist` agent); config quality (`/foundry:audit` (requires `foundry` plugin)).
-
 </objective>
 
 <compaction>
@@ -50,7 +49,7 @@ Triggered by `judge` or `judge <file.md>`.
 
 ## Step J1: Locate and parse program.md
 
-**Flag parsing** (first action):
+**Flag parsing** (first):
 
 ```bash
 SKIP_VALIDATION=false
@@ -107,23 +106,23 @@ Check 12 items. Produce findings list with severity. Each finding has: `id`, `ch
 | C11 | `colab_hw` valid (if present) | low | `colab_hw` absent OR is one of `H100, L4, T4, A100, V100, A10G, TPUv2, TPUv3, TPUv4` — fail detail: `"colab_hw '<value>' is not in known set {H100, L4, T4, A100, V100, A10G, TPUv2, TPUv3, TPUv4} — may cause GPU identity check failure in run mode"`. Note: this check is a minimum-capability floor — new Colab hardware tiers may exist beyond this list; unknown values are flagged for user verification, not blocked. |
 | C12 | `## Notes` section present | low | Notes optional but improve ideation quality |
 
-**Scope adequacy sub-rule (C6b)** — after C6 passes, assess whether `scope_files` is *sufficient* for the stated goal. If the goal type implies known bottleneck locations outside the declared scope, add a `medium` finding:
+**Scope adequacy sub-rule (C6b)** — after C6 passes, assess whether `scope_files` is *sufficient* for stated goal. If goal type implies known bottleneck locations outside declared scope, add `medium` finding:
 - Test-speed goal + scope limited to `tests/` only → flag: "conftest.py, fixtures, and test infrastructure outside tests/ are common levers for test runtime; scope may be too narrow"
 - Throughput/latency goal + scope limited to single-layer path (e.g., `src/serving/`) → flag: "serving bottlenecks often span middleware, connection pooling, or database layers outside declared scope"
 - Any goal where the stated scope excludes a widely-known dependency class → emit medium finding with location `## Config / scope_files`, suggested broader pattern as fix
 
-This is distinct from C6 (path existence) — C6b fires even when the path exists but is likely insufficient.
+Distinct from C6 (path existence) — C6b fires even when path exists but is likely insufficient.
 
-**Severity summary**: count findings per severity. Any critical finding = verdict cannot be APPROVED. **Enumeration rule**: check ALL 12 items before stopping — do not short-circuit after finding the first critical issue. A program.md can have multiple independent flaws across different severity levels; the Required Changes section must list all of them, not just the verdict-determining one.
+**Severity summary**: count findings per severity. Any critical finding = verdict cannot be APPROVED. **Enumeration rule**: check ALL 12 items before stopping — don't short-circuit after first critical issue. program.md can have multiple independent flaws across severity levels; Required Changes section must list all, not just verdict-determining one.
 
 **Placeholder token check (C2, C4 sub-rule)** — after confirming `command` present in `## Metric` (C2) and `## Guard` (C4), scan each command for `{...}` tokens. Verify each token's field name exists in `## Config`. Token with no matching field = unresolvable — add `high` finding. Don't flag `{field_name}` tokens as malformed; valid when resolvable.
 
-**Goodhart's Law check (C2b)** — after confirming metric `command` present (C2 passes), assess whether the command operationalizes the stated `## Goal` or measures a proxy. If the metric could improve while the actual goal is NOT achieved, add a `critical` finding:
+**Goodhart's Law check (C2b)** — after confirming metric `command` present (C2 passes), assess whether command operationalizes stated `## Goal` or measures proxy. If metric could improve while actual goal NOT achieved, add `critical` finding:
 - metric measures test pass rate but goal is latency reduction → critical: "metric is a correctness proxy, not a latency measure"
 - metric measures lint error count but goal is bug density reduction → critical: "pylint score is a gameable proxy; agent can suppress warnings without improving actual quality"
 - metric measures a format/style score but goal is functional improvement → critical: "metric does not operationalize the stated goal"
 
-Goodhart findings are `critical` (not just methodology notes) because a broken metric invalidates the entire feedback loop — equivalent impact to C2 (missing command).
+Goodhart findings are `critical` (not just methodology notes) — broken metric invalidates entire feedback loop, equivalent impact to C2 (missing command).
 
 **Command feasibility**: J2 validates command fields statically (presence, format). Executability deferred to J4. If `$SKIP_VALIDATION` is `true`, J4 skipped, commands unverified — report as "validation skipped — commands unverified."
 
@@ -136,11 +135,11 @@ RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/judge-run-dir"  # persist for J3 block (Check 41)
 ```
 
-**Synchronous spawn note**: J3 agents are spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. Timeout is handled post-hoc — after each Agent() returns, check its output file; if missing/empty mark that agent timed out (⏱). See J3 post-call checks below.
+**Synchronous spawn note**: J3 agents spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. Timeout handled post-hoc — after each Agent() returns, check output file; if missing/empty mark agent timed out (⏱). See J3 post-call checks below.
 
-Dispatch agents in a single response — scientist always; architect only when complexity gate fires.
+Dispatch agents in single response — scientist always; architect only when complexity gate fires.
 
-Before constructing the J3 prompts, expand all bash variables into concrete paths — never pass literal `<path_to_program.md>` or `<RUN_DIR>` placeholders to agents:
+Before constructing J3 prompts, expand all bash variables into concrete paths — never pass literal `<path_to_program.md>` or `<RUN_DIR>` placeholders to agents:
 
 ```bash
 PROGRAM_PATH=$(realpath "$PROGRAM_FILE" 2>/dev/null || echo "$PROGRAM_FILE")
@@ -173,15 +172,15 @@ fi
 
 When `SPAWN_ARCHITECT=false`: skip architect spawn; J5b precedence step 0 sets `methodology_rating="sound"` (scientist review still covers scientific rigor); record `architect: skipped (narrow scope)` in J6 summary.
 
-When `SPAWN_ARCHITECT=true`: spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opus`). The full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
+When `SPAWN_ARCHITECT=true`: spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opus`). Full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
 
 > `$J3_ARCH_PROMPT` template externalized: `Read $_RESEARCH_SHARED/judge-j3-prompts.md` § J3_ARCH_PROMPT (one Read supplies both J3 templates).
 
-> **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in the template above MUST be replaced with the concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before the string is passed to `Agent(...)`. Passing the literal `${RUN_DIR}` to the agent will cause the agent to write to a directory named `${RUN_DIR}`. This applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation that the Agent runtime expands.
+> **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in template above MUST be replaced with concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before string passed to `Agent(...)`. Passing literal `${RUN_DIR}` to agent causes agent to write to directory named `${RUN_DIR}`. Applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation the Agent runtime expands.
 
-When `SPAWN_ARCHITECT=true` — after the architect Agent() returns, check `$RUN_DIR/methodology.md`: if missing or empty, set `methodology_rating = "timed_out"`, continue to J6; surface with ⏱ in report.
+When `SPAWN_ARCHITECT=true` — after architect Agent() returns, check `$RUN_DIR/methodology.md`: if missing or empty, set `methodology_rating = "timed_out"`, continue to J6; surface with ⏱ in report.
 
-After the scientist Agent() returns, check `$RUN_DIR/scientific-review.md`: if missing or empty, set `scientific_rating = "timed_out"`, continue to J6; surface with ⏱ in Scientific Rigor section.
+After scientist Agent() returns, check `$RUN_DIR/scientific-review.md`: if missing or empty, set `scientific_rating = "timed_out"`, continue to J6; surface with ⏱ in Scientific Rigor section.
 
 Use `methodology_rating` from returned envelope for verdict computation in J6:
 
@@ -191,16 +190,16 @@ Use `methodology_rating` from returned envelope for verdict computation in J6:
 
 Also spawn `research:scientist` in parallel (dispatch both at start of J3) to review scientific rigor. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing — construct `$J3_SCI_PROMPT` analogously to `$J3_ARCH_PROMPT` above (same variable substitution pattern). Spawn: `Agent(subagent_type="research:scientist", prompt=$J3_SCI_PROMPT)`.
 
-> `$J3_SCI_PROMPT` template: `$_RESEARCH_SHARED/judge-j3-prompts.md` § J3_SCI_PROMPT (already loaded by the J3_ARCH Read above).
+> `$J3_SCI_PROMPT` template: `$_RESEARCH_SHARED/judge-j3-prompts.md` § J3_SCI_PROMPT (already loaded by J3_ARCH Read above).
 
-Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** — informs but does not override verdict. Exception: `scientific_rating == "fundamentally-flawed"` (exact match) elevates verdict to BLOCKED.
+Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** — informs but doesn't override verdict. Exception: `scientific_rating == "fundamentally-flawed"` (exact match) elevates verdict to BLOCKED.
 
-**Source precedence for `scientific_rating`** (mandatory when both are present):
+**Source precedence for `scientific_rating`** (mandatory when both present):
 
 1. **File-parsed value** from `$RUN_DIR/scientific-review.md` (read after agent completes) — authoritative
-2. **Health-monitor / envelope value** from the agent's returned JSON — advisory only
+2. **Health-monitor / envelope value** from agent's returned JSON — advisory only
 
-File-parsed value takes priority over the health monitor value; use the file-parsed value when both are present. Same precedence applies to `methodology_rating` parsed from `$RUN_DIR/methodology.md` vs the envelope value. Use envelope value only when the file is missing or unparsable (e.g., timeout with no output).
+File-parsed value takes priority over health monitor value; use file-parsed value when both present. Same precedence applies to `methodology_rating` parsed from `$RUN_DIR/methodology.md` vs envelope value. Use envelope value only when file missing or unparsable (e.g., timeout with no output).
 
 ```bash
 # Compaction contract — boundary: after J3 agents complete, before J4 validation (compaction-contract.md §Lifecycle)
@@ -220,7 +219,7 @@ mkdir -p .claude/state  # timeout: 5000
 
 ## Step J4: Local validation
 
-> Skip if `$SKIP_VALIDATION` is `true` (parsed in J1). Print: `→ Validation skipped (--skip-validation passed)` and continue to J5. Add a `high` finding: "Executability unverified — metric_cmd and guard_cmd not tested on local machine." This finding persists into J6 — APPROVED is not achievable when `--skip-validation` is set (high > 0 → NEEDS-REVISION at best).
+> Skip if `$SKIP_VALIDATION` is `true` (parsed in J1). Print: `→ Validation skipped (--skip-validation passed)` and continue to J5. Add `high` finding: "Executability unverified — metric_cmd and guard_cmd not tested on local machine." This finding persists into J6 — APPROVED not achievable when `--skip-validation` set (high > 0 → NEEDS-REVISION at best).
 
 Execute each command once. **Non-blocking** — failures become `critical` findings, not hard stops.
 
@@ -287,7 +286,7 @@ Incorporate Codex findings into overall findings list with `source: "codex"`.
 note: codex plugin not installed — skipping adversarial review (Claude-only judge)
 ```
 
-**`CODEX_STATUS=cli-missing`**: print diagnostic and continue (distinguish from plugin-absent so a user with Codex installed but `claude` CLI not in PATH is not silently denied the review):
+**`CODEX_STATUS=cli-missing`**: print diagnostic and continue (distinguish from plugin-absent so user with Codex installed but `claude` CLI not in PATH isn't silently denied review):
 
 ```text
 note: `claude` CLI not in PATH — Codex availability cannot be verified; skipping adversarial review. To enable: ensure `claude` binary is on PATH and Codex plugin installed.
@@ -296,12 +295,11 @@ note: `claude` CLI not in PATH — Codex availability cannot be verified; skippi
 ## Step J5b: Resolve rating source
 
 Apply rating source precedence before J6 verdict computation — fixes ambiguity when envelope and file-parsed ratings disagree.
-
 For `methodology_rating`:
 
-0. If `SPAWN_ARCHITECT=false` (complexity gate did not fire): set `methodology_rating="sound"` directly — no file or envelope; log `→ methodology_rating: sound (architect gate skipped — narrow scope)`. Skip steps 1–2 for methodology_rating.
+0. If `SPAWN_ARCHITECT=false` (complexity gate didn't fire): set `methodology_rating="sound"` directly — no file or envelope; log `→ methodology_rating: sound (architect gate skipped — narrow scope)`. Skip steps 1–2 for methodology_rating.
 1. If `$RUN_DIR/methodology.md` present AND parsable, use file-parsed value — authoritative.
-2. Else use envelope value from the agent's returned JSON — fallback.
+2. Else use envelope value from agent's returned JSON — fallback.
 3. Log source used: print `→ methodology_rating source: file | envelope`.
 
 For `scientific_rating`:
@@ -332,7 +330,7 @@ Top-to-bottom; **first match wins**. BLOCKED takes precedence — stop at first 
 
 **Verdict matching rules**: all `*_rating` comparisons require exact string match. Reject partial/substring matches — e.g., `timed_out_partial` does NOT match `timed_out`; `flawed` does NOT match `fundamentally-flawed`. Use `==` equality only; never `=~`, `startswith`, or pattern matching.
 
-**Goodhart consolidation rule**: Goodhart's Law findings can surface via two paths — J2 C2b (static, produces `critical` finding) and J3 agents (dynamic review, produces `methodology_rating` or `scientific_rating`). Before applying the verdict table, apply this rule: if J3 architect or scientist explicitly flags Goodhart's Law as an issue AND J2 did not already flag it as `critical`, promote it to a `critical` finding in the J2 list (source: "J3-Goodhart"). This ensures both paths produce BLOCKED for Goodhart issues. The architect and scientist prompts already instruct `fundamentally-flawed` for Goodhart — this consolidation handles edge cases where the rating falls below `fundamentally-flawed` but Goodhart is still mentioned.
+**Goodhart consolidation rule**: Goodhart's Law findings surface via two paths — J2 C2b (static, produces `critical` finding) and J3 agents (dynamic review, produces `methodology_rating` or `scientific_rating`). Before applying verdict table: if J3 architect or scientist explicitly flags Goodhart's Law as issue AND J2 didn't already flag it `critical`, promote to `critical` finding in J2 list (source: "J3-Goodhart"). Ensures both paths produce BLOCKED for Goodhart issues. Architect and scientist prompts already instruct `fundamentally-flawed` for Goodhart — this consolidation handles edge cases where rating falls below `fundamentally-flawed` but Goodhart still mentioned.
 
 **Pre-compute**:
 
@@ -458,6 +456,6 @@ rm -f .claude/state/skill-contract.md  # clear contract — judge verdict comple
 - Verdict deterministic (finding counts + methodology_rating); not inferred from prose
 - Re-run judge after editing `program.md` to confirm fixes
 - Judge run dirs don't write `result.jsonl` — exempt from automated 30-day TTL cleanup (per `.claude/rules/artifact-lifecycle.md` TTL policy — no `result.jsonl` = cleanup skipped); remove manually (`rm -rf .experiments/judge-*/`)
-- **Calibration scope**: J1–J2 sub-steps only — synthetic result file with known verdict (APPROVED/NEEDS-REVISION/BLOCKED) and injected finding counts; score whether judge correctly identifies verdict and extracts counts. Full J3 validation execution loop excluded — requires live git state and executable metric commands. See `/foundry:calibrate` skills mode domain table for path resolution.
+- **Calibration scope**: J1–J2 sub-steps only — synthetic result file with known verdict (APPROVED/NEEDS-REVISION/BLOCKED) and injected finding counts; score whether judge correctly identifies verdict and extracts counts. Full J3 validation execution loop excluded — needs live git state and executable metric commands. See `/foundry:calibrate` skills mode domain table for path resolution.
 
 </notes>

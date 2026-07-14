@@ -1,8 +1,7 @@
 <!-- Loaded by foundry:perf-optimizer (opus + high) -->
 # ML / GPU Profiling (foundry:perf-optimizer specialized guidance)
 
-Read this file only when the workload involves GPU/ML profiling (CUDA, PyTorch training, model inference, DataLoader bottlenecks, mixed precision). Skip for pure CPU/IO profiling.
-
+Read only when workload involves GPU/ML profiling (CUDA, PyTorch training, model inference, DataLoader bottlenecks, mixed precision). Skip for pure CPU/IO profiling.
 ## PyTorch Profiler
 
 ```python
@@ -41,10 +40,9 @@ nvitop
 
 `data_fraction = data_time / step_time` then `cpu_bound = data_fraction > 0.3` → pipeline CPU-bound.
 Fix: increase `num_workers`, add `pin_memory=True`, `persistent_workers=True` — or switch to faster augmentations (e.g. albumentations) when augmentation dominates `data_time`.
-
 ## DataLoader Optimization
 
-**Throughput parameters** (`num_workers`, `persistent_workers`, `pin_memory`, `prefetch_factor`): owned by `foundry:perf-optimizer` — tune based on `data_fraction` ratio (see Detection section above). Set `num_workers > 0`, `pin_memory=True`, `persistent_workers=True` as first fix when DataLoader is bottleneck.
+**Throughput parameters** (`num_workers`, `persistent_workers`, `pin_memory`, `prefetch_factor`): owned by `foundry:perf-optimizer` — tune based on `data_fraction` ratio (see Detection above). Set `num_workers > 0`, `pin_memory=True`, `persistent_workers=True` as first fix when DataLoader is bottleneck.
 **Correctness/reproducibility** (`worker_init_fn` seeding, split isolation, leakage detection): see `research:data-steward` (requires `research` plugin). If `research` plugin unavailable, apply throughput tuning only and flag correctness audit as out-of-scope.
 
 ## Mixed Precision (torch.amp — PyTorch 2.0+)
@@ -77,7 +75,6 @@ optimizer.step()
 ## Distributed Training Profiling
 
 Profile DDP overhead by measuring all-reduce time. Common bottlenecks:
-
 - Gradient bucket too small → too many all-reduce calls: `DDP(model, bucket_cap_mb=25)` (increase for large models)
 - Uneven data distribution → fast workers wait for slow: `DistributedSampler(drop_last=True)` equalizes batches  # NOTE: drops up to (world_size-1) samples per epoch — do not use in eval loops
 - SyncBatchNorm overhead in small-batch regime: only use `sync_batchnorm` when `batch_per_gpu < 16`

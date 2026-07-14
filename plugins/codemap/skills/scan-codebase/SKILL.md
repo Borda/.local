@@ -15,7 +15,7 @@ Index captures per module: import graph, blast-radius metrics, **symbol list** (
 
 Agents + develop skills query index via `scan-query` for module deps, blast radius, coupling, symbol source before editing.
 
-NOT for querying existing index (use `/codemap:query-code`); NOT for integration health checks or injection (use `/codemap:integration`); NOT for first-time codemap onboarding or injection into skill files (use `/codemap:integration init`).
+NOT for: querying existing index (use `/codemap:query-code`); integration health checks or injection (use `/codemap:integration`); first-time codemap onboarding or injection into skill files (use `/codemap:integration init`).
 
 </objective>
 
@@ -70,7 +70,7 @@ if ! "$SCAN_BIN" --timeout 360 "${SCAN_ARGS[@]}"; then
 fi
 ```
 
-**`--root` naming note**: when `--root <path>` is provided, the index is named after `basename(<path>)` — a different name than the default project index (which uses the git root's basename). If you previously queried or modified the default index, the `--root` index is separate and queries will not see it unless the same `--root` is used consistently. Run `resolve_index_env.py` to verify which index path will be used after a custom-root scan.
+**`--root` naming note**: when `--root <path>` given, index named after `basename(<path>)` — differs from default project index (uses git root's basename). Prior queries/edits against default index: `--root` index separate, queries won't see it unless same `--root` used consistently. Run `resolve_index_env.py` to verify index path after custom-root scan.
 
 Scanner writes to `<root>/.cache/codemap/<project>.json` (or `$CODEMAP_INDEX_DIR/<project>.json` when set) and prints summary line:
 
@@ -107,11 +107,11 @@ fi
 
 Degraded count reported — `scan-stats.py` reports module counts only, no per-file list. Not failure — index still useful.
 
-If `--incremental` passed and no prior index existed, Step 1 sets a sentinel file (`codemap-incremental-noop-${PROJ_SLUG}`) before the scan starts. Step 2 detects and removes it after stats, logging: `--incremental had no prior index — full scan ran instead`. If scan fails, Step 1 removes the sentinel to avoid misleading state on the next run.
+If `--incremental` passed and no prior index existed, Step 1 sets sentinel file (`codemap-incremental-noop-${PROJ_SLUG}`) before scan starts. Step 2 detects + removes it after stats, logging: `--incremental had no prior index — full scan ran instead`. If scan fails, Step 1 removes sentinel to avoid misleading state next run.
 
-**Sentinel hostname limitation**: `PROJ_SLUG` includes the machine hostname short-name. On Docker containers or cloud instances with dynamic/random hostnames, the sentinel key changes between runs — incremental-noop detection will not fire even when a stale sentinel exists. This is a known limitation; it affects only the informational message in Step 2, not correctness of the scan itself.
+**Sentinel hostname limitation**: `PROJ_SLUG` includes machine hostname short-name. Docker containers/cloud instances with dynamic/random hostnames: sentinel key changes between runs — incremental-noop detection won't fire even with stale sentinel present. Known limitation; affects only Step 2 informational message, not scan correctness.
 
-Zero-Python project: Step 3 suggestions will return no results — the index is valid but empty.
+Zero-Python project: Step 3 suggestions return no results — index valid but empty.
 
 ## Step 3: Suggest next step
 

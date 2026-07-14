@@ -1,6 +1,6 @@
 # Mode: Thread Analysis (Issue, Discussion, or PR)
 
-All three = GitHub conversation threads — same analysis structure, different API fetch. `TYPE` set by auto-detection in SKILL.md (`issue`, `discussion`, or `pr`). `NUMBER` = item number (strip `discussion ` prefix if present).
+All three = GitHub conversation threads — same analysis structure, different API fetch. `TYPE` set by auto-detection in SKILL.md (`issue`, `discussion`, or `pr`). `NUMBER` = item number (strip `discussion ` prefix if present)
 
 <workflow>
 
@@ -110,7 +110,7 @@ Set `SENSITIVE_FLAGS=()` array; add one entry per class found (e.g., `"credentia
 
 ### Step R3: Spawn agent (only when `HAS_REPRO=true`)
 
-Extract minimal reproduction code or steps from thread. Bind `REPRO_AGENT` — **default `foundry:sw-engineer`**; switch only on explicit signal. Never leave `subagent_type` to the tool default (`general-purpose`): an unbound spawn silently downgrades to a generic agent, which then spawns generic children (it has the `Agent` tool; `foundry:sw-engineer` does not) — a cascade of non-specialist agents on code.
+Extract minimal reproduction code or steps from thread. Bind `REPRO_AGENT` — **default `foundry:sw-engineer`**; switch only on explicit signal. Never leave `subagent_type` to tool default (`general-purpose`): unbound spawn silently downgrades to generic agent, which then spawns generic children (it has `Agent` tool; `foundry:sw-engineer` does not) — cascade of non-specialist agents on code.
 
 - Code uses pytest / unittest / Python testing patterns → `REPRO_AGENT=foundry:qa-specialist`
 - Everything else (general Python / CLI / config / ambiguous / no code) → `REPRO_AGENT=foundry:sw-engineer` (default)
@@ -156,7 +156,7 @@ Skip for PRs (their diffs already name live files). Optional structural signal �
 
 > loads: codemap-signals.md
 
-Read `$_OSS_ANALYSE/modes/codemap-signals.md` and run its **Detect** block, then **Signal A**. `$_OSS_ANALYSE` is set by parent `analyse/SKILL.md`; if empty, the Detect block re-resolves it. From the thread body + comments, extract candidate identifiers (dotted modules + backtick/import/traceback symbols, project-internal only, cap 8) and write them one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates.txt` before running Signal A's batch fence. Run the existence-check and set `STALE_ISSUE`. When `STALE_ISSUE=true`: list missing identifiers + suggested renames under `### Analysis` and add `stale-symbols` to `### Suggested Labels`. When `CM_ENABLED=false`: emit the one-line inline flag from codemap-signals.md into the report (do not block).
+Read `$_OSS_ANALYSE/modes/codemap-signals.md` and run its **Detect** block, then **Signal A**. `$_OSS_ANALYSE` set by parent `analyse/SKILL.md`; if empty, Detect block re-resolves it. From thread body + comments, extract candidate identifiers (dotted modules + backtick/import/traceback symbols, project-internal only, cap 8), write them one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates.txt` before running Signal A's batch fence. Run existence-check, set `STALE_ISSUE`. When `STALE_ISSUE=true`: list missing identifiers + suggested renames under `### Analysis`, add `stale-symbols` to `### Suggested Labels`. When `CM_ENABLED=false`: emit one-line inline flag from codemap-signals.md into report (don't block).
 
 Status mapping: `reproduced` → ✅ · `not_reproduced` → ❌ · `partial` → ⚠ · `missing_context` → ⚠ (add missing detail) · `HAS_REPRO=false` → 🔍 No Example · PR → ⏭ Skipped
 
@@ -265,7 +265,7 @@ _Legend: ✅ present · ⚠️ partial · ❌ missing · 🔵 N/A_
 
 Run `mkdir -p .reports/analyse/thread` then write full report to `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md` using Write tool — **do not print full analysis to terminal**.
 
-Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.md`. File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed.
+Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.md`. File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed
 
 **⛔ DO NOT STOP — `REPLY_MODE=true`**: Skip Confidence block here — emitted in SKILL.md Step 6 after reply, or as last step of SKILL.md if not in reply mode. Proceed **immediately** to "Draft contributor reply" section in SKILL.md (Step 7). Response not complete until shepherd spawned and reply file written.
 

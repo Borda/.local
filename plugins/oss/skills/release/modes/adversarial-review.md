@@ -1,9 +1,9 @@
 <!-- oss:release adversarial review — executed via: Read $SKILL_DIR/modes/adversarial-review.md; execute -->
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $BRANCH, $RANGE, $GATHER_FILE, assembled draft content -->
 
-Challenge every factual claim in assembled draft against codebase and project docs. Runs before voice/tone polish — facts correct before prose refined.
+Challenge every factual claim in assembled draft against codebase, project docs. Runs before voice/tone polish — facts correct before prose refined.
 
-**Scope**: applies to `notes` mode (DRAFT.md) and `prepare` mode (releases/$VERSION/DRAFT.md) and `--migration` flag output. Skip for `--summary` (internal audience) and `--changelog` entries (structured format, not claim-heavy prose).
+**Scope**: applies to `notes` mode (DRAFT.md), `prepare` mode (releases/$VERSION/DRAFT.md), `--migration` flag output. Skip for `--summary` (internal audience), `--changelog` entries (structured format, not claim-heavy prose).
 
 ```bash
 # expand to literal value before spawning
@@ -39,12 +39,12 @@ Return ONLY on your final line: {\"status\":\"done\",\"file\":\"<$ADVERSARIAL_DI
 
 Expand `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>`, `<$ADVERSARIAL_DIR>` to literal values before spawning — never pass variable names literally.
 
-**Pre-handover truth check loop** — no output reaches the user until all critical and high findings are resolved:
+**Pre-handover truth check loop** — no output reaches user until all critical and high findings resolved:
 
-1. Read `$ADVERSARIAL_DIR/adversarial-review.md` from the spawned reviewer
-2. **Critical or high findings present**: fix every claim in the draft that is contradicted by HEAD (remove unverified API names, correct wrong descriptions, remove symbols absent from codebase); re-spawn the adversarial reviewer on the updated draft; repeat until zero critical/high findings or 3 total iterations reached
-3. **After max 3 iterations with persistent critical/high findings**: surface remaining findings to user and stop — do not hand over a draft with known false claims
-4. **Medium or low findings**: append as `> ⚠️ Reviewer notes: <summary>` to response; these do not block handover
+1. Read `$ADVERSARIAL_DIR/adversarial-review.md` from spawned reviewer
+2. **Critical or high findings present**: fix every claim in draft contradicted by HEAD (remove unverified API names, correct wrong descriptions, remove symbols absent from codebase); re-spawn adversarial reviewer on updated draft; repeat until zero critical/high findings or 3 total iterations reached
+3. **After max 3 iterations with persistent critical/high findings**: surface remaining findings to user, stop — don't hand over draft with known false claims
+4. **Medium or low findings**: append as `> ⚠️ Reviewer notes: <summary>` to response; these don't block handover
 5. **0 critical/high findings**: proceed to Polish
 
 Log each fix: `[CORRECTED] <original claim> → <what changed and why>`.

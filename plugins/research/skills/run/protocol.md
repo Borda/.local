@@ -7,7 +7,7 @@ paths:
 
 ## Run Directory Layout
 
-Canonical layout — other run/mode files point here rather than re-explaining it. A run uses two sibling dirs under `.experiments/`, keyed by the same `<run-id>`:
+Canonical layout — other run/mode files point here rather than re-explaining it. A run uses two sibling dirs under `.experiments/`, keyed by same `<run-id>`:
 
 ```text
 .experiments/state/<run-id>/     ← per-iteration state (all modes)
@@ -21,7 +21,7 @@ Canonical layout — other run/mode files point here rather than re-explaining i
   journal.md         ← structured learning log, appended after every iteration (when --journal is set)
 ```
 
-> **Planned unification (code alignment needed — not yet migrated)**: the two run-scoped dirs are a known duplication (re-explained across several files). Target = one dir per run — merge pipeline artifacts under `.experiments/state/<run-id>/`, leaving `state.json` in place so `find_run_id.py` / `read_state_field.py` resume discovery is untouched. Blocked on a coordinated change: producers (`run/SKILL.md` `RUN_DIR`, `hypothesis-pipeline.md`, `team.md`), every `<RUN_DIR>` substitution, and README/protocol docs must move together; team mode also derives its own `.experiments/run-team-<ts>/` via `make_run_dir` and stores that `run_dir` path in `state.json`, so the migration must not break team-mode resume.
+> **Planned unification (code alignment needed — not yet migrated)**: two run-scoped dirs are known duplication (re-explained across several files). Target = one dir per run — merge pipeline artifacts under `.experiments/state/<run-id>/`, leaving `state.json` in place so `find_run_id.py` / `read_state_field.py` resume discovery untouched. Blocked on coordinated change: producers (`run/SKILL.md` `RUN_DIR`, `hypothesis-pipeline.md`, `team.md`), every `<RUN_DIR>` substitution, and README/protocol docs must move together; team mode also derives its own `.experiments/run-team-<ts>/` via `make_run_dir` and stores that `run_dir` path in `state.json`, so migration must not break team-mode resume.
 
 ## hypotheses.jsonl Schema
 

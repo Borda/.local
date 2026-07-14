@@ -97,7 +97,7 @@ Score 9C:
 
 **Sub-signal 9D — Commit automation ratio** (uses last 50 commits fetch)
 
-Rationale: dep-bump merges by human maintainers = legitimate maintenance work; only fully bot-authored commits indicate zero human engagement.
+Rationale: dep-bump merges by human maintainers = legitimate maintenance work; only fully bot-authored commits indicate zero human engagement
 
 Computation:
 - automated_count = commits where BOTH conditions hold: (a) message matches dep-bump pattern (case-insensitive, anchored at start): `^(bump|chore\(deps\)|build\(deps\)|dependabot|renovate|update deps|upgrade deps)` AND (b) author login matches `*[bot]` or `*-bot` suffix

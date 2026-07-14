@@ -1,8 +1,8 @@
 # 🌱 oss — Claude Code Plugin
 
-OSS workflow plugin for Python/ML open-source projects. Four agents (two user-facing, two internal pipeline) and four slash-command skills covering issue analysis, parallel code review, PR resolution, and SemVer-disciplined releases.
+OSS workflow plugin for Python/ML open-source projects. Four agents (two user-facing, two internal pipeline), four slash-command skills: issue analysis, parallel code review, PR resolution, SemVer-disciplined releases.
 
-> Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:qa-specialist`, etc.) and is strongly recommended for production use.
+> Works standalone — `foundry` not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:qa-specialist`, etc.) — strongly recommended for production.
 
 ______________________________________________________________________
 
@@ -34,25 +34,25 @@ ______________________________________________________________________
 
 ## 🤔 What is oss?
 
-`oss` is a Claude Code plugin for maintainers of Python and ML open-source projects. It gives you four slash-command skills — analyse, review, resolve, release — and two specialist agents that own contributor communication and CI health. Together they cover the recurring, expensive parts of the maintainer loop: triaging GitHub threads, reviewing PRs with multiple expert perspectives, closing review feedback in one pass, and cutting releases with correct SemVer and complete changelogs.
+`oss` = Claude Code plugin for Python/ML open-source maintainers. Four slash-command skills — analyse, review, resolve, release — plus two specialist agents owning contributor communication and CI health. Covers recurring expensive maintainer work: triaging GitHub threads, multi-perspective PR review, closing review feedback in one pass, cutting releases with correct SemVer and complete changelogs.
 
 ______________________________________________________________________
 
 ## 🎯 Why oss?
 
-Maintaining an open-source project means juggling three competing demands: reviewing code carefully enough to catch regressions, responding to contributors quickly enough that they stay engaged, and shipping releases confidently enough that users upgrade. Each of these is a context-switch tax.
+Maintaining OSS = three competing demands: review code carefully (catch regressions), respond to contributors fast (keep engaged), ship releases confidently (users upgrade). Each = context-switch tax.
 
-`oss` removes that tax. Here is what it actually does for you:
+`oss` removes tax:
 
-**You review a PR in minutes, not hours.** `/oss:review` runs a Codex pre-pass in about 60 seconds. Trivial PRs close right there. For anything substantive, six specialist agents fan out in parallel — architecture, tests, performance, docs, linting, security — and hand you a ranked, consolidated report. You get expert-level coverage without reading every line yourself.
+**PR review in minutes, not hours.** `/oss:review` runs Codex pre-pass ~60 seconds. Trivial PRs close there. Substantive PRs → six specialist agents fan out parallel — architecture, tests, performance, docs, linting, security — return ranked consolidated report. Expert coverage without reading every line.
 
-**Contributors get a real response, fast.** The `--reply` flag drafts a welcoming comment in your project's voice, citing your specific conventions. You spend 30 seconds reviewing it instead of 10 minutes writing from scratch. Contributors feel heard; they stay engaged.
+**Contributors get real response, fast.** `--reply` flag drafts welcoming comment in project voice, citing your conventions. 30 seconds review vs 10 minutes writing. Contributors feel heard, stay engaged.
 
-**Review feedback gets applied completely.** `/oss:resolve` closes the gap between "reviewer said X" and "X is in the code." It reads live PR comments, a saved review report, or both, deduplicates across sources, resolves conflicts semantically (not by picking a side mechanically), and implements everything in batches with `[resolve #N]` tags so you can trace each fix.
+**Review feedback applied completely.** `/oss:resolve` closes gap between "reviewer said X" and "X in code." Reads live PR comments, saved review report, or both. Deduplicates across sources, resolves conflicts semantically (not mechanical side-pick), implements in batches with `[resolve #N]` tags for traceability.
 
-**Releases go out correctly.** `oss:shepherd` enforces SemVer before any tag lands. It writes the changelog with deprecation tracking, generates migration guides for breaking changes, and runs a readiness audit. No accidental major bumps. No forgotten changelog entries.
+**Releases go out correct.** `oss:shepherd` enforces SemVer before any tag. Writes changelog with deprecation tracking, generates migration guides for breaking changes, runs readiness audit. No accidental major bumps. No forgotten changelog entries.
 
-**Triage is fast and structured.** `/oss:analyse vitality` gives you a repo vitality scorecard with duplicate issue clustering and stale PR detection every morning. Drilling into a specific thread gives you a structured summary you can act on immediately.
+**Triage fast, structured.** `/oss:analyse vitality` = repo vitality scorecard with duplicate issue clustering + stale PR detection every morning. Specific thread → structured summary, act immediately.
 
 ______________________________________________________________________
 
@@ -63,7 +63,7 @@ claude plugin marketplace add Borda/AI-Rig
 claude plugin install oss@borda-ai-rig
 ```
 
-Install the full suite for best results:
+Full suite for best results:
 
 ```bash
 claude plugin install foundry@borda-ai-rig   # base agents — strongly recommended
@@ -72,7 +72,7 @@ claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
 ```
 
-**Optional integrations** (unlock additional capabilities inside `oss` skills):
+**Optional integrations** (unlock extra capabilities inside `oss` skills):
 
 | Plugin    | What it unlocks                                                                                                                                                                                      |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,9 +80,9 @@ claude plugin install research@borda-ai-rig
 | `codex`   | Action item implementation in `/oss:resolve` Step 8; Tier 1 pre-pass in `/oss:review`                                                                                                                |
 | `codemap` | Reverse-dependency count (`rdep_count`) in `/oss:review` risk assessment; stale-symbol detection in `/oss:analyse` issue triage, Open-PR Overlap + Structural Constraints in `/oss:analyse vitality` |
 
-All `oss` skills degrade gracefully when optional plugins are absent — you get reduced capability, not broken commands.
+All `oss` skills degrade gracefully when optional plugins absent — reduced capability, not broken commands.
 
-> **Note:** Skills are always invoked with the `oss:` prefix: `/oss:analyse`, `/oss:review`, `/oss:resolve`, `/oss:release`.
+> **Note:** Skills always invoked with `oss:` prefix: `/oss:analyse`, `/oss:review`, `/oss:resolve`, `/oss:release`.
 
 <details>
 
@@ -128,11 +128,11 @@ ______________________________________________________________________
 
 ### /analyse
 
-Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the keyword `vitality`, the keyword `ecosystem`, or a path to a saved report file.
+Analyse GitHub threads + repo vitality. Accepts issue/PR number, keyword `vitality`, keyword `ecosystem`, or path to saved report file.
 
-**Purpose:** Give you a structured, actionable summary of any GitHub thread or a broad view of your repo's open work. Saves you from reading every comment yourself.
+**Purpose:** Structured actionable summary of any GitHub thread, or broad view of open work. No need to read every comment yourself.
 
-**Auto-invokes when:** user provides a GitHub issue/PR number (`#N`) or `github.com` URL and asks to analyze, summarize, or triage it; user asks "is this repo healthy" or for vitality stats.
+**Auto-invokes when:** user gives GitHub issue/PR number (`#N`) or `github.com` URL + asks analyze/summarize/triage; user asks "is this repo healthy" or vitality stats.
 
 **Invocation:**
 
@@ -146,17 +146,17 @@ Analyse GitHub threads and repo vitality. Accepts an issue or PR number, the key
 
 **Flags:**
 
-| Flag               | Effect                                                                                                                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--reply`          | Draft a contributor-facing response after analysis (routed through `oss:shepherd` for voice consistency)                                                                                                      |
-| `--quick`          | Vitality only: fast daily scorecard — skips the Codex independent review and adversarial rework loop, reducing to 4 spawns. Full (reviewed) mode stays the default; confidence is capped lower in quick mode. |
-| `--keep "<items>"` | Append quoted string to the compaction contract's `preserve:` line — ensures those items survive auto-compact mid-run (advanced; useful for long multi-agent sessions)                                        |
+| Flag               | Effect                                                                                                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reply`          | Draft contributor-facing response after analysis (routed through `oss:shepherd` for voice consistency)                                                                                      |
+| `--quick`          | Vitality only: fast daily scorecard — skips Codex independent review + adversarial rework loop, reduces to 4 spawns. Full (reviewed) mode = default; confidence capped lower in quick mode. |
+| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions)                                                   |
 
 **What it does:**
 
-For a thread number, `analyse` fetches the issue or PR, reads all comments, classifies the thread type (bug report, feature request, question, duplicate, stale), and produces a structured summary: what was asked, what the current state is, what action is needed from you, and — with `--reply` — a draft response. When a codemap index is present, symbols and modules named in an issue thread are existence-checked against the index; identifiers that no longer resolve flag the issue as referencing stale code (with the likely rename target when codemap suggests one).
+Thread number: fetches issue/PR, reads all comments, classifies thread type (bug report, feature request, question, duplicate, stale), produces structured summary: what asked, current state, action needed from you, and — with `--reply` — draft response. With codemap index present, symbols/modules named in issue thread existence-checked against index; identifiers that no longer resolve flag issue as referencing stale code (with likely rename target when codemap suggests one).
 
-For `vitality`, it pulls open issues and PRs, scores repo vitality across 9 axes (Axes 1–8 plus Axis 9 Trajectory), clusters duplicates, flags threads stale beyond your project's threshold, and gives you a prioritised triage list with a weighted Health Score %. All raw API data is saved to a JSONL file alongside the report for manual inspection. With a codemap index, the report also gains an Open-PR Overlap note (pairwise changed-file overlap plus tightly-coupled-module conflict candidates) and a Structural Constraints block (highest-blast-radius modules, collision/degraded/stale index signals). Every codemap signal is optional — with no index or the codemap plugin absent, analyse degrades to its GitHub-only behavior and flags the gap inline rather than blocking.
+`vitality`: pulls open issues + PRs, scores repo across 9 axes (Axes 1–8 plus Axis 9 Trajectory), clusters duplicates, flags threads stale beyond project threshold, gives prioritised triage list with weighted Health Score %. All raw API data saved to JSONL file alongside report for manual inspection. With codemap index, report gains Open-PR Overlap note (pairwise changed-file overlap plus tightly-coupled-module conflict candidates) and Structural Constraints block (highest-blast-radius modules, collision/degraded/stale index signals). Every codemap signal optional — no index or plugin absent → analyse degrades to GitHub-only behavior, flags gap inline, never blocks.
 
 **Sample vitality scorecard (terminal output):**
 
@@ -196,15 +196,15 @@ Bus factor of 2 is the primary risk. Dependency update config absent.
 - Vitality report: `.reports/analyse/vitality/`
 - Ecosystem report: `.reports/analyse/ecosystem/`
 
-GitHub API responses are cached in `.cache/gh/` by number and date (30-day TTL) — repeated calls on the same thread are fast.
+GitHub API responses cached in `.cache/gh/` by number and date (30-day TTL) — repeated calls on same thread fast.
 
 ______________________________________________________________________
 
 ### /review
 
-Tiered parallel review of a GitHub PR. Input is always a PR number.
+Tiered parallel review of GitHub PR. Input always PR number.
 
-**Purpose:** Give you expert-level review coverage across architecture, tests, performance, docs, linting, and security — without reading every line yourself. Produces a ranked findings report. Optionally drafts a welcoming contributor comment.
+**Purpose:** Expert-level review coverage — architecture, tests, performance, docs, linting, security — without reading every line. Produces ranked findings report. Optionally drafts welcoming contributor comment.
 
 **Invocation:**
 
@@ -213,7 +213,7 @@ Tiered parallel review of a GitHub PR. Input is always a PR number.
 /oss:review 55 --reply        # review + draft contributor-facing comment
 ```
 
-> To review local files or the current git diff without a PR, use `/develop:review` from the `develop` plugin.
+> Local files or current git diff without PR → use `/develop:review` from `develop` plugin.
 
 **How the pipeline works:**
 
@@ -261,7 +261,7 @@ Tier 2  Parallel specialist agents (requires foundry plugin)
 | Chore (deps, config, tooling)                         | sw-engineer, doc-scribe, linting-expert, challenger, Codex                                             | qa-specialist, perf-optimizer, solution-architect                             |
 | Any PR with failing CI                                | same as above by type                                                                                  | — (CI noted in report header)                                                 |
 
-Without `foundry`, Tier 2 falls back to general-purpose agents with role descriptions — still functional, lower quality.
+Without `foundry`, Tier 2 falls back to general-purpose agents with role descriptions — functional, lower quality.
 
 **Output locations:**
 
@@ -271,18 +271,18 @@ Without `foundry`, Tier 2 falls back to general-purpose agents with role descrip
 
 **Flags:**
 
-| Flag               | Effect                                                                                                                                                                 |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--reply`          | After consolidation, `oss:shepherd` drafts a welcoming two-part PR comment (positive framing first, then specific actionable asks)                                     |
-| `--keep "<items>"` | Append quoted string to the compaction contract's `preserve:` line — ensures those items survive auto-compact mid-run (advanced; useful for long multi-agent sessions) |
+| Flag               | Effect                                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--reply`          | After consolidation, `oss:shepherd` drafts welcoming two-part PR comment (positive framing first, then specific actionable asks)          |
+| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions) |
 
 ______________________________________________________________________
 
 ### /resolve
 
-Apply review findings to the codebase. Reads from live PR comments, a saved review report, or both — deduplicates, resolves conflicts, and implements fixes.
+Apply review findings to codebase. Reads live PR comments, saved review report, or both — deduplicates, resolves conflicts, implements fixes.
 
-**Purpose:** Close the gap between "reviewer said X" and "X is in the code." One command takes you from open findings to committed fixes.
+**Purpose:** Close gap between "reviewer said X" and "X in code." One command: open findings → committed fixes.
 
 **Invocation:**
 
@@ -295,22 +295,22 @@ Apply review findings to the codebase. Reads from live PR comments, a saved revi
 
 **Source modes:**
 
-| Arguments        | Mode           | Source                            | When to use                                                        |
-| ---------------- | -------------- | --------------------------------- | ------------------------------------------------------------------ |
-| `55` (PR number) | pr             | Live GitHub PR comments           | Apply feedback posted directly on GitHub                           |
-| `report`         | report         | Saved `/oss:review` findings file | Apply findings from your last review run                           |
-| `55 report`      | pr + report    | Both, aggregated                  | Full close — deduplicates across both inputs                       |
-| _(none)_         | review-handoff | Review-handoff                    | Continues directly from the last `/oss:review` run in this session |
+| Arguments        | Mode           | Source                            | When to use                                                 |
+| ---------------- | -------------- | --------------------------------- | ----------------------------------------------------------- |
+| `55` (PR number) | pr             | Live GitHub PR comments           | Apply feedback posted directly on GitHub                    |
+| `report`         | report         | Saved `/oss:review` findings file | Apply findings from last review run                         |
+| `55 report`      | pr + report    | Both, aggregated                  | Full close — deduplicates across both inputs                |
+| _(none)_         | review-handoff | Review-handoff                    | Continues directly from last `/oss:review` run this session |
 
 **How it works:**
 
-Resolve runs in three phases:
+Three phases:
 
-1. **Intelligence gathering** — a dedicated subagent fetches the full PR thread (comments, reviews, inline code comments) so the orchestrator context stays small; subagent classifies each finding and writes structured output to files; orchestrator reads the compact classified table
-2. **Conflict resolution** — for merge conflicts, read intent from both sides; apply the semantically correct resolution (never mechanical "take ours" or "take theirs")
-3. **Action item implementation** — items dispatched to Codex (or appropriate foundry agent per change type and complexity); with >=4 selected items, items are grouped by file/concern affinity (max 5 per batch) into one combined challenge call + one implementation agent per batch — per-item verdicts and `[resolve #N]` attribution unchanged, spawn count drops ~3x; soft cap 10 items per dispatch (AskUserQuestion beyond, hard cap 20); soft codemap blast-radius check runs after the loop to flag callers of changed modules
+1. **Intelligence gathering** — dedicated subagent fetches full PR thread (comments, reviews, inline code comments) — orchestrator context stays small; subagent classifies each finding, writes structured output to files; orchestrator reads compact classified table
+2. **Conflict resolution** — merge conflicts: read intent from both sides; apply semantically correct resolution (never mechanical "take ours"/"take theirs")
+3. **Action item implementation** — items dispatched to Codex (or appropriate foundry agent per change type + complexity); >=4 selected items → grouped by file/concern affinity (max 5 per batch) into one combined challenge call + one implementation agent per batch — per-item verdicts and `[resolve #N]` attribution unchanged, spawn count drops ~3x; soft cap 10 items per dispatch (AskUserQuestion beyond, hard cap 20); soft codemap blast-radius check after loop flags callers of changed modules
 
-When resolve follows `/review` on the same PR, the blast-radius check reuses the per-module codemap answers review already computed instead of re-querying: review's persisted pre-flight batch is split into freshness-stamped per-module artifacts (index `git_sha` + `scanned_at`), and each module served from cache when its stamp still matches the current index. A rebuilt index invalidates the cache and resolve re-queries. Reuse is measured as `reuse_ratio` (fraction of persisted answers actually reused). With no review artifact or the codemap plugin absent, every module is a cache miss and the scan queries live — no behaviour change.
+Resolve after `/review` on same PR: blast-radius check reuses per-module codemap answers review already computed, no re-query — review's persisted pre-flight batch split into freshness-stamped per-module artifacts (index `git_sha` + `scanned_at`); each module served from cache when stamp matches current index. Rebuilt index invalidates cache, resolve re-queries. Reuse measured as `reuse_ratio` (fraction of persisted answers actually reused). No review artifact or codemap plugin absent → every module cache miss, scan queries live — no behaviour change.
 
 **Severity → triage type mapping** (report mode):
 
@@ -322,22 +322,22 @@ When resolve follows `/review` on the same PR, the blast-radius check reuses the
 | MEDIUM                  | Test Coverage, Documentation, Static Analysis, Codex Co-Review | `[suggest]`                                                              |
 | LOW                     | any                                                            | `[suggest]` — grouped by topic when count exceeds ceiling, never dropped |
 
-`[req]` items apply by default on bulk-action; `[suggest]` items require explicit selection. Security findings inherit severity from `/oss:review` (hardcoded secrets → CRITICAL, dep CVEs → HIGH) — no separate security category. LOW findings cluster into composite rows by logical theme when the total would exceed the AskUserQuestion ceiling (12 items); each composite carries the full member bullet list in `full_comment_text`.
+`[req]` items apply by default on bulk-action; `[suggest]` items need explicit selection. Security findings inherit severity from `/oss:review` (hardcoded secrets → CRITICAL, dep CVEs → HIGH) — no separate security category. LOW findings cluster into composite rows by logical theme when total exceeds AskUserQuestion ceiling (12 items); each composite carries full member bullet list in `full_comment_text`.
 
 **Guard rails:**
 
-- More than 15 required items → pauses and asks you to confirm before continuing
-- More than 20 conflicted files → aborts and reports; you review manually
-- Git push requires explicit confirmation via before executing
+- More than 15 required items → pauses, asks confirm before continuing
+- More than 20 conflicted files → aborts, reports; you review manually
+- Git push requires explicit confirmation before executing
 - Core invariant: uses `git merge`, never `git rebase` — preserves history
 
-Every resolve cycle closes with parallel `foundry:linting-expert` + `foundry:qa-specialist` passes before the final report.
+Every resolve cycle closes with parallel `foundry:linting-expert` + `foundry:qa-specialist` passes before final report.
 
 **Flags:**
 
-| Flag               | Effect                                                                                                                                                                 |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--keep "<items>"` | Append quoted string to the compaction contract's `preserve:` line — ensures those items survive auto-compact mid-run (advanced; useful for long multi-agent sessions) |
+| Flag               | Effect                                                                                                                                    |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--keep "<items>"` | Append quoted string to compaction contract's `preserve:` line — items survive auto-compact mid-run (advanced; long multi-agent sessions) |
 
 **Output location:** `.reports/resolve/<timestamp>/`
 
@@ -345,9 +345,9 @@ ______________________________________________________________________
 
 ### /release
 
-SemVer-disciplined release pipeline. Six modes covering every step from generating notes to auditing readiness.
+SemVer-disciplined release pipeline. Six modes: from generating notes to auditing readiness.
 
-**Purpose:** Cut a release correctly — right version bump, complete changelog, migration guides where needed, readiness verified before the tag goes out.
+**Purpose:** Cut release correctly — right version bump, complete changelog, migration guides where needed, readiness verified before tag goes out.
 
 **Invocation:**
 
@@ -363,7 +363,7 @@ SemVer-disciplined release pipeline. Six modes covering every step from generati
 /oss:release demo v1.2->v2.0                        # demo scoped to explicit range
 ```
 
-Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-tag..HEAD`. Pre-release tags (`rcN`, `devN`, `alphaN`, `betaN`) are excluded from tag detection automatically.
+Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-tag..HEAD`. Pre-release tags (`rcN`, `devN`, `alphaN`, `betaN`) excluded from tag detection automatically.
 
 **Modes and flags:**
 
@@ -397,17 +397,17 @@ Range notation: `v1->v2` (e.g. `v1.2->v2.0`). Omit range → defaults to `last-t
 | Version consistency   | -             | ✓         | ✓       | -      |
 | CVEs                  | -             | ✓         | ✓       | -      |
 
-Flag mark = output produced only when that flag is passed. ¹ Full guide when breaking changes detected; single-line stub otherwise. ² Jupytext percent-format Python script with `# %%` code cells and `# %% [markdown]` narrative cells; self-contained with references to additional resources.
+Flag mark = output produced only when flag passed. ¹ Full guide when breaking changes detected; single-line stub otherwise. ² Jupytext percent-format Python script with `# %%` code cells and `# %% [markdown]` narrative cells; self-contained with references to additional resources.
 
 **SemVer enforcement:**
 
-`oss:shepherd` validates the proposed version bump against the actual diff before anything is written. It refuses to proceed if:
+`oss:shepherd` validates proposed version bump against actual diff before anything written. Refuses to proceed if:
 
-- A `patch` bump is proposed but the diff contains breaking changes → should be `major`
-- A `minor` bump is proposed but no new public API was added → should be `patch`
-- Version string does not follow `MAJOR.MINOR.PATCH` format
+- `patch` bump proposed but diff contains breaking changes → should be `major`
+- `minor` bump proposed but no new public API added → should be `patch`
+- Version string not `MAJOR.MINOR.PATCH` format
 
-**Breaking-change classification** (codemap-gated): after the truth check, each diff-derived public symbol is run through `fn-rdeps --exclude-tests`. A symbol with a caller outside its own top-level package is labelled **Breaking** and moved to ⚠️ Breaking Changes with the external call sites cited; a symbol whose callers all live inside its own package stays under its human label. The affected call-site list is drafted into the migration guide so downstream consumers see exactly what to change. Requires a codemap v3 index — with no index this phase is skipped and the human classification stands. Partial coverage (`query_complete:false`) surfaces the evidence as possibly-incomplete rather than dropping it.
+**Breaking-change classification** (codemap-gated): after truth check, each diff-derived public symbol run through `fn-rdeps --exclude-tests`. Symbol with caller outside own top-level package → labelled **Breaking**, moved to ⚠️ Breaking Changes with external call sites cited; symbol whose callers all inside own package stays under human label. Affected call-site list drafted into migration guide — downstream consumers see exactly what to change. Requires codemap v3 index — no index → phase skipped, human classification stands. Partial coverage (`query_complete:false`) surfaces evidence as possibly-incomplete, never drops it.
 
 **CHANGELOG section ordering** (strict, enforced):
 
@@ -415,11 +415,11 @@ Flag mark = output produced only when that flag is passed. ¹ Full guide when br
 Added → Breaking Changes → Changed → Deprecated → Removed → Fixed → 🔒 Security
 ```
 
-**Deprecation tracking:** Uses `pyDeprecate` for the deprecation lifecycle. Migration guides include a before/after table with argument mapping for all renamed or removed parameters.
+**Deprecation tracking:** Uses `pyDeprecate` for deprecation lifecycle. Migration guides include before/after table with argument mapping for all renamed/removed parameters.
 
-**Shepherd review** applies to release notes and migration guides. CHANGELOG entries and summaries are written directly without review.
+**Shepherd review** applies to release notes + migration guides. CHANGELOG entries + summaries written directly, no review.
 
-**Output location:** `releases/<version>/` for `prepare` mode (including `demo.py` when version tag is stable); `.temp/` for individual modes and demo on non-release branches.
+**Output location:** `releases/<version>/` for `prepare` mode (including `demo.py` when version tag stable); `.temp/` for individual modes and demo on non-release branches.
 
 ______________________________________________________________________
 
@@ -427,47 +427,47 @@ ______________________________________________________________________
 
 ### gh-scraper
 
-**Role:** Raw GitHub data fetcher for `/oss:analyse vitality`. Fetches all GitHub API data (REST + GraphQL) across two parallel groups, writes raw JSONL data file consumed by oss:repo-warden axis scorers. Internal — spawned by oss:analyse vitality Step 1 only.
+**Role:** Raw GitHub data fetcher for `/oss:analyse vitality`. Fetches all GitHub API data (REST + GraphQL) across two parallel groups, writes raw JSONL consumed by oss:repo-warden axis scorers. Internal — spawned by oss:analyse vitality Step 1 only.
 
 **Model:** Sonnet (focused data collection)
 
 **What gh-scraper does:**
 
-- Runs all GitHub API fetch calls in parallel (Group 1) then Group 2 (README, CONTRIBUTING, workflow files, branch protection)
+- Runs all GitHub API fetch calls parallel (Group 1), then Group 2 (README, CONTRIBUTING, workflow files, branch protection)
 - Retries contributor stats (202 computing) up to 6× before writing partial record
-- Writes `raw-data-{owner}-{repo}-{date}.jsonl` for reproducibility and scorer consumption
+- Writes `raw-data-{owner}-{repo}-{date}.jsonl` for reproducibility + scorer consumption
 
 **What gh-scraper does NOT do:**
 
-- Axis scoring of any kind → oss:repo-warden owns all axis scoring
-- Report generation, terminal output, or adversarial review → oss:analyse vitality Steps 4–7 own those
-- Direct user invocation — always spawned by the vitality skill
+- Axis scoring → oss:repo-warden owns all axis scoring
+- Report generation, terminal output, adversarial review → oss:analyse vitality Steps 4–7 own those
+- Direct user invocation — always spawned by vitality skill
 
 ______________________________________________________________________
 
 ### repo-warden
 
-**Role:** Axis scorer for `/oss:analyse vitality`. Reads pre-fetched raw JSONL from oss:gh-scraper and scores an assigned group of vitality axes per the vitality-scoring.md rubric; writes partial scores JSON for assembly. Spawned 3× in parallel by oss:analyse vitality Step 2 — not for direct user invocation.
+**Role:** Axis scorer for `/oss:analyse vitality`. Reads pre-fetched raw JSONL from oss:gh-scraper, scores assigned group of vitality axes per vitality-scoring.md rubric; writes partial scores JSON for assembly. Spawned 3× parallel by oss:analyse vitality Step 2 — not for direct user invocation.
 
 **Model:** Sonnet (focused computation)
 
 **What repo-warden does:**
 
 - Scores assigned axis group (A: Axes 1,2,5,6 / B: Axes 4,7,8 / C: Axes 3,9) from DATA_FILE
-- Runs the Axis 3 multi-pass confidence logic; applies fallback from commits_50 when contributor stats unavailable
+- Runs Axis 3 multi-pass confidence logic; applies fallback from commits_50 when contributor stats unavailable
 - Writes `partial-{group}-{owner}-{repo}-{ts}.json` consumed by vitality Step 3 assembly
 
 **What repo-warden does NOT do:**
 
 - Raw data fetching → oss:gh-scraper owns all GitHub API calls
-- Report generation, terminal output, or adversarial review → oss:analyse vitality Steps 4–7 own those
-- Direct user invocation — always spawned by the vitality skill
+- Report generation, terminal output, adversarial review → oss:analyse vitality Steps 4–7 own those
+- Direct user invocation — always spawned by vitality skill
 
 ______________________________________________________________________
 
 ### shepherd
 
-**Role:** The public voice of your project. Shepherd owns all external-facing communication — PR replies, issue responses, release notes, changelog entries, and migration guides. It never writes implementation code.
+**Role:** Public voice of project. Owns all external-facing communication — PR replies, issue responses, release notes, changelog entries, migration guides. Never writes implementation code.
 
 **Model:** opusplan
 
@@ -481,12 +481,12 @@ use shepherd to write a migration guide for the v3.0 breaking changes
 
 **What shepherd does:**
 
-- **Issue triage:** Classifies every issue into one of seven archetypes (bug confirmed, feature request, question/support, duplicate, stale, out of scope, breaking change) and drafts a response appropriate to each
-- **Close-scenario replies:** Uses seven close archetypes from the shepherd playbook — fixed in a release, fixed on `develop`, superseded by architecture change, external/wrong repo, self-resolved/stale, keep open + relabel, and superseded PR
-- **PR review response:** Two-part format — leads with what is genuinely good, then gives specific actionable asks with line references; never adversarial
-- **SemVer validation:** Reads the actual diff and enforces correct bump type before any release proceeds
-- **Release pipeline:** Writes release notes, changelog entries, and migration guides in consistent project voice
-- **Deprecation lifecycle:** Works with `pyDeprecate`; tracks deprecated APIs, writes migration guides, enforces the deprecation → warning → removal timeline
+- **Issue triage:** Classifies every issue into one of seven archetypes (bug confirmed, feature request, question/support, duplicate, stale, out of scope, breaking change), drafts response fitting each
+- **Close-scenario replies:** Seven close archetypes from shepherd playbook — fixed in release, fixed on `develop`, superseded by architecture change, external/wrong repo, self-resolved/stale, keep open + relabel, superseded PR
+- **PR review response:** Two-part format — leads with genuinely good, then specific actionable asks with line references; never adversarial
+- **SemVer validation:** Reads actual diff, enforces correct bump type before any release proceeds
+- **Release pipeline:** Writes release notes, changelog entries, migration guides in consistent project voice
+- **Deprecation lifecycle:** Works with `pyDeprecate`; tracks deprecated APIs, writes migration guides, enforces deprecation → warning → removal timeline
 
 **What shepherd does NOT do:**
 
@@ -496,7 +496,7 @@ use shepherd to write a migration guide for the v3.0 breaking changes
 
 **Voice principles:**
 
-- Leads with what is good
+- Leads with what's good
 - Treats contributors as partners, never supplicants
 - Cites specific conventions (contributing guide, coding style) when asking for changes
 - Never adversarial, never dismissive of effort
@@ -505,7 +505,7 @@ ______________________________________________________________________
 
 ### cicd-steward
 
-**Role:** GitHub Actions health specialist. Owns CI configuration quality: workflow topology, runner strategy, caching, branch protections, and flaky test detection.
+**Role:** GitHub Actions health specialist. Owns CI configuration quality: workflow topology, runner strategy, caching, branch protections, flaky test detection.
 
 **Model:** Sonnet (fast iteration on workflow YAML)
 
@@ -523,8 +523,8 @@ use cicd-steward to add SHA pinning to all actions in the workflow
 - Audits GitHub Actions workflow files for antipatterns (unpinned actions, missing concurrency groups, broken caching, wrong parallelism)
 - Optimises build time toward targets: unit tests < 5 min, full CI < 15 min
 - Enforces cache hit rate > 80% using `astral-sh/setup-uv` with `uv.lock`-keyed caching
-- Detects and quarantines flaky tests (target: 0% flakiness)
-- Configures test matrices, reusable workflows, nightly upstream CI, and performance regression benchmarks
+- Detects + quarantines flaky tests (target: 0% flakiness)
+- Configures test matrices, reusable workflows, nightly upstream CI, performance regression benchmarks
 
 **SHA pinning enforcement** (cicd-steward flags these as primary findings):
 
@@ -534,13 +534,13 @@ use cicd-steward to add SHA pinning to all actions in the workflow
 | High      | Mutable version tags | `uses: actions/checkout@v4`                                       |
 | Compliant | Full 40-char SHA     | `uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` |
 
-Short SHAs (fewer than 40 hex characters) are treated as unpinned — they can collide and are not cryptographically safe.
+Short SHAs (fewer than 40 hex chars) treated as unpinned — can collide, not cryptographically safe.
 
 **What cicd-steward does NOT do:**
 
 - ruff/mypy rule selection or `.pre-commit-config.yaml` authoring → use `foundry:linting-expert` (IS for CI workflow steps that invoke pre-commit, e.g. `pre-commit/action@SHA`)
-- PyPI release management, release notes, CHANGELOG entries, or contributor communication → use `oss:shepherd`
-- PyPI project registration, OIDC trusted publisher setup on pypi.org dashboard, or GitHub environment configuration → use `oss:shepherd`
+- PyPI release management, release notes, CHANGELOG entries, contributor communication → use `oss:shepherd`
+- PyPI project registration, OIDC trusted publisher setup on pypi.org dashboard, GitHub environment configuration → use `oss:shepherd`
 
 **Health targets:**
 
@@ -556,13 +556,13 @@ ______________________________________________________________________
 
 ## ⚙️ Configuration
 
-`oss` has no required configuration — it reads your project structure automatically.
+`oss` needs no required configuration — reads project structure automatically.
 
-**GitHub authentication:** Skills use the `gh` CLI. Run `gh auth login` once if you have not already.
+**GitHub authentication:** Skills use `gh` CLI. Run `gh auth login` once if not already.
 
-**Optional plugin integrations** are detected automatically at runtime. Install any of the optional plugins listed in [Install](#install) and the skills will use them on the next invocation — no config changes needed.
+**Optional plugin integrations** detected automatically at runtime. Install any optional plugin from [Install](#install) — skills use them next invocation, no config changes.
 
-**Cache location:** `.cache/gh/` at project root. Cached responses have a 30-day TTL. To force a fresh fetch, delete the relevant cache file or the entire `.cache/gh/` directory.
+**Cache location:** `.cache/gh/` at project root. Cached responses: 30-day TTL. Force fresh fetch: delete relevant cache file or entire `.cache/gh/` directory.
 
 **Artifact directories** created by `oss` skills:
 
@@ -575,7 +575,7 @@ ______________________________________________________________________
 | `.cache/gh/`          | `/oss:analyse`, `/oss:review` | GitHub API response cache                        |
 | `releases/<version>/` | `/oss:release prepare`        | Release artefacts                                |
 
-All artifact directories are gitignored (ephemeral, TTL-managed).
+All artifact directories gitignored (ephemeral, TTL-managed).
 
 ______________________________________________________________________
 
@@ -593,27 +593,27 @@ ______________________________________________________________________
 
 **`/oss:review` skips Tier 2 agents**
 
-Tier 2 only runs when Tier 1 (Codex pre-pass) does not surface a blocking issue on its own. If Tier 1 flags something blocking, you will see it in the report. Install the `codex` plugin to enable the pre-pass; without it, `/oss:review` goes directly to Tier 2.
+Tier 2 runs only when Tier 1 (Codex pre-pass) finds no blocking issue alone. Tier 1 flags blocking → shows in report. Install `codex` plugin to enable pre-pass; without it, `/oss:review` goes directly to Tier 2.
 
 **`/oss:review` uses general-purpose agents instead of specialist agents**
 
-`foundry` plugin is not installed or not detected. Install it with `claude plugin install foundry@borda-ai-rig`. All skills degrade gracefully to general-purpose agents when `foundry` is absent.
+`foundry` plugin not installed or not detected. Install: `claude plugin install foundry@borda-ai-rig`. All skills degrade gracefully to general-purpose agents when `foundry` absent.
 
 **`/oss:resolve` pauses mid-run asking for confirmation**
 
-More than 15 required items were found across the sources. This is intentional — resolve asks before applying a large batch. Confirm to continue, or review the item list and tell resolve which items to skip.
+More than 15 required items found across sources. Intentional — resolve asks before applying large batch. Confirm to continue, or review item list, tell resolve which to skip.
 
 **`/oss:resolve` aborts with "too many conflicted files"**
 
-More than 20 files have semantic conflicts. Resolve aborts rather than guessing at intent at scale. Review the conflict list in the output, resolve the most complex ones manually, then re-run resolve on the remainder.
+More than 20 files have semantic conflicts. Resolve aborts rather than guessing intent at scale. Review conflict list in output, resolve most complex manually, re-run resolve on remainder.
 
 **`/oss:release` refuses to proceed with a proposed version bump**
 
-`oss:shepherd` validated the diff and found the bump type is incorrect. The output will tell you what bump type is justified by the actual changes. Adjust your version argument and re-run.
+`oss:shepherd` validated diff, found bump type incorrect. Output tells what bump type justified by actual changes. Adjust version argument, re-run.
 
 **`/oss:analyse` returns stale data**
 
-Cached GitHub API responses are served from `.cache/gh/`. Delete the cache file for the specific thread number or clear `.cache/gh/` entirely for a fresh fetch.
+Cached GitHub API responses served from `.cache/gh/`. Delete cache file for specific thread number or clear `.cache/gh/` entirely for fresh fetch.
 
 **Skills not found after install**
 
@@ -627,10 +627,10 @@ ______________________________________________________________________
 
 ## 🙏 Contributing / feedback
 
-`oss` is part of the Borda-AI-Rig plugin suite. To contribute or report issues:
+`oss` = part of Borda-AI-Rig plugin suite. Contribute or report issues:
 
-- **Bugs and feature requests:** Open an issue in the Borda-AI-Rig repository
-- **Plugin authoring rules:** See `plugins/CLAUDE.md` — covers file layout, naming conventions, cross-plugin references, README sync requirements, and versioning policy
-- **Voice and tone:** All contributor-facing text follows the same principles as `oss:shepherd` — welcoming, specific, treats contributors as partners
+- **Bugs and feature requests:** Open issue in Borda-AI-Rig repository
+- **Plugin authoring rules:** See `plugins/CLAUDE.md` — file layout, naming conventions, cross-plugin references, README sync requirements, versioning policy
+- **Voice and tone:** All contributor-facing text follows same principles as `oss:shepherd` — welcoming, specific, treats contributors as partners
 
-When editing `oss` skills or agents, update this README before the commit. The rule in `plugins/CLAUDE.md` is: changed trigger, scope, NOT-for, or hook behaviour → update the README description. Added or removed agent/skill → update the table. Unsynced change = incomplete.
+Editing `oss` skills or agents → update this README before commit. Rule in `plugins/CLAUDE.md`: changed trigger, scope, NOT-for, or hook behaviour → update README description. Added/removed agent/skill → update table. Unsynced change = incomplete.

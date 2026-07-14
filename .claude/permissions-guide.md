@@ -2,7 +2,7 @@
 
 Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and `.claude-plugin/permissions-deny.json` (deny list) — canonical sources merged into `~/.claude/settings.json` by `/foundry:setup`. Working copy lives at `.claude/permissions-guide.md`, kept in sync by `/audit` (Check 4 drift check) and `/manage add perm` / `/manage remove perm`.
 
-**Destructive git commands explicitly denied** — see Deny List below. Deny rules evaluated before allow rules; matching deny always blocks regardless of any allow entry. Remote-mutating ops (`git push`, `git remote`) not denied — prompt user for approval.
+**Destructive git commands explicitly denied** — see Deny List below. Deny rules evaluated before allow rules; matching deny always blocks regardless of allow entry. Remote-mutating ops (`git push`, `git remote`) not denied — prompt user for approval.
 
 ## Deny List — always blocked
 
@@ -10,7 +10,7 @@ Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and 
 | ------------------------------- | ------------------------------------- | --------------------------------------------- |
 | `Bash(chmod 777:*)`             | World-writable permissions            | Security risk; overly broad file permissions  |
 | `Bash(rm -rf:*)`                | Recursive force delete                | Irreversible; destroys entire directory trees |
-| `Bash(ssh:*)`                   | SSH connections                       | Prevents agent from opening remote sessions   |
+| `Bash(ssh:*)`                   | SSH connections                       | Prevents agent opening remote sessions        |
 | `Bash(sudo:*)`                  | Privilege escalation                  | Agents must not gain root access              |
 | `Bash(git branch -D:*)`         | Force-delete local branch             | Irreversible; require explicit confirmation   |
 | `Bash(git branch -d:*)`         | Delete local branch                   | Requires explicit user confirmation           |
@@ -20,24 +20,24 @@ Annotated companion to `.claude-plugin/permissions-allow.json` (allow list) and 
 
 ## Built-in tool permissions
 
-Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates access frequently as part of their own config or runtime state. Without these, agents prompted to confirm accessing own config files or writing output to skill run dirs.
+Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates access frequently as part of own config or runtime state. Without these, agents prompted to confirm accessing own config files or writing output to skill run dirs.
 
-| Permission              | Description                                   | Typical use case                                                                                                                                                                                                |
-| ----------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Read(.claude/*.md)`    | Read top-level `.claude/` markdown files      | Agents read CLAUDE.md, permissions-guide.md, TEAM_PROTOCOL.md at spawn                                                                                                                                          |
-| `Read(.claude/**/*.md)` | Read any nested `.claude/` markdown file      | Agents and skills read own agent/skill/rule files; curator reads config files for audit                                                                                                                         |
-| `Read(.claude/logs/**)` | Read log files under `.claude/logs/`          | `/calibrate` reads calibrations.jsonl for historical context; `/audit` reads audit-errors.jsonl                                                                                                                 |
-| `Edit(.claude/logs/**)` | Edit log files under `.claude/logs/`          | Skills append to calibrations.jsonl and audit-errors.jsonl without Bash redirection                                                                                                                             |
-| `Read(./**)`            | Read any file in project root                 | Teammates read `TEAM_PROTOCOL.md` and agent files at spawn; skills read own SKILL.md files                                                                                                                      |
-| `Glob(./**)`            | Glob-match any file in project                | `/audit` and `/manage` enumerate agents, skills, hooks, source files without shell `find`                                                                                                                       |
-| `Grep(./**)`            | Search content in any project file            | `/audit` checks cross-references; `/calibrate` locates skill keyword patterns                                                                                                                                   |
-| `Read(/tmp/**)`         | Read temporary files under `/tmp/`            | `/calibrate` reads checkpoint files for background agent health monitoring; skill temp output files                                                                                                             |
-| `Write(.plans/**)`      | Write plan and blueprint files to `.plans/`   | `/brainstorm` writes spec and tree files to `.plans/blueprint/`; `/develop:plan` writes plans to `.plans/active/`                                                                                               |
-| `Write(.notes/**)`      | Write notes and lessons to `.notes/`          | Skills write lessons, diary entries, guides to `.notes/`                                                                                                                                                        |
-| `Write(.reports/**)`    | Write files into `.reports/` skill run dirs   | Skills and Codex write timestamped run artifacts (result.jsonl, analysis files) to `.reports/<skill>/`                                                                                                          |
-| `Write(.temp/**)`       | Write prose output files to `.temp/`          | Quality-gates long output; research, review, resolve, session, other skills write findings to `.temp/output-<slug>-<date>.md`                                                                                   |
-| `Glob(~/.claude/**)`    | Glob-match files in home `.claude/` directory | `/foundry:setup link` checks for existing symlinks/files before linking; `/investigate` probes verify agent/skill/config files exist in `~/.claude/`; scoped to `.claude/` only to avoid broad home-dir timeout |
-| `Read(~/.claude/**)`    | Read files in home `.claude/` directory       | `/foundry:setup` reads `~/.claude/settings.json` for merging; `/investigate` probes read `~/.claude/settings.json` during environment checks                                                                    |
+| Permission              | Description                                   | Typical use case                                                                                                                                                                                            |
+| ----------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Read(.claude/*.md)`    | Read top-level `.claude/` markdown files      | Agents read CLAUDE.md, permissions-guide.md, TEAM_PROTOCOL.md at spawn                                                                                                                                      |
+| `Read(.claude/**/*.md)` | Read any nested `.claude/` markdown file      | Agents and skills read own agent/skill/rule files; curator reads config files for audit                                                                                                                     |
+| `Read(.claude/logs/**)` | Read log files under `.claude/logs/`          | `/calibrate` reads calibrations.jsonl for historical context; `/audit` reads audit-errors.jsonl                                                                                                             |
+| `Edit(.claude/logs/**)` | Edit log files under `.claude/logs/`          | Skills append to calibrations.jsonl and audit-errors.jsonl without Bash redirection                                                                                                                         |
+| `Read(./**)`            | Read any file in project root                 | Teammates read `TEAM_PROTOCOL.md` and agent files at spawn; skills read own SKILL.md files                                                                                                                  |
+| `Glob(./**)`            | Glob-match any file in project                | `/audit` and `/manage` enumerate agents, skills, hooks, source files without shell `find`                                                                                                                   |
+| `Grep(./**)`            | Search content in any project file            | `/audit` checks cross-references; `/calibrate` locates skill keyword patterns                                                                                                                               |
+| `Read(/tmp/**)`         | Read temporary files under `/tmp/`            | `/calibrate` reads checkpoint files for background agent health monitoring; skill temp output files                                                                                                         |
+| `Write(.plans/**)`      | Write plan and blueprint files to `.plans/`   | `/brainstorm` writes spec and tree files to `.plans/blueprint/`; `/develop:plan` writes plans to `.plans/active/`                                                                                           |
+| `Write(.notes/**)`      | Write notes and lessons to `.notes/`          | Skills write lessons, diary entries, guides to `.notes/`                                                                                                                                                    |
+| `Write(.reports/**)`    | Write files into `.reports/` skill run dirs   | Skills and Codex write timestamped run artifacts (result.jsonl, analysis files) to `.reports/<skill>/`                                                                                                      |
+| `Write(.temp/**)`       | Write prose output files to `.temp/`          | Quality-gates long output; research, review, resolve, session, other skills write findings to `.temp/output-<slug>-<date>.md`                                                                               |
+| `Glob(~/.claude/**)`    | Glob-match files in home `.claude/` directory | `/foundry:setup link` checks existing symlinks/files before linking; `/investigate` probes verify agent/skill/config files exist in `~/.claude/`; scoped to `.claude/` only to avoid broad home-dir timeout |
+| `Read(~/.claude/**)`    | Read files in home `.claude/` directory       | `/foundry:setup` reads `~/.claude/settings.json` for merging; `/investigate` probes read `~/.claude/settings.json` during environment checks                                                                |
 
 ## Web
 
@@ -65,7 +65,7 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | `Bash(ls:*)`                          | List directory contents                              | Check file existence, inspect directory structure                                                       |
 | `Bash(wc:*)`                          | Count lines, words, or bytes                         | Measure file count, line budget checks                                                                  |
 | `Bash(diff:*)`                        | Compare two files line-by-line                       | Confirm patch outcome, spot drift between config files                                                  |
-| `Bash(cp:*)`                          | Copy files                                           | `/foundry:setup` uses this to copy rules and settings to `~/.claude/`                                   |
+| `Bash(cp:*)`                          | Copy files                                           | `/foundry:setup` copies rules and settings to `~/.claude/`                                              |
 | `Bash(ln:*)`                          | Create symlinks                                      | `/foundry:setup link` symlinks agents, skills, rules into `~/.claude/`                                  |
 | `Bash(mkdir:*)`                       | Create directories                                   | Ensure target paths exist before writing                                                                |
 | `Bash(mkdir -p .cache/*)`             | Create subdirs inside `.cache/`                      | `/analyse` creates `.cache/gh/` for GitHub API response caching                                         |
@@ -111,7 +111,7 @@ Pre-authorize `Read`, `Glob`, `Grep`, `Write` on dirs skills and teammates acces
 | ------------------------- | ------------------------------------------- | --------------------------------------------------------------------------- |
 | `Bash(gh auth status:*)`  | Check GitHub CLI authentication state       | Pre-flight check in `/resolve` and any skill requiring `gh` auth            |
 | `Bash(gh pr view:*)`      | Inspect PR metadata, body, review status    | Used by `/oss:review` and `/develop:fix` to understand PR under review      |
-| `Bash(gh pr checkout:*)`  | Check out PR branch locally                 | `/resolve` uses this to enter PR branch state before applying changes       |
+| `Bash(gh pr checkout:*)`  | Check out PR branch locally                 | `/resolve` enters PR branch state before applying changes                   |
 | `Bash(gh pr diff:*)`      | Fetch full diff of PR                       | `/oss:review` fetches diff for static analysis                              |
 | `Bash(gh pr list:*)`      | List open or merged PRs                     | `/analyse health` and duplicate-detection modes                             |
 | `Bash(gh pr checks:*)`    | Read CI check status on PR                  | Verify CI passed before marking fix complete                                |

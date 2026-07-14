@@ -24,7 +24,7 @@ Before marking fix complete: "Could this symptom have a second independent root 
 
 ### Post-fix challenger invocation
 
-**Dispatch rule**: post-fix re-invoke is a fresh orchestrator-initiated dispatch — not a nested call from within an active challenger run. Challenger's SKIP rule ("already inside an active challenger context") still applies if currently executing inside a challenger review; orchestrator waits for challenger to complete, then dispatches a new instance for post-fix verification.
+**Dispatch rule**: post-fix re-invoke is fresh orchestrator-initiated dispatch — not nested call from within active challenger run. Challenger's SKIP rule ("already inside active challenger context") still applies if currently executing inside challenger review; orchestrator waits for challenger to complete, then dispatches new instance for post-fix verification.
 
 After any non-trivial fix (multi-file change, behaviour change, fix to previously-masked bug):
 
@@ -32,9 +32,9 @@ After any non-trivial fix (multi-file change, behaviour change, fix to previousl
 2. Challenger confirms: (a) root cause structurally consistent with diff, (b) all original symptoms resolved, (c) no new failure modes introduced
 3. Residual or new symptoms found → root cause incomplete → return to diagnosis loop
 
-**Batched challenger dispatch**: when multiple fixes are being committed together (same logical release, same session), batch them into **one** challenger call covering all groups — not one challenger per fix. Group fixes by logical concern (e.g. "research plugin", "hook fix", "rule change") and review together. Single-pass: avoids spawning N redundant agents for overlapping context; catches cross-group regressions a per-fix reviewer cannot see.
+**Batched challenger dispatch**: when multiple fixes committed together (same logical release, same session), batch into **one** challenger call covering all groups — not one challenger per fix. Group fixes by logical concern (e.g. "research plugin", "hook fix", "rule change") and review together. Single-pass: avoids spawning N redundant agents for overlapping context; catches cross-group regressions a per-fix reviewer cannot see.
 
-**Delegation + file-handoff**: always delegate batch to `foundry:challenger` via `Agent()` — not inline. Challenger writes full findings to a `.temp/` file; returns only compact JSON envelope to orchestrator. Orchestrator reads envelope verdict; reads file only on FAIL or low confidence. Never accumulate full challenger output in main context.
+**Delegation + file-handoff**: always delegate batch to `foundry:challenger` via `Agent()` — not inline. Challenger writes full findings to `.temp/` file; returns only compact JSON envelope to orchestrator. Orchestrator reads envelope verdict; reads file only on FAIL or low confidence. Never accumulate full challenger output in main context.
 
 **Non-trivial threshold**: fix touching >1 file, or any logic previously believed working. Single-line typo fixes in isolated files exempt.
 
@@ -45,4 +45,4 @@ After any non-trivial fix (multi-file change, behaviour change, fix to previousl
 - **Partial validation**: checking only primary symptom after fix, not all reported symptoms
 - **Fix-before-confirm**: writing fix before confirming root cause — risk of fixing wrong thing
 - **Skipping challenger on "obvious" fixes** — obvious fixes have highest rate of incomplete root-cause identification; obviousness not an exemption
-- **Ungrounded premise as design pillar**: using any assumption, constraint claim, recalled fact, or hypothesis as a foundation for design or fix without first reading authoritative source that proves it. Covers: technical constraints ("X can't do Y"), behavioral assumptions ("this function returns Z"), facts from memory or training ("I know this library does…"). Memory and training knowledge are never evidence. Drill move: challenge the premise's *justification* before challenging the design — "Where is this documented?" forces evidence lookup at the earliest point. Weak sources (blog posts, tweets, forum posts) require ≥2 independent corroborating sources or experimental validation before the premise can be treated as fact. Layers of implementation built on a false premise make the entire design infeasible; only catch point is before design begins.
+- **Ungrounded premise as design pillar**: using any assumption, constraint claim, recalled fact, or hypothesis as foundation for design or fix without first reading authoritative source that proves it. Covers: technical constraints ("X can't do Y"), behavioral assumptions ("this function returns Z"), facts from memory or training ("I know this library does…"). Memory and training knowledge are never evidence. Drill move: challenge premise's *justification* before challenging design — "Where is this documented?" forces evidence lookup at earliest point. Weak sources (blog posts, tweets, forum posts) require ≥2 independent corroborating sources or experimental validation before premise treated as fact. Layers built on false premise make entire design infeasible; only catch point is before design begins.

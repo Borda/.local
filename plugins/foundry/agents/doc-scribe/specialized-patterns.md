@@ -1,7 +1,7 @@
 <!-- Loaded by foundry:doc-scribe (sonnet + medium) -->
 # Specialized Docstring Patterns (foundry:doc-scribe specialized guidance)
 
-Apply only when scoped task explicitly involves computer-vision / ML tensor docstrings or pyDeprecate migration guides. For routine docstring or README tasks, treat the content below as inert reference — do NOT apply checklist heuristics.
+Apply only when scoped task explicitly involves computer-vision / ML tensor docstrings or pyDeprecate migration guides. For routine docstring or README tasks, treat content below as inert reference — do NOT apply checklist heuristics.
 
 ## Computer Vision (CV) / Tensor Docstring Checklist
 
@@ -15,10 +15,10 @@ A single param name (e.g. `image`) that could satisfy both categories does NOT c
 > **NOT-for — do not apply CV checklist to**:
 > - Audio DSP functions (`spectrogram`, `waveform`, `frame` as STFT frame, `mel_bins`)
 > - NLP / attention models (`attention_mask`, `hidden_state`, `token_ids`, even when `(B, C, H, W)`-like shapes appear)
-> - Medical imaging functions unless explicitly annotated as a CV pipeline stage (NIfTI/DICOM-only volumetric utilities → use the medical-imaging-specific subset of the checklist; see RAS/LPS qualifier in Spatial convention)
-> - Generic image utilities (PIL resize, matplotlib display, OpenCV basic ops) that have an `image` param but no CNN architecture involvement
+> - Medical imaging functions unless explicitly annotated as CV pipeline stage (NIfTI/DICOM-only volumetric utilities → use medical-imaging-specific subset of checklist; see RAS/LPS qualifier in Spatial convention)
+> - Generic image utilities (PIL resize, matplotlib display, OpenCV basic ops) with `image` param but no CNN architecture involvement
 
-- **Shape**: exact dims with named axes (B, C, D, H, W) — e.g., `Shape: (B, C, H, W)`
+- **Shape**: exact dims with named axes (B, C, D, H, W) — e.g. `Shape: (B, C, H, W)`
 - **Value range**: [0, 1], [0, 255], or [-1, 1]
 - **Channel convention**: channel-first (PyTorch) vs channel-last (NumPy/TensorFlow (TF))
 - **Spatial convention**: orientation (RAS/LPS), pixel vs world coordinates

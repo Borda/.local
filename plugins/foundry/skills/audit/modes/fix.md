@@ -2,9 +2,9 @@
 
 # Mode: fix (Steps 8–10)
 
-Loaded by `audit/SKILL.md` Step 7 only when the user picks a fix option (a–c) from the follow-up gate. Runs the fix-dispatch → codex cross-file → re-audit convergence loop inline, then returns to SKILL.md Step 11 (Final report).
+Loaded by `audit/SKILL.md` Step 7 only when user picks a fix option (a–c) from follow-up gate. Runs fix-dispatch → codex cross-file → re-audit convergence loop inline, then returns to SKILL.md Step 11 (Final report).
 
-State (`$RUN_DIR`, `$AUDIT_TPL`, `LOCAL_MODE`, `summary.jsonl`) is re-derived from the persisted state files exactly as in SKILL.md Pre-flight — Claude Code spawns a fresh shell per `Bash()` call.
+State (`$RUN_DIR`, `$AUDIT_TPL`, `LOCAL_MODE`, `summary.jsonl`) re-derived from persisted state files exactly as in SKILL.md Pre-flight — Claude Code spawns fresh shell per `Bash()` call.
 
 ## Step 8: Delegate fixes to subagents
 
@@ -12,7 +12,7 @@ State (`$RUN_DIR`, `$AUDIT_TPL`, `LOCAL_MODE`, `summary.jsonl`) is re-derived fr
 
 **Fix Action Hierarchy** — before any fix:
 
-1. **Reason** — finding correct? Flagged content genuinely wrong or just wrong place? Misidentified → discard, don't act.
+1. **Reason** — finding correct? Flagged content genuinely wrong or wrong place? Misidentified → discard, don't act.
 2. **Relocate** — correct content, wrong location → move, not remove.
 3. **Consolidate** — redundant with nearby content → merge into one clearer location.
 4. **Minimize** — too long but valid → compress (tighten wording, remove restatements).
@@ -22,7 +22,7 @@ Apply hierarchy to every fix at all severity levels.
 
 **Dependency classification — before any dispatch**
 
-Classify each finding from `summary.jsonl` before spawning fix agents to avoid stale-read conflicts (agent reads file A → concurrent agent modifies file A → first agent's assumptions now wrong).
+Classify each finding from `summary.jsonl` before spawning fix agents to avoid stale-read conflicts (agent reads file A → concurrent agent modifies file A → first agent's assumptions wrong).
 
 **Parallel-safe** (ALL four must hold — apply after same-file coalescing in criterion 4):
 1. Fix writes only to the file that contains the finding
@@ -38,7 +38,7 @@ Sequential examples: broken cross-reference (must verify target name on current 
 
 **Two-phase dispatch**:
 - **Phase 1 — Parallel basket**: issue ALL parallel-safe fix spawns in a single response. Each agent touches only its own file with self-contained changes.
-- **Phase 2 — Sequential basket**: after Phase 1 complete, spawn **foundry:curator** mini-agent to re-read files modified in Phase 1 that are dependency inputs for Phase 2 fixes — orchestrator must NOT inline-read modified files (orchestration contract: see SKILL.md `## Pre-flight checks` orchestration rule). Mini-agent returns updated finding refs (refreshed line numbers, moot findings dropped). Then dispatch Phase 2 fixes using the category→dependency table:
+- **Phase 2 — Sequential basket**: after Phase 1 complete, spawn **foundry:curator** mini-agent to re-read files modified in Phase 1 that are dependency inputs for Phase 2 fixes — orchestrator must NOT inline-read modified files (orchestration contract: see SKILL.md `## Pre-flight checks` orchestration rule). Mini-agent returns updated finding refs (refreshed line numbers, moot findings dropped). Then dispatch Phase 2 fixes using category→dependency table:
 
   | Category | Reads from | Serialization rule |
   | --- | --- | --- |
@@ -56,7 +56,7 @@ Narrate phase boundaries: `"Phase 1: N parallel-safe fixes launched"` → `"Phas
 1. Spawn **foundry:challenger** with finding text, file path, proposed fix — challenge: "Is this finding real? Is fix appropriate? Does it risk removing load-bearing behavioral content (runtime gates, behavioral invariants, execution constraints, `notes` checkpoints)?"
 2. Spawn **foundry:curator** same context — validate: "Fix correct per Fix Action Hierarchy? Preserves behavioral integrity? Could silently remove load-bearing content even if appearing redundant or verbose?"
 3. Both spawns in parallel per file. Each writes verdict to `<RUN_DIR>/gate-<file-basename>-<finding-id>.md`; returns only: `{"verdict":"approved"|"blocked","reason":"<one-line>","file":"<path>"}`
-4. **Either** returns `blocked` → skip fix agent; add to `blocked_findings` with reason; surface as `⚠ GATE-BLOCKED — needs human review: <reason>`
+4. **Either** returns `blocked` → skip fix agent; add to `blocked_findings` with reason; surface `⚠ GATE-BLOCKED — needs human review: <reason>`
 5. **Both** `approved` → proceed to fix agent
 
 Gate applies at every severity level. Skip only for inline-exception cases (settings.json, CLAUDE.md, dead loops, model tier).
@@ -82,7 +82,7 @@ After gate fires (Step 7): finding count > 10 or user picked option (a) "Fix aut
 
 **Gate failure fallback**: if sub-agent returns `blocked_findings: []` with `fixed > 0` and `failed == 0` but no `gate-<file>.md` files appear in `<RUN_DIR>`, surface: `⚠ GATE-SKIPPED — sub-agent did not perform adversarial gate; review fixes manually before merging.`
 
-Spawn a dedicated **audit-fix** sub-agent — read full prompt from `$AUDIT_TPL/audit-fix-prompt.md` and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into the prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false`, `failed > 0`, or `residual_criticals > 0`.
+Spawn dedicated **audit-fix** sub-agent — read full prompt from `$AUDIT_TPL/audit-fix-prompt.md` and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false`, `failed > 0`, or `residual_criticals > 0`.
 
 Finding count ≤ 10 and user picked option (b) "Fix SECURITY + CRITICAL + HIGH" → inline batched pattern (one fix-agent per file, all parallel) acceptable; no dedicated sub-agent.
 
@@ -99,7 +99,7 @@ Default (options a–b): report only — no Edit or Write tool calls for NON_AUT
 
 **"Fix ALL" option (c)**:
 
-1. **Upfront decision collection** — before any fixes run: group all NON_AUTO_FIXABLE findings by category (settings.json / model-tier / CLAUDE.md-conflict / dead-loop — max 4 categories). For each category call `AskUserQuestion` (one call per category, honoring `communication.md` 4-question-per-call cap): list up to 4 representative findings; if >4 in category, note "and N more follow same pattern". Options: (a) Apply same resolution to all in this category · (b) Review each individually · (c) Skip this category. Hard cap: max 4 `AskUserQuestion` calls total; overflow findings listed in final report. "Apply same resolution" valid for uniform findings; non-uniform findings force option (b).
+1. **Upfront decision collection** — before any fixes run: group all NON_AUTO_FIXABLE findings by category (settings.json / model-tier / CLAUDE.md-conflict / dead-loop — max 4 categories). For each category call `AskUserQuestion` (one call per category, honoring `communication.md` 4-question-per-call cap): list up to 4 representative findings; if >4 in category, note "and N more follow same pattern". Options: (a) Apply same resolution to all in category · (b) Review each individually · (c) Skip category. Hard cap: max 4 `AskUserQuestion` calls total; overflow findings listed in final report. "Apply same resolution" valid for uniform findings; non-uniform findings force option (b).
 
 2. **Single integrated fix pass** — after all decisions collected, run auto-fixable + user-resolved NON_AUTO_FIXABLE in one combined loop using same Phase 1 parallel / Phase 2 sequential dispatch. Low findings included. No mid-run checkpoint — all decisions already made upfront.
 

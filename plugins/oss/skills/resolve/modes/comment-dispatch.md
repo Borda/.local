@@ -1,6 +1,6 @@
 # Comment Dispatch — oss:resolve independent entry point
 
-Reached when `$ARGUMENTS` = bare comment text (not PR number or URL). File read + executed by `/oss:resolve` Step 12.
+Reached when `$ARGUMENTS` = bare comment text (not PR number or URL). File read, executed by `/oss:resolve` Step 12.
 
 <workflow>
 
@@ -28,11 +28,11 @@ If `CODEX_AVAILABLE=false`: degrade gracefully — match `action-item-dispatch.m
 | `style` | `foundry:linting-expert` |
 | ambiguous / config-only changes | `foundry:sw-engineer` |
 
-Print `⚠ codex plugin not found — falling back to <agent> for this comment. For broader Codex support: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`. Set `IMPL_AGENT=<fallback agent>`; proceed to Step 12a with fallback agent in place of `codex:codex-rescue`. Skip the Codex review loop (Step 12b) when no Codex available — single dispatch only.
+Print `⚠ codex plugin not found — falling back to <agent> for this comment. For broader Codex support: /plugin marketplace add openai/codex-plugin-cc && /plugin install codex@openai-codex && /reload-plugins`. Set `IMPL_AGENT=<fallback agent>`; proceed to Step 12a with fallback agent in place of `codex:codex-rescue`. Skip Codex review loop (Step 12b) when no Codex available — single dispatch only.
 
 ### 12a: Dispatch
 
-**BATCH_SIZE=5** — dispatch at most 5 `Agent()` calls per response turn; wait for all to return before next batch. If $ARGUMENTS expands to more than 5 comment items (multi-comment dispatch), process first 5, wait for results, then continue with next 5. Prevents rate-limit hits and unbounded parallel spawn.
+**BATCH_SIZE=5** — dispatch at most 5 `Agent()` calls per response turn; wait for all to return before next batch. If $ARGUMENTS expands to more than 5 comment items (multi-comment dispatch), process first 5, wait for results, then continue with next 5. Prevents rate-limit hits, unbounded parallel spawn.
 
 Compute the scoped sentinel path via `compute_commit_sentinel.py`, touch it, and register a cleanup trap:
 
@@ -89,7 +89,7 @@ If code changed, ensure `$CHANGE_SCOPE` set (default `targeted` if unset), then 
 Read and execute $_OSS_RESOLVE/modes/lint-qa-gate.md
 ```
 
-Commit authorization is revoked automatically by the `trap 'rm -f "$SENTINEL"' EXIT INT TERM` registered in Step 12a — `$SENTINEL` stays in scope for the entire dispatch + review + gate sequence. Do **not** issue a separate `rm -f /tmp/claude-commit-authorized` here; that path is no longer used (sentinel is now scoped per repo + branch per `git-commit.md`).
+Commit authorization revoked automatically by `trap 'rm -f "$SENTINEL"' EXIT INT TERM` registered in Step 12a — `$SENTINEL` stays in scope for entire dispatch + review + gate sequence. Do **not** issue separate `rm -f /tmp/claude-commit-authorized` here; that path no longer used (sentinel now scoped per repo + branch per `git-commit.md`).
 
 Mark task `completed`:
 

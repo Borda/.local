@@ -14,7 +14,7 @@ Agent(
 )
 ```
 
-Plugin agent writes direct to working tree. Inspect via `git diff HEAD` after return. If plugin unavailable it reports gracefully — don't block.
+Plugin agent writes direct to working tree. Inspect via `git diff HEAD` after return. Plugin unavailable → reports gracefully, don't block.
 
 **Don't delegate to Codex:**
 

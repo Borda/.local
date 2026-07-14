@@ -66,7 +66,7 @@ mkdir -p "$REPORT_DIR"
 } | tee "${TMPDIR:-/tmp}/foundry-profile-state"
 ```
 
-Values are persisted to `${TMPDIR:-/tmp}/foundry-profile-state`; Steps 2–3 re-source it (bash state does not persist across Bash calls, and `REPORT_DIR` carries a per-shell timestamp that cannot be re-derived).
+Values persisted to `${TMPDIR:-/tmp}/foundry-profile-state`; Steps 2–3 re-source it (bash state does not persist across Bash calls, and `REPORT_DIR` carries a per-shell timestamp that cannot be re-derived).
 
 ## Step 2: Run analyzer
 
@@ -95,7 +95,7 @@ echo '{"status":"complete","since":"'"$SINCE"'","session_id":"'"$SESSION_ID"'","
 
 ## Step 4: Emit terminal output
 
-Read the YAML header from `$REPORT_DIR/report.md` (first block between `---` lines) and print verbatim. Then print `→ $REPORT_DIR/report.md`. Then read the Headline split block plus the top 3 sessions from the per-session table and surface as executive summary (per quality-gates.md output routing).
+Read YAML header from `$REPORT_DIR/report.md` (first block between `---` lines) and print verbatim. Then print `→ $REPORT_DIR/report.md`. Then read Headline split block plus top 3 sessions from per-session table and surface as executive summary (per quality-gates.md output routing).
 
 Also Write the long-output dump per quality-gates rule:
 

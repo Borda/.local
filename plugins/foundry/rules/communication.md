@@ -6,7 +6,7 @@ paths:
 
 ## Re: Anchor
 
-Start every reply with a Unicode box header containing a one-line summary, then response body, then a closing `▓` footer line.
+Start every reply with Unicode box header containing one-line summary, then response body, then closing `▓` footer line.
 
 Example (actual template — copy structure, replace bracketed text):
 
@@ -27,16 +27,16 @@ Example (actual template — copy structure, replace bracketed text):
 - Summary: neutral factual gist of what user asked — not full restatement, no labels
 - Footer: exactly 62 `▓` chars — matches box width, signals end of reply
 - Never use pipe chars in summary text — corrupts box borders
-- No exceptions except the two Exemption blocks below (machine-parsed replies · quality-gates `---` report headers) — any other response not opening with `╔` is non-compliant
+- No exceptions except two Exemption blocks below (machine-parsed replies · quality-gates `---` report headers) — any other response not opening with `╔` is non-compliant
 - Tables, code blocks, bold headers work normally in body — no per-line prefix conflicts
 
 ## Reply Visibility
 
-Box `╔═╗`/`╚═╝` zone creates clear header boundary. `▓▓▓` footer creates clear end boundary. Together they visually frame the response against surrounding tool call output and hook logs. Unicode box-drawing only — no ANSI escape codes.
+Box `╔═╗`/`╚═╝` zone creates header boundary. `▓▓▓` footer creates end boundary. Together they frame response against surrounding tool call output and hook logs. Unicode box-drawing only — no ANSI escape codes.
 
-**Exemption — machine-parsed responses**: omit box header and footer when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone is sufficient to trigger the exemption; both keywords present together also triggers it.
+**Exemption — machine-parsed responses**: omit box header and footer when response prompt contains `Return ONLY:` or `compact JSON envelope` — output parsed by parent orchestrator. Either keyword alone triggers exemption; both present also triggers it.
 
-**Exemption — quality-gates report headers**: when the reply leads with a quality-gates `---` metadata block (a skill's Output Routing report header — the YAML between `---` delimiters printed verbatim from the report file, e.g. `/oss:review`, `/oss:resolve`, `/foundry:audit`, `/foundry:calibrate`), omit the `╔═╗` box header — that `---` block IS the reply header and the box would shadow it. Print the `---` block as the first line of the reply; keep the `▓` footer. Never emit both a box header and a `---` metadata block in the same reply.
+**Exemption — quality-gates report headers**: when reply leads with quality-gates `---` metadata block (skill's Output Routing report header — YAML between `---` delimiters printed verbatim from report file, e.g. `/oss:review`, `/oss:resolve`, `/foundry:audit`, `/foundry:calibrate`), omit `╔═╗` box header — that `---` block IS reply header and box would shadow it. Print `---` block as first line of reply; keep `▓` footer. Never emit both box header and `---` metadata block in same reply.
 
 ## Progress and Transparency
 
@@ -45,9 +45,9 @@ Box `╔═╗`/`╚═╝` zone creates clear header boundary. `▓▓▓` foot
 
 ## Execution Failure Signaling
 
-When unable to execute or proceed with any part of a request (unsupported flag, `disable-model-invocation` block, parse error, missing prerequisite, permission denied, tool unavailable):
+When unable to execute or proceed with any part of request (unsupported flag, `disable-model-invocation` block, parse error, missing prerequisite, permission denied, tool unavailable):
 
-**Mandatory**: lead the response with a bold failure block — never bury the failure at the end, never silently skip it:
+**Mandatory**: lead response with bold failure block — never bury failure at end, never silently skip it:
 
 ```
 **! BLOCKED — [one-line reason]**
@@ -56,10 +56,10 @@ When unable to execute or proceed with any part of a request (unsupported flag, 
 ```
 
 Rules:
-- Color+! block is the FIRST content in the response — not a footnote, not a trailing note
-- State: what was asked · what cannot proceed · what alternative is available (if any)
+- Color+! block is FIRST content in response — not footnote, not trailing note
+- State: what was asked · what cannot proceed · what alternative available (if any)
 - Applies to partial failures too: if 3 of 4 sub-tasks fail, color-flag the 3 at top before reporting the 1 success
-- Never use grey prose ("note: X was skipped") as a substitute — that's what gets missed
+- Never use grey prose ("note: X was skipped") as substitute — that's what gets missed
 
 ## Tone
 
@@ -84,20 +84,20 @@ Rules:
 
 Labelled or annotated question (e.g. `[AskUserQuestion simulated] — What format?`) still plain text, still violates rule. Only actual tool invocation satisfies constraint.
 
-Describing, simulating, or annotating a tool call in any form — parenthetical ("AskUserQuestion would be invoked here"), bracket notation (`[Invoking AskUserQuestion: ...]`), or intent narration ("I would ask...") — is plain text and a violation. Call the tool directly; emit no prose description of intent before or instead of the call.
+Describing, simulating, or annotating a tool call in any form — parenthetical ("AskUserQuestion would be invoked here"), bracket notation (`[Invoking AskUserQuestion: ...]`), or intent narration ("I would ask...") — is plain text and a violation. Call tool directly; emit no prose description of intent before or instead of call.
 
-Compliant example — this is the only valid form:
-> Call `AskUserQuestion(questions=["What format is the data in? (JSON, CSV, XML)"])` — no prose question in the response body.
+Compliant example — only valid form:
+> Call `AskUserQuestion(questions=["What format is the data in? (JSON, CSV, XML)"])` — no prose question in response body.
 
 - Plain text questions easily missed, don't block execution, don't surface as distinct UI affordance
-- Bracketed, annotated, or narrated tool calls are plain text and violate this constraint — examples of violations: `[AskUserQuestion: ...]`, `"I would ask..."`, `"AskUserQuestion would be invoked here"`, `(AskUserQuestion simulated)`
-- Only an actual tool invocation (tool call block in the response) satisfies this constraint
+- Bracketed, annotated, or narrated tool calls are plain text and violate this constraint — violations: `[AskUserQuestion: ...]`, `"I would ask..."`, `"AskUserQuestion would be invoked here"`, `(AskUserQuestion simulated)`
+- Only actual tool invocation (tool call block in response) satisfies this constraint
 - Applies to: ambiguous input, clarifying choices, scope decisions, continuation guards, any point where user input required before proceeding
 - **Scope decisions count**: user asks "should I also X?" mid-task → scope decision requiring AskUserQuestion — not rhetorical; never silently resolve
 - Applies globally — all skills, agents, model-generated questions without exception
 - When `AskUserQuestion` not in skill's `allowed-tools`, add it before asking any question
 - Max 4 questions per call; group related sub-questions into one option set rather than asking sequentially
-- **Recommended option placement**: place recommended option **second** in the options list, not first and not last. First slot = most natural/neutral default; second = recommended; last = skip/abort.
+- **Recommended option placement**: place recommended option **second** in options list, not first and not last. First slot = most natural/neutral default; second = recommended; last = skip/abort.
 
 ## Output Routing
 

@@ -6,7 +6,7 @@
 | 1 | Inventory drift (MEMORY.md vs disk) | medium | setup | Agents + skills on disk vs MEMORY.md roster |
 | 2 | README vs disk | medium | setup | Agent/skill table rows in README vs disk |
 | 3 | settings.json permissions | medium | setup | Bash commands in skills vs allow list |
-| 4 | permissions-guide.md drift | medium | setup | Every allow entry must have a guide row, and vice versa |
+| 4 | permissions-guide.md drift | medium | setup | Every allow entry needs a guide row, and vice versa |
 | 5 | Permission safety audit | critical/high | setup | Allow entries must be non-destructive, reversible, local-only |
 | 6 | Stale settings.json allow entries | low | setup | Allow entries with no usage in any .claude/ file |
 | 7 | codex plugin integration | medium | setup | Plugin installed and enabled; dispatches work |

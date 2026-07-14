@@ -53,7 +53,7 @@ Load design_artifacts from `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_share
 ## Finding Priority and Labelling
 
 1. **Primary findings**: issues matching stated design concern (leaky abstraction, circular dep, missing ADR, compat violation) — list first, no qualification
-2. **Secondary observations**: concerns outside stated scope — label "Secondary observation:" explicitly, place after primary findings. Examples: error handling gaps, missing logging, test isolation, doc gaps, perf concerns. Real issues but not primary architectural question.
+2. **Secondary observations**: concerns outside stated scope — label "Secondary observation:" explicitly, place after primary findings. Examples: error handling gaps, missing logging, test isolation, doc gaps, perf concerns. Real issues but not the primary architectural question.
 3. **Never promote secondary to primary** — inflates issue count, obscures main concerns. Orthogonal issues go in "Secondary observations" section.
 
 ## Coupling Analysis

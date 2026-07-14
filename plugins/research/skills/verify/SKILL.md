@@ -27,7 +27,7 @@ NOT for: running experiments (use `/research:run`); judging experimental methodo
 
 ## Agent Resolution
 
-`research:scientist` in same plugin as this skill — no fallback needed if research plugin installed. Scientist handles all five audit dimensions in single spawn to preserve cross-dimension context (e.g., notation inconsistency explaining formula mismatch requires holistic paper understanding).
+`research:scientist` same plugin as this skill — no fallback needed if research plugin installed. Scientist handles all five audit dimensions in single spawn to preserve cross-dimension context (e.g., notation inconsistency explaining formula mismatch needs holistic paper understanding).
 
 ## Verify Mode (Steps V1–V6)
 
@@ -109,7 +109,7 @@ OUT=$(cat "${TMPDIR:-/tmp}/verify-${_VTAG}-out" 2>/dev/null)
 2. `--program <program.md>` flag — Read file, extract `scope_files` from `## Config` fenced block
 3. Auto-detect — `Glob(pattern="**/*.py")` up to 100 files; prefer files with ML-relevant imports (`torch`, `tensorflow`, `sklearn`, `numpy`, `jax`). If Glob returns 100 files and additional `.py` files exist (i.e., total may exceed 100): print `⚠ Scope truncated at 100 files — large codebase. Fidelity score reflects verified subset only. Use --scope or --program to narrow to relevant modules.`
 
-**Post-resolution validation** (applies to ALL three resolution methods above, including `--scope` and `--program`): after `scope_files` is resolved, count entries:
+**Post-resolution validation** (applies to all three resolution methods above, including `--scope` and `--program`): after `scope_files` resolved, count entries:
 - `len(scope_files) == 0` → print `! MISSING — Scope resolved to 0 files. Check --scope glob (typos like '**/*.pytroch' return zero matches), --program config block, or auto-detect coverage.` and stop.
 - `len(scope_files) > 100` → print the truncation warning above regardless of resolution method, so user is aware fidelity reflects verified subset only.
 
@@ -146,7 +146,7 @@ fi
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`. Single agent handles all five dimensions — cross-dimension context requires holistic paper understanding.
 
-**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-verify-codemap-enabled`): read `$_RESEARCH_SHARED/codemap-context.md` and execute its block (leave `TARGET_MODULE`/`TARGET_FN` empty for the `central` baseline, or set `TARGET_MODULE` to a key module from `scope_files`). Prepend the output to the scientist prompt under a `## Structural Context (codemap)` heading so the architecture (N) and eval (E) dimensions reference real import/coverage structure instead of re-reading every file.
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-verify-codemap-enabled`): read `$_RESEARCH_SHARED/codemap-context.md`, execute its block (leave `TARGET_MODULE`/`TARGET_FN` empty for `central` baseline, or set `TARGET_MODULE` to key module from `scope_files`). Prepend output to scientist prompt under `## Structural Context (codemap)` heading so architecture (N) and eval (E) dimensions reference real import/coverage structure instead of re-reading every file.
 
 <!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is declared as a reference constant but is NOT enforceable within the skill — Agent() has no timeout parameter. After Agent() returns, apply the single timeout policy declared in `<constants>`: check `$RUN_DIR/audit-raw.md`; if absent or empty, set `fidelity = null`, `status = TIMED_OUT`, mark ⏱ in report; if present, parse normally. Same limitation as research:topic. -->
 
@@ -340,6 +340,6 @@ ls ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/fix/SKILL.md >/dev/null
 - Re-run verify after fixing mismatches to confirm fixes resolved flagged items
 - For papers with appendices beyond 20 pages, iterate Read with `pages: "21-40"` etc. to capture full hyperparameter tables
 - Fidelity score = ratio, not probability — 0.9 means 90% of verified claims match, not 90% confidence
-- **Dimension [C] (Citation chain) is best-effort** — paper provenance is rarely resolvable from code alone; expect most [C] findings to come back as `UNVERIFIABLE`. To skip [C] entirely for faster, cleaner output, run with `--dim F,H,E,N`. Keep [C] when you have specific provenance suspicions (e.g., code may implement variant from different paper than the one cited).
+- **Dimension [C] (Citation chain) is best-effort** — paper provenance rarely resolvable from code alone; expect most [C] findings to come back `UNVERIFIABLE`. To skip [C] for faster, cleaner output, run with `--dim F,H,E,N`. Keep [C] with specific provenance suspicions (e.g., code may implement variant from different paper than one cited).
 
 </notes>

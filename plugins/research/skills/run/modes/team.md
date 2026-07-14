@@ -79,7 +79,7 @@
    Call TaskUpdate(in_progress) when starting; TaskUpdate(completed) when done.
    ```
 
-**Synchronous spawn note**: hypothesis agents are spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. After the Agent() calls return, check each `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`; if missing or empty, that agent timed out — read any partial output, surface with ⏱ in the Phase D report, never silently omit.
+**Synchronous spawn note**: hypothesis agents spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling unreachable mid-call. After Agent() calls return, check each `<RUN_DIR>/hypotheses-<axis-slug>.jsonl`; if missing or empty, that agent timed out — read any partial output, surface with ⏱ in Phase D report, never silently omit.
 
 5. Collect compact JSON envelopes from all hypothesis agents. Do not read `.md` analysis files into lead context — inputs to Phase B queue assembly only.
 

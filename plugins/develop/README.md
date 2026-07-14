@@ -1,8 +1,8 @@
 # 🛠️ develop — Claude Code Plugin
 
-Six slash-command skills — `plan`, `feature`, `fix`, `refactor`, `debug`, `review` — built on a single principle: validate the problem exists before writing a single line of solution. Every code-changing skill forces you to prove you understand what you're building or breaking before you touch production code.
+Six slash-command skills — `plan`, `feature`, `fix`, `refactor`, `debug`, `review` — one principle: prove problem exist before writing solution. Every code-changing skill force you prove understanding before touching production code.
 
-> Works standalone — `foundry` is not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:qa-specialist`, etc.) and is strongly recommended.
+> Works standalone — `foundry` not required. Without it, agent dispatches fall back to `general-purpose` with role descriptions (lower quality). Installing `foundry` unlocks specialized agents (`foundry:sw-engineer`, `foundry:qa-specialist`, etc.) — strongly recommended.
 
 ______________________________________________________________________
 
@@ -32,11 +32,11 @@ ______________________________________________________________________
 
 ## 🤔 What is develop?
 
-`develop` is a development workflow plugin for Claude Code that enforces a validate-first discipline across the full implementation lifecycle. It covers scoping, feature development, bug fixing, refactoring, debugging, and local code review — all as structured, reproducible workflows rather than freeform requests.
+`develop` = development workflow plugin for Claude Code. Enforces validate-first discipline across full implementation lifecycle: scoping, features, bug fixes, refactoring, debugging, local code review — structured reproducible workflows, not freeform requests.
 
-It is for developers who want AI assistance that follows engineering discipline rather than one that guesses and charges ahead. Every skill has explicit gates that prevent moving forward on shaky ground.
+For developers who want AI that follows engineering discipline, not one that guesses and charges ahead. Every skill has explicit gates blocking forward motion on shaky ground.
 
-**Not for**: dependency upgrades (pydantic v1→v2, numpy 1→2), codebase onboarding/exploration, data migration scripts, CI-only failures without local repro (use `--ci-run` in debug), cross-cutting refactors spanning >15 files (split into phases).
+**Not for**: dependency upgrades (pydantic v1→v2, numpy 1→2), codebase onboarding/exploration, data migration scripts, CI-only failures without local repro (use `--ci-run` in debug), cross-cutting refactors >15 files (split into phases).
 
 ______________________________________________________________________
 
@@ -44,19 +44,19 @@ ______________________________________________________________________
 
 Without it, AI-assisted development tends to:
 
-- Implement features before the API contract is pinned — then discover the design is wrong after the implementation
-- Fix bugs by guessing the root cause, producing patches that pass tests but don't fix the actual problem
-- Refactor without a safety net, breaking behavior silently
-- Apply multi-file changes without knowing which downstream callers are affected
+- Implement before API contract pinned — discover wrong design after implementation
+- Fix bugs by guessing root cause — patches pass tests, don't fix actual problem
+- Refactor without safety net — break behavior silently
+- Apply multi-file changes blind to affected downstream callers
 
-With `develop`, each workflow enforces the same discipline a rigorous engineer applies manually:
+With `develop`, each workflow enforces discipline rigorous engineer applies manually:
 
-- **feature**: write a failing demo test first — if you cannot write the test, the feature is underspecified
-- **fix**: reproduce the bug with a failing regression test first — if you cannot reproduce it, you cannot verify the fix
-- **refactor**: audit test coverage and lock in characterization tests before moving a single line
-- **debug**: gather all evidence and state one confirmed hypothesis before proposing any fix
-- **plan**: scope complexity, identify blast radius, and get agent feasibility review before committing to implementation
-- **review**: run six specialist agents across architecture, tests, performance, docs, lint, and API design against your local diff — no GitHub PR required
+- **feature**: failing demo test first — cannot write test = feature underspecified
+- **fix**: reproduce bug with failing regression test first — cannot reproduce = cannot verify fix
+- **refactor**: audit test coverage, lock characterization tests before moving one line
+- **debug**: gather all evidence, state one confirmed hypothesis before any fix
+- **plan**: scope complexity, identify blast radius, agent feasibility review before committing
+- **review**: six specialist agents — architecture, tests, performance, docs, lint, API design — against local diff. No GitHub PR needed
 
 ______________________________________________________________________
 
@@ -84,7 +84,7 @@ claude plugin install research@borda-ai-rig
 
 </details>
 
-Installing `foundry` gives `develop` access to `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, and others. Without it, all agent dispatches fall back to `general-purpose` with role-description prompts — functional but lower quality.
+`foundry` gives `develop` access to `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, others. Without it, all dispatches fall back to `general-purpose` with role-description prompts — functional, lower quality.
 
 <details>
 
@@ -94,7 +94,7 @@ Installing `foundry` gives `develop` access to `foundry:sw-engineer`, `foundry:q
 claude plugin list | grep -F 'develop@borda-ai-rig'
 ```
 
-You should see an enabled entry like `develop@borda-ai-rig` in the output.
+Expect enabled entry like `develop@borda-ai-rig` in output.
 
 </details>
 
@@ -102,13 +102,13 @@ ______________________________________________________________________
 
 ## ⚡ Quick start
 
-The fastest way to get immediate value: scope your next task before starting it.
+Fastest value: scope next task before starting.
 
 ```text
 /develop:plan "extract data loading into a dedicated DataLoader class"
 ```
 
-`plan` reads your codebase, classifies the task, identifies affected files, estimates complexity, runs a parallel feasibility review with specialist agents, and writes a structured plan to `.plans/active/`. It then tells you exactly which skill to run next:
+`plan` reads codebase, classifies task, identifies affected files, estimates complexity, runs parallel feasibility review with specialist agents, writes structured plan to `.plans/active/`. Then tells exactly which skill to run next:
 
 ```text
 Plan -> .plans/active/plan_extract-data-loading-dataloader.md
@@ -126,15 +126,15 @@ ______________________________________________________________________
 
 ## 🔧 Skills reference
 
-All skills are invoked with the `develop:` prefix.
+All skills invoked with `develop:` prefix.
 
 ______________________________________________________________________
 
 ### `/develop:plan`
 
-**Purpose**: Scope a task before committing to it. Produces a structured plan with classification, complexity estimate, affected files, risks, and a suggested implementation approach. No code is written.
+**Purpose**: Scope task before committing. Produces structured plan: classification, complexity estimate, affected files, risks, suggested approach. No code written.
 
-**When to use**: before any non-trivial feature, fix, or refactor; when you are unsure of the blast radius or complexity of a change; when you want agent-validated feasibility before starting.
+**When to use**: before non-trivial feature/fix/refactor; blast radius or complexity unclear; want agent-validated feasibility first.
 
 **Invocation**:
 
@@ -153,11 +153,11 @@ ______________________________________________________________________
 
 **What happens**:
 
-1. Spawns `foundry:sw-engineer` to classify the task (feature / fix / refactor), map affected files, estimate complexity (small / medium / large), and list risks. When codemap is available, effort sizing is structural rather than file-count-based: reverse-dependency counts per affected module set a blast tier (≥5 rdeps HIGH, 1–4 MODERATE, 0 LOW) and co-change coupled pairs surface as risks — a HIGH module or 3+ affected modules pushes complexity to `large`
-2. Writes a structured plan to `.plans/active/<slug>.md`
-3. Spawns parallel feasibility agents matching the classification — they flag blockers, open questions, and concerns
-4. Attempts to resolve blockers autonomously (codebase search, WebFetch for docs); escalates only what genuinely requires your input
-5. Annotates the plan with resolved/unresolved status and writes a Brief summary
+1. Spawns `foundry:sw-engineer` to classify task (feature / fix / refactor), map affected files, estimate complexity (small / medium / large), list risks. With codemap: effort sizing structural, not file-count-based — reverse-dependency counts per affected module set blast tier (≥5 rdeps HIGH, 1–4 MODERATE, 0 LOW), co-change coupled pairs surface as risks. HIGH module or 3+ affected modules push complexity to `large`
+2. Writes structured plan to `.plans/active/<slug>.md`
+3. Spawns parallel feasibility agents matching classification — flag blockers, open questions, concerns
+4. Resolves blockers autonomously (codebase search, WebFetch for docs); escalates only what genuinely needs your input
+5. Annotates plan with resolved/unresolved status, writes Brief summary
 
 **Output to terminal**:
 
@@ -173,22 +173,22 @@ Agent review   : ✓ agents ready (N corrections incorporated)
 -> /develop:feature|fix|refactor "<goal>" when ready
 ```
 
-**Passing the plan to downstream skills**: every code-changing skill accepts `--plan <path>`. When provided, the skill reads classification, affected files, risks, and suggested approach from the plan — skipping cold codebase exploration and inheriting feasibility verdicts already validated.
+**Passing plan to downstream skills**: every code-changing skill accepts `--plan <path>`. Skill reads classification, affected files, risks, suggested approach from plan — skips cold codebase exploration, inherits validated feasibility verdicts.
 
 ```text
 /develop:plan "add streaming response support"
 /develop:feature "add streaming response support" --plan .plans/active/plan_add-streaming-response-support.md
 ```
 
-**What plan does NOT do**: write any code or tests. It is analysis-only.
+**What plan does NOT do**: write code or tests. Analysis-only.
 
 ______________________________________________________________________
 
 ### `/develop:feature`
 
-**Purpose**: TDD-first feature development. Crystallises the API as a failing demo test, drives implementation to pass it, then closes quality gaps via a review loop and documentation update.
+**Purpose**: TDD-first feature development. Crystallises API as failing demo test, drives implementation to pass, closes quality gaps via review loop + docs update.
 
-**When to use**: adding new behavior to the codebase.
+**When to use**: adding new behavior.
 
 **Not for**: bug fixes — use `/develop:fix`.
 
@@ -205,22 +205,22 @@ ______________________________________________________________________
 
 | Flag                  | Description                                                                                                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--repo <owner/repo>` | Route issue fetch to an upstream repository. Use when working in a fork and the issue is on the original repo (e.g. `--repo owner/my-project`).                                            |
-| `--plan <path>`       | Read classification, scope, and approach from an existing plan file                                                                                                                        |
+| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                  |
+| `--plan <path>`       | Read classification, scope, approach from existing plan file                                                                                                                               |
 | `--team`              | Spawn parallel `foundry:sw-engineer` + `foundry:qa-specialist` + `foundry:doc-scribe` teammates. Use when feature spans 3+ modules, changes public API, or touches auth/payment/data scope |
 | `--no-codemap`        | Disable codemap even if available                                                                                                                                                          |
 | `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                     |
-| `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust your own scoping)                                                                                                                |
+| `--accept-no-plan`    | Skip inline plan generation for medium/large scope (trust own scoping)                                                                                                                     |
 | `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                           |
-| `--challenge`         | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                                                                                             |
-| `--keep "<items>"`    | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                              |
+| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                  |
+| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                  |
 
 **Workflow**:
 
-1. **Scope analysis** (`foundry:sw-engineer`): understand existing patterns, reuse opportunities, affected files, and compatibility concerns. If a GitHub issue number is provided, fetches the full issue with comments (from upstream repo if `--repo` specified).
-2. **Source verification** (conditional): if the feature calls an external library API, detects the installed version from `pyproject.toml`, fetches the official docs page via WebFetch, and cites the relevant passage in code comments.
-3. **Demo use-case**: crystallises the API contract as either an inline doctest (simple functions) or an example script (complex features with setup). The demo must fail against current code before proceeding. Gate enforced via exit code — not output text.
-4. **TDD implementation loop** (`foundry:sw-engineer`): makes tests pass one at a time, running the full suite after each change to catch regressions.
+1. **Scope analysis** (`foundry:sw-engineer`): existing patterns, reuse opportunities, affected files, compatibility concerns. GitHub issue number given → fetches full issue + comments (upstream if `--repo`).
+2. **Source verification** (conditional): feature calls external library API → detects installed version from `pyproject.toml`, fetches official docs via WebFetch, cites relevant passage in code comments.
+3. **Demo use-case**: crystallises API contract as inline doctest (simple functions) or example script (complex features with setup). Demo must fail against current code before proceeding. Gate enforced via exit code — not output text.
+4. **TDD implementation loop** (`foundry:sw-engineer`): tests pass one at a time, full suite after each change to catch regressions.
 5. **Review and close gaps**: 5-axis quality scan (correctness, readability, architecture, security, performance) → fix loop, max 3 cycles.
 6. **Documentation** (`foundry:doc-scribe`): Google-style docstrings, CHANGELOG entry, README updates if public API changed.
 7. **Quality stack**: lint/format (ruff) → type check (mypy) → full test suite → blast-radius check (codemap) → Codex pre-pass → progressive review loop.
@@ -232,17 +232,17 @@ ______________________________________________________________________
 /develop:feature "add CSV export to the results API" --plan .plans/active/plan_add-csv-export-results-api.md
 ```
 
-**Team mode coordination**: Lead broadcasts Step 1 analysis. `foundry:qa-specialist` challenges the API design before implementation starts. `foundry:sw-engineer` implements while `foundry:qa-specialist` writes TDD tests in parallel. `foundry:doc-scribe` prepares documentation structure concurrently.
+**Team mode coordination**: Lead broadcasts Step 1 analysis. `foundry:qa-specialist` challenges API design before implementation. `foundry:sw-engineer` implements while `foundry:qa-specialist` writes TDD tests parallel. `foundry:doc-scribe` prepares docs structure concurrently.
 
 ______________________________________________________________________
 
 ### `/develop:fix`
 
-**Purpose**: Reproduce-first bug resolution. Captures the bug in a failing regression test before applying any fix.
+**Purpose**: Reproduce-first bug resolution. Captures bug in failing regression test before any fix.
 
-**When to use**: fixing a known bug with a traceback, failing test, or GitHub issue.
+**When to use**: fixing known bug with traceback, failing test, or GitHub issue.
 
-**Not for**: CI-only failures — use `/develop:debug --ci-run <run-id>` first; production incidents without any CI run or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`.
+**Not for**: CI-only failures — use `/develop:debug --ci-run <run-id>` first; production incidents without CI run or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`.
 
 **Invocation**:
 
@@ -257,22 +257,22 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag                  | Description                                                                                                                                     |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--repo <owner/repo>` | Route issue fetch to an upstream repository. Use when working in a fork and the issue is on the original repo (e.g. `--repo owner/my-project`). |
-| `--plan <path>`       | Read scope and approach from an existing plan file                                                                                              |
-| `--diagnosis <path>`  | Read confirmed root cause from a `/develop:debug` output file; skips Step 1 analysis entirely                                                   |
-| `--team`              | Spawn 2-3 `foundry:sw-engineer` teammates each investigating a distinct root-cause hypothesis independently                                     |
-| `--no-challenge`      | Skip the challenger adversarial gate entirely                                                                                                   |
-| `--challenge`         | Force the challenger gate even on a small change the auto-skip would otherwise skip                                                             |
-| `--keep "<items>"`    | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                   |
+| Flag                  | Description                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`). |
+| `--plan <path>`       | Read scope and approach from existing plan file                                                                           |
+| `--diagnosis <path>`  | Read confirmed root cause from `/develop:debug` output file; skips Step 1 analysis entirely                               |
+| `--team`              | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating distinct root-cause hypothesis independently                |
+| `--no-challenge`      | Skip challenger adversarial gate entirely                                                                                 |
+| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                 |
+| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                 |
 
 **Workflow**:
 
-1. **Understand the problem** (`foundry:sw-engineer`): reads the full traceback, searches for the failing code path, traces call graph, identifies root cause, state mutation, and blast radius. If the argument is a positive integer, fetches the GitHub issue (from upstream repo if `--repo` specified).
-2. **Reproduce the bug** (`foundry:qa-specialist`): writes a regression test that fails on unfixed code. Gate: test must exit non-zero before proceeding.
-3. **Apply the fix** (`foundry:sw-engineer`): minimal change — only what is necessary to make the regression test pass.
-4. **Review and close gaps**: 5-axis quality scan → fix loop, max 3 cycles. Adjacent bugs are documented as observations and handled in a separate session — never fixed in the same pass.
+1. **Understand the problem** (`foundry:sw-engineer`): reads full traceback, searches failing code path, traces call graph, identifies root cause, state mutation, blast radius. Argument = positive integer → fetches GitHub issue (upstream if `--repo`).
+2. **Reproduce the bug** (`foundry:qa-specialist`): writes regression test failing on unfixed code. Gate: test must exit non-zero before proceeding.
+3. **Apply the fix** (`foundry:sw-engineer`): minimal change — only what makes regression test pass.
+4. **Review and close gaps**: 5-axis quality scan → fix loop, max 3 cycles. Adjacent bugs documented as observations, handled in separate session — never fixed same pass.
 5. **Quality stack**: ruff → mypy → full test suite → blast-radius check → Codex pre-pass → progressive review loop.
 
 **Realistic example**:
@@ -290,13 +290,13 @@ ______________________________________________________________________
 /develop:fix "intermittent timeout on /api/predict under load" --diagnosis .plans/active/debug_intermittent-timeout.md
 ```
 
-**Scope gate**: if root cause spans 3+ modules, you are asked whether to narrow scope or proceed — prevents large unfocused fixes.
+**Scope gate**: root cause spans 3+ modules → asked narrow scope or proceed — prevents large unfocused fixes.
 
 ______________________________________________________________________
 
 ### `/develop:refactor`
 
-**Purpose**: Test-first refactoring. Audits existing test coverage, adds characterization tests for gaps, then restructures the code with a safety net that catches any behavior change.
+**Purpose**: Test-first refactoring. Audits test coverage, adds characterization tests for gaps, restructures code with safety net catching any behavior change.
 
 **When to use**: restructuring existing code — extracting classes, simplifying logic, cleaning API, removing dead code — without changing observed behavior.
 
@@ -313,32 +313,32 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag                  | Description                                                                                                                                                                                         |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--repo <owner/repo>` | Route issue fetch to an upstream repository. Use when working in a fork and the refactor context is tied to an upstream issue. Parsed for consistency; refactor has no issue-fetch step by default. |
-| `--plan <path>`       | Read scope and approach from an existing plan file                                                                                                                                                  |
-| `--team`              | Spawn `foundry:sw-engineer` (refactoring) and `foundry:qa-specialist` (characterization tests) in parallel. Use when target is a directory or spans multiple modules                                |
-| `--no-codemap`        | Disable codemap even if available                                                                                                                                                                   |
-| `--codemap`           | Strict codemap — fail if index missing                                                                                                                                                              |
-| `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                                                  |
-| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                                                    |
-| `--challenge`         | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                                                                                                      |
-| `--keep "<items>"`    | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                       |
+| Flag                  | Description                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--repo <owner/repo>` | Route issue fetch to upstream repo. Use when refactor context tied to upstream issue in fork. Parsed for consistency; refactor has no issue-fetch step by default. |
+| `--plan <path>`       | Read scope and approach from existing plan file                                                                                                                    |
+| `--team`              | Spawn `foundry:sw-engineer` (refactoring) + `foundry:qa-specialist` (characterization tests) parallel. Use when target is directory or spans multiple modules      |
+| `--no-codemap`        | Disable codemap even if available                                                                                                                                  |
+| `--codemap`           | Strict codemap — fail if index missing                                                                                                                             |
+| `--accept-no-plan`    | Skip inline plan generation for medium/large scope                                                                                                                 |
+| `--no-challenge`      | Skip challenger adversarial gate                                                                                                                                   |
+| `--challenge`         | Force challenger gate even on small change auto-skip would otherwise skip                                                                                          |
+| `--keep "<items>"`    | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                          |
 
 **Workflow**:
 
-1. **Scope and understand** (`foundry:sw-engineer`): reads the target code, maps the public API surface, identifies complexity hotspots and coupling. Uses codemap for blast-radius analysis when available. Scope gate: if target spans 3+ modules, 5+ files, or any public-API rename, asks whether to narrow or proceed.
-2. **Audit test coverage**: classifies each public function as covered / partially covered / uncovered. Falls back to "all uncovered" conservatively if `pytest-cov` is not installed.
-3. **Add characterization tests** (`foundry:qa-specialist`): for every uncovered or partially covered public API, generates tests that assert *current* behavior (not desired behavior). Gate: all characterization tests must pass on unmodified code before proceeding.
-4. **Refactor with safety net**: one focused change per cycle, run tests after each. Safety break: max 5 change-test cycles per inner session; max 10 total across all outer review cycles.
-5. **Review and close gaps**: checks behavior preservation, goal achievement, no new smells, no unintended API surface changes. Max 3 outer review cycles.
+1. **Scope and understand** (`foundry:sw-engineer`): reads target code, maps public API surface, identifies complexity hotspots + coupling. Codemap for blast-radius when available. Scope gate: target spans 3+ modules, 5+ files, or any public-API rename → asks narrow or proceed.
+2. **Audit test coverage**: classifies each public function covered / partially covered / uncovered. No `pytest-cov` installed → falls back to "all uncovered" conservatively.
+3. **Add characterization tests** (`foundry:qa-specialist`): every uncovered/partial public API gets tests asserting *current* behavior (not desired). Gate: all characterization tests must pass on unmodified code before proceeding.
+4. **Refactor with safety net**: one focused change per cycle, tests after each. Safety break: max 5 change-test cycles per inner session; max 10 total across all outer review cycles.
+5. **Review and close gaps**: behavior preservation, goal achievement, no new smells, no unintended API surface changes. Max 3 outer review cycles.
 6. **Quality stack**: ruff → mypy → full test suite → blast-radius check → Codex pre-pass → progressive review loop.
 
-**Refactoring categories the skill handles**:
+**Refactoring categories skill handles**:
 
 - Logic simplification: replace complex conditionals, flatten nesting, extract helpers
 - API cleanup: rename for clarity, consolidate parameters, add type annotations
-- Structural: extract classes or modules, reduce coupling, apply design patterns
+- Structural: extract classes/modules, reduce coupling, apply design patterns
 - Performance: replace loops with vectorized ops, reduce allocations, batch I/O
 - Dead code removal: unused imports, unreachable branches, unexported public methods
 
@@ -349,17 +349,17 @@ ______________________________________________________________________
 /develop:refactor "extract data loading into a dedicated DataLoader class" --plan .plans/active/plan_extract-data-loading-dataloader.md
 ```
 
-**Checkpoint and resume**: creates `.developments/<timestamp>/checkpoint.md` after each step. If the session is interrupted, re-running the skill offers to resume from the last completed step.
+**Checkpoint and resume**: creates `.developments/<timestamp>/checkpoint.md` after each step. Session interrupted → re-run offers resume from last completed step.
 
 ______________________________________________________________________
 
 ### `/develop:debug`
 
-**Purpose**: Investigation-first debugging. Gathers all available signals, traces the failure path, forms a single confirmed root-cause hypothesis, writes a diagnosis file, and hands off to `/develop:fix`.
+**Purpose**: Investigation-first debugging. Gathers all signals, traces failure path, forms single confirmed root-cause hypothesis, writes diagnosis file, hands off to `/develop:fix`.
 
-**When to use**: when you have a symptom but not a confirmed root cause; when a bug is mysterious enough to warrant structured investigation before fixing.
+**When to use**: symptom without confirmed root cause; bug mysterious enough to warrant structured investigation before fixing.
 
-**Not for**: production incidents without any CI run ID or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`. CI-only failures ARE supported — pass `--ci-run <run-id or URL>`.
+**Not for**: production incidents without CI run ID or traceback — use `/foundry:investigate`; `.claude/` config issues — use `/foundry:audit`. CI-only failures ARE supported — pass `--ci-run <run-id or URL>`.
 
 **Invocation**:
 
@@ -372,25 +372,25 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag                   | Description                                                                                                                                                                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--repo <owner/repo>`  | Route issue fetch to an upstream repository. Use when working in a fork and the issue is on the original repo (e.g. `--repo owner/my-project`).                                                                                                     |
-| `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating a distinct root-cause hypothesis independently. Use when root cause is unclear after initial analysis, or failure spans 3+ modules                                                    |
-| `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures with no local repro. |
-| `--codemap`            | Strict codemap — fail if index missing (auto-enabled when installed)                                                                                                                                                                                |
-| `--no-codemap`         | Disable codemap even if available                                                                                                                                                                                                                   |
-| `--no-challenge`       | Skip the challenger adversarial gate entirely                                                                                                                                                                                                       |
-| `--challenge`          | Force the challenger gate even on a small change the auto-skip would otherwise skip                                                                                                                                                                 |
-| `--keep "<items>"`     | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                                                                       |
+| Flag                   | Description                                                                                                                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--repo <owner/repo>`  | Route issue fetch to upstream repo. Use when working in fork and issue on original repo (e.g. `--repo owner/my-project`).                                                                                                                       |
+| `--team`               | Spawn 2-3 `foundry:sw-engineer` teammates, each investigating distinct root-cause hypothesis independently. Use when root cause unclear after initial analysis, or failure spans 3+ modules                                                     |
+| `--ci-run <id-or-url>` | Fetch CI failure logs via `gh run view <id> --log-failed` instead of running pytest locally. Accepts bare run ID or any GitHub Actions URL (`/actions/runs/<id>` or `/actions/runs/<id>/jobs/<job>`). Use for CI-only failures, no local repro. |
+| `--codemap`            | Strict codemap — fail if index missing (auto-enabled when installed)                                                                                                                                                                            |
+| `--no-codemap`         | Disable codemap even if available                                                                                                                                                                                                               |
+| `--no-challenge`       | Skip challenger adversarial gate entirely                                                                                                                                                                                                       |
+| `--challenge`          | Force challenger gate even on small change auto-skip would otherwise skip                                                                                                                                                                       |
+| `--keep "<items>"`     | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill                                                                                                                                       |
 
 **Workflow**:
 
-1. **Understand the symptom** (`foundry:sw-engineer`): reads full tracebacks, recent git changes near the failing code, and traces the call path from entry point to failure site. If a GitHub issue number is provided, fetches the full issue with comments (from upstream repo if `--repo` specified).
-2. **Pattern analysis**: finds 2-3 similar working code paths and compares them exhaustively against the broken path — across input, environment, call order, conditional branches, and None/empty guards.
-3. **Hypothesis and gate**: states root cause explicitly with supporting and contradicting evidence and a confidence level (high / medium / low). Presents hypothesis to you and waits for confirmation before proceeding. Low confidence triggers a targeted probe (minimal script, added assertion) to gather missing signal. When codemap is enabled, also runs a one-time `test-impact` query on the confirmed suspect module/function.
-4. **Hand off to fix**: writes a diagnosis file to `.plans/active/debug_<slug>.md` and emits `-> /develop:fix --diagnosis <path>`. Fix's Step 1 analysis is pre-answered by the diagnosis. The test-impact result (with the index timestamp) is written under a `## Test Impact (codemap)` section so `/develop:fix` reuses it — running test-impact once across the debug→fix flow — and re-queries only if the index moved or the result is stale.
+1. **Understand the symptom** (`foundry:sw-engineer`): reads full tracebacks, recent git changes near failing code, traces call path entry point → failure site. GitHub issue number → fetches full issue + comments (upstream if `--repo`).
+2. **Pattern analysis**: finds 2-3 similar working code paths, compares exhaustively against broken path — input, environment, call order, conditional branches, None/empty guards.
+3. **Hypothesis and gate**: states root cause explicitly with supporting + contradicting evidence and confidence (high / medium / low). Presents hypothesis, waits for confirmation before proceeding. Low confidence → targeted probe (minimal script, added assertion) for missing signal. Codemap enabled → one-time `test-impact` query on confirmed suspect module/function.
+4. **Hand off to fix**: writes diagnosis file to `.plans/active/debug_<slug>.md`, emits `-> /develop:fix --diagnosis <path>`. Fix's Step 1 pre-answered by diagnosis. Test-impact result (with index timestamp) written under `## Test Impact (codemap)` section — `/develop:fix` reuses it (test-impact runs once across debug→fix flow), re-queries only if index moved or result stale.
 
-**Debug is investigation-only** — no code changes. The fix happens in a separate, auditable session with its own regression test gate.
+**Debug is investigation-only** — no code changes. Fix happens in separate auditable session with own regression test gate.
 
 **Realistic example**:
 
@@ -399,19 +399,19 @@ ______________________________________________________________________
 # -> /develop:fix --diagnosis .plans/active/debug_intermittent-timeout-api-predict.md
 ```
 
-**Team mode**: teammates independently investigate competing hypotheses, lead facilitates cross-challenge, then synthesises consensus before handing off to fix.
+**Team mode**: teammates independently investigate competing hypotheses, lead facilitates cross-challenge, synthesises consensus before handing off to fix.
 
 ______________________________________________________________________
 
 ### `/develop:review`
 
-**Purpose**: Comprehensive local code review via six specialist agents in parallel — covering architecture, tests, performance, documentation, static analysis, and API design. Works against local files or the current git diff. No GitHub PR required.
+**Purpose**: Comprehensive local code review via six specialist agents parallel — architecture, tests, performance, docs, static analysis, API design. Works against local files or current git diff. No GitHub PR required.
 
-**When to use**: reviewing your own changes before committing; getting structured feedback on local files; closing quality gaps before opening a PR.
+**When to use**: reviewing own changes before committing; structured feedback on local files; closing quality gaps before PR.
 
 **Not for**: GitHub PR review — use `/oss:review <PR#>`; implementation work — use `/develop:feature` or `/develop:fix`.
 
-**Scope**: Python source files only. Non-Python files (YAML, Dockerfile, JSON, shell scripts) are flagged in the report header as "not reviewed" but their presence is noted because dependency or config changes can silently break reviewed Python code.
+**Scope**: Python source only. Non-Python files (YAML, Dockerfile, JSON, shell scripts) flagged in report header as "not reviewed" but presence noted — dependency/config changes can silently break reviewed Python code.
 
 **Invocation**:
 
@@ -423,29 +423,29 @@ ______________________________________________________________________
 
 **Flags**:
 
-| Flag               | Description                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- |
-| `--no-challenge`   | Skip challenger adversarial gate                                                                              |
-| `--challenge`      | Force the challenger gate even on a small change the small-diff auto-skip would otherwise skip                |
-| `--codemap`        | Strict codemap — fail if index missing                                                                        |
-| `--no-codemap`     | Disable codemap even if available                                                                             |
-| `--semble`         | Enable semble semantic search context                                                                         |
-| `--keep "<items>"` | Append items to the compaction contract preserve field — keeps key context if auto-compaction fires mid-skill |
+| Flag               | Description                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| `--no-challenge`   | Skip challenger adversarial gate                                                                          |
+| `--challenge`      | Force challenger gate even on small change auto-skip would otherwise skip                                 |
+| `--codemap`        | Strict codemap — fail if index missing                                                                    |
+| `--no-codemap`     | Disable codemap even if available                                                                         |
+| `--semble`         | Enable semble semantic search context                                                                     |
+| `--keep "<items>"` | Append items to compaction contract preserve field — keeps key context if auto-compaction fires mid-skill |
 
 **Workflow**:
 
-1. **Identify scope**: collects Python files from the path or `git diff HEAD`. Classifies the diff as FIX / REFACTOR / FEATURE / CHORE / MIXED — skips optional agents for smaller diffs (e.g., FIX skips `foundry:perf-optimizer` and `foundry:solution-architect`; CHORE skips `foundry:qa-specialist`, `foundry:perf-optimizer`, and `foundry:solution-architect`). A small diff (single file, \<50 lines, no new public API) also auto-skips the `foundry:challenger` gate unless `--challenge` is passed.
-2. **Codex co-review** (if `codex` plugin installed): adversarial diff review to seed a pre-flagged issues list for the specialist agents.
+1. **Identify scope**: collects Python files from path or `git diff HEAD`. Classifies diff FIX / REFACTOR / FEATURE / CHORE / MIXED — skips optional agents for smaller diffs (FIX skips `foundry:perf-optimizer` + `foundry:solution-architect`; CHORE skips `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:solution-architect`). Small diff (single file, \<50 lines, no new public API) also auto-skips `foundry:challenger` gate unless `--challenge` passed.
+2. **Codex co-review** (if `codex` plugin installed): adversarial diff review seeds pre-flagged issues list for specialist agents.
 3. **Six parallel agents** (file-based handoff — each writes handover files to `.temp/review/<timestamp>/`):
-   - `foundry:sw-engineer`: architecture, SOLID adherence, type safety, error handling, Python anti-patterns, security for touched auth/input/data paths
+   - `foundry:sw-engineer`: architecture, SOLID, type safety, error handling, Python anti-patterns, security for touched auth/input/data paths
    - `foundry:qa-specialist`: test coverage gaps, missing edge cases, ML non-determinism, seed pinning, boundary conditions
    - `foundry:perf-optimizer`: algorithmic complexity, loops that should be NumPy/torch ops, unnecessary I/O, ML DataLoader config (skipped for FIX diffs)
    - `foundry:doc-scribe`: public APIs without docstrings, Google-style section gaps, CHANGELOG entries, deprecated stdlib usage
    - `foundry:linting-expert`: ruff violations, mypy errors, type annotation gaps on public API, suppressed violations
-   - `foundry:solution-architect`: API design quality, coupling, backward compatibility (only for changes touching public API boundaries; skipped for REFACTOR and FIX)
-4. **Cross-validate** critical and blocking findings using the same agent type that raised each finding.
-5. **Consolidate** (`foundry:sw-engineer`): reads all agent findings, deduplicates, ranks by impact, writes full report to `.reports/review/<timestamp>/review-report.md`. Applies signal-to-noise gate: small modules do not get padded with low-severity findings.
-6. **Codex delegation** (optional): delegates mechanical tasks — docstrings, missing tests for concrete scenarios, consistent renames — to Codex when a precise brief can be written.
+   - `foundry:solution-architect`: API design quality, coupling, backward compatibility (only for public API boundary changes; skipped for REFACTOR and FIX)
+4. **Cross-validate** critical + blocking findings using same agent type that raised each finding.
+5. **Consolidate** (`foundry:sw-engineer`): reads all findings, deduplicates, ranks by impact, writes full report to `.reports/review/<timestamp>/review-report.md`. Signal-to-noise gate: small modules not padded with low-severity findings.
+6. **Codex delegation** (optional): mechanical tasks — docstrings, missing tests for concrete scenarios, consistent renames — delegated to Codex when precise brief writable.
 
 **Report structure**:
 
@@ -473,15 +473,15 @@ git add src/mypackage/trainer.py tests/test_trainer.py
 
 - Blocking bugs or regressions → `/develop:fix`
 - Structural or quality issues → `/develop:refactor`
-- Security findings → address via `/develop:fix`; run `pip-audit` if dependency files changed
+- Security findings → `/develop:fix`; run `pip-audit` if dependency files changed
 - Mechanical issues (docstrings, missing tests) → `/codex:codex-rescue <task>` if Codex available
-- GitHub PR review for a contributor → `/oss:review <PR#>` instead
+- GitHub PR review for contributor → `/oss:review <PR#>` instead
 
 ______________________________________________________________________
 
 ## 🗺️ Workflow overview
 
-Skills chain together naturally. A typical development session looks like this:
+Skills chain naturally. Typical session:
 
 ### New feature
 
@@ -523,7 +523,7 @@ Skills chain together naturally. A typical development session looks like this:
 
 ### Fork workflow (upstream issue)
 
-You have forked a repository and want to fix or implement an issue reported on the original upstream repo. Pass `--repo <owner/repo>` to route issue fetching to the upstream instead of your fork:
+Forked repo, want to fix/implement issue reported on original upstream. Pass `--repo <owner/repo>` to route issue fetch to upstream instead of fork:
 
 ```text
 # Debug an upstream issue in your fork
@@ -536,11 +536,11 @@ You have forked a repository and want to fix or implement an issue reported on t
 /develop:feature 123 --repo owner/my-project
 ```
 
-The `--repo` flag is accepted by `fix`, `feature`, `debug`, and `refactor`. It affects only the `gh issue view` call that fetches issue body and comments — the rest of the workflow operates on your local fork as normal.
+`--repo` accepted by `fix`, `feature`, `debug`, `refactor`. Affects only `gh issue view` call fetching issue body + comments — rest of workflow operates on local fork as normal.
 
 ### Complex or high-stakes work
 
-Add `--team` to any code-changing skill. It spawns parallel specialist agents exploring the implementation space independently. Significantly higher token cost — reserve for changes spanning multiple modules, public API additions, or work in auth/payment/data scope.
+Add `--team` to any code-changing skill. Spawns parallel specialist agents exploring implementation space independently. Significantly higher token cost — reserve for multi-module changes, public API additions, auth/payment/data scope.
 
 ```text
 /develop:feature "add streaming response support" --team
@@ -553,17 +553,17 @@ ______________________________________________________________________
 
 ### Dependencies by capability
 
-| Dependency       | Required    | Unlocks                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `foundry` plugin | recommended | `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, and others; quality stack shared file. Without foundry, all agents fall back to `general-purpose` with role-description prompts.                                                                                                                                                                   |
-| `oss` plugin     | optional    | `oss:review` checklist used by `develop:review` Agent 1. `oss:*` skills are never auto-invoked from develop flows — the progressive review loop escalates to `/develop:review` on concern signal only; run `/oss:review` explicitly once a PR exists.                                                                                                                                              |
-| `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                                                                                                                                                                                   |
-| `codemap`        | optional    | `scan-query` for blast-radius, import graph, and call-graph context. **Auto-enabled** in all skills when installed and index found; an existing index is incremental-refreshed (SHA-diff) automatically before use; silently skipped if absent (no full build mid-task — run `/codemap:scan-codebase` once). Install: `claude plugin install codemap@borda-ai-rig`, then `/codemap:scan-codebase`. |
-| `gh` CLI         | optional    | Used in `fix`, `debug`, and `feature` when argument is a GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to an upstream repo (fork workflow).                                                                                                                                                                                                               |
+| Dependency       | Required    | Unlocks                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `foundry` plugin | recommended | `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, others; quality stack shared file. Without foundry, all agents fall back to `general-purpose` with role-description prompts.                                                                                                                                                             |
+| `oss` plugin     | optional    | `oss:review` checklist used by `develop:review` Agent 1. `oss:*` skills never auto-invoked from develop flows — progressive review loop escalates to `/develop:review` on concern signal only; run `/oss:review` explicitly once PR exists.                                                                                                                                              |
+| `codex` plugin   | optional    | Codex pre-pass in quality stack; Codex adversarial co-review in `develop:review`; mechanical delegation in Step 6. Gracefully skipped if absent.                                                                                                                                                                                                                                         |
+| `codemap`        | optional    | `scan-query` for blast-radius, import graph, call-graph context. **Auto-enabled** in all skills when installed and index found; existing index incremental-refreshed (SHA-diff) automatically before use; silently skipped if absent (no full build mid-task — run `/codemap:scan-codebase` once). Install: `claude plugin install codemap@borda-ai-rig`, then `/codemap:scan-codebase`. |
+| `gh` CLI         | optional    | Used in `fix`, `debug`, `feature` when argument is GitHub issue number (`gh issue view`). Pass `--repo <owner/repo>` to route issue fetch to upstream repo (fork workflow).                                                                                                                                                                                                              |
 
 ### Codemap behavior
 
-Codemap is auto-enabled in all skills when the plugin is installed and the index exists. No flag needed for the default experience.
+Codemap auto-enabled in all skills when plugin installed and index exists. No flag needed for default experience.
 
 | State                              | Behavior                                |
 | ---------------------------------- | --------------------------------------- |
@@ -575,15 +575,15 @@ Codemap is auto-enabled in all skills when the plugin is installed and the index
 | Installed + no index + `--codemap` | Fail with: build index first            |
 | Any state + `--no-codemap`         | Always disabled                         |
 
-Use `--codemap` as a **strict assertion** — useful in CI or when you need to guarantee structural context is always applied. Use `--no-codemap` to skip codemap for a specific run (e.g., when working on a non-Python submodule).
+`--codemap` = **strict assertion** — useful in CI or to guarantee structural context always applied. `--no-codemap` skips codemap for specific run (e.g. non-Python submodule).
 
 ### Python tooling
 
-The quality stack auto-detects your project's tooling at skill start via the shared runner-detection file. No configuration needed — it finds `uv`, `ruff`, `mypy`, and `pytest` if they are on the path. If a tool is absent, that stack step is skipped with a note in the final report.
+Quality stack auto-detects project tooling at skill start via shared runner-detection file. No configuration needed — finds `uv`, `ruff`, `mypy`, `pytest` if on path. Tool absent → stack step skipped with note in final report.
 
 ### Artifact directories
 
-Skills write to these directories at project root (all gitignored):
+Skills write to these dirs at project root (all gitignored):
 
 | Directory                      | Contents                                                               |
 | ------------------------------ | ---------------------------------------------------------------------- |
@@ -592,7 +592,7 @@ Skills write to these directories at project root (all gitignored):
 | `.temp/review/<timestamp>/`    | Per-agent handover files (intermediate) from `/develop:review`         |
 | `.reports/review/<timestamp>/` | Consolidated final report from `/develop:review`                       |
 
-Completed runs are cleaned up after 30 days. Interrupted runs (no `result.jsonl`) are kept for debugging.
+Completed runs cleaned after 30 days. Interrupted runs (no `result.jsonl`) kept for debugging.
 
 ______________________________________________________________________
 
@@ -608,7 +608,7 @@ ______________________________________________________________________
 
 ### "foundry plugin not installed — quality stack skipped"
 
-The quality stack reads a shared file from the `foundry` plugin. If `foundry` is not installed, the lint/type/test/blast-radius steps are skipped entirely and the final report notes this.
+Quality stack reads shared file from `foundry` plugin. Not installed → lint/type/test/blast-radius steps skipped entirely, final report notes it.
 
 ```bash
 claude plugin install foundry@borda-ai-rig
@@ -616,23 +616,23 @@ claude plugin install foundry@borda-ai-rig
 
 ### Demo gate passes (exit 0) when it should fail
 
-`/develop:feature` Step 2 confirms the demo fails before implementation. If the gate exits 0, the feature may already be implemented, or the test is testing the wrong thing. The skill stops and asks you to revisit Step 1. Do not force past this gate — it means either the feature exists already or the demo is not testing the contract you intend.
+`/develop:feature` Step 2 confirms demo fails before implementation. Gate exits 0 → feature may already exist, or test tests wrong thing. Skill stops, asks revisit Step 1. Do not force past gate — means feature exists already or demo not testing intended contract.
 
 ### Regression test gate passes when it should fail
 
-Same pattern in `/develop:fix` Step 2. If the regression test passes on unfixed code, the test is not capturing the bug. Revisit Step 1 — either the symptom description is not pointing at the actual failure site, or the test exercises a different code path.
+Same pattern in `/develop:fix` Step 2. Regression test passes on unfixed code → test not capturing bug. Revisit Step 1 — symptom description not pointing at actual failure site, or test exercises different code path.
 
 ### Characterization test fails on unmodified code
 
-In `/develop:refactor` Step 3, characterization tests must pass before refactoring begins. If a characterization test fails, the test is wrong — it must assert *current* behavior, not desired behavior. Fix the test to match what the code actually does now.
+`/develop:refactor` Step 3: characterization tests must pass before refactoring begins. Characterization test fails → test wrong — must assert *current* behavior, not desired. Fix test to match what code actually does now.
 
 ### Session interrupted mid-skill
 
-`feature`, `fix`, and `refactor` write a checkpoint file to `.developments/<timestamp>/checkpoint.md` after each major step. Re-running the same skill command offers to resume from the last completed step.
+`feature`, `fix`, `refactor` write checkpoint file to `.developments/<timestamp>/checkpoint.md` after each major step. Re-running same skill command offers resume from last completed step.
 
 ### scan-query warnings appearing in output
 
-`codemap` is optional. If `scan-query` is not on your PATH, all codemap steps are silently skipped. If the plugin is installed but the index is missing or stale, the default (auto) mode prompts you to build/rebuild it (Gate A/B); `--no-codemap` skips silently. The skill works fully without it. To enable codemap context, install the `codemap` plugin and run `/codemap:scan-codebase`.
+`codemap` optional. `scan-query` not on PATH → all codemap steps silently skipped. Plugin installed but index missing/stale → default (auto) mode prompts build/rebuild (Gate A/B); `--no-codemap` skips silently. Skill works fully without it. To enable codemap context, install `codemap` plugin, run `/codemap:scan-codebase`.
 
 ______________________________________________________________________
 
@@ -640,9 +640,9 @@ ______________________________________________________________________
 
 ## 🙏 Contributing / feedback
 
-This plugin is part of the `borda-ai-rig` plugin suite. The canonical source is in `plugins/develop/` within the repository.
+Plugin part of `borda-ai-rig` suite. Canonical source in `plugins/develop/` within repository.
 
-To report a bug or suggest an improvement, open an issue in the repository. Include the skill name, the invocation you used, and what the actual vs expected behavior was.
+Report bug or suggest improvement: open issue in repository. Include skill name, invocation used, actual vs expected behavior.
 
 **To update the plugin**:
 
@@ -677,4 +677,4 @@ plugins/develop/
         └── SKILL.md
 ```
 
-If you modify any skill, update this README before finishing — an unsynced change is an incomplete change.
+Modify any skill → update this README before finishing — unsynced change = incomplete change.

@@ -51,7 +51,7 @@ done
 
 ### Apply model reasoning:
 
-**20a — Overlap analysis**: Per agent pair, assess domain overlap. Flag pairs where descriptions don't disambiguate → **medium** finding per ambiguous pair.
+**20a — Overlap analysis**: Per agent pair, assess domain overlap. Flag pairs where descriptions don't disambiguate → **medium** per ambiguous pair.
 
 **20b — NOT-for clause coverage**: Per high-overlap pair from 20a, check at least one agent has "NOT for" exclusion referencing other or its domain. Missing disambiguation → **medium**.
 
@@ -93,7 +93,7 @@ done
 
 Use model reasoning to score each pair: `overlap_pct` = fraction of one agent's scope covered by the other. Flag pairs exceeding threshold.
 
-**34b — Coverage gap detection**: scan agent descriptions for task domains with no clear owner. Coverage gap = a realistic task type where no agent's TRIGGER applies and no NOT-for exclusion explains the gap.
+**34b — Coverage gap detection**: scan agent descriptions for task domains with no clear owner. Coverage gap = realistic task type where no agent's TRIGGER applies and no NOT-for exclusion explains the gap.
 
 Examples of coverage gap signals:
 - "Who handles X?" produces no confident agent → gap

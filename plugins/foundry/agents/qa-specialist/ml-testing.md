@@ -1,7 +1,7 @@
 <!-- Loaded by foundry:qa-specialist (sonnet + high) -->
 # ML Testing (foundry:qa-specialist specialized guidance)
 
-Read this file only when task scope includes ML model testing (PyTorch, TensorFlow, JAX, model inference, training-loop verification, tensor-shape checks). Skip for non-ML Python tasks.
+Read only when task scope includes ML model testing (PyTorch, TensorFlow, JAX, model inference, training-loop verification, tensor-shape checks). Skip for non-ML Python tasks.
 
 > **Framework scope**: all patterns below are PyTorch-based. TF/JAX users: adapt to `tf.debugging`/`jax.test_util` equivalents — seeding, assertion APIs, and DataLoader patterns differ.
 

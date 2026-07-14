@@ -5,7 +5,7 @@ Contains oracle agent orchestration, feasibility annotation, queue filtering, ch
 
 > **Research run directory**: outputs (`hypotheses.jsonl`, `checkpoint.json`, `journal.md`) go to `.experiments/<run-id>/` — timestamped dir created at R0 start, distinct from `.experiments/state/<run-id>/`. Called `<RUN_DIR>` throughout. See `protocol.md` (companion file, same skill dir) for layout.
 
-**Synchronous spawn note**: oracle agents are spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 sentinel polling is unreachable mid-call. After the Agent() calls return, check each oracle's output (e.g. `<RUN_DIR>/oracle-researcher.md`); if missing or empty, surface with ⏱ and continue with partial hypotheses or an empty queue if none written.
+**Synchronous spawn note**: oracle agents spawned synchronously (not `run_in_background=true`) — CLAUDE.md §6 sentinel polling unreachable mid-call. After Agent() calls return, check each oracle's output (e.g. `<RUN_DIR>/oracle-researcher.md`); missing or empty → surface with ⏱, continue with partial hypotheses or empty queue if none written.
 
 1. **Build hypothesis queue** — if `--hypothesis <path>` provided, read as pre-built queue (skip oracle phase). Otherwise spawn oracle agents per active flags — parallel if both set:
 
@@ -29,7 +29,7 @@ Contains oracle agent orchestration, feasibility annotation, queue filtering, ch
    Read `<RUN_DIR>/hypotheses.jsonl` and the project codebase. For each hypothesis, annotate with: feasible (bool), blocker (str|null, required if feasible=false), codebase_mapping (str). Write the annotated queue back to the same file preserving order. Write your full analysis, reasoning, and Confidence block to `<RUN_DIR>/oracle-feasibility.md` using the Write tool. Return ONLY: {"status":"done","file":"<path>","feasible":N,"infeasible":N,"confidence":0.N}
    ```
 
-   Note: `--architect` only (no `--researcher`) → skip feasibility annotation — architect already validated feasibility. Set `feasible: true` implicitly.
+   `--architect` only (no `--researcher`) → skip feasibility annotation — architect already validated feasibility. Set `feasible: true` implicitly.
 
    Both agents follow handoff envelope protocol (CLAUDE.md §2). Schema: `protocol.md` (companion file, same skill dir).
 
@@ -39,7 +39,7 @@ Contains oracle agent orchestration, feasibility annotation, queue filtering, ch
 
 4. Store active queue in memory as `RESEARCH_QUEUE`.
 
-5. **Codex availability re-check** — if any downstream review skill is dispatched after this pipeline (Step 6+), re-verify codex is reachable before invoking. Silent stalls happen when codex is absent at dispatch time despite being present at run start.
+5. **Codex availability re-check** — downstream review skill dispatched after this pipeline (Step 6+) → re-verify codex reachable before invoking. Silent stalls happen when codex absent at dispatch time despite present at run start.
 
    ```bash
    CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000

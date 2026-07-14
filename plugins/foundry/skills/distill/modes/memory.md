@@ -22,7 +22,7 @@ while IFS= read -r -d '' d; do
 done < <(find "$HOME/.claude/projects" -maxdepth 3 -name "memory" -type d -print0 2>/dev/null | sort -z)
 ```
 
-**If `PROJECT_FLAG == true`** (check model context from SKILL.md bash output): call `AskUserQuestion` with `multiSelect: true`. Build options from `MEM_DIR:` lines — label = `<slug> (tokens=<N>k)`, description = `<M> feedback files`. Max 4 options: if more than 4 projects found, take the 4 largest by token count and note in the question text that remaining projects were omitted. Always add a final option with label `Skip` and description `exit without changes`. Checked slugs → extract matching directory paths as the working set.
+**If `PROJECT_FLAG == true`** (check model context from SKILL.md bash output): call `AskUserQuestion` with `multiSelect: true`. Build options from `MEM_DIR:` lines — label = `<slug> (tokens=<N>k)`, description = `<M> feedback files`. Max 4 options: if more than 4 projects found, take 4 largest by token count and note in question text that remaining projects omitted. Always add final option label `Skip`, description `exit without changes`. Checked slugs → extract matching directory paths as working set.
 
 **If `PROJECT_FLAG == false`**: use all directories from `MEM_DIR:` lines.
 
@@ -32,7 +32,7 @@ For each selected directory, use Glob tool with pattern `feedback_*.md` in that 
 
 Ground each project's feedback in its codebase context — prevents misclassifying project-specific constraints as general rules, and vice versa. Run all lookups in parallel across selected projects.
 
-For each `<slug> | <path>` pair from the working set, attempt to resolve the project root:
+For each `<slug> | <path>` pair from working set, attempt to resolve project root:
 
 ```bash
 # timeout: 5000
@@ -57,7 +57,7 @@ If `PROJ_ROOT` resolved (≠ `not_found`):
 
 Label collected context as `[Project grounding: <slug>]` and pass alongside feedback to Step L2.
 
-If `PROJ_ROOT` not resolved: note `[Project grounding: <slug> — path not resolved]` in L2; treat ambiguous feedback for that project as `→ too narrow` unless evidence in feedback files themselves is strong.
+If `PROJ_ROOT` not resolved: note `[Project grounding: <slug> — path not resolved]` in L2; treat ambiguous feedback for that project as `→ too narrow` unless evidence in feedback files themselves strong.
 
 ## Step L2: Cluster and classify
 
@@ -85,11 +85,11 @@ Thresholds:
 
 - **`→ rule`**: 2+ distinct lessons on same topic, or single lesson applying across ≥3 agents/skills
 - **`→ agent/skill update`**: lesson applies specifically to one file's behavior and not yet there
-- **`→ already covered`**: exact principle including scope already in target file — mark and skip. Before marking, verify scope matches: same terminology does not imply same scope. If the lesson adds conditions not in the existing rule (new agent population, new trigger context, new edge case), classify as `→ rule` or `→ agent/skill update` instead.
+- **`→ already covered`**: exact principle including scope already in target file — mark and skip. Before marking, verify scope matches: same terminology does not imply same scope. If lesson adds conditions not in existing rule (new agent population, new trigger context, new edge case), classify as `→ rule` or `→ agent/skill update` instead.
 
-**Duplicate detection**: Before finalizing proposals, scan all lessons for identical insights expressed with different wording. When two or more lessons reduce to the same principle, consolidate into one entry — do not propose separate changes for duplicate lessons. Flag the consolidation explicitly in the proposals table.
+**Duplicate detection**: Before finalizing proposals, scan all lessons for identical insights expressed with different wording. When two or more lessons reduce to same principle, consolidate into one entry — do not propose separate changes for duplicate lessons. Flag consolidation explicitly in proposals table.
 
-**Contradiction detection**: If two lessons make mutually exclusive claims about the same topic, flag both with ⚠ CONTRADICTION and do not classify either as → rule or → agent/skill update. Surface to user for resolution.
+**Contradiction detection**: If two lessons make mutually exclusive claims about same topic, flag both with ⚠ CONTRADICTION and do not classify either as → rule or → agent/skill update. Surface to user for resolution.
 
 ## Step L3: Generate proposals
 

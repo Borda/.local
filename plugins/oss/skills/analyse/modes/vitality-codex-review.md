@@ -2,7 +2,7 @@
 
 ## Step 5 — Codex Independent Repo Review
 
-When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 9 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation and divergence detection.
+When `CODEX_AVAILABLE=1`: spawn `codex:codex-rescue` to independently assess repo on same 9 axes from raw fetched data — NOT from main analysis report. Produces parallel verdict for aggregation, divergence detection.
 
 ```bash
 REVIEW_DIR=".reports/analyse/vitality/$(date +%Y-%m-%d)-review"

@@ -110,10 +110,10 @@ _(Observations worth tracking but not urgent.)_
 
 ## Duplicate Clustering
 
-Group all issues, PRs, and discussions (open and closed) by their shared duplication root —
-the specific element that makes them the same problem: identical error message, identical
+Group all issues, PRs, and discussions (open and closed) by shared duplication root —
+specific element that makes them same problem: identical error message, identical
 feature ask, or identical root cause even if symptoms differ. Flag as RELATED (not duplicate)
-when items share a component/area but have distinct problems.
+when items share component/area but have distinct problems.
 
 #### Group 1
 **Root**: [the shared key — e.g. exact error message, exact feature request, exact failure mode]
@@ -178,7 +178,7 @@ _{Any endpoint returning 403 or 202 is noted in Gaps & Limitations. All counts a
 
 ## Methodology
 
-Axes and weights reflect signal quality, data reliability, and predictive value for project sustainability. Sources: CHAOSS practitioner guides, OpenSSF Scorecard risk levels, repohealth category weights.
+Axes and weights reflect signal quality, data reliability, predictive value for project sustainability. Sources: CHAOSS practitioner guides, OpenSSF Scorecard risk levels, repohealth category weights.
 
 | Axis | Weight | Rationale |
 |------|--------|-----------|

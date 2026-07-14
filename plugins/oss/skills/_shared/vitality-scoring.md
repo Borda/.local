@@ -1,6 +1,6 @@
 # Vitality Scoring Rubrics
 
-Reference rubrics for oss:repo-warden (axis scoring + confidence). Split by axis group so each of 3 parallel scorer instances in oss:analyse vitality Step 2 reads only its assigned group — not the full rubric.
+Reference rubrics for oss:repo-warden (axis scoring + confidence). Split by axis group so each of 3 parallel scorer instances in oss:analyse vitality Step 2 reads only assigned group — not full rubric.
 Variables `$GH_OWNER`, `$GH_REPO`, fetched data sourced from DATA_FILE (written by oss:gh-scraper).
 
 ## Axis Group Index
@@ -14,7 +14,7 @@ Per-axis rubric text lives in group files, split by oss:repo-warden `AXIS_GROUP`
 | `vitality-scoring-group-c.md` | 3 Contributor Health, 9 Trajectory | oss:repo-warden AXIS_GROUP=C |
 | `vitality-scoring-group-unassigned.md` | 10 Supply-Chain Integrity, 11 Ecosystem Criticality & Reach, 12 Dependency Health (Libyears), 13 Interface Stability & Community Engagement | none yet — see Implementation Status below |
 
-This index file keeps only cross-cutting content shared across all groups: the weight table (read by `assemble_vitality_scores.py`), advisory signals, and data-fetching implementation status.
+This index file keeps only cross-cutting content shared across all groups: weight table (read by `assemble_vitality_scores.py`), advisory signals, data-fetching implementation status.
 
 ---
 
@@ -38,14 +38,14 @@ This index file keeps only cross-cutting content shared across all groups: the w
 
 ## Advisory Signals (non-scoring)
 
-These signals appear in report annotations but do not affect numeric axis scores:
+These signals appear in report annotations but don't affect numeric axis scores:
 
-- **Version stability flag**: if latest release tag matches `^0\.` or contains `alpha`/`beta`/`rc` (case-insensitive) → append `⚠ pre-release stability` flag to report header. Pre-release APIs may break without SemVer guarantee.
+- **Version stability flag**: latest release tag matches `^0\.` or contains `alpha`/`beta`/`rc` (case-insensitive) → append `⚠ pre-release stability` flag to report header. Pre-release APIs may break without SemVer guarantee.
 - **Stalebot inflation warning**: see Axis 4 close rate definition. Surfaced as report annotation, not score degrader.
 
 ## Implementation Status — Data Fetching Requirements
 
-Axes 1–9 and 13 Group A use data already fetched by `oss:gh-scraper`. Axes 10–13 require new gh-scraper fetch groups. Until implemented, these axes score ⚪ and are excluded from weighted Health Score.
+Axes 1–9 and 13 Group A use data already fetched by `oss:gh-scraper`. Axes 10–13 require new gh-scraper fetch groups. Until implemented, these axes score ⚪, excluded from weighted Health Score.
 
 ### gh-scraper changes required per axis
 

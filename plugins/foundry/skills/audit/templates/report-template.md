@@ -70,7 +70,7 @@ Or if limit hit:
 
 ### Code Block Similarity
 
-Include when `$RUN_DIR/similarity-check33.md` exists (`--efficiency` mode only). Read the file and embed both tables verbatim — do NOT summarize. Label:
+Include when `$RUN_DIR/similarity-check33.md` exists (`--efficiency` mode only). Read file and embed both tables verbatim — do NOT summarize. Label:
 
 ```markdown
 #### Purpose-based similarity clusters — Check 33 / --efficiency only
@@ -78,7 +78,7 @@ Include when `$RUN_DIR/similarity-check33.md` exists (`--efficiency` mode only).
 <Table 2 from similarity-check33.md verbatim>
 ```
 
-Omit section entirely if `similarity-check33.md` absent (efficiency not active or no clusters found).
+Omit section if `similarity-check33.md` absent (efficiency not active or no clusters found).
 
 ```markdown
 ### Agent Confidence

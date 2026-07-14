@@ -1,8 +1,8 @@
 # plugins/ — Plugin Authoring & Behavior Reference
 
-Authoritative reference for critical behaviors, permission model, known limitations, and user expectations across all 5 plugins. Read before editing plugin files or diagnosing unexpected behavior.
+Authoritative reference: critical behaviors, permission model, known limitations, user expectations across all 5 plugins. Read before editing plugin files or diagnosing unexpected behavior.
 
-> Plugin inventory, install instructions, versioning policy, and cross-plugin dependency rules: see root `README.md` and `plugins/CLAUDE.md`. This file covers trust model, bin/ execution, and operational guarantees only.
+> Plugin inventory, install instructions, versioning policy, cross-plugin dependency rules: see root `README.md` + `plugins/CLAUDE.md`. This file covers trust model, bin/ execution, operational guarantees only.
 
 ______________________________________________________________________
 
@@ -10,43 +10,43 @@ ______________________________________________________________________
 
 ### Trust boundary is at install time, not invocation time
 
-Installing a plugin = consenting to trust its bin/ scripts. Claude Code's allow list enforces this: once a plugin is installed, its bin/ executables run without per-invocation approval prompts.
+Install plugin = consent to trust its bin/ scripts. Claude Code allow list enforces: once plugin installed, its bin/ executables run without per-invocation approval prompts.
 
 ### Scope of trust
 
-`Bash(python:*)` matches any `python ...` invocation — not only `${CLAUDE_PLUGIN_ROOT}/bin/*.py`. This is by design: the same entry also covers `python -m pytest`, `python -m cProfile`, etc. The allow list is not path-restricted.
+`Bash(python:*)` matches any `python ...` invocation — not only `${CLAUDE_PLUGIN_ROOT}/bin/*.py`. By design: same entry covers `python -m pytest`, `python -m cProfile`, etc. Allow list not path-restricted.
 
-Additional trust boundaries to be aware of:
+More trust boundaries to know:
 
-- **Integrity at install time only**: `claude plugin install` fetches code from the marketplace. Nothing verifies marketplace authenticity or pins a hash. If the marketplace is compromised at install time, the installed bin/ scripts run without prompts. For a personal dev tool this is the accepted threat model; it is not appropriate for multi-tenant environments.
-- **Updates inherit prior consent**: if a plugin update ships new bin/\*.py code, it runs without re-consent. `/foundry:setup` is re-run to sync settings, not to re-authorize.
-- **No auto-revocation on uninstall**: `/foundry:setup` merge is additive — it adds entries to `~/.claude/settings.json` but never removes them. Uninstalling a plugin does not remove its allow entries. Manual cleanup required.
+- **Integrity at install time only**: `claude plugin install` fetches code from marketplace. Nothing verifies marketplace authenticity or pins hash. Marketplace compromised at install time → installed bin/ scripts run without prompts. Accepted threat model for personal dev tool; not appropriate for multi-tenant environments.
+- **Updates inherit prior consent**: plugin update ships new bin/\*.py code → runs without re-consent. `/foundry:setup` re-run syncs settings, not re-authorize.
+- **No auto-revocation on uninstall**: `/foundry:setup` merge additive — adds entries to `~/.claude/settings.json`, never removes. Uninstall does not remove plugin's allow entries. Manual cleanup required.
 
 ### What is pre-approved (in `~/.claude/settings.json`)
 
-All entries are merged from `plugins/foundry/.claude-plugin/permissions-allow.json` by `/foundry:setup`. Key entries relevant to plugin execution:
+All entries merged from `plugins/foundry/.claude-plugin/permissions-allow.json` by `/foundry:setup`. Key entries for plugin execution:
 
 | Entry                     | What it covers                                                   | Why                                                                                     |
 | ------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `Bash(python:*)`          | Plugin bin/ Python scripts (`bin/*.py`) and `python -m *` tools  | Install = consent; per-invocation prompts are security theater for trusted plugin infra |
+| `Bash(python:*)`          | Plugin bin/ Python scripts (`bin/*.py`) + `python -m *` tools    | Install = consent; per-invocation prompts are security theater for trusted plugin infra |
 | `Bash(eval:*)`            | `eval "$(python ...)"` patterns (arg parsing, health monitoring) | Required for shell variable injection from bin/ Python scripts                          |
 | `Bash(find:*)`            | Path resolution, run-dir discovery                               | Core skill infrastructure                                                               |
-| `Bash(node:*)`            | Hook files (`hooks/*.js`)                                        | All hooks are Node.js                                                                   |
+| `Bash(node:*)`            | Hook files (`hooks/*.js`)                                        | All hooks Node.js                                                                       |
 | `Bash(git *:*)` (various) | Read-only git operations                                         | Standard dev workflow                                                                   |
 | `Bash(gh *:*)` (various)  | GitHub CLI read operations                                       | OSS plugin workflows                                                                    |
 
 ### What deliberately prompts
 
-| Entry                                       | Reason                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `python -c "..."` inline code               | `python -c` does not match `Bash(python:*)` — Claude Code's matcher tokenizes the full prefix; a separate `Bash(python -c:*)` entry would be required (intentionally absent). Check 23a is the policy enforcement; the prompt is a side-effect of matcher tokenization, not a designed security feature. |
-| `Bash(python3:*)`                           | Standardized to `python`; `python3` invocations signal unconverted code                                                                                                                                                                                                                                  |
-| `git push`                                  | Push requires explicit user confirmation per session — intentional friction                                                                                                                                                                                                                              |
-| Any `python*` wildcard beyond bare `python` | Only bare `python:*` was added; `python3.11`, `python3.x` etc. still prompt                                                                                                                                                                                                                              |
+| Entry                                       | Reason                                                                                                                                                                                                                                                                        |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `python -c "..."` inline code               | `python -c` does not match `Bash(python:*)` — Claude Code matcher tokenizes full prefix; separate `Bash(python -c:*)` entry needed (intentionally absent). Check 23a is the policy enforcement; prompt is side-effect of matcher tokenization, not designed security feature. |
+| `Bash(python3:*)`                           | Standardized to `python`; `python3` invocations signal unconverted code                                                                                                                                                                                                       |
+| `git push`                                  | Push requires explicit user confirmation per session — intentional friction                                                                                                                                                                                                   |
+| Any `python*` wildcard beyond bare `python` | Only bare `python:*` added; `python3.11`, `python3.x` etc. still prompt                                                                                                                                                                                                       |
 
 ### Check 23a — inline Python detector
 
-`/audit` Check 23a scans all SKILL.md files for `python -c` and `python <<` patterns and flags them HIGH. The `Bash(python:*)` allow entry does **not** exempt inline code from this check — the matcher requires `Bash(python -c:*)` for that. If you see a Check 23a finding, fix it by extracting the logic to a `bin/*.py` script.
+`/audit` Check 23a scans all SKILL.md files for `python -c` and `python <<` patterns, flags HIGH. `Bash(python:*)` allow entry does **not** exempt inline code — matcher requires `Bash(python -c:*)` for that. Check 23a finding → fix by extracting logic to `bin/*.py` script.
 
 ______________________________________________________________________
 
@@ -56,10 +56,10 @@ ______________________________________________________________________
 
 Every bin/ call uses `${CLAUDE_PLUGIN_ROOT:-plugins/<plugin>}`:
 
-- **Installed** (normal use): `CLAUDE_PLUGIN_ROOT` set by Claude Code to the plugin's cache path (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/<version>/`).
-- **Dev/testing** (local tree, `CLAUDE_PLUGIN_ROOT` unset): falls back to `plugins/<plugin>` — the source tree location.
+- **Installed** (normal use): `CLAUDE_PLUGIN_ROOT` set by Claude Code to plugin cache path (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/<version>/`).
+- **Dev/testing** (local tree, `CLAUDE_PLUGIN_ROOT` unset): falls back to `plugins/<plugin>` — source tree location.
 
-The fallback exists so skills work from both installed cache and local dev tree without configuration. Never use bare `plugins/<name>/` as the primary path — Check C32 flags it as a violation.
+Fallback exists so skills work from both installed cache and local dev tree, no configuration. Never use bare `plugins/<name>/` as primary path — Check C32 flags as violation.
 
 ### Two call patterns
 
@@ -70,7 +70,7 @@ _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py"
 RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.py" "skill" ".reports" 2>/dev/null)         # timeout: 5000
 ```
 
-The `VAR=$(...)` form is a shell variable assignment — Claude Code's permission matcher treats it as a shell builtin construct. The inner script is not separately matched against the allow list. **Note**: this is observed behavior, not a documented guarantee; a Claude Code update could change it. ~48 call sites across all plugin SKILL.md files depend on this behavior (see Known Limitations).
+`VAR=$(...)` form = shell variable assignment — Claude Code permission matcher treats it as shell builtin construct. Inner script not separately matched against allow list. **Note**: observed behavior, not documented guarantee; Claude Code update could change it. ~48 call sites across all plugin SKILL.md files depend on this (see Known Limitations).
 
 **Pattern B — Python scripts (`.py`) via direct call or subshell:**
 
@@ -82,7 +82,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_tag_symmetry.py" .claud
 MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # timeout: 5000
 ```
 
-`Bash(python:*)` is in the allow list — both forms run without prompts.
+`Bash(python:*)` in allow list — both forms run without prompts.
 
 ### What NOT to do
 
@@ -99,7 +99,7 @@ RESULT=$(python -c "import json; ...")
 
 ### Timeout mechanism
 
-Use Claude Code's `# timeout: N` annotation (N in milliseconds) on the Bash block line. This is the correct mechanism — it tells the Bash tool to hard-kill after N ms. The `timeout S cmd` shell wrapper is NOT needed in SKILL.md context (it's only valid for scripts invoked outside Claude Code, e.g. CI or standalone shell).
+Use Claude Code `# timeout: N` annotation (N in milliseconds) on Bash block line. Correct mechanism — tells Bash tool to hard-kill after N ms. `timeout S cmd` shell wrapper NOT needed in SKILL.md context (only valid for scripts invoked outside Claude Code, e.g. CI or standalone shell).
 
 ```bash
 # ✓ correct
@@ -111,21 +111,21 @@ ______________________________________________________________________
 
 ## bin/ Script Principles
 
-- **Token optimisation** — bin/ scripts and prose rules both serve to reduce tokens in SKILL.md; prefer prose when precision-equivalent and shorter; prefer bin/ when logic is too complex for prose.
+- **Token optimisation** — bin/ scripts and prose rules both reduce tokens in SKILL.md; prefer prose when precision-equivalent and shorter; prefer bin/ when logic too complex for prose.
 - **Reduce complexity** — keep skill files simple; complex logic belongs in tested executables, not inline.
-- **Cross-OS friendly** — bin/ scripts must work on macOS and Linux; avoid `grep -P`, `sed -i ''` vs `sed -i`, and other GNU vs BSD differences; Python scripts preferred over bash for portability.
-- **Reproducible and precise** — same input always produces same output; deterministic; no edge-case ambiguity; prose is only used when it achieves 100% precision and 100% reproducibility.
-- **Tests as safety net for non-obvious cases** — tests exist precisely when precision or reproducibility is not self-evident from reading the script; presence of tests signals the script should stay as an executable, not be converted to prose.
-- **Faster via direct executable call** — calling one tested executable is faster than requiring model reasoning through complex inline logic; extract to bin/ when the alternative is model-interpreted inline bash.
-- **Reusability** — a script used by 2+ skills or agents earns `Reuse +2` in the extraction score and must stay as an executable; shared logic belongs in `bin/`, not duplicated inline across multiple `.md` files.
+- **Cross-OS friendly** — bin/ scripts must work on macOS and Linux; avoid `grep -P`, `sed -i ''` vs `sed -i`, other GNU vs BSD differences; Python preferred over bash for portability.
+- **Reproducible and precise** — same input, same output; deterministic; no edge-case ambiguity; prose only when it achieves 100% precision and 100% reproducibility.
+- **Tests as safety net for non-obvious cases** — tests exist precisely when precision or reproducibility not self-evident from reading script; presence of tests signals script stays executable, not converted to prose.
+- **Faster via direct executable call** — one tested executable beats model reasoning through complex inline logic; extract to bin/ when alternative is model-interpreted inline bash.
+- **Reusability** — script used by 2+ skills or agents earns `Reuse +2` in extraction score, must stay executable; shared logic belongs in `bin/`, not duplicated inline across multiple `.md` files.
 
-See [bin/ Authoring Guide](foundry/skills/_shared/bin-authoring-guide.md) for full extraction gate, scoring, and prose-over-code rules.
+See [bin/ Authoring Guide](foundry/skills/_shared/bin-authoring-guide.md) for full extraction gate, scoring, prose-over-code rules.
 
 ______________________________________________________________________
 
 ## Test Coverage & CI
 
-Every `bin/` Python script ships with a `pytest` test suite in the plugin's `tests/` directory. Tests run on every PR and push to `main` via GitHub Actions (`ci-tests.yml`), across 6 matrix combinations (Ubuntu, macOS, Windows × Python 3.10, 3.12).
+Every `bin/` Python script ships with `pytest` suite in plugin's `tests/` directory. Tests run every PR + push to `main` via GitHub Actions (`ci-tests.yml`), 6 matrix combos (Ubuntu, macOS, Windows × Python 3.10, 3.12).
 
 | Plugin        | Test files | Tests     | Coverage |
 | ------------- | ---------- | --------- | -------- |
@@ -138,9 +138,9 @@ Every `bin/` Python script ships with a `pytest` test suite in the plugin's `tes
 
 `+` = at minimum; run `grep -r "^def test_" plugins/*/tests/ | wc -l` for current count. Coverage = avg line coverage across `bin/` modules (as of 2026-06-10).
 
-`/audit` Check 23a and Check C32 continuously verify that SKILL.md files don't introduce inline Python or bare `plugins/` path references — structural violations are caught before they reach users.
+`/audit` Check 23a and Check C32 continuously verify SKILL.md files don't introduce inline Python or bare `plugins/` path references — structural violations caught before reaching users.
 
-The CI matrix ensures bin/ scripts run correctly on the platforms users install plugins on. A green CI badge = all executables behave identically on Linux, macOS, and Windows with both Python 3.10 and 3.12.
+CI matrix ensures bin/ scripts run correctly on platforms users install plugins on. Green CI badge = all executables behave identically on Linux, macOS, Windows with both Python 3.10 and 3.12.
 
 ______________________________________________________________________
 
@@ -148,15 +148,15 @@ ______________________________________________________________________
 
 ### Pattern A passthrough is observed behavior, not a contract
 
-Shell script calls inside `VAR=$(script.sh ...)` work without explicit allow entries. This is inferred from production behavior — Claude Code's permission matcher appears to treat the variable assignment as a shell builtin and not descend into `$(...)`. If Claude Code's matcher ever changes, ~48 `.sh` bin/ call sites across all plugins would require restructuring. Adding explicit allow entries is not a clean mitigation (paths are install-path-dependent). No test harness verifies this behavior.
+Shell script calls inside `VAR=$(script.sh ...)` work without explicit allow entries. Inferred from production behavior — Claude Code permission matcher appears to treat variable assignment as shell builtin, not descend into `$(...)`. If matcher ever changes, ~48 `.sh` bin/ call sites across all plugins require restructuring. Explicit allow entries not clean mitigation (paths install-path-dependent). No test harness verifies this behavior.
 
 ______________________________________________________________________
 
 ## Settings Sync
 
-`plugins/foundry/.claude-plugin/permissions-allow.json` is the canonical allow list for all entries that foundry needs. `/foundry:setup` merges this into `~/.claude/settings.json` on install. The merge is **additive** — entries are never removed automatically. If you remove an entry from `permissions-allow.json`, manually remove it from `~/.claude/settings.json` as well.
+`plugins/foundry/.claude-plugin/permissions-allow.json` = canonical allow list for all entries foundry needs. `/foundry:setup` merges into `~/.claude/settings.json` on install. Merge **additive** — entries never removed automatically. Remove entry from `permissions-allow.json` → manually remove from `~/.claude/settings.json` too.
 
-If you add a new allow entry:
+Adding new allow entry:
 
 1. Edit `plugins/foundry/.claude-plugin/permissions-allow.json`
 2. Run `/foundry:manage add perm "Bash(X:*)" "description" "use case"` OR manually update `~/.claude/settings.json` + `~/.claude/permissions-guide.md`

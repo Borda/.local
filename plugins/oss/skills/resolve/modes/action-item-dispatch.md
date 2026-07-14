@@ -5,7 +5,7 @@
 
 ## Step 8: Implement action items
 
-**Commit authorization — entire Step 8**: `COMMIT_MODE` from Step 3d governs all commits; never re-ask regardless of mode, item count, or sentinel state. Multiple resolve flows per session each honor their own Step 3d choice.
+**Commit authorization — entire Step 8**: `COMMIT_MODE` from Step 3d governs all commits; never re-ask regardless of mode, item count, or sentinel state. Multiple resolve flows per session each honor own Step 3d choice.
 
 Determine implementation agent, set up file-handoff dir, and authorize commits before the loop:
 
@@ -51,7 +51,7 @@ Process items in `SELECTED_ITEMS` (from Step 3e) in priority order (`[req]` firs
 
 **Caps** — soft cap 10, hard cap 20 items per dispatch. When `SELECTED_ITEMS` > 10 (`$(echo "$SELECTED_ITEMS" | wc -w)` > 10): invoke `AskUserQuestion` — (a) Apply first 10 now, re-run for remainder · (b) Apply all `[req]` only · (c) Proceed with all up to 20 (slow, context risk). Never silently start loop with >10 items; never exceed 20 in one dispatch (context budget boundary).
 
-**≥4 selected items — batched dispatch** (token lever: cuts spawn count ~3×, per-item rigor unchanged): group items by file affinity (items touching the same file or same concern class → one batch; max 5 per batch; unrelated items → solo batch). Per batch:
+**≥4 selected items — batched dispatch** (token lever: cuts spawn count ~3×, per-item rigor unchanged): group items by file affinity (items touching same file or same concern class → one batch; max 5 per batch; unrelated items → solo batch). Per batch:
 - **One combined challenge call** to `DOMAIN_CHALLENGER` (route by the batch's dominant domain; mixed-domain batch → `foundry:challenger`) covering ALL batch items — prompt lists each item's `<id>`, `full_comment_text`, `<file:line>`; agent writes full analysis to `$IMPL_DIR/challenge-batch-<ids>.md`; returns per-item verdict array: `{"items":[{"id":N,"evidence":"VALID"|"REJECT","evidence_rationale":"…","suggestion":"VALID"|"REJECT","suggestion_rationale":"…","alternative":"…|null"}]}`. Same per-item parsing/CHALLENGE_LOG rules as Phase 1 — verdict granularity is NOT relaxed; rejected items drop from the batch.
 - **One impl agent per batch** for surviving items (route by batch `change` majority per the routing table; effort = highest `ITEM_EFFORT` in batch): prompt lists per-item feedback + per-item `ITEM_CALLERS`; agent writes `$IMPL_DIR/impl-batch-<ids>.md`; returns `{"status":"done"|"partial","items_done":[ids],"items_skipped":[{"id":N,"reason":"…"}],"files_changed":N}`. Stage/commit per `COMMIT_MODE` using each item's own id for attribution (`stage_item_changes.py <id>` per item).
 - Print compact progress `[N/total] batch #<ids> — <files>`. Skip per-item stash/unstash — one clean-state check per batch instead.
@@ -65,9 +65,9 @@ ITEM_DATA=$(jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl")  # t
 
 Use `.full_comment_text` for `IMPL_PROMPT`, `.file`/`.line` for stash label and commit scope, `.change`/`.severity` for effort classification and agent routing.
 
-**Pre-loop blast-radius scan** — run once in the main orchestrator before the loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `scan-query` is a no-op.
+**Pre-loop blast-radius scan** — run once in main orchestrator before loop starts; collect caller context per item so each impl subagent knows which contracts to preserve. Soft: missing `scan-query` is a no-op.
 
-Each module's `rdeps` answer is served from the **review pre-flight cache** first (materialized in SKILL.md Step 8; contract in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache). `codemap_cache.py read` returns `{"reuse":true,...}` only when the cached answer is fresh against the current index (matching `git_sha`, `scanned_at` not older); a cache hit skips the `scan-query` process entirely, so a resolve after `/review` issues 0 duplicate pre-flight queries. Cache miss (`reuse:false`, no artifact, or oss helper absent) → query live, unchanged. Reused hits are marked in the artifact `delta.notes` so `codemap_cache.py report` can compute `reuse_ratio` as the health metric.
+Each module's `rdeps` answer served from **review pre-flight cache** first (materialized in SKILL.md Step 8; contract in `$_DEV_SHARED/codemap-context.md` §Review→resolve pre-flight cache). `codemap_cache.py read` returns `{"reuse":true,...}` only when cached answer fresh against current index (matching `git_sha`, `scanned_at` not older); cache hit skips `scan-query` process entirely, so resolve after `/review` issues 0 duplicate pre-flight queries. Cache miss (`reuse:false`, no artifact, or oss helper absent) → query live, unchanged. Reused hits marked in artifact `delta.notes` so `codemap_cache.py report` can compute `reuse_ratio` as health metric.
 
 ```bash
 # pre-loop; BLAST_RADIUS_CONTEXT shared with impl agents

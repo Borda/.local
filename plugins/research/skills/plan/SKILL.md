@@ -21,16 +21,16 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 
 ## Agent Resolution
 
-**Environment precondition** — `CLAUDE_PLUGIN_ROOT` is set automatically when this skill runs via the plugin manager. Fallback `plugins/research` resolves only from project root. If neither resolves (bare `.claude/` copy invoked from a subdirectory), bin/ scripts return empty strings silently.
+**Environment precondition** — `CLAUDE_PLUGIN_ROOT` set automatically when skill runs via plugin manager. Fallback `plugins/research` resolves only from project root. Neither resolves (bare `.claude/` copy invoked from subdirectory) → bin/ scripts return empty strings silently.
 
-**bin/ scripts this skill depends on** (deployed inside `${CLAUDE_PLUGIN_ROOT}/bin/`): `resolve_shared.py`, `make_run_dir.py`. Each call below is followed by an explicit empty-result guard — silent failure surfaces as a fail-fast error, never as an empty-string path.
+**bin/ scripts this skill depends on** (deployed inside `${CLAUDE_PLUGIN_ROOT}/bin/`): `resolve_shared.py`, `make_run_dir.py`. Each call below followed by explicit empty-result guard — silent failure surfaces as fail-fast error, never empty-string path.
 
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:plan from project root."; exit 1; }
 ```
 
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`.
+Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`.
 
 ## Plan Mode (Steps P-P0–P-P4)
 
@@ -46,25 +46,25 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 
 Parse `<input>` from arguments. Determine: **file path** or **goal string**:
 
-First, extract first positional token (strip all `--<flag>` tokens from `$ARGUMENTS`, take first remaining token as `FILE_ARG`). Then:
+Extract first positional token (strip all `--<flag>` tokens from `$ARGUMENTS`, take first remaining token as `FILE_ARG`). Then:
 
-**Disambiguation guard** — only treat `FILE_ARG` as a file path if it actually exists on disk. Multi-token strings ($ARGUMENTS containing spaces beyond `FILE_ARG`) are always goal text — never run `test -f` on the first token of a multi-token goal:
+**Disambiguation guard** — treat `FILE_ARG` as file path only if it exists on disk. Multi-token strings ($ARGUMENTS containing spaces beyond `FILE_ARG`) always goal text — never run `test -f` on first token of multi-token goal:
 
-**Quoting note**: `$ARGUMENTS` is a raw string (not shell-tokenized). User-supplied quotes (e.g. `plan "reduce training loss"`) appear as literal characters. Before token counting, strip surrounding matched quotes from `$ARGUMENTS` so quoted multi-word goals are correctly recognised as multi-token:
+**Quoting note**: `$ARGUMENTS` raw string (not shell-tokenized). User-supplied quotes (e.g. `plan "reduce training loss"`) appear as literal characters. Before token counting, strip surrounding matched quotes from `$ARGUMENTS` so quoted multi-word goals correctly recognised as multi-token:
 
 ```bash
 _STRIPPED=$(echo "$ARGUMENTS" | sed -E 's/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/')  # timeout: 5000
 NONFLAG_TOKEN_COUNT=$(echo "$_STRIPPED" | tr ' ' '\n' | grep -v '^--' | grep -v '^$' | wc -l | tr -d ' ')  # timeout: 5000
 ```
 
-1. `NONFLAG_TOKEN_COUNT == 1` AND `test -f "$FILE_ARG"` succeeds → **file path**. `FILE_ARG` is the script to profile. Enter profiling flow.
+1. `NONFLAG_TOKEN_COUNT == 1` AND `test -f "$FILE_ARG"` succeeds → **file path**. `FILE_ARG` is script to profile. Enter profiling flow.
 2. Otherwise (multi-token, or single token not on disk) → **goal string**. Use full `$ARGUMENTS` (minus flags) as `<goal>`. Skip to Step P-P1.
 
 **Profiling flow** (file path detected):
 
-Run baseline profiling using `FILE_ARG` only — never use raw `$ARGUMENTS` in cProfile command.
+Run baseline profiling using `FILE_ARG` only — never raw `$ARGUMENTS` in cProfile command.
 
-**Module-file guard**: `python -m cProfile` requires an executable script (has `if __name__ == "__main__":` guard or can be run directly). Library/module files without entry point produce empty cProfile output. Pre-check:
+**Module-file guard**: `python -m cProfile` requires executable script (has `if __name__ == "__main__":` guard or runs directly). Library/module files without entry point produce empty cProfile output. Pre-check:
 
 ```bash
 grep -q '__main__' "$FILE_ARG" 2>/dev/null || { echo "⚠ File has no __main__ guard — cProfile will produce empty output. Falling back to goal-string path."; PROFILE_AVAILABLE=false; }
@@ -86,9 +86,9 @@ else
 fi
 ```
 
-**Fallback path** — ONLY when `PROFILE_AVAILABLE=false`: skip the bottleneck selection menu. Invoke `AskUserQuestion` with options: (a) **Provide goal** — enter optimization goal string directly (cProfile unavailable — note: cProfile requires a self-contained runnable script with `if __name__ == '__main__'` guard; modules and test files are not supported); (b) **Abort** — stop. Use the user's response as `<goal>`. Proceed directly to P-P1. Skip the profile-available path entirely — do not read or execute the following block.
+**Fallback path** — ONLY when `PROFILE_AVAILABLE=false`: skip bottleneck selection menu. Invoke `AskUserQuestion` with options: (a) **Provide goal** — enter optimization goal string directly (cProfile unavailable — note: cProfile requires self-contained runnable script with `if __name__ == '__main__'` guard; modules and test files not supported); (b) **Abort** — stop. Use user's response as `<goal>`. Proceed directly to P-P1. Skip profile-available path entirely — do not read or execute following block.
 
-**Profile-available path** — ONLY when `PROFILE_AVAILABLE=true` (skip entirely if fallback path was taken above), present top up to 5 bottleneck functions (skip rows where no data available):
+**Profile-available path** — ONLY when `PROFILE_AVAILABLE=true` (skip entirely if fallback path taken above), present top up to 5 bottleneck functions (skip rows with no data available):
 
 ```markdown
 Top bottleneck functions:
@@ -116,7 +116,7 @@ Set as `<goal>`, proceed to P-P1.
 - (a) label: `rephrase as optimization goal` — description: provide revised goal with measurable improvement target
 - (b) label: `abort` — description: stop; use `/research` for explanatory questions
 
-Stop if user selects (b). Do not proceed to P-P2 or P-P3 without valid optimization goal.
+Stop if user selects (b). Never proceed to P-P2 or P-P3 without valid optimization goal.
 
 Parse `<goal>`. Scan codebase to detect:
 
@@ -140,13 +140,13 @@ scope_files:     [files the ideation agent may modify]
 compute:         local | colab | docker
 ```
 
-Dry-run both commands before presenting (add `# timeout: 60000` to timed bash calls — user commands may run for minutes; ML pipeline data-loading steps may exceed 60 s — increase timeout or use guard_cmd dry-run only when metric dry-run is slow). Failure → flag error, propose corrections, then invoke `AskUserQuestion` — (a) **I fixed the command — re-run dry-run** · (b) **Proceed anyway (I know this command is correct)** · (c) **Abort**. Do not proceed to P-P3 without user confirmation after failure.
+Dry-run both commands before presenting (add `# timeout: 60000` to timed bash calls — user commands may run minutes; ML pipeline data-loading steps may exceed 60s — increase timeout or use guard_cmd dry-run only when metric dry-run slow). Failure → flag error, propose corrections, then invoke `AskUserQuestion` — (a) **I fixed the command — re-run dry-run** · (b) **Proceed anyway (I know this command is correct)** · (c) **Abort**. Never proceed to P-P3 without user confirmation after failure.
 
 ### Step P-P2b: Agent validation (pre-write)
 
 After user confirms, run expert agent review before writing `program.md`. Dispatch conditional on goal type — run whichever apply in parallel.
 
-**Foundry availability check** — before dispatching any `foundry:*` agent: run `find ~/.claude/plugins/cache -path "*/foundry*" -name "solution-architect.md" 2>/dev/null | head -1`. If result empty: skip architecture and perf reviews entirely; print `⚠ foundry plugin not installed — skipping foundry:solution-architect and foundry:perf-optimizer reviews. Continuing without architecture/perf advisory.`; record gap in advisory block as `architect: skipped (foundry absent)`. Proceed to P-P3 with available advisor output (scientist only if ML keywords matched).
+**Foundry availability check** — before dispatching any `foundry:*` agent: run `find ~/.claude/plugins/cache -path "*/foundry*" -name "solution-architect.md" 2>/dev/null | head -1`. Result empty: skip architecture and perf reviews entirely; print `⚠ foundry plugin not installed — skipping foundry:solution-architect and foundry:perf-optimizer reviews. Continuing without architecture/perf advisory.`; record gap in advisory block as `architect: skipped (foundry absent)`. Proceed to P-P3 with available advisor output (scientist only if ML keywords matched).
 
 **Pre-spawn — create plan run dir** (review files share single timestamped dir):
 
@@ -155,9 +155,9 @@ PLAN_RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/make_run_dir.
 [ -z "$PLAN_RUN_DIR" ] && { echo "! make_run_dir.py returned empty — research plugin path resolution failed"; exit 1; }
 ```
 
-**Synchronous spawn note**: P-P2 advisors (architect, scientist, perf) are spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 per-agent sentinel polling is unreachable mid-call. Timeout is handled post-hoc — after the Agent() calls return, check each advisor's review file under `$PLAN_RUN_DIR` (`plan-review-architect.md`, `plan-review-scientist.md`, `plan-review-perf.md`). Any file missing or empty = that advisor timed out: surface with ⏱ and continue to P-P3 with the remaining advisor output.
+**Synchronous spawn note**: P-P2 advisors (architect, scientist, perf) spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 per-agent sentinel polling unreachable mid-call. Timeout handled post-hoc — after Agent() calls return, check each advisor's review file under `$PLAN_RUN_DIR` (`plan-review-architect.md`, `plan-review-scientist.md`, `plan-review-perf.md`). Any file missing or empty = that advisor timed out: surface with ⏱ and continue to P-P3 with remaining advisor output.
 
-**Architect gate** — spawn `foundry:solution-architect` only when `scope_files` contains >1 file OR `agent_strategy = arch`. Single-file optimization goals skip architect (no architectural surface to validate; saves ~5–10 min of opus-tier compute). Record skip reason in advisory block as `architect: skipped (single-file scope)`.
+**Architect gate** — spawn `foundry:solution-architect` only when `scope_files` contains >1 file OR `agent_strategy = arch`. Single-file optimization goals skip architect (no architectural surface to validate; saves ~5–10 min opus-tier compute). Record skip reason in advisory block as `architect: skipped (single-file scope)`.
 
 When gate fires, before constructing the Agent() call, substitute the actual computed value of `$PLAN_RUN_DIR` into the prompt string (e.g. `.experiments/plan-2026-05-13T10-00-00Z`):
 
@@ -194,8 +194,8 @@ Any agent returns `ok: false` → surface suggestions, then invoke `AskUserQuest
 - (b) **Proceed with current config** — if `OUTPUT_EXISTS`: warn "will overwrite `<output_path>`"; if not: proceed silently
 - (c) **Abort** — stop
 
-If all advisors return `ok: true` AND `OUTPUT_EXISTS`: invoke `AskUserQuestion` — (a) Overwrite `<output_path>` — proceed; (b) Abort — stop.
-If all advisors return `ok: true` AND NOT `OUTPUT_EXISTS`: proceed directly to writing — no AskUserQuestion needed.
+All advisors return `ok: true` AND `OUTPUT_EXISTS`: invoke `AskUserQuestion` — (a) Overwrite `<output_path>` — proceed; (b) Abort — stop.
+All advisors return `ok: true` AND NOT `OUTPUT_EXISTS`: proceed directly to writing — no AskUserQuestion needed.
 
 ### Step P-P3: Write program.md
 
@@ -250,7 +250,7 @@ Next steps:
 
 `--team` detected in `$ARGUMENTS`:
 
-**Precondition** — P-P3 must have completed successfully (file written, no overwrite-abort). If P-P3 was aborted (user chose Abort at overwrite check, or any prior P-P step aborted): mark P-P4 task `deleted`, do NOT execute steps 2–4 below, and do NOT append to any pre-existing file. P-P4 owns only the append; P-P3 owns the file existence and base template.
+**Precondition** — P-P3 must have completed successfully (file written, no overwrite-abort). P-P3 aborted (user chose Abort at overwrite check, or any prior P-P step aborted): mark P-P4 task `deleted`, do NOT execute steps 2–4 below, and do NOT append to any pre-existing file. P-P4 owns only the append; P-P3 owns file existence and base template.
 
 1. Complete Steps P-P0–P-P3 as normal — produce `program.md` with full single-researcher structure.
 2. Append `## Team Mode Notes` section to the `program.md` just written by P-P3 (never to a pre-existing file untouched by P-P3):
@@ -258,7 +258,6 @@ Next steps:
    - Whether SOTA consensus exists — if clear winner, note team mode may not add value
 3. Tell user: "`--team` applies at run step, not plan step. Run: `/research:run <program.md> --team` to execute with parallel researchers."
 4. Resolve run-modes dir, read team protocol — include one-line summary in Team Mode Notes:
-
    ```bash
    _RESEARCH_RUN_MODES=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/run/modes 2>/dev/null | head -1)
    [ -d "$_RESEARCH_RUN_MODES" ] || _RESEARCH_RUN_MODES="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/run/modes"

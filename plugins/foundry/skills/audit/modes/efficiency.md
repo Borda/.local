@@ -8,7 +8,7 @@ Triggered by `/audit --efficiency`. Read+executed by `/audit` when `--efficiency
 
 **Trigger**: `/audit [<scope>...] --efficiency`
 
-Sweeps agents and skills for cost inefficiency signals. Does NOT run standard per-file quality audit (Steps 3–6) — efficiency-only analysis. Generates prioritized cost-reduction plan with estimated savings. Note: mode produces heuristic estimates only — no live token-cost baseline is measured and no post-fix delta is computed. Savings figures are directional guidance.
+Sweeps agents and skills for cost inefficiency signals. Does NOT run standard per-file quality audit (Steps 3–6) — efficiency-only analysis. Generates prioritized cost-reduction plan with estimated savings. Note: mode produces heuristic estimates only — no live token-cost baseline measured, no post-fix delta computed. Savings figures are directional guidance.
 
 **Scope resolution**: same as standard audit. No scope = all agents + skills across plugins + `.claude/`. Named scope = union of resolved file sets. Fragment files (`*/modes/*`, `*/templates/*`, `*/_shared/*`): skip checks 1–4 and 6 (no model frontmatter); run checks 5 (token bloat) and 7 (bin/ extraction) only.
 
@@ -93,9 +93,9 @@ echo "_shared resolution pattern: $SHARED_RES files"
 
 **Phase B2 — Code block purpose-grouping + extraction feasibility (Check 33, parallel with Phase A+B)**:
 
-Scope: per plugin — compare blocks within same plugin only (cross-plugin overlap also captured here). When `--efficiency` is active, **skip Check 17** — Phase B2 subsumes it: DUPLICATE clusters (max-sim ≥ 0.90) are the Check 17 findings at higher resolution.
+Scope: per plugin — compare blocks within same plugin only (cross-plugin overlap also captured here). When `--efficiency` active, **skip Check 17** — Phase B2 subsumes it: DUPLICATE clusters (max-sim ≥ 0.90) are the Check 17 findings at higher resolution.
 
-**Primary signal: functional purpose, not syntactic similarity.** Syntactic line-intersection is blind to conditional-inversion and variable renaming — two blocks implementing the same logic written differently will have low syntactic overlap but identical purpose. Group by purpose first; use syntactic overlap only as a secondary confirmation and DUPLICATE label.
+**Primary signal: functional purpose, not syntactic similarity.** Syntactic line-intersection is blind to conditional-inversion and variable renaming — two blocks implementing same logic written differently have low syntactic overlap but identical purpose. Group by purpose first; use syntactic overlap only as secondary confirmation and DUPLICATE label.
 
 Spawn **foundry:curator** per plugin with this prompt:
 
@@ -170,9 +170,9 @@ Estimated savings (P1+P2): ~X%
 
 Omit `code-blocks:` line when no clusters found (all HOLD verdicts or no Check 33 data available). Omit `instruction-quality:` line when both complexity and noise are zero.
 
-Efficiency findings feed into standard fix pipeline (Steps 7–10). **Step 8 override**: model-tier mismatch findings are NOT subject to Step 8's "report-only" bypass — user opted into auto-fix by invoking `--efficiency`. Fix agents will apply model-tier changes.
+Efficiency findings feed into standard fix pipeline (Steps 7–10). **Step 8 override**: model-tier mismatch findings NOT subject to Step 8's "report-only" bypass — user opted into auto-fix by invoking `--efficiency`. Fix agents will apply model-tier changes.
 
-**Extraction routing**: when Phase C envelope `extract_count > 0` (HIGH or MEDIUM verdict clusters), the follow-up gate replaces option (d) with a `/distill executables` choice — user selects from gate; do NOT auto-run. Gate substitution logic is in main SKILL.md follow-up gate section.
+**Extraction routing**: when Phase C envelope `extract_count > 0` (HIGH or MEDIUM verdict clusters), follow-up gate replaces option (d) with a `/distill executables` choice — user selects from gate; do NOT auto-run. Gate substitution logic is in main SKILL.md follow-up gate section.
 
 **Post-extraction orphan check**: after `/distill executables` completes, run `python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/check_orphaned_bin.py"` — must exit 0. New orphan introduced (bin/ script created without consumer rewire) = HIGH finding; abort extraction phase, require wire-in before commit.
 

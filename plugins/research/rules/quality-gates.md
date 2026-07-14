@@ -22,7 +22,7 @@ Every analysis agent **must** end with:
 
 - Omit **Refinements** if 0 passes (don't write "0 passes") — omit individual **Gaps** bullets if none, but keep **Gaps** header
 - **Score**, **Gaps**, **Refinements** = peer top-level fields — never nest Refinements under Gaps; blank line before **Refinements** required
-- Score < 0.85 → ⚠ on score line AND on the line immediately after (standalone line, not a Gaps bullet): "orchestrator may re-run with the specific gap addressed"
+- Score < 0.85 → ⚠ on score line AND line immediately after (standalone, not a Gaps bullet): "orchestrator may re-run with the specific gap addressed"
 - Gaps = primary signal — surfaces implicit limitations for re-run decisions
 
 ## Internal Quality Loop (analysis tasks only)
@@ -36,7 +36,7 @@ Before returning, self-review:
 
 ## Pre-Handover Check
 
-Confidence < 0.9 → push back on the analysis before handing over: ask for proof for each uncertain claim (read source code, read docs, trace through examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → also spawn `Agent(subagent_type="codex:codex-rescue")` naming the low-confidence area for adversarial review — incorporate findings before handover. After re-examination (and codex review if available): if confidence still < 0.9 → state the specific gap explicitly so user can decide to re-run.
+Confidence < 0.9 → push back on analysis before handover: demand proof per uncertain claim (read source code, read docs, trace examples), re-examine assumptions, rethink conclusions from first principles. If `codex` plugin available → spawn `Agent(subagent_type="codex:codex-rescue")` naming low-confidence area for adversarial review — incorporate findings before handover. After re-examination (+ codex review if available): confidence still < 0.9 → state specific gap explicitly so user can decide to re-run.
 
 ## Link Verification
 
@@ -44,8 +44,8 @@ Confidence < 0.9 → push back on the analysis before handing over: ask for proo
 
 1. **Fetch** — call WebFetch (or equivalent); URL must return non-error (not 4xx/5xx)
 2. **Read** — read actual page content; don't rely on URL structure or HTTP status alone
-3. **Match** — confirm content matches intended description; no match = don't add link
-4. **Independent** — every URL needs own Fetch+Read+Match pass; verified URL on same domain doesn't exempt others; skipping any step (including inferring validity from URL structure or HTTP status alone) is violation
+3. **Match** — confirm content matches description; no match = don't add link
+4. **Independent** — every URL needs own Fetch+Read+Match pass; verified URL on same domain doesn't exempt others; skipping any step (incl. inferring validity from URL structure/HTTP status alone) = violation
 
 - Applies to: agent files, skill files, CLAUDE.md, any markdown
 
@@ -64,7 +64,7 @@ Confidence < 0.9 → push back on the analysis before handing over: ask for proo
 - Prose paragraphs: no hard line breaks at column width
 - **Follow-up gate options**: skill-defined; minimum: (a) primary action · (b) skip. Canonical examples by skill:
   - `research:topic` → (a) `/research:plan` · (b) `/develop:feature` · (c) skip
-- **Follow-up gate follow-through**: when `AskUserQuestion` returns with skill-invocation option selected — call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
+- **Follow-up gate follow-through**: `AskUserQuestion` returns with skill-invocation option selected → call `Skill(skill=..., args=...)` same response turn; never narrate intent as prose ("Invoke that next.", "Will now run /skill") and stop without acting
 
 ## Reporting Findings
 

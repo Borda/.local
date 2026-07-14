@@ -10,11 +10,9 @@ effort: medium
 <objective>
 
 Turn unformed idea into branching exploration tree, then distill into spec. Idea mode = pure divergence — grow tree of directions, deepen promising branches, prune others, save result. No premature convergence. Run `breakdown` on tree when ready: asks distillation questions, writes spec section-by-section.
-
 NOT for implementation or code-gen — see `develop` plugin (requires `develop` plugin).
 
 > **HARD GATE:** Do NOT take any implementation action — writing code, creating files, scaffolding — until user approves design (spec). Applies regardless of perceived simplicity. Simple idea can have short tree and spec, but process never skipped.
-
 </objective>
 
 <inputs>
@@ -23,7 +21,7 @@ NOT for implementation or code-gen — see `develop` plugin (requires `develop` 
 
 - **`--tight`** — reduced-ceremony mode: see per-step caps below — 5/5/1 bounds vs default 10/10/2. Good for well-scoped ideas where problem already understood.
 
-- **`--deep`** — extended-ceremony mode: 15/15/3 bounds vs default 10/10/2. Good for genuinely ambiguous problems where more exploration valuable.
+- **`--deep`** — extended-ceremony mode: 15/15/3 bounds vs default 10/10/2. Good for ambiguous problems where more exploration valuable.
 
 - Default (no flag): behaviour unchanged — 10/10/2 bounds.
 
@@ -85,9 +83,9 @@ Gather project context before asking anything:
 
 When no `--type` declared, perform generic scan.
 
-**Existing codebase guidance**: when project has existing code, note patterns in use (naming, architecture, data flow) — Step 3 branches should follow established patterns unless idea explicitly requires changing them. Where existing code has problems affecting the work (e.g., file grown too large, unclear boundaries), note as open threads — do not propose unrelated refactoring, but flag targeted improvements that serve current goal.
+**Existing codebase guidance**: when project has existing code, note patterns in use (naming, architecture, data flow) — Step 3 branches follow established patterns unless idea explicitly requires changing them. Where existing code has problems affecting work (e.g., file grown too large, unclear boundaries), note as open threads — do not propose unrelated refactoring, but flag targeted improvements serving current goal.
 
-Goal: understand constraints so questions targeted, not generic. If idea already exists or clearly out of scope, say so immediately and stop.
+Goal: understand constraints so questions targeted, not generic. If idea already exists or out of scope, say so immediately and stop.
 
 **Scope check**: before asking clarifying questions, assess request size. If idea describes multiple independent subsystems (e.g., "build a platform with chat, file storage, billing, and analytics"), flag immediately — do not spend questions refining details of oversized scope. Help user decompose into sub-ideas: what are independent pieces, how do they relate, what order to tackle them? Then proceed with first sub-idea through normal idea mode flow.
 
@@ -233,12 +231,12 @@ After seeding, enter operations loop. Each iteration:
 **Operations**:
 
 - **Deepen (a)**: generate 2–3 sub-branches under named branch. Sub-branches use same format as top-level branches. Ask which one(s) to focus on. After executing, write 1–2 sentences reacting to what deepening this branch opens up — what new tensions or opportunities sub-branches reveal.
-- **Reject (b)**: mark named branch as ⛔ (rejected) with user's reason shown after `—`. Add one-line entry to pruning log. Ask if reason captures it correctly before proceeding. After executing, write 1–2 sentences reacting to what rejecting this branch reveals — what it tells us about where exploration is actually headed.
-- **Accept (c)**: mark named branch as ✅ (resolved) with note explaining why it was chosen as the direction. Do NOT add to pruning log (it's accepted, not pruned). After executing, write 1–2 sentences on what this choice commits to — what it confirms and what it implicitly rules out.
+- **Reject (b)**: mark named branch as ⛔ (rejected) with user's reason shown after `—`. Add one-line entry to pruning log. Ask if reason captures it correctly before proceeding. After executing, write 1–2 sentences reacting to what rejecting this branch reveals — what it tells us about where exploration is headed.
+- **Accept (c)**: mark named branch as ✅ (resolved) with note explaining why chosen as direction. Do NOT add to pruning log (accepted, not pruned). After executing, write 1–2 sentences on what this choice commits to — what it confirms and implicitly rules out.
 - **Merge (d)**: synthesise two named branches into single hybrid branch; present merged description; mark originals as 🔗 with `[merged -> <number>: <new-branch-name>]` immediately in tree summary shown after merge, and in all subsequent tree summaries. When writing merged branch state to sidecar, use field name `merged_into_id` with value equal to target branch's `id` field (e.g., `"b6"`), not a label string. After executing, write 1–2 sentences on what merge suggests about where idea is heading — what synthesis makes clearer or harder.
-- **Add (e)**: generate 1–2 fresh top-level branches with directions not yet represented in tree. After executing, write 1–2 sentences on why new angle matters — what gap it fills or what it challenges in existing branches.
+- **Add (e)**: generate 1–2 fresh top-level branches with directions not yet represented in tree. After executing, write 1–2 sentences on why new angle matters — what gap it fills or challenges in existing branches.
 - **Reopen (f)**: change ⛔ (rejected) or ✅ (resolved) back to 💭 (open) on named branch; note re-opening reason. After executing, write 1–2 sentences on what reopening this branch might change — what it puts back on table.
-- **Idea stacking (g)**: pause tree operations and enter brief free-form exchange — same format as pre-seeding exchange (2–3 rounds max). Useful when exploration feels stuck or new angle just surfaced but isn't fully formed yet. After exchange, return to tree operations loop with any new angles incorporated as branches or sub-branches. Does NOT consume an operation slot — counter unchanged.
+- **Idea stacking (g)**: pause tree operations and enter brief free-form exchange — same format as pre-seeding exchange (2–3 rounds max). Useful when exploration feels stuck or new angle just surfaced but isn't fully formed yet. After exchange, return to tree operations loop with any new angles incorporated as branches or sub-branches. Does NOT consume operation slot — counter unchanged.
 - **Ready (h)**: exit loop, proceed to Step 4.
 
 ### Tree summary format

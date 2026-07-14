@@ -45,11 +45,11 @@ Infer `INTEL_AGENT` from `PR_LABELS` + `PR_TITLE` (lowercase, first match wins) 
 | `lint`, `style`, `format`, `ruff`, `mypy`, `typing`, `type hint`, `annotation`, `annotate`, `docstring`, `comments` | `foundry:linting-expert` |
 | (no match / mixed) | `foundry:sw-engineer` |
 
-**`--agent` override applies to `INTEL_AGENT`**: when the caller passes `--agent <name>`, the resolved (auto-prefixed) agent overrides the routing table for `INTEL_AGENT` as well as the Step 8 implementation agent — caller's explicit agent choice always wins. Exception: when the resolved agent is `codex:codex-rescue` (Codex is the implementation default; not a classification agent), fall back to the routing table for `INTEL_AGENT`.
+**`--agent` override applies to `INTEL_AGENT`**: when caller passes `--agent <name>`, resolved (auto-prefixed) agent overrides routing table for `INTEL_AGENT` as well as Step 8 implementation agent — caller's explicit agent choice always wins. Exception: when resolved agent is `codex:codex-rescue` (Codex is implementation default; not classification agent), fall back to routing table for `INTEL_AGENT`.
 
 Apply `agent-resolution.md` fallback to `INTEL_AGENT` (foundry absent → substitute with `general-purpose` + role prefix).
 
-Raw PR discussion — all `--comments`, formal reviews, and inline code comments — can be thousands of tokens on an active PR. Offload fetching + classification to a subagent; orchestrator context stays small. Subagent writes structured output to `$IMPL_DIR/`; orchestrator reads only the compact envelope and loads the classified table from file.
+Raw PR discussion — all `--comments`, formal reviews, inline code comments — can be thousands of tokens on active PR. Offload fetching + classification to subagent; orchestrator context stays small. Subagent writes structured output to `$IMPL_DIR/`; orchestrator reads only compact envelope, loads classified table from file.
 
 ```text
 Agent(subagent_type="${INTEL_AGENT}", prompt="
@@ -82,7 +82,7 @@ Key invariant: location tracks "does this comment have a resolvable PullRequestR
 
 Synthesize contribution motivation (2–3 sentences using PR body + linked issues):
 what problem contributor solving, why this approach, expected user-visible outcome.
-This becomes the priority lens for conflict resolution.
+Becomes priority lens for conflict resolution.
 **PR body = stated intent; thread = authoritative record**: PR descriptions often drift from actual implementation when reviewers request changes mid-review. When PR body conflicts with what thread discussion/reviewer requests agreed upon, thread wins. Use thread consensus to understand what was actually implemented, not original PR description.
 
 Classify EVERY comment using these codes:
@@ -160,7 +160,7 @@ fi
 [ "${RESOLVED_THREAD_IDS_COUNT:-0}" = "0" ] && echo "⚠ Could not fetch resolved thread status — some items may already be resolved; review table carefully"  # timeout: 3000
 ```
 
-Read `$IMPL_DIR/pr-intelligence.md` and print its contents (Sources block + motivation + action item table) **inline to terminal** — this is the only ACTION_ITEMS table in pure `pr` mode; Output-Routing `.temp` diversion does **not** apply to it (selection-driving, read-in-context; canonical exemption in SKILL.md Step 3c). Orchestrator context now holds the *classified* table (~500–1000 tokens) rather than raw PR thread (often 5000–20000+ tokens on active PRs). All later steps read per-item details from `$IMPL_DIR/action-items.jsonl` when `full_comment_text` or other fields are needed:
+Read `$IMPL_DIR/pr-intelligence.md` and print its contents (Sources block + motivation + action item table) **inline to terminal** — this is the only ACTION_ITEMS table in pure `pr` mode; Output-Routing `.temp` diversion does **not** apply to it (selection-driving, read-in-context; canonical exemption in SKILL.md Step 3c). Orchestrator context now holds *classified* table (~500–1000 tokens) rather than raw PR thread (often 5000–20000+ tokens on active PRs). All later steps read per-item details from `$IMPL_DIR/action-items.jsonl` when `full_comment_text` or other fields needed:
 
 ```bash
 jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl"  # timeout: 5000
@@ -168,4 +168,4 @@ jq -c ". | select(.id == <id>)" "$IMPL_DIR/action-items.jsonl"  # timeout: 5000
 
 ### `[question]` item handling
 
-Answer `[question]` items resolvable from code — **no `AskUserQuestion` in this step**. Classify inline: code directly answers question → reclassify as `[req]` or `[suggest]` per reviewer intent; answer reveals known limitation or deferred work → keep `[question]` tag, append brief answer note. Unresolvable from code → keep `[question]` unchanged. All `[question]` items flow into Step 3d for user selection — user selecting one there implicitly approves implementation. Never self-promote without code evidence.
+Answer `[question]` items resolvable from code — **no `AskUserQuestion` in this step**. Classify inline: code directly answers question → reclassify as `[req]` or `[suggest]` per reviewer intent; answer reveals known limitation or deferred work → keep `[question]` tag, append brief answer note. Unresolvable from code → keep `[question]` unchanged. All `[question]` items flow into Step 3d for user selection — user selecting one there implicitly approves implementation. Never self-promote without code evidence

@@ -42,7 +42,7 @@ _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 # loads: compaction-contract.md
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -59,7 +59,7 @@ if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; the
 fi
 ```
 
-If `NON_PY` is non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
+If `NON_PY` non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
 
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
@@ -74,7 +74,7 @@ echo "$DEV_DIR" > "${TMPDIR:-/tmp}/dev-fix-dev-dir"
 
 ## Fix Mode
 
-**Optional `--diagnosis <path>`**: if provided (from preceding `/develop:debug` session), read diagnosis file first. Skip Step 1 codebase analysis — root cause, suspect files, and evidence pre-populated from diagnosis file. The Challenger gate still applies: proceed from pre-populated root cause through challenger gate, then to Step 2. Do NOT skip the challenger gate — it reviews the fix approach, not just root cause discovery.
+**Optional `--diagnosis <path>`**: if provided (from preceding `/develop:debug` session), read diagnosis file first. Skip Step 1 codebase analysis — root cause, suspect files, and evidence pre-populated from diagnosis file. Challenger gate still applies: proceed from pre-populated root cause through challenger gate, then to Step 2. Do NOT skip challenger gate — it reviews fix approach, not just root cause discovery.
 
 ```bash
 DIAG_FILE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/diagnosis_parse.py" "$ARGUMENTS" 2>&1) || { echo "$DIAG_FILE"; exit 1; }  # timeout: 5000
@@ -103,7 +103,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
 
 Downstream blocks read back, e.g. `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`.
 
-**Codemap resolve** — `CODEMAP_RAW` is already written to `${TMPDIR:-/tmp}/dev-codemap-raw` by the flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
+**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-codemap-raw` by flag-parsing block above (via `dev_parse_args.py --skill fix --write-files`). Read it back, then normalize via `codemap-resolve`:
 
 ```bash
 # timeout: 5000
@@ -160,7 +160,7 @@ trap 'rm -f ${TMPDIR:-/tmp}/fix-team-check-$TS' EXIT
 
 Spawn 2 teammates in parallel using Agent() tool:
 
-**IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in the prompt strings. `<TS_LITERAL>`, `<_DEV_SHARED_LITERAL>`, and `<ARGUMENTS_LITERAL>` in the prompt text below are placeholders — substitute the actual computed values before constructing the Agent call; the spawned agent cannot expand shell variables from its parent context:
+**IMPORTANT**: before building each spawn prompt below, resolve all shell variables to literal values — embed resolved literals, not variable references, in prompt strings. `<TS_LITERAL>`, `<_DEV_SHARED_LITERAL>`, and `<ARGUMENTS_LITERAL>` in prompt text below are placeholders — substitute actual computed values before constructing Agent call; spawned agent cannot expand shell variables from its parent context:
 
 ```bash
 # timeout: 5000
@@ -176,7 +176,7 @@ _SPAWN_RUN_DIR=$(cat ${TMPDIR:-/tmp}/dev-fix-run-dir 2>/dev/null || echo ".temp/
 
 **Teammate 2 — foundry:sw-engineer (model=opus) — hypothesis B**: substitute `$_SPAWN_DEV_SHARED`, `$_SPAWN_TS`, `$_SPAWN_ARGS`, and `$_SPAWN_RUN_DIR` with resolved literals before constructing prompt: "You are a foundry:sw-engineer teammate investigating a bug fix. Read ${HOME}/.claude/TEAM_PROTOCOL.md — use AgentSpeak v2. Read <_DEV_SHARED_LITERAL>/preflight-helpers.md §Team Spawn Template. Bug: <ARGUMENTS_LITERAL>. Evidence: {bug: <description>, traceback: <key lines>}. Your task: investigate hypothesis B — claim a DIFFERENT root-cause hypothesis from your teammates, gather evidence, propose fix approach. Task tracking: do NOT call TaskCreate or TaskUpdate — lead owns all task state. Signal completion: 'Status: complete | blocked — <reason>'. Write full analysis to <RUN_DIR_LITERAL>/fix-hypothesis-B-<TS_LITERAL>.md using Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"hypothesis\":\"<one-line>\",\"confidence\":0.N}"
 
-Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files the spawn block persisted):
+Health monitoring (CLAUDE.md §6): re-derive `$TS` and `$RUN_DIR` at block start (bash state lost between Bash() calls — read back from temp files spawn block persisted):
 
 ```bash
 # timeout: 5000
@@ -204,21 +204,21 @@ else
 fi
 ```
 
-**Cross-repo adaptation** (when `REPO_NAME` set) — issue was filed against a different codebase. After fetching issue, the analysis must:
-1. Understand the bug's root cause intent from the issue body — not just the symptoms or described fix (which may reference upstream structure)
-2. Locate the equivalent bug in LOCAL codebase — run Grep for relevant symbols/patterns; the code paths may differ due to divergence
-3. Treat the upstream issue as context, not as a prescription — implement the fix appropriate to local structure
+**Cross-repo adaptation** (when `REPO_NAME` set) — issue was filed against a different codebase. After fetching issue, analysis must:
+1. Understand bug's root cause intent from issue body — not just symptoms or described fix (which may reference upstream structure)
+2. Locate equivalent bug in LOCAL codebase — run Grep for relevant symbols/patterns; code paths may differ due to divergence
+3. Treat upstream issue as context, not prescription — implement fix appropriate to local structure
 
 If error message or pattern provided: use Grep tool (pattern `<error_pattern>`, path `.`) to search codebase for failing code path.
 
-`<test_path>` is a **substitution token** — resolve the failing test file/node (from `$ARGUMENTS` or the fetched issue) into `TEST_PATH` before running; bash reads a literal `<...>` as a stdin redirect. Redirect order is `>file 2>&1` (stdout to file, then stderr onto stdout) — the reverse `2>&1 >file` loses stderr to the terminal.
+`<test_path>` is a **substitution token** — resolve failing test file/node (from `$ARGUMENTS` or fetched issue) into `TEST_PATH` before running; bash reads a literal `<...>` as stdin redirect. Redirect order is `>file 2>&1` (stdout to file, then stderr onto stdout) — reverse `2>&1 >file` loses stderr to terminal.
 
 ```bash
 # timeout: 600000
 $PYTEST_CMD --tb=long "$TEST_PATH" -v >"${TMPDIR:-/tmp}/pytest-out.txt" 2>&1; PYTEST_EXIT=$?; tail -40 "${TMPDIR:-/tmp}/pytest-out.txt"; [ $PYTEST_EXIT -ne 0 ] && echo "PYTEST FAILED (exit $PYTEST_EXIT)"
 ```
 
-**Codemap target derivation** — set `TARGET_MODULE`/`TARGET_FN` before loading `codemap-context.md` so its caller-impact queries (`fn-rdeps`, `fn-blast`) fire instead of only the `central` baseline. The user may pass an explicit suspect as `module.path::function`:
+**Codemap target derivation** — set `TARGET_MODULE`/`TARGET_FN` before loading `codemap-context.md` so its caller-impact queries (`fn-rdeps`, `fn-blast`) fire instead of only `central` baseline. User may pass explicit suspect as `module.path::function`:
 
 ```bash
 # timeout: 5000
@@ -245,7 +245,7 @@ Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 - Related code possibly affected by fix — blast radius
 - Recent commits touching this path (from git log output, if provided)
 
-**Direct-caller impact** — when `CODEMAP_ENABLED=true` and `TARGET_FN` was NOT supplied via `$ARGUMENTS`, derive the suspect qualified name from the sw-engineer Step 1 finding (the module/function it named as the minimal code surface), then run `fn-rdeps` for direct callers benchmarked far cheaper than a plain caller walk (94k vs 1M+ tokens, +40pp accuracy). The shared `codemap-context.md` already ran when `TARGET_FN` was pre-set from args; this block covers the auto-derive case:
+**Direct-caller impact** — when `CODEMAP_ENABLED=true` and `TARGET_FN` was NOT supplied via `$ARGUMENTS`, derive suspect qualified name from sw-engineer Step 1 finding (module/function it named as minimal code surface), then run `fn-rdeps` for direct callers — benchmarked far cheaper than a plain caller walk (94k vs 1M+ tokens, +40pp accuracy). Shared `codemap-context.md` already ran when `TARGET_FN` was pre-set from args; this block covers the auto-derive case:
 
 ```bash
 # timeout: 6000
@@ -262,12 +262,12 @@ if [ "$CODEMAP_ENABLED" = "true" ] && [ -z "$TARGET_FN" ] && command -v scan-que
 fi
 ```
 
-> The derived qualified name comes from whatever Step 1 recorded in `$DEV_DIR/checkpoint.md` (write the suspect there as `module::function` when you append `step: 1 — completed`). No suspect in `module::function` form recorded → skip silently; the `central` baseline already ran.
+> Derived qualified name comes from whatever Step 1 recorded in `$DEV_DIR/checkpoint.md` (write suspect there as `module::function` when you append `step: 1 — completed`). No suspect in `module::function` form recorded → skip silently; `central` baseline already ran.
 
-**Cannot-reproduce gate**: if sw-engineer was unable to identify root cause, traceback, or any failing test, invoke `AskUserQuestion` — do NOT proceed to Step 2 with no reproduction path:
+**Cannot-reproduce gate**: if sw-engineer unable to identify root cause, traceback, or any failing test, invoke `AskUserQuestion` — do NOT proceed to Step 2 with no reproduction path:
 - question: "Cannot confirm root cause from available information. How to proceed?"
 - (a) Use `/develop:debug` — investigate interactively first
-- (b) Provide additional context — user pastes traceback, logs, or minimal reproduction; after user replies, re-run Step 1 analysis with the new context in the same session (DMI: cannot wait for next invocation; apply additional context inline)
+- (b) Provide additional context — user pastes traceback, logs, or minimal reproduction; after user replies, re-run Step 1 analysis with new context in same session (DMI: cannot wait for next invocation; apply additional context inline)
 - (c) Use `/foundry:investigate` (requires foundry plugin) — for production incidents with no CI trace
 Stop until user provides option (b) context or selects a redirect.
 
@@ -278,21 +278,21 @@ If root cause not definitively established after analysis, surface assumptions b
 > 1. [assumption about root cause]
 > 2. [assumption about affected scope] -> Correct me now or I'll proceed with these.
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **fix** context from the Skill contexts table.
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **fix** context from Skill contexts table.
 
 **Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
 
-Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **fix** context from the Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
+Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **fix** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 ## Challenger gate
 
 **Decision — three states** (default is NOT "skip": it runs on substantial fixes and auto-skips only small ones):
 
-1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
 2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small fix.
-3. else **default** → **run when the fix is substantial** (multi-file, ≳50 lines, or touches public API); **auto-skip when small** (single file, ≲50 lines, no API change) — challenger adds little on trivial fixes.
+3. else **default** → **run when fix is substantial** (multi-file, ≳50 lines, or touches public API); **auto-skip when small** (single file, ≲50 lines, no API change) — challenger adds little on trivial fixes.
 
-Both flags exist because they cover opposite regimes: `--no-challenge` suppresses the gate on the substantial fixes where it would otherwise fire; `--challenge` forces it on the small fixes where it would otherwise auto-skip.
+Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial fixes where it would otherwise fire; `--challenge` forces it on small fixes where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with root cause analysis from Step 1 (root cause, blast radius, assumptions, approach):
 
@@ -309,7 +309,7 @@ Parse result:
 
 ### Part A — Test archaeology (before writing anything new)
 
-1. Search for existing tests covering the broken behavior:
+1. Search for existing tests covering broken behavior:
 
    ```bash
    grep -r "<broken_symbol_or_error>" tests/ --include="*.py" -l
@@ -323,7 +323,7 @@ Parse result:
    ```
 
 2. For each candidate test found — critically assess coverage quality:
-   - Does it exercise the exact failing path (correct inputs, correct assertions)?
+   - Does it exercise exact failing path (correct inputs, correct assertions)?
    - Or is it a weak test — broad mocking, trivially happy-path, partial assertion — that deflected the problem rather than caught it?
 
 3. Three outcomes from archaeology:
@@ -362,7 +362,7 @@ Spawn with context:
 - Use `pytest.mark.parametrize` if bug affects multiple input patterns
 - Add brief comment linking to issue if applicable (e.g., `# Regression test for #123`)
 
-**When to skip Path 1**: if bug is purely internal (no user-facing flow exists), document why and proceed with Path 2 only.
+**When to skip Path 1**: if bug purely internal (no user-facing flow exists), document why and proceed with Path 2 only.
 
 Both tests must **fail** against current code before proceeding. Check exit codes for each independently:
 
@@ -394,7 +394,7 @@ $PYTEST_CMD --tb=long <existing_test_file>::<existing_test_name> -v 2>&1 | tail 
 [ $GATE_EXIT -eq 0 ] && echo "GATE FAIL: fixed test still passes — weak test not corrected; revisit" || echo "GATE OK: fixed test fails as expected (exit $GATE_EXIT)"
 ```
 
-**Outcome B failure-mode verification**: scan the traceback output above for the expected error string from the reported symptom. If traceback does NOT contain a recognizable match to the reported bug symptom, surface: `⚠ Test fails but failure mode may differ from reported symptom — verify the test captures the actual bug before proceeding.`
+**Outcome B failure-mode verification**: scan traceback output above for expected error string from reported symptom. If traceback does NOT contain a recognizable match to reported bug symptom, surface: `⚠ Test fails but failure mode may differ from reported symptom — verify the test captures the actual bug before proceeding.`
 
 ### Review: Validate the reproduction
 
@@ -448,9 +448,9 @@ Make minimal change to fix root cause:
    ```
 3. Run affected tests (prefer targeted over full suite):
 
-   **Test impact (codemap)** — derive the minimal test set before running anything.
+   **Test impact (codemap)** — derive minimal test set before running anything.
 
-   **Reuse from diagnosis handoff first** — when invoked with `--diagnosis`, `/develop:debug` may have already run this query and written it into the diagnosis file under `## Test Impact (codemap)`. Reuse it (one query total across debug→fix) only when it is still fresh — not `stale` and not older than the current index:
+   **Reuse from diagnosis handoff first** — when invoked with `--diagnosis`, `/develop:debug` may have already run this query and written it into diagnosis file under `## Test Impact (codemap)`. Reuse it (one query total across debug→fix) only when still fresh — not `stale` and not older than current index:
 
    ```bash
    # timeout: 6000
@@ -479,7 +479,7 @@ Make minimal change to fix root cause:
    - Reused `REUSED_PYTEST_CMD` non-empty, OR live result non-empty `pytest_cmd` → use it instead of full `<test_dir>` run; surface `not_covered` caveat if present
    - Result empty or `scan-query` absent → fall back to full directory below
 
-   **Full suite fallback** (only when impact query returns empty or is unavailable):
+   **Full suite fallback** (only when impact query returns empty or unavailable):
    ```bash
    # timeout: 600000
    $PYTEST_CMD --tb=short <test_dir> -v

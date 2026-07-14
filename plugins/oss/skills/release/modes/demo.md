@@ -3,7 +3,7 @@
 
 **Trigger**: `/release demo [range]`
 
-**Purpose**: Story-telling release notebook — self-contained Python script in jupytext percent (`# %%`) format. Highlights 2–3 most significant contributions with narrative prose and runnable code cells. Suitable for Colab, local Jupyter, or blog embeds.
+**Purpose**: Story-telling release notebook — self-contained Python script in jupytext percent (`# %%`) format. Highlights 2–3 most significant contributions with narrative prose, runnable code cells. Suitable for Colab, local Jupyter, or blog embeds.
 
 ```bash
 # LAST_TAG, REPO_ROOT, SKILL_DIR from Shared setup above
@@ -28,7 +28,7 @@ For each headline feature, read actual diff or changed source file to understand
 
 ### Phase 2: Generate demo script
 
-**Real-world data constraint**: demo must use actual project artifacts, real API calls against package under release, or genuine example data already in repo. Fabricated or synthetic inputs not acceptable by default. Sources in priority order: repo test fixtures, example scripts shipped with package, public datasets referenced in project docs, real CLI invocations against installed package.
+**Real-world data constraint**: demo must use actual project artifacts, real API calls against package under release, or genuine example data already in repo. Fabricated/synthetic inputs not acceptable by default. Sources in priority order: repo test fixtures, example scripts shipped with package, public datasets referenced in project docs, real CLI invocations against installed package.
 
 **Fallback protocol — if real demo cannot be assembled** (no usable fixtures, installed package not functional, API requires live credentials): before writing any synthetic script, execute these steps in order:
 
@@ -77,7 +77,7 @@ Write Python script in jupytext percent format. Structure in order:
 Content rules:
 - All code must be syntactically valid Python
 - Placeholder URLs use `<repo-url>`, `<docs-url>` — never invent real URLs
-- Narrative cells explain WHY, not just what — write for developer who hasn't seen this release
+- Narrative cells explain WHY, not just what — write for developer who hasn't seen release
 - No class docstrings or multi-line comment blocks in demo code cells; inline `# comments` only
 - Breaking changes get both `> **Breaking change:**` callout in title cell AND comparison cell in relevant section
 

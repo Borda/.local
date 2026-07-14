@@ -1,8 +1,8 @@
 # 🏭 foundry — Claude Code Plugin
 
-OSS Claude Code config: 10 specialist agents, 11 skills, event-driven hooks, and a self-improvement loop for professional AI-assisted development.
+OSS Claude Code config: 10 specialist agents, 11 skills, event-driven hooks, self-improvement loop for professional AI-assisted development.
 
-> For OSS workflows, also install the `oss` plugin (`/oss:review`, `/oss:release`, ...). For development workflows, install `develop` (`/develop:feature`, `/develop:fix`, ...). For ML research, install `research` (`/research:run`, `/research:topic`, ...).
+> OSS workflows: also install `oss` plugin (`/oss:review`, `/oss:release`, ...). Development: install `develop` (`/develop:feature`, `/develop:fix`, ...). ML research: install `research` (`/research:run`, `/research:topic`, ...).
 
 ______________________________________________________________________
 
@@ -53,39 +53,39 @@ ______________________________________________________________________
 
 ## 🤔 What is foundry?
 
-foundry is the base infrastructure plugin for Claude Code on Python and ML OSS projects. It gives Claude Code a team of ten non-overlapping specialist agents — each with deep, calibrated domain knowledge — paired with skills for managing their lifecycle, benchmarking their accuracy, and feeding corrections back into their instructions.
+foundry = base infrastructure plugin for Claude Code on Python/ML OSS projects. Gives Claude Code team of ten non-overlapping specialist agents — deep, calibrated domain knowledge each — plus skills for lifecycle management, accuracy benchmarking, feeding corrections back into instructions.
 
-Without foundry, Claude Code is a generalist. It helps with code but does not know your release conventions, does not enforce routing to the right specialist, and has no mechanism to measure or improve its own accuracy over time. foundry packages all of that infrastructure in a single installable plugin.
+Without foundry: Claude Code = generalist. Helps with code but no release conventions, no routing enforcement to right specialist, no mechanism to measure or improve own accuracy over time. foundry packages all that infrastructure in one installable plugin.
 
 ______________________________________________________________________
 
 ## 🎯 Why foundry?
 
-**Without it**: one model handles architecture, implementation, documentation, linting, testing, and performance — with no boundary enforcement between them. Corrections made in one session evaporate. There is no way to know whether agent accuracy has drifted.
+**Without**: one model handles architecture, implementation, docs, linting, testing, performance — no boundary enforcement. Corrections evaporate per session. No way to know if agent accuracy drifted.
 
-**With it**:
+**With**:
 
-- `/foundry:audit` catches config drift before it becomes a debugging session
-- `/foundry:calibrate` measures recall versus stated confidence so you know exactly where agents fall short
-- `/foundry:manage` creates, renames, and deletes agents with full cross-reference propagation in a single command
-- `/foundry:brainstorm` turns a vague idea into an approved spec before a single line of code is written
-- `/foundry:distill` converts accumulated corrections into durable rules and agent instruction updates
-- Hooks keep lint, task tracking, and teammate quality gates running on every file save
+- `/foundry:audit` catches config drift before it becomes debugging session
+- `/foundry:calibrate` measures recall vs stated confidence — know exactly where agents fall short
+- `/foundry:manage` creates, renames, deletes agents with full cross-reference propagation, one command
+- `/foundry:brainstorm` turns vague idea into approved spec before any code written
+- `/foundry:distill` converts accumulated corrections into durable rules + agent instruction updates
+- Hooks keep lint, task tracking, teammate quality gates running on every file save
 
-The self-improvement loop — `/foundry:audit` catches structural drift; `/foundry:calibrate` catches behavioral drift; `/foundry:distill` surfaces patterns from your corrections — closes the feedback loop automatically.
+Self-improvement loop — `/foundry:audit` catches structural drift; `/foundry:calibrate` catches behavioral drift; `/foundry:distill` surfaces patterns from corrections — closes feedback loop automatically.
 
 ______________________________________________________________________
 
 ## 📦 Install
 
-**Prerequisites**: Claude Code with plugin support; `jq` on PATH; `node` on PATH (required by hooks).
+**Prerequisites**: Claude Code with plugin support; `jq` on PATH; `node` on PATH (hooks need it).
 
 ```bash
 claude plugin marketplace add Borda/AI-Rig
 claude plugin install foundry@borda-ai-rig
 ```
 
-Install companion plugins if you need the full workflow suite:
+Companion plugins for full workflow suite:
 
 ```bash
 claude plugin install oss@borda-ai-rig
@@ -93,35 +93,35 @@ claude plugin install develop@borda-ai-rig
 claude plugin install research@borda-ai-rig
 ```
 
-**One-time setup** — run inside Claude Code after installing:
+**One-time setup** — run inside Claude Code after install:
 
 ```text
 /foundry:setup
 ```
 
-This merges `statusLine`, `permissions.allow`, and `enabledPlugins` into `~/.claude/settings.json`, and symlinks all rule files and `TEAM_PROTOCOL.md` into `~/.claude/`. It is idempotent — safe to re-run.
+Merges `statusLine`, `permissions.allow`, `enabledPlugins` into `~/.claude/settings.json`; symlinks all rule files + `TEAM_PROTOCOL.md` into `~/.claude/`. Idempotent — safe to re-run.
 
-**After any plugin upgrade**, re-run `/foundry:setup` — it auto-replaces stale foundry symlinks and removes rules that no longer exist in the new version. No prompt needed for old-version symlinks.
+**After any plugin upgrade**, re-run `/foundry:setup` — auto-replaces stale foundry symlinks, removes rules gone from new version. No prompt for old-version symlinks.
 
 ______________________________________________________________________
 
 ## ⚡ Quick start
 
-The one command that confirms everything is working:
+One command confirms everything works:
 
 ```text
 /foundry:audit setup
 ```
 
-Expected output: a structured report of system configuration checks (hooks, settings.json, plugin integration, symlinks). Zero critical findings means you are ready.
+Expected: structured report of system config checks (hooks, settings.json, plugin integration, symlinks). Zero critical findings = ready.
 
-Follow up with:
+Follow with:
 
 ```text
 /foundry:calibrate routing --fast
 ```
 
-This runs a quick routing accuracy benchmark — measures whether Claude Code dispatches tasks to the right agent. You should see routing accuracy at or above 90%.
+Quick routing accuracy benchmark — measures whether Claude Code dispatches tasks to right agent. Expect routing accuracy ≥90%.
 
 ______________________________________________________________________
 
@@ -129,7 +129,7 @@ ______________________________________________________________________
 
 ### `/foundry:setup`
 
-Post-install setup. Merges settings and creates symlinks. Run once after install, and again after any upgrade.
+Post-install setup. Merges settings, creates symlinks. Run once after install, again after any upgrade.
 
 ```text
 /foundry:setup
@@ -139,19 +139,19 @@ Post-install setup. Merges settings and creates symlinks. Run once after install
 What it does:
 
 - Detects Python 3.10+ (`python` / `py -3` / `python3`); installs `~/.local/bin/python` shim when `python` absent or resolves to Windows Store stub
-- Backs up `~/.claude/settings.json` before touching it
-- Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, and `advisorModel` (copied from project `.claude/settings.json` when pinned)
+- Backs up `~/.claude/settings.json` before touching
+- Merges `statusLine`, `permissions.allow`, `permissions.deny`, `enabledPlugins`, `advisorModel` (copied from project `.claude/settings.json` when pinned)
 - Copies `permissions-guide.md` to `.claude/` (only if absent — preserves project-local edits)
-- Symlinks all `plugins/foundry/rules/*.md` and `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks and removes rules no longer in current version\`
+- Symlinks all `plugins/foundry/rules/*.md` + `TEAM_PROTOCOL.md` into `~/.claude/`; on upgrade, auto-replaces stale foundry symlinks, removes rules gone from current version\`
 - Removes stale `hooks` block from settings if present (hooks now register via plugin manifest)
 
-Hooks (`hooks.json`) register automatically when the plugin is enabled — `/foundry:setup` does not touch them directly.
+Hooks (`hooks.json`) register automatically when plugin enabled — `/foundry:setup` never touches them directly.
 
 ______________________________________________________________________
 
 ### `/foundry:audit`
 
-Full-sweep quality audit of `.claude/` configuration and all `plugins/*/` agent and skill files. Catches broken cross-references, inventory drift, model-tier mismatches, description overlap, and documentation staleness. Reports findings by severity; fix level chosen from always-fire follow-up gate after report. Adversarial mode challenges every claim using `foundry:challenger` + Codex.
+Full-sweep quality audit of `.claude/` config + all `plugins/*/` agent and skill files. Catches broken cross-references, inventory drift, model-tier mismatches, description overlap, doc staleness. Reports findings by severity; fix level chosen from always-fire follow-up gate after report. Adversarial mode challenges every claim via `foundry:challenger` + Codex.
 
 ```text
 /foundry:audit                      # full sweep, report only — gate offers fix options
@@ -186,9 +186,9 @@ Full-sweep quality audit of `.claude/` configuration and all `plugins/*/` agent 
 /foundry:audit --keep "task-123, .reports/audit/2026-07-03T10-00-00Z"
 ```
 
-`fix` and `upgrade` are mutually exclusive — never combine them.
+`fix` and `upgrade` mutually exclusive — never combine.
 
-**What the sweep checks (30 checks)**:
+**Sweep checks (30 checks)**:
 
 - Inventory drift: MEMORY.md roster vs files on disk
 - Broken cross-references between agents and skills
@@ -197,18 +197,18 @@ Full-sweep quality audit of `.claude/` configuration and all `plugins/*/` agent 
 - Agent description routing overlap (40%+ consecutive step overlap flagged)
 - settings.json permissions vs Bash calls in skills
 - Hook event names vs documented schema
-- Claude Code docs freshness (spawns `foundry:web-explorer` to fetch live docs)
+- Claude Code docs freshness (spawns `foundry:web-explorer` for live docs)
 - Plugin integration correctness (codex plugin, foundry plugin)
 - File length, heading hierarchy, LLM context minimality
-- Config token overhead: total always-loaded config >100 KB, single rules file >10 KB (rules/ loads at session start; agents/skills are lazy-loaded)
+- Config token overhead: total always-loaded config >100 KB, single rules file >10 KB (rules/ loads at session start; agents/skills lazy-loaded)
 
-Outputs a structured report. With a fix level: delegates fixes to sub-agents (never edits inline), then re-audits modified files to confirm fixes held. Convergence loop runs up to 5 passes.
+Outputs structured report. With fix level: delegates fixes to sub-agents (never edits inline), re-audits modified files to confirm fixes held. Convergence loop up to 5 passes.
 
 ______________________________________________________________________
 
 ### `/foundry:calibrate`
 
-Benchmarks agents and skills against synthetic problems with defined ground truth. Primary signal is calibration bias — the gap between self-reported confidence and actual recall. A well-calibrated agent reports 0.9 when it finds roughly 90% of issues.
+Benchmarks agents and skills against synthetic problems with defined ground truth. Primary signal = calibration bias — gap between self-reported confidence and actual recall. Well-calibrated agent reports 0.9 when finds ~90% of issues.
 
 ```text
 /foundry:calibrate all --fast              # quick benchmark across all modes (3 problems each)
@@ -234,34 +234,34 @@ Benchmarks agents and skills against synthetic problems with defined ground trut
 /foundry:calibrate --keep "task-456, .reports/calibrate/2026-07-03T10-00-00Z"
 ```
 
-**Large fan-out gate**: broad scopes (`all`, `agents`, `skills`, `plugins`, `<plugin-name>`) always confirm via `AskUserQuestion` before spawning — these expand to dozens of agent/skill pipelines only inside Step 2, so no exact count is available upfront. Narrow scopes (single agent/skill) confirm only when the exact spawn count exceeds 50. `--apply` no longer bypasses this gate on its own; only `--skip-gate` does.
+**Large fan-out gate**: broad scopes (`all`, `agents`, `skills`, `plugins`, `<plugin-name>`) always confirm via `AskUserQuestion` before spawning — expand to dozens of agent/skill pipelines only inside Step 2, no exact count upfront. Narrow scopes (single agent/skill) confirm only when exact spawn count exceeds 50. `--apply` no longer bypasses gate alone; only `--skip-gate` does.
 
 **Thresholds**:
 
 - Routing accuracy: 90% (hard-problem accuracy: 80%)
-- Recall per agent: 0.70 (below this, instruction improvement is needed)
-- Calibration bias: within +/-0.15 (beyond this, confidence is decoupled from quality)
+- Recall per agent: 0.70 (below = instruction improvement needed)
+- Calibration bias: within +/-0.15 (beyond = confidence decoupled from quality)
 
 **Modes**:
 
 - `agents` — all specialist agents
 - `skills` — `/foundry:audit` and `/oss:review`
-- `routing` — measures orchestrator dispatch accuracy for synthetic task prompts
+- `routing` — orchestrator dispatch accuracy for synthetic task prompts
 - `communication` — team protocol compliance, file-handoff protocol violations
-- `rules` — rule adherence across global and path-scoped rule files
-- `plugins` / `<plugin-name>` — all agents + calibratable skills for one or all plugins
-- `<agent-name>` / `<skill-name>` — single target by bare or plugin-prefixed name
-- `all` — all of the above
+- `rules` — rule adherence across global + path-scoped rule files
+- `plugins` / `<plugin-name>` — all agents + calibratable skills, one or all plugins
+- `<agent-name>` / `<skill-name>` — single target, bare or plugin-prefixed name
+- `all` — all above
 
-Results saved to `.reports/calibrate/<timestamp>/<target>/`. Improvement proposals written to `proposal.md` in each target directory and applied with `--apply`.
+Results saved to `.reports/calibrate/<timestamp>/<target>/`. Improvement proposals written to `proposal.md` per target dir, applied with `--apply`.
 
-Agents and skills modes use dual-source evaluation: Claude and Codex generate problems and score responses independently, with Claude as 51% tiebreaker.
+Agents and skills modes use dual-source evaluation: Claude + Codex generate problems and score responses independently, Claude 51% tiebreaker.
 
 ______________________________________________________________________
 
 ### `/foundry:manage`
 
-Create, update, or delete agents, skills, rules, and hooks with full cross-reference propagation. Keeps MEMORY.md, README, and `settings.json` in sync automatically.
+Create, update, delete agents, skills, rules, hooks with full cross-reference propagation. Keeps MEMORY.md, README, `settings.json` in sync automatically.
 
 ```text
 /foundry:manage create agent security-auditor "Vulnerability scanning specialist for OWASP Top 10 and supply chain threats"
@@ -278,21 +278,21 @@ Create, update, or delete agents, skills, rules, and hooks with full cross-refer
 /foundry:manage remove perm "Bash(jq:*)"
 ```
 
-**Create**: fetches the latest Claude Code agent/skill frontmatter schema, picks an unused color, assigns a model tier based on role complexity, then delegates content generation to `foundry:curator`. Checks for overlap with existing agents before creating.
+**Create**: fetches latest Claude Code agent/skill frontmatter schema, picks unused color, assigns model tier by role complexity, delegates content generation to `foundry:curator`. Checks overlap with existing agents first.
 
-**Update**: auto-detects type from disk. Rename is atomic (write-before-delete). Content edits are delegated to `foundry:curator` (agents/skills) or `foundry:sw-engineer` (hooks). Propagates description changes to cross-references when more than 3 files are affected.
+**Update**: auto-detects type from disk. Rename atomic (write-before-delete). Content edits delegated to `foundry:curator` (agents/skills) or `foundry:sw-engineer` (hooks). Propagates description changes to cross-references when more than 3 files affected.
 
-**Delete**: removes the file, cleans up broken references across `.claude/`, updates MEMORY.md and README.
+**Delete**: removes file, cleans broken references across `.claude/`, updates MEMORY.md and README.
 
-**Permissions**: `add perm` and `remove perm` update both `settings.json` and `permissions-guide.md` atomically — never one without the other.
+**Permissions**: `add perm` / `remove perm` update both `settings.json` and `permissions-guide.md` atomically — never one without other.
 
-After any create or update, follow up with `/foundry:calibrate routing --fast` to confirm routing accuracy is unaffected.
+After any create or update: `/foundry:calibrate routing --fast` to confirm routing accuracy unaffected.
 
 ______________________________________________________________________
 
 ### `/foundry:brainstorm`
 
-Turns a fuzzy idea into an approved exploration tree, then into a spec, then into an ordered action plan. Nothing is implemented until the user approves a design.
+Turns fuzzy idea into approved exploration tree, then spec, then ordered action plan. Nothing implemented until user approves design.
 
 ```text
 /foundry:brainstorm "add caching layer to the data pipeline"
@@ -309,25 +309,25 @@ Turns a fuzzy idea into an approved exploration tree, then into a spec, then int
 
 **Idea mode** (default):
 
-1. Scans codebase for relevant existing code and constraints
+1. Scans codebase for relevant existing code + constraints
 2. Asks up to 10 clarifying questions (5 with `--tight`, 15 with `--deep`), one at a time
-3. Presents 3-5 initial branches with core idea, tension resolved, and what it trades away
+3. Presents 3-5 initial branches: core idea, tension resolved, what it trades away
 4. Interactive operations loop: deepen, reject, resolve, merge, add — up to 10 rounds
 5. Saves tree to `.plans/blueprint/YYYY-MM-DD-<slug>.md` with `Status: tree`
-6. Live tree viewer available at the URL printed during Step 1 (serve project root with `python -m http.server 8000`)
+6. Live tree viewer at URL printed during Step 1 (serve project root with `python -m http.server 8000`)
 
 **Breakdown mode** (`breakdown <file>`):
 
-- `Status: tree` file: distillation questions then section-by-section spec, saved with `Status: draft`
-- `Status: draft` file: resolves blocking open questions, then produces ordered action plan with tagged invocations
+- `Status: tree` file: distillation questions, then section-by-section spec, saved `Status: draft`
+- `Status: draft` file: resolves blocking open questions, produces ordered action plan with tagged invocations
 
-`--type` hint (`application`, `workflow`, `utility`, `config`, `research`) shapes question framing and codebase scan patterns in idea mode.
+`--type` hint (`application`, `workflow`, `utility`, `config`, `research`) shapes question framing + codebase scan patterns in idea mode.
 
 ______________________________________________________________________
 
 ### `/foundry:investigate`
 
-Systematic diagnosis for unknown failures. Gathers signals, ranks hypotheses, probes the top candidates, and reports a confirmed root cause with a recommended next action.
+Systematic diagnosis for unknown failures. Gathers signals, ranks hypotheses, probes top candidates, reports confirmed root cause + recommended next action.
 
 ```text
 /foundry:investigate "hooks not firing on Save"
@@ -337,21 +337,21 @@ Systematic diagnosis for unknown failures. Gathers signals, ranks hypotheses, pr
 /foundry:investigate "hooks not firing" --keep "task-999"  # preserve across compaction
 ```
 
-**What it covers**: broken local setup, environment mismatches, tool misconfigurations, hook misbehavior, CI vs local divergence, permission errors, runtime anomalies.
+**Covers**: broken local setup, environment mismatches, tool misconfigurations, hook misbehavior, CI vs local divergence, permission errors, runtime anomalies.
 
-**Not for**: known Python test failures with a traceback (use `/develop:debug`); `.claude/` config quality sweep (use `/foundry:audit`).
+**Not for**: known Python test failures with traceback (use `/develop:debug`); `.claude/` config quality sweep (use `/foundry:audit`).
 
-Workflow: parse symptom -> gather signals in parallel (tool versions, PATH, recent git changes, config state, logs) -> rank hypotheses -> optional Codex adversarial review for ambiguous cases -> probe top hypotheses -> report root cause and recommended next skill.
+Workflow: parse symptom -> gather signals in parallel (tool versions, PATH, recent git changes, config state, logs) -> rank hypotheses -> optional Codex adversarial review for ambiguous cases -> probe top hypotheses -> report root cause + recommended next skill.
 
-Output always includes: confirmed root cause (or narrowed suspects), key evidence, what was ruled out, and a single recommended next action.
+Output always includes: confirmed root cause (or narrowed suspects), key evidence, what was ruled out, single recommended next action.
 
-**Auto-invokes when (MAYBE):** unknown failure with no Python traceback — hook not firing, CI passes locally but fails remotely, behavior inconsistent with config; "not working but config looks right", "hook not triggering", "why isn't X running".
+**Auto-invokes when (MAYBE):** unknown failure, no Python traceback — hook not firing, CI passes locally but fails remotely, behavior inconsistent with config; "not working but config looks right", "hook not triggering", "why isn't X running".
 
 ______________________________________________________________________
 
 ### `/foundry:profile`
 
-Bucket session clock time from existing `~/.claude/logs/{timings,invocations}.jsonl` into local-tool, agent-spawn, Skill, AskUserQuestion idle, and main-loop reasoning residual. Pure log read — no instrumentation, no LLM calls, no skill edits.
+Buckets session clock time from existing `~/.claude/logs/{timings,invocations}.jsonl` into local-tool, agent-spawn, Skill, AskUserQuestion idle, main-loop reasoning residual. Pure log read — no instrumentation, no LLM calls, no skill edits.
 
 ```text
 /foundry:profile                          # last 24h, top 5 slowest calls
@@ -360,19 +360,19 @@ Bucket session clock time from existing `~/.claude/logs/{timings,invocations}.js
 /foundry:profile --top-n 20               # 20 longest single calls
 ```
 
-**What it covers**: per-session breakdown (local% / agent% / skill% / reasoning% / idle), per-skill rollup (runs, total, mean, median, p90), top-N longest single calls, headline split aggregated over the window.
+**Covers**: per-session breakdown (local% / agent% / skill% / reasoning% / idle), per-skill rollup (runs, total, mean, median, p90), top-N longest single calls, headline split over window.
 
-**Not for**: token or cost accounting (`model` field is null in current logs); per-line Python perf (use `foundry:perf-optimizer`); known failure diagnosis (use `/foundry:investigate`).
+**Not for**: token/cost accounting (`model` field null in current logs); per-line Python perf (use `foundry:perf-optimizer`); known failure diagnosis (use `/foundry:investigate`).
 
-Reads the JSONL logs the foundry `task-log.js` hook already writes — answers "where did wall clock go in `/oss:resolve`?" and similar questions. Background agents (`run_in_background=true`) whose `duration_ms` is the spawn-only false-zero are recovered by joining the matching `started→completed` pair in `invocations.jsonl`.
+Reads JSONL logs foundry `task-log.js` hook already writes — answers "where did wall clock go in `/oss:resolve`?" and similar. Background agents (`run_in_background=true`) with spawn-only false-zero `duration_ms` recovered by joining matching `started→completed` pair in `invocations.jsonl`.
 
-**Auto-invokes when (MAYBE):** user asks where wall-clock time goes, why a skill is slow, what dominates session runtime; "where does time go", "why so slow", "profile last session", "clock breakdown", "session timing".
+**Auto-invokes when (MAYBE):** user asks where wall-clock time goes, why skill slow, what dominates session runtime; "where does time go", "why so slow", "profile last session", "clock breakdown", "session timing".
 
 ______________________________________________________________________
 
 ### `/foundry:distill`
 
-Extracts patterns from work history and corrections, then distills them into durable improvements — new agent or skill suggestions, roster quality review, memory pruning, promoting lessons into rules, or analysing external plugins and agentic resources for adoption.
+Extracts patterns from work history + corrections, distills into durable improvements — new agent/skill suggestions, roster quality review, memory pruning, promoting lessons into rules, or analysing external plugins/agentic resources for adoption.
 
 ```text
 /foundry:distill                                     # analyze project patterns, suggest new agents/skills
@@ -387,21 +387,21 @@ Extracts patterns from work history and corrections, then distills them into dur
 /foundry:distill --keep "task-111"                       # preserve key context across compaction
 ```
 
-`--project` triggers an interactive project picker — lists all slugs found under `~/.claude/projects/*/memory/` with their MEMORY.md size in tokens; select one or more to operate on. Without `--project`, both modes run across **all** projects automatically. Both `prune` and `memory` operate in parallel across selected projects (one agent per project), then consolidate into a single confirmation step. `memory` mode also enriches each project's feedback with project-level context (CLAUDE.md, recent git log, active plans) to improve classification accuracy.
+`--project` triggers interactive project picker — lists all slugs under `~/.claude/projects/*/memory/` with MEMORY.md size in tokens; select one or more. Without `--project`, both modes run across **all** projects automatically. Both `prune` and `memory` run parallel across selected projects (one agent per project), then consolidate into single confirmation step. `memory` mode also enriches each project's feedback with project-level context (CLAUDE.md, recent git log, active plans) for better classification accuracy.
 
-**`lessons` mode** is the primary post-correction consolidation path. It reads `.notes/lessons.md` and `feedback_*.md` memory files, clusters them by domain, classifies each entry as `→ rule`, `→ agent update`, `→ skill update`, `→ already covered`, or `→ too narrow`, then generates proposals. Before applying, it runs a conflict pre-check — greps each target file for the section the delta would land in and flags cross-proposal collisions with ⚠. Confirmed changes are applied and followed by a `git diff` gate so you can inspect or revert before committing.
+**`lessons` mode** = primary post-correction consolidation path. Reads `.notes/lessons.md` and `feedback_*.md` memory files, clusters by domain, classifies each entry as `→ rule`, `→ agent update`, `→ skill update`, `→ already covered`, or `→ too narrow`, generates proposals. Before applying: conflict pre-check — greps each target file for section delta lands in, flags cross-proposal collisions with ⚠. Confirmed changes applied, followed by `git diff` gate — inspect or revert before committing.
 
-**`external` mode** does a fast + slow read of the source (URL, file, or directory), extracts the mental model and standout implementation details, compares against the live local setup, then splits candidates into two groups: *Align + improve* (maps cleanly onto existing agents/skills/rules) and *Differentiated highlights* (novel, structurally different — interesting but larger work). Each candidate is scored and assigned to an adoption lane: adopt-as-is / tweak / discuss / skip. When Group A is thin or cumulative edit effort is large, it recommends installing the source as a standalone plugin with justification, rather than cherry-picking. Nothing is written until you confirm.
+**`external` mode** does fast + slow read of source (URL, file, directory), extracts mental model + standout implementation details, compares against live local setup, splits candidates into two groups: *Align + improve* (maps cleanly onto existing agents/skills/rules) and *Differentiated highlights* (novel, structurally different — interesting but larger work). Each candidate scored, assigned adoption lane: adopt-as-is / tweak / discuss / skip. When Group A thin or cumulative edit effort large, recommends installing source as standalone plugin with justification, not cherry-picking. Nothing written until confirmed.
 
 After applying: run `/foundry:setup` to propagate new rule files to `~/.claude/`.
 
-Run monthly or after any burst of corrections.
+Run monthly or after any correction burst.
 
 ______________________________________________________________________
 
 ### `/foundry:session`
 
-Parking lot for open-loop ideas and unanswered questions that arise mid-session. Parks items automatically as they arise; three on-demand commands manage them.
+Parking lot for open-loop ideas + unanswered questions mid-session. Parks items automatically as they arise; three on-demand commands manage them.
 
 ```text
 /foundry:session resume           # list all pending parked items for this project
@@ -411,15 +411,15 @@ Parking lot for open-loop ideas and unanswered questions that arise mid-session.
 
 **Auto-invokes when:** user asks "what was I working on", "any pending items", "remind me where we left off", "what did we defer" — resume mode only.
 
-Items are stored in project-scoped memory (`~/.claude/projects/<slug>/memory/session-open-*.md`). Items older than 14 days are marked stale; items older than 30 days are deleted silently on `resume`.
+Items stored in project-scoped memory (`~/.claude/projects/<slug>/memory/session-open-*.md`). Items older than 14 days marked stale; older than 30 days deleted silently on `resume`.
 
-**Automatic parking** (no command needed): when you send a new top-level request before answering Claude's prior clarifying question, or defer something with "let's come back to that", Claude parks the open item automatically so it is not lost to context compaction.
+**Automatic parking** (no command needed): new top-level request sent before answering Claude's prior clarifying question, or deferral like "let's come back to that" — Claude parks open item automatically so not lost to context compaction.
 
 ______________________________________________________________________
 
 ### `/foundry:create`
 
-Interactive outline co-creation for developer advocacy content. Collects format, audience profile, four-beat arc, and voice/tone through structured questions; detects out-of-scope requests; surfaces editorial conflicts; writes approved outline for `foundry:creator` to execute.
+Interactive outline co-creation for developer advocacy content. Collects format, audience profile, four-beat arc, voice/tone via structured questions; detects out-of-scope requests; surfaces editorial conflicts; writes approved outline for `foundry:creator` to execute.
 
 ```text
 /foundry:create "tracing Python microservices with OpenTelemetry"
@@ -429,9 +429,9 @@ Interactive outline co-creation for developer advocacy content. Collects format,
 
 **Supported formats**: blog post, Marp slide deck (conference/meetup talk), social thread (Twitter/LinkedIn), talk abstract (CFP submission), lightning talk (5–10 min).
 
-**Out-of-scope detection**: refuses FAQs, comparison tables, and reference docs at Step 1, redirecting to `foundry:doc-scribe`.
+**Out-of-scope detection**: refuses FAQs, comparison tables, reference docs at Step 1, redirects to `foundry:doc-scribe`.
 
-**Editorial conflict detection**: if the brief implies an expert-level topic for a beginner audience (or vice versa), the skill surfaces the mismatch explicitly before writing.
+**Editorial conflict detection**: brief implies expert-level topic for beginner audience (or reverse) — skill surfaces mismatch explicitly before writing.
 
 Writes `.plans/content/<slug>-outline.md`. Hand off to `foundry:creator` after approval:
 
@@ -439,168 +439,168 @@ Writes `.plans/content/<slug>-outline.md`. Hand off to `foundry:creator` after a
 @foundry:creator
 ```
 
-Max 5 `AskUserQuestion` interactions for a well-specified brief (format, audience, arc, voice). Skips interactive steps if all choices are provided in the initial brief.
+Max 5 `AskUserQuestion` interactions for well-specified brief (format, audience, arc, voice). Skips interactive steps if all choices in initial brief.
 
 ______________________________________________________________________
 
 ### `/foundry:humanizer`
 
-Strips AI-writing tells from human-facing prose — docs, PR/commit bodies, reports, release notes, blog posts. Removes LLM-vocabulary clichés, banned constructions (rule-of-three triads, "not just X but Y"), and formatting tells (title-case headings, em-dash overuse). Applies as a final pass that preserves meaning and structure; it does not rewrite from scratch.
+Strips AI-writing tells from human-facing prose — docs, PR/commit bodies, reports, release notes, blog posts. Removes LLM-vocabulary clichés, banned constructions (rule-of-three triads, "not just X but Y"), formatting tells (title-case headings, em-dash overuse). Final pass — preserves meaning + structure; no rewrite from scratch.
 
 ```text
 /foundry:humanizer <text or file path>    # humanize in place
 /foundry:humanizer check <file>           # report tells without editing
 ```
 
-Primarily a model-initiated self-review pass: foundry may invoke it before finalizing a substantial prose artifact drafted during a task. Best-effort, not a guaranteed intercept. Skips code, config, machine-parsed envelopes, and inter-agent handover files.
+Primarily model-initiated self-review pass: foundry may invoke before finalizing substantial prose artifact drafted during task. Best-effort, not guaranteed intercept. Skips code, config, machine-parsed envelopes, inter-agent handover files.
 
 ______________________________________________________________________
 
 ## 🤖 Agents reference
 
-All ten agents are available by their full plugin-prefixed name. In spawn directives and `subagent_type` values, always use the full prefix (`foundry:sw-engineer`, not `sw-engineer`).
+All ten agents available by full plugin-prefixed name. In spawn directives and `subagent_type` values, always use full prefix (`foundry:sw-engineer`, not `sw-engineer`).
 
 ### foundry:sw-engineer
 
-**Role**: senior software engineer for writing and refactoring Python code.
+**Role**: senior software engineer — writing/refactoring Python.
 
-**Use for**: implementing features, fixing bugs, TDD/test-first development, SOLID principles, type safety, production-quality Python for OSS libraries.
+**Use for**: implementing features, fixing bugs, TDD/test-first, SOLID, type safety, production-quality Python for OSS libraries.
 
 **Model**: `opus`
 
-**Not for**: docstrings (use `foundry:doc-scribe`), configuring ruff/mypy (use `foundry:linting-expert`), system design decisions (use `foundry:solution-architect`), test quality analysis (use `foundry:qa-specialist`), performance profiling (use `foundry:perf-optimizer`), ML paper implementations (use `research:scientist`), editing `.claude/` config files (use `foundry:curator`), CI/CD pipeline configuration — GitHub Actions, pre-commit hooks, CI YAML (use `oss:cicd-steward` — requires `oss` plugin).
+**Not for**: docstrings (`foundry:doc-scribe`), ruff/mypy config (`foundry:linting-expert`), system design (`foundry:solution-architect`), test quality analysis (`foundry:qa-specialist`), perf profiling (`foundry:perf-optimizer`), ML paper implementations (`research:scientist`), `.claude/` config edits (`foundry:curator`), CI/CD pipeline config — GitHub Actions, pre-commit hooks, CI YAML (`oss:cicd-steward` — requires `oss` plugin).
 
-**Auto-invokes when:** user asks to implement, build, write, modify, or fix code across 3+ files; phrases: "implement", "build", "write the code for", "add feature", "fix this bug". Runs in isolated worktree.
+**Auto-invokes when:** user asks to implement, build, write, modify, fix code across 3+ files; phrases: "implement", "build", "write the code for", "add feature", "fix this bug". Runs in isolated worktree.
 
-Runs in an isolated worktree by default to keep changes sandboxed until review.
+Runs in isolated worktree by default — changes sandboxed until review.
 
 ______________________________________________________________________
 
 ### foundry:solution-architect
 
-**Role**: system design specialist for ADRs, API surface design, interface specs, migration plans, and coupling analysis.
+**Role**: system design specialist — ADRs, API surface design, interface specs, migration plans, coupling analysis.
 
-**Use for**: evaluating architectural trade-offs, designing public API contracts, planning deprecation strategies, assessing architectural feasibility of AI-generated hypotheses against codebase constraints.
+**Use for**: architectural trade-offs, public API contracts, deprecation strategies, assessing architectural feasibility of AI-generated hypotheses against codebase constraints.
 
 **Model**: `opus`
 
-**Not for**: writing implementation code (use `foundry:sw-engineer`), release management (use `oss:shepherd`), performance profiling or DataLoader throughput tuning (use `foundry:perf-optimizer`).
+**Not for**: implementation code (`foundry:sw-engineer`), release management (`oss:shepherd`), perf profiling or DataLoader throughput tuning (`foundry:perf-optimizer`).
 
-**Auto-invokes when (MAYBE):** user asks about architecture involving 3+ components; "how should I structure this", "ADR for", "migration plan for". Not triggered for simple design questions.
+**Auto-invokes when (MAYBE):** architecture questions involving 3+ components; "how should I structure this", "ADR for", "migration plan for". Not for simple design questions.
 
-Produces documentation — ADRs, interface contracts, migration plans, component diagrams — not production code. Hands off to `foundry:sw-engineer` for execution. When a spec has multiple unresolved decision branches, resolves them one at a time via `AskUserQuestion` with a recommended answer each, rather than one bulk ask.
+Produces documentation — ADRs, interface contracts, migration plans, component diagrams — not production code. Hands off to `foundry:sw-engineer` for execution. Spec with multiple unresolved decision branches: resolves one at a time via `AskUserQuestion` with recommended answer each, not one bulk ask.
 
 ______________________________________________________________________
 
 ### foundry:qa-specialist
 
-**Role**: QA specialist for writing, reviewing, and fixing tests. Rigorous black-box end-user tester: focuses exclusively on the public API surface, derives expectations from docs/type hints — not implementation, and writes tests that represent realistic user workflows.
+**Role**: QA specialist — writing, reviewing, fixing tests. Rigorous black-box end-user tester: public API surface only, expectations from docs/type hints — not implementation, tests represent realistic user workflows.
 
-**Use for**: writing new pytest tests, analyzing public-API coverage gaps, building edge-case matrices, fixing failing tests, integration test design. Automatically embeds OWASP Top 10 security review when task scope includes authentication, payment flows, or PII handling — applies in all modes.
+**Use for**: new pytest tests, public-API coverage gaps, edge-case matrices, fixing failing tests, integration test design. Auto-embeds OWASP Top 10 security review when task scope includes auth, payment flows, or PII — all modes.
 
 **Model**: `sonnet`
 
-**Not for**: linting, type checking, or annotation fixes (use `foundry:linting-expert`), production implementation (use `foundry:sw-engineer`), slow test suite profiling or optimizing test execution speed (use `foundry:perf-optimizer`), testing private/internal methods or mocking internals.
+**Not for**: linting, type checking, annotation fixes (`foundry:linting-expert`), production implementation (`foundry:sw-engineer`), slow test suite profiling (`foundry:perf-optimizer`), testing private/internal methods or mocking internals.
 
-**Auto-invokes when:** user asks to write tests, assess coverage, or define test strategy; "write tests for", "add unit tests", "test coverage for".
+**Auto-invokes when:** user asks to write tests, assess coverage, define test strategy; "write tests for", "add unit tests", "test coverage for".
 
-Writes deterministic, parametrized, behavior-focused tests. Systematic progression: happy path → edge cases → error cases → boundary values → adversarial inputs. Applies a public-API coverage checklist before marking done.
+Writes deterministic, parametrized, behavior-focused tests. Progression: happy path → edge cases → error cases → boundary values → adversarial inputs. Applies public-API coverage checklist before done.
 
 ______________________________________________________________________
 
 ### foundry:linting-expert
 
-**Role**: static analysis and tooling specialist for Python.
+**Role**: static analysis + tooling specialist for Python.
 
-**Use for**: configuring ruff rules, mypy strictness, pre-commit hooks, fixing lint/type violations, adding missing type annotations, defining the lint/type content of quality gates. Handles final code sanitization before handover.
+**Use for**: ruff rules, mypy strictness, pre-commit hooks, fixing lint/type violations, missing type annotations, lint/type content of quality gates. Final code sanitization before handover.
 
 **Model**: `haiku` (high-frequency, lightweight diagnostics)
 
-**Not for**: CI pipeline structure or runner strategy (use `oss:cicd-steward`), writing test logic (use `foundry:qa-specialist`), implementation fixes beyond annotation/style (use `foundry:sw-engineer`), inline docstrings or API reference writing (use `foundry:doc-scribe`).
+**Not for**: CI pipeline structure or runner strategy (`oss:cicd-steward`), test logic (`foundry:qa-specialist`), implementation beyond annotation/style (`foundry:sw-engineer`), docstrings or API reference (`foundry:doc-scribe`).
 
-**Auto-invokes when:** after code edits when user asks "is this clean", "any lint issues", "check formatting", "check types"; linting or type errors visible in output.
+**Auto-invokes when:** after code edits when user asks "is this clean", "any lint issues", "check formatting", "check types"; lint or type errors visible in output.
 
-Always downstream of `foundry:sw-engineer` — never lints code that has not yet been implemented.
+Always downstream of `foundry:sw-engineer` — never lints unimplemented code.
 
 ______________________________________________________________________
 
 ### foundry:perf-optimizer
 
-**Role**: performance engineer for profiling and optimizing CPU, GPU, memory, and I/O bottlenecks.
+**Role**: performance engineer — profiling + optimizing CPU, GPU, memory, I/O bottlenecks.
 
-**Use for**: profiling Python/ML workloads, identifying DataLoader bottlenecks, applying mixed precision, vectorizing loops, tuning PyTorch throughput.
+**Use for**: profiling Python/ML workloads, DataLoader bottlenecks, mixed precision, vectorizing loops, PyTorch throughput tuning.
 
 **Model**: `opus`
 
-**Not for**: general code refactoring (use `foundry:sw-engineer`), architectural redesign (use `foundry:solution-architect`), DataLoader pipeline correctness or reproducibility audits (use `research:data-steward` — requires `research` plugin), doc writing (use `foundry:doc-scribe`), annotation fixes (use `foundry:linting-expert`).
+**Not for**: general refactoring (`foundry:sw-engineer`), architectural redesign (`foundry:solution-architect`), DataLoader correctness or reproducibility audits (`research:data-steward` — requires `research` plugin), doc writing (`foundry:doc-scribe`), annotation fixes (`foundry:linting-expert`).
 
-**Auto-invokes when:** user asks to profile, benchmark, or optimize a Python/ML workload; mentions slow training, GPU underutilization, or DataLoader bottleneck; phrases: "why is this slow", "profile this", "optimize training speed". Not triggered for general code changes (use `foundry:sw-engineer`).
+**Auto-invokes when:** user asks to profile, benchmark, optimize Python/ML workload; mentions slow training, GPU underutilization, DataLoader bottleneck; phrases: "why is this slow", "profile this", "optimize training speed". Not for general code changes (`foundry:sw-engineer`).
 
-Strictly profile-first: measures before changing, changes one thing, measures again. Optimization order: algorithm -> data structure -> I/O -> memory -> concurrency -> vectorization -> compute -> caching. Never jumps to GPU tuning before checking I/O.
+Strictly profile-first: measure before change, change one thing, measure again. Optimization order: algorithm -> data structure -> I/O -> memory -> concurrency -> vectorization -> compute -> caching. Never GPU tuning before checking I/O.
 
 ______________________________________________________________________
 
 ### foundry:doc-scribe
 
-**Role**: documentation specialist for docstrings, API references, and README files.
+**Role**: documentation specialist — docstrings, API references, README files.
 
-**Use for**: auditing missing docstrings, writing Google-style (Napoleon) docstrings from code, creating or updating README content, finding doc/code inconsistencies.
+**Use for**: auditing missing docstrings, writing Google-style (Napoleon) docstrings from code, README content, doc/code inconsistencies.
 
 **Model**: `sonnet`
 
-**Not for**: CHANGELOG entries or release notes (use `oss:shepherd` for lifecycle/format decisions, `/oss:release` for automated generation), linting code examples (use `foundry:linting-expert`), implementation code (use `foundry:sw-engineer`), outward-facing narrative artifacts like blog posts, talk slides, or social threads (use `foundry:creator`).
+**Not for**: CHANGELOG entries or release notes (`oss:shepherd` for lifecycle/format decisions, `/oss:release` for automated generation), linting code examples (`foundry:linting-expert`), implementation (`foundry:sw-engineer`), outward-facing narrative artifacts — blog posts, talk slides, social threads (`foundry:creator`).
 
 **Auto-invokes when:** user asks for documentation; "write docs for", "add docstrings to", "update the README", "document this function".
 
-Always downstream — documents finalized code, never shapes design. After `foundry:doc-scribe` produces content, follow with `foundry:linting-expert` to sanitize code examples in the output.
+Always downstream — documents finalized code, never shapes design. After `foundry:doc-scribe` produces content, follow with `foundry:linting-expert` to sanitize code examples.
 
 ______________________________________________________________________
 
 ### foundry:web-explorer
 
-**Role**: web fetch and content extraction specialist.
+**Role**: web fetch + content extraction specialist.
 
 **Use for**: fetching live library docs, API references, changelogs, migration guides, package version lookups, GitHub release extraction. Used internally by `/foundry:audit upgrade` and `/foundry:manage create`.
 
 **Model**: `sonnet`
 
-**Not for**: code analysis or implementation (use `foundry:sw-engineer`), ML paper analysis (use `research:scientist`), writing or updating README content or docstrings (use `foundry:doc-scribe`), dependency upgrade lifecycle decisions (use `oss:shepherd`), performance profiling or benchmarking recommendations (use `foundry:perf-optimizer`).
+**Not for**: code analysis or implementation (`foundry:sw-engineer`), ML paper analysis (`research:scientist`), README/docstring writing (`foundry:doc-scribe`), dependency upgrade lifecycle decisions (`oss:shepherd`), perf profiling or benchmarking recommendations (`foundry:perf-optimizer`).
 
-**Auto-invokes when:** user asks about library docs, external API, or URL content; "what does X docs say", "look up", "find the docs for", "latest version of"; user pastes URL and asks a question about it.
+**Auto-invokes when:** user asks about library docs, external API, URL content; "what does X docs say", "look up", "find the docs for", "latest version of"; user pastes URL + asks question about it.
 
-Feeds `research:scientist` — fetches current docs and papers; scientist interprets.
+Feeds `research:scientist` — fetches current docs + papers; scientist interprets.
 
 ______________________________________________________________________
 
 ### foundry:curator
 
-**Role**: quality guardian of Claude config markdown files — agents, skills, and rules.
+**Role**: quality guardian of Claude config markdown files — agents, skills, rules.
 
-**Use for**: auditing `.claude/` config files for verbosity creep, cross-agent duplication, broken cross-references, structural violations, outdated content, and roster overlap. Used internally by `/foundry:audit` and `/foundry:manage`.
+**Use for**: auditing `.claude/` config files — verbosity creep, cross-agent duplication, broken cross-references, structural violations, outdated content, roster overlap. Used internally by `/foundry:audit` and `/foundry:manage`.
 
 **Model**: `opusplan`
 
-**Not for**: hook files (`*.js`) — those belong to `foundry:sw-engineer`. Not for creating or scaffolding new agents or skills (use `/foundry:manage create`). Not for routing new tasks to other agents.
+**Not for**: hook files (`*.js`) — belong to `foundry:sw-engineer`. Not for creating/scaffolding new agents or skills (`/foundry:manage create`). Not for routing new tasks to other agents.
 
-**Auto-invokes when (MAYBE):** user explicitly references a specific agent or skill config file by path; "audit this agent", "check this skill file", "is this config valid". Narrow trigger — see description.
+**Auto-invokes when (MAYBE):** user explicitly references specific agent/skill config file by path; "audit this agent", "check this skill file", "is this config valid". Narrow trigger — see description.
 
-You will generally not invoke this agent directly. `/foundry:audit` spawns it in batches across all config files; `/foundry:manage` delegates content generation and editing to it.
+Generally not invoked directly. `/foundry:audit` spawns it in batches across all config files; `/foundry:manage` delegates content generation + editing to it.
 
 ______________________________________________________________________
 
 ### foundry:challenger
 
-**Role**: adversarial reviewer for implementation plans, architecture proposals, and significant code reviews.
+**Role**: adversarial reviewer — implementation plans, architecture proposals, significant code reviews.
 
-**Use for**: red-teaming a plan before committing to it, challenging architectural decisions before they ship, adversarial code review on security-sensitive or irreversible operations. Treats every claim as unproven until backed by evidence. Attacks across 6 dimensions (Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep, Root Cause) — drills to bedrock for every standing challenge (keeps asking "why?" until root cause found, not just surface symptom). Applies mandatory refutation step to stay objective: accepts refutation when evidence warrants.
+**Use for**: red-teaming plan before committing, challenging architectural decisions before ship, adversarial code review on security-sensitive or irreversible ops. Every claim unproven until backed by evidence. Attacks across 6 dimensions (Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep, Root Cause) — drills to bedrock per standing challenge (keeps asking "why?" until root cause, not surface symptom). Mandatory refutation step keeps it objective: accepts refutation when evidence warrants.
 
-When `codex@openai-codex` plugin is installed, challenger automatically launches a parallel Codex adversarial review track (same target, `--scope auto`) and aggregates the results — findings from both tracks are reported together with convergence callouts where both flagged the same area. Pass `--no-codex` in the prompt to skip. If Codex is installed but the parallel run fails for any reason, the failure is surfaced in the report; results are never silently dropped to Claude-only.
+When `codex@openai-codex` plugin installed, challenger auto-launches parallel Codex adversarial review track (same target, `--scope auto`), aggregates results — findings from both tracks reported together with convergence callouts where both flagged same area. Pass `--no-codex` in prompt to skip. Codex installed but parallel run fails: failure surfaced in report; results never silently dropped to Claude-only.
 
 **Model**: `opus`
 
-**Not for**: designing plans or ADRs (use `foundry:solution-architect`), writing tests or test coverage review (use `foundry:qa-specialist`), config file quality review (use `foundry:curator`).
+**Not for**: designing plans or ADRs (`foundry:solution-architect`), writing tests or coverage review (`foundry:qa-specialist`), config file quality review (`foundry:curator`).
 
-**Auto-invokes when:** user asks to challenge, stress-test, or critique a design or plan; "challenge this", "what are the weaknesses", "devil's advocate", "poke holes in", "second opinion on".
+**Auto-invokes when:** user asks to challenge, stress-test, critique design or plan; "challenge this", "what are the weaknesses", "devil's advocate", "poke holes in", "second opinion on".
 
 Read-only — never writes or edits files. Runs by default in all `/develop:*` skills and `/oss:review` — skip with `--no-challenge`.
 
@@ -608,31 +608,31 @@ ______________________________________________________________________
 
 ### foundry:creator
 
-**Role**: developer advocacy content specialist for outward-facing narrative artifacts.
+**Role**: developer advocacy content specialist — outward-facing narrative artifacts.
 
-**Use for**: generating complete blog posts, Marp slide decks, social threads, talk abstracts, and lightning talk outlines in one autonomous pass. Imagines the ideal reader experience first, then works backwards to structure and form — questions status-quo conventions before accepting them, pushes for genuinely fresh angles. Reads an approved outline file (`.plans/content/<slug>-outline.md`) produced by `/foundry:create`. Applies a four-beat story arc (Problem→Journey→Insight→Action) calibrated to the target audience level.
+**Use for**: complete blog posts, Marp slide decks, social threads, talk abstracts, lightning talk outlines in one autonomous pass. Imagines ideal reader experience first, works backwards to structure + form — questions status-quo conventions, pushes for fresh angles. Reads approved outline file (`.plans/content/<slug>-outline.md`) from `/foundry:create`. Applies four-beat story arc (Problem→Journey→Insight→Action) calibrated to target audience level.
 
 **Model**: `sonnet`
 
-**Not for**: in-code documentation, docstrings, or API references (use `foundry:doc-scribe`), release notes or changelogs (use `oss:shepherd` — requires `oss` plugin), structured reference content such as FAQs or comparison tables (redirect to `foundry:doc-scribe`).
+**Not for**: in-code documentation, docstrings, API references (`foundry:doc-scribe`), release notes/changelogs (`oss:shepherd` — requires `oss` plugin), structured reference content — FAQs, comparison tables (redirect to `foundry:doc-scribe`).
 
-**Auto-invokes when:** outline file `.plans/content/<slug>-outline.md` approved; user asks to write a blog post, Marp slide deck, social thread, talk abstract, or lightning talk outline. Skip when outline file not found (run `/foundry:create` first); code documentation (use `foundry:doc-scribe`); release notes (use `oss:shepherd`).
+**Auto-invokes when:** outline file `.plans/content/<slug>-outline.md` approved; user asks for blog post, Marp slide deck, social thread, talk abstract, lightning talk outline. Skip when: outline file not found (run `/foundry:create` first); code documentation (`foundry:doc-scribe`); release notes (`oss:shepherd`).
 
-Always downstream of `/foundry:create` — reads the approved outline file and generates the full artifact. The two-phase system: `/foundry:create` (interactive intake → outline) then `foundry:creator` (autonomous generation → artifact).
+Always downstream of `/foundry:create` — reads approved outline, generates full artifact. Two-phase system: `/foundry:create` (interactive intake → outline) then `foundry:creator` (autonomous generation → artifact).
 
 ______________________________________________________________________
 
 ## 🔗 Agent relationships
 
-Agents form a directed pipeline, not a flat pool:
+Agents = directed pipeline, not flat pool:
 
-- `foundry:linting-expert` is always **downstream** of `foundry:sw-engineer` — never lints code that has not been implemented
-- `foundry:doc-scribe` is always **downstream** — documents finalized code, never shapes design
+- `foundry:linting-expert` always **downstream** of `foundry:sw-engineer` — never lints unimplemented code
+- `foundry:doc-scribe` always **downstream** — documents finalized code, never shapes design
 - `foundry:qa-specialist` runs **parallel** to `foundry:sw-engineer` during review, or downstream after implementation
-- `foundry:challenger` is **pre-implementation** — challenges plans and proposals before any code is written; use before `foundry:sw-engineer`
+- `foundry:challenger` is **pre-implementation** — challenges plans + proposals before any code; use before `foundry:sw-engineer`
 - `foundry:curator` is **orthogonal** — audits `.claude/` config files, not user code
-- `foundry:web-explorer` **feeds** `research:scientist` — fetches current docs and papers; scientist interprets
-- `foundry:creator` is always **downstream** of `/foundry:create` — reads the approved outline file; never generates content without a prior outline
+- `foundry:web-explorer` **feeds** `research:scientist` — fetches current docs + papers; scientist interprets
+- `foundry:creator` always **downstream** of `/foundry:create` — reads approved outline file; never generates without prior outline
 
 **Model tiering**: reasoning agents (`foundry:sw-engineer`, `foundry:perf-optimizer`, `foundry:solution-architect`) use `opus`; adversarial reasoning (`foundry:challenger`) uses `opus`; plan-gated roles (`foundry:curator`) use `opusplan`; execution agents (`foundry:doc-scribe`, `foundry:web-explorer`, `foundry:creator`, `foundry:qa-specialist`) use `sonnet`; high-frequency diagnostics (`foundry:linting-expert`) use `haiku`.
 
@@ -640,18 +640,18 @@ ______________________________________________________________________
 
 ## 📋 Rules installed
 
-`/foundry:setup` symlinks all rule files from `plugins/foundry/rules/` into `~/.claude/rules/`. These govern Claude's behavior globally across all sessions after install.
+`/foundry:setup` symlinks all rule files from `plugins/foundry/rules/` into `~/.claude/rules/`. Govern Claude behavior globally, all sessions after install.
 
-> **Stub + on-demand split (token diet):** `git-commit.md`, `debugging.md`, `external-data.md`, and `artifact-lifecycle.md` are thin always-loaded stubs carrying only the hard constraints; the full procedural bodies live in `rules/_full/` (resolved from the plugin cache, NOT symlinked or injected) and are Read on demand at the trigger point named in each stub — drafting a commit, multi-file fix, multi-page fetch, defining new output dirs. Cuts ~6K tokens of per-session injection with zero constraint loss.
+> **Stub + on-demand split (token diet):** `git-commit.md`, `debugging.md`, `external-data.md`, `artifact-lifecycle.md` = thin always-loaded stubs with hard constraints only; full procedural bodies live in `rules/_full/` (resolved from plugin cache, NOT symlinked or injected), Read on demand at trigger point named in each stub — drafting commit, multi-file fix, multi-page fetch, defining new output dirs. Cuts ~6K tokens per-session injection, zero constraint loss.
 
-| Rule file               | Applies to                      | What it governs                                                                                         |
+| Rule file               | Applies to                      | Governs                                                                                                 |
 | ----------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `communication.md`      | all                             | Re: anchor format, progress narration, tone, output routing, breaking-findings format, terminal colors  |
 | `quality-gates.md`      | all                             | Confidence block format, Internal Quality Loop, link verification, output routing (long output to file) |
-| `git-commit.md`         | all                             | Commit message format, diff-gathering before writing, co-author trailers, branch and push safety        |
+| `git-commit.md`         | all                             | Commit message format, diff-gathering before writing, co-author trailers, branch + push safety          |
 | `claude-config.md`      | all                             | Bash timeouts (3x P90), directory navigation rules, no hardcoded absolute paths                         |
 | `artifact-lifecycle.md` | all                             | Canonical artifact layout (`.plans/`, `.reports/`, `.temp/`), run directory naming, TTL policy          |
-| `external-data.md`      | all                             | Pagination rules for GitHub CLI, REST APIs, GraphQL, Cloud APIs — never work on partial result set      |
+| `external-data.md`      | all                             | Pagination rules: GitHub CLI, REST APIs, GraphQL, Cloud APIs — never work on partial result set         |
 | `foundry-config.md`     | `.claude/**`                    | Plan-mode gate before any `.claude/` edit, post-edit checklist, XML tag conventions, distribution rules |
 | `python-code.md`        | `**/*.py`                       | Google-style docstrings (no exceptions), deprecation version check before generating deprecation code   |
 | `testing.md`            | `tests/**/*.py`, `**/test_*.py` | pytest design: TDD process, fixture conventions, parametrization, what to test in priority order        |
@@ -663,27 +663,27 @@ ______________________________________________________________________
 
 ### settings.json keys merged by `/foundry:setup`
 
-| Key                                    | What it does                                                                                        |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `statusLine.command`                   | Runs `statusline.js` to display active agent count in the Claude Code status bar                    |
-| `permissions.allow`                    | Adds pre-approved Bash commands, git operations, and WebFetch domains                               |
-| `permissions.deny`                     | Adds permanently denied write operations (public GitHub mutations, destructive git)                 |
-| `enabledPlugins["codex@openai-codex"]` | Enables Codex plugin for adversarial review in `/foundry:calibrate` and `/foundry:audit`            |
-| `advisorModel`                         | Copied from project `.claude/settings.json` when pinned, so the advisor tool uses your chosen model |
+| Key                                    | What it does                                                                             |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `statusLine.command`                   | Runs `statusline.js` — active agent count in Claude Code status bar                      |
+| `permissions.allow`                    | Adds pre-approved Bash commands, git operations, WebFetch domains                        |
+| `permissions.deny`                     | Adds permanently denied write operations (public GitHub mutations, destructive git)      |
+| `enabledPlugins["codex@openai-codex"]` | Enables Codex plugin for adversarial review in `/foundry:calibrate` and `/foundry:audit` |
+| `advisorModel`                         | Copied from project `.claude/settings.json` when pinned — advisor tool uses chosen model |
 
 ### Optional flags and knobs
 
-**`--approve`** on `/foundry:setup`: skips all interactive prompts and auto-accepts recommended choices. Use for scripted or CI setups.
+**`--approve`** on `/foundry:setup`: skips all interactive prompts, auto-accepts recommended choices. For scripted or CI setups.
 
-**`--skip-audit`** on `/foundry:manage`: skips the trailing `/foundry:audit` validation step. Use inside audit-initiated fix sessions to avoid recursion.
+**`--skip-audit`** on `/foundry:manage`: skips trailing `/foundry:audit` validation step. Use inside audit-initiated fix sessions to avoid recursion.
 
-**Calibration pace**: `--fast` (3 problems per target, default) vs `--full` (10 problems per target). Use `--fast` for routine checks after agent edits; use `--full` for thorough benchmarks before releases or after major instruction changes.
+**Calibration pace**: `--fast` (3 problems per target, default) vs `--full` (10 per target). `--fast` for routine checks after agent edits; `--full` for thorough benchmarks before releases or after major instruction changes.
 
-**Brainstorm ceremony**: `--tight` (5/5/1 caps for well-scoped ideas), default (10/10/2), `--deep` (15/15/3 for genuinely ambiguous problems).
+**Brainstorm ceremony**: `--tight` (5/5/1 caps, well-scoped ideas), default (10/10/2), `--deep` (15/15/3, genuinely ambiguous problems).
 
 ### Environment
 
-No environment variables required. foundry reads from `~/.claude/settings.json` and the plugin's installed cache path, both resolved automatically by `/foundry:setup`.
+No environment variables required. foundry reads `~/.claude/settings.json` + plugin's installed cache path, both resolved automatically by `/foundry:setup`.
 
 ______________________________________________________________________
 
@@ -699,27 +699,27 @@ ______________________________________________________________________
 
 **`/foundry:audit` reports broken symlinks (Check I3)**
 
-Symlinks in `~/.claude/rules/` point to the previous plugin cache path after an upgrade. Re-run `/foundry:setup` — Step 9 detects stale symlinks as conflicts and offers to replace them.
+Symlinks in `~/.claude/rules/` point to previous plugin cache path after upgrade. Re-run `/foundry:setup` — Step 9 detects stale symlinks as conflicts, offers replacement.
 
 **Hooks not firing**
 
-Run `/foundry:investigate "hooks not firing on Save"`. Most common cause: a `hooks` block is still present in `~/.claude/settings.json` from a pre-plugin-migration install (hooks now register via plugin manifest, not the `hooks` key). `/foundry:setup` Step 3 detects and removes the stale block.
+Run `/foundry:investigate "hooks not firing on Save"`. Most common cause: `hooks` block still in `~/.claude/settings.json` from pre-plugin-migration install (hooks now register via plugin manifest, not `hooks` key). `/foundry:setup` Step 3 detects + removes stale block.
 
 **`/foundry:calibrate` times out**
 
-Each pipeline subagent has a 10-minute hard cutoff (15 minutes when Codex is active). If a target consistently times out, run it in isolation: `/foundry:calibrate foundry:sw-engineer --fast`. For persistent issues: `/foundry:investigate "/calibrate times out every run"`.
+Each pipeline subagent has 10-minute hard cutoff (15 minutes when Codex active). Target consistently times out: run in isolation: `/foundry:calibrate foundry:sw-engineer --fast`. Persistent: `/foundry:investigate "/calibrate times out every run"`.
 
 **`/foundry:manage create` picks wrong model tier**
 
-Model tier is chosen by role complexity at creation time: `opusplan` for plan-gated quality review (e.g. `foundry:curator`), `opus` for complex reasoning (e.g. `foundry:sw-engineer`, `foundry:solution-architect`), `sonnet` for focused execution, `haiku` for high-frequency diagnostics. To fix after creation: `/foundry:manage update <name> "change model to sonnet"`.
+Model tier chosen by role complexity at creation: `opusplan` for plan-gated quality review (e.g. `foundry:curator`), `opus` for complex reasoning (e.g. `foundry:sw-engineer`, `foundry:solution-architect`), `sonnet` for focused execution, `haiku` for high-frequency diagnostics. Fix after creation: `/foundry:manage update <name> "change model to sonnet"`.
 
 **`foundry:curator` returns low confidence during `/foundry:audit`**
 
-The audit re-runs the agent with the specific gap named in its `Gaps:` field. If confidence remains below 0.7 after one retry, the gap is surfaced with a warning in the final report for manual review. Add recurring gaps to `foundry:curator`'s antipatterns section: `/foundry:manage update foundry-curator "add gap X to antipatterns_to_flag"`.
+Audit re-runs agent with specific gap named in `Gaps:` field. Confidence still below 0.7 after one retry: gap surfaced with warning in final report for manual review. Recurring gaps: add to `foundry:curator` antipatterns section: `/foundry:manage update foundry-curator "add gap X to antipatterns_to_flag"`.
 
 **`jq` not found warning during `/foundry:audit setup`**
 
-Check 4 (permissions-guide drift) requires `jq`. Install it with `brew install jq` on macOS or `apt install jq` on Linux. The audit continues without it — only Check 4 is skipped.
+Check 4 (permissions-guide drift) requires `jq`. Install: `brew install jq` on macOS, `apt install jq` on Linux. Audit continues without — only Check 4 skipped.
 
 ______________________________________________________________________
 
@@ -779,7 +779,7 @@ Then, inside Claude Code:
 /foundry:setup
 ```
 
-Re-running `/foundry:setup` after an upgrade is required — symlinks point to the versioned cache path and go stale after reinstall.
+Re-run `/foundry:setup` after upgrade required — symlinks point to versioned cache path, go stale after reinstall.
 
 </details>
 
@@ -795,7 +795,7 @@ ______________________________________________________________________
 claude plugin uninstall foundry
 ```
 
-Settings keys merged by `/foundry:setup` (`statusLine`, `permissions.allow` entries) remain in `~/.claude/settings.json` after uninstall — remove them manually if desired. Symlinks created by `/foundry:setup` in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist.
+Settings keys merged by `/foundry:setup` (`statusLine`, `permissions.allow` entries) remain in `~/.claude/settings.json` after uninstall — remove manually if desired. Symlinks from `/foundry:setup` in `~/.claude/rules/` and `~/.claude/TEAM_PROTOCOL.md` also persist.
 
 ______________________________________________________________________
 
@@ -810,7 +810,7 @@ pip install pytest pytest-cov
 pytest plugins/foundry/tests/ -v
 ```
 
-Run only JS hook tests:
+JS hook tests only:
 
 ```bash
 pytest plugins/foundry/tests/ -v -k "js"
@@ -818,22 +818,22 @@ pytest plugins/foundry/tests/ -v -k "js"
 
 ### JS hook tests (subprocess, black-box)
 
-Each test spawns `node <hook>.js` with a JSON payload on stdin and asserts filesystem side-effects under `/tmp/claude-state-<session_id>/` and exit codes.
+Each test spawns `node <hook>.js` with JSON payload on stdin, asserts filesystem side-effects under `/tmp/claude-state-<session_id>/` + exit codes.
 
-| File                      | Hook              | Tests | What's covered                                                                                                                                                                                                                  |
+| File                      | Hook              | Tests | Covered                                                                                                                                                                                                                         |
 | ------------------------- | ----------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `test_task_log_js.py`     | `task-log.js`     | 19    | Agent lifecycle (Pre/PostToolUse, SubagentStart/Stop), background agents kept past dispatch-time PostToolUse, pending/ race condition, worktree `last_active` refresh on tool activity, codex skill tracking, per-tool counters |
 | `test_statusline_js.py`   | `statusline.js`   | 10    | `🤖` segment: empty/active/stale agents, long-running agent kept visible by fresh `last_active`, codex agent type label (via `agents/` and the `codex/` dir), missing-`agents/`-dir tolerance                                   |
 | `test_commit_guard_js.py` | `commit-guard.js` | 8     | Commit always passes through (prompt-discipline only, not hook-gated), non-push Bash passthrough, SessionStart wipes push sentinel, force-push blocked unconditionally (even with sentinel), push sentinel gate (no auto-arm)   |
 | `test_agent_router_js.py` | `agent-router.js` | 4     | Builtin/plugin-agent passthrough (tier 1), unknown-agent reroute to `general-purpose` (tier 3), SessionStart index build                                                                                                        |
 
-`run_hook` and `state_dir` are pytest fixtures in `conftest.py`; test methods receive them as parameters — no `from conftest import` needed.
+`run_hook` and `state_dir` = pytest fixtures in `conftest.py`; test methods receive as parameters — no `from conftest import` needed.
 
-**Why Python tests for JS hooks?** These are black-box contract tests: each test spawns the real `node` process, sends a JSON payload on stdin, and asserts filesystem side-effects and exit codes. Python is just the orchestrator — the JS runs for real. One runner (pytest) covers all plugin tests (Python `bin/` scripts and JS hooks) with no `package.json` or `node_modules` required. Tradeoff: covers the hook *interface* contract but not individual JS function internals. Jest would be the right addition if internal logic ever warrants unit testing.
+**Why Python tests for JS hooks?** Black-box contract tests: each spawns real `node` process, sends JSON payload on stdin, asserts filesystem side-effects + exit codes. Python = orchestrator only — JS runs for real. One runner (pytest) covers all plugin tests (Python `bin/` scripts + JS hooks), no `package.json` or `node_modules` required. Tradeoff: covers hook *interface* contract, not individual JS function internals. Jest = right addition if internal logic ever warrants unit testing.
 
 ### Python `bin/` script tests
 
-| File                              | Script                       | Tests | What's covered                                                                                          |
+| File                              | Script                       | Tests | Covered                                                                                                 |
 | --------------------------------- | ---------------------------- | ----- | ------------------------------------------------------------------------------------------------------- |
 | `test_check_routing_links.py`     | `check_routing_links.py`     | 42    | Computed path resolution, orphan-risk detection (R2), bin-ref integrity (R3), security path guard       |
 | `test_symlink_with_guard.py`      | `symlink_with_guard.py`      | 31    | Create/update/remove symlinks, guard against stale links, cleanup of obsolete rule links                |
@@ -858,16 +858,16 @@ Each test spawns `node <hook>.js` with a JSON payload on stdin and asserts files
 | `test_get_plugin_install_path.py` | `get_plugin_install_path.py` | 7     | Registry lookup, multiple-entry tie-breaking, missing plugin exit code                                  |
 | `test_c33_dir_resolution.py`      | _(C33 dir-resolution logic)_ | 4     | Latest-version selection, older-version exclusion, no-cache fallback                                    |
 
-CI runs the full test suite on every push to `main` and on PRs touching `plugins/` (see `.github/workflows/ci-tests.yml`).
+CI runs full test suite on every push to `main` and on PRs touching `plugins/` (see `.github/workflows/ci-tests.yml`).
 
 ______________________________________________________________________
 
 ## 🙏 Contributing / feedback
 
-foundry is part of the Borda-AI-Rig repository. To suggest an improvement or report a bug:
+foundry = part of Borda-AI-Rig repository. Suggest improvement or report bug:
 
-1. Run `/foundry:brainstorm "your idea"` to develop the idea before filing anything
-2. File an issue on the repository — include the output of `/foundry:audit setup` and your Claude Code version
+1. Run `/foundry:brainstorm "your idea"` to develop idea before filing
+2. File issue on repository — include output of `/foundry:audit setup` + Claude Code version
 3. Plugin updates propagate to users via `claude plugin install foundry@borda-ai-rig` + `/foundry:setup`
 
-To add a new agent or skill, use `/foundry:manage create` — it handles scaffolding, README sync, and MEMORY.md updates automatically.
+New agent or skill: use `/foundry:manage create` — handles scaffolding, README sync, MEMORY.md updates automatically.

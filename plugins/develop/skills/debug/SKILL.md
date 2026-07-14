@@ -13,7 +13,7 @@ Investigation-first debugging. Gather evidence, trace data flow, form confirmed 
 
 NOT for: production incidents without any CI run ID or local traceback (use `/foundry:investigate` (requires foundry plugin) for triage); `.claude/` config issues (use `/foundry:audit` (requires foundry plugin)); non-Python projects (JS/TS/Go/Rust) — toolchain assumes pytest; use language-native toolchain instead. CI-only failures ARE supported — pass `--ci-run <run-id or URL>` to use GitHub Actions logs as evidence source.
 
-**Issue ID routing note**: issue mode is selected when the `--issue` flag is present, or when the argument (after other flags are stripped) is a pure run of digits with an optional `#` prefix (e.g. `123` or `#123`). There is no numeric threshold. Pass `--issue <N>` to force issue mode for any argument.
+**Issue ID routing note**: issue mode selected when `--issue` flag present, or when argument (after other flags stripped) is a pure run of digits with an optional `#` prefix (e.g. `123` or `#123`). No numeric threshold. Pass `--issue <N>` to force issue mode for any argument.
 
 </objective>
 
@@ -21,7 +21,7 @@ NOT for: production incidents without any CI run ID or local traceback (use `/fo
 
 Key boundary: after Steps 1+2 — evidence gathered and pattern analysis complete, before hypothesis gate (Step 3).
 Preserve: debug mode, CI run ID if set, evidence signals (issue body, test path), tried-hypotheses ledger (candidate causes + verdicts — refuted/ruled-out/open), --keep items.
-Refresh also after any Step 3 probe that rules out a hypothesis — so post-compact the gate does not re-test refuted causes (loop guard).
+Refresh also after any Step 3 probe that rules out a hypothesis — so post-compact gate does not re-test refuted causes (loop guard).
 
 </compaction>
 
@@ -36,7 +36,7 @@ _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_reso
 # loads: compaction-contract.md
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:challenger`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:challenger`.
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -81,7 +81,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_parse_args.py" \
 # URL normalization + log fetching: §URL Normalization in ci-log-extract.md
 ```
 
-**Codemap resolve** — `CODEMAP_RAW` is already written to `${TMPDIR:-/tmp}/dev-debug-codemap` (per-skill) and `${TMPDIR:-/tmp}/dev-codemap-raw` (legacy) by the flag-parsing block above (via `dev_parse_args.py --skill debug --write-files`). Read the per-skill path, then normalize via `codemap-resolve`:
+**Codemap resolve** — `CODEMAP_RAW` already written to `${TMPDIR:-/tmp}/dev-debug-codemap` (per-skill) and `${TMPDIR:-/tmp}/dev-codemap-raw` (legacy) by flag-parsing block above (via `dev_parse_args.py --skill debug --write-files`). Read per-skill path, then normalize via `codemap-resolve`:
 
 ```bash
 # timeout: 5000
@@ -124,19 +124,19 @@ echo "$DEBUG_MODE" > ${TMPDIR:-/tmp}/dev-debug-mode
 ```
 
 Subsequent steps branch by `DEBUG_MODE`:
-- **Issue mode**: Step 1 fetches issue body and extracts test path before invoking pytest; skip the symptom-text pytest block. Stop after Step 4 (handoff) — do not run symptom-text branches.
-- **Symptom mode**: Step 1 skips issue fetch; uses free-text symptom directly. Skip the issue-mode pytest block entirely.
+- **Issue mode**: Step 1 fetches issue body and extracts test path before invoking pytest; skip symptom-text pytest block. Stop after Step 4 (handoff) — do not run symptom-text branches.
+- **Symptom mode**: Step 1 skips issue fetch; uses free-text symptom directly. Skip issue-mode pytest block entirely.
 
-**If `TEAM_MODE=true`** — execute team investigation now in place of standard Steps 1-2. After team synthesis completes, run Steps 3-4 inline (hypothesis gate + handoff to fix) on the winning hypothesis — do not return to standard Steps 1-2. Authoritative reading: team mode **replaces** Steps 1-2 (parallel hypothesis investigation supplants serial evidence gathering); Steps 3-4 still execute (inline within this block, not by looping back to the standard workflow):
+**If `TEAM_MODE=true`** — execute team investigation now in place of standard Steps 1-2. After team synthesis completes, run Steps 3-4 inline (hypothesis gate + handoff to fix) on winning hypothesis — do not return to standard Steps 1-2. Authoritative reading: team mode **replaces** Steps 1-2 (parallel hypothesis investigation supplants serial evidence gathering); Steps 3-4 still execute (inline within this block, not by looping back to standard workflow):
 
 1. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template. Confirm `[ROLE_PHRASE]` = symptom text (from `$ARGUMENTS` stripped of flags), `[FILE_SLUG]` = `debug-hypothesis`.
 2. Run project detection (read `$_DEV_SHARED/runner-detection.md`) to set `$TEST_CMD` and `$PYTEST_CMD`.
-3. Compute `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)` and `mkdir -p ".temp/develop/$TS"`. Spawn 2-3 `foundry:sw-engineer` agents (model=opus) in parallel — each investigating one independent root-cause hypothesis. Use the Team Spawn Template from preflight-helpers: replace `[ROLE_PHRASE]` with the symptom, `[FILE_SLUG]` with `debug-hypothesis`, assign each agent a distinct hypothesis number N. Each agent writes full output to `.temp/develop/$TS/debug-hypothesis-N.md` and returns compact JSON `{"status":"done","file":"<path>","findings":N,"confidence":0.N,"summary":"<one-line description of hypothesis>"}`.
+3. Compute `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)` and `mkdir -p ".temp/develop/$TS"`. Spawn 2-3 `foundry:sw-engineer` agents (model=opus) in parallel — each investigating one independent root-cause hypothesis. Use Team Spawn Template from preflight-helpers: replace `[ROLE_PHRASE]` with symptom, `[FILE_SLUG]` with `debug-hypothesis`, assign each agent a distinct hypothesis number N. Each agent writes full output to `.temp/develop/$TS/debug-hypothesis-N.md` and returns compact JSON `{"status":"done","file":"<path>","findings":N,"confidence":0.N,"summary":"<one-line description of hypothesis>"}`.
 4. **Coordination**: lead broadcasts `{symptom: <description>, traceback: <key lines>}` to teammates before spawning. After all return, facilitate cross-challenge between competing analyses. Convergence rule: select hypothesis with most direct evidence (observable in code or logs); if truly tied, invoke `AskUserQuestion` presenting top 2 competing hypotheses.
 5. **Synthesis trace agent**: spawn one `foundry:sw-engineer` synthesis agent after individual teammate reports — read all teammate findings from `.temp/develop/$TS/debug-hypothesis-*.md`, produce unified cross-cutting trace map (entry point, modules crossed, state mutations, invariant violations across hypotheses). Write to `.temp/develop/$TS/debug-trace-synthesis.md`.
-6. Lead synthesises consensus root cause from synthesis trace + competing hypotheses. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on the winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2. **Step 3 gate in team mode**: if convergence was reached by synthesis agent (all hypotheses point to same root cause with high confidence), present the converged hypothesis without a new user confirmation prompt — state "Team converged on root cause (no ambiguity)" and proceed directly to Step 4 handoff. Only invoke `AskUserQuestion` at Step 3 if competing hypotheses remain or convergence was declared by default (tied evidence).
+6. Lead synthesises consensus root cause from synthesis trace + competing hypotheses. Run Steps 3-4 of standard workflow (hypothesis gate + hand off to fix) on winning hypothesis — execute those steps inline here; do not loop back through Steps 1-2. **Step 3 gate in team mode**: if convergence reached by synthesis agent (all hypotheses point to same root cause with high confidence), present converged hypothesis without a new user confirmation prompt — state "Team converged on root cause (no ambiguity)" and proceed directly to Step 4 handoff. Only invoke `AskUserQuestion` at Step 3 if competing hypotheses remain or convergence declared by default (tied evidence).
 
-Health monitoring (CLAUDE.md §6): for each spawned agent, use a **per-agent sentinel** keyed on the loop counter `$N` (not the literal `N`). Loop over agent indices in actual bash:
+Health monitoring (CLAUDE.md §6): for each spawned agent, use a **per-agent sentinel** keyed on loop counter `$N` (not literal `N`). Loop over agent indices in actual bash:
 
 ```bash
 # timeout: 5000
@@ -145,13 +145,13 @@ for N in 1 2 3; do
 done
 ```
 
-Poll each independently every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-${N} -type f | wc -l` where `$N` is the actual agent index in the loop variable. A single shared sentinel collapses health isolation — stalled agent N=2 cannot be distinguished from active agent N=1. Hard cutoff 15 min no-file-activity per agent; mark timed-out agents with ⏱ in synthesis.
+Poll each independently every 5 min via `find .temp/develop/$TS -newer ${TMPDIR:-/tmp}/debug-team-check-${N} -type f | wc -l` where `$N` is actual agent index in loop variable. A single shared sentinel collapses health isolation — stalled agent N=2 cannot be distinguished from active agent N=1. Hard cutoff 15 min no-file-activity per agent; mark timed-out agents with ⏱ in synthesis.
 
 ## Step 1: Understand the symptom
 
 Collect all signals before forming any hypothesis.
 
-**Structural context (codemap — only if `CODEMAP_ENABLED=true`)**: if index available, run before codebase exploration to pre-load blast-radius context for the failing module:
+**Structural context (codemap — only if `CODEMAP_ENABLED=true`)**: if index available, run before codebase exploration to pre-load blast-radius context for failing module:
 
 ```bash
 # timeout: 10000
@@ -169,7 +169,7 @@ scan-query rdeps <TARGET_MODULE> 2>/dev/null
 scan-query fn-blast <TARGET_MODULE::failing_fn> 2>/dev/null  # v3 index only
 ```
 
-If codemap results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of the failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
+If codemap results returned: prepend `## Structural Context (codemap)` block to foundry:sw-engineer spawn prompt (Step 1). Callers of failing module = likely affected paths to verify after fix. fn-blast shows transitive callers — high-depth callers are regression risk.
 
 **Issue-number mode first** — if `$ARGUMENTS` is issue number, fetch issue body and extract test path BEFORE invoking pytest:
 
@@ -219,11 +219,11 @@ SUSPECT_FILE="${TEST_PATH:-}"  # empty → full-repo diff
 ```
 
 **Cross-repo adaptation** (when `REPO_NAME` set) — issue from different codebase. After fetching issue:
-1. Extract bug's root cause intent — what invariant is violated, not just described symptoms (which may reference upstream structure or code paths)
-2. Search LOCAL codebase for the equivalent failure site — grep for related symbols; code paths may differ from upstream due to divergence
-3. Treat upstream issue as debugging context, not as a map — trace the actual failure in local code
+1. Extract bug's root cause intent — what invariant violated, not just described symptoms (which may reference upstream structure or code paths)
+2. Search LOCAL codebase for equivalent failure site — grep for related symbols; code paths may differ from upstream due to divergence
+3. Treat upstream issue as debugging context, not as a map — trace actual failure in local code
 
-**Symptom-text mode** — if `$ARGUMENTS` is free-text, skip issue fetch + extraction; locate failing test path from symptom directly. `<test_path>` is a **substitution token** — resolve it into the shell variable `$TEST_PATH` first (via Grep against symptom keywords or heuristic file search), then use `$TEST_PATH` in the pytest call. Do NOT execute with the literal `<test_path>` string — bash would interpret `<` as a stdin redirect from a file named `test_path`:
+**Symptom-text mode** — if `$ARGUMENTS` is free-text, skip issue fetch + extraction; locate failing test path from symptom directly. `<test_path>` is a **substitution token** — resolve into shell variable `$TEST_PATH` first (via Grep against symptom keywords or heuristic file search), then use `$TEST_PATH` in pytest call. Do NOT execute with literal `<test_path>` string — bash would interpret `<` as stdin redirect from a file named `test_path`:
 
 ```bash
 # Resolve TEST_PATH before this block — e.g.:
@@ -239,15 +239,15 @@ else
 fi
 ```
 
-**Claim-validation gate** — before debugging, validate that the user's expectation is itself correct. A bug report always contains an implicit or explicit claim: "X should behave like Y". That claim may be wrong — misread docs, misunderstood API contract, incorrect formula, outdated assumption. Fixing a correct implementation to match a wrong expectation wastes effort and introduces regressions.
+**Claim-validation gate** — before debugging, validate that user's expectation is itself correct. A bug report always contains an implicit or explicit claim: "X should behave like Y". Claim may be wrong — misread docs, misunderstood API contract, incorrect formula, outdated assumption. Fixing a correct implementation to match a wrong expectation wastes effort and introduces regressions.
 
-Classify the claim type and validate accordingly:
+Classify claim type and validate accordingly:
 
 | Claim type | Example | Validation approach |
 | --- | --- | --- |
 | Numeric / metric result | "IoU should be 0.5 but returns 0.3" | Verify formula from authoritative source; compute expected value independently |
-| API contract | "function should return list but returns generator" | Read docstring, type hints, and docs — not the current implementation |
-| Algorithm correctness | "sorting is wrong — element 3 should come before element 1" | Trace comparison logic against the documented sort key or invariant |
+| API contract | "function should return list but returns generator" | Read docstring, type hints, and docs — not current implementation |
+| Algorithm correctness | "sorting is wrong — element 3 should come before element 1" | Trace comparison logic against documented sort key or invariant |
 | Behavioral invariant | "adding item twice should raise, not silently dedupe" | Check README, docs, or published contract — not assumed behavior |
 | Cross-version assumption | "this worked in v1, now broken" | Check changelog/release notes for intentional breaking change |
 | Domain-specific formula | ML metric, statistical estimator, signal processing | Spawn `research:scientist` (requires `research` plugin); pass metric name, formula used, claimed expected value; ask: "Is the claimed expected value correct per authoritative definition?" |
@@ -273,7 +273,7 @@ Spawn **foundry:sw-engineer** agent to map execution path and produce:
 
 Present agent's analysis summary before proceeding.
 
-**Flaky-test branch** — if symptom is intermittent (passes alone, fails in full suite): run binary-search isolation. `<failing-test-node-id>` is a **substitution token** — before executing this block, resolve the failing test node ID from `$ARGUMENTS` or from prior pytest output (captured in a shell variable, e.g. `FAILING_TEST_NODE=tests/foo.py::test_bar`), then substitute the literal node ID into the command. Do NOT execute with the literal `<failing-test-node-id>` string — bash would interpret `<` as a stdin redirect:
+**Flaky-test branch** — if symptom is intermittent (passes alone, fails in full suite): run binary-search isolation. `<failing-test-node-id>` is a **substitution token** — before executing this block, resolve failing test node ID from `$ARGUMENTS` or from prior pytest output (captured in a shell variable, e.g. `FAILING_TEST_NODE=tests/foo.py::test_bar`), then substitute literal node ID into command. Do NOT execute with literal `<failing-test-node-id>` string — bash would interpret `<` as stdin redirect:
 
 ```bash
 # resolve FAILING_TEST_NODE first — bash interprets literal <...> as redirect:
@@ -290,7 +290,7 @@ else
 fi
 ```
 
-Output names the polluting upstream test. Cross-plugin call — `find-polluter.py` ships in `foundry/bin/`. Run only when CI shows non-deterministic failure pattern. If foundry plugin absent: skip flaky-test isolation step; proceed with standard rerun.
+Output names polluting upstream test. Cross-plugin call — `find-polluter.py` ships in `foundry/bin/`. Run only when CI shows non-deterministic failure pattern. If foundry plugin absent: skip flaky-test isolation step; proceed with standard rerun.
 
 ## Step 2: Pattern analysis
 
@@ -306,7 +306,7 @@ Find nearest similar working code path, compare exhaustively:
 
 Step catches non-obvious causes — ordering dependency, environment-specific state, type coercion silently changing behaviour.
 
-**Record candidates (loop guard)** — as each candidate cause is identified, append it to the hypothesis ledger with verdict `open`. The ledger is inlined into the compaction contract at the boundary below, so a mid-investigation compaction never loses which causes were already weighed. Verdict values: `open` · `refuted (challenger)` · `ruled-out (probe)`.
+**Record candidates (loop guard)** — as each candidate cause identified, append it to hypothesis ledger with verdict `open`. Ledger inlined into compaction contract at boundary below, so a mid-investigation compaction never loses which causes were already weighed. Verdict values: `open` · `refuted (challenger)` · `ruled-out (probe)`.
 
 ```bash
 # WHY: ledger survives compaction via contract; prevents re-testing refuted causes after a mid-investigation compact
@@ -317,19 +317,19 @@ echo "<candidate cause> :: open" >> ${TMPDIR:-/tmp}/dev-debug-hypotheses
 
 **Decision — three states** (default is NOT "skip": it runs on substantial root causes and auto-skips only narrow ones):
 
-1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
 2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a narrow root cause.
-3. else **default** → **run when the root cause is substantial** (spans multiple files, a larger change, or touches public API); **auto-skip when narrow** (single file, ≲50 lines, no API change) — the hypothesis is simple enough to proceed directly.
+3. else **default** → **run when root cause is substantial** (spans multiple files, a larger change, or touches public API); **auto-skip when narrow** (single file, ≲50 lines, no API change) — hypothesis simple enough to proceed directly.
 
-Both flags exist because they cover opposite regimes: `--no-challenge` suppresses the gate on the substantial cases where it would otherwise fire; `--challenge` forces it on the narrow cases where it would otherwise auto-skip.
+Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial cases where it would otherwise fire; `--challenge` forces it on narrow cases where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with pattern analysis from Step 2 (differences between working/broken paths, candidate causes):
 
 > "Review pattern analysis and candidate root causes. Challenge across all 5 dimensions: Assumptions, Missing Cases, Security Risks, Architectural Concerns, Complexity Creep. Apply mandatory refutation step."
 
-Parse result — update the hypothesis ledger (`${TMPDIR:-/tmp}/dev-debug-hypotheses`) with each candidate's verdict as you parse:
-- **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into hypothesis list before Step 3 gate. Mark any candidate the challenger refuted `:: refuted (challenger)` in the ledger.
-- **Concerns only** → add as alternative hypotheses in Step 3; append each new concern to the ledger as `:: open (alt)`; continue.
+Parse result — update hypothesis ledger (`${TMPDIR:-/tmp}/dev-debug-hypotheses`) with each candidate's verdict as you parse:
+- **Blockers found** → STOP. Present findings. Incorporate challenger's surviving challenges into hypothesis list before Step 3 gate. Mark any candidate the challenger refuted `:: refuted (challenger)` in ledger.
+- **Concerns only** → add as alternative hypotheses in Step 3; append each new concern to ledger as `:: open (alt)`; continue.
 - **No findings / all refuted** → proceed.
 
 ```bash
@@ -365,13 +365,13 @@ Evidence against: [anything that contradicts or remains unexplained]
 Confidence: high / medium / low
 ```
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **debug** context from the Skill contexts table. Run before presenting hypothesis — any ungrounded premise in the hypothesis produces a fix that addresses the wrong mechanism.
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **debug** context from Skill contexts table. Run before presenting hypothesis — any ungrounded premise in hypothesis produces a fix that addresses wrong mechanism.
 
 **Gate**: present hypothesis to user, wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
 
-If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out the current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses` and re-run the boundary contract block above before re-hypothesizing — keeps the loop guard current so the ruled-out cause is not revisited.
+If confidence low: propose targeted probe (minimal script, added log statement, single assertion) to gather missing signal — run before committing to fix. If a probe rules out current hypothesis, append `<cause> :: ruled-out (probe)` to `${TMPDIR:-/tmp}/dev-debug-hypotheses` and re-run boundary contract block above before re-hypothesizing — keeps loop guard current so ruled-out cause not revisited.
 
-**Test impact (codemap) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query the affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `scan-query` availability (same gate as Step 1). `<SUSPECT>` is the confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
+**Test impact (codemap) — hypothesis confirmed** — root cause now names a suspect module (and often a function). Query affected test set once here so `/develop:fix` reuses it instead of re-querying. Gated on `CODEMAP_ENABLED` + `scan-query` availability (same gate as Step 1). `<SUSPECT>` is confirmed suspect as `module.path::function` (fn known) or bare `module.path` (module-level):
 
 ```bash
 # timeout: 8000
@@ -384,7 +384,7 @@ else
 fi
 ```
 
-The captured JSON carries `pytest_cmd`, `test_files`, top-level `stale`, and `index.not_covered`. It is written into the diagnosis file (Step 4) under a marked section so fix can reuse a fresh result. Query returns `"error"` or empty → skip silently; fix re-queries.
+Captured JSON carries `pytest_cmd`, `test_files`, top-level `stale`, and `index.not_covered`. Written into diagnosis file (Step 4) under a marked section so fix can reuse a fresh result. Query returns `"error"` or empty → skip silently; fix re-queries.
 
 ## Step 4: Hand off to fix
 
@@ -432,7 +432,7 @@ Write `$DIAG_FILE` with this structure:
 <high|medium|low>
 ```
 
-**Append Test Impact section** — only when Step 3 captured a non-empty, non-error result (`${TMPDIR:-/tmp}/dev-debug-test-impact` present). fix reads this to skip re-querying. Records the raw JSON plus the index `scanned_at` so fix can verify the handoff is not older than the current index (freshness guard):
+**Append Test Impact section** — only when Step 3 captured a non-empty, non-error result (`${TMPDIR:-/tmp}/dev-debug-test-impact` present). fix reads this to skip re-querying. Records raw JSON plus index `scanned_at` so fix can verify handoff is not older than current index (freshness guard):
 
 ```bash
 # timeout: 5000

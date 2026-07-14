@@ -1,6 +1,6 @@
 # Agent Teams Protocol — Borda.AI-Rig
 
-AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60% token savings vs natural language. Adapted from [github.com/yuvalsuede/claude-teams-language-protocol](https://github.com/yuvalsuede/claude-teams-language-protocol) (MIT) <!-- attribution-only; not a runtime dependency -->.
+AgentSpeak v2 compressed inter-agent messaging for Claude Code Agent Teams. ~60% token savings vs natural language. Adapted from [github.com/yuvalsuede/claude-teams-language-protocol](https://github.com/yuvalsuede/claude-teams-language-protocol) (MIT) <!-- attribution-only; not runtime dependency -->.
 
 - **Rule 1**: Teammate↔teammate uses protocol. Lead↔human uses normal English.
 - **Rule 2**: Declare version at spawn: `alpha PROTO:v2.0 @lead ready`
@@ -138,7 +138,7 @@ epsilon!fail auth attempt:3/3 ?lead          # giving up, reassign
 
 ## Security in QA
 
-`foundry:qa-specialist` auto-includes OWASP Top 10 — see `<teammate_mode>` section in qa-specialist agent for full scope and severity rules. No separate security agent.
+`foundry:qa-specialist` auto-includes OWASP Top 10 — see `<teammate_mode>` section in qa-specialist agent for scope and severity rules. No separate security agent.
 
 ## Result Return Protocol
 

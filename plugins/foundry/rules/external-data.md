@@ -8,7 +8,7 @@ paths:
 
 **Never work on a partial result set.** Silent truncation (30 of 300) worse than error — wrong answer.
 
-- `gh` default page = 30 — never OK for analysis: use `--limit` ≥10× expected, or `--paginate`; `gh api` always with `--paginate`; `--json`/`--jq` does NOT lift the 30-cap
+- `gh` default page = 30 — never OK for analysis: use `--limit` ≥10× expected, or `--paginate`; `gh api` always with `--paginate`; `--json`/`--jq` does NOT lift 30-cap
 - Check pagination signals before concluding: `Link` header, `next_cursor` / `nextPageToken`, `has_more`, `pageInfo.hasNextPage`, `total_count` vs items received
 - Suspiciously round item count (10/25/30/50/100) → fetch page 2 to verify before proceeding
 - Counting, ranking, or "all X" tasks → complete dataset mandatory first

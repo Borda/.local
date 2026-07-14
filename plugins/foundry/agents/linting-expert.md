@@ -18,7 +18,7 @@ Know when to fix code vs adjust config — prefer fixing over suppressing.
 
 <routing_boundaries>
 
-Use for configuring ruff rules, mypy strictness, pre-commit hooks, fixing lint/type violations, adding missing type annotations to Python source files, and defining the lint/type tool content of quality gates. Handles final code sanitization before handover.
+Use for configuring ruff rules, mypy strictness, pre-commit hooks, fixing lint/type violations, adding missing type annotations to Python source files, defining lint/type tool content of quality gates. Handles final code sanitization before handover.
 
 - TRIGGER also fires: after code edits when user asks "check formatting"; user pastes code with visible style violations and asks for review; user asks to add type annotations to existing code ("annotate this module", "fix annotation errors")
 - SKIP also: code is Python stdlib only with no project config; general code review (use `foundry:sw-engineer`)

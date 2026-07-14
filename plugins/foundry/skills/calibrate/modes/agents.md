@@ -29,7 +29,7 @@ All agents support `ceiling` difficulty tier. Ceiling patterns by domain: `found
 
 Mark "Calibrate agents" in_progress. **Availability check** (vars set in SKILL.md Step 2): skip `oss:*` agents if `$OSS_AVAILABLE` empty; skip `research:*` agents if `$RESEARCH_AVAILABLE` empty. Log: "<plugin> plugin not installed — skipping <agent> calibration" per excluded agent.
 
-Per agent in domain table (after exclusions), spawn one `general-purpose` pipeline subagent. **Spawn in batches of `$PIPELINE_BATCH_SIZE` (default 5)**: issue up to 5 agent pipeline spawns per response, wait for all in the batch to return their compact JSON results, then spawn the next batch. Agents within a batch run concurrently; batches are sequential. Do NOT spawn all agents in a single response — with 14+ agents this spikes context and resource usage.
+Per agent in domain table (after exclusions), spawn one `general-purpose` pipeline subagent. **Spawn in batches of `$PIPELINE_BATCH_SIZE` (default 5)**: issue up to 5 agent pipeline spawns per response, wait for all in batch to return their compact JSON results, then spawn next batch. Agents within a batch run concurrently; batches sequential. Do NOT spawn all agents in a single response — with 14+ agents this spikes context and resource usage.
 
 Each subagent gets pipeline template from `.claude/skills/calibrate/templates/pipeline-prompt.md` with substitutions:
 

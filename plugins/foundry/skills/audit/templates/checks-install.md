@@ -4,7 +4,7 @@ Checks validate post-install state in `~/.claude/`. Operate on home dir, not pro
 
 ## Check I1 — Plugin cache intact
 
-Verify foundry plugin installed and cache dir accessible.
+Verify foundry plugin installed, cache dir accessible.
 
 ```bash
 printf "=== Check I1: foundry plugin cache ===\n"
@@ -132,10 +132,9 @@ fi
 
 ## Check R1 — Computed path resolution (local + installed duality)
 
-Root cause guard for the `adversarial.md` / `upgrade.md` silent-deletion class of bugs. Skill `.md` files construct file paths via variable substitution (`$AUDIT_TPL/../modes/upgrade.md`, `$_FS/task-hygiene.md`, `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>`). Those paths only exist as literal strings if the target filename appears somewhere visible to grep. A file that exists locally but was never copied to the installed plugin cache will silently fail for users who install the plugin.
+Root cause guard for `adversarial.md` / `upgrade.md` silent-deletion bug class. Skill `.md` files construct paths via variable substitution (`$AUDIT_TPL/../modes/upgrade.md`, `$_FS/task-hygiene.md`, `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>`). Those paths exist as literal strings only if target filename is grep-visible. File existing locally but never copied to installed plugin cache silently fails for users who install plugin.
 
-**What it checks**: for every computed-path reference in `plugins/*/skills/*/SKILL.md`, `plugins/*/skills/*/modes/*.md`, and `plugins/*/agents/*.md` — verify the resolved target exists both locally (`plugins/<plugin>/...`) and in the installed cache (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/<path>`).
-
+**What it checks**: for every computed-path reference in `plugins/*/skills/*/SKILL.md`, `plugins/*/skills/*/modes/*.md`, `plugins/*/agents/*.md` — verify resolved target exists both locally (`plugins/<plugin>/...`) and in installed cache (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/<path>`).
 Skip if `LOCAL_MODE != true` (no plugin source tree to scan).
 
 ```bash
@@ -151,19 +150,19 @@ fi
 ```
 
 **Severity**:
-- `R1-FAIL` (file exists locally but absent from installed cache) → **high** — users who install the plugin get broken dispatch at runtime; likely means file was added locally but plugin was not re-installed
-- `R1-WARN` (file exists in installed cache but absent locally) → **medium** — stale installed copy; will break after plugin update
+- `R1-FAIL` (file exists locally but absent from installed cache) → **high** — users who install plugin get broken dispatch at runtime; likely file added locally but plugin not re-installed
+- `R1-WARN` (file exists in installed cache but absent locally) → **medium** — stale installed copy; breaks after plugin update
 - `R1-INFO` (plugin not installed) → **low/info** — cannot verify installed state; note in report only
 
-Fix: re-install plugin with `claude plugin install <plugin>@borda-ai-rig` to sync installed state with local source tree. For WARN: restore missing local file or remove reference.
+Fix: re-install plugin with `claude plugin install <plugin>@borda-ai-rig` to sync installed state with local source tree. WARN: restore missing local file or remove reference.
 
 ## Check R2 — Grep-visible referencing (orphan-risk detection)
 
-Structural guard: for every `.md` file in `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`, and `plugins/*/skills/_shared/` — verify its **basename** appears as a literal string in at least one consumer `.md` file in the same plugin.
+Structural guard: for every `.md` file in `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`, `plugins/*/skills/_shared/` — verify its **basename** appears as literal string in ≥1 consumer `.md` file in same plugin.
 
-**Scope**: `modes/`, `templates/`, `_shared/` only. SKILL.md and agent `.md` files themselves are covered by Check 32a (checks-skills.md); R2 is complementary — it covers subdirectories that 32a does not walk.
+**Scope**: `modes/`, `templates/`, `_shared/` only. SKILL.md and agent `.md` files covered by Check 32a (checks-skills.md); R2 complementary — covers subdirectories 32a does not walk.
 
-**Why**: grep-based dead-file checks (Check 32a, 32b) and agent zero-hit analysis work by searching for the filename. A file loaded exclusively via computed path (e.g. `$AUDIT_TPL/../modes/adversarial.md`) has zero literal-basename hits → grep tools conclude it is unreferenced → deletion risk.
+**Why**: grep-based dead-file checks (Check 32a, 32b) and agent zero-hit analysis search for filename. File loaded only via computed path (e.g. `$AUDIT_TPL/../modes/adversarial.md`) has zero literal-basename hits → grep tools conclude unreferenced → deletion risk.
 
 Skip if `LOCAL_MODE != true`.
 
@@ -178,17 +177,16 @@ else
 fi
 ```
 
-**Severity**: `R2-ORPHAN-RISK` → **medium** — file is grep-invisible; any automated or agent-assisted dead-file sweep will incorrectly flag it as unreferenced and may delete it.
+**Severity**: `R2-ORPHAN-RISK` → **medium** — file is grep-invisible; any automated or agent-assisted dead-file sweep will incorrectly flag as unreferenced and may delete it.
 
-Fix: add a comment in the consumer `SKILL.md` that makes the basename a literal string, e.g.:
+Fix: add comment in consumer `SKILL.md` making basename a literal string, e.g.:
 ```
 # loads: adversarial.md  (via $AUDIT_TPL/../modes/adversarial.md)
 ```
-This single-line comment costs ~5 tokens and permanently protects the file from grep-based false-positive orphan detection.
-
+This single-line comment costs ~5 tokens and permanently protects file from grep-based false-positive orphan detection.
 ## Check R3 — bin/ script reference integrity (reverse of Check 32d)
 
-Check 32d walks `bin/` scripts and flags those unreferenced by any `.md` file (orphaned scripts). R3 is the reverse: for every `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>` reference in any plugin `.md` file, verify the script actually exists locally — catches typos, deleted scripts, and refactor leftovers that leave dangling references.
+Check 32d walks `bin/` scripts and flags those unreferenced by any `.md` file (orphaned scripts). R3 is the reverse: for every `${CLAUDE_PLUGIN_ROOT:-plugins/<x>}/bin/<script>` reference in any plugin `.md` file, verify script exists locally — catches typos, deleted scripts, refactor leftovers leaving dangling references.
 
 Skip if `LOCAL_MODE != true`.
 
@@ -205,10 +203,10 @@ fi
 ```
 
 **Severity**:
-- `R3-FAIL` (script referenced but missing locally) → **high** — skill dispatch will fail immediately at the `python ...` call site
+- `R3-FAIL` (script referenced but missing locally) → **high** — skill dispatch fails immediately at `python ...` call site
 - `R3-WARN` (script exists locally but absent from installed cache) → **high** — same as R1-FAIL but for bin/ scripts; users get broken skill at runtime after install
 
-Fix: create the missing script locally (FAIL) or re-install plugin to sync (WARN).
+Fix: create missing script locally (FAIL) or re-install plugin to sync (WARN).
 
 > **Convenience shortcut**: run all three checks together:
 > ```bash
@@ -229,9 +227,9 @@ Fix: create the missing script locally (FAIL) or re-install plugin to sync (WARN
 
 ## Check R4 — bin/ Python test coverage
 
-For every `plugins/<plugin>/bin/<script>.py`, verify a corresponding `plugins/<plugin>/tests/test_<script>.py` exists and is non-empty. Skip if `LOCAL_MODE != true`.
+For every `plugins/<plugin>/bin/<script>.py`, verify corresponding `plugins/<plugin>/tests/test_<script>.py` exists and non-empty. Skip if `LOCAL_MODE != true`.
 
-**Implementation note**: `check_orphaned_bin.py` does not yet have `--check-tests`; until that flag is added, run the check inline:
+**Implementation note**: `check_orphaned_bin.py` lacks `--check-tests`; until that flag is added, run the check inline:
 
 ```bash
 printf "=== Check R4: bin/ Python test coverage ===\n"
@@ -288,7 +286,7 @@ fi
 **Severity**:
 - `R4-FAIL` (any sub-check) → **medium** — plugin policy violation; new bin/ scripts must ship with tests containing real assertions
 
-Fix: create `tests/test_<basename>.py` with at minimum one test class covering the public API of the script.
+Fix: create `tests/test_<basename>.py` with at minimum one test class covering script's public API.
 
 | Sub-check | Condition | Severity | Auto-fix |
 | --- | --- | --- | --- |
@@ -297,13 +295,13 @@ Fix: create `tests/test_<basename>.py` with at minimum one test class covering t
 | R4-FAIL — no test functions | test file non-empty but has zero `def test_` functions | medium | no — write tests |
 | R4-FAIL — stub tests only | all `def test_` functions body is only `pass` or `...` | medium | no — implement assertions |
 
-Note: the `_*.py` exclusion (e.g., `_schema.py`) is intentional only for files that are pure type-definition modules with no runnable logic. Files with `__name__ == "__main__"` guards must have tests regardless of leading underscore. Auditor should verify exclusion is appropriate per file when `_FAIL` reports are absent.
+Note: the `_*.py` exclusion (e.g., `_schema.py`) is intentional only for pure type-definition modules with no runnable logic. Files with `__name__ == "__main__"` guards must have tests regardless of leading underscore. Auditor verifies exclusion is appropriate per file when `_FAIL` reports are absent.
 
 ## Check R5 — Consumer→template orphan (reverse of R2)
 
-Check R2 verifies every template file has its basename visible in a consumer `.md` file. R5 is the reverse: for every `<!-- loads: X -->` or `# loads: X` comment in any `.md` file, verify that `X` actually exists as a file on disk (locally or in the installed cache).
+Check R2 verifies every template file has its basename visible in a consumer `.md` file. R5 is the reverse: for every `<!-- loads: X -->` or `# loads: X` comment in any `.md` file, verify `X` exists on disk (locally or in installed cache).
 
-This catches deleted or renamed templates where the consumer `<!-- loads: -->` comment was not updated — silent runtime failure when audit tries to `Read $AUDIT_TPL/X`.
+Catches deleted or renamed templates where consumer `<!-- loads: -->` comment was not updated — silent runtime failure when audit tries to `Read $AUDIT_TPL/X`.
 
 Skip if `LOCAL_MODE != true`.
 
@@ -326,7 +324,7 @@ fi
 ```
 
 **Severity**: medium — audit itself may crash at runtime trying to read missing template; silent breakage for users.
-Fix: either restore the missing template file or remove/update the stale `<!-- loads: -->` comment in the consumer.
+Fix: restore missing template file or remove/update stale `<!-- loads: -->` comment in consumer.
 
 | Sub-check | Condition | Severity | Auto-fix |
 | --- | --- | --- | --- |

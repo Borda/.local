@@ -10,7 +10,7 @@ context: fork
 
 <objective>
 
-Track open-loop ideas, deferred questions, diverging threads — no loss to context compaction or session end. Three on-demand commands (`resume`, `archive`, `summary`) plus behavioral parking rule that writes `session-open-*.md` memory files as items arise.
+Track open-loop ideas, deferred questions, diverging threads — no loss to context compaction or session end. Three on-demand commands (`resume`, `archive`, `summary`) plus behavioral parking rule writing `session-open-*.md` memory files as items arise.
 
 NOT for: general persistent notes or diary entries (use .notes/ directly); managing task lists (use TaskCreate/TaskUpdate tools).
 
@@ -59,7 +59,7 @@ If `MODE` matches:
 - `archive` → **Mode: archive**
 - `summary` → **Mode: summary**
 
-**Unsupported flag check** — after extracting the mode token, scan `$ARGUMENTS` for any remaining `--<token>` patterns. If found: print `! Unknown flag(s): \`--<token>\`. Supported modes: resume, archive, summary.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
+**Unsupported flag check** — after extracting mode token, scan `$ARGUMENTS` for remaining `--<token>` patterns. If found: print `! Unknown flag(s): \`--<token>\`. Supported modes: resume, archive, summary.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke correctly) · (b) **Continue ignoring** (skip unknown flags, proceed with recognized mode).
 
 Otherwise (empty, unrecognized, misspelled): use `AskUserQuestion`:
 
@@ -90,14 +90,14 @@ echo "cleanup done"
 
 **Primary source (current)**: Read `.claude/state/session-context.md` if it exists. Extract all bullets under `## Parked items` section — each is a current parked item. Use item's `Raised:` date for age computation.
 
-**Legacy source (backwards-compat)**: List `session-open-*.md` files via Bash (Glob with absolute paths outside project root may return empty on restricted installs — Bash `ls` is the reliable fallback):
+**Legacy source (backwards-compat)**: List `session-open-*.md` files via Bash (Glob with absolute paths outside project root may return empty on restricted installs — Bash `ls` reliable fallback):
 ```bash
 MEMORY_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_memory_dir.py" 2>/dev/null)  # re-derive: fresh shell
 ls "$MEMORY_DIR"/session-open-*.md 2>/dev/null  # timeout: 5000
 ```
 For each file path returned, read with Read tool to extract `name` and `description` frontmatter fields and item body. Show legacy items alongside current items in output. If `ls` returns no files, skip — no legacy items.
 
-Compute age in days per file using `session_age_files.py` (cross-platform; output is `<age>\t<path>` per line): <!-- file: session_age_files.py — consumers: foundry:session Substep 1c -->
+Compute age in days per file using `session_age_files.py` (cross-platform; output `<age>\t<path>` per line): <!-- file: session_age_files.py — consumers: foundry:session Substep 1c -->
 
 ```bash
 # MEMORY_DIR — must re-derive here; shell state lost across Bash calls
@@ -148,7 +148,7 @@ Combine both into a single candidate list for fuzzy matching in Substep 2b.
 
 Extract `<partial-text>` from `$ARGUMENTS` (everything after `archive `).
 
-Search candidates from Substep 2a. For `session-open-*.md` files: Grep with partial text, match against file basenames. For session-context.md bullets: match `<partial-text>` against the slug or summary text. Select best match — if ambiguous (2+ equally close matches), list them and ask user to disambiguate before proceeding.
+Search candidates from Substep 2a. For `session-open-*.md` files: Grep with partial text, match against file basenames. For session-context.md bullets: match `<partial-text>` against slug or summary text. Select best match — if ambiguous (2+ equally close matches), list them and ask user to disambiguate before proceeding.
 
 Track match source:
 ```bash
@@ -277,9 +277,9 @@ Follow-up gate (`AskUserQuestion`):
 
 **Automatic parking behavior (core behavioral rule — no command needed)**
 
-During any session, Claude proactively appends open-loop items to **`.claude/state/session-context.md`** (the project-scoped state file maintained by the PreCompact hook) as they arise.
+During any session, Claude proactively appends open-loop items to **`.claude/state/session-context.md`** (project-scoped state file maintained by PreCompact hook) as they arise.
 
-> **Why not auto-memory?** Project CLAUDE.md `Memory Policy` forbids auto-writes under `~/.claude/projects/.../memory/`. Session state belongs in the project-scoped state file so it stays with the repo, survives compaction, and never pollutes auto-memory. The `resume` / `archive` / `summary` modes above continue to read the **legacy** `session-open-*.md` files (created by older versions) for backwards compatibility, but **new items are never written there**.
+> **Why not auto-memory?** Project CLAUDE.md `Memory Policy` forbids auto-writes under `~/.claude/projects/.../memory/`. Session state belongs in project-scoped state file so it stays with repo, survives compaction, never pollutes auto-memory. `resume` / `archive` / `summary` modes above continue reading **legacy** `session-open-*.md` files (created by older versions) for backwards compatibility, but **new items are never written there**.
 
 | Item type | Trigger | Entry format |
 | --- | --- | --- |

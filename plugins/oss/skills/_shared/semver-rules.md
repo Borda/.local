@@ -2,9 +2,9 @@
 
 ## What counts as a breaking change
 
-**Breaking change** = public-facing behavior worked before → fails or behaves differently now → without prior warning, deprecation notice, argument forwarding shim, or migration path offered in an earlier release.
+**Breaking change** = public-facing behavior worked before → fails or behaves differently now → without prior warning, deprecation notice, argument forwarding shim, or migration path offered in earlier release.
 
-Corollary: API deprecated in a prior release (with warning + forwarding shim) and now removed = **❌ Removed**, not a breaking change. A breaking change is always a surprise; a removal after proper deprecation is not.
+Corollary: API deprecated in prior release (with warning + forwarding shim) and now removed = **❌ Removed**, not breaking change. Breaking change always a surprise; removal after proper deprecation is not.
 
 ## Breaking Change Escalation Protocol
 

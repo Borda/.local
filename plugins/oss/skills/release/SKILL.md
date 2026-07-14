@@ -11,7 +11,7 @@ effort: high
 
 Prepare release communication from changes. Output adapts to audience — user-facing notes, CHANGELOG entry, internal summary, migration guide.
 
-**All outputs = documentation artifacts** (CHANGELOG.md, DRAFT.md, MIGRATION.md, SUMMARY.md, demo.py). Released product = code/package published separately via project tooling (`git tag`, `gh release create`, PyPI upload). Skill prepares communication; does not perform release.
+**All outputs = documentation artifacts** (CHANGELOG.md, DRAFT.md, MIGRATION.md, SUMMARY.md, demo.py). Released product = code/package published separately via project tooling (`git tag`, `gh release create`, PyPI upload). Skill prepares communication; doesn't perform release.
 
 NOT for ecosystem impact without release (use oss:analyse (requires `oss` plugin)). NOT for contributor communication or post-release announcements (use oss:shepherd (requires `oss` plugin)). NOT for retrospective analysis — historical review → oss:analyse (requires `oss` plugin).
 
@@ -33,7 +33,6 @@ Mode comes **first**; range or flags follow:
 | `/release demo [range]` | optional range (default: last-tag..HEAD) | `releases/<version>/demo.py` or `.temp/release-demo-<branch>-<date>.py` |
 
 Range notation: `v1->v2` (e.g. `v1.2->v2.0`) — converted internally to git range. No mode → defaults to `notes`. `prepare` = full pipeline — runs audit first, then all artifacts; use when cutting release, not drafting.
-
 </inputs>
 
 <workflow>
@@ -63,7 +62,7 @@ Tasks:
 
 ## Delegation strategy
 
-In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via file-based handoff (CLAUDE.md §2) — these phases produce large output bloating main context:
+In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via file-based handoff (CLAUDE.md §2) — these phases produce large output, bloat main context:
 
 1. Pre-compute gather file path and create dir:
    ```bash
@@ -246,7 +245,7 @@ else
 fi
 ```
 
-Cross-reference commit bodies against PR descriptions — canonical source of truth for *why* change was made. `BREAKING CHANGE:` footer = breaking change regardless of PR label.
+Cross-reference commit bodies against PR descriptions — canonical source of truth for *why* change made. `BREAKING CHANGE:` footer = breaking change regardless of PR label.
 
 **Detect revert pairs**: scan `git log $RANGE --no-merges --format="%H %s"` for subjects beginning with `Revert "`. For each: extract original subject, search range for matching commit. Both found → `REVERT_SET` pair (net effect zero).
 
@@ -261,7 +260,7 @@ git diff "$RANGE" -- <file>    # timeout: 3000
 git show <commit>:<file>       # timeout: 3000
 ```
 
-Goal: understand new APIs, parameters, behavior — so notes describe real functionality, not just commit subjects. Skip for trivial changes (typos, dep bumps, CI config).
+Goal: understand new APIs, parameters, behavior — notes describe real functionality, not just commit subjects. Skip trivial changes (typos, dep bumps, CI config).
 
 ## Validate docs
 
@@ -381,7 +380,7 @@ LinkedIn detected when `.blog` contains `linkedin.com`. Format: `- **Name** (@gi
 
 ## Identify highlights
 
-Pick top 3–5 most significant changes from Classify. Ranking: breaking changes > new public API > major UX improvements > notable fixes. Pull concrete code example from explore-codebase diff for each. These drive Summary paragraph and Spotlights section.
+Pick top 3–5 most significant changes from Classify. Ranking: breaking changes > new public API > major UX improvements > notable fixes. Pull concrete code example from explore-codebase diff for each. Drives Summary paragraph and Spotlights section.
 
 ## Draft migration guide
 
@@ -393,7 +392,7 @@ If `breaking_callers` non-empty (from Breaking-change classification): for each 
 
 ## Generate release demo
 
-**Only for feature releases** (≥1 🚀 Added items). Skip for bug-fix-only releases.
+**Only for feature releases** (≥1 🚀 Added items). Skip bug-fix-only releases.
 
 Self-contained Python script in jupytext percent (`# %%`) format. Full story: install → setup → demonstrate each highlight → verify output.
 
@@ -427,7 +426,7 @@ echo "${DEMO_EXIT}" > "${TMPDIR:-/tmp}/release-demo-exit"
 
 ## Draft executive summary
 
-1–2 paragraph executive summary: what release is, why it matters, who benefits. Based on Identify highlights. Save to `.temp/output-release-summary-$BRANCH-$DATE.md`.
+1–2 paragraph executive summary: what release is, why it matters, who benefits. Based on Identify highlights. Save `.temp/output-release-summary-$BRANCH-$DATE.md`.
 
 ## Write release draft
 
@@ -519,7 +518,7 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 <notes>
 
 - **Doc artifacts ≠ released product**: CHANGELOG.md, DRAFT.md, MIGRATION.md, SUMMARY.md, demo.py = communication artifacts; released product published separately via `git tag`, `gh release create`, PyPI upload.
-- **AskUserQuestion usage**: spread across `notes`/`prepare`/`audit`/`demo` modes; each call is in a distinct branch-path (no single path has >4 sequential calls); compliant with sequential-call limit.
+- **AskUserQuestion usage**: spread across `notes`/`prepare`/`audit`/`demo` modes; each call in distinct branch-path (no single path has >4 sequential calls); compliant with sequential-call limit.
 - **Numbers reference**: numeric limits documented with rationale in `guidelines/numbers-reference.md`; update whenever limits change
 - Filter noise (CI config, dep bumps, typos) unless user-impacting
 - **Public-facing content policy**: user-visible changes only. Never include: internal staff names, internal maintenance, CI/tooling, internal dep bumps, housekeeping with no user impact.
@@ -533,7 +532,7 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
   - Readiness check → `/oss:release prepare <version>` runs built-in audit first; use standalone `/oss:release audit [version]` only for readiness check without cutting release
   - Breaking changes → `/oss:analyse` (requires `oss` plugin) for ecosystem impact
   - Notes/changelog written → `gh release create` must be user-run via project tooling
-  - `migration` content written → add to project docs and link from CHANGELOG entry
+  - `migration` content written → add to project docs, link from CHANGELOG entry
 
 </notes>
 

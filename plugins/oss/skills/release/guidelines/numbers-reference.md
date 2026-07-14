@@ -83,7 +83,6 @@ Design choices — adjust when release output feels too sparse or dense.
 ## Performance Claims — Fact-Check Gate
 
 Quantitative claims ("2× faster", "50% memory reduction", "latency −30 ms") in commit messages or PR bodies need evidence before inclusion in release notes. Two tiers:
-
 | Tier | Source | Inclusion rule |
 | --- | --- | --- |
 | Supported | PR body cites benchmark run, CI artifact, profiling output, or timing table | Include claim verbatim |

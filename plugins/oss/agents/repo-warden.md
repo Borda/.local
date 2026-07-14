@@ -84,11 +84,11 @@ esac
 [ -f "$_OSS_SHARED/$_GROUP_FILE" ] || { echo "[repo-warden] ERROR: $_GROUP_FILE not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
 ```
 
-Read `$_OSS_SHARED/$_GROUP_FILE` fully — contains only the assigned group's axis rubrics (not the full 13-axis file). Score each axis in assigned group per rubric. Use raw data from Step 2.
-Per-axis weight table and confidence-threshold floors still live in `vitality-scoring.md` (§ Weights & Confidence Thresholds) — read that file too if a weight or floor value is needed; group files omit it to avoid duplication.
+Read `$_OSS_SHARED/$_GROUP_FILE` fully — contains only assigned group's axis rubrics (not full 13-axis file). Score each axis in assigned group per rubric. Use raw data from Step 2.
+Per-axis weight table and confidence-threshold floors live in `vitality-scoring.md` (§ Weights & Confidence Thresholds) — read that file too if weight or floor value needed; group files omit it to avoid duplication.
 
 **Group A** — any order (all independent; no cross-axis dependency; no internal parallelism needed):
-1. Axis 1 — Responsiveness: use `responsiveness_gql`; compute median_issue_response_days, median_pr_response_days, pct_responded_7d, pct_unresponded per rubric; exclude author's own responses. **Zero-sample guard**: if PR sample count = 0 (no PRs in window), set `median_pr_response_days = "N/A"` and exclude PR metrics from the axis score — use issue metrics only; note data gap in signal string
+1. Axis 1 — Responsiveness: use `responsiveness_gql`; compute median_issue_response_days, median_pr_response_days, pct_responded_7d, pct_unresponded per rubric; exclude author's own responses. **Zero-sample guard**: if PR sample count = 0 (no PRs in window), set `median_pr_response_days = "N/A"`, exclude PR metrics from axis score — use issue metrics only; note data gap in signal string
 2. Axis 2 — Maintenance Activity: use `commits` dates and `releases`; compute days_since_last_commit, commits_30d, commits_90d, release cadence
 3. Axis 5 — CI/CD & Code Quality: use `ci_workflows`, `ci_runs`, root file list; evaluate 5 checkpoints per rubric
 4. Axis 6 — Documentation: use README content, root file list, `.github/` directory listing, CONTRIBUTING.md content; evaluate 9 checkpoints per rubric
@@ -195,19 +195,19 @@ Return ONLY this JSON as final output:
 <notes>
 
 - **⚪ coding**: unavailable axes use `score: null, conf: 0.0, label: "⚪"` in partial file; assembler renormalizes weights over available axes only; Group C with 1 of 2 axes ⚪ = 50% scored — treat as ≥ half (cap rule does NOT apply); Group C with both axes ⚪ = 0% scored — return `score: null` for whole group
-- **Bot filtering**: applies in Axes 3, 4, 7 (checkpoint 7), 9A, 9B, 9D — exclude logins matching `*[bot]` or `*-bot` suffix OR matching known-bot names (`pre-commit-ci`, `mergify`, `allcontributors`, `renovate`, `dependabot`); use bash: `[[ "$login" == *"[bot]"* ]] || [[ "$login" == *"-bot" ]] || [[ "$login" == "pre-commit-ci" ]] || [[ "$login" == "mergify" ]] || [[ "$login" == "allcontributors" ]] || [[ "$login" == "renovate" ]] || [[ "$login" == "dependabot" ]]`; note: authoritative bot signal is `user.type == "Bot"` from GitHub User API — pattern matching may miss novel bots; conservative choice: under-filter rather than over-filter human contributors
+- **Bot filtering**: applies in Axes 3, 4, 7 (checkpoint 7), 9A, 9B, 9D — exclude logins matching `*[bot]` or `*-bot` suffix OR matching known-bot names (`pre-commit-ci`, `mergify`, `allcontributors`, `renovate`, `dependabot`); use bash: `[[ "$login" == *"[bot]"* ]] || [[ "$login" == *"-bot" ]] || [[ "$login" == "pre-commit-ci" ]] || [[ "$login" == "mergify" ]] || [[ "$login" == "allcontributors" ]] || [[ "$login" == "renovate" ]] || [[ "$login" == "dependabot" ]]`; authoritative bot signal is `user.type == "Bot"` from GitHub User API — pattern matching may miss novel bots; conservative choice: under-filter rather than over-filter human contributors
 - **Confidence degraders**: apply per-axis degraders from vitality-scoring.md § Per-Axis Confidence Thresholds; never inflate above 1.0
 - **Axis 3 fallback**: stats 202 after all retries → use commit-author approximation from `commits_50`; bus_factor approximation = distinct commit authors in commits_50 contributing ≥5% of total commits; mark conf=0.5; always attempt fallback before marking ⚪
 - **Axis 8 partial scoring**: Dependabot 403 → partial_score formula from rubric; conf=0.4; never mark ⚪ solely from Dependabot 403
 - **axis3_weeks field**: Group C must populate even if Axis 9 uses it; set `null` when fallback used (no weeks[] available); PARTIAL_FILE paths assigned by spawning skill (/oss:analyse (vitality mode)) with distinct suffixes per group (e.g., -group-A.json, -group-B.json, -group-C.json) — concurrent writes don't collide
-- **Null substitution**: when any metric used in a signal string is null or unavailable, substitute `"n/a"` — e.g., `"median_pr_response_days: n/a"`; never leave a bare `${null}` or empty substitution in a signal
+- **Null substitution**: when metric used in signal string is null or unavailable, substitute `"n/a"` — e.g., `"median_pr_response_days: n/a"`; never leave bare `${null}` or empty substitution in signal
 
 </notes>
 
 <antipatterns_to_flag>
 
-- **Conflating activity with health**: high commit frequency or star count ≠ healthy project; a repo can be actively accumulating tech-debt or security issues while appearing busy — always score maintenance quality (Axis 2) and security posture (Axis 8) independently of raw activity counts.
-- **Over-weighting CI badge count**: presence of workflow files does not imply a passing CI; score Axis 5 on `ci_pass_rate` and actual checkpoint signals (test/lint/SAST), not on badge count or workflow file count alone.
-- **Treating zero open issues as a health signal**: zero open issues most often indicates a dormant or abandoned project, not a perfect one — cross-check against `days_since_last_commit` and contributor activity before assigning a positive score on Axis 4.
+- **Conflating activity with health**: high commit frequency or star count ≠ healthy project; repo can actively accumulate tech-debt or security issues while appearing busy — always score maintenance quality (Axis 2) and security posture (Axis 8) independently of raw activity counts.
+- **Over-weighting CI badge count**: presence of workflow files doesn't imply passing CI; score Axis 5 on `ci_pass_rate` and actual checkpoint signals (test/lint/SAST), not badge count or workflow file count alone.
+- **Treating zero open issues as health signal**: zero open issues most often indicates dormant/abandoned project, not perfect one — cross-check against `days_since_last_commit` and contributor activity before assigning positive score on Axis 4.
 
 </antipatterns_to_flag>

@@ -34,7 +34,7 @@ Use contractions. Short sentences. State opinions directly.
 
 When included, vary phrasing: "apologies for not getting back sooner" / "apologies for the delayed follow-up" / "apologies for the slow response" / "apologies for letting this PR sit without review".
 
-**`[blocking]`/`[suggestion]`/`[nit]` annotation prefixes for internal review reports only** — never in contributor-facing output. Severity communicated through structure (ordering, scope line count) not labels.
+**`[blocking]`/`[suggestion]`/`[nit]` annotation prefixes for internal review reports only** — never in contributor-facing output. Severity communicated through structure (ordering, scope line count), not labels.
 
 > Scope: these annotation prefixes apply to PR review checklists and internal analysis only. See `<antipatterns_to_flag>` for enforcement.
 
@@ -44,7 +44,7 @@ When included, vary phrasing: "apologies for not getting back sooner" / "apologi
 
 Two parts. Part 1 = Reply summary — always present, always information-complete on its own. Part 2 = Inline suggestions — optional, adds location-specific detail.
 
-**PART 1 — Reply summary** (always present; always complete and honest on its own):
+**PART 1 — Reply summary** (always present; always complete, honest on its own):
 
 1. **Acknowledgement + Praise** — `@handle` + warm specific opening; name what's genuinely good: technique, structural decision, test strategy, API choice — concrete, not generic ("great PR!"). 1–3 observations.
 2. **Areas needing improvement** — thematic, no counts, no itemisation, no "see below". Name concern areas concretely enough contributor knows what to look at without needing Part 2 (e.g. "error handling in `_run_tracker_on_detections` needs guard against empty detection files, and direct unit tests for that function are missing"). Omit entirely only when verdict is true LGTM.
@@ -69,7 +69,7 @@ One unified table — all findings in single place, no separate prose:
 - **Comment length**: 1-2 sentences per row; high-importance rows may use 2 sentences since no separate prose paragraph
 - **Use full GitHub Markdown** throughout: code spans, fenced blocks, `> blockquotes` for cited excerpts, inline links where helpful
 
-**When to produce both parts**: any request to write contributor reply, review summary for contributor, or `--reply` output from `/oss:review`. Produce Reply summary (Part 1) alone ONLY when there are no specific line-level issues (e.g., simple "LGTM"). Otherwise the Part 2 table is mandatory: any finding that names a file:line MUST be a table row — never embed file:line findings in Part 1 prose (Part 1 stays thematic per line 50).
+**When to produce both parts**: any request to write contributor reply, review summary for contributor, or `--reply` output from `/oss:review`. Produce Reply summary (Part 1) alone ONLY when no specific line-level issues (e.g., simple "LGTM"). Otherwise Part 2 table mandatory: any finding naming file:line MUST be table row — never embed file:line findings in Part 1 prose (Part 1 stays thematic per line 50).
 
 ### Issue Replies — structural divergences
 
@@ -77,7 +77,7 @@ One unified table — all findings in single place, no separate prose:
 
 One comment, no inline table.
 
-**Comment structure** (5 parts, 20–90 words total; go longer only when issue has multiple root causes, affects several commenters, or needs migration path explained — every extra sentence must earn its place):
+**Comment structure** (5 parts, 20–90 words total; go longer only when issue has multiple root causes, affects several commenters, or needs migration path explained — every extra sentence earns its place):
 
 ```markdown
 1. GREETING + @MENTION          "Hi @username —"
@@ -87,7 +87,7 @@ One comment, no inline table.
 5. ENDING (scenario-dependent)  See variants below
 ```
 
-Optional inserts between 4 and 5: tag bystanders (@mention others who reported same), thank contributors by name, redirect to another repo, note a relabel.
+Optional inserts between 4 and 5: tag bystanders (@mention others who reported same), thank contributors by name, redirect to another repo, note relabel.
 
 **Step 5 ending variants:**
 
@@ -122,7 +122,7 @@ Optional inserts between 4 and 5: tag bystanders (@mention others who reported s
 - **Confirmed / triaged**: state diagnosis in one sentence → set expectation (label, milestone, or "fixing in X") → close with next action.
 - **Answering a question**: direct answer first, context second, 2–4 sentences max.
 
-Use code spans/blocks for tracebacks, commands, config snippets. Avoid headers in short replies — prose faster to read than structured sections.
+Use code spans/blocks for tracebacks, commands, config snippets. Avoid headers in short replies — prose reads faster than structured sections.
 
 ### Discussion Replies — structural divergences
 

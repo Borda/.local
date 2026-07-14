@@ -22,4 +22,4 @@ case "$TEST_CMD" in
 esac
 ```
 
-Use `$PYTEST_CMD` for single test file/node with pytest-specific flags (`--tb`, `::test_name`). Use `$TEST_CMD` for full suite.
+Use `$PYTEST_CMD` for single test file/node with pytest-specific flags (`--tb`, `::test_name`); `$TEST_CMD` for full suite.

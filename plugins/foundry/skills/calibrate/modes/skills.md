@@ -6,7 +6,7 @@
 
 Skill domains:
 
-- `/audit` → synthetic `.claude/` config with N injected structural issues. **Focus on cross-file JUDGMENT issues** (tool-grant mismatch, inter-file contract split, dead dispatch path) — the mechanical/deterministic classes (fence, tag, README/version drift, mode-dispatch, bash-persistence, orphaned-bin) are already recall-benchmarked at 100% by `plugins/foundry/tests/test_audit_static.py` (the Step-1b Layer-1 driver), so injecting those adds no signal; inject the defects a per-file pass would MISS to measure the Layer-2 holistic pass.
+- `/audit` → synthetic `.claude/` config with N injected structural issues. **Focus on cross-file JUDGMENT issues** (tool-grant mismatch, inter-file contract split, dead dispatch path) — mechanical/deterministic classes (fence, tag, README/version drift, mode-dispatch, bash-persistence, orphaned-bin) already recall-benchmarked at 100% by `plugins/foundry/tests/test_audit_static.py` (Step-1b Layer-1 driver), so injecting those adds no signal; inject defects a per-file pass would MISS to measure Layer-2 holistic pass.
 - `/oss:review` → **currently excluded** — skill fetches live GitHub PR via `gh`; synthetic Python input cannot substitute; pipeline generates problems but skill cannot run them; deferred until fixture diff-format mocking added *(skip — even if oss plugin present)*
 - `/research:plan` → synthetic optimization goal (e.g. "reduce pytest runtime by 30%"); measure whether plan mode produces complete, valid `program.md` with all required sections, plausible `metric_cmd`, correct `direction`, coherent `scope_files` *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
 - `/research:judge` → synthetic `program.md` with N injected plan-quality issues (e.g. missing guard command, absent `direction`, non-existent `scope_files` path, invalid `agent_strategy`); measure whether judge correctly identifies each injected issue at right severity *(research plugin required — skip if `$RESEARCH_AVAILABLE` empty)*
@@ -33,7 +33,7 @@ Skill domains:
 
 Mark "Calibrate skills" in_progress. **Availability check** (vars set in SKILL.md Step 2): exclude skills marked with plugin requirements above when plugin absent. Log: "<plugin> plugin not installed — skipping <skill> calibration" per excluded skill.
 
-For each skill in domain table (after exclusions), spawn one `general-purpose` pipeline subagent. **Spawn in batches of `$PIPELINE_BATCH_SIZE` (default 5)**: issue up to 5 skill pipeline spawns per response, wait for all in the batch to return their compact JSON results, then spawn the next batch. Skills within a batch run concurrently; batches are sequential. Do NOT spawn all skills in a single response.
+For each skill in domain table (after exclusions), spawn one `general-purpose` pipeline subagent. **Spawn in batches of `$PIPELINE_BATCH_SIZE` (default 5)**: issue up to 5 skill pipeline spawns per response, wait for all in batch to return their compact JSON results, then spawn next batch. Skills within a batch run concurrently; batches sequential. Do NOT spawn all skills in a single response.
 
 For skill targets (target name starts with `/`): spawn `general-purpose` subagent with skill's `SKILL.md` content prepended as context, running against synthetic input from problem. Pipeline template write-and-acknowledge pattern still applies.
 
@@ -62,7 +62,7 @@ Each subagent receives pipeline template from `.claude/skills/calibrate/template
 - `optimize plan` — config wizard; output is `program.md` checkable against completeness schema
 - `optimize judge` — plan auditor; output is findings list checkable against injected known issues (same pattern as `/audit`)
 
-Other orchestration-heavy skills excluded: `resolve`, `manage`, `develop`, `research`, `create` (content outline co-creation — interactive; no deterministic ground truth). Outputs too context-dependent or long-horizon for synthetic ground truth without significant test infrastructure. (`/brainstorm` moved to the domain table above — see line 28.)
+Other orchestration-heavy skills excluded: `resolve`, `manage`, `develop`, `research`, `create` (content outline co-creation — interactive; no deterministic ground truth). Outputs too context-dependent or long-horizon for synthetic ground truth without significant test infrastructure. (`/brainstorm` moved to domain table above — see line 28.)
 
 Run dir per skill: `.reports/calibrate/<TIMESTAMP>/<TARGET>/` (strip `/` from target name for dir, e.g. `audit` or `review`)
 

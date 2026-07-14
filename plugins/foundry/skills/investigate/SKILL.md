@@ -10,7 +10,6 @@ effort: high
 <objective>
 
 Diagnose unknown failures: broken local setup, environment mismatch, tool misbehavior, hook problems, CI vs local divergence, permission errors, runtime anomalies. Gather signals broadly, eliminate hypotheses systematically, report confirmed root cause + recommended next skill. No fixes — diagnosis only.
-
 NOT for: known Python test failures with traceback (use `/develop:debug` (requires `develop` plugin)); `.claude/` config quality sweep (use `/foundry:audit`).
 
 </objective>
@@ -71,7 +70,7 @@ From $ARGUMENTS extract:
 
 ## Step 2: Gather signals
 
-**Initialise run directory unconditionally at start of Step 2** — `$INVESTIGATE_RUN` must be set even when Step 4 is skipped (`--fast` path), so Step 6's read of `$INVESTIGATE_RUN/*-review.md` does not expand to `/codex-review.md` or an unset reference. Step 4 will only create review files when adversarial review runs; Step 6 must guard reads with `[ -f <path> ]`.
+**Init run directory unconditionally at start of Step 2** — `$INVESTIGATE_RUN` must be set even when Step 4 skipped (`--fast` path), so Step 6's read of `$INVESTIGATE_RUN/*-review.md` does not expand to `/codex-review.md` or unset reference. Step 4 creates review files only when adversarial review runs; Step 6 must guard reads with `[ -f <path> ]`.
 
 ```bash
 # timeout: 5000
@@ -82,7 +81,6 @@ echo "INVESTIGATE_RUN=$INVESTIGATE_RUN"  # bash vars don't persist; read from st
 ```
 
 Collect evidence in parallel — do NOT form hypotheses yet.
-
 **Tool versions and PATH**:
 
 ```bash
@@ -194,7 +192,7 @@ Common categories:
 
 When `--fast`: mark Step 4 task as `deleted` (not completed — it was skipped).
 
-Otherwise, set up adversarial review. The run dir was already created in Step 2; re-resolve the path string here (bash state does not persist):
+Otherwise, set up adversarial review. Run dir created in Step 2; re-resolve path string here (bash state does not persist):
 
 ```bash
 # timeout: 5000
@@ -208,7 +206,7 @@ echo "CODEX_OUT=$CODEX_OUT"  # spawn-prompt reads both stdout lines
 
 > **Step 2 appends the resolved run path to `${TMPDIR:-/tmp}/investigate-run-path`** so this resolution succeeds — see `echo "$INVESTIGATE_RUN" > "${TMPDIR:-/tmp}/investigate-run-path"` in Step 2.
 
-Re-check Codex availability at point of use (bash variables don't persist across tool calls) and **echo the result so the next prose decision can read it**:
+Re-check Codex availability at point of use (bash vars don't persist across tool calls) and **echo result so next prose decision can read it**:
 
 ```bash
 CODEX_AVAILABLE=false
@@ -221,7 +219,7 @@ fi
 echo "CODEX_AVAILABLE=$CODEX_AVAILABLE"  # bash vars don't persist; branch below MUST read this value from stdout
 ```
 
-**Read `CODEX_AVAILABLE=…` from the bash stdout above** (NOT shell state). If the printed value was `true`: spawn Codex; else spawn `foundry:challenger`. The spawn prompts below instruct the subagent to Read the persisted symptom/signals/hypotheses files (written in Steps 2 and 3) — this is more reliable than inlining the values, which the LLM can paraphrase under context pressure.
+**Read `CODEX_AVAILABLE=…` from bash stdout above** (NOT shell state). Printed `true`: spawn Codex; else spawn `foundry:challenger`. Spawn prompts below instruct subagent to Read persisted symptom/signals/hypotheses files (written in Steps 2 and 3) — more reliable than inlining values, which the LLM can paraphrase under context pressure.
 
 If Codex available (requires `codex` plugin) — substitute concrete path strings for `<INVESTIGATE_RUN>` and `<CODEX_OUT>` before constructing the prompt:
 
@@ -235,7 +233,7 @@ Else (Codex unavailable) — substitute `<INVESTIGATE_RUN>` with the printed run
 Agent(subagent_type="foundry:challenger", prompt="Adversarial review of hypothesis quality. Read these files for full context: <INVESTIGATE_RUN>/symptom.txt, <INVESTIGATE_RUN>/signals.md, <INVESTIGATE_RUN>/hypotheses.md. Challenge the top hypothesis, identify blindspots, and surface alternative root causes. Read-only analysis only. Write full findings to <INVESTIGATE_RUN>/challenger-review.md using the Write tool. Return ONLY: {\"status\":\"done\",\"file\":\"<path>\",\"findings\":N,\"confidence\":0.N}")
 ```
 
-Verification before issuing the call: scan the constructed prompt string for any remaining `<` or `>` characters — if present, substitution is incomplete; resolve before spawning.
+Before issuing the call: scan constructed prompt string for remaining `<` or `>` characters — if present, substitution incomplete; resolve before spawning.
 
 - Add challenger alternative hypotheses as new rows in Step 3 table
 - Re-rank if challenger gives stronger evidence for lower-ranked candidate
@@ -287,7 +285,7 @@ Stop when one hypothesis confirmed with clear evidence, or top-3 all ruled out (
 
 ## Step 6: Report findings
 
-Re-resolve `$INVESTIGATE_RUN` from the persisted path file (`cat "${TMPDIR:-/tmp}/investigate-run-path"`). Then guard each read with `[ -f <path> ]`: if `$INVESTIGATE_RUN/codex-review.md` exists, read it; if `$INVESTIGATE_RUN/challenger-review.md` exists, read it. Either or both may be absent (Step 4 was skipped via `--fast`, or the spawned agent failed silently). Incorporate any new hypotheses or blindspots from existing files into the Evidence section below; skip the read entirely if neither file is present — do NOT block on missing review files.
+Re-resolve `$INVESTIGATE_RUN` from persisted path file (`cat "${TMPDIR:-/tmp}/investigate-run-path"`). Guard each read with `[ -f <path> ]`: if `$INVESTIGATE_RUN/codex-review.md` exists, read it; if `$INVESTIGATE_RUN/challenger-review.md` exists, read it. Either or both may be absent (Step 4 skipped via `--fast`, or spawned agent failed silently). Incorporate new hypotheses or blindspots from existing files into Evidence section below; skip read entirely if neither file present — do NOT block on missing review files.
 
 ```markdown
 ## Investigation: <symptom>

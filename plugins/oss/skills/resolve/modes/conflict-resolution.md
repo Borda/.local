@@ -55,7 +55,7 @@ Store returned task ID alongside each file path as `conflict_task_id`. Print con
 | config.yaml | #<task_id> | pending |
 ```
 
-> **Invariant**: all conflict tasks `completed` before Step 8. Upfront creation keeps each conflict scoped and independently reversible.
+> **Invariant**: all conflict tasks `completed` before Step 8. Upfront creation keeps each conflict scoped, independently reversible.
 
 No conflicts → complete merge, skip to Step 8:
 
@@ -88,7 +88,7 @@ git log $MERGE_BASE..$HEAD_REF --oneline --no-merges        # timeout: 3000
 git diff $MERGE_BASE $HEAD_REF --stat                       # timeout: 3000
 ```
 
-One-sentence summary: which files/modules PR owns and what it changes.
+One-sentence summary: which files/modules PR owns, what it changes.
 
 ### 6b: Target-branch drift (the "surprises")
 
@@ -98,7 +98,7 @@ SOURCE_LAST_TIME=$(git log "$HEAD_REF" -1 --format="%ci")      # timeout: 3000
 git log origin/$BASE_REF --after="$SOURCE_LAST_TIME" --oneline # commits the contributor never saw  # timeout: 3000
 ```
 
-One-sentence summary: independent base changes after contributor's last commit — preserve unconditionally.
+One-sentence summary: independent base changes after contributor's last commit — preserve unconditionally
 
 ## Step 7: Resolve per conflicted file
 

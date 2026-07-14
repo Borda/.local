@@ -9,16 +9,16 @@ effort: low
 
 <objective>
 
-Identify the minimal set of tests affected by changing a function or module. Uses codemap static analysis — no test execution needed. Result: ready-to-run `pytest` command covering only the impacted tests.
+Identifies minimal test set affected by changing a function or module. Uses codemap static analysis — no test execution needed. Result: ready-to-run `pytest` command covering only impacted tests.
 
 Two input modes:
 
-- **Function-level** (`module::symbol`) — BFS over reverse call graph; finds every test that calls the changed function, directly or transitively. Also includes tests that mock the symbol (`mock_patches`).
-- **Module-level** (bare `module`) — BFS over reverse import graph; finds every test that imports the module through any chain. Also includes tests that mock any symbol in the module.
+- **Function-level** (`module::symbol`) — BFS over reverse call graph; finds every test calling changed function, directly or transitively. Includes tests mocking the symbol (`mock_patches`).
+- **Module-level** (bare `module`) — BFS over reverse import graph; finds every test importing module through any chain. Includes tests mocking any symbol in module.
 
-`not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers — same blind spot as `fn-blast`. Surface caveat and log gap.
+`not_covered`: dynamic dispatch, hook callbacks, string-dispatch callers — same blind spot as `fn-blast`. Surface caveat, log gap.
 
-NOT for: finding all callers of a function (use `/codemap:query-code fn-blast <module::symbol>`); querying module deps or blast radius (use `/codemap:query-code`); running or executing tests (tests are not executed here — only identified).
+NOT for: finding all callers of a function (use `/codemap:query-code fn-blast <module::symbol>`); querying module deps or blast radius (use `/codemap:query-code`); running/executing tests (identified here, not executed).
 
 </objective>
 
@@ -48,7 +48,7 @@ echo "$SQ" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-sq"
 [ ! -f "$INDEX" ] && echo "No index found — will build via codemap:scan-codebase"
 ```
 
-Auto-build is opt-out via `SCAN_NO_AUTOBUILD=1` (use the index exactly as-is — no refresh, no full build); when a build runs, its wall-time is echoed so build cost stays separable from query cost.
+Auto-build opt-out via `SCAN_NO_AUTOBUILD=1` (index used exactly as-is — no refresh, no full build); build wall-time echoed when it runs, keeps build cost separable from query cost.
 
 If `$INDEX` not found:
 - `SCAN_NO_AUTOBUILD=1` set → print `! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: /codemap:scan-codebase` and exit 1.
@@ -102,7 +102,7 @@ QNAME="<answer from AskUserQuestion>"
 echo "$QNAME" > "${TMPDIR:-/tmp}/codemap-${_CM_PROJ}-ti-qname"
 ```
 
-**Multi-symbol guard**: `$ARGUMENTS` may contain multiple space-separated tokens (e.g. `mypackage.auth::validate mypackage.auth::parse`). `awk '{print $1}'` silently truncates to the first. If `$ARGUMENTS` contains more than one token after stripping `--no-mocks`, print `⚠ test-impact accepts one symbol at a time — using first token only: $QNAME. Run separately for each remaining symbol.`
+**Multi-symbol guard**: `$ARGUMENTS` may contain multiple space-separated tokens (e.g. `mypackage.auth::validate mypackage.auth::parse`). `awk '{print $1}'` silently truncates to first. If `$ARGUMENTS` has more than one token after stripping `--no-mocks`, print `⚠ test-impact accepts one symbol at a time — using first token only: $QNAME. Run separately for each remaining symbol.`
 
 ## Step 2 — Run test-impact query
 
@@ -130,7 +130,7 @@ Parse JSON output from `$RESULT`:
 - `index.not_covered` — surface as caveat if non-empty
 - `index.hint` — include as suggestion
 
-**haiku JSON parse guard**: `scan-query` JSON output may be prefixed or suffixed with log/warning lines when running under haiku model. Always extract JSON via `python3 -c "import sys,json; ..."` piping stdin — never assume raw output is valid JSON. If parsing fails (ValueError/JSONDecodeError), print `! scan-query returned non-JSON output — try /codemap:scan-codebase to rebuild index` and exit 1.
+**haiku JSON parse guard**: `scan-query` JSON output may be prefixed/suffixed with log/warning lines under haiku model. Always extract JSON via `python3 -c "import sys,json; ..."` piping stdin — never assume raw output valid JSON. Parsing fails (ValueError/JSONDecodeError) → print `! scan-query returned non-JSON output — try /codemap:scan-codebase to rebuild index` and exit 1.
 
 ## Step 3 — Output
 

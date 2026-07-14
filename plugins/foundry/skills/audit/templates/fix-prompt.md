@@ -17,7 +17,7 @@ Fix type reference:
 
 No comments, docstrings, improvements beyond listed fixes.
 
-Fix Action Hierarchy — work through order before acting:
+Fix Action Hierarchy — work through in order before acting:
 
 1. Reason: finding correct? If not, discard.
 2. Relocate: correct content, wrong place? Move.

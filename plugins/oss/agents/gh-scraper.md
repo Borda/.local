@@ -9,7 +9,7 @@ color: cyan
 
 <role>
 
-Data collection agent for /oss:analyse (vitality mode). Fetches all required GitHub data (REST + GraphQL) in two parallel groups → writes raw JSONL → returns path. Scoring handled by 3 parallel oss:repo-warden instances.
+Data collection agent for /oss:analyse (vitality mode). Fetches required GitHub data (REST + GraphQL) in two parallel groups → writes raw JSONL → returns path. Scoring: 3 parallel oss:repo-warden instances.
 
 NOT for axis scoring — oss:repo-warden owns all axis scoring.
 NOT for report formatting, terminal summary, or adversarial review — /oss:analyse (vitality mode) Steps 4–7 own those.
@@ -18,7 +18,7 @@ NOT for report formatting, terminal summary, or adversarial review — /oss:anal
 
 <inputs>
 
-Prompt must supply these key=value pairs (space-separated):
+Prompt must supply key=value pairs (space-separated):
 - `GH_OWNER=<owner>` — GitHub owner or org
 - `GH_REPO=<repo>` — GitHub repository name
 - `DATA_FILE=<path>` — output path for raw JSONL (one JSON object per line)
@@ -89,11 +89,11 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/fetch_gh_data_group1.py" \
     --cutoff-180d "$CUTOFF_180D"  # timeout: 90000
 ```
 
-The script handles truncation-detection limits (`--limit 501`/`1001`/`201`), 403 fallbacks for security APIs, and disabled-discussions error swallowing. Per-call failures emit `⚠` to stderr; the corresponding output file is left empty so Step 4 marks the dataset as unavailable instead of crashing. Retry of contributor stats 202s and pagination of forks/issues stays inline below — those need iterative LLM-driven state.
+Script handles truncation-detection limits (`--limit 501`/`1001`/`201`), 403 fallbacks for security APIs, disabled-discussions error swallowing. Per-call failures emit `⚠` to stderr; corresponding output file left empty so Step 4 marks dataset unavailable instead of crashing. Retry of contributor stats 202s and pagination of forks/issues stays inline below — needs iterative LLM-driven state.
 
 ## Step 3 — Data Fetch Group 2 (depends on Group 1)
 
-After Group 1 complete — root file list and default_branch now known. Run all calls below sequentially in one Bash call (Group 2 as a whole runs after Group 1 completes — the parallelism is Group 1 vs later calls, not within Group 2):
+After Group 1 complete — root file list and default_branch known. Run all calls below sequentially in one Bash call (Group 2 runs after Group 1 completes — parallelism is Group 1 vs later calls, not within Group 2):
 
 Read Group 1 outputs before the bash block:
 
@@ -112,7 +112,7 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/fetch_gh_data_group2.py" --owner 
 
 Write all fetched API responses to JSONL before scoring — file = scorer reference + reproducibility artifact. Run after all Group 1 and Group 2 fetches complete.
 
-Use Write tool to create `$DATA_FILE`. Format: one JSON object per line (overwrite same-day file — one raw snapshot per repo per day; users needing intermediate data use timestamped paths).
+Use Write tool to create `$DATA_FILE`. Format: one JSON object per line (overwrite same-day file — one raw snapshot per repo per day; for intermediate data use timestamped paths).
 
 One line per dataset. Record type specs and schema: `$_OSS_SHARED/vitality-data-schema.md`.
 
@@ -144,18 +144,18 @@ Return ONLY this JSON as final output line:
 
 - **Parallel group discipline**: Group 1 calls all run simultaneously — independent; Group 2 only after Group 1 resolves (needs root file list and default_branch)
 - **Data reuse**: root-contents fetch shared by Axes 6 and 7; releases fetch shared by Axis 2 and security signals; contributor stats weeks[] shared by Axis 3 and sub-signal 9A; open issues list shared by Axis 4 and sub-signal 9C — write all datasets to JSONL; scorers read what they need
-- **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501`); if response length equals limit → at least that many items exist (truncation at target count); set `"partial": true` in JSONL record; scorers apply confidence degraders. Note: unambiguous — 501 returned means ≥501 items exist, not off-by-one ambiguity
-- **Stats 202 retry**: contributor stats returns 202 on first call for large repos — retry up to 6× with 10s sleep (60s total); if still 202 after all retries, write record with `"partial": true, "data": null, "202_pending": true`; scorer Group C handles fallback
-- **403 on security APIs**: Dependabot and secret scanning require push access; 403 = expected; write `"data": "403"` string in JSONL record; Group B scorer applies partial-scoring formula
+- **--limit caps and truncation detection**: all limits set to target+1 (e.g. `--limit 501`); if response length equals limit → at least that many items exist (truncation at target count); set `"partial": true` in JSONL record; scorers apply confidence degraders. Unambiguous — 501 returned means ≥501 items exist, not off-by-one ambiguity
+- **Stats 202 retry**: contributor stats returns 202 on first call for large repos — retry up to 6× with 10s sleep (60s total); if still 202 after retries, write record with `"partial": true, "data": null, "202_pending": true`; scorer Group C handles fallback
+- **403 on security APIs**: Dependabot and secret scanning require push access; 403 expected; write `"data": "403"` string in JSONL record; Group B scorer applies partial-scoring formula
 - **CUTOFF_* variables**: computed in Step 1; CUTOFF_30D/CUTOFF_90D/CUTOFF_180D/CUTOFF_3Y all persisted to /tmp; repo-warden Group C reads CUTOFF_30D via ANALYSIS_NOW - 30*86400 (computed from JSONL timestamp); ANALYSIS_NOW used for all age calculations throughout
-- **Scoring removed**: scoring steps removed — scoring handled by 3 parallel oss:repo-warden instances; this agent is fetch-only
+- **Scoring removed**: scoring handled by 3 parallel oss:repo-warden instances; this agent fetch-only
 
 </notes>
 
 <antipatterns_to_flag>
 
-- **Treating paginated-but-truncated response as complete**: when a `gh` list command returns exactly N items matching a `--limit N` cap, the dataset is truncated — set `"partial": true` in the JSONL record and let the scorer apply confidence degraders; never pass a capped result to a scorer as if it were the full dataset.
-- **Conflating null field with absent field**: a JSON field explicitly present as `null` (API returned it as null) is distinct from a field absent from the response (API did not return it); treat `null` as "data unavailable" and absent as "field not supported by endpoint" — scorers handle them differently (e.g., Axis 8 partial scoring vs ⚪).
-- **Using cached response when fresh fetch needed**: re-fetching the same repo within minutes after a prior scrape is safe to skip, but never reuse a cached JSONL file across days without re-fetching — security alert counts, PR states, and CI pass rates change frequently; stale data silently produces wrong scores.
+- **Treating paginated-but-truncated response as complete**: when `gh` list command returns exactly N items matching `--limit N` cap, dataset truncated — set `"partial": true` in JSONL record, let scorer apply confidence degraders; never pass capped result to scorer as if full dataset.
+- **Conflating null field with absent field**: JSON field explicitly present as `null` (API returned null) distinct from field absent from response (API didn't return it); treat `null` as "data unavailable" and absent as "field not supported by endpoint" — scorers handle differently (e.g., Axis 8 partial scoring vs ⚪).
+- **Using cached response when fresh fetch needed**: re-fetching same repo within minutes after prior scrape safe to skip, but never reuse cached JSONL file across days without re-fetching — security alert counts, PR states, CI pass rates change frequently; stale data silently produces wrong scores.
 
 </antipatterns_to_flag>

@@ -45,7 +45,7 @@ _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_s
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
 ```
 
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:solution-architect`.
+Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`.
 
 **Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
 
@@ -63,7 +63,7 @@ Read current project before searching, extract constraints:
 - Task (classification, detection, generation, regression)?
 - Constraints (latency, memory, dataset size, compute budget)?
 
-**Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. are accepted. Each Bash tool call runs in a fresh shell, so a lowercased copy does NOT persist across blocks — re-derive it inline from `$ARGUMENTS` (harness-substituted every block) wherever a dispatch check needs it, e.g. `echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | …`. Preserve original `$ARGUMENTS` only where literal substitution into prompts is required (e.g. topic string).
+**Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. accepted. Each Bash tool call runs fresh shell, so lowercased copy does NOT persist across blocks — re-derive inline from `$ARGUMENTS` (harness-substituted every block) wherever dispatch check needs it, e.g. `echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | …`. Preserve original `$ARGUMENTS` only where literal substitution into prompts required (e.g. topic string).
 
 **Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`, `--keep`.
 
@@ -83,13 +83,12 @@ UNKNOWN_FLAGS=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | grep -oE -- '--
 ```
 
 **Early dispatch for `--team` and `plan` modes** — check BEFORE Steps 2-3. Priority: `--team` wins over `plan` (`plan --team` → Team Mode, topic string = "plan"):
-
 ```bash
 FIRST_WORD=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | awk '{print $1}')  # timeout: 5000
 ```
 
-- If `$ARGUMENTS_LOWER` contains `--team` flag → skip Steps 2-3; jump directly to **Team Mode** section below.
-- Else if `$FIRST_WORD` equals exactly `plan` → skip Steps 2-3; jump directly to **Plan Mode** section below.
+- `$ARGUMENTS_LOWER` contains `--team` flag → skip Steps 2-3; jump directly to **Team Mode** section below.
+- Else `$FIRST_WORD` equals exactly `plan` → skip Steps 2-3; jump directly to **Plan Mode** section below.
 
 Steps 2-3 execute only when neither `--team` nor `plan` mode is detected.
 
@@ -101,7 +100,7 @@ Steps 2-3 execute only when neither `--team` nor `plan` mode is detected.
 
 Conduct broad SOTA search directly using `foundry:web-explorer` (or inline WebSearch/WebFetch if web-explorer unavailable) — topic skill owns SOTA end-to-end. Find top 5 papers for `$ARGUMENTS`, produce comparison table (method, key idea, benchmark results, compute, code availability), recommend single best method given codebase constraints from Step 1.
 
-**Note**: do NOT dispatch to `research:scientist` for broad SOTA surveys — scientist is scoped to deep single-paper analysis with a named paper anchor. Use `research:scientist` directly only when: (a) a specific paper is identified and needs deep analysis, (b) hypothesis generation for an identified method, or (c) experiment design for a concrete approach. Broad SOTA = web-explorer territory.
+**Note**: never dispatch to `research:scientist` for broad SOTA surveys — scientist scoped to deep single-paper analysis with named paper anchor. Use `research:scientist` directly only when: (a) specific paper identified and needs deep analysis, (b) hypothesis generation for identified method, or (c) experiment design for concrete approach. Broad SOTA = web-explorer territory.
 
 Pre-compute output paths before searching:
 
@@ -117,7 +116,7 @@ echo "$DATE" > "${TMPDIR:-/tmp}/topic-date"
 echo "$AGENT_OUT" > "${TMPDIR:-/tmp}/topic-agent-out"
 ```
 
-Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of the top 5 papers found via WebSearch/WebFetch: extract method, key idea, benchmark results, compute cost, code availability. Write full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
+Search targets: arXiv, Papers With Code, Semantic Scholar, HuggingFace Hub. For each of top 5 papers found via WebSearch/WebFetch: extract method, key idea, benchmark results, compute cost, code availability. Write full findings (comparison table, paper analysis, recommendation, implementation plan, Confidence block) to `$AGENT_OUT`.
 
 **If `foundry:web-explorer` available** (check `ls ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents/web-explorer.md 2>/dev/null`): spawn `Agent(subagent_type="foundry:web-explorer", prompt="...")` for parallel deep web research, then merge results into `$AGENT_OUT`. Otherwise conduct research inline using WebSearch and WebFetch directly.
 
@@ -254,7 +253,7 @@ Also verify `~/.claude/TEAM_PROTOCOL.md` exists (each teammate spawn prompt requ
 
 Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"` and execute its workflow.
 
-**Mandatory termination gate**: after `modes/team.md` returns (consolidation complete, report written), continue to the `## Follow-up gate` section below — do NOT exit early. The `AskUserQuestion` call in `## Follow-up gate` is the only authorized terminal action for team mode; reaching the end of the team workflow without invoking it is a protocol violation.
+**Mandatory termination gate**: after `modes/team.md` returns (consolidation complete, report written), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for team mode; reaching end of team workflow without invoking it is protocol violation.
 
 ## Plan Mode — only when first token of `$ARGUMENTS` is exactly `plan` (not a prefix match — "planning algorithms" must NOT trigger this mode)
 
@@ -268,7 +267,7 @@ _PLAN_MODE="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"
 
 Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"` and execute its workflow.
 
-**Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written), continue to the `## Follow-up gate` section below — do NOT exit early. The `AskUserQuestion` call in `## Follow-up gate` is the only authorized terminal action for plan mode; reaching the end of the plan workflow without invoking it is a protocol violation.
+**Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for plan mode; reaching end of plan workflow without invoking it is protocol violation.
 
 ## Follow-up gate
 
@@ -286,9 +285,9 @@ Call `AskUserQuestion` tool — do NOT write options as plain text first. Map op
 
 <notes>
 
-- Skill orchestrates — owns broad SOTA literature search end-to-end via `foundry:web-explorer`, delegates codebase mapping to `foundry:solution-architect` (plan mode). For direct hypothesis/experiment work on a named paper, use `research:scientist` directly.
+- Skill orchestrates — owns broad SOTA literature search end-to-end via `foundry:web-explorer`, delegates codebase mapping to `foundry:solution-architect` (plan mode). For direct hypothesis/experiment work on named paper, use `research:scientist` directly.
 - **Team Mode dependency**: `--team` requires `~/.claude/TEAM_PROTOCOL.md` to exist — each teammate spawn prompt includes `Read $HOME/.claude/TEAM_PROTOCOL.md and use AgentSpeak v2`; verify file present before launching team mode.
-- **Link integrity**: All URLs cited in research report must be fetched and verified before inclusion. Use WebFetch to confirm each URL exists and says what you claim.
+- **Link integrity**: all URLs cited in research report must be fetched and verified before inclusion. Use WebFetch to confirm each URL exists and says what claimed.
 - Follow-up chains:
   - Research recommends method → `/research:plan` for sequenced plan (auto-detects latest output), then `/develop:feature` (requires `develop` plugin) for TDD-first implementation
   - Research integrates into existing code → `/develop:refactor` (requires `develop` plugin) first to prepare module, then `/develop:feature` (requires `develop` plugin)

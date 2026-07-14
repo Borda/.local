@@ -14,12 +14,12 @@ In `.md` plugin files: prose annotations/notes/load directives → `>` blockquot
 
 **Code block comments — WHY vs example**:
 
-- **Procedural code** (steps executed by agent/skill): comments explain WHY only — non-obvious constraint, workaround, incident ref, safety rationale. Never WHAT or HOW (code shows that). Remove self-documenting comments (`# Create directory`, `# Check if exists`, `# Parse flags`).
-- **Example/pattern code** (illustrating a pattern, not executed directly): comments may also document expected output, motivation for the pattern, and when to apply it — these add value the code alone cannot convey.
+- **Procedural code** (steps agent/skill executes): comments explain WHY only — non-obvious constraint, workaround, incident ref, safety rationale. Never WHAT or HOW (code shows that). Remove self-documenting comments (`# Create directory`, `# Check if exists`, `# Parse flags`).
+- **Example/pattern code** (illustrates pattern, not executed directly): comments may also document expected output, pattern motivation, when to apply — value code alone cannot convey.
 
 ## Writing Style — Compression Tiers
 
-Three tiers based on reader:
+Three tiers by reader:
 
 | Content | Tier | Rule |
 | --- | --- | --- |
@@ -29,11 +29,11 @@ Three tiers based on reader:
 
 Verbatim always (no compression): code blocks, bash commands, tool citations, file:line refs, JSON keys, structured field labels, compact JSON envelopes.
 
-When unsure: human reads artifact directly → normal; only agents read it → ultra.
+Unsure: human reads artifact directly → normal; only agents read → ultra.
 
 ## Length Unit Convention
 
-All size/length limits in plugin files must express size as **tokens primary, lines secondary**:
+All size/length limits in plugin files: **tokens primary, lines secondary**.
 
 Format: `N tokens (~M lines)` — e.g. `10K tokens (~500 lines)`.
 
@@ -50,29 +50,29 @@ Format: `N tokens (~M lines)` — e.g. `10K tokens (~500 lines)`.
     - Python scripts: type hints, module docstring, `if __name__ == "__main__"` guard; ruff-format 120-char line length (pre-commit enforced); aggregate related print output into single `print()` using `\n`/`\t`; pure functions (no I/O, no subprocess, no env-var reads) → `doctest` in docstring; anything with I/O/subprocess/argv → `pytest` with `capsys`/`monkeypatch` in `tests/` alongside `bin/`
     - bin/ scope: deterministic transforms only (parse args, resolve paths, compute one value); decision flow, branching prompts, agent-dispatch logic stays in SKILL.md prose
     - Reference design: `plugins/codemap/bin/` (typed, docstrings, `__name__` guards, dataclass serialization boundaries)
-  - **Language policy — inline blocks in SKILL.md**: bash default; Python only when bash version requires JSON parsing, multi-line string manipulation, or numeric computation (and note: `Bash(python:*)` not in allow list — inline Python triggers approval prompt every invocation)
+  - **Language policy — inline blocks in SKILL.md**: bash default; Python only when bash version requires JSON parsing, multi-line string manipulation, or numeric computation (note: `Bash(python:*)` not in allow list — inline Python triggers approval prompt every invocation)
 - `rules/`, `hooks/` — foundry only
 
 ## Shared File Authoring Rule (modes/, templates/, _shared/)
 
-Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`, or `plugins/*/skills/_shared/` **must** satisfy at least one of:
+Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`, or `plugins/*/skills/_shared/` **must** satisfy at least one:
 
-1. Its **basename appears as a literal string** in at least one consumer `.md` file (SKILL.md, agent `.md`, or another shared file) — e.g. `# loads: upgrade.md` or inline in prose
-2. The file itself contains a `<!-- file: <basename> — consumers: ... -->` header declaring cross-plugin consumers (use when all consumers are in a different plugin)
+1. **Basename appears as literal string** in ≥1 consumer `.md` file (SKILL.md, agent `.md`, or another shared file) — e.g. `# loads: upgrade.md` or inline in prose
+2. File itself contains `<!-- file: <basename> — consumers: ... -->` header declaring cross-plugin consumers (use when all consumers in different plugin)
 
-**Why**: grep-based orphan checks find zero hits → agent concludes file is dead → deletes it. This has happened to `adversarial.md`, `upgrade.md`, `vitality-calibration.md`. A single comment line prevents deletion. Check R2 (`/foundry:audit plugins`) detects violations.
+**Why**: grep-based orphan check finds zero hits → agent concludes file dead → deletes it. Happened to `adversarial.md`, `upgrade.md`, `vitality-calibration.md`. Single comment line prevents deletion. Check R2 (`/foundry:audit plugins`) detects violations.
 
-**At authoring time**: before writing the file, identify its consumer SKILL.md and add the `# loads:` comment there first, then create the file. If consumer is in a different plugin, add the `<!-- file: ... -->` header to the file itself.
+**At authoring time**: before writing file, identify consumer SKILL.md, add `# loads:` comment there first, then create file. Consumer in different plugin → add `<!-- file: ... -->` header to file itself.
 
 ## Installability
 
-- Every file must be installable via `claude plugin install <name>@borda-ai-rig`
+- Every file installable via `claude plugin install <name>@borda-ai-rig`
 - No file depend on source tree — assume installed path only
 - No hardcoded paths to sibling plugins or `plugins/<name>/` directories
-- **No hardcoded absolute user paths** (`/Users/<name>/`, `/home/<name>/`, `/tmp/`) in any plugin file — critical installability violation; breaks on every other machine. Always use `~/`, `$(git rev-parse --show-toplevel)`, or `$CLAUDE_PLUGIN_ROOT`. Check R3 flags violations.
+- **No hardcoded absolute user paths** (`/Users/<name>/`, `/home/<name>/`, `/tmp/`) in any plugin file — critical installability violation; breaks on every other machine. Always `~/`, `$(git rev-parse --show-toplevel)`, or `$CLAUDE_PLUGIN_ROOT`. Check R3 flags violations.
 - Validate: after `claude plugin install`, all agents/skills/rules/hooks resolve without local `plugins/` tree
-- **Bare `plugins/` path = only valid as final fallback** after cache-path resolution: `VAR="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)"; [ -z "$VAR" ] && VAR="plugins/<plugin>/skills/_shared"`. Never use bare `plugins/` as primary path. Check C32 flags violations.
-- **Health monitoring mandatory for background agents**: any skill spawning `Agent(..., run_in_background=true)` must implement CLAUDE.md §6 (sentinel + 5-min poll + 15-min cutoff). Reference `_FOUNDRY_SHARED/agent-spawn-protocol.md` rather than reproducing inline. Check C35 flags violations.
+- **Bare `plugins/` path = only valid as final fallback** after cache-path resolution: `VAR="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/<plugin>/*/skills/_shared 2>/dev/null | head -1)"; [ -z "$VAR" ] && VAR="plugins/<plugin>/skills/_shared"`. Never bare `plugins/` as primary path. Check C32 flags violations.
+- **Health monitoring mandatory for background agents**: any skill spawning `Agent(..., run_in_background=true)` must implement CLAUDE.md §6 (sentinel + 5-min poll + 15-min cutoff). Reference `_FOUNDRY_SHARED/agent-spawn-protocol.md`, don't reproduce inline. Check C35 flags violations.
 
 ## Naming
 
@@ -83,23 +83,23 @@ Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`
 
 - `description` field = routing signal; calibrated threshold `routing accuracy ≥90%`
 - NOT-for lines mandatory in every agent; `/audit` Check 16 flags ≥40% overlap
-- **Independent instances** — each plugin is independent install; treat as if source tree absent
+- **Independent instances** — each plugin independent install; treat as if source tree absent
   - Never cross-ref via local/relative path (e.g. `../foundry/agents/foo.md`) — breaks after install
   - Reference only via installed plugin-prefixed name (e.g. `foundry:sw-engineer`)
 - **Opt-in gating required** — plugins opt-in; user may have only subset installed
   - Any cross-plugin usage **must** check availability first
   - Degrade gracefully if dependency plugin absent
-  - Unchecked cross-plugin call = broken UX for users without that plugin
+  - Unchecked cross-plugin call = broken UX for users without plugin
 - **Prose references too**: any mention of `/plugin:skill` in `<notes>`, follow-up chains, or documentation prose (not just dispatch calls) must include `(requires \`<plugin>\` plugin)` inline caveat. Check 28c flags unguarded prose refs.
 
 ## Fallback / Resilience Infrastructure
 
-**The self-defeating plugin trap** — hook or skill whose job is "handle plugin `foo` being absent" cannot live inside plugin `foo`. If `foo` absent, hook never runs.
+**Self-defeating plugin trap** — hook or skill whose job is "handle plugin `foo` being absent" cannot live inside plugin `foo`. If `foo` absent, hook never runs.
 
 - **General rule: resilience code lives in plugin whose users need protecting, not plugin being protected against**
 - Examples: fallback for missing `foundry` agents → cannot live in `foundry`; fallback for missing `oss` agents → cannot live in `oss`; same for any plugin pair
 
-Correct placement: every plugin dispatching agents from others ships own fallback hook. Source of truth in one plugin; copies live in each consuming plugin. **Byte-identical shared files are propagated by `plugins/foundry/bin/propagate_shared.py`** — its `MANIFEST` maps each canonical file to the copies that must equal it (currently `agent-router.js`: foundry canonical → oss/develop/research). `--apply` syncs; the default `--check` mode is enforced in pre-commit and audit Check 14e, so drift is caught at commit. When you edit a manifested shared file, edit the canonical and run `propagate_shared.py --apply`. `sync.sh` still only copies `.codex/` + the `~/.claude` cache — it does NOT propagate cross-plugin files. NOTE: files that legitimately vary per plugin (`agent-resolution.md` fallback tables, per-plugin `rules/quality-gates.md`) are intentionally NOT manifested — do not add them.
+Correct placement: every plugin dispatching agents from others ships own fallback hook. Source of truth in one plugin; copies in each consuming plugin. **Byte-identical shared files propagated by `plugins/foundry/bin/propagate_shared.py`** — its `MANIFEST` maps each canonical file to copies that must equal it (currently `agent-router.js`: foundry canonical → oss/develop/research). `--apply` syncs; default `--check` mode enforced in pre-commit and audit Check 14e — drift caught at commit. Edit manifested shared file → edit canonical, run `propagate_shared.py --apply`. `sync.sh` still only copies `.codex/` + `~/.claude` cache — does NOT propagate cross-plugin files. NOTE: files that legitimately vary per plugin (`agent-resolution.md` fallback tables, per-plugin `rules/quality-gates.md`) intentionally NOT manifested — do not add them.
 
 No plugin dependency system in Claude Code — never propose "install `foo` as prerequisite" or "register globally via `foo` init" as solution to missing-plugin resilience. Circular: requires thing that might be absent.
 
@@ -109,15 +109,15 @@ No plugin dependency system in Claude Code — never propose "install `foo` as p
 
 - Added/removed → update README table
 - Changed trigger/scope/NOT-for/hook behaviour → update README description
-- Changed user-facing API/usage patterns (flags, argument names, invocation syntax, skill modes) → revise affected README sections and propagate to all cross-plugin READMEs that reference the changed interface; search other plugin READMEs for any mention of the changed flag/argument before declaring done
-- Changed model tier for an agent → update README agent entry's **Model** line and the agent-relationships model-tiering paragraph; update `curator.md` antipatterns table if the agent appears there
-- Significant behaviour change (new phase, changed default, removed option) → add a note in the relevant README skill or agent section; if the change is breaking, mark with `! BREAKING` in the README change description
+- Changed user-facing API/usage patterns (flags, argument names, invocation syntax, skill modes) → revise affected README sections, propagate to all cross-plugin READMEs referencing changed interface; search other plugin READMEs for any mention of changed flag/argument before declaring done
+- Changed model tier for agent → update README agent entry's **Model** line + agent-relationships model-tiering paragraph; update `curator.md` antipatterns table if agent appears there
+- Significant behaviour change (new phase, changed default, removed option) → add note in relevant README skill or agent section; breaking → mark `! BREAKING` in README change description
 
 Unsynced change = incomplete.
 
 ## Versioning
 
-> **Commit gate**: any `plugins/<name>/` **non-test** file in `git diff HEAD` → run pre-bump checklist before `git add`. If ALL changed files in a plugin are under `tests/` → no bump, skip checklist entirely. Each plugin touched gets its own independent bump. Baseline = HEAD every time — post-compaction sessions have no memory of prior bumps; always re-read HEAD version, never trust session recall.
+> **Commit gate**: any `plugins/<name>/` **non-test** file in `git diff HEAD` → run pre-bump checklist before `git add`. ALL changed files in plugin under `tests/` → no bump, skip checklist entirely. Each plugin touched gets own independent bump. Baseline = HEAD every time — post-compaction sessions have no memory of prior bumps; always re-read HEAD version, never trust session recall.
 
 Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 
@@ -138,23 +138,23 @@ Per-plugin version in `.claude-plugin/plugin.json`. Space: `0.X.Y`.
 
 **Example**: start `0.2.0`, session: wording fix + feature add → commit as `0.3.0` (not `0.2.1`).
 
-**Pre-bump checklist** — all steps mandatory; skipping any step is a violation:
+**Pre-bump checklist** — all steps mandatory; skipping any step = violation:
 
-0. **Test-only guard**: run `git diff HEAD --name-only -- plugins/<name>/` and check if every changed path is under `plugins/<name>/tests/`. If yes → **STOP; no bump needed** — test-only commits never touch the version.
+0. **Test-only guard**: run `git diff HEAD --name-only -- plugins/<name>/`, check if every changed path under `plugins/<name>/tests/`. Yes → **STOP; no bump needed** — test-only commits never touch version.
 1. Read HEAD baseline: `git show HEAD:<plugin-path>/.claude-plugin/plugin.json | grep version`
-2. **Read on-disk version: `grep version <plugin-path>/.claude-plugin/plugin.json`** — if on-disk ≠ HEAD → session bump already applied → **STOP; do not proceed**
+2. **Read on-disk version: `grep version <plugin-path>/.claude-plugin/plugin.json`** — on-disk ≠ HEAD → session bump already applied → **STOP; do not proceed**
 3. Classify highest-magnitude change in session (`X` or `Y`)
-4. Calculate new version from HEAD baseline: `X` → bump minor, reset patch to `0`; `Y` → bump patch only; max +1 on the bumped component
-5. Write calculated version — must be exactly HEAD + the single bump; anything higher = double-bump violation
+4. Calculate new version from HEAD baseline: `X` → bump minor, reset patch to `0`; `Y` → bump patch only; max +1 on bumped component
+5. Write calculated version — must be exactly HEAD + single bump; anything higher = double-bump violation
 
-**One bump per commit session** — after writing once, all further edits to that plugin in same uncommitted session must NOT bump again. Step 2 catches this: on-disk will already differ from HEAD. Never treat on-disk bumped value as new baseline to increment from.
+**One bump per commit session** — after writing once, all further edits to that plugin in same uncommitted session must NOT bump again. Step 2 catches this: on-disk already differs from HEAD. Never treat on-disk bumped value as new baseline to increment from.
 
 ## Edit Quality Gate
 
 Before any edit, delete, or addition to plugin files — self-challenge:
 
 - **Best approach?** Simpler path exists → take it; no unnecessary complexity or speculative abstractions
-- **No side effects?** Cross-refs still resolve, existing callers unaffected, no behavior regression introduced
+- **No side effects?** Cross-refs still resolve, existing callers unaffected, no behavior regression
 - **Complete and clean?** No gaps/TODOs, no dead instructions, no orphaned cross-refs, no leftover stubs
 - **Verified?** Every claim backed by code/disk evidence — no hypothesis or assumption stated as fact
-- **bin/ scripts wired?** Created/edited a `bin/` script? Consumer `.md` references basename before commit (inline invocation or `<!-- file: ... consumers: ... -->` header in owning plugin). Run `check_orphaned_bin.py` — must exit 0.
+- **bin/ scripts wired?** Created/edited `bin/` script? Consumer `.md` references basename before commit (inline invocation or `<!-- file: ... consumers: ... -->` header in owning plugin). Run `check_orphaned_bin.py` — must exit 0.

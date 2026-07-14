@@ -28,7 +28,7 @@ Critical/high issues from recent `/audit` run, or gate check finds BREAKING: sto
 
 **Always spawn fresh foundry:web-explorer** — no context from prior audit runs, cached docs, or memory. Every upgrade run fetches live docs.
 
-Run **Claude Code docs freshness** check from Step 4 of main audit workflow: spawn foundry:web-explorer, validate current config against latest docs, apply genuine-value filter, produce Upgrade Proposals table. Cap at 5 total (max 3 capability, any number of config).
+Run **Claude Code docs freshness** check from Step 4 of main audit workflow: spawn foundry:web-explorer, validate current config against latest docs, apply genuine-value filter, produce Upgrade Proposals table. Cap at 5 total (max 3 capability, any number config).
 
 **RTK hook alignment** — also run Check 10 from main audit workflow (inline, no subagent):
 

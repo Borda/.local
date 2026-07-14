@@ -24,7 +24,7 @@ NOT for:
 Key boundary: end of Step 1 — scope analysis and plan complete, before Step 2 demo test writing.
 Second boundary: end of Step 3 — TDD loop complete, before Step 4 review/close gaps.
 Preserve at boundary 1: dev-dir (checkpoint.md), plan-file, scope from sw-engineer analysis, PYTEST_CMD, --keep items.
-Mid-loop refresh: after each Step 3 TDD cycle the contract is rewritten with changed-files + checkpoint.md path — so a mid-loop compaction resumes the loop (re-run suite for green state) instead of restarting the Step 2 demo.
+Mid-loop refresh: after each Step 3 TDD cycle contract is rewritten with changed-files + checkpoint.md path — so mid-loop compaction resumes loop (re-run suite for green state) instead of restarting Step 2 demo.
 Preserve at boundary 2: dev-dir, changed files list, test outcomes, PYTEST_CMD.
 
 </compaction>
@@ -42,7 +42,7 @@ _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 # loads: compaction-contract.md
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
+Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
 
 Read `$_DEV_SHARED/task-hygiene.md`.
 
@@ -59,14 +59,14 @@ if [ ! -f "pyproject.toml" ] && [ ! -f "setup.py" ] && [ ! -f "setup.cfg" ]; the
 fi
 ```
 
-If `NON_PY` is non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
+If `NON_PY` non-empty: invoke `AskUserQuestion` — "Non-Python project detected (`$NON_PY` present, no pyproject.toml/setup.py). This toolchain assumes pytest. How to proceed?" · (a) **Abort** — use language-native toolchain · (b) **Continue** — I know what I'm doing (project has Python). On Abort: stop.
 
 <!--
   NON_PY and MULTI_LANG gates are mutually exclusive — NON_PY fires only when no Python markers exist;
   MULTI_LANG fires only when Python markers AND non-Python markers coexist. Both cannot be true on the
   same repo; never reorder so MULTI_LANG runs before NON_PY.
 -->
-**Monorepo language-target gate**: if `NON_PY` is empty (Python markers found) but non-Python markers also exist, confirm target language:
+**Monorepo language-target gate**: if `NON_PY` empty (Python markers found) but non-Python markers also exist, confirm target language:
 
 ```bash
 # timeout: 5000
@@ -132,7 +132,7 @@ If `ISSUE_REF` non-empty and issue fetch succeeded: include issue title, body, a
 2. Check local divergences: run `git log --oneline -10` and grep for symbols mentioned in issue; identify where local codebase differs structurally from what issue assumes
 3. Produce adaptation plan: upstream intent → local implementation using local conventions, existing abstractions, and current code structure — never assume upstream approach ports directly
 
-**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from the block above), scan `$ARGUMENTS` for remaining `--<token>` tokens that are not in the supported list. Do NOT include `--issue` in the "unknown" set — it is consumed in the second parse block above. Supported: `--plan`, `--team`, `--no-challenge`, `--challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`, `--keep`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
+**Unsupported flag check** — after ALL supported flags extracted (including `--issue` from block above), scan `$ARGUMENTS` for remaining `--<token>` tokens not in supported list. Do NOT include `--issue` in "unknown" set — it is consumed in second parse block above. Supported: `--plan`, `--team`, `--no-challenge`, `--challenge`, `--no-codemap`, `--codemap`, `--semble`, `--accept-no-plan`, `--issue`, `--repo`, `--keep`. If truly unknown token found: print `! Unknown flag(s): \`--<token>\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Codemap auto-detection** — run after flag parsing; reads raw value, normalizes to `true`/`false`, writes normalized result so downstream blocks see post-normalization state:
 
@@ -180,7 +180,7 @@ echo "$TEAM_DIR" > ${TMPDIR:-/tmp}/dev-feature-team-dir
 trap 'rm -f ${TMPDIR:-/tmp}/feature-team-check-$TS' EXIT
 ```
 
-**IMPORTANT**: in spawn prompts below, substitute `$_SPAWN_TS` and `$_SPAWN_TEAM_DIR` with the actual computed values from the bash block above — literal resolved strings, not shell variable references. Bare `$TS`/`$TEAM_DIR` inside a quoted Agent prompt string will NOT be expanded; the spawned agent receives the literal dollar-sign text, causing path mismatches and health-monitoring false timeouts.
+**IMPORTANT**: in spawn prompts below, substitute `$_SPAWN_TS` and `$_SPAWN_TEAM_DIR` with actual computed values from bash block above — literal resolved strings, not shell variable references. Bare `$TS`/`$TEAM_DIR` inside a quoted Agent prompt string will NOT be expanded; spawned agent receives literal dollar-sign text, causing path mismatches and health-monitoring false timeouts.
 
 ```bash
 # timeout: 5000
@@ -195,7 +195,7 @@ Use `$_SPAWN_TS` (resolved to literal before prompt construction) inside spawn p
 Spawn teammates in **two serialized waves** — qa-specialist and doc-scribe cannot meaningfully audit/document an implementation that does not yet exist; running them in parallel with sw-engineer produces tests written against guessed APIs and docs of placeholder structure:
 
 - **Wave 1 — foundry:sw-engineer alone**: spawn Teammate 1 (sw-engineer) and wait for `Status: complete`.
-- **Wave 2 — foundry:qa-specialist + foundry:doc-scribe in parallel**: after Wave 1 returns, spawn Teammates 2 and 3 together. Both receive the actual implementation file path from Wave 1's output as input context (resolved via `.temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md`).
+- **Wave 2 — foundry:qa-specialist + foundry:doc-scribe in parallel**: after Wave 1 returns, spawn Teammates 2 and 3 together. Both receive actual implementation file path from Wave 1's output as input context (resolved via `.temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md`).
 
 <!-- loads: team-spawn-prompts.md -->
 Spawn prompts: read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/team-spawn-prompts.md` for full prompt text per teammate. Summary below:
@@ -249,7 +249,7 @@ Gather full context before writing any code:
 
 > **Argument type detection**: if `$ARGUMENTS` is positive integer (or prefixed with `#`, e.g. `#123`), treat as GitHub issue number and fetch with `gh issue view`. If text, treat as feature description.
 >
-> **Issue ID parsing rule**: any argument whose leading characters are a run of digits (optionally prefixed with `#`, e.g. `123` or `#123`) is treated as a GitHub issue number — the leading digits are extracted and passed to `issue_fetch.py`. There is no numeric threshold and no `--issue` flag gate. To avoid a numeric feature goal being misread as an issue number, phrase the goal as descriptive text that does not start with digits.
+> **Issue ID parsing rule**: any argument whose leading characters are a run of digits (optionally prefixed with `#`, e.g. `123` or `#123`) is treated as a GitHub issue number — leading digits are extracted and passed to `issue_fetch.py`. No numeric threshold and no `--issue` flag gate. To avoid a numeric feature goal being misread as an issue number, phrase goal as descriptive text that does not start with digits.
 
 ```bash
 _RAW="${ARGUMENTS#\#}"
@@ -267,7 +267,7 @@ fi
 
 If free-text description provided: use Grep tool (pattern `<keyword>`, glob `**/*.py`) to search related code. Path hint: use `src/` if that directory exists, otherwise search from project root (`.`).
 
-**Codemap target derivation** — when the feature extends an existing module or modifies an existing function, pre-set `TARGET_MODULE`/`TARGET_FN` so `codemap-context.md` runs caller-impact queries (`rdeps` module importers, `fn-rdeps` function callers) before implementation, surfacing who breaks if the existing surface changes. The goal may name the extension point as `module.path` or `module.path::function`:
+**Codemap target derivation** — when feature extends an existing module or modifies an existing function, pre-set `TARGET_MODULE`/`TARGET_FN` so `codemap-context.md` runs caller-impact queries (`rdeps` module importers, `fn-rdeps` function callers) before implementation, surfacing who breaks if existing surface changes. Goal may name extension point as `module.path` or `module.path::function`:
 
 ```bash
 # timeout: 5000
@@ -287,9 +287,9 @@ echo "$TARGET_MODULE" > ${TMPDIR:-/tmp}/dev-feature-target-module   # persist �
 echo "$TARGET_FN"     > ${TMPDIR:-/tmp}/dev-feature-target-fn
 ```
 
-> Pure net-new feature (no existing module/function named) → both empty → only the `central` baseline runs, which is correct: nothing to compute caller impact against yet.
+> Pure net-new feature (no existing module/function named) → both empty → only `central` baseline runs, which is correct: nothing to compute caller impact against yet.
 
-**Module-importer impact** — when `CODEMAP_ENABLED=true` and `TARGET_MODULE` is set, run `rdeps` for the modules that import the extension target, so the implementation accounts for downstream importers before changing the surface:
+**Module-importer impact** — when `CODEMAP_ENABLED=true` and `TARGET_MODULE` set, run `rdeps` for modules that import extension target, so implementation accounts for downstream importers before changing surface:
 
 ```bash
 # timeout: 6000
@@ -314,11 +314,11 @@ Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 
 **Complexity classification**: classify as `small` (≤3 files, single concern), `medium` (4–7 files, or 1 new module), or `large` (8+ files, 2+ new modules, or public API change).
 
-Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **feature** context from the Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
+Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **feature** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 Present analysis summary before proceeding.
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **feature** context from the Skill contexts table.
+Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **feature** context from Skill contexts table.
 
 ### Source Verification (optional — when using external APIs or version-sensitive libraries)
 
@@ -363,11 +363,11 @@ Skip if feature calls no external library APIs — no new framework features, no
 
 **Decision — three states** (default is NOT "skip": it runs on substantial features and auto-skips only small ones):
 
-1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip the gate entirely**, any size.
+1. `--no-challenge` (`CHALLENGE_ENABLED=false`) → **skip gate entirely**, any size.
 2. else `--challenge` (`CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)` = `true`) → **always run**, even on a small feature.
-3. else **default** → **run when the feature is substantial** (multi-file, ≳50 lines, or adds any new public API — the common case for a feature); **auto-skip when small** (single file, ≲50 lines, no new public API).
+3. else **default** → **run when feature is substantial** (multi-file, ≳50 lines, or adds any new public API — common case for a feature); **auto-skip when small** (single file, ≲50 lines, no new public API).
 
-Both flags exist because they cover opposite regimes: `--no-challenge` suppresses the gate on the substantial features where it would otherwise fire; `--challenge` forces it on the small features where it would otherwise auto-skip.
+Both flags exist because they cover opposite regimes: `--no-challenge` suppresses gate on substantial features where it would otherwise fire; `--challenge` forces it on small features where it would otherwise auto-skip.
 
 Spawn `foundry:challenger` with scope analysis from Step 1 (purpose, scope, risks, approach):
 
@@ -423,7 +423,7 @@ Both forms must:
 
 **Gate**: demo must fail or error.
 
-`<module>` is a **substitution token** — resolve the actual module file path (e.g. `src/mypackage/feature.py`) into a shell variable `$MODULE_PATH` before executing these blocks. Do NOT execute with the literal `<module>.py` string — bash would interpret `<` as a stdin redirect from a file named `module>.py`.
+`<module>` is a **substitution token** — resolve actual module file path (e.g. `src/mypackage/feature.py`) into shell variable `$MODULE_PATH` before executing these blocks. Do NOT execute with literal `<module>.py` string — bash would interpret `<` as stdin redirect from a file named `module>.py`.
 
 ```bash
 # Resolve MODULE_PATH before this block — e.g.:
@@ -475,7 +475,7 @@ If issue found: revise demo and re-run gate. Don't proceed to Step 3 with flawed
 
 ## Step 3: TDD implementation loop
 
-**TDD test ownership**: lead (or foundry:sw-engineer if delegated) writes all red-green demo and TDD tests in Steps 2–3. foundry:qa-specialist must NOT write the primary demo or red-green tests in any mode — qa-specialist adds edge-case, boundary, and regression tests after implementation is complete (Step 4). This rule applies in both solo and team mode.
+**TDD test ownership**: lead (or foundry:sw-engineer if delegated) writes all red-green demo and TDD tests in Steps 2–3. foundry:qa-specialist must NOT write primary demo or red-green tests in any mode — qa-specialist adds edge-case, boundary, and regression tests after implementation complete (Step 4). Rule applies in both solo and team mode.
 
 Drive implementation by making tests pass, one cycle at a time:
 
@@ -527,7 +527,7 @@ Start from Step 2 demo — already failing, becomes first target. For each piece
    ```
 7. If regressions appear: fix before moving on — never carry forward broken suite
 
-After each cycle, refresh the compaction contract so a mid-loop compaction resumes the TDD loop instead of restarting the Step 2 demo:
+After each cycle, refresh compaction contract so a mid-loop compaction resumes TDD loop instead of restarting Step 2 demo:
 
 ```bash
 # WHY: boundary-1 contract (Step 1) says "next: Step 2 demo"; without this a mid-Step-3 compaction restarts the demo. Redo is idempotent but wastes agent spawns + test runs. checkpoint.md already lists completed steps for resume.
@@ -638,7 +638,7 @@ GATE_EXIT=${PIPESTATUS[0]}
 
 Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
 
-**Branch Safety Guard — no test suite**: if no test suite found (pytest collects 0 tests or `$TEST_CMD` not set), log `⚠ No test suite detected — Branch Safety Guard weakened` and require explicit user confirmation before proceeding past the guard.
+**Branch Safety Guard — no test suite**: if no test suite found (pytest collects 0 tests or `$TEST_CMD` not set), log `⚠ No test suite detected — Branch Safety Guard weakened` and require explicit user confirmation before proceeding past guard.
 
 ## Final Report
 

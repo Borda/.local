@@ -4,8 +4,8 @@
 
 ### Section 1: Header + Setup
 `# %% [markdown]` cell:
-  - Title: `# 🔬 <Competition Title> ⚡PTL + <ModelLibrary>` (emoji fitting the domain)
-  - 2–3 sentences: what the competition is about, approach chosen
+  - Title: `# 🔬 <Competition Title> ⚡PTL + <ModelLibrary>` (emoji fitting domain)
+  - 2–3 sentences: what competition is about, approach chosen
   - Link: `Competition: <url-if-known>`
 
 `# %%` cell (setup):
@@ -27,10 +27,10 @@ Single `# %%` cell — global imports and paths only; **config constants live JI
   - Version print block: `print(f"PyTorch: {torch.__version__}")`, `print(f"Device: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")`
   - `pl.seed_everything(42)` (DL notebooks only) — covers torch/numpy/random; no separate manual seeds needed
 
-> **JIT constants rule**: do NOT dump all constants here. Each major section opens with its own config block — EDA constants before EDA, DataModule constants before Dataset class, Model constants before Model class. Reader sees config exactly when it becomes relevant.
+> **JIT constants rule**: do NOT dump all constants here. Each major section opens own config block — EDA constants before EDA, DataModule constants before Dataset class, Model constants before Model class. Reader sees config exactly when it becomes relevant.
 
 ### Section 3: EDA
-`# %% [markdown]` header: `## EDA` — include explanation of what/why/how it contributes to the solution.
+`# %% [markdown]` header: `## EDA` — include explanation of what/why/how it contributes to solution.
 
 **EDA config block** — first `# %%` cell in this section (JIT constants):
 ```python
@@ -55,7 +55,7 @@ display(df_train.describe())
 **3b. Label / target distribution**
 - bar or pie chart with axis labels, grid, legend when >1 class; `_=` suppression
 
-**3c. Hypothesis validation** — `# %% [markdown]` cell listing hypotheses that gate design decisions, then one `# %%` per hypothesis:
+**3c. Hypothesis validation** — `# %% [markdown]` cell listing hypotheses gating design decisions, then one `# %%` per hypothesis:
 
 Generate hypotheses from `problem_type` + `input_modality` — examples:
 - *class balance* → affects loss function choice (BCE vs weighted cross-entropy); code: `df_train[TARGET_COL].value_counts(normalize=True)`
@@ -73,7 +73,7 @@ Each hypothesis cell pattern:
 # conclusion printed inline: print(f"→ Imbalance ratio: {ratio:.2f} — use weighted loss: {ratio > 3}")
 ```
 
-**3d. Helper definition (JIT)** — define visualization helpers in a `# %%` cell immediately before the cell that uses them. Never define helpers at top of notebook. Pattern:
+**3d. Helper definition (JIT)** — define visualization helpers in `# %%` cell immediately before cell that uses them. Never define helpers at top of notebook. Pattern:
 ```python
 # %%
 def show_images(imgs, titles=None, cols=3):
@@ -94,9 +94,9 @@ def show_images(imgs, titles=None, cols=3):
 
 **3f. Dimension / size analysis** (image modalities) — scatter of (width, height) with marginal histograms; axis labels + grid.
 
-Any modality-specific installs required by the chosen branch go at the top of the setup `# %%` cell.
+Modality-specific installs required by chosen branch go at top of setup `# %%` cell.
 
-**Training sanity check** (Section 5 lens cell) also uses the same modality dispatch — call `show_images()` / `show_volume()` / `show_pcd()` on one batch from `train_dataloader()` to verify shapes before first epoch.
+**Training sanity check** (Section 5 lens cell) also uses same modality dispatch — call `show_images()` / `show_volume()` / `show_pcd()` on one batch from `train_dataloader()` to verify shapes before first epoch.
 
 ### Section 4: Dataset & DataModule (DL) or Feature Engineering (tabular)
 
@@ -164,7 +164,7 @@ nb_epochs      = MAX_EPOCHS if torch.cuda.is_available() else 2  # safe CPU fall
 
 **For DL + PTL — `%%writefile` pattern (mandatory for DL models):**
 
-Write the model class to a standalone file using `%%writefile` so inference notebooks can import without duplication:
+Write model class to standalone file via `%%writefile` — inference notebooks import without duplication:
 
 ```python
 # %%
@@ -189,7 +189,7 @@ class <Name>Model(pl.LightningModule):
     ...
 ```
 
-Follow with an import cell to make the class available in the training notebook:
+Follow with import cell to make class available in training notebook:
 ```python
 # %%
 from {competition_name}_model import <Name>Model

@@ -33,7 +33,7 @@ Check `CHANGELOG.md`: `[Unreleased]` or `$TARGET` section covers `$RANGE` commit
 
 ### Check 4b: Doc weight ratio (🚀 Added features)
 
-For each 🚀 Added entry in CHANGELOG `$TARGET` or `[Unreleased]` identifying a significant new entity (new public skill, new command, new agent, new submodule, new mode): compute **doc weight** for that feature and 2–3 comparable existing features of same nature (same task type, mode category, conceptual peer) in relevant README or docs file.
+For each 🚀 Added entry in CHANGELOG `$TARGET` or `[Unreleased]` identifying significant new entity (new public skill, new command, new agent, new submodule, new mode): compute **doc weight** for that feature and 2–3 comparable existing features of same nature (same task type, mode category, conceptual peer) in relevant README or docs file.
 
 Doc weight = `header_score + coverage_score + example_score`:
 - `header_score`: H2 = 3, H3 = 2, H4/deeper = 1, no heading = 0
@@ -87,4 +87,4 @@ Date: [date] | Range: [last-tag]..HEAD ([N] commits)
 [e.g., "resolve open PRs → re-run `/release audit v1.3.0` to verify → `/release prepare v1.3.0`"]
 ```
 
-**Terminal output** — after writing the report file, print the readiness check table (the `| Check | Status | Detail |` rows only, no YAML header, no verdict prose) directly to the terminal so it appears inline in the Claude response. This is mandatory even when audit runs as a sub-phase of `/release prepare` — do not treat the table as intermediate pipeline output or route it only to the report file; it must appear in the terminal response before prepare proceeds to Phase 2.
+**Terminal output** — after writing report file, print readiness check table (`| Check | Status | Detail |` rows only, no YAML header, no verdict prose) directly to terminal so it appears inline in Claude response. Mandatory even when audit runs as sub-phase of `/release prepare` — don't treat table as intermediate pipeline output or route it only to report file; must appear in terminal response before prepare proceeds to Phase 2.

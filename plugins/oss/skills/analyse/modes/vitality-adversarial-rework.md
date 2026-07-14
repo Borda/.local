@@ -2,7 +2,7 @@
 
 ## Step 6 — Adversarial Rework Loop
 
-After Step 5 aggregation complete — report includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess **complete combined report** iteratively; rework applied between iterations.
+After Step 5 aggregation complete — report includes main analysis + Codex independent review + divergence resolution. Adversarial reviewers assess **complete combined report** iteratively; rework applied between iterations
 
 ```bash
 # CODEX_AVAILABLE set in Step 4 — reuse as-is

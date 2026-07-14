@@ -4,7 +4,7 @@
 
 **Net-state principle**: classify only HEAD state, not development journey. Feature added then removed within range = net effect zero — omit.
 
-**PR accumulation**: list ALL contributing PR numbers for net-surviving entry. **Same category only** — two PRs merge under one bullet only when both classify into SAME section. Later PR fixing bug in same-range feature = own 🔧 Fixed entry. **Trivial-fix exception**: fix or doc tweak with no standalone user-visible effect folds into parent Added bullet. When in doubt: separate entries safer.
+**PR accumulation**: list ALL contributing PR numbers for net-surviving entry. **Same category only** — two PRs merge under one bullet only when both classify into SAME section. Later PR fixing bug in same-range feature = own 🔧 Fixed entry. **Trivial-fix exception**: fix or doc tweak with no standalone user-visible effect folds into parent Added bullet. When in doubt: separate entries safer
 
 Section order (fixed): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed → 🗑️ Deprecated → ❌ Removed → 🔧 Fixed → 🔒 Security → 🔄 Reverted
 
@@ -23,7 +23,7 @@ Section order (fixed): 🚀 Added → ⚠️ Breaking Changes → 🌱 Changed �
 
 **Same-release feature+fix dedup**: 🔧 Fixed targeting code introduced same release = never shipped = fold into 🚀 Added or omit.
 
-**Breaking vs Deprecated vs Removed**: old call still works → Deprecated. Deprecated in prior release and now removed → Removed. **Prior-deprecation body-signal**: commit body contains "deprecated in vX", "previously deprecated", "was deprecated", "emits DeprecationWarning since", or "deprecated since" → treat as Removed regardless of `feat!:`/`BREAKING CHANGE:` markers. **Bug fixed to match spec**: classify as 🌱 Changed when users relied on buggy behavior; ⚠️ Breaking Changes only if load-bearing and causes widespread breakage.
+**Breaking vs Deprecated vs Removed**: old call still works → Deprecated. Deprecated in prior release, now removed → Removed. **Prior-deprecation body-signal**: commit body contains "deprecated in vX", "previously deprecated", "was deprecated", "emits DeprecationWarning since", or "deprecated since" → treat as Removed regardless of `feat!:`/`BREAKING CHANGE:` markers. **Bug fixed to match spec**: classify as 🌱 Changed when users relied on buggy behavior; ⚠️ Breaking Changes only if load-bearing, causes widespread breakage.
 
 **OMIT-INTERNAL body-signal override**: commit body contains "No code changes", "no user-facing changes", "internal only", "no public API changes", "internal buffer changes only", "internal restructure" OR all paths under `.github/`, `ci/`, `scripts/`, `Makefile`, `*.yml` under `.github/` → classify as Internal. **Exception**: BREAKING CHANGE footer or confirmed user-visible breakage overrides.
 
