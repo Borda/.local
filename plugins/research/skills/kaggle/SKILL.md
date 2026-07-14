@@ -108,11 +108,10 @@ echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/kaggle-keep-items"  # persist for Step
 **Unsupported flag check** — scan `$ARGUMENTS` for remaining `--<token>` tokens after supported flags extracted (`--eda-only`, `--inference-only`, `--offline-setup`, `--type`, `--resume`, `--keep`). Found: print `` ! Unknown flag(s): `--<token>`. Supported: `--eda-only`, `--inference-only`, `--offline-setup`, `--type <type>`, `--resume <path>`, `--keep "<items>"`. `` then invoke `AskUserQuestion` — (a) **Abort** · (b) **Continue ignoring**. On Abort: stop.
 
 **Context collection** — run in parallel:
-1. Check style guide exists at `.temp/kaggle-style-distill.md`; read if present
-2. URL provided in args: `WebFetch` competition page; extract problem description, target metric, data format, evaluation — read and quote actual text, never paraphrase from training knowledge
-3. `--resume`: read existing script (`Read` tool)
-4. Scan `.experiments/kaggle/` (`Glob` pattern `*.py`) for prior scripts; read first 30 lines of each — find similar past competitions, use as structural reference
-5. Check `resources/competitors/` for `.ipynb`/`.py` files — found: read each, summarise approach (model choice, preprocessing, feature engineering, augmentation). Use findings to inform detection method and domain-specific preprocessing decisions in Step 2.
+1. URL provided in args: `WebFetch` competition page; extract problem description, target metric, data format, evaluation — read and quote actual text, never paraphrase from training knowledge
+2. `--resume`: read existing script (`Read` tool)
+3. Scan `.experiments/kaggle/` (`Glob` pattern `*.py`) for prior scripts; read first 30 lines of each — find similar past competitions, use as structural reference
+4. Check `resources/competitors/` for `.ipynb`/`.py` files — found: read each, summarise approach (model choice, preprocessing, feature engineering, augmentation). Use findings to inform detection method and domain-specific preprocessing decisions in Step 2.
 
 **Grounding protocol — mandatory before Step 2:**
 
@@ -172,7 +171,7 @@ FOUNDRY_AVAILABLE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/foundry/*/agents
 [ -z "$FOUNDRY_AVAILABLE" ] && { printf "⚠ foundry plugin not available — kaggle notebook generation requires foundry:sw-engineer\nInstall: claude plugin install foundry@borda-ai-rig\n"; exit 1; }
 ```
 
-Spawn prompt assembled from inline problem profile (below) plus section template loaded from appropriate mode file:
+Spawn prompt assembled from the inline problem profile below plus exactly one resolved composition row:
 
 ```bash
 # Re-hydrate flags persisted in Step 1 (bash state lost between Bash calls)
@@ -180,34 +179,27 @@ COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name" 2>/dev/null || 
 EDA_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-eda-only" 2>/dev/null || echo "false")
 INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only" 2>/dev/null || echo "false")
 _KAGGLE_MODES="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/kaggle/modes"
-TEMPLATE_FILE="$_KAGGLE_MODES/full.md"
-[ "$EDA_ONLY" = "true" ] && TEMPLATE_FILE="$_KAGGLE_MODES/eda-only.md"
-[ "$INFERENCE_ONLY" = "true" ] && TEMPLATE_FILE="$_KAGGLE_MODES/inference-only.md"
+COMPOSITION_FILE="$_KAGGLE_MODES/composition.md"
+MODE="full"
+[ "$EDA_ONLY" = "true" ] && MODE="eda-only"
+[ "$INFERENCE_ONLY" = "true" ] && MODE="inference-only"
 
-# Derive output filename from mode — must match template contract before spawning
+# Derive output filename from mode — must match the composition contract before spawning
 OUTPUT_SUFFIX=""
 [ "$INFERENCE_ONLY" = "true" ] && OUTPUT_SUFFIX="-inference"
 OUTFILE=".experiments/kaggle/${COMPETITION_NAME}${OUTPUT_SUFFIX}.py"
-echo "Output: $OUTFILE"
+echo "$MODE" > "${TMPDIR:-/tmp}/kaggle-mode"
+echo "Mode: $MODE · Output: $OUTFILE"
 ```
 
-> loads: full.md
-> loads: eda-only.md
-> loads: inference-only.md
+Read `$COMPOSITION_FILE` and select the exact `$MODE` row. Then read each named contract once, from left to right, and read `style-rules.md` once. Read `modality-dispatch.md` only when a selected section requests a modality branch. Do not load unselected section contracts. Pass the selected row and resolved contract contents to `foundry:sw-engineer` after the problem profile block below.
 
-Read `$TEMPLATE_FILE` — contains required sections template. Pass to foundry:sw-engineer as continuation of spawn prompt after problem profile block below.
-
-Spawn **foundry:sw-engineer** with this prompt preamble (inline, then continue with content from `$TEMPLATE_FILE`):
+Spawn **foundry:sw-engineer** with this prompt preamble (inline, then continue with the resolved composition contracts):
 
 ```markdown
 Write a complete Kaggle competition notebook script to `<OUTFILE>` (substitute expanded path from bash block above).
 
 Format: Jupytext `# %%` Python script — every cell separated by `# %%` (code) or `# %% [markdown]` (markdown).
-
-Formatting rules (strict):
-- `[markdown]` blank lines: empty line only — never `#` alone (bare `#` = H1 in Kaggle)
-- Shell commands: write as `# ! cmd` (Python comment) — valid syntax, visible in Jupyter; never bare `! cmd` lines
-- Markdown cell headers: describe only what the cell CONTAINS now — never hint at future refactoring or package destinations (e.g. never `## Helpers (inlined — distill to src/X/ after validation)`)
 
 ## Problem profile
 - Competition: <competition-name>
@@ -219,7 +211,13 @@ Formatting rules (strict):
 - Use PTL: <use_ptl>
 - Description: <competition description if available>
 
-[Continue with section template from $TEMPLATE_FILE]
+[Continue with the selected row from composition.md, followed by the resolved section contracts in order, style-rules.md, and the selected modality branch when applicable.]
+
+## Completion
+
+Write `<OUTFILE>`. Return only:
+
+{"status":"done","file":"<OUTFILE>","lines":N,"sections":N,"problem_type":"<type>","mode":"<MODE>","confidence":0.N}
 ```
 
 **Synchronous spawn note**: `foundry:sw-engineer` spawned synchronously (not `run_in_background=true`), so CLAUDE.md §6 poll-based monitoring unreachable mid-call. After Agent() returns, check agent's output under `.experiments/kaggle/`; missing or empty → treat as timed out, surface with ⏱ marker — never silently omit.
@@ -248,14 +246,16 @@ After agent completes:
 
 1. Read first 30 lines of generated file to verify `# %%` structure
 2. Count cell markers: `grep -c "^# %%" .experiments/kaggle/<name>.py`
-3. Check all required sections present: `grep "^# %% \[markdown\]" <file>`
+3. Resolve the current row from `composition.md`; verify every listed section is present and no unlisted section was generated
 
 ```bash
 # Re-derive OUTFILE from flags persisted in Step 1 (bash state lost between steps)
 COMPETITION_NAME=$(cat "${TMPDIR:-/tmp}/kaggle-competition-name" 2>/dev/null || echo "$COMPETITION_NAME")
 INFERENCE_ONLY=$(cat "${TMPDIR:-/tmp}/kaggle-inference-only" 2>/dev/null || echo "false")
+MODE=$(cat "${TMPDIR:-/tmp}/kaggle-mode" 2>/dev/null || echo "full")
 OUTPUT_SUFFIX=""; [ "$INFERENCE_ONLY" = "true" ] && OUTPUT_SUFFIX="-inference"
 OUTFILE=".experiments/kaggle/${COMPETITION_NAME}${OUTPUT_SUFFIX}.py"
+echo "=== Composition ==="; echo "$MODE"
 echo "=== Cell count ==="; grep -c "^# %%" "$OUTFILE"  # timeout: 5000
 echo "=== Sections ===";   grep "^# %% \[markdown\]" "$OUTFILE"  # timeout: 5000
 echo "=== File size ===";  wc -l "$OUTFILE"  # timeout: 5000
@@ -263,6 +263,7 @@ echo "=== File size ===";  wc -l "$OUTFILE"  # timeout: 5000
 
 Print to terminal:
 - Output path (`$OUTFILE`)
+- Mode + resolved composition contracts
 - Problem type + recommended model
 - Cell count and section list
 - Missing required sections flagged with `⚠`
@@ -298,20 +299,3 @@ rm -f .claude/state/skill-contract.md  # clear contract — kaggle notebook comp
 ```
 
 </workflow>
-
-<notes>
-
-- **`# %%` format**: Jupytext light format — compatible with VS Code Jupyter extension, JupyterLab, `jupytext --to notebook <file>.py`. Each `# %%` starts new code cell; `# %% [markdown]` starts markdown cell where lines prefixed `# ` are markdown content. **Blank lines inside `[markdown]` cells must be actual empty lines** — no `#`, no `# `. Bare `#` renders as H1 heading in Kaggle. Pattern: `# Last sentence.` → empty line → `# Next paragraph.`
-- **Shell commands — `# ! cmd`**: write every shell command as `# ! cmd` — valid Python comment, no syntax error, visible in Jupyter source. Example: `# ! head -5 {path}`. Do NOT write bare `! cmd` lines — cause `SyntaxError` when running `.py` file as Python script.
-- **`%` magic — NEVER convert**: write `%matplotlib inline` verbatim. Do NOT convert to `get_ipython().run_line_magic(...)`. Jupytext handles `%` magic natively; exclude `.experiments/` from linting (pyproject.toml) — never rewrite magic syntax.
-- **PTL version compat**: newer Lightning uses `accelerator="auto", devices="auto"` not `gpus=1`; use new API in generated code
-- **Frozen packages pattern**: two-step offline setup — (1) download: `# ! pip download -q <pkg> --dest frozen_packages/` (run once online); (2) install: `# ! pip install -q --no-index --find-links frozen_packages/ <pkg> 2>/dev/null || pip install -q <pkg>` (works online and offline). When `OFFLINE_SETUP=true`, step 1 replaced by `# ! cp -r ../input/python-packages/frozen_packages .` (packages already stored as Kaggle input dataset)
-- **Inference notebook pattern**: each training notebook saves checkpoints to `logs/`; companion notebook loads from checkpoint for inference — script includes both inline + load-from-ckpt cells so same file works both ways
-- **Style guide regeneration**: `.temp/kaggle-style-distill.md` missing at Step 1 → style rules embedded in Step 3's generator prompt are authoritative source — no style guide file required
-- **Sharing context**: competition notebooks meant to be shared publicly as learning resources; clarity and educational value matter alongside score
-- **No forward-refs in headers**: markdown cell headers describe only what present in cell — never annotate with future refactoring plans (e.g. `## Helpers (distill to src/X/ later)` forbidden); such notes belong in distillation gate dialogue, not notebook source
-- **Storytelling structure**: notebook must read as coherent narrative for public audience — each section builds on findings of previous; EDA conclusions motivate design decisions in Dataset/Model; hypothesis validation in EDA must explicitly connect to choices made downstream (loss function, augmentation, image size)
-- **JIT constants**: never dump all config at top; each major section opens with own `# %%` config block containing only constants needed by that section — reader sees config exactly when it becomes relevant; `IMAGE_SIZE` belongs in DataModule section, `MODEL_NAME`/`LEARNING_RATE` belong in Model section
-- **JIT helpers**: define every helper function in `# %%` cell immediately before cell that calls it — never in global "helpers" block at top; reader learns helper at moment of use
-
-</notes>

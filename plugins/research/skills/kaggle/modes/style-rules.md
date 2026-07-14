@@ -1,4 +1,4 @@
-<!-- file: style-rules.md — consumers: full.md, eda-only.md, inference-only.md -->
+<!-- file: style-rules.md — applied by composition.md -->
 
 Apply ALL of these in generated script:
 
@@ -7,11 +7,10 @@ Apply ALL of these in generated script:
 3. `# ==============================` between logical blocks within cell (not every line — only major breaks)
 4. `_=` to suppress matplotlib/pandas return values: `_= df["col"].plot(...)`
 5. **Every plot: axis labels + grid + legend when multiple series**: always call `plt.xlabel("...")`, `plt.ylabel("...")`, `plt.grid(True)` after any plot; chart with multiple lines/bars/hues → add `plt.legend()` or pass `legend=True`; seaborn facets use `g.set_axis_labels("x label", "y label")`
-6. ALL_CAPS for paths and config constants
-7. Version print block right after imports
-8. No `if __name__ == '__main__':` guards
-9. No argparse, no dataclasses for config
-10. **Markdown blank lines — empty lines only**
-11. **`display()` over `print()` for pandas objects**: use `display(df.head())`, `display(df.dtypes)`, `display(metrics.dropna(axis=1, how="all").head())`; `print()` for scalars and status strings only: in `# %% [markdown]` cells, blank lines between paragraphs/sections must be actual empty lines (no characters). Never `#` alone (renders as H1 in Kaggle), never `# ` with trailing space. Pattern: `# Last sentence.` → empty line → `# Next paragraph.`
-12. **No doctests in ipy scripts**: doctests belong in package modules, not notebook scripts — `# %% [markdown]` cell above function IS explanation; don't duplicate as doctest
-13. **Compact docstrings — never omit**: always include one-line docstring; never omit — narrative lives in `# %% [markdown]` cell immediately above function cell; full Google-style docstrings with `Args:`, `Returns:`, `Example:` blocks apply only after distillation to `src/` utils package
+6. No `if __name__ == '__main__':` guards
+7. No argparse, no dataclasses for config
+8. **Markdown blank lines — empty lines only**: inside `# %% [markdown]` cells, use a truly empty line between paragraphs; never write bare `#` or `# ` lines because Kaggle renders them as headings
+9. **`display()` over `print()` for pandas objects**: use `display(df.head())`, `display(df.dtypes)`, `display(metrics.dropna(axis=1, how="all").head())`; use `print()` only for scalars and status strings
+10. **No doctests in ipy scripts**: doctests belong in package modules, not notebook scripts — `# %% [markdown]` cell above function cell IS explanation; don't duplicate as doctest
+11. **Compact docstrings — never omit**: always include one-line docstring; never omit — narrative lives in `# %% [markdown]` cell immediately above function cell; full Google-style docstrings with `Args:`, `Returns:`, `Example:` blocks apply only after distillation to `src/` utils package
+12. **No forward references in headers**: describe only what the cell contains now; keep future refactoring or package-distillation plans out of notebook headings
