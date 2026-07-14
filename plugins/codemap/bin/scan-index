@@ -45,6 +45,8 @@ from _schema import SCAN_VERSION, Resolution
 from _telemetry import log_cli
 
 _STDLIB_MODULES: frozenset[str] = frozenset(sys.stdlib_module_names)  # Python 3.10+; project requires 3.10+
+_WINDOWS_REPLACE_RETRIES = 8
+_WINDOWS_REPLACE_DELAY_SECONDS = 0.025
 
 
 @dataclass(frozen=True)
@@ -1337,7 +1339,7 @@ def _docstring_nodes(tree: ast.Module) -> list[tuple[ast.AST, int]]:
     return results
 
 
-def extract_sphinx_xrefs(tree: ast.Module, filepath: Path, current_module: str) -> list[dict]:
+def extract_sphinx_xrefs(tree: ast.Module, filepath: Path, root: Path, current_module: str) -> list[dict]:
     """Extract Sphinx cross-reference roles from every docstring in *tree*.
 
     Walks module-, class-, function-, and async-function-level docstrings and
@@ -1351,6 +1353,7 @@ def extract_sphinx_xrefs(tree: ast.Module, filepath: Path, current_module: str) 
     Args:
         tree: parsed AST of the module.
         filepath: filesystem path of the source file (recorded in each entry).
+        root: project root used to store a portable relative file path.
         current_module: dotted name of the module (used to anchor bare names).
 
     Returns:
@@ -1358,7 +1361,7 @@ def extract_sphinx_xrefs(tree: ast.Module, filepath: Path, current_module: str) 
         document order. ``source`` is always ``"sphinx"``.
     """
     results: list[dict] = []
-    file_str = str(filepath)
+    file_str = filepath.relative_to(root).as_posix()
     for node, base_line in _docstring_nodes(tree):
         doc = ast.get_docstring(node, clean=False)
         if not doc:
@@ -2728,7 +2731,7 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
         )
         return {
             "name": name,
-            "path": str(rel_path),
+            "path": rel_path.as_posix(),
             "status": "degraded",
             "reason": f"file too large ({file_size} bytes) — skipped to prevent OOM",
         }
@@ -2738,7 +2741,7 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
         except UnicodeDecodeError as exc:
             # errors="replace" would substitute U+FFFD and index corrupted source
             # silently; mark degraded so scan-query surfaces it in degraded_files.
-            return {"name": name, "path": str(rel_path), "status": "degraded", "reason": f"encoding: {exc}"}
+            return {"name": name, "path": rel_path.as_posix(), "status": "degraded", "reason": f"encoding: {exc}"}
         tree = ast.parse(source, filename=str(filepath))
         try:
             imports, nm, mm, star_imports = _extract_imports_and_scope(tree, name)
@@ -2751,11 +2754,11 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
         _loc, _is_entry = _count_loc_and_main_guard(source)
         is_test = bool(_TEST_PATH_RE.search(rel_path.as_posix()))
         entity_type, pkg = _classify_entity(rel_path, name)
-        sphinx_xrefs = extract_sphinx_xrefs(tree, filepath, name)
+        sphinx_xrefs = extract_sphinx_xrefs(tree, filepath, root, name)
         exports = extract_module_exports(tree)
         entry: dict = {
             "name": name,
-            "path": str(rel_path),
+            "path": rel_path.as_posix(),
             "loc": _loc,
             "dep_count": len(imports),
             "direct_imports": imports,
@@ -2775,9 +2778,9 @@ def _parse_file(filepath: Path, root: Path, src_root: Path) -> dict:
             entry["mock_patches"] = extract_mock_patches(tree, filepath)
         return entry
     except SyntaxError as exc:
-        return {"name": name, "path": str(rel_path), "status": "degraded", "reason": f"SyntaxError: {exc}"}
+        return {"name": name, "path": rel_path.as_posix(), "status": "degraded", "reason": f"SyntaxError: {exc}"}
     except Exception as exc:
-        return {"name": name, "path": str(rel_path), "status": "degraded", "reason": str(exc)}
+        return {"name": name, "path": rel_path.as_posix(), "status": "degraded", "reason": str(exc)}
 
 
 def _build_internal_prefix_set(indexed_names: set[str]) -> set[str]:
@@ -3401,6 +3404,20 @@ def _build_index(args: argparse.Namespace, root: Path, out_path: Path) -> dict:
     return scan(root, coverage_path=coverage_path)
 
 
+def _replace_index(tmp_path: Path, out_path: Path) -> None:
+    """Atomically promote a complete temporary index, retrying transient NTFS sharing failures."""
+    for attempt in range(_WINDOWS_REPLACE_RETRIES):
+        try:
+            tmp_path.replace(out_path)
+            return
+        except PermissionError as exc:
+            transient = sys.platform == "win32" and getattr(exc, "winerror", None) in {5, 32}
+            if not transient or attempt == _WINDOWS_REPLACE_RETRIES - 1:
+                raise
+            # Keep both complete files intact while a concurrent reader releases the destination.
+            time.sleep(_WINDOWS_REPLACE_DELAY_SECONDS * 2**attempt)
+
+
 def main() -> None:
     """Parse CLI arguments and run the scan."""
     parser = argparse.ArgumentParser(description="Build the codemap structural index.")
@@ -3460,7 +3477,7 @@ def main() -> None:
         try:
             with tmp_path.open("w") as f:
                 json.dump(index, f, separators=(",", ":"))
-            tmp_path.replace(out_path)
+            _replace_index(tmp_path, out_path)
         except BaseException:
             # Never leak a PID-suffixed temp if the write/replace fails or is interrupted.
             tmp_path.unlink(missing_ok=True)

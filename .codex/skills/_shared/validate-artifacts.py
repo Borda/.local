@@ -110,6 +110,17 @@ SKILL_REQUIREMENTS: dict[str, dict[str, object]] = {
             "root-cause.md": ["Evidence", "Falsification", "Rejected Alternatives", "Confidence"],
         },
     },
+    "kaggle": {
+        "files": {
+            "profile.md": [
+                "Normalized Inputs",
+                "Grounded Facts",
+                "Model Decision",
+                "Verification",
+                "Residual Limits",
+            ],
+        },
+    },
     "manage": {
         "files": {
             "ownership.md": ["Intent", "Owned Files", "Verification", "Residual Limits"],

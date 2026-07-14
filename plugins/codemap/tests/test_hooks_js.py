@@ -35,6 +35,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -93,16 +94,19 @@ def _write_index(idx_dir: Path, proj: str, *, git_sha: str, modules: int = 2) ->
 def _fake_plugin_root(root: Path, *, with_scan_bin: bool, marker: Path) -> Path:
     """Create a fake CLAUDE_PLUGIN_ROOT.
 
-    When *with_scan_bin* is True, ``bin/scan-index`` is an executable shell stub that
-    touches *marker* on spawn — the observable proof the hook launched a refresh.
+    When *with_scan_bin* is True, ``bin/scan-index`` is a runnable platform-native
+    stub that touches *marker* on spawn — the observable proof the hook launched a refresh.
     """
     plugin_root = root / "plugin"
     bin_dir = plugin_root / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     if with_scan_bin:
         scan_bin = bin_dir / "scan-index"
-        scan_bin.write_text(f'#!/bin/sh\necho spawned > "{marker}"\n')
-        scan_bin.chmod(scan_bin.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        if os.name == "nt":
+            scan_bin.write_text(f'from pathlib import Path\nPath(r"{marker}").write_text("spawned")\n')
+        else:
+            scan_bin.write_text(f'#!/bin/sh\necho spawned > "{marker}"\n')
+            scan_bin.chmod(scan_bin.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return plugin_root
 
 
@@ -119,6 +123,7 @@ def _run_inject(
         **os.environ,
         "CODEMAP_INDEX_DIR": str(idx_dir),
         "CLAUDE_PLUGIN_ROOT": str(plugin_root),
+        "PYTHON": sys.executable,
         "TMPDIR": str(tmpdir),
         "TEMP": str(tmpdir),
         "TMP": str(tmpdir),
@@ -166,6 +171,7 @@ def _run_inject_with_event(
         **os.environ,
         "CODEMAP_INDEX_DIR": str(idx_dir),
         "CLAUDE_PLUGIN_ROOT": str(plugin_root),
+        "PYTHON": sys.executable,
         "TMPDIR": str(tmpdir),
         "TEMP": str(tmpdir),
         "TMP": str(tmpdir),
@@ -550,7 +556,7 @@ class TestInjectPreambleStaleCollapse:
 
         assert result.returncode == 0, result.stderr
         lines = [ln for ln in result.stdout.splitlines() if ln]
-        assert lines == ["[codemap] index stale · refresh in progress"]
+        assert lines == ["[codemap] index stale - refresh in progress"]
         # Collapsed form exits before the module-count parse — no second "Prefer" line.
         assert "Prefer scan-query" not in result.stdout
 
@@ -574,7 +580,7 @@ class TestInjectPreambleStaleCollapse:
 
         assert result.returncode == 0, result.stderr
         lines = [ln for ln in result.stdout.splitlines() if ln]
-        assert lines == ["[codemap] index stale · refresh pending"]
+        assert lines == ["[codemap] index stale - refresh pending"]
 
     def test_stale_collapse_isolated_from_preamble_flag(self, tmp_path: Path) -> None:
         """A fresh preamble flag (current-path dedup) does NOT collapse the stale reminder.

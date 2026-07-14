@@ -1697,7 +1697,8 @@ class TestSphinxXrefs:
         (root / "pkg").mkdir()
         # Module-level docstring of the __init__ module.
         (root / "pkg" / "__init__.py").write_text(
-            '"""Package overview — see :func:`mymod.target_fn` for the canonical helper."""\n'
+            '"""Package overview — see :func:`mymod.target_fn` for the canonical helper."""\n',
+            encoding="utf-8",
         )
         index_path = self._scan(root, scan_index)
         rc, data, _ = self._query(root, index_path, scan_query, ["xrefs", "mymod::target_fn"])

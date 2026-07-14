@@ -70,7 +70,7 @@ class TestContextContract:
         """Target derivation is explicitly consumer-supplied, not baked into the generic contract."""
         text = _CONTEXT_CONTRACT.read_text(encoding="utf-8")
         assert "consumer-supplied inputs" in text
-        assert "this contract does not derive them" in text
+        assert "contract doesn't derive them" in text
 
     def test_carries_evidence_line_and_completeness_semantics(self):
         """The evidence line and all four completeness states are defined once in the contract."""
@@ -132,8 +132,8 @@ class TestDevelopWrapper:
     def test_keeps_graceful_fallback(self):
         """Wrapper degrades gracefully when the codemap plugin is absent — never a broken load."""
         text = _DEVELOP_CONTEXT.read_text(encoding="utf-8")
-        assert "Fallback when the codemap plugin is absent" in text
-        assert "Never break the load." in text
+        assert "Fallback when codemap plugin absent" in text
+        assert "Never break load." in text
 
     @pytest.mark.parametrize(
         "surface",
@@ -166,7 +166,7 @@ class TestDevelopGatesWrapper:
         """Wrapper carries develop's skip flag and a graceful fallback."""
         text = _DEVELOP_GATES.read_text(encoding="utf-8")
         assert "CODEMAP_RAW=auto" in text
-        assert "Never break the load." in text
+        assert "Never break load." in text
 
 
 @pytest.mark.skipif(not _OSS_GATES.is_file(), reason="oss plugin sibling tree absent")

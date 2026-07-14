@@ -228,15 +228,21 @@ def _contaminates(
     # Pass the batch via a tempfile (one test per line). pytest accepts
     # ``@filename`` for "args from file"; using a tempfile keeps the OS argv
     # cap from biting on large suites, mirroring bash's mktemp approach.
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=True, encoding="utf-8") as batch_file:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as batch_file:
         batch_file.write("\n".join(batch))
         batch_file.write("\n")
         batch_file.flush()
+        batch_path = Path(batch_file.name)
+    # Close before pytest opens the args file: Windows forbids sharing the active
+    # delete-marked handle, unlike Unix where this used to appear to work.
+    try:
         # Reference the batch via pytest's ``@file`` args-from-file syntax rather
         # than expanding it onto argv, so early binary-search rounds on large
         # suites never hit the OS argv-length cap (the reason the tempfile exists).
-        args = [f"@{batch_file.name}", failing_test, "-q", "--tb=no"]
+        args = [f"@{batch_path}", failing_test, "-q", "--tb=no"]
         output = _run_pytest(pytest_cmd, args)
+    finally:
+        batch_path.unlink(missing_ok=True)
     return bool(FAILURE_RE.search(output))
 
 

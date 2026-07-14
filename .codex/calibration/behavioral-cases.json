@@ -447,6 +447,44 @@
     },
     {
       "expected_findings": [
+        "scope-context-not-rendered",
+        "selection-ledger-compressed",
+        "selectable-table-not-presented"
+      ],
+      "id": "code-remediate-scope-context-compressed",
+      "prompt": "Assess a code-remediate workflow that writes a complete resolution-scope.md with selection metadata and an indexed six-column table, but shows the user only a short Selectable items numbered list before asking which findings to remediate. The terminal never prints the full pre-edit resolution-scope.md context.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "scope-report-link-missing",
+        "full-report-path-missing"
+      ],
+      "id": "code-remediate-scope-report-link-missing",
+      "prompt": "Assess a code-remediate workflow that prints the complete pre-edit resolution-scope.md context and then asks the user which findings to remediate, but does not print a Full report link or path to the complete action-items.md resolution report.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "scope-context-not-visible",
+        "tool-output-treated-as-user-visible",
+        "selection-widget-opened-before-visible-ledger"
+      ],
+      "id": "code-remediate-scope-context-tool-only",
+      "prompt": "Assess a code-remediate workflow that runs cat on the complete resolution-scope.md and prints its Full report path in a terminal tool, but the UI collapses that output to a Read resolution-scope.md summary. The agent sends only a short status message before opening the scope-selection widget, so the user never sees the complete ledger or report path.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
+        "codex-coauthor-trailer-missing",
+        "commit-template-not-used"
+      ],
+      "id": "code-remediate-commit-codex-attribution-missing",
+      "prompt": "Assess a code-remediate workflow where the user explicitly requests a local commit after remediation gates pass, but the agent creates a commit without the required Codex co-author trailer and does not use the shared commit-response template.",
+      "target": "code-remediate"
+    },
+    {
+      "expected_findings": [
         "resolution-workplan-missing",
         "selected-item-ungrouped",
         "specialist-assignment-missing",
@@ -823,6 +861,15 @@
     },
     {
       "expected_findings": [
+        "codex-coauthor-trailer-missing",
+        "commit-template-not-used"
+      ],
+      "id": "manage-universal-codex-commit-attribution",
+      "prompt": "Assess an agent run where Codex creates a local commit after an explicit request and passing checks, but the commit omits the required Codex co-author trailer and the agent does not use the shared commit-response template. The workflow is not Code Remediate.",
+      "target": "manage"
+    },
+    {
+      "expected_findings": [
         "implicit-commit-confirmation-missing",
         "proposed-commit-message-missing",
         "unauthorized-commit"
@@ -847,6 +894,15 @@
       "id": "manage-default-completion-no-commit",
       "prompt": "Assess an ordinary completed implementation task with no explicit or implicit commit request where the agent creates a local commit instead of leaving accepted changes unstaged for review.",
       "target": "manage"
+    },
+    {
+      "expected_findings": [
+        "caveman-ultra-report-required",
+        "evidence-loss-risk"
+      ],
+      "id": "manage-verbose-report-and-handover",
+      "prompt": "Assess a Codex configuration change that permits verbose report, handover, or context-pack prose; removes exact command, evidence, failure, risk, owner/action, or confidence details during compression; treats a prose summary as a replacement for JSON, logs, patches, or required tables; or applies Ultra where security, irreversible, or ordered instructions become ambiguous.",
+      "target": "manage"
     }
   ],
   "thresholds": {
@@ -856,5 +912,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.8"
+  "version": "1.10"
 }

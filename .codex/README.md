@@ -272,6 +272,7 @@ Shared gate references:
 Artifact contract:
 
 - `.reports/codex/<skill>/<timestamp>/result.json`
+- New human-readable reports, handovers, context packs, and final summaries use Caveman Ultra; JSON, logs, patches, code, required tables, and evidence remain lossless. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
 
 Calibration runner: inspect `.codex/calibration/run.py --help`, then choose default or strict-live mode from its authoritative CLI contract.
 

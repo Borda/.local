@@ -118,10 +118,10 @@ function handleMissingIndex(projRoot, proj) {
   }
 
   process.stdout.write(
-    `[codemap] No structural index for "${proj}" (.cache/codemap/${proj}.json missing) — blast-radius / coupling queries unavailable.\n` +
-      `ACTION (ask once): call AskUserQuestion — ask the user whether to build the codemap index now.\n` +
-      `  • yes → run scan-index (\${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index) in the FOREGROUND and WAIT until it finishes, then continue using scan-query.\n` +
-      `  • no  → proceed without codemap; do not raise again this session.\n`,
+    `[codemap] No structural index for "${proj}" (.cache/codemap/${proj}.json missing) - blast-radius / coupling queries unavailable.\n` +
+      `ACTION (ask once): call AskUserQuestion - ask the user whether to build the codemap index now.\n` +
+      `  - yes -> run scan-index (\${CLAUDE_PLUGIN_ROOT:-plugins/codemap}/bin/scan-index) in the FOREGROUND and WAIT until it finishes, then continue using scan-query.\n` +
+      `  - no -> proceed without codemap; do not raise again this session.\n`,
   );
   process.exit(0);
 }
@@ -300,13 +300,29 @@ function main() {
       if (fs.existsSync(scanBin)) {
         try {
           // Non-blocking: detached child, stdin/stdout/stderr all ignored
-          const child = spawn(scanBin, ["--root", scanRoot, "--timeout", "300"], {
+          const scanArgs = ["--root", scanRoot, "--timeout", "300"];
+          const usePython = process.platform === "win32";
+          const command = usePython ? process.env.PYTHON || "python" : scanBin;
+          const commandArgs = usePython ? [scanBin, ...scanArgs] : scanArgs;
+          const child = spawn(command, commandArgs, {
             detached: true,
             stdio: "ignore",
             cwd,
           });
-          child.unref();
-          refreshNote = " · refresh started";
+          const releaseLock = () => {
+            try {
+              fs.unlinkSync(lockFile);
+            } catch {
+              /* retry remains best-effort */
+            }
+          };
+          child.once("error", releaseLock);
+          if (child.pid) {
+            child.unref();
+            refreshNote = " - refresh started";
+          } else {
+            releaseLock();
+          }
         } catch {
           /* best-effort; spawn errors never block */
         }
@@ -319,7 +335,7 @@ function main() {
         }
       }
     } else {
-      refreshNote = " · refresh in progress";
+      refreshNote = " - refresh in progress";
     }
   }
 
@@ -354,7 +370,7 @@ function main() {
     try {
       const staleAge = Date.now() - readTimestamp(staleFlag);
       if (Number.isFinite(staleAge) && staleAge < SESSION_TTL_MS) {
-        process.stdout.write(`[codemap] index stale${refreshNote || " · refresh pending"}\n`);
+        process.stdout.write(`[codemap] index stale${refreshNote || " - refresh pending"}\n`);
         process.exit(0);
       }
     } catch {
@@ -384,7 +400,7 @@ function main() {
   const shaLabel = currency === "current" ? ` (git: ${shortSha})` : "";
 
   process.stdout.write(
-    `[codemap] ${relIdx} · ${moduleCount} modules · ${currency}${shaLabel}${refreshNote} · scanned: ${scannedAt}\n` +
+    `[codemap] ${relIdx} - ${moduleCount} modules - ${currency}${shaLabel}${refreshNote} - scanned: ${scannedAt}\n` +
       `Prefer scan-query over file reads: rdeps, fn-rdeps, fn-blast, xrefs, symbol.\n`,
   );
 }

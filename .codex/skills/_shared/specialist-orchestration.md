@@ -51,6 +51,8 @@ Before spawning/simulating pass, write/describe context pack:
 
 Do not default to full repo/PR thread/report. Specialist may request more; parent decides relevance.
 
+Write human-readable context packs in Caveman Ultra. Preserve exact evidence, questions, output contract, stop rule, risks, and ownership. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
+
 ## Output Contract
 
 Every real/substitute pass returns:
@@ -75,7 +77,7 @@ Before accepting delegated work, lead then parent verify:
 - explicit scope widening/conflicts
 - executable/behavior-changing acceptance returns parent or Terra/Sol owner
 
-Reject/re-scope handovers lacking evidence, crossing ownership, hiding failures, transferring acceptance to support. Keep accepted changes unstaged. Prefer compact text; `.codex/handover/` patch only when materially useful.
+Reject/re-scope handovers lacking evidence, crossing ownership, hiding failures, transferring acceptance to support. Keep accepted changes unstaged. Use Caveman Ultra handover text: each fact once, no filler or repeated context; retain exact ownership, evidence, checks, failures, conflicts, limits, and next owner/action. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous. `.codex/handover/` patch only when materially useful and remains lossless.
 
 ## Substitution Rules
 

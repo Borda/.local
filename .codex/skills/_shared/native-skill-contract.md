@@ -19,6 +19,7 @@ Long workflows keep contract-level `## Workflow` with `### NN:` ordered subheade
 ## Portability Rules
 
 - Keep `.reports/codex/<skill>/<timestamp>/result.json` as the canonical artifact.
+- New human-readable report artifacts use Caveman Ultra: each fact once, no filler or repeated context. Do not compress or omit machine-readable JSON, commands, paths, code, logs, patches, required tables, evidence, failures, risks, owner/action, or confidence limits. Use clear concise prose where Ultra would make security, irreversible, or ordered instructions ambiguous.
 - Use `.codex/skills/_shared/run-gates.sh` and executable `write-result.py` when the skill changes files or runs code checks.
 - Use `.codex/skills/_shared/helper-cli-contract.md` for gate/write/validate lifecycle. Helper `--help` owns options; skills do not duplicate full local CLI invocations.
 - Use `.codex/skills/_shared/collect-diff.sh` for scope-aware `working-tree`, `path`, `commit` diffs; do not duplicate git plumbing.

@@ -31,6 +31,7 @@ Docs, deps, CI/CD, releases, security, deprecations → prefer current primary s
 - Keep live plan for multi-step work, update as task changes shape. Use as session task ledger.
 - One owner per file set at a time. Other thread/agent owns same surface → coordinate, no overwrite.
 - Broader analysis/review output → durable artifact under `.reports/codex/<skill>/<timestamp>/`, final chat summary compact.
+- New human-readable reports, handovers, context packs, and final summaries use Caveman Ultra: state each fact once; omit filler and repeated context; preserve exact paths, commands, identifiers, evidence, failures, risks, confidence, and owner/action. JSON, logs, patches, code, and required tables stay lossless. Use clear concise prose if Ultra would make security, irreversible, or ordered instructions ambiguous.
 - Parallel agents: outputs = inputs to consolidation, not interchangeable opinions. Reconcile conflicts explicit.
 - Conclusion depends on assumption not verified fact → mark as hypothesis in summary/artifact.
 
@@ -194,18 +195,22 @@ ______________________________________________________________________
 
 ## Commit Authorization
 
+Every local commit created by Codex must end with:
+
+`Co-authored-by: Codex <codex@openai.com>`
+
+This applies to every skill and workflow. Use `.codex/skills/_shared/commit-response-template.md` exactly for commit and summary messages; the `commit_attribution` setting and individual skill rules reinforce this project-wide requirement.
+
 - Explicit request: commit after checks.
 - Implicit request: show proposed message; commit only after confirmation.
 - Commit-summary request alone: no commit.
 - Otherwise: leave changes unstaged.
 
-Commits or summaries: follow `.codex/skills/_shared/commit-response-template.md`.
-
 ______________________________________________________________________
 
 ## Work Handover
 
-Parent-owned, non-destructive handovers between agents. Prefer short text handoffs first; patch files in `.codex/handover/` = optional review artifacts, not required transport.
+Parent-owned, non-destructive handovers between agents. Prefer Caveman Ultra text handoffs first; patch files in `.codex/handover/` = optional review artifacts, not required transport. Preserve exact files, intent, verification, open risks, owners, and required evidence.
 
 ### Default rules
 

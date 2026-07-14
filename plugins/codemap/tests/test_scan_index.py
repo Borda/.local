@@ -45,6 +45,7 @@ _iter_python_files = _scan_index_mod._iter_python_files
 _dedup_modules = _scan_index_mod._dedup_modules
 _dedup_key = _scan_index_mod._dedup_key
 _parse_file = _scan_index_mod._parse_file
+_replace_index = _scan_index_mod._replace_index
 
 
 def test_creates_index(tmp_path, gamma_src, beta_src, alpha_src, delta_src, scan_index):
@@ -466,6 +467,32 @@ class TestAtomicIndexWrite:
 
         index = json.loads((tmp_path / ".cache" / "codemap" / f"{tmp_path.name}.json").read_text())
         assert any(m["name"] == "gamma" for m in index["modules"])
+
+    def test_windows_replace_retries_transient_sharing_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """WinError 5 retries without replacing the destination non-atomically."""
+        temp = tmp_path / "index.tmp"
+        target = tmp_path / "index.json"
+        temp.write_text('{"complete": true}')
+        original_replace = Path.replace
+        attempts = 0
+
+        def fail_twice(path: Path, destination: Path) -> Path:
+            nonlocal attempts
+            if path == temp and attempts < 2:
+                attempts += 1
+                error = PermissionError("destination temporarily locked")
+                error.winerror = 5
+                raise error
+            return original_replace(path, destination)
+
+        monkeypatch.setattr(_scan_index_mod.sys, "platform", "win32")
+        monkeypatch.setattr(_scan_index_mod.time, "sleep", lambda _delay: None)
+        monkeypatch.setattr(Path, "replace", fail_twice)
+
+        _replace_index(temp, target)
+
+        assert attempts == 2
+        assert json.loads(target.read_text()) == {"complete": True}
 
     def test_concurrent_writers_leave_valid_index(self, tmp_path: Path, scan_index):
         """Two writers racing on the same root must not corrupt the index (PID-qualified temp).

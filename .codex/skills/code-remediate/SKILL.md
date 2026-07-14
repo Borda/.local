@@ -197,7 +197,28 @@ Selectable items:
 - exclude triage/resolution `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`
 - exclude fetched online PR comments/threads marked resolved in current PR evidence
 
-Present selectable list and ask:
+### Terminal Scope Context Contract
+
+Before accepting an explicit scope or prompting for one, complete the pre-edit `$OUT_DIR/resolution-scope.md` document. It must contain, in this order:
+
+1. `## Resolution Scope Selection`.
+2. The selection source, exact prompt text or explicit-input note, selection-confirmation state, selected indexes/severity groups, omitted resolved-online count, deferred/unselected indexes, and unselected critical/high findings.
+3. The complete six-column selection table above, with every selectable item. Do not abbreviate summaries, source locations, or expected closure evidence.
+
+For an omitted `remediation_scope`, record the pending state before prompting: `selection source: user-prompt`, the exact prompt below, `user selection confirmed before editing: false`, and no selected indexes or severity groups. Retain resolved online items only as the documented omitted count; do not add them to the table.
+
+Print the complete document to the terminal before any scope prompt or edits:
+
+```bash
+cat "$OUT_DIR/resolution-scope.md"
+printf '\nFull report: %s\n' "$OUT_DIR/action-items.md"
+```
+
+The `Full report` path must appear immediately after the unabridged scope context and target `$OUT_DIR/action-items.md`, the complete normalized resolution report. The link supplements the scope context; do not replace the context with a `Selectable items:` summary, shortened numbered list, artifact link, or ellipsis. The terminal table must let the user choose from the full item id/source, severity, summary, and closure evidence without opening another file.
+
+Immediately after the terminal command returns and before opening the scope-selection control, emit a user-visible assistant message that reproduces the exact unabridged `resolution-scope.md` content followed immediately by `Full report: <action-items.md path>`. Do this even when a terminal tool has already returned the same text. A collapsed tool result, `Read resolution-scope.md` summary, status message, artifact link without the ledger, or an announcement that the ledger is rendering does not count as user-visible scope context. The scope-selection control must not appear until that full message has been sent.
+
+After the unabridged terminal rendering, ask:
 
 ```text
 Which findings should I remediate?
@@ -206,7 +227,7 @@ Which findings should I remediate?
 - indexes: comma-separated indexes or ranges such as 1,3,5-7
 ```
 
-If `remediation_scope` supplied, it is user selection: apply without re-asking; still write `$OUT_DIR/resolution-scope.md`. If omitted and selectable items exist, stop before edits and ask exactly which findings to resolve. Never infer `all`, silently select only code-editable items, or use default selection. If runtime cannot ask, fail `scope-selection-required` before edit. If none selectable, write `none-selectable`, skip implementation, continue gates/artifact.
+If `remediation_scope` supplied, it is user selection: apply without re-asking; still write and print the complete `$OUT_DIR/resolution-scope.md` before edits. If omitted and selectable items exist, stop before edits and ask exactly which findings to resolve. Never infer `all`, silently select only code-editable items, or use default selection. If runtime cannot ask, fail `scope-selection-required` before edit. If none selectable, write and print `none-selectable`, skip implementation, continue gates/artifact.
 
 Record in `$OUT_DIR/resolution-scope.md` and `CODE_REMEDIATE_METADATA.resolution_scope`:
 
@@ -334,6 +355,16 @@ Follow `../_shared/helper-cli-contract.md` and authoritative help. Write `CODE_R
 
 `CODE_REMEDIATE_METADATA.mode` is normalized mode. `CODE_REMEDIATE_METADATA.confidence_recovery` includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REMEDIATE_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` plus evidence/rationale. `CODE_REMEDIATE_METADATA.resolution_scope` summarizes requested `remediation_scope`, `selection_source`, prompt presented, `selection_confirmed_by_user` pre-edit, selected indexes/severity groups, deferred indexes, omitted resolved-online count. `CODE_REMEDIATE_METADATA.resolution_workplan` summarizes `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, `workplan_path`. `CODE_REMEDIATE_METADATA.review_report_intake` summarizes `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, `report_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.final_resolution_table` summarizes ingested entries, final rows, omitted entries, selectable/non-selectable rows, required columns, triage/resolution status counts. `CODE_REMEDIATE_METADATA.out_of_scope_confirmation` summarizes `count`, `all_confirmed_by_user`, every out-of-scope item id/source/rationale/evidence path/confirmation. `CODE_REMEDIATE_METADATA.pr_relevance` summarizes `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, `connected_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.unresolved_summary` summarizes selected totals, unresolved closure-class counts, `all_local_actionable_items_closed`, `unresolved_reason_groups` with reason/count/owner/next action/evidence path. For `mode=pr`, include selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, `$OUT_DIR/merge-prestage.md`.
 
+### 12: Commit Attribution When Explicitly Requested
+
+Leave accepted remediation changes unstaged by default. If the user explicitly requests a local commit after gates pass, load `../_shared/commit-response-template.md` and use its exact message shape. Every proposed or created remediation commit must end with:
+
+```text
+Co-authored-by: Codex <codex@openai.com>
+```
+
+Do not commit for a remediation summary alone or without the user's explicit authorization.
+
 ## Fail-fast Rules
 
 01. Missing findings source => fail. 01a. `+review`, `+report`, or `report` shorthand without matching target code-review report => fail: "run `$code-review <target>` first or provide a report path".
@@ -374,6 +405,10 @@ Follow `../_shared/helper-cli-contract.md` and authoritative help. Write `CODE_R
 36. Final table status counts do not cover every row => fail.
 37. Final table lacks `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, or `evidence` => fail.
 38. Final chat lacks compact resolution summary, unresolved/deferred items, confidence/material limits, or artifact path => fail.
+39. A pre-edit scope interaction substitutes a compact `Selectable items:` list for the unabridged terminal `resolution-scope.md` context => fail: `scope-context-not-rendered`.
+40. The unabridged scope context is not immediately followed by a `Full report` link/path to `$OUT_DIR/action-items.md` => fail: `scope-report-link-missing`.
+41. A scope-selection control opens without an immediately preceding user-visible assistant message containing the unabridged scope context and `Full report` path; collapsed tool output does not count => fail: `scope-context-not-visible`.
+42. An explicitly requested remediation commit omits `Co-authored-by: Codex <codex@openai.com>` or the shared commit-response template => fail: `codex-coauthor-trailer-missing`.
 
 ## Quality Gates
 
@@ -403,6 +438,6 @@ Apply shared confidence band policy from `../_shared/quality-gates.md` for score
 
 Keep complete, unabridged resolution ledger in `$OUT_DIR/action-items.md`: every ingested item, validated columns/counts/status vocabulary/resolved evidence/scope selection/workplan/PR relevance/unresolved classes/confidence recovery above.
 
-Final terminal/chat output is compact. Start `Remediation Summary`: requested scope; ingested/selected/implemented/unresolved/deferred totals; whether all selected local actionable items closed; gate status; confidence/material limits; artifact path. List only unresolved/user-deferred items with next owner/action; never duplicate closed artifact rows. Say "resolved all" only if `selected_items_unresolved=0`. For `mode=pr`, add compact merge-prestage line with evidence path/remaining collision risk. Artifact validator—not chat repetition—proves full-ledger completeness.
+The pre-edit scope context is deliberately unabridged: print the full `$OUT_DIR/resolution-scope.md` to the terminal and emit the same content plus the `Full report` path in a user-visible assistant message before the selection control, as required in the Terminal Scope Context Contract. After scope confirmation, final terminal/chat output is compact. Start `Remediation Summary`: requested scope; ingested/selected/implemented/unresolved/deferred totals; whether all selected local actionable items closed; gate status; confidence/material limits; artifact path. List only unresolved/user-deferred items with next owner/action; never duplicate closed artifact rows. Say "resolved all" only if `selected_items_unresolved=0`. For `mode=pr`, add compact merge-prestage line with evidence path/remaining collision risk. Artifact validator—not chat repetition—proves full-ledger completeness.
 
 Minimum artifact payload template: `result-template.json`.

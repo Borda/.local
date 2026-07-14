@@ -313,3 +313,9 @@ def test_load_salt_defers_to_existing_salt(tmp_path: Path) -> None:
     salt_file = tmp_path / ".salt"
     salt_file.write_text(("ab" * 32))
     assert anonymize._load_salt(salt_file) == bytes.fromhex("ab" * 32)
+
+
+def test_load_salt_works_without_posix_fchmod(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Salt creation stays usable on platforms that expose no ``os.fchmod``."""
+    monkeypatch.delattr(anonymize.os, "fchmod", raising=False)
+    assert len(anonymize._load_salt(tmp_path / ".salt")) == 32

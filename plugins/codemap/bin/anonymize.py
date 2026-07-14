@@ -91,7 +91,8 @@ def _load_salt(salt_file: Path) -> bytes:
         # defer to it rather than overwrite so both processes share one salt.
         return bytes.fromhex(salt_file.read_text().strip())
     with os.fdopen(fd, "w") as f:
-        os.fchmod(f.fileno(), 0o600)  # exact 0o600 regardless of the process umask
+        if hasattr(os, "fchmod"):
+            os.fchmod(f.fileno(), 0o600)  # exact 0o600 regardless of the process umask
         f.write(salt.hex())
     return salt
 
