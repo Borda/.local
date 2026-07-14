@@ -5,7 +5,7 @@ description: Minimal codex-native analysis loop. Use for issue/PR/problem analys
 
 # Analyse
 
-Run a linear evidence-first analysis loop. Use this skill to answer "what is true, what is risky, and what should happen next" before implementation, review, release, or sync work.
+Run evidence-first analysis: truth, risk, next action before implementation, review, release, sync.
 
 ## Input Schema
 
@@ -30,16 +30,16 @@ mkdir -p "$OUT_DIR"
 
 ### 02: Normalize the analysis mode
 
-- `local`: code, local diff, local reports, pasted text.
-- `github`: issue/PR/discussion metadata where live access is available.
-- `report`: existing `.reports/**` or `.reports/codex/**` artifact.
-- `ecosystem`: downstream/API/dependency impact. Live web or `gh` evidence is required for current external claims.
+- `local`: code, local diff/reports, pasted text.
+- `github`: live issue/PR/discussion metadata.
+- `report`: `.reports/**` or `.reports/codex/**` artifact.
+- `ecosystem`: downstream/API/dependency impact; current external claims need live web/`gh` evidence.
 
-Unsupported or ambiguous mode => fail with a usage note, unless the user supplied enough pasted evidence to continue in `local`.
+Unsupported/ambiguous mode => fail with usage note, unless pasted evidence supports `local`.
 
 ### 03: Capture scope and source inventory before drawing conclusions
 
-Use `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`. Run the reference scan separately and record failures instead of hiding a missing diff context.
+Use `collect-diff.sh --help`; collect `working-tree` into `$OUT_DIR/baseline`. Scan references separately; record failed diff collection.
 
 ### 04: Gather evidence with a ledger. Write `$OUT_DIR/evidence.md` with one row per claim:
 
@@ -50,14 +50,14 @@ Use `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/b
 
 Evidence rules:
 
-- Code claims require file paths and line references.
-- External/current claims require primary sources or a caveat that live verification was unavailable.
-- Thread/report claims must separate verified facts from hypotheses.
-- Duplicate or related issues/findings are listed explicitly instead of collapsed silently.
+- Code claims: file/line refs.
+- External/current: primary sources or unavailable-live-verification caveat.
+- Thread/report: distinguish facts/hypotheses.
+- List duplicate/related findings; do not silently collapse.
 
 ### 05: Orchestrate specialist analysis when the question has independent axes
 
-Apply `../_shared/specialist-orchestration.md` for broad questions, PR/issue analysis with multiple risk domains, ecosystem analysis, or conclusions that need independent challenge. Stay single-agent for narrow local analysis where fan-out would duplicate the same context.
+Use `../_shared/specialist-orchestration.md` for broad/multi-risk PR/issue, ecosystem, or independently challenged conclusions. Stay single-agent when narrow local fan-out duplicates context.
 
 Write `"$OUT_DIR/orchestration.md"` when fan-out is used or intentionally skipped for a broad scope. Include:
 
@@ -66,7 +66,7 @@ Write `"$OUT_DIR/orchestration.md"` when fan-out is used or intentionally skippe
 - skipped axes with rationale
 - consolidation plan
 
-Useful routes: `solution-architect` for architecture/API tradeoffs, `qa-specialist` for testability, `security-auditor` for risk, `web-explorer` for current ecosystem evidence, `scientist` for methodology, `curator` for config/workflow drift, and `challenger` for high-impact conclusions.
+Routes: `solution-architect` architecture/API; `qa-specialist` testability; `security-auditor` risk; `web-explorer` current ecosystem; `scientist` method; `curator` config/workflow drift; `challenger` high-impact conclusions.
 
 ### 06: Analyze alternatives before recommending action
 
@@ -89,14 +89,14 @@ git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
 
 ### 08: Decide gate result
 
-- `pass`: findings are evidence-backed, ranked, and gaps are explicit.
-- `fail`: missing scope, missing evidence for a blocking claim, stale external claim presented as fact, or no result artifact.
+- `pass`: evidence-backed ranked findings, explicit gaps.
+- `fail`: missing scope/blocking-claim evidence, stale external claim as fact, or no result artifact.
 
 ### 09: Run shared gates and write the validated result artifact
 
-Follow `../_shared/helper-cli-contract.md` and each helper's `--help`. For an analysis-only run, mark lint, format, types, and tests not applicable with concrete reasons; the review gate requires non-empty `analysis.md`, `self-review.md`, and a clean diff check. Write with `ANALYSE_METADATA`, validate as skill `analyse`, and promote only the validated candidate.
+Follow `../_shared/helper-cli-contract.md` and helper `--help`. Analysis-only: mark lint/format/types/tests not applicable with reasons; review needs non-empty `analysis.md`, `self-review.md`, clean diff. Write `ANALYSE_METADATA`, validate `analyse`, promote only validated candidate.
 
-Replace an explicit skip with the relevant command when the analysis includes code changes or executable probes.
+Replace skip with command when analysis includes code changes/executable probes.
 
 ## Self-Critical Gate
 
@@ -108,27 +108,27 @@ Before final output, answer in `$OUT_DIR/self-review.md`:
 4. Which facts are unverified or stale?
 5. What next check would most improve confidence?
 
-Critical conclusions without this self-review are non-passing.
+Critical conclusion without self-review cannot pass.
 
 ## Fail-Fast Rules
 
 1. Missing question or scope => fail.
 2. Unsupported mode with insufficient pasted/local evidence => fail.
-3. Current external claim without live primary-source evidence or stale/unverified caveat => fail.
+3. Current external claim lacks live primary-source evidence/stale-unverified caveat => fail.
 4. Blocking conclusion without evidence ledger entry => fail.
 5. Missing self-review for critical conclusions => fail.
-6. Broad multi-axis analysis without orchestration evidence or skip rationale => fail.
+6. Broad multi-axis analysis lacks orchestration evidence/skip rationale => fail.
 7. Result artifact missing => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: evidence ledger, self-review, and `git diff --check` when a diff exists.
+- `review`: evidence ledger, self-review, `git diff --check` when diff exists.
 
 Optional checks:
 
-- `lint`, `format`, `types`, `tests`: only when analysis includes code changes or executable probes.
+- `lint`, `format`, `types`, `tests`: only with code changes/executable probes.
 
 ## Calibration Hooks
 

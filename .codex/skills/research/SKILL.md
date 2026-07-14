@@ -5,7 +5,7 @@ description: Minimal codex-native research loop. Use for docs/papers/state-of-th
 
 # Research
 
-Run a source-backed research loop for documentation, API migration, paper, or state-of-the-art questions.
+Source-backed research for documentation, API migration, paper, or state-of-the-art questions.
 
 ## Input Schema
 
@@ -51,12 +51,12 @@ Write `$OUT_DIR/sources.md`:
 
 Source rules:
 
-- Prefer primary docs, papers, specifications, release notes, or code.
-- Use current live sources for volatile docs, dependencies, and APIs.
-- Mark any stale or unavailable source explicitly.
+- Prefer primary docs, papers, specs, release notes, code.
+- Use current live sources for volatile docs, dependencies, APIs.
+- Mark stale/unavailable source explicitly.
 - Do not cite secondary summaries for high-impact claims unless independently corroborated.
 
-For `sota`, `paper`, `methodology`, and `code-fidelity` modes, apply `../_shared/specialist-orchestration.md` when independent expertise improves correctness. Write `"$OUT_DIR/specialist-research-plan.md"` with context packs for:
+For `sota`, `paper`, `methodology`, `code-fidelity`, apply `../_shared/specialist-orchestration.md` when independent expertise improves correctness. Write `"$OUT_DIR/specialist-research-plan.md"` with context packs for:
 
 - `web-explorer`: current docs, release notes, API and dependency changes.
 - `scientist`: formulas, methodology, metrics, ablations, benchmark claims.
@@ -65,11 +65,11 @@ For `sota`, `paper`, `methodology`, and `code-fidelity` modes, apply `../_shared
 - `data-steward`: datasets, splits, leakage, reproducibility.
 - `challenger`: unsupported recommendation or overconfident source synthesis.
 
-Do not send full papers, entire repositories, or all search results to every specialist. Give each specialist only the source excerpts, code files, and questions needed for its axis.
+Do not send full papers, repositories, or all search results to every specialist. Give each only source excerpts, code files, questions needed for its axis.
 
 ### 04: Map to codebase context when implementation is relevant
 
-Inspect `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`. Run the topic scan separately and record unavailable paths or collection failures as evidence gaps.
+Inspect `collect-diff.sh --help`; collect `working-tree` scope into `$OUT_DIR/baseline`. Run topic scan separately; record unavailable paths/collection failures as evidence gaps.
 
 ### 05: Produce `$OUT_DIR/research.md` with:
 
@@ -99,9 +99,9 @@ git diff --check >"$OUT_DIR/review.txt" 2>&1 || true
 
 ### 08: Run shared gates and write the validated result artifact
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. For research-only work, mark lint, format, types, and tests not applicable with concrete reasons; the review gate requires non-empty `research.md`, `sources.md`, and a clean diff check. Write with `RESEARCH_METADATA`, validate as skill `research`, and promote only the validated candidate.
+Follow `../_shared/helper-cli-contract.md` and authoritative help. For research-only work, mark lint, format, types, tests inapplicable with concrete reasons; review requires non-empty `research.md`, `sources.md`, clean diff check. Write `RESEARCH_METADATA`, validate as `research`, promote only validated candidate.
 
-Replace an explicit skip with the relevant command when research includes executable validation.
+Replace explicit skip with relevant command when research includes executable validation.
 
 ## Fail-Fast Rules
 
@@ -113,17 +113,17 @@ Replace an explicit skip with the relevant command when research includes execut
 
 ## Quality Gates
 
-Required checks:
+Required:
 
-- `review`: source table, caveats, self-review, and `git diff --check`.
+- `review`: source table, caveats, self-review, `git diff --check`.
 
-Conditional checks:
+Conditional:
 
 - `tests`: when research includes an executable validation or code-fidelity probe.
 
 ## Calibration Hooks
 
-Update calibration when source protocol or recommendation policy changes:
+On source-protocol/recommendation-policy change, update calibration:
 
 - behavioral cases: stale docs, unsupported SOTA claim, paper-code mismatch
 - benchmark patterns: `research`

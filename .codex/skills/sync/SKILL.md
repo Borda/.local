@@ -5,9 +5,9 @@ description: Agent-led project/home Codex mirror workflow. Use to report manifes
 
 # Sync
 
-Run a dry-run-first, agent-led sync between the project `.codex` mirror and the active home `~/.codex`. No dedicated sync runtime is required. The agent reads the exact manifest, reasons about config differences, applies only approved actions, and produces auditable artifacts.
+Dry-run-first, agent-led sync between project `.codex` mirror and active home `~/.codex`. No dedicated sync runtime. Agent reads exact manifest, reasons about config differences, applies only approved actions, produces auditable artifacts.
 
-The dry-run default is mandatory. Managed documentation includes `.codex/AGENTS.md` and `.codex/README.md`. Keep `commit_attribution` in the manifest-managed root config so project and home commit trailers remain aligned. Agents never delete home-only state; only explicitly approved manifest `retired_paths` may be retired after backup.
+Dry-run default mandatory. Managed docs: `.codex/AGENTS.md`, `.codex/README.md`. Keep `commit_attribution` in manifest-managed root config so project/home commit trailers align. Never delete home-only state; retire only explicitly approved manifest `retired_paths` after backup.
 
 ## Input Schema
 
@@ -31,56 +31,56 @@ The dry-run default is mandatory. Managed documentation includes `.codex/AGENTS.
 
 ### 01: Scope and artifact directory
 
-Create `.reports/codex/sync/<timestamp>/` with `backup/`, `drift.json`, `drift.md`, `actions.json`, and `post-sync.json`. Read `.codex/sync-manifest.json` as JSON. Reject unknown target groups, wildcard paths, missing source files, symlinked roots/parents, and paths escaping either `.codex` root.
+Create `.reports/codex/sync/<timestamp>/`: `backup/`, `drift.json`, `drift.md`, `actions.json`, `post-sync.json`. Read `.codex/sync-manifest.json` as JSON. Reject unknown target groups, wildcard paths, missing source files, symlinked roots/parents, paths escaping either `.codex` root.
 
-The manifest is authoritative. Do not recursively inventory, compare, or copy either `.codex` tree. Never include `.system`, auth, secrets, projects/trust, plugins, marketplaces, sessions, history, databases, logs, caches, memories, goals, or desktop state.
+Manifest authoritative. Do not recursively inventory, compare, or copy either `.codex` tree. Never include `.system`, auth, secrets, projects/trust, plugins, marketplaces, sessions, history, databases, logs, caches, memories, goals, desktop state.
 
 ### 02: Agent-led dry run
 
-For every exact file in the selected manifest groups:
+For every exact file in selected manifest groups:
 
 1. Verify source and destination containment.
 2. Record existence and SHA-256 on both sides.
 3. Classify `identical`, `changed`, `source-only`, or `destination-only`.
 4. Record the proposed direction and whether an overwrite, creation, retirement, or semantic merge would occur.
 
-For `config.toml`, read both files and compare only the managed root keys, feature keys, `[agents]` setting keys, registered agent names, and skill paths declared in the manifest. Treat TOML as structured configuration in reasoning; never use broad regex replacement. Preserve every destination-only key/table/registration unless the user explicitly selects it for removal.
+For `config.toml`, read both; compare only manifest-declared managed root/feature keys, `[agents]` setting keys, registered agent names, skill paths. Treat TOML as structured config; never broad regex replacement. Preserve every destination-only key/table/registration unless user explicitly selects removal.
 
-For `hooks.json`, inspect only `retired_hook_command_substrings`. Preserve unrelated hook events, groups, and commands.
+For `hooks.json`, inspect only `retired_hook_command_substrings`. Preserve unrelated hook events/groups/commands.
 
-Check every `retired_paths` entry and record `retired-present` or `retired-absent`. Check mode writes reports only and never changes home files.
+Check every `retired_paths` entry; record `retired-present`/`retired-absent`. `check` writes reports only; never changes home files.
 
 ### 03: Approval boundary
 
-Before `apply`, require explicit direction, selected target groups, home-write approval, and separate approval for every present retired path. Bootstrap of a missing home `.codex` requires a separate decision. Stop on ambiguous two-sided edits; show both versions and recommend one.
+Before `apply`, require explicit direction, selected target groups, home-write approval, separate approval for each present retired path. Missing-home-`.codex` bootstrap requires separate decision. Stop on ambiguous two-sided edits; show both versions and recommend one.
 
 ### 04: Apply approved actions
 
 For every mutation:
 
-1. Copy the current destination to the matching path under `$OUT_DIR/backup/`.
-2. Verify the backup exists and its SHA-256 matches the pre-change destination.
-3. Copy exact ordinary files or generate a narrow semantic edit for `config.toml`/`hooks.json`.
-4. Re-read the destination immediately and record the action plus post-change hash in `actions.json`.
+1. Copy current destination to matching `$OUT_DIR/backup/` path.
+2. Verify backup exists and SHA-256 matches pre-change destination.
+3. Copy exact ordinary files or generate narrow semantic edit for `config.toml`/`hooks.json`.
+4. Immediately reread destination; record action + post-change hash in `actions.json`.
 
-Only manifest-listed retired paths may be deleted, and only after backup plus explicit retirement approval. Never delete an unlisted home-only file.
+Delete only manifest-listed retired paths, after backup + explicit retirement approval. Never delete unlisted home-only file.
 
 ### 05: Post-check
 
-Repeat the exact dry-run comparison after apply. `post-sync.json` passes only when:
+Repeat exact dry-run comparison after apply. `post-sync.json` passes only when:
 
-- every selected ordinary managed file is identical
-- managed root keys, agent settings/registrations, features, and skills match the selected source
-- destination-only config and unrelated hooks remain present
-- every approved retired path is absent
-- every action has a verified backup and post-change hash
-- active-home calibration passes when agents, skills, shared helpers, or calibration changed
+- every selected ordinary managed file identical
+- managed root keys, agent settings/registrations, features, skills match selected source
+- destination-only config/unrelated hooks remain
+- every approved retired path absent
+- every action has verified backup + post-change hash
+- active-home calibration passes when agents, skills, shared helpers, calibration changed
 
-Whole-tree equality is neither required nor desired.
+Whole-tree equality neither required nor desired.
 
 ### 06: Quality gates and result
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. For an agent-led sync without implementation changes, mark lint, format, and types not applicable with concrete reasons; tests run calibration, and review requires non-empty drift/post-sync evidence plus a clean diff check. Write the candidate with sync metadata, validate as skill `sync`, and promote only the validated candidate. Include confidence gaps for any semantic merge the agent could not independently validate.
+Follow `../_shared/helper-cli-contract.md` and authoritative help. For agent-led sync without implementation changes, mark lint, format, types inapplicable with concrete reasons; tests runs calibration; review requires non-empty drift/post-sync evidence + clean diff check. Write candidate with sync metadata, validate as `sync`, promote only validated candidate. Include confidence gaps for semantic merge agent cannot independently validate.
 
 ## Fail-Fast Rules
 
@@ -96,12 +96,12 @@ Follow `../_shared/helper-cli-contract.md` and authoritative help. For an agent-
 
 ## Quality Gates
 
-Required: manifest-scoped drift matrix, backup hashes, action log, semantic config/hook preservation review, post-check, active-home calibration when behavior changed, and `git diff --check`.
+Required: manifest-scoped drift matrix, backup hashes, action log, semantic config/hook-preservation review, post-check, active-home calibration for behavior change, `git diff --check`.
 
 ## Calibration Hooks
 
-Update behavioral coverage when the manifest or agent-led safety contract changes. Calibration validates manifest presence and the shared artifact/result contracts; sync correctness is proven by each run's drift, backup, action, post-check, and home-calibration evidence.
+Update behavioral coverage when manifest/agent-led safety contract changes. Calibration validates manifest presence + shared artifact/result contracts; each run's drift, backup, action, post-check, home-calibration evidence proves sync correctness.
 
 ## Output Contract
 
-Use `../_shared/quality-gates.md` and `result-template.json`. Report exact changed paths, preserved home-only state, retired paths, backup locations, post-check status, confidence, and material limits.
+Use `../_shared/quality-gates.md` and `result-template.json`. Report exact changed paths, preserved home-only state, retired paths, backup locations, post-check status, confidence, material limits.

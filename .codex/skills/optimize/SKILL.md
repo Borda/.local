@@ -5,7 +5,7 @@ description: Minimal codex-native optimization loop. Use for metric-driven impro
 
 # Optimize
 
-Run a metric-driven optimization loop with explicit guards, rollback criteria, and experiment logging.
+Metric-driven optimization with explicit guards, rollback criteria, experiment log.
 
 ## Input Schema
 
@@ -37,16 +37,16 @@ mkdir -p "$OUT_DIR"
 
 ### 02: Validate metric and guard commands
 
-Requirements:
+Require:
 
-- `metric_cmd` is repeatable and produces a comparable value or pass/fail result.
-- `metric_direction` is known.
+- Repeatable `metric_cmd` producing comparable value or pass/fail.
+- Known `metric_direction`.
 - `guard_cmd` fails on unacceptable regressions.
-- `scope_files` is bounded.
-- `max_iterations` is explicit for `campaign` mode and remains bounded.
-- Files or scripts used by `metric_cmd` and `guard_cmd` are protected unless the user explicitly includes them in scope and accepts the measurement-integrity risk.
+- Bounded `scope_files`.
+- Explicit, bounded `max_iterations` for `campaign`.
+- Protect files/scripts used by `metric_cmd`/`guard_cmd` unless user explicitly scopes them and accepts measurement-integrity risk.
 
-Dry-run both commands before editing:
+Dry-run both before edit:
 
 ```bash
 ${METRIC_CMD} >"$OUT_DIR/metric-baseline.txt" 2>&1
@@ -63,7 +63,7 @@ Write `$OUT_DIR/hypothesis.md`:
 - guard risk
 - rollback condition
 
-For `campaign` mode, noisy metrics, GPU/ML performance, or optimization that touches correctness-sensitive code, apply `../_shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-optimization-plan.md"` with narrow context packs for:
+For `campaign`, noisy metrics, GPU/ML performance, or correctness-sensitive code, apply `../_shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-optimization-plan.md"` with narrow context packs for:
 
 - `squeezer`: profiling mechanism, bottleneck hypothesis, measurement plan.
 - `qa-specialist`: guard coverage and regression risk.
@@ -71,9 +71,9 @@ For `campaign` mode, noisy metrics, GPU/ML performance, or optimization that tou
 - `scientist`: metric validity, ablation design, statistical noise.
 - `challenger`: overfitting to the metric or weakening guard checks.
 
-Do not fan out for a single small measured change with a stable metric and guard. Never let a specialist change the metric or guard scripts unless that is explicitly in `scope_files` and measurement-integrity risk is recorded.
+No fan-out for one small measured change with stable metric/guard. Never let specialist change metric/guard scripts unless explicitly in `scope_files` and measurement-integrity risk recorded.
 
-Initialize a machine-readable iteration log:
+Initialize machine-readable iteration log:
 
 ```bash
 : >"$OUT_DIR/experiments.jsonl"
@@ -81,7 +81,7 @@ Initialize a machine-readable iteration log:
 
 ### 04: Apply one minimal optimization change per iteration
 
-Do not combine independent hypotheses in one iteration. Do not optimize unmeasured paths. Before each iteration, write `$OUT_DIR/iteration-<n>-before.patch` with the current diff for the scoped files. If an iteration fails and only that iteration's patch is present, revert the iteration with `git apply -R` against the iteration diff or mark the run failed when a clean reversal cannot be proven. Never use `git reset --hard`.
+One independent hypothesis per iteration. Do not optimize unmeasured paths. Before each, write `$OUT_DIR/iteration-<n>-before.patch` with scoped-file diff. If iteration fails and only its patch is present, revert with `git apply -R` against iteration diff; otherwise fail run when clean reversal cannot be proven. Never use `git reset --hard`.
 
 ### 05: Re-measure
 
@@ -101,7 +101,7 @@ Required fields:
 - confidence
 - noise caveats
 
-Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
+Append one JSON object/iteration to `$OUT_DIR/experiments.jsonl`:
 
 ```json
 {
@@ -118,19 +118,19 @@ Append one JSON object per iteration to `$OUT_DIR/experiments.jsonl` with:
 
 ### 07: Decide keep/revert
 
-- Keep only when metric moves in the intended direction and guards pass.
-- For `min_delta`, keep only when the delta meets or exceeds the practical significance threshold.
-- Revert or mark fail when guard regresses.
-- If measurement is noisy, require repeated runs or mark inconclusive.
-- In `campaign` mode, stop at the first kept result unless the user asked for continued exploration; otherwise continue only while `max_iterations` remains and each rejected iteration has rollback evidence.
+- Keep only with intended metric movement and passing guards.
+- With `min_delta`, keep only if delta meets/exceeds practical-significance threshold.
+- Revert or fail on guard regression.
+- For noisy measurement, repeat or mark inconclusive.
+- In `campaign`, stop at first kept result unless user asked continued exploration; otherwise continue only while `max_iterations` remains and each rejected iteration has rollback evidence.
 
 ### 08: Run shared quality gates
 
-Inspect `run-gates.sh --help`. The tests gate must run the configured test command or guard command; supply real commands or explicit reasons for the other gates.
+Inspect `run-gates.sh --help`. Tests runs configured test or guard command; give real commands or explicit reasons for other gates.
 
 ### 09: Write and validate the mandatory result artifact
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `OPTIMIZE_METADATA`, validate as skill `optimize`, and promote only the validated candidate.
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write `OPTIMIZE_METADATA`, validate as `optimize`, promote only validated candidate.
 
 ## Fail-Fast Rules
 
@@ -146,19 +146,19 @@ Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `O
 
 ## Quality Gates
 
-Required checks:
+Required:
 
 - `tests`: guard command or impacted tests.
-- `review`: metric comparison, rollback decision, campaign ledger when relevant, and `git diff --check`.
-- `artifact`: shared validator confirms comparison, experiments JSONL, gate logs, and result JSON shape.
+- `review`: metric comparison, rollback decision, relevant campaign ledger, `git diff --check`.
+- `artifact`: shared validator confirms comparison, experiments JSONL, gate logs, result JSON shape.
 
-Recommended checks:
+Recommended:
 
 - `lint`, `format`, `types`: run for any code edits.
 
 ## Calibration Hooks
 
-Update calibration when metric/guard policy changes:
+On metric/guard-policy change, update calibration:
 
 - behavioral cases: baseline missing, guard regression, noisy metric overclaim, campaign rollback evidence, below-threshold improvement, artifact validator bypass
 - benchmark patterns: `optimize`

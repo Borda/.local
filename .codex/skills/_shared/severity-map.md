@@ -1,6 +1,6 @@
 # Severity Map
 
-Use this severity mapping consistently across codex-native skills.
+Use across codex-native skills.
 
 ## Critical
 

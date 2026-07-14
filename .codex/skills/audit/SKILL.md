@@ -5,7 +5,7 @@ description: Minimal codex-native audit loop. Use to scan codex configuration/wo
 
 # Audit
 
-Run a linear configuration and workflow audit loop.
+Run linear configuration/workflow audit.
 
 ## Input Schema
 
@@ -33,10 +33,10 @@ mkdir -p "$OUT_DIR"
 
 Scopes:
 
-- `config`: `.codex/config.toml`, project instructions, permission/routing entries.
-- `skills`: `.codex/skills/**` plus calibration coverage for skills.
+- `config`: `.codex/config.toml`, instructions, permission/routing.
+- `skills`: `.codex/skills/**` plus calibration coverage.
 - `agents`: `.codex/agents/*.toml` plus spawn/routing coverage.
-- `all`: every scope above.
+- `all`: all above.
 
 ```bash
 find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
@@ -46,25 +46,25 @@ find .codex -maxdepth 4 -type f | sort >"$OUT_DIR/inventory.txt"
 
 Write `$OUT_DIR/audit-ledger.md` with these sections:
 
-- `Inventory`: configured vs present agents/skills.
+- `Inventory`: configured/present agents/skills.
 - `Broken References`: missing files, stale paths, unresolved shared resources.
-- `Runtime Leaks`: non-native runner fields or external runtime assumptions in native files.
-- `Coverage`: calibration benchmark and behavioral coverage.
-- `Overlap`: duplicate or fuzzy ownership decisions.
-- `Recommendations`: ranked fix plan.
+- `Runtime Leaks`: non-native runner fields/external runtime assumptions.
+- `Coverage`: calibration benchmark/behavior.
+- `Overlap`: duplicate/fuzzy ownership decisions.
+- `Recommendations`: ranked fixes.
 
-For `scope=all`, `mode=adversarial`, or any audit crossing skills plus agents plus CI/config, apply `../_shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-audit-plan.md"` with context packs for:
+For `scope=all`, `mode=adversarial`, or audits crossing skills, agents, CI/config, apply `../_shared/specialist-orchestration.md`. Write `"$OUT_DIR/specialist-audit-plan.md"` packs for:
 
 - `curator`: skill/agent/config drift, duplication, calibration hygiene.
 - `linting-expert`: Markdown, Python, shell, ruff/mypy/pre-commit references.
 - `cicd-steward`: CI harness, workflow permissions, artifact behavior.
 - `challenger`: adversarial check of no-finding or low-risk conclusions.
 
-Stay single-agent for narrow `scope=config`, `scope=skills`, or `scope=agents` audits where the same inventory would be sent to every specialist.
+Stay single-agent for narrow `scope=config`, `scope=skills`, or `scope=agents` audits where same inventory would go to every specialist.
 
 ### 04: Run shared quality gates
 
-Follow `../_shared/helper-cli-contract.md` and `run-gates.sh --help`. The default gate intent is ruff lint/format over `.codex`, an explicit no-typed-target reason, calibration as tests, and a clean diff review; project-specific commands may replace these defaults.
+Follow `../_shared/helper-cli-contract.md` and `run-gates.sh --help`. Default: ruff lint/format `.codex`, explicit no-typed-target reason, calibration tests, clean diff review; project commands may replace.
 
 ### 05: Detect drift and broken references
 
@@ -81,7 +81,7 @@ rg -n "TRIGGER when|SKIP when|NOT for" .codex/agents >"$OUT_DIR/spawn-policy-sec
 
 ### 07: Review native skill and agent contract consistency
 
-Each configured skill should have:
+Each configured skill has:
 
 - `Input Schema`
 - `Workflow`
@@ -90,7 +90,7 @@ Each configured skill should have:
 - `Calibration Hooks`
 - `Output Contract`
 
-Each configured agent should have:
+Each configured agent has:
 
 - `## Scope` or clear role boundary text
 - `## Evidence Standard`
@@ -103,27 +103,27 @@ Each configured agent should have:
 rg -n "^(name|description|developer_instructions)" .codex/agents >"$OUT_DIR/agent-roster-scan.txt"
 ```
 
-Classify overlap findings explicitly as `keep`, `sharpen`, or `merge-prune`:
+Classify overlap as `keep`, `sharpen`, `merge-prune`:
 
-- `keep`: distinct decision surface remains
-- `sharpen`: role stays, but boundary text should tighten
-- `merge-prune`: role no longer owns a distinct acceptance criterion
+- `keep`: distinct decision surface.
+- `sharpen`: role stays; tighten boundary.
+- `merge-prune`: no distinct acceptance criterion.
 
 ### 09: Classify findings using `../_shared/severity-map.md`
 
 ### 10: Write mandatory result artifact
 
-Use the shared helper lifecycle and authoritative help. Write with `AUDIT_METADATA`, validate as skill `audit`, and promote only the validated candidate.
+Use shared lifecycle/authoritative help. Write `AUDIT_METADATA`, validate `audit`, promote only validated candidate.
 
 ## Fail-fast Rules
 
 1. Missing `.codex` inventory => fail.
 2. Shared gate script missing => fail.
-3. Broken config/skill references in critical paths => fail.
-4. Missing spawn coverage for any configured agent => fail.
-5. Unclear or overlapping spawn intent without explicit collaboration-team guidance => fail.
-6. Agent overlap left without a keep/sharpen/merge-prune decision => fail.
-7. Missing native skill or agent contract section on a configured entry => fail unless an explicit exception is recorded.
+3. Critical-path broken config/skill reference => fail.
+4. Any configured agent lacks spawn coverage => fail.
+5. Unclear/overlapping spawn intent lacks collaboration-team guidance => fail.
+6. Agent overlap lacks keep/sharpen/merge-prune decision => fail.
+7. Configured entry lacks native skill/agent contract section => fail unless exception recorded.
 8. Non-native runtime assumptions in `.codex/skills/*/SKILL.md` or `.codex/agents/*.toml` => fail.
 9. Result artifact missing => fail.
 
@@ -131,13 +131,13 @@ Use the shared helper lifecycle and authoritative help. Write with `AUDIT_METADA
 
 Required checks:
 
-- `review`: inventory, contract ledger, reference scan, overlap decisions, and `git diff --check`.
-- `calibration`: run or explicitly justify skipping `.codex/calibration/run.py` when skill/agent behavior changed.
+- `review`: inventory, contract ledger, reference scan, overlap decisions, `git diff --check`.
+- `calibration`: run or justify skipping `.codex/calibration/run.py` with skill/agent behavior change.
 
 Conditional checks:
 
-- `lint`/`format`: enabled when generated Python, TOML, shell, or Markdown formatters are available.
-- `tests`: enabled when audit includes executable probes or behavior-changing fixes.
+- `lint`/`format`: when Python/TOML/shell/Markdown formatters available.
+- `tests`: with executable probes/behavior-changing fixes.
 
 ## Calibration Hooks
 

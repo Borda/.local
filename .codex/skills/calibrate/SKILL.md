@@ -5,7 +5,7 @@ description: Codex-native calibration loop. Use to detect leaks or major gaps ac
 
 # Calibrate
 
-Run a linear calibration loop for codex workflow integrity and behavioral scoring.
+Run calibration for Codex workflow integrity and behavioral scoring.
 
 ## Input Schema
 
@@ -28,7 +28,7 @@ Run a linear calibration loop for codex workflow integrity and behavioral scorin
 
 ### 03: Load behavioral observations from `.codex/calibration/behavioral-observations.jsonl`
 
-- Require `source`, `run_id`, and `observed_at`. A `source=live-*` row must also include route, campaign and pair IDs, pair role, registered role, actual model/effort, recomputable prompt and task-contract SHA-256 values, task type/scope, input/cached/output tokens, latency, outcome, tool/check failures, normalized cost units, and pricing reference. Every complete campaign must exactly match the case/role/type/scope signatures in `live-ab-tasks.json`; substituted tasks, fixtures, gates, or prompt inputs fail.
+- Require `source`, `run_id`, `observed_at`. `source=live-*` also needs route; campaign/pair IDs; pair/registered role; actual model/effort; recomputable prompt/task-contract SHA-256; task type/scope; input/cached/output tokens; latency; outcome; tool/check failures; normalized cost; pricing reference. Each complete campaign exactly matches case/role/type/scope signatures in `live-ab-tasks.json`; substituted task, fixture, gate, prompt input fails.
 
 ### 04: Inspect `.codex/calibration/run.py --help`, then run the required default or strict-live mode
 
@@ -36,83 +36,72 @@ Run a linear calibration loop for codex workflow integrity and behavioral scorin
 
 ### 06: Review behavioral metrics:
 
-- `recall`: expected finding IDs recovered from known cases.
-- `precision`: reported finding IDs that match expected finding IDs.
+- `recall`: expected IDs recovered from known cases.
+- `precision`: reported IDs matching expected IDs.
 - `confidence_accuracy`: `1 - mean(abs(confidence - per-case F1))`.
-- `mean_overconfidence`: average positive confidence bias over per-case F1.
-- `gate_metrics_raw`: unrounded overall values used for pass/fail thresholds.
-- `by_source`: recall, precision, and confidence calibration grouped by observation source.
-- `observation_freshness`: latest `observed_at`, missing timestamp count, and live-vs-fixture observation counts.
-- `live_route_acceptance`: matched baseline/candidate quality across classification and isolated tool-use tasks, normalized token-efficiency proxy, and evidence sufficiency for every configured route. It is not monetary pricing evidence.
+- `mean_overconfidence`: mean positive confidence bias over per-case F1.
+- `gate_metrics_raw`: unrounded pass/fail values.
+- `by_source`: recall, precision, confidence calibration by source.
+- `observation_freshness`: latest `observed_at`, missing timestamps, live/fixture counts.
+- `live_route_acceptance`: matched baseline/candidate classification and isolated tool-use quality, normalized token-efficiency proxy, evidence sufficiency per configured route; not monetary pricing evidence.
 
 ### 07: Classify gaps as blocking or non-blocking
 
 ### 08: Emit measured recommendations for what should be fixed or improved next
 
-- Failed checks and leaks come first.
-- Behavioral recommendations must name the metric gap and the affected cases when available.
-- Fixture-only caveats must be separate from live-quality claims.
+- Failed checks/leaks first.
+- Behavioral recommendations name metric gap/affected cases when available.
+- Separate fixture-only caveats from live-quality claims.
 
 ### 09: Write skill artifacts to `.reports/codex/calibrate/<timestamp>/`; preserve runner evidence under `.reports/codex/calibration/<timestamp>/`
 
 ### 10: Write the validated skill-level artifact when this skill wraps the runner
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. Gate intent is ruff lint/format over calibration and skills, an explicit no-typed-target reason, calibration as tests, and a clean diff review. Write with `CALIBRATE_METADATA`, validate as skill `calibrate`, and promote only the validated candidate.
+Follow `../_shared/helper-cli-contract.md`/authoritative help. Gate intent: ruff lint/format calibration+skills, explicit no-typed-target reason, calibration tests, clean diff. Write `CALIBRATE_METADATA`, validate `calibrate`, promote only validated candidate.
 
 ## Native Contract Checks
 
-Calibration must verify the configured native surface, not only the runner internals.
+Verify configured native surface, not only runner internals.
 
 Skill checks:
 
-- each configured skill file exists
-- skill frontmatter uses unindented `---` markers with `name:` and `description:`
-- required contract sections are present
-- artifact path uses `.reports/codex/<skill>/`
-- output examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, and `artifact_path`
-- native skill files do not depend on external runner-only metadata or cache paths
-- CLI checks discover every local shebang Python/shell entry point across calibration, shared helpers, code-review, and the offline harness; each must be executable, registered in the fixed help roster, and return authoritative usage from `--help`
-- every skill references `helper-cli-contract.md` instead of duplicating complete local CLI invocations
-- behavioral case-set version checks compare `.codex/calibration/behavioral-cases.json` against `HEAD`; the working tree may keep the same version or advance by exactly one commit-relative version step, but must not repeatedly bump versions inside one uncommitted change set
+- configured skill file exists; frontmatter has unindented `---`, `name:`, `description:`; required sections exist; artifact path `.reports/codex/<skill>/`; examples include `status`, `checks_run`, `checks_failed`, `findings`, `confidence`, `artifact_path`; no external runner-only metadata/cache.
+- CLI checks find every local shebang Python/shell entry point in calibration, shared helpers, code-review, offline harness; each executable, fixed-help-roster registered, authoritative `--help`.
+- every skill references `helper-cli-contract.md`, not complete local CLI invocations.
+- compare `.codex/calibration/behavioral-cases.json` version to `HEAD`: dirty tree same or exactly one commit-relative version step; no repeated uncommitted bumps.
 
 Agent checks:
 
-- each configured agent file exists and is registered
-- active `model` and `review_model` pins use supported model strings for the current Codex runtime
-- the project default, review parent, runtime, research, curation, and adversarial specialists use `gpt-5.6-terra`; delegation coordination, documentation, CI/CD stewardship, web, OSS, and static-analysis roles use `gpt-5.6-luna`; only security and solution architecture use `gpt-5.6-sol`
-- Luna/high is an explicit human override for bounded simpler roles; calibration preserves its strict quality/cost failure and rejects any undocumented expansion
-- every configured role defaults to `high`; `xhigh` and `max` require explicit task-level escalation
-- `model_reasoning_effort` follows the agent-effort-policy: every configured role uses `high`; `xhigh` and `max` are explicit task-level overrides
-- high-stakes specialist roles use the high-capability model tier, while bounded support roles may use the lower-cost support tier
-- deprecated model strings are absent from active project config and agent TOML files
-- role has a clear `Scope` or equivalent boundary
-- counterpart mapping, evidence standard, boundaries, output format, and output contract are present or explicitly waived
-- sensitive agents keep their sandbox constraints, especially read-only security audit
-- no external runtime tool names or external path variables are required by native agents
+- each configured agent exists/registered; active `model`/`review_model` supported current-runtime strings.
+- default, review parent, runtime, research, curation, adversarial use `gpt-5.6-terra`; delegation/docs/CI-CD/web/OSS/static analysis use `gpt-5.6-luna`; only security/solution architecture use `gpt-5.6-sol`.
+- Luna/high is explicit human override for bounded simpler roles; preserve strict quality/cost failure, reject undocumented expansion.
+- every role defaults `high`; `xhigh`/`max` explicit task escalation. `model_reasoning_effort` follows agent-effort-policy: all `high`, `xhigh`/`max` task overrides.
+- high-stakes roles use high-capability tier; bounded support may lower-cost tier. No deprecated model string in active config/TOML.
+- role has clear `Scope`/boundary; counterpart mapping, evidence, boundaries, output format/contract present or waived; sensitive agents retain sandbox, especially read-only security audit; native agents require no external runtime tool/path variable.
 
 ## Usage Notes
 
-- Use after any meaningful agent or skill instruction change to confirm routing and output shape still match the configured stack.
-- Treat `leaks_found` as the primary drift signal and `checks_failed` as the mechanical gate signal.
-- Treat behavioral metrics as measurement of supplied observations only. `fixture-selftest` observations validate the scoring contract; live Codex quality requires replacing or appending observations generated from live calibration prompts.
-- Treat missing route coverage as `insufficient-evidence`, never route acceptance. When `require_live_routes=true`, insufficient evidence exits nonzero.
-- Compare behavioral thresholds against `gate_metrics_raw`, not rounded display metrics.
-- Use `.codex/calibration/run_live_ab.py` for paid paired campaigns. It plans calls by default and executes only with `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API-key environment, and no `CI`/`GITHUB_ACTIONS` marker.
-- Each live task names a registered role; the runner prepends the exact project `AGENTS.md` plus that role TOML's developer instructions to both paired prompts. Tool-use pairs may accept a candidate that passes the executable gate when a successfully invoked baseline fails that gate; infrastructure timeouts never count as a candidate win.
-- Keep Sol critical-only unless its paired candidate quality exceeds Terra by the configured minimum; a tie retains Terra.
-- Do not claim monetary savings from `normalized-token-v1`; use a dated authoritative model-specific price source before making a currency-cost claim.
-- Treat calibration fixture `version` fields as committed-history markers. Before changing one, compare with `git show HEAD:<path>` and keep the dirty tree at either the last committed version or a single next version until the change is committed.
-- If the run surfaces missing registration or pattern mismatches, prefer a minimal config fix and rerun before widening the change.
+- After meaningful agent/skill instruction change, confirm routing/output match stack.
+- `leaks_found` primary drift; `checks_failed` mechanical gate.
+- Behavioral metrics measure supplied observations only. `fixture-selftest` validates scoring; live Codex quality requires replacing/appending live-prompt observations.
+- Missing route coverage is `insufficient-evidence`, never acceptance; `require_live_routes=true` exits nonzero.
+- Compare thresholds with `gate_metrics_raw`, not rounded display.
+- Paid paired campaigns: `.codex/calibration/run_live_ab.py`; plans by default, executes only `--confirm-paid-run=chatgpt-subscription`, verified local ChatGPT subscription login, no API key env, no `CI`/`GITHUB_ACTIONS`.
+- Each live task names registered role; runner prepends exact project `AGENTS.md` plus role TOML developer instructions to both prompts. Tool pair can accept candidate passing executable gate when successfully invoked baseline fails; infrastructure timeout never candidate win.
+- Sol critical-only unless paired quality exceeds Terra configured minimum; tie retains Terra.
+- Do not claim currency savings from `normalized-token-v1`; need dated authoritative model-specific price.
+- Fixture `version` is committed-history marker: compare `git show HEAD:<path>`; dirty tree stays committed or one-next version until commit.
+- Missing registration/pattern mismatch: minimal config fix then rerun before widening.
 
 ## Fail-Fast Rules
 
 1. Missing calibration files => fail.
 2. Missing configured skill or agent file => fail.
-3. Native skill/agent contract mismatch => fail unless explicitly waived in the result.
+3. Native skill/agent contract mismatch => fail unless result waives.
 4. Runtime leakage in native skill or agent files => fail.
 5. Behavioral gate below threshold => fail.
 6. Result artifact missing => fail.
-7. Behavioral case-set version advances more than one step from the last committed version => fail.
+7. Behavioral case-set version >1 step from committed version => fail.
 8. `require_live_routes=true` with incomplete route pairs => fail.
 9. Live row without the strict paired execution schema => fail.
 
@@ -121,8 +110,8 @@ Agent checks:
 Required checks:
 
 - `calibration`: `.codex/calibration/run.py`.
-- `behavioral-version-policy`: compare the behavioral case-set version against `HEAD` so dirty-tree iterations do not create meaningless version gaps.
-- `review`: inspect failed patterns, leakage, behavioral gaps, and stale fixtures before recommending changes.
+- `behavioral-version-policy`: compare case-set version to `HEAD`; avoid meaningless dirty-tree gaps.
+- `review`: inspect failed patterns, leaks, behavioral gaps, stale fixtures before recommendations.
 
 Conditional checks:
 

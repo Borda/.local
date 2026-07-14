@@ -5,7 +5,7 @@ description: Minimal codex-native release loop. Use for SemVer-aware release rea
 
 # Release
 
-Run a SemVer-aware release readiness and communication loop. This skill prepares release evidence and documentation; it does not tag, publish, upload, or force-push.
+SemVer-aware release readiness/communication. Prepares release evidence/docs; never tag, publish, upload, or force-push.
 
 ## Input Schema
 
@@ -30,12 +30,12 @@ mkdir -p "$OUT_DIR"
 
 ### 02: Determine mode, range, and target version
 
-- `notes`: draft release notes from a git range.
-- `prepare`: run audit plus notes/changelog/migration artifact checks.
+- `notes`: draft release notes from git range.
+- `prepare`: audit plus notes/changelog/migration-artifact checks.
 - `audit`: readiness verdict only.
 - `demo`: optional release-demo planning artifact; never required for non-feature releases.
 
-Unknown mode or ambiguous range => fail before writing release docs.
+Unknown mode/ambiguous range => fail before release docs.
 
 ### 03: Collect release evidence
 
@@ -44,9 +44,9 @@ RELEASE_RANGE="${RANGE:-$(git describe --tags --abbrev=0 2>/dev/null)..HEAD}"
 git log --oneline "$RELEASE_RANGE" >"$OUT_DIR/commits.txt" 2>/dev/null || true
 ```
 
-Inspect `collect-diff.sh --help`, then collect `commit` scope for `RELEASE_RANGE` into `$OUT_DIR/range`; a collection failure is an evidence gap, not an empty release.
+Inspect `collect-diff.sh --help`; collect `commit` scope for `RELEASE_RANGE` into `$OUT_DIR/range`. Collection failure is evidence gap, not empty release.
 
-Write `$OUT_DIR/change-table.md` with change type, user impact, breaking status, docs need, and verification evidence.
+Write `$OUT_DIR/change-table.md`: change type, user impact, breaking status, docs need, verification evidence.
 
 ### 04: Verify release readiness
 
@@ -54,10 +54,10 @@ Required checks:
 
 - SemVer classification matches observed API/user-visible changes.
 - Breaking changes have migration guidance.
-- Deprecations use project policy and were released before removal.
-- CHANGELOG or release notes mention user-visible changes.
-- Reverted changes are not advertised as live features.
-- Security/dependency changes are called out with source evidence.
+- Deprecations follow project policy and released before removal.
+- CHANGELOG/release notes mention user-visible changes.
+- Do not advertise reverted changes as live features.
+- Call out security/dependency changes with source evidence.
 
 Write `$OUT_DIR/release-readiness.md` with:
 
@@ -66,7 +66,7 @@ Write `$OUT_DIR/release-readiness.md` with:
 - `Checks`
 - `Blockers`
 
-For `prepare` and `audit` modes, apply `../_shared/specialist-orchestration.md` when the release includes public API changes, CI/release automation, security/dependency changes, docs/migration work, or broad verification risk. Write `"$OUT_DIR/specialist-release-plan.md"` with narrow context packs for:
+For `prepare`/`audit`, apply `../_shared/specialist-orchestration.md` for public API changes, CI/release automation, security/dependency changes, docs/migration work, or broad verification risk. Write `"$OUT_DIR/specialist-release-plan.md"` with narrow context packs for:
 
 - `oss-shepherd`: SemVer, deprecation policy, maintainer readiness.
 - `cicd-steward`: release workflow, publishing, CI status, artifact gates.
@@ -75,11 +75,11 @@ For `prepare` and `audit` modes, apply `../_shared/specialist-orchestration.md` 
 - `security-auditor`: security/dependency-sensitive changes.
 - `challenger`: release-blocker downgrade or no-blocker conclusion.
 
-Stay single-agent for `notes` mode on a narrow, low-risk range unless SemVer or migration impact is ambiguous.
+Single-agent for `notes` on narrow low-risk range unless SemVer/migration impact ambiguous.
 
 ### 05: Run required checks from `../_shared/quality-gates.md`
 
-Inspect `run-gates.sh --help`, then run every project-required release gate with explicit commands or skip reasons.
+Inspect `run-gates.sh --help`; run every project-required release gate with explicit commands/skip reasons.
 
 ### 06: Classify blockers and warnings
 
@@ -90,7 +90,7 @@ Inspect `run-gates.sh --help`, then run every project-required release gate with
 
 ### 07: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/release/<timestamp>/result.json`
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `RELEASE_METADATA`, validate as skill `release`, and promote only the validated candidate.
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write `RELEASE_METADATA`, validate as `release`, promote only validated candidate.
 
 ## Fail-Fast Rules
 
@@ -105,11 +105,11 @@ Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `R
 
 ## Quality Gates
 
-All five shared gates and the shared artifact validator are required for release readiness unless the project has no executable package; any skipped executable check must be recorded as a gap.
+Release readiness requires all five shared gates + shared artifact validator unless project has no executable package; record any skipped executable check as gap.
 
 ## Calibration Hooks
 
-Update calibration when SemVer, deprecation, changelog, or release-blocker policy changes:
+On SemVer, deprecation, changelog, or release-blocker policy change, update calibration:
 
 - behavioral cases: missing migration, wrong SemVer, unreleased API removal, artifact validator bypass
 - benchmark patterns: `release`

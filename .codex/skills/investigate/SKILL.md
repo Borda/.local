@@ -5,7 +5,7 @@ description: Minimal codex-native investigation loop. Use for unknown failures, 
 
 # Investigate
 
-Run a diagnosis-first loop for unclear failures, including code debugging from failing tests, tracebacks, regressions, and surprising runtime behavior. This skill produces a root-cause claim with evidence, falsification checks, and rejected alternatives before any fix is attempted. Use `investigate` for debugging until the root cause is established; then hand off to `develop` or `code-remediate` for the fix.
+Diagnosis-first loop for unclear failures: failing tests, tracebacks, regressions, surprising runtime behavior. Produce root-cause claim with evidence, falsification, rejected alternatives before any fix. Use `investigate` until root cause established; then hand off to `develop` or `code-remediate`.
 
 ## Input Schema
 
@@ -45,9 +45,9 @@ git log --oneline -10 >"$OUT_DIR/recent-commits.txt" 2>/dev/null || true
 python --version >"$OUT_DIR/python-version.txt" 2>&1 || true
 ```
 
-Inspect `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`; record collection failure instead of treating it as an empty diff.
+Inspect `collect-diff.sh --help`, collect `working-tree` scope into `$OUT_DIR/baseline`; record collection failure, never treat as empty diff.
 
-Add tool-specific logs, CI excerpts, traceback snippets, config files, and changed source files as needed. Never treat absence of evidence as evidence of absence.
+Add needed tool logs, CI excerpts, tracebacks, config, changed source. Absence of evidence ≠ evidence of absence.
 
 ### 04: Rank hypotheses in `$OUT_DIR/hypotheses.md`
 
@@ -56,13 +56,13 @@ Add tool-specific logs, CI excerpts, traceback snippets, config files, and chang
 | --- | --- | --- | --- | --- |
 ```
 
-Include at least three plausible hypotheses unless the root cause is directly proven by a failing command and code/log evidence.
+Include ≥3 plausible hypotheses unless failing command + code/log directly prove root cause.
 
 ### 05: Orchestrate specialist probes when hypotheses split by domain
 
-Apply `../_shared/specialist-orchestration.md` when the symptom spans multiple plausible domains or when parallel evidence gathering can reduce elapsed time. Stay single-agent for a narrow deterministic failure with one obvious hypothesis.
+Apply `../_shared/specialist-orchestration.md` for multi-domain symptoms or useful parallel evidence. Stay single-agent for narrow deterministic failure with one obvious hypothesis.
 
-Write `"$OUT_DIR/specialist-probes.md"` before fan-out. Each row must include role, hypothesis, context pack path, expected falsification signal, and mode (`spawned`, `substituted`, or `not_triggered`).
+Write `"$OUT_DIR/specialist-probes.md"` before fan-out: role, hypothesis, context path, expected falsification signal, mode (`spawned`, `substituted`, `not_triggered`).
 
 Recommended probe routing:
 
@@ -76,11 +76,11 @@ Recommended probe routing:
 - `web-explorer`: volatile dependency or external API behavior.
 - `challenger`: root-cause claim that would be damaging if wrong.
 
-Each context pack must include only the symptom slice, relevant logs, touched files, environment facts, and the exact falsification question for that hypothesis. Specialists may request more context, but the parent decides whether to widen. The parent consolidates probe outcomes and owns the final root-cause claim.
+Each context pack: symptom slice, relevant logs/touched files/environment facts, exact falsification question. Specialists may request context; parent decides widening, consolidates outcomes, owns final root-cause claim.
 
 ### 06: Probe the top hypotheses
 
-Use targeted probes that can confirm, rule out, or narrow one hypothesis at a time.
+Use targeted probes confirming, ruling out, or narrowing one hypothesis at a time.
 
 Each probe must have a clear outcome:
 
@@ -99,7 +99,7 @@ A root-cause claim requires:
 - at least one rejected alternative
 - explicit confidence
 
-If confidence is low, continue probing instead of proposing a fix.
+Low confidence: continue probing, no fix proposal.
 
 Write `$OUT_DIR/root-cause.md` with:
 
@@ -110,7 +110,7 @@ Write `$OUT_DIR/root-cause.md` with:
 
 ### 08: Run shared quality gates or targeted checks relevant to the failure
 
-Inspect `run-gates.sh --help`, then run the full or targeted gate commands required to falsify the failure hypotheses.
+Inspect `run-gates.sh --help`, run full/targeted gates needed to falsify hypotheses.
 
 ### 09: Decide gate result, write `result.candidate.json`, validate artifacts, and publish `.reports/codex/investigate/<timestamp>/result.json`
 

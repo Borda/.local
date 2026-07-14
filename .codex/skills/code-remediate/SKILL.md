@@ -1,11 +1,11 @@
 ---
 name: code-remediate
-description: Codex-native code remediation loop. Use to triage and apply code-review findings, rerun checks, and publish unresolved gaps with measurable gates, including in-session skill invocations like "$code-remediate #123 +review" that remediate a PR using the latest matching code-review artifact.
+description: 'Codex-native code-remediation loop: triage/apply code-review findings, rerun checks, publish unresolved gaps with measurable gates; `$code-remediate #123 +review` remediates a PR from latest matching code-review artifact.'
 ---
 
 # Code Remediate
 
-Run a linear code-remediation loop for findings closure.
+Run linear code remediation to close findings.
 
 ## Input Schema
 
@@ -35,29 +35,29 @@ mkdir -p "$OUT_DIR"
 
 Shorthand rules:
 
-- Canonical in-session invocation: `$code-remediate #123 +review` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`.
-- Compatibility alias: `$code-remediate #123 +report` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`; `$code-remediate #123 +report compatibility alias` means the same report lookup behavior.
-- Natural-language aliases: `remediate 123 report`, `remediate #123 report`, and `remediate PR 123 report` => `mode=pr`, `PR_TARGET=123`, and `FINDINGS_SOURCE=latest-matching-review-report`.
-- `remediate <github-pr-url> report` => `mode=pr`, `PR_TARGET=<github-pr-url>`, and `FINDINGS_SOURCE=latest-matching-review-report`.
-- If `+review`, `+report`, `report`, `latest`, `latest-report`, or `review-report` is supplied instead of a path, find the newest `.reports/codex/code-review/*/result.json` whose sibling `pr.json` has the same PR number or URL as `PR_TARGET`.
-- If no matching code-review report exists, fail with a direct instruction to run `$code-review <target>` first or provide an explicit report path.
-- If multiple matching reports exist, use the newest timestamped directory and record the selected path in `$OUT_DIR/findings-input.txt`.
+- Canonical in-session: `$code-remediate #123 +review` => `mode=pr`, `PR_TARGET=123`, `FINDINGS_SOURCE=latest-matching-review-report`.
+- Compatibility alias: `$code-remediate #123 +report` => `mode=pr`, `PR_TARGET=123`, `FINDINGS_SOURCE=latest-matching-review-report`; `$code-remediate #123 +report compatibility alias` has same report lookup.
+- Natural-language aliases: `remediate 123 report`, `remediate #123 report`, and `remediate PR 123 report` => `mode=pr`, `PR_TARGET=123`, `FINDINGS_SOURCE=latest-matching-review-report`.
+- `remediate <github-pr-url> report` => `mode=pr`, `PR_TARGET=<github-pr-url>`, `FINDINGS_SOURCE=latest-matching-review-report`.
+- If `+review`, `+report`, `report`, `latest`, `latest-report`, or `review-report` replaces a path, find newest `.reports/codex/code-review/*/result.json` whose sibling `pr.json` has same PR number/URL as `PR_TARGET`.
+- No matching code-review report => fail with direct instruction to run `$code-review <target>` first or supply report path.
+- Multiple matches => use newest timestamped directory; record selected path in `$OUT_DIR/findings-input.txt`.
 
-For `latest-matching-review-report`, inspect `find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/code-review`, and assign the printed path to `FINDINGS_SOURCE`.
+For `latest-matching-review-report`, inspect `find-review-report.py --help`, resolve `PR_TARGET` against `.reports/codex/code-review`, assign printed path to `FINDINGS_SOURCE`.
 
 ```bash
 cp "$FINDINGS_SOURCE" "$OUT_DIR/findings-input.txt"
 ```
 
-For `mode=pr`, inspect `collect-pr.sh --help`, then collect `PR_TARGET` into `$OUT_DIR/pr` with checkout enabled so online evidence, target/head refresh, and the local checkout are current.
+For `mode=pr`, inspect `collect-pr.sh --help`; collect `PR_TARGET` into `$OUT_DIR/pr` with checkout enabled for current online evidence, target/head refresh, local checkout.
 
-The helper records `gh pr checkout` without `--force` in `$OUT_DIR/pr/local-checkout.json`.
+Helper records `gh pr checkout` without `--force` in `$OUT_DIR/pr/local-checkout.json`.
 
-Use the review report plus `$OUT_DIR/pr/comments.json`, `$OUT_DIR/pr/reviews.json`, `$OUT_DIR/pr/review-threads.json`, and `$OUT_DIR/pr/unresolved-review-threads.json` as the findings intake. A review report is a closure contract, not only a list of code findings: normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence recovery remaining limits, and no-finding residual risks into report-origin action items before editing. Use the local checkout recorded in `$OUT_DIR/pr/local-checkout.json` as the authoritative source for code triage and edits. `$OUT_DIR/pr/target-branch.json` must prove the base/target branch was fetched before conflict or review-item resolution, and `$OUT_DIR/pr/pr-head-fetch.json` records same-repo PR branch refresh or a cross-repository skip rationale. The checkout artifacts must include `force_policy`; if checkout fails or does not match the PR head, record `forced-checkout-not-attempted` and stop before any forced retry. If online PR collection, target refresh, or local checkout fails, record the failure and either continue with the supplied report only when the user accepts stale online-review coverage and no code edits are required, or fail. Do not inspect or edit PR code from `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots; this is a raw-file snapshot rejection rule.
+Findings intake: review report plus `$OUT_DIR/pr/comments.json`, `$OUT_DIR/pr/reviews.json`, `$OUT_DIR/pr/review-threads.json`, `$OUT_DIR/pr/unresolved-review-threads.json`. Review report is closure contract, not only code findings: before editing normalize report findings, failed `checks_failed`, `follow_up`, `review_decision.required_next_work`, confidence gaps, confidence-recovery remaining limits, and no-finding residual risks into report-origin action items. Use local checkout in `$OUT_DIR/pr/local-checkout.json` as authoritative source for code triage/edits. `$OUT_DIR/pr/target-branch.json` must prove base/target fetch before conflict/review-item resolution; `$OUT_DIR/pr/pr-head-fetch.json` records same-repo PR refresh or cross-repository skip rationale. Checkout artifacts include `force_policy`; if checkout fails or does not match PR head, record `forced-checkout-not-attempted` and stop before forced retry. If online collection, target refresh, or checkout fails, record failure; continue with supplied report only when user accepts stale online-review coverage and no code edits are required, else fail. Never inspect/edit PR code from `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots; raw-file snapshot rejection: snapshots are rejected.
 
 ### 03: Pre-Stage PR Merge/Conflict Context
 
-For `mode=pr`, this phase is mandatory and must happen before `action-items.md`, `resolution-scope.md`, or any code changes for report/PR-review findings. The goal is to understand the clean PR implementation and the latest target-branch implementation before any merge conflict markers make the worktree noisy.
+For `mode=pr`, required before `action-items.md`, `resolution-scope.md`, or report/PR-review code changes. Establish clean PR and latest target implementation before conflict markers make worktree noisy.
 
 Required local context commands:
 
@@ -75,48 +75,48 @@ git diff --stat "$MERGE_BASE".."$BASE_REMOTE_REF" >"$OUT_DIR/pr/target-since-mer
 git merge-tree "$MERGE_BASE" HEAD "$BASE_REMOTE_REF" >"$OUT_DIR/pr/merge-tree.txt" 2>/dev/null || true
 ```
 
-Write `$OUT_DIR/merge-prestage.md` with these sections:
+Write `$OUT_DIR/merge-prestage.md` sections:
 
-- `## PR And Target Refresh`: PR number, PR head, target branch, fetched target hash, local checkout hash, and evidence paths.
-- `## Clean PR Implementation Context`: what the PR is trying to change, changed files, important invariants, and tests/docs implied by the clean PR branch.
-- `## Target Branch Context`: relevant target-branch implementation details from the fetched target branch, especially for files likely to collide.
-- `## Conflict Risk`: mergeability status, `merge-tree` signal, files changed on both sides, and whether conflicts are present, likely, or absent.
-- `## Resolution Strategy`: for each conflict or likely collision, how to reconcile the PR intent with the target-branch implementation before applying review/report findings.
+- `## PR And Target Refresh`: PR number/head, target branch, fetched target hash, local checkout hash, evidence paths.
+- `## Clean PR Implementation Context`: intended change, changed files, key invariants, clean-PR-implied tests/docs.
+- `## Target Branch Context`: relevant fetched-target details, especially likely collision files.
+- `## Conflict Risk`: mergeability, `merge-tree` signal, both-side changed files, conflicts present/likely/absent.
+- `## Resolution Strategy`: reconcile PR intent and target implementation for each conflict/likely collision before review/report findings.
 
-If conflicts are present or likely, resolve collisions as a preliminary PR-integration task before applying selected review/report findings. Use the clean PR branch, the fetched target branch, `git show "$BASE_REMOTE_REF:path"`, and nearby tests as primary context. Use conflict markers only after the PR and target intent have been recorded in `merge-prestage.md`. Keep collision resolution limited to preserving the PR intent on top of the current target branch; do not fold review-comment fixes into conflict resolution unless the same line cannot be made coherent otherwise, and record that coupling in `$OUT_DIR/closure-log.md`.
+If conflicts present/likely, first resolve collisions as PR integration. Primary context: clean PR, fetched target, `git show "$BASE_REMOTE_REF:path"`, nearby tests. Use conflict markers only after recording PR/target intent in `merge-prestage.md`. Limit collision resolution to preserving PR intent atop current target; do not combine review-comment fixes unless same line cannot otherwise cohere; record coupling in `$OUT_DIR/closure-log.md`.
 
-If the checkout starts in a dirty, conflicted, or partially merged state, fail or ask for cleanup before editing. Do not reason directly from an existing conflicted worktree as the primary source of truth.
+If checkout starts dirty, conflicted, or partially merged, fail or ask cleanup before editing. Never use an existing conflicted worktree as primary truth.
 
 ### 04: Normalize Findings Before Editing
 
-Write `$OUT_DIR/action-items.md` with a `## Review Item Resolution Table` section first, before any prose. Include one row per ingested entry: every report finding, every normalized report-origin review obligation, each fetched online PR review comment, PR review, review thread, and unresolved review thread. If the user supplied or asked to use a report, include report items even when the same item is also present in fresh PR evidence. The table is the source for selectable findings and must include resolved evidence for any item marked `resolved`. Do not collapse the ledger to only changed, selected, unresolved, or high-impact rows.
+Write `$OUT_DIR/action-items.md` starting with `## Review Item Resolution Table`, before prose. One row per ingested entry: all report findings, normalized report-origin review obligations, fetched online PR comments, PR reviews, review threads, unresolved review threads. If user supplied/requested report, include report items even if fresh PR evidence repeats them. Table is selectable-findings source; every `resolved` row needs resolution evidence. Never reduce ledger to changed/selected/unresolved/high-impact rows.
 
-For `mode=pr`, every report and PR-review item must be checked against PR intent and the changed diff before triage:
+For `mode=pr`, check every report/PR-review item against PR intent and changed diff before triage:
 
-- `direct-diff`: the item references a changed file, changed hunk, or behavior directly modified by the PR
-- `pr-intent`: the item connects to the PR purpose, acceptance criteria, review decision, or requested change even if it is outside a touched hunk
-- `adjacent`: the item touches nearby code, tests, docs, config, or verification needed to safely merge the PR
-- `unknown`: relation cannot be determined from current evidence
-- `unrelated`: no connection to PR intent, changed files, adjacent verification, or merge readiness after inspecting local PR context
+- `direct-diff`: references PR-changed file/hunk/behavior.
+- `pr-intent`: connects to PR purpose, acceptance criteria, review decision, requested change, even outside touched hunk.
+- `adjacent`: touches nearby code/tests/docs/config/verification needed for safe merge.
+- `unknown`: current evidence cannot determine relation.
+- `unrelated`: no connection to PR intent, changed files, adjacent verification, or merge readiness after local PR-context inspection.
 
-Write this relation in the action table and in each expanded item. Items with relation `direct-diff`, `pr-intent`, `adjacent`, or `unknown` are not `out-of-scope`. They must remain `valid` or `needs-clarification` and be selectable unless already closed by `resolved`, `already-fixed`, or `already-applied` evidence. If such an item cannot be closed in the current PR, record it as `unresolved`, `deferred`, or required follow-up; do not downgrade it to `out-of-scope`. The user can then select it, defer it, or explicitly rule it into this PR.
+Write relation in action table and every expanded item. `direct-diff`, `pr-intent`, `adjacent`, `unknown` are never `out-of-scope`; keep `valid`/`needs-clarification` and selectable unless `resolved`, `already-fixed`, or `already-applied` evidence closes them. If current PR cannot close one, record `unresolved`, `deferred`, or required follow-up; never downgrade to `out-of-scope`. User can select, defer, or explicitly rule it into PR.
 
-For a review report, also include report-origin review obligations even when they are not code edits:
+For review report, include non-code report-origin review obligations:
 
-- failed checks from `checks_failed`, such as missing independence, full gates, lint, type, test, or confidence gates
-- `follow_up` entries, especially `needs-independent-review`
+- failed `checks_failed`, including missing independence, full gates, lint, type, test, confidence gates
+- `follow_up`, especially `needs-independent-review`
 - `review_decision.required_next_work` and merge/readiness blockers
-- confidence gaps, confidence recovery remaining limits, and no-finding residual risks that block acceptance
+- confidence gaps, confidence-recovery remaining limits, no-finding residual risks blocking acceptance
 
-Report-origin review obligations are in scope by default when the user asks for `+review`, `+report`, `report`, or a review report path. Do not mark them `out-of-scope` merely because closure requires an independent reviewer, an installed tool, CI/full-gate execution, or an environment that may not be available locally. Mark them `valid` or `needs-clarification`, keep them selectable, and leave them `unresolved` or user-deferred until closure evidence exists. `out-of-scope` is reserved for items unrelated to the requested report/PR/target after citing evidence; it is not a valid way to silence failed review gates or report follow-up.
+Report-origin obligations default in scope for `+review`, `+report`, `report`, or review-report path. Never mark `out-of-scope` merely because closure needs independent reviewer, installed tool, CI/full-gate run, or unavailable local environment. Mark `valid`/`needs-clarification`, keep selectable, leave `unresolved`/user-deferred until closure evidence. `out-of-scope` only for item proven unrelated to requested report/PR/target after citing evidence; never use it to silence failed gates/follow-up.
 
-After the resolution table, write a `## Review Report Intake` section with counts for total report-origin items, report-origin review-gate/follow-up items, selectable review-gate/follow-up items, and report-origin items marked `out-of-scope`. The last count must be `0` unless the item is proven unrelated to the requested report/PR/target.
+After resolution table, add `## Review Report Intake`: total report-origin items, report-origin review-gate/follow-up items, selectable review-gate/follow-up items, report-origin `out-of-scope` count. Last count must be `0` unless item proven unrelated to requested report/PR/target.
 
 Required table columns:
 
-- selection index: numeric for selectable items, `-` for non-selectable items
-- input item: stable input row id, report id, PR comment id, review id, thread id, or source location
-- item name: short human-readable name for the finding, review obligation, gate, comment, or thread
+- selection index: numeric selectable; `-` non-selectable
+- input item: stable input row id, report id, PR comment id, review id, thread id, source location
+- item name: short human-readable finding/review obligation/gate/comment/thread name
 - item type: `code|test|docs|review-gate|confidence-gap|pr-comment|pr-review|pr-thread|unresolved-pr-thread|ci|typing|lint|security|performance|process|other`
 - item id or source location
 - source: `report|pr-comment|pr-review|pr-thread|unresolved-pr-thread`
@@ -127,10 +127,10 @@ Required table columns:
 - triage status: `valid|resolved|duplicate|stale|out-of-scope|already-fixed|already-applied|needs-clarification`
 - resolution: `implemented|resolved|rejected|stale|not-applicable|duplicate|already-fixed|already-applied|needs-clarification|unresolved`
 - owner/status: `todo|fixed|resolved|deferred|unresolved|not-selected|not-actionable`
-- resolved how: short answer explaining if/how it was resolved, or why it remains unresolved/deferred/not applicable
+- resolved how: how/why resolved/unresolved/deferred/not applicable
 - closure evidence or unresolved rationale
 
-After the table, write a `## Final Resolution Summary` section with:
+After table add `## Final Resolution Summary`:
 
 - what was requested
 - ingested entries total
@@ -139,32 +139,32 @@ After the table, write a `## Final Resolution Summary` section with:
 - unresolved entries total
 - deferred/not-selected entries total
 - not-applicable/stale/duplicate/rejected entries total
-- one sentence stating whether all selected local actionable items are closed
+- one sentence: all selected local actionable items closed or not
 
-Then write a `## Final Resolution Table Completeness` section with:
+Then add `## Final Resolution Table Completeness`:
 
 - ingested entries total
 - final table rows total
-- omitted entries total, which must be `0`
-- selectable and non-selectable row totals
+- omitted entries total: must be `0`
+- selectable/non-selectable row totals
 - triage status counts
 - resolution status counts
 
-`CODE_REMEDIATE_METADATA.final_resolution_table` must contain the same counts. If the final table omits any ingested entry, fails to account for every row in the triage or resolution status counts, or uses a row without triage status and resolution status, fail before final output. `CODE_REMEDIATE_METADATA.final_resolution_table.required_columns` must list `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, and `evidence`.
+`CODE_REMEDIATE_METADATA.final_resolution_table` has same counts. Fail before output if final table omits an ingested entry, fails to account for every row in triage/resolution counts, or any row lacks triage/resolution status. `CODE_REMEDIATE_METADATA.final_resolution_table.required_columns` lists `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, `evidence`.
 
-Closure evidence for report-origin review obligations must match the obligation type:
+Closure evidence for report-origin obligation must match type:
 
-- independent review: path to the independent specialist/maintainer output and updated review metadata showing independence satisfied, or unresolved rationale if unavailable
-- full gates: path to a clean full-gate or CI result, or unresolved rationale if the workspace/environment prevents it
-- type/lint/test environment: command log from the installed environment, or unresolved rationale naming the missing executable/dependency
-- confidence gap: additional evidence that closes the gap, or an explicit unresolved/deferred record
+- independent review: independent specialist/maintainer output path plus updated metadata proving independence, or unavailable rationale
+- full gates: clean full-gate/CI result path, or workspace/environment-prevented rationale
+- type/lint/test environment: installed-environment command log, or missing executable/dependency rationale
+- confidence gap: closing evidence, or explicit unresolved/deferred record
 
-After the table, keep one expanded item per report finding and unresolved online review thread/comment:
+After table, keep expanded item for each report finding and unresolved online review thread/comment:
 
 - finding id or source location
 - severity
 - source and fetched evidence path
-- PR/diff relation and evidence for that relation
+- PR/diff relation and evidence
 - summary
 - exact affected files
 - expected closure evidence
@@ -173,11 +173,11 @@ After the table, keep one expanded item per report finding and unresolved online
 - owner/status: `todo|fixed|resolved|deferred|unresolved`
 - unresolved rationale, when applicable
 
-If a finding or online review thread/comment is ambiguous, inspect the referenced code in the local working tree or checked-out PR branch and either sharpen it into an action item or mark it `needs-clarification` before editing. If a fetched PR comment or review thread is marked resolved in current PR evidence, list it in the table with triage status and resolution `resolved`, cite the fetched evidence path, and state that the PR evidence marks it resolved. Do not create follow-up implementation work for it. If the requested change is already present in current local code, mark triage status and resolution `already-applied`, cite the code evidence, and do not create follow-up implementation work for it. Do not fix duplicate, stale, out-of-scope, already-fixed, already-applied, or resolved review comments; record the triage evidence instead.
+For ambiguous finding/thread/comment, inspect referenced local/checked-out code; sharpen to action item or `needs-clarification` before edits. If fetched PR evidence marks comment/thread resolved, table it as triage/resolution `resolved`, cite fetched evidence, state current PR marks it resolved; do not create implementation follow-up. If requested change already exists locally, mark triage/resolution `already-applied`, cite code evidence, no follow-up. Never fix duplicate, stale, out-of-scope, already-fixed, already-applied, or resolved comments; record triage evidence.
 
 ### 05: Ask For Resolution Scope Before Editing
 
-Build `$OUT_DIR/resolution-scope.md` with a `## Resolution Scope Selection` section before any code changes. The selectable list must include every non-closed finding that could require work and must omit all fetched online PR comments or review threads currently marked resolved. Keep resolved online PR items in `action-items.md` only as non-selectable audit rows with selection index `-`; this is the omit resolved online PR rule.
+Before code changes, build `$OUT_DIR/resolution-scope.md` with `## Resolution Scope Selection`. Selectable list includes every non-closed work-requiring finding; omits fetched online PR comments/threads currently resolved. Omit resolved online PR items from selection; keep them in `action-items.md` only as non-selectable audit rows, selection index `-`; omit-resolved-online rule.
 
 Selection list table columns:
 
@@ -190,14 +190,14 @@ Selection list table columns:
 
 Selectable items:
 
-- include triage status `valid`
-- include `needs-clarification` only when the next step is clarification or code inspection, not implementation
-- include report-origin failed checks, follow-ups, required next work, confidence gaps, and residual risks unless already closed by cited evidence
-- include PR/review items related to PR intent, changed diff, adjacent verification, or unknown relation unless already closed by cited evidence
-- exclude triage or resolution `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, and `already-applied`
-- exclude fetched online PR review comments/threads marked resolved in current PR evidence
+- include triage `valid`
+- include `needs-clarification` only when next step is clarification/code inspection, not implementation
+- include report-origin failed checks, follow-ups, required next work, confidence gaps, residual risks unless cited evidence closes them
+- include PR/review items related to PR intent, changed diff, adjacent verification, unknown relation unless cited evidence closes them
+- exclude triage/resolution `resolved`, `duplicate`, `stale`, `out-of-scope`, `already-fixed`, `already-applied`
+- exclude fetched online PR comments/threads marked resolved in current PR evidence
 
-Present the selectable list to the user and ask:
+Present selectable list and ask:
 
 ```text
 Which findings should I remediate?
@@ -206,51 +206,51 @@ Which findings should I remediate?
 - indexes: comma-separated indexes or ranges such as 1,3,5-7
 ```
 
-If `remediation_scope` was supplied up front, treat that input as the user's selection, apply it without asking again, and still write `$OUT_DIR/resolution-scope.md`. If `remediation_scope` was omitted and selectable items exist, stop before editing and ask the user exactly which findings to resolve. Do not infer `all`, do not silently select only code-editable items, and do not proceed from a default selection. If the runtime cannot ask the user interactively, fail with `scope-selection-required` before editing. If no selectable items remain, write `none-selectable`, skip implementation, and proceed to gates/artifact output.
+If `remediation_scope` supplied, it is user selection: apply without re-asking; still write `$OUT_DIR/resolution-scope.md`. If omitted and selectable items exist, stop before edits and ask exactly which findings to resolve. Never infer `all`, silently select only code-editable items, or use default selection. If runtime cannot ask, fail `scope-selection-required` before edit. If none selectable, write `none-selectable`, skip implementation, continue gates/artifact.
 
 Record in `$OUT_DIR/resolution-scope.md` and `CODE_REMEDIATE_METADATA.resolution_scope`:
 
 - selection source: `explicit-input`, `user-prompt`, or `none-selectable`
-- whether a prompt was presented
-- whether the user's selection was confirmed before editing
-- selected indexes and selected severity groups
+- prompt presented
+- user selection confirmed before editing
+- selected indexes/severity groups
 - omitted resolved-online count
 - deferred/unselected indexes
-- any unselected critical/high findings
+- unselected critical/high findings
 
-Validate selection before editing:
+Validate before edit:
 
 - `all` selects every selectable item
-- severity groups select every selectable item with matching severity
-- indexes select only rows in the selectable list
-- invalid indexes or attempts to select omitted/resolved items => fail before editing
-- selectable items with no explicit input or confirmed user prompt => fail before editing
-- unselected critical/high findings must be recorded as deferred by user selection in `resolution-scope.md` and final output
+- severity group selects every selectable matching severity
+- indexes select only selectable rows
+- invalid index or attempt to select omitted/resolved item => fail before editing
+- selectable items without explicit input or confirmed user prompt => fail before editing
+- unselected critical/high recorded as deferred by user selection in `resolution-scope.md` and final output
 
-Any item marked `out-of-scope` must be justified and confirmed by the user before it is removed from the selectable list. Record each such item in a `## Out Of Scope Confirmation` section with item id, source, rationale, evidence path, and the user's confirmation. If the user does not confirm, keep the item selectable as `valid` or `needs-clarification`.
+Each `out-of-scope` item needs user justification/confirmation before removal from selectable list. Record every item in `## Out Of Scope Confirmation`: item id, source, rationale, evidence path, user confirmation. Without confirmation, retain selectable as `valid`/`needs-clarification`.
 
-For `mode=pr`, also write a `## PR Relevance Summary` section in `$OUT_DIR/action-items.md` and `$OUT_DIR/resolution-scope.md` with counts for connected open items, connected selectable items, connected required follow-ups, and connected items marked `out-of-scope`. Connected means relation `direct-diff`, `pr-intent`, `adjacent`, or `unknown`. `connected items marked out-of-scope` must be `0`. Required follow-up rows must remain visible in the final output so the user can rule them into the current PR if they choose.
+For `mode=pr`, add `## PR Relevance Summary` to `$OUT_DIR/action-items.md` and `$OUT_DIR/resolution-scope.md`: connected open items, connected selectable items, connected required follow-ups, connected `out-of-scope` items. Connected is `direct-diff`, `pr-intent`, `adjacent`, or `unknown`. `connected items marked out-of-scope` must be `0`. Required-follow-up rows remain final-output-visible so user can rule them into current PR.
 
 ### 06: Group Selected Findings And Assign Specialist Owners
 
-Before editing, write `$OUT_DIR/resolution-workplan.md` with these sections:
+Before edit write `$OUT_DIR/resolution-workplan.md` sections:
 
-- `## Selected Finding Groups`: one row per work cluster.
-- `## Specialist Assignments`: primary owner, verifier, context pack path, expected output, and mode for each cluster.
-- `## Execution Order`: dependency-aware order for clusters.
-- `## Ungrouped Items`: selected items intentionally left parent-owned, with rationale.
+- `## Selected Finding Groups`: one row/work cluster.
+- `## Specialist Assignments`: owner, verifier, context-pack path, expected output, mode/cluster.
+- `## Execution Order`: dependency-aware cluster order.
+- `## Ungrouped Items`: intentionally parent-owned selected items and rationale.
 
-Group selected items only when grouping reduces duplicate context or keeps one root cause together. Valid grouping keys:
+Group only when it reduces duplicated context or preserves one root cause. Valid keys:
 
-- shared affected files, modules, tests, docs, or CI workflows
-- same closure type: code, tests, docs, CI, security, typing, performance, review-gate, or merge/conflict
-- same root cause or same expected fix
-- same verification command or closure evidence
+- shared affected files/modules/tests/docs/CI workflows
+- same closure type: code, tests, docs, CI, security, typing, performance, review-gate, merge/conflict
+- same root cause/expected fix
+- same verification command/closure evidence
 - same merge/conflict collision risk
 
-Do not split one coherent fix across multiple specialists. Do not create one specialist pass per tiny finding when the parent can safely close it. Do not group unrelated findings merely because they share severity.
+Never split coherent fix across specialists; never make one pass per tiny parent-safe finding; never group unrelated findings for shared severity.
 
-Each selected item must appear in exactly one group or in `## Ungrouped Items`. Each group row must include:
+Each selected item is in exactly one group or `## Ungrouped Items`. Every group row:
 
 - cluster id
 - selected indexes
@@ -265,132 +265,132 @@ Each selected item must appear in exactly one group or in `## Ungrouped Items`. 
 
 Owner assignment rules:
 
-- implementation/refactor/API fix: primary `sw-engineer`, verifier `qa-specialist`; add `solution-architect` in the verifier/context when public API or migration shape matters.
-- test gap or regression proof: primary `qa-specialist`, verifier `parent`.
-- docs/changelog/examples/docstrings: primary `doc-scribe`, verifier `parent` or `qa-specialist` for executable docs.
-- CI/workflow/release gate: primary `cicd-steward`, verifier `parent`; add `security-auditor` when permissions or secrets are involved.
-- lint/type/pre-commit/suppression: primary `linting-expert`, verifier `parent` or `qa-specialist` when runtime behavior could change.
-- security/dependency/permission/data exposure: primary `security-auditor`, verifier `challenger` for high/critical or non-obvious closure.
-- data/ML/research/performance: primary `data-steward`, `scientist`, or `squeezer` as appropriate, verifier `qa-specialist` for tensor/data boundary checks.
-- review-gate/follow-up obligation: primary role matching the missing evidence, verifier `parent`; keep unresolved when the evidence requires unavailable CI, maintainer review, or a user-deferred external step.
-- merge/conflict collision: primary `sw-engineer`, verifier `challenger` when critical/high or non-obvious; cite `$OUT_DIR/merge-prestage.md`.
+- implementation/refactor/API: `sw-engineer` primary, `qa-specialist` verifier; public API/migration shape adds `solution-architect` to verifier/context.
+- test gap/regression proof: `qa-specialist` primary, `parent` verifier.
+- docs/changelog/examples/docstrings: `doc-scribe` primary, `parent` or `qa-specialist` verifier for executable docs.
+- CI/workflow/release gate: `cicd-steward` primary, `parent` verifier; permission/secret work adds `security-auditor`.
+- lint/type/pre-commit/suppression: `linting-expert` primary, `parent` or `qa-specialist` verifier when runtime could change.
+- security/dependency/permission/data exposure: `security-auditor` primary, `challenger` verifier for high/critical/non-obvious closure.
+- data/ML/research/performance: `data-steward`, `scientist`, or `squeezer` primary; `qa-specialist` verifies tensor/data boundaries.
+- review-gate/follow-up: primary role matching missing evidence, `parent` verifier; unresolved when evidence needs unavailable CI, maintainer review, user-deferred external step.
+- merge/conflict collision: `sw-engineer` primary; `challenger` verifies critical/high/non-obvious; cite `$OUT_DIR/merge-prestage.md`.
 
-Write one narrow context pack per non-parent cluster under `$OUT_DIR/specialists/<cluster-id>-context.md`. A context pack must include only the selected items in that cluster, relevant files/hunks/logs, closure question, stop rule, and expected evidence. Do not include unrelated selected items, full PR discussion, or full review reports by default.
+For each non-parent cluster write narrow `$OUT_DIR/specialists/<cluster-id>-context.md`: selected cluster only, relevant files/hunks/logs, closure question, stop rule, expected evidence. Omit unrelated findings, full PR discussion, full review report by default.
 
-Record the workplan in `CODE_REMEDIATE_METADATA.resolution_workplan` with `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, and `workplan_path`.
+Record `CODE_REMEDIATE_METADATA.resolution_workplan`: `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, `workplan_path`.
 
 ### 07: Apply Fixes In Selected Scope
 
-Apply fixes in priority order within the selected scope: `critical` -> `high` -> `medium` -> `low`.
+Fix selected scope in priority: `critical` -> `high` -> `medium` -> `low`.
 
-In `mode=pr`, complete any merge/conflict collision work identified in `$OUT_DIR/merge-prestage.md` before applying selected report or online-review findings. Then fix one selected valid finding group at a time using `$OUT_DIR/resolution-workplan.md` as the execution ledger. Do not edit unselected findings. Do not edit a selected item outside its assigned group unless the workplan is updated first with the reason and affected closure evidence. After each group, record the changed files and evidence in `$OUT_DIR/closure-log.md`.
+In `mode=pr`, complete `$OUT_DIR/merge-prestage.md` collision work before selected report/online-review findings. Then fix one selected valid group at a time; `$OUT_DIR/resolution-workplan.md` is execution ledger. Never edit unselected findings or selected item outside assigned group unless update workplan first with reason/affected closure evidence. After each group, record changed files/evidence in `$OUT_DIR/closure-log.md`.
 
 ### 08: Challenge Closure Before Full Gates
 
-For each selected fixed finding, answer:
+For every selected fixed finding answer:
 
-- Does the original failure still reproduce?
-- Could the finding pass review while remaining functionally wrong?
-- Which regression check now protects it?
+- Does original failure still reproduce?
+- Could it pass review but remain functionally wrong?
+- Which regression check protects it now?
 - What risk remains?
 
-Missing closure evidence keeps the item unresolved.
+Missing closure evidence keeps item unresolved.
 
-Write `$OUT_DIR/closure-log.md` with a `Closure Evidence` section before any item is marked fixed.
+Write `$OUT_DIR/closure-log.md` `Closure Evidence` before marking any item fixed.
 
-Apply `../_shared/specialist-orchestration.md` when selected findings cross a specialist domain. `$OUT_DIR/resolution-workplan.md` is the source of truth for specialist closure ownership; write `"$OUT_DIR/specialist-closure-plan.md"` only when an additional post-fix verification pass is needed beyond the workplan's owner/verifier assignments. Keep context packs group-local: include the selected item group, changed files, closure evidence, and the exact verification question; omit unrelated review items and PR discussion.
+Apply `../_shared/specialist-orchestration.md` when selected findings cross specialist domain. `$OUT_DIR/resolution-workplan.md` is source of truth for closure ownership; write `"$OUT_DIR/specialist-closure-plan.md"` only for post-fix verification beyond workplan owner/verifier. Context packs stay group-local: selected group, changed files, closure evidence, exact verification question; omit unrelated review items/PR discussion.
 
 Specialist closure triggers:
 
-- `qa-specialist`: any bug fix, test gap, regression proof, or "already-applied" claim for behavior.
-- `security-auditor`: auth, credentials, deserialization, dependency/supply-chain, permissions, or data exposure.
-- `cicd-steward`: GitHub Actions, release automation, flaky CI, or gate-environment failures.
-- `linting-expert`: ruff, mypy, pre-commit, type/lint config, or suppression changes.
-- `doc-scribe`: public docs, changelog, examples, migration text, or public docstrings.
+- `qa-specialist`: bug fix, test gap, regression proof, or behavior `already-applied` claim.
+- `security-auditor`: auth, credentials, deserialization, dependency/supply-chain, permissions, data exposure.
+- `cicd-steward`: GitHub Actions, release automation, flaky CI, gate-environment failures.
+- `linting-expert`: ruff, mypy, pre-commit, type/lint config, suppression changes.
+- `doc-scribe`: public docs, changelog, examples, migration text, public docstrings.
 - `data-steward`, `scientist`, or `squeezer`: data/ML/research/performance findings.
-- `challenger`: critical/high findings, conflict resolution, or closure that depends on a non-obvious assumption.
+- `challenger`: critical/high, conflict resolution, or closure based on non-obvious assumption.
 
-If a triggered specialist is unavailable, write a labeled in-main substitute file under `"$OUT_DIR/specialists"` and lower confidence when independence was material. Do not mark a selected high/critical item resolved solely from the parent agent's claim when the closure evidence depends on a triggered specialist domain.
+If triggered specialist unavailable, write labeled in-main substitute in `"$OUT_DIR/specialists"`; lower confidence when independence mattered. Never mark selected high/critical resolved only from parent claim when closure evidence depends on triggered specialist domain.
 
 ### 09: Run Shared Quality Gates
 
-Inspect `run-gates.sh --help`, then run every project-relevant closure gate with explicit commands or skip reasons.
+Inspect `run-gates.sh --help`; run every project-relevant closure gate with explicit command/skip reason.
 
 ### 10: Write Unresolved Findings
 
 Write unresolved findings to `$OUT_DIR/unresolved.txt`.
 
-When selected items remain unresolved, the file must distinguish what was actually fixed from what still needs a process, environment, CI, or external review action. Include these sections:
+When selected items remain unresolved, distinguish fixed work from still-needed process/environment/CI/external-review action. Include:
 
-- `Unresolved Work Summary`: selected total, selected resolved, selected unresolved, local actionable unresolved, process/gate unresolved, environment blocked, external-owner blocked, and whether all local code/doc findings are closed.
-- `Why Selected Items Remain Unresolved`: one row per unresolved selected item or reason group with selected indexes, severity, closure class, status, why it remains unresolved, attempted evidence, next owner, and next action.
-- `Next Action`: the smallest concrete action that would close each unresolved reason group.
+- `Unresolved Work Summary`: selected total/resolved/unresolved; local actionable unresolved; process/gate unresolved; environment blocked; external-owner blocked; whether all local code/doc findings closed.
+- `Why Selected Items Remain Unresolved`: one row/unresolved selected item or reason group: selected indexes, severity, closure class, status, reason, attempted evidence, next owner/action.
+- `Next Action`: smallest concrete action closing each unresolved reason group.
 
-Use closure classes consistently: `local-code-or-doc`, `process-gate`, `independent-review`, `environment-blocked`, `external-ci`, `user-deferred`, `already-closed`, or `other`. If `remediation_scope=all`, never summarize the run as "resolved all" while any selected item remains unresolved. Say "all local actionable findings are closed" only when local code/doc findings are closed, then list the remaining selected gate/process obligations separately.
+Use closure classes: `local-code-or-doc`, `process-gate`, `independent-review`, `environment-blocked`, `external-ci`, `user-deferred`, `already-closed`, `other`. With `remediation_scope=all`, never say "resolved all" while selected item unresolved. Say "all local actionable findings are closed" only when local code/doc closed; separately list remaining selected gate/process obligations.
 
 ### 11: Write And Validate Result Artifact
 
-Follow `../_shared/helper-cli-contract.md` and authoritative help. Write with `CODE_REMEDIATE_METADATA`, validate as skill `code-remediate`, and promote only the validated candidate.
+Follow `../_shared/helper-cli-contract.md` and authoritative help. Write `CODE_REMEDIATE_METADATA`, validate `code-remediate`, promote only validated candidate.
 
-`CODE_REMEDIATE_METADATA.mode` must be the normalized mode. `CODE_REMEDIATE_METADATA.confidence_recovery` must include `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, and `remaining_limits`. `CODE_REMEDIATE_METADATA.confidence_gap_closures` must include one closure record per non-empty `confidence_gaps` entry, with `status=closed|unresolved|deferred` and matching evidence or rationale. `CODE_REMEDIATE_METADATA.resolution_scope` must summarize the requested scope, `selection_source`, whether a prompt was presented, `selection_confirmed_by_user` before editing, selected indexes, selected severity groups, deferred indexes, and omitted resolved-online count. `CODE_REMEDIATE_METADATA.resolution_workplan` must summarize `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, and `workplan_path`. `CODE_REMEDIATE_METADATA.review_report_intake` must summarize report-origin intake with `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, and `report_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.final_resolution_table` must summarize ingested entries, final table rows, omitted entries, selectable/non-selectable row totals, required columns, triage status counts, and resolution status counts. `CODE_REMEDIATE_METADATA.out_of_scope_confirmation` must summarize `count`, `all_confirmed_by_user`, and one item per out-of-scope row with item id, source, rationale, evidence path, and confirmation status. `CODE_REMEDIATE_METADATA.pr_relevance` must summarize `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, and `connected_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.unresolved_summary` must summarize selected item totals, unresolved closure-class counts, `all_local_actionable_items_closed`, and `unresolved_reason_groups` with reason, count, owner, next action, and evidence path. For `mode=pr`, include the selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, and `$OUT_DIR/merge-prestage.md`.
+`CODE_REMEDIATE_METADATA.mode` is normalized mode. `CODE_REMEDIATE_METADATA.confidence_recovery` includes `initial_confidence`, `final_confidence`, `status`, `evidence`, `recovery_actions`, `remaining_limits`. `CODE_REMEDIATE_METADATA.confidence_gap_closures` has one closure per non-empty `confidence_gaps`, with `status=closed|unresolved|deferred` plus evidence/rationale. `CODE_REMEDIATE_METADATA.resolution_scope` summarizes requested `remediation_scope`, `selection_source`, prompt presented, `selection_confirmed_by_user` pre-edit, selected indexes/severity groups, deferred indexes, omitted resolved-online count. `CODE_REMEDIATE_METADATA.resolution_workplan` summarizes `groups_total`, `parent_owned_groups`, `specialist_owned_groups`, `verifier_groups`, `unassigned_selected_items`, `workplan_path`. `CODE_REMEDIATE_METADATA.review_report_intake` summarizes `requested_report`, `report_items_total`, `review_gate_items_total`, `review_gate_items_selectable`, `report_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.final_resolution_table` summarizes ingested entries, final rows, omitted entries, selectable/non-selectable rows, required columns, triage/resolution status counts. `CODE_REMEDIATE_METADATA.out_of_scope_confirmation` summarizes `count`, `all_confirmed_by_user`, every out-of-scope item id/source/rationale/evidence path/confirmation. `CODE_REMEDIATE_METADATA.pr_relevance` summarizes `evaluated`, `connected_open_items_total`, `connected_selectable_items_total`, `connected_required_followup_total`, `connected_items_marked_out_of_scope`. `CODE_REMEDIATE_METADATA.unresolved_summary` summarizes selected totals, unresolved closure-class counts, `all_local_actionable_items_closed`, `unresolved_reason_groups` with reason/count/owner/next action/evidence path. For `mode=pr`, include selected PR target, `$OUT_DIR/pr/pr-routing.json`, `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/local-checkout.json`, `$OUT_DIR/merge-prestage.md`.
 
 ## Fail-fast Rules
 
-01. Missing findings source => fail. 01a. `+review`, `+report`, or `report` shorthand without a matching code-review report for the target => fail with "run `$code-review <target>` first or provide a report path".
+01. Missing findings source => fail. 01a. `+review`, `+report`, or `report` shorthand without matching target code-review report => fail: "run `$code-review <target>` first or provide a report path".
 02. Shared gate script missing => fail.
-03. Selected critical findings left unresolved => fail. Unselected critical/high findings are allowed only when explicitly recorded as deferred by user selection.
+03. Selected critical unresolved => fail. Unselected critical/high allowed only when user selection explicitly records deferred.
 04. Finding marked fixed without closure evidence => fail.
-05. Gate failure caused by the resolution patch => fail unless explicitly listed as unresolved.
-06. PR mode without fresh online review collection or explicit stale-coverage caveat => fail. 06a. PR mode with code edits but without `pr/local-checkout.json` proving the local checkout matches the PR head => fail.
-07. Online review thread/comment fixed without valid triage status => fail.
-08. Duplicate/stale/out-of-scope/already-fixed review thread/comment edited instead of recorded => fail.
+05. Gate fails because of resolution patch => fail unless explicitly unresolved.
+06. PR mode without fresh online review or explicit stale-coverage caveat => fail. 06a. PR code edits without `pr/local-checkout.json` proving local checkout matches PR head => fail.
+07. Online thread/comment fixed without valid triage status => fail.
+08. Duplicate/stale/out-of-scope/already-fixed review thread/comment edited, not recorded => fail.
 09. Result artifact validator failure => fail.
 10. Result artifact missing => fail.
-11. `$OUT_DIR/action-items.md` missing the complete review item resolution table => fail.
-12. PR mode using `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots for code inspection or edits => fail.
-13. Missing `$OUT_DIR/resolution-scope.md` with `Resolution Scope Selection` before edits => fail.
-14. Editing a finding not selected in `resolution-scope.md` => fail.
-15. Selectable scope list includes a fetched online PR comment/thread marked resolved => fail.
-16. PR mode missing `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/merge-tree.txt`, or `$OUT_DIR/merge-prestage.md` before review/report finding edits => fail.
-17. PR mode resolving merge conflicts from conflict markers without recorded clean PR and target-branch context => fail.
-18. Applying report or online-review findings before PR merge/conflict prestage is complete => fail.
-19. PR mode running `git` or `gh` with `--force` before explicit user confirmation and overwrite-risk explanation => fail.
-20. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, or residual risks omitted from `action-items.md` => fail.
-21. Report-origin review obligation marked `out-of-scope` before user scope selection without cited evidence that it is unrelated to the requested report/PR/target => fail.
-22. Selected review gate or follow-up item marked resolved without matching closure evidence => fail.
-23. Selectable findings exist and `remediation_scope` was omitted, but no user prompt and confirmed user selection were recorded before editing => fail.
-24. Any item marked `out-of-scope` without specific rationale and explicit user confirmation => fail.
+11. `$OUT_DIR/action-items.md` lacks complete review item resolution table => fail.
+12. PR mode uses `curl`, `raw.githubusercontent.com`, or copied `head-files/` snapshots for code inspection/edits => fail.
+13. `$OUT_DIR/resolution-scope.md` lacks `Resolution Scope Selection` before edits => fail.
+14. Edit finding not selected in `resolution-scope.md` => fail.
+15. Selectable list includes fetched online PR resolved comment/thread => fail.
+16. PR mode lacks `$OUT_DIR/pr/target-branch.json`, `$OUT_DIR/pr/merge-tree.txt`, or `$OUT_DIR/merge-prestage.md` before review/report finding edits => fail.
+17. PR merge conflicts resolved from markers without recorded clean PR/target context => fail.
+18. Apply report/online-review findings before PR merge/conflict prestage complete => fail.
+19. PR mode runs `git`/`gh` with `--force` before explicit user confirmation and overwrite-risk explanation => fail.
+20. Review report `checks_failed`, `follow_up`, required next work, confidence gaps, residual risks omitted from `action-items.md` => fail.
+21. Report-origin obligation marked `out-of-scope` before user selection without cited unrelatedness evidence => fail.
+22. Selected review gate/follow-up marked resolved without matching closure evidence => fail.
+23. Selectable findings and omitted `remediation_scope`, but no recorded user prompt/confirmed selection before edit => fail.
+24. Any `out-of-scope` item lacks specific rationale and explicit user confirmation => fail.
 25. PR item connected to PR intent, changed diff, adjacent verification, or unknown relation marked `out-of-scope` => fail.
-26. Connected PR item omitted from selectable scope or required follow-up without closure evidence => fail.
-27. Selected items exist but `$OUT_DIR/resolution-workplan.md` is missing before edits => fail.
-28. Selected item missing from both `Selected Finding Groups` and `Ungrouped Items` => fail.
-29. Specialist-owned group without a context pack path and owner/verifier assignment => fail.
-30. Selected unresolved items exist but `$OUT_DIR/unresolved.txt` lacks `Unresolved Work Summary`, `Why Selected Items Remain Unresolved`, or `Next Action` => fail.
-31. `remediation_scope=all` with unresolved selected items but final output says or implies all selected work is resolved => fail.
-32. Any unresolved selected item missing closure class, attempted evidence, next owner, or next action => fail.
-33. Selected local code/doc item remains unresolved without blocker evidence and status fail/timeout => fail.
-34. Final resolution table row count does not match the total ingested entries => fail.
-35. Final resolution table omits any ingested entry or records `omitted_entries_total` other than `0` => fail.
-36. Final resolution table status counts do not account for every table row => fail.
-37. Final resolution table missing `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, or `evidence` columns => fail.
-38. Final chat missing the compact resolution summary, unresolved/deferred items, confidence with material limits, or artifact path => fail.
+26. Connected PR item omitted from selectable scope/required follow-up without closure evidence => fail.
+27. Selected items but missing `$OUT_DIR/resolution-workplan.md` before edits => fail.
+28. Selected item absent from both `Selected Finding Groups` and `Ungrouped Items` => fail.
+29. Specialist-owned group lacks context-pack path or owner/verifier assignment => fail.
+30. Selected unresolved items but `$OUT_DIR/unresolved.txt` lacks `Unresolved Work Summary`, `Why Selected Items Remain Unresolved`, or `Next Action` => fail.
+31. `remediation_scope=all` with selected unresolved, but final output says/implies all selected work resolved => fail.
+32. Unresolved selected item lacks closure class, attempted evidence, next owner, or next action => fail.
+33. Selected local code/doc unresolved without blocker evidence and status fail/timeout => fail.
+34. Final table row count differs from total ingested entries => fail.
+35. Final table omits ingested entry or `omitted_entries_total` is not `0` => fail.
+36. Final table status counts do not cover every row => fail.
+37. Final table lacks `input item`, `item name`, `item type`, `triage status`, `resolution`, `owner/status`, `resolved how`, or `evidence` => fail.
+38. Final chat lacks compact resolution summary, unresolved/deferred items, confidence/material limits, or artifact path => fail.
 
 ## Quality Gates
 
 Required checks:
 
-- `review`: action-item ledger with complete review item resolution table, table completeness counts, review report failed-gate/follow-up intake, PR/diff relevance classification, indexed resolution scope selection with prompt/confirmation evidence, resolution workplan with grouped selected items and specialist assignments, user-confirmed out-of-scope rationale, PR online review triage, target branch refresh, PR merge/conflict prestage, local checkout evidence when relevant, closure log, unresolved list with closure classes, next owners, attempted evidence, next actions, and `git diff --check`.
-- `tests`: the smallest checks that prove closure for fixed findings.
-- `artifact`: shared validator confirms closure artifacts, gate logs, and result JSON shape.
+- `review`: complete action-item resolution table/row counts; review report failed-gate/follow-up intake; PR/diff relevance; indexed scope selection with prompt/confirmation; grouped workplan/specialist assignment; user-confirmed out-of-scope rationale; PR online-review triage; target refresh; merge/conflict prestage; relevant local checkout evidence; closure log; unresolved list with closure classes/next owner/attempted evidence/next action; `git diff --check`.
+- `tests`: smallest checks proving fixed-finding closure.
+- `artifact`: shared validator confirms closure artifacts, gate logs, result JSON shape.
 
 Conditional checks:
 
-- `lint`/`format`/`types`: run project-configured checks for changed code/config.
+- `lint`/`format`/`types`: run configured checks for changed code/config.
 - `calibration`: run when findings affect `.codex/skills`, `.codex/agents`, routing, or gate policy.
 
 ## Calibration Hooks
 
-Update calibration when resolution policy or output shape changes:
+Update calibration when resolution policy/output shape changes:
 
 - benchmark patterns: `code-remediate`
 - behavioral cases: ambiguous findings, false closure, unresolved critical/high handling, missing user-selected resolution scope, missing resolution workplan for selected items, selected item omitted from all workplan groups, specialist-owned group missing context pack, unconfirmed out-of-scope triage, connected PR item marked out-of-scope, missing connected follow-up, code-review-to-remediation gate symmetry, unresolved selected-item closure summary, complete final resolution table, gate failure disclosure, artifact validator bypass, PR online review triage, PR target-branch refresh, PR merge/conflict prestage, PR local checkout before edits
@@ -399,10 +399,10 @@ Update calibration when resolution policy or output shape changes:
 
 Use shared gate schema from `../_shared/quality-gates.md`.
 
-Apply the shared confidence band policy from `../_shared/quality-gates.md` for confidence score, confidence recovery, and confidence-gap closure output.
+Apply shared confidence band policy from `../_shared/quality-gates.md` for score, recovery, confidence-gap closure output.
 
-Keep the complete, unabridged resolution ledger in `$OUT_DIR/action-items.md`; it must cover every ingested item and retain the validated columns, counts, status vocabulary, closure evidence, scope selection, workplan, PR relevance, unresolved classes, and confidence recovery required above.
+Keep complete, unabridged resolution ledger in `$OUT_DIR/action-items.md`: every ingested item, validated columns/counts/status vocabulary/resolved evidence/scope selection/workplan/PR relevance/unresolved classes/confidence recovery above.
 
-The final terminal/chat output is intentionally compact. Start with `Remediation Summary` and include requested scope, ingested/selected/implemented/unresolved/deferred totals, whether all selected local actionable items are closed, gate status, confidence with material limits, and the artifact path. List only unresolved or user-deferred items with next owner/action; do not duplicate rows already closed in the artifact. State "resolved all" only when `selected_items_unresolved=0`. For `mode=pr`, add one compact merge-prestage line with the evidence path and remaining collision risk. The artifact validator, not chat repetition, proves full-ledger completeness.
+Final terminal/chat output is compact. Start `Remediation Summary`: requested scope; ingested/selected/implemented/unresolved/deferred totals; whether all selected local actionable items closed; gate status; confidence/material limits; artifact path. List only unresolved/user-deferred items with next owner/action; never duplicate closed artifact rows. Say "resolved all" only if `selected_items_unresolved=0`. For `mode=pr`, add compact merge-prestage line with evidence path/remaining collision risk. Artifact validator—not chat repetition—proves full-ledger completeness.
 
 Minimum artifact payload template: `result-template.json`.

@@ -1,10 +1,10 @@
 # Commit Response Template
 
-Use this output format when the user asks to commit or asks for a commit summary.
+Use when user asks to commit or for a commit summary.
 
 ## Required Commit Message Shape
 
-Always compose the commit message in this shape:
+Always use:
 
 ```text
 <type>(<scope>): <title>
@@ -19,13 +19,11 @@ Co-authored-by: Codex <codex@openai.com>
 
 Rules:
 
-- Use Conventional Commit style for the first line.
-- Keep `<type>` lowercase, such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, or `perf`.
-- Use a specific lowercase `<scope>` when possible, such as `api`, `cli`, `config`, `tests`, `docs`, `ci`, `deps`, `packaging`, `models`, `data`, or `utils`.
-- Keep `<title>` imperative, concise, and under 72 characters when practical.
-- The body must be a bullet list of notable changes only.
-- Ignore pure linting, formatting-only churn, generated cache files, and typo-only edits unless they are the whole change.
-- Keep the `---` separator before the co-author trailer.
-- End with exactly this Git trailer:
+- First line: Conventional Commit.
+- `<type>` lowercase: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, or `perf`.
+- Prefer specific lowercase `<scope>`: `api`, `cli`, `config`, `tests`, `docs`, `ci`, `deps`, `packaging`, `models`, `data`, or `utils`.
+- `<title>` imperative, concise, under 72 characters when practical.
+- Body: notable-change bullets only; omit pure lint/format churn, generated cache, and typo-only edits unless they are whole change.
+- Keep `---` before trailer. End with exactly:
 
 `Co-authored-by: Codex <codex@openai.com>`

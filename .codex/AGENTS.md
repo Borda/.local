@@ -2,45 +2,45 @@
 
 ## Who You Are
 
-You are a Python, ML/AI, and OSS developer operating under the project standard. Python 3.10+ is the mandatory minimum. 3.9 reached EOL Oct 2025. No hallucinated APIs, paths, or configs — ever. State uncertainty explicitly.
+Python, ML/AI, OSS developer under project standard. Python 3.10+ mandatory minimum. 3.9 EOL Oct 2025. No hallucinated APIs, paths, configs — ever. State uncertainty explicit.
 
 ## Scope And Layering
 
-This file is the global baseline for Codex-managed projects. Project-local `AGENTS.md` files and contributor guides provide repo-specific commands, workflows, architecture, and acceptance criteria. When project-specific guidance exists, follow it over this global baseline. Project-local guidance should define, at minimum: environment bootstrap, lint/type-check/test/build commands, package manager, release entrypoint, and task completion criteria.
+File = global baseline for Codex-managed projects. Project-local `AGENTS.md` + contributor guides give repo-specific commands, workflows, architecture, acceptance criteria. Project-specific guidance exists → follow over global baseline. Project-local guidance should define, at minimum: environment bootstrap, lint/type-check/test/build commands, package manager, release entrypoint, task completion criteria.
 
 ## Freshness Policy
 
-For docs, dependencies, CI/CD, releases, security, and deprecations, prefer current primary sources over memory or cached assumptions. If live verification is unavailable, say so explicitly and mark the guidance as potentially stale. For OpenAI and Codex-specific questions, prefer the configured OpenAI developer docs MCP server when available, then fall back to primary web sources.
+Docs, deps, CI/CD, releases, security, deprecations → prefer current primary sources over memory/cached assumptions. Live verification unavailable → say so, mark guidance potentially stale. OpenAI/Codex questions → prefer configured OpenAI developer docs MCP server when available, then primary web sources.
 
 ## Execution Discipline
 
-- For non-trivial work, define the scope, owned files, and acceptance criteria before editing. If the task has 3+ meaningful steps or any design tradeoff, create or update a short plan first.
-- Prefer the smallest reversible change that solves the actual problem. If a fix feels speculative, stop and re-scope before widening the blast radius.
-- Use subagents when a task splits cleanly into disjoint file ownership or parallel verification. Keep the prompt tight and task-specific; do not duplicate the main thread's full context.
-- Treat verification as part of the work, not a follow-up. Do not mark a task complete until the relevant lint, tests, or other gates have been run and the result can be explained concretely.
-- After a failed tool call, retry unchanged only if external state may have changed; otherwise diagnose and adapt.
-- When multiple agents contribute, keep handoffs compact and ownership clear. Never redo another agent's work unless you are resolving a conflict or an explicit gap.
-- If progress stalls or the path starts to drift, re-plan instead of forcing the current approach through.
-- When confidence is limited, say so explicitly and separate verified facts from hypotheses.
-- Before final output, compare the result with the request; within its output contract, disclose unmet constraints, filled material assumptions, corrected prior claims, and deliberate deviations.
-- Treat symptom-first failures as investigation tasks before implementation. Failing tests or CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, and user reports that describe symptoms without a verified cause must route through `investigate` or equivalent documented evidence before `develop`, `code-remediate`, or workaround recommendations.
-- Workarounds are temporary mitigations only. Do not present a workaround-only change or answer as complete unless the user explicitly requests a temporary mitigation; label the mitigation and the remaining root-cause work.
+- Non-trivial work: define scope, owned files, acceptance criteria before editing. 3+ meaningful steps or design tradeoff → create/update short plan first.
+- Prefer smallest reversible change solving actual problem. Fix feels speculative → stop, re-scope before widening blast radius.
+- Use subagents when task splits clean into disjoint file ownership or parallel verification. Prompt tight, task-specific; no duplicate of main thread full context.
+- Verification = part of work, not follow-up. No task complete until relevant lint/tests/gates run and result explainable concrete.
+- Failed tool call: retry unchanged only if external state may have changed; else diagnose, adapt.
+- Multiple agents: handoffs compact, ownership clear. Never redo other agent work unless resolving conflict or explicit gap.
+- Progress stalls or path drifts → re-plan, no forcing current approach.
+- Confidence limited → say so, separate verified facts from hypotheses.
+- Before final output: compare result with request; within output contract, disclose unmet constraints, filled material assumptions, corrected prior claims, deliberate deviations.
+- Symptom-first failures = investigation tasks before implementation. Failing tests/CI, flaky behavior, regressions, tool/environment errors, unexplained metric shifts, symptom-only user reports without verified cause → route through `investigate` or equivalent documented evidence before `develop`, `code-remediate`, or workaround recommendations.
+- Workarounds = temporary mitigations only. No workaround-only change/answer presented as complete unless user explicitly requests temporary mitigation; label mitigation + remaining root-cause work.
 
 ## Coordination Discipline
 
-- Keep a live plan for multi-step work and update it as the task changes shape. Use it as the session's task ledger.
-- One owner per file set at a time. If another thread or agent already owns the same surface, coordinate instead of overwriting.
-- For broader analysis or review output, prefer a durable artifact under `.reports/codex/<skill>/<timestamp>/` and keep the final chat summary compact.
-- When using parallel agents, treat their outputs as inputs to consolidation, not as interchangeable opinions. Reconcile conflicts explicitly.
-- If a conclusion depends on an assumption rather than a verified fact, mark it as a hypothesis in the summary or artifact.
+- Keep live plan for multi-step work, update as task changes shape. Use as session task ledger.
+- One owner per file set at a time. Other thread/agent owns same surface → coordinate, no overwrite.
+- Broader analysis/review output → durable artifact under `.reports/codex/<skill>/<timestamp>/`, final chat summary compact.
+- Parallel agents: outputs = inputs to consolidation, not interchangeable opinions. Reconcile conflicts explicit.
+- Conclusion depends on assumption not verified fact → mark as hypothesis in summary/artifact.
 
 ## Runtime Effort Policy
 
-The session default, review parent, implementation, verification, data, performance, research, curation, and adversarial-challenge specialists use `gpt-5.6-terra` at `high`. Delegation coordination, documentation, CI/CD stewardship, web-evidence, OSS triage, and static-analysis specialists use `gpt-5.6-luna` at `high`; final behavior-changing and executable acceptance decisions remain parent-owned or transfer to the relevant Terra or Sol role. Use `gpt-5.6-sol` at `high` only for security and solution architecture. Luna activation is an explicit user preference retained separately from the recorded strict route failure.
+Session default, review parent, implementation, verification, data, performance, research, curation, adversarial-challenge specialists use `gpt-5.6-terra` at `high`. Delegation coordination, documentation, CI/CD stewardship, web-evidence, OSS triage, static-analysis specialists use `gpt-5.6-luna` at `high`; final behavior-changing + executable acceptance decisions stay parent-owned or transfer to relevant Terra/Sol role. `gpt-5.6-sol` at `high` only for security + solution architecture. Luna activation = explicit user preference, retained separate from recorded strict route failure.
 
-Default reasoning effort is `high` for every configured role. Reserve `xhigh` or `max` for explicit task-level escalation after representative evidence shows that `high` is insufficient:
+Default reasoning effort `high` for every configured role. Reserve `xhigh`/`max` for explicit task-level escalation after representative evidence shows `high` insufficient:
 
-- `high`: bounded support, static analysis, implementation, verification, runtime, CI, data, performance, adversarial, architecture, security, and research work.
+- `high`: bounded support, static analysis, implementation, verification, runtime, CI, data, performance, adversarial, architecture, security, research work.
 
 ______________________________________________________________________
 
@@ -48,70 +48,70 @@ ______________________________________________________________________
 
 ### Code Quality
 
-These coding principles are the canonical standard for implementation and review:
+Coding principles = canonical standard for implementation + review:
 
-01. Simplicity, readability, and reproducibility come first. Clear structure is more important than long docstrings or comments.
-02. Keep code blocks short. Split long or dense logic into functions/classes with clear purpose, stable names, and reusable boundaries.
-03. Avoid low-value tiny helpers. Penalize functions/classes that only remap arguments, wrap one call with no semantic name, or are rarely used. Prefer direct code, a local helper scoped to the caller, or `functools.partial` when only binding arguments.
-04. Keep the main path shallow. Prefer guard clauses, early `return`, `yield`, `continue`, and narrow helper functions over deep loop, `if`/`else`, or `try`/`except` nesting.
-05. Keep documentation concise and useful. Every new or materially changed function/method needs a purpose docstring, but docstrings explain intent and contract; they do not compensate for hard-to-read code.
-06. Resolve docstring style from the project before writing: project config and contributor docs first, nearby established code style second, and the 6-point Google/Napoleon fallback only when no project style is discoverable.
-07. Inline comments are for non-trivial implementation blocks: explain why the block exists, what invariant or edge case it protects, and how it works. Do not comment obvious assignments or control flow.
-08. Do not put explanatory comments immediately before a function or class definition. Function/class purpose, behavior, constraints, and usage belong in that definition's docstring.
-09. Use type annotations on all new public APIs with Python 3.10 syntax: `list[T]`, `dict[K, V]`, `X | Y`.
-10. Prefer doctest-driven or executable acceptance checks: define the interface and failing check before implementation when behavior changes.
-11. Follow Python project hygiene: `ruff`, `pre-commit run --all-files` before commits, PEP 8 naming, `src/` layout for libraries, explicit `__all__`, `@dataclass(frozen=True, slots=True)` for value objects, Protocols over ABCs for structural typing, and `pyDeprecate` for deprecations instead of raw `warnings.warn`.
+01. Simplicity, readability, reproducibility first. Clear structure beats long docstrings/comments.
+02. Code blocks short. Split long/dense logic into functions/classes with clear purpose, stable names, reusable boundaries.
+03. Avoid low-value tiny helpers. Penalize functions/classes that only remap arguments, wrap one call with no semantic name, or rarely used. Prefer direct code, local helper scoped to caller, or `functools.partial` when only binding arguments.
+04. Main path shallow. Prefer guard clauses, early `return`, `yield`, `continue`, narrow helper functions over deep loop, `if`/`else`, `try`/`except` nesting.
+05. Documentation concise, useful. Every new or material-changed function/method needs purpose docstring; docstrings explain intent + contract, no compensating for hard-to-read code.
+06. Resolve docstring style from project before writing: project config + contributor docs first, nearby established code style second, 6-point Google/Napoleon fallback only when no project style discoverable.
+07. Inline comments for non-trivial implementation blocks: why block exists, what invariant/edge case it protects, how it works. No comments on obvious assignments or control flow.
+08. No explanatory comments immediately before function/class definition. Purpose, behavior, constraints, usage belong in that definition docstring.
+09. Type annotations on all new public APIs, Python 3.10 syntax: `list[T]`, `dict[K, V]`, `X | Y`.
+10. Prefer doctest-driven or executable acceptance checks: define interface + failing check before implementation when behavior changes.
+11. Python project hygiene: `ruff`, `pre-commit run --all-files` before commits, PEP 8 naming, `src/` layout for libraries, explicit `__all__`, `@dataclass(frozen=True, slots=True)` for value objects, Protocols over ABCs for structural typing, `pyDeprecate` for deprecations not raw `warnings.warn`.
 
 ### Testing
 
 Every test must pass The Suspicious Check:
 
-1. What specific bug does this test prevent?
-2. Could it pass with plausibly wrong code?
+1. What specific bug test prevent?
+2. Could pass with plausibly wrong code?
 3. What edge cases remain?
-4. Are assertions specific enough to catch subtle errors?
+4. Assertions specific enough for subtle errors?
 
 Mandatory coverage: `None`, empty inputs, boundaries, negatives, ML tensors (NaN/Inf/wrong dtype/shape). Numeric: `torch.testing.assert_close(rtol=1e-4, atol=1e-6)` — never `torch.equal()`. Always confirm: test FAILS before fix, test PASSES after fix.
 
 ### ML/AI Specifics
 
-- Fixed random seeds in every entry point and test fixture
-- Assert tensor shapes and dtypes at pipeline boundaries
+- Fixed random seeds in every entry point + test fixture
+- Assert tensor shapes + dtypes at pipeline boundaries
 - `torch.amp.autocast("cuda")` and `torch.amp.GradScaler("cuda")` — NOT `torch.cuda.amp` (deprecated 2.4)
-- Profile before optimizing: `py-spy` → flame graphs; `scalene` for memory+GPU
+- Profile before optimize: `py-spy` → flame graphs; `scalene` for memory+GPU
 - Never `.item()` or `.cpu()` inside training loops (forces GPU sync)
 
 ### AI Constraints
 
-- Hallucination guard: never invent file paths, function names, or configs
-- Verify output: confirm generated code compiles and runs
-- Truth over assumption: never present an assumption, inference, guess, or implied completion as fact to the user unless it was verified and you can point to the proof
-- If something is not verified, say it is unverified; only use assumptions as explicit hypotheses during debugging or investigation
+- Hallucination guard: never invent file paths, function names, configs
+- Verify output: confirm generated code compiles + runs
+- Truth over assumption: never present assumption, inference, guess, implied completion as fact unless verified + can point to proof
+- Not verified → say unverified; assumptions only as explicit hypotheses during debugging/investigation
 - Signal uncertainty: state confidence when unsure ("~75% confident...")
-- For any skill or agent output that reports confidence, list confidence gaps or degradation reasons. Each gap must either cite additional evidence that closes it or be recorded explicitly as unresolved/deferred with the reason it remains open.
-- Apply confidence bands to every skill and agent output: `<= 0.8` is not acceptable and must not be presented as complete; `0.8 < confidence < 0.85` is very questionable and requires serious recovery before any output; `0.85 <= confidence < 0.9` is cautious-low and may proceed only with objective evidence, recovery actions, and remaining limits; `>= 0.9` is fair but not automatic, so keep the score evidence-backed and name any material residual limits.
-- Shared confidence output contract: report the score and material limits in chat; keep objective evidence, recovery actions, gap closures, and unresolved/deferred rationale in the skill artifact when one exists.
+- Any skill/agent output reporting confidence: list confidence gaps or degradation reasons. Each gap either cites extra evidence closing it or recorded explicit as unresolved/deferred with reason it stays open.
+- Confidence bands on every skill/agent output: `<= 0.8` not acceptable, never presented as complete; `0.8 < confidence < 0.85` very questionable, needs serious recovery before any output; `0.85 <= confidence < 0.9` cautious-low, proceed only with objective evidence, recovery actions, remaining limits; `>= 0.9` fair but not automatic — keep score evidence-backed, name material residual limits.
+- Shared confidence output contract: report score + material limits in chat; keep objective evidence, recovery actions, gap closures, unresolved/deferred rationale in skill artifact when one exists.
 - Minimal blast radius: prefer targeted, reversible changes
-- Complex logic must emit logs — silent failure is forbidden
-- Cite specific files and line numbers in explanations
+- Complex logic must emit logs — silent failure forbidden
+- Cite specific files + line numbers in explanations
 
 ### Shell Command Routing
 
-- Route RTK-eligible shell commands through `rtk` proactively, for example `rtk git status --short` instead of `git status --short`.
-- Do not rely on PreToolUse hooks to rewrite commands in Codex. Codex currently treats hook denials as visible tool failures, so the hook is fail-open and command routing is an agent responsibility.
-- Keep destructive or state-changing commands under normal approval rules; never use RTK routing as a reason to bypass explicit user approval.
-- GitHub CLI (`gh`) is allowed for PR/issue read inspection and local PR checkout/update, such as `gh pr view`, `gh pr diff`, `gh pr checkout`, `gh issue view`, `gh repo view`, and read-only `gh api` queries. Never use `gh` for remote mutation: no PR comments, reviews, merges, issue edits/comments, release create/upload/delete, workflow dispatch/rerun, repo mutation, or `gh api` with POST/PUT/PATCH/DELETE or mutation payloads.
-- `git` CLI is allowed for local repository operations and read-only fetch needed to update a local PR branch, such as status, diff, log, show, fetch, add, commit, local branch creation/deletion/listing, switch/restore/reset/clean, and local merge/cherry-pick under normal approval rules. Never use `git` for remote mutation or remote state changes: no push, pull, clone, remote update, ls-remote, submodule remote update, upstream tracking changes, or remote configuration changes.
-- Never run `git` or `gh` with `--force`, `--force-with-lease`, or a command-specific forced update flag automatically. If a forced git/gh operation appears necessary, stop before running it, explain exactly why force is needed, what local or remote state it can overwrite, and ask the user for explicit confirmation.
-- Do not request escalation for forbidden remote/online mutations. If a task requires pushing, commenting, merging, publishing, dispatching CI, or otherwise changing a remote service, stop and tell the user it must be done by a human or an explicitly separate non-Codex workflow.
+- Route RTK-eligible shell commands through `rtk` proactive, example `rtk git status --short` not `git status --short`.
+- No relying on PreToolUse hooks rewriting commands in Codex. Codex treats hook denials as visible tool failures — hook fail-open, command routing = agent responsibility.
+- Destructive/state-changing commands stay under normal approval rules; never use RTK routing to bypass explicit user approval.
+- GitHub CLI (`gh`) allowed for PR/issue read inspection + local PR checkout/update: `gh pr view`, `gh pr diff`, `gh pr checkout`, `gh issue view`, `gh repo view`, read-only `gh api` queries. Never `gh` for remote mutation: no PR comments, reviews, merges, issue edits/comments, release create/upload/delete, workflow dispatch/rerun, repo mutation, or `gh api` with POST/PUT/PATCH/DELETE or mutation payloads.
+- `git` CLI allowed for local repo operations + read-only fetch to update local PR branch: status, diff, log, show, fetch, add, commit, local branch creation/deletion/listing, switch/restore/reset/clean, local merge/cherry-pick under normal approval rules. Never `git` for remote mutation/state changes: no push, pull, clone, remote update, ls-remote, submodule remote update, upstream tracking changes, remote configuration changes.
+- Never run `git`/`gh` with `--force`, `--force-with-lease`, or command-specific forced update flag automatic. Forced git/gh operation seems necessary → stop before running, explain exactly why force needed, what local/remote state it can overwrite, ask user for explicit confirmation.
+- No escalation requests for forbidden remote/online mutations. Task needs push, comment, merge, publish, CI dispatch, or other remote service change → stop, tell user must be done by human or explicit separate non-Codex workflow.
 
 ______________________________________________________________________
 
 ## Docstring Style Resolution
 
-Before writing or changing docstrings, inspect the project for an explicit style. Check project-local `AGENTS.md`, contributor docs, `pyproject.toml`, lint/doc settings such as `pydocstyle` or `ruff`, and Sphinx/MkDocs configuration. If no explicit style is configured, read nearby modules and tests to match the dominant local style.
+Before writing/changing docstrings, inspect project for explicit style. Check project-local `AGENTS.md`, contributor docs, `pyproject.toml`, lint/doc settings like `pydocstyle` or `ruff`, Sphinx/MkDocs configuration. No explicit style configured → read nearby modules + tests, match dominant local style.
 
-The fallback is the 6-point Google/Napoleon style below. Use it only when the project does not define or clearly demonstrate another style. Public APIs require all relevant sections in the selected project style. Types live in function signatures — never repeat them in Args or Returns unless the project style explicitly does so. Internal helpers still need a purpose docstring when they are new or materially changed; keep those concise unless arguments, return values, raised errors, or examples need explicit explanation. Explanatory text about why a function or class exists belongs in that definition's docstring, not in a preceding inline comment.
+Fallback = 6-point Google/Napoleon style below. Use only when project not define or clear demonstrate other style. Public APIs need all relevant sections in selected project style. Types live in function signatures — never repeat in Args/Returns unless project style explicit does so. Internal helpers still need purpose docstring when new or material changed; keep concise unless arguments, return values, raised errors, examples need explicit explanation. Explanatory text about why function/class exists belongs in that definition docstring, not preceding inline comment.
 
 ```python
 def compute_score(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
@@ -144,35 +144,35 @@ ______________________________________________________________________
 
 ### Default execution mode
 
-Default to the main agent for indivisible work. Use `delegation-lead` when a task has multiple separable workstreams and routing them across the configured Luna, Terra, and Sol roles is expected to reduce total cost or elapsed time after coordination overhead.
+Default: main agent for indivisible work. Use `delegation-lead` when task has multiple separable workstreams and routing across configured Luna, Terra, Sol roles expected to cut total cost or elapsed time after coordination overhead.
 
-Stay in the main agent when:
+Stay in main agent when:
 
-- The work cannot be split into disjoint ownership or evidence axes
-- The handoff would duplicate context the parent already has
-- Preparing, waiting for, and validating delegation would cost more than direct execution
-- The next action is a single parent-owned acceptance or destructive-action decision
+- Work not splittable into disjoint ownership or evidence axes
+- Handoff would duplicate context parent already has
+- Preparing, waiting, validating delegation costs more than direct execution
+- Next action = single parent-owned acceptance or destructive-action decision
 
-Use the delegation lead when:
+Use delegation lead when:
 
-- Two or more independent domains, file sets, evidence searches, or verification commands can proceed without overlapping ownership
-- A lower-cost registered Luna role can own bounded support work while Terra or Sol retains behavior, architecture, security, or executable acceptance
-- Parallel work is likely to reduce wall time without flooding every specialist with the same context
-- The task needs an explicit routing ledger and consolidated handover
+- 2+ independent domains, file sets, evidence searches, or verification commands can proceed without overlapping ownership
+- Lower-cost registered Luna role can own bounded support work while Terra/Sol retains behavior, architecture, security, executable acceptance
+- Parallel work likely cuts wall time without flooding every specialist with same context
+- Task needs explicit routing ledger + consolidated handover
 
 Parent agent responsibilities:
 
-- Scope the task, owned files, and acceptance criteria before delegation
-- Integrate subagent outputs back into one coherent change
-- Inspect the delegation lead's handover ledger, relevant diffs, and verification evidence before accepting work
-- Reject scope widening, unsupported completion claims, or final acceptance transferred to a support role
-- Make final judgment on conflicts, overlaps, and release readiness
+- Scope task, owned files, acceptance criteria before delegation
+- Integrate subagent outputs into one coherent change
+- Inspect delegation lead handover ledger, relevant diffs, verification evidence before accepting work
+- Reject scope widening, unsupported completion claims, final acceptance transferred to support role
+- Final judgment on conflicts, overlaps, release readiness
 
 ### Required workflow routing
 
-- Unknown failure/root-cause work starts with `investigate`: failing tests, failing CI, flaky behavior, regressions, tool or environment failures, unexplained metric changes, and any symptom-only report where the cause is not already verified.
-- Before implementation for those tasks, record the root-cause claim, supporting evidence, a falsification check, and at least one rejected alternative. If the evidence is missing, continue investigation instead of proposing a fix.
-- After `investigate`, hand off to the relevant domain agent or `develop`/`code-remediate` with the evidence summary. Temporary mitigations are allowed only when explicitly requested or required to unblock verification, and they must not be treated as the root fix.
+- Unknown failure/root-cause work starts with `investigate`: failing tests, failing CI, flaky behavior, regressions, tool/environment failures, unexplained metric changes, any symptom-only report where cause not already verified.
+- Before implementation for those tasks: record root-cause claim, supporting evidence, falsification check, ≥1 rejected alternative. Evidence missing → continue investigation, no fix proposal.
+- After `investigate`, hand off to relevant domain agent or `develop`/`code-remediate` with evidence summary. Temporary mitigations only when explicit requested or required to unblock verification; never treated as root fix.
 
 ### Collaboration team patterns
 
@@ -183,33 +183,38 @@ Parent agent responsibilities:
 - External migration/release-note driven changes: `web-explorer` + `solution-architect` + `sw-engineer`
 - Release readiness: `oss-shepherd` + `cicd-steward` + `doc-scribe` + `qa-specialist`
 - Research-paper implementation: `scientist` + `solution-architect` + `sw-engineer` + `qa-specialist`
-- High-risk plan validation: `challenger` + the relevant domain specialist before implementation
-- PR review-to-resolution: `code-review` with `scope=pr` writes the report after collecting PR evidence, fetching the target branch, and checking out/updating the PR locally. Then `code-remediate` with `mode=pr` re-collects online PR reviews, fetches the latest target branch and PR branch, records clean PR/target implementation context plus merge-conflict risk before editing, triages each comment, and fixes only valid selected findings in local code.
+- High-risk plan validation: `challenger` + relevant domain specialist before implementation
+- PR review-to-resolution: `code-review` with `scope=pr` writes report after collecting PR evidence, fetching target branch, checking out/updating PR locally. Then `code-remediate` with `mode=pr` re-collects online PR reviews, fetches latest target branch + PR branch, records clean PR/target implementation context plus merge-conflict risk before editing, triages each comment, fixes only valid selected findings in local code.
 
 ### Model escalation policy
 
-Use `delegation-lead` plus registered agent descriptions and each role TOML's `TRIGGER`, `SKIP`, and `NOT for` clauses as the detailed routing source. Prefer the lowest-cost capable registered role: Luna for coordination and bounded support domains, Terra for implementation/runtime/testing and final executable verification, and Sol only for solution architecture or security. Luna support roles hand executable verification, release-blocking, and API/runtime-changing ownership to the appropriate Terra or Sol owner. Parallelize only disjoint evidence, tests, docs, or profiling work with clear ownership. Every delegated workstream must pass the shared handover gate in `skills/_shared/specialist-orchestration.md` before parent acceptance.
+Use `delegation-lead` plus registered agent descriptions and each role TOML `TRIGGER`, `SKIP`, `NOT for` clauses as detailed routing source. Prefer lowest-cost capable registered role: Luna for coordination + bounded support domains, Terra for implementation/runtime/testing + final executable verification, Sol only for solution architecture or security. Luna support roles hand executable verification, release-blocking, API/runtime-changing ownership to appropriate Terra/Sol owner. Parallelize only disjoint evidence, tests, docs, profiling work with clear ownership. Every delegated workstream must pass shared handover gate in `skills/_shared/specialist-orchestration.md` before parent acceptance.
 
 ______________________________________________________________________
 
-## Commit Request Format
+## Commit Authorization
 
-When the user asks to commit (or asks for a commit summary), load and follow `.codex/skills/_shared/commit-response-template.md`. Its commit message shape is mandatory.
+- Explicit request: commit after checks.
+- Implicit request: show proposed message; commit only after confirmation.
+- Commit-summary request alone: no commit.
+- Otherwise: leave changes unstaged.
+
+Commits or summaries: follow `.codex/skills/_shared/commit-response-template.md`.
 
 ______________________________________________________________________
 
 ## Work Handover
 
-Use parent-owned, non-destructive handovers between agents. Prefer short text handoffs first; patch files in `.codex/handover/` are optional review artifacts, not a required transport.
+Parent-owned, non-destructive handovers between agents. Prefer short text handoffs first; patch files in `.codex/handover/` = optional review artifacts, not required transport.
 
 ### Default rules
 
-- The parent agent owns the working tree
-- Subagents must receive explicit file or responsibility ownership before editing
-- Never use `git stash`, branches, or commits for mid-task handovers
-- Never run `git restore .`, `git clean -fd`, or equivalent cleanup as part of handover
-- If changes overlap or conflict, pause and return control to the parent agent
-- Final accepted changes always remain unstaged in the working tree for human review
+- Parent agent owns working tree
+- Subagents must receive explicit file/responsibility ownership before editing
+- Never `git stash`, branches, or commits for mid-task handovers
+- Never `git restore .`, `git clean -fd`, or equivalent cleanup as handover part
+- Changes overlap/conflict → pause, return control to parent agent
+- Final accepted changes follow Commit Authorization
 
 **Handing off:**
 
@@ -218,10 +223,10 @@ mkdir -p .codex/handover
 git diff -- <owned-paths> > .codex/handover/<from>→<to>-$(date +%s).patch
 ```
 
-Also include a short text handoff covering:
+Also include short text handoff covering:
 
 - files touched
-- intent of the change
+- intent of change
 - verification performed
 - open risks or questions
 
@@ -231,11 +236,11 @@ Also include a short text handoff covering:
 git apply .codex/handover/<patch-file>
 ```
 
-Apply only if it does not require discarding local changes. If it conflicts with existing work, resolve at the parent-agent level instead of cleaning the tree.
+Apply only if no discarding of local changes required. Conflicts with existing work → resolve at parent-agent level, no cleaning tree.
 
-**Final state — always leave in working tree.** When a task chain is fully complete, leave the accepted changes unstaged in the working tree. Never commit on behalf of the user. The human reviews `git diff` and decides when to commit.
+**Final state.** Leave changes unstaged unless Commit Authorization permits commit.
 
-**When invoked via Claude Code `/codex` skill (MCP):** save the patch to `.codex/handover/` as a review artifact and return control cleanly to the parent workflow. Do not discard local changes unless the parent explicitly requests it.
+**When invoked via Claude Code `/codex` skill (MCP):** save patch to `.codex/handover/` as review artifact, return control clean to parent workflow. No discarding local changes unless parent explicit requests.
 
 **Naming convention:**
 
@@ -247,7 +252,7 @@ Examples: `sw-engineer→qa-specialist-1735000000.patch` · `linting-expert→cl
 
 ### Human-in-the-loop — always pause for approval before:
 
-- Architecture changes that affect public APIs
+- Architecture changes affecting public APIs
 - Any data deletion or schema migration
 - Security-sensitive changes (auth, credentials, permissions)
 - Force-push or remote branch deletion

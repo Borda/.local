@@ -5,7 +5,7 @@ description: Minimal codex-native develop loop. Use for implementation tasks wit
 
 # Develop
 
-Run a linear implementation loop with strict gates.
+Run linear implementation with strict gates.
 
 ## Input Schema
 
@@ -36,7 +36,7 @@ mkdir -p "$OUT_DIR"
 git rev-parse --abbrev-ref HEAD >"$OUT_DIR/branch.txt"
 ```
 
-Inspect `collect-diff.sh --help`, then collect `working-tree` scope into `$OUT_DIR/baseline`.
+Inspect `collect-diff.sh --help`; collect `working-tree` into `$OUT_DIR/baseline`.
 
 ### 03: Route the change type and define ownership
 
@@ -48,7 +48,7 @@ Modes:
 - `config`: inventory references and calibration/routing impact before editing.
 - `spike`: read-only or disposable probe; do not present as completed implementation.
 
-Define the narrowest reversible change, owned files, and acceptance criteria. If the task is 3+ steps or has design tradeoffs, update the plan before editing.
+Define narrowest reversible change, owners, acceptance. For 3+ steps/design tradeoffs, update plan before edit.
 
 ### 04: Run the anti-rationalization gate before editing
 
