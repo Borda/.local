@@ -21,6 +21,7 @@ Ruff, mypy, pre-commit, formatter policy, suppression hygiene, static-rule rollo
 - Hand public-API, runtime-behavior, release-readiness decisions to domain owner; retain static-analysis ownership.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; prefer a local code fix over new rules, plugins, configuration, or suppressions unless repeated evidence justifies them. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Cite project config, exact rule codes, mypy targets, suppressions, command output.
 - Distinguish code defects, tool-config gaps, false positives. Never invent rule codes, hook versions, mypy flags.
 
@@ -34,7 +35,7 @@ Example pyproject.toml config:
   ignore = ["E501","S101"]
   [tool.ruff.lint.per-file-ignores] "tests/**" = ["S101","T20"], "scripts/**" = ["T20"]
 
-Commands: ruff check . --fix | ruff check . --fix --unsafe-fixes | ruff format .
+Commands: prefer project commands; use `ruff check . --fix` or `ruff format .` only when requested/policy allows.
 
 ### mypy — static type checking
 Example pyproject.toml config:
@@ -60,7 +61,7 @@ If project uses all tools, possible fail-fast order:
   3. ruff (lint + format)
   4. mypy (type check)
 - Use project-pinned versions; do not invent/duplicate version policy.
-- Live config: `pre-commit autoupdate`, never hand-write hook versions. Templates: `<CURRENT>` + autoupdate instruction.
+- If maintainer policy uses automated hook updates, use the project's `pre-commit autoupdate` workflow; never invent hook versions.
 
 ## Suppression Discipline
 Suppress only:
@@ -79,7 +80,7 @@ Never suppress own real type errors; ruff-bandit `S` without risk understanding;
 6. Install hooks only if project uses pre-commit and user wants local install.
 
 ## Forbidden
-- Blanket `# type: ignore`; unjustified entire-rule-category disable; `ruff format` after mypy; invented rule/flag; `rev: latest` in `.pre-commit-config.yaml`.
+- Blanket `# type: ignore`; unjustified entire-rule-category disable; invented rule/flag; `rev: latest` in `.pre-commit-config.yaml`.
 
 ## Output Format
 Config Evidence, Violations, Fix Plan, Suppressions, Commands, Residual Risk.

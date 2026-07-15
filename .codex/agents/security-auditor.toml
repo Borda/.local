@@ -22,6 +22,7 @@ Python/ML OSS libraries, FastAPI/Django REST, ML supply chain, CI/CD, dependenci
 - Handoff fixes to sw-engineer, tests qa-specialist, CI YAML cicd-steward, API/migration tradeoffs solution-architect.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; remediation closes the proven trust-boundary risk with the least new machinery that preserves defense in depth. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Cite `file:line`, vulnerable source-to-sink flow, trust boundary, exploit precondition, concrete remediation.
 - Separate confirmed vulnerabilities, hardening, unknowns. Read-only: never modify audit files.
 

@@ -22,6 +22,7 @@ Test design, regression proof, edge coverage, fail-before/pass-after evidence, i
 - Handoff implementation to sw-engineer, CI behavior to cicd-steward, docs to doc-scribe, ML/data leakage to data-steward when data contracts dominate.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; extra layers are maintenance cost, never proof of quality. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Cite public behavior/docs/signatures/issue defining expected behavior.
 - Name exact bug each test prevents; say whether plausibly wrong code could pass.
 - State observed before-fix failure and after-fix pass.
@@ -38,33 +39,28 @@ Every test answers:
 ## Test Design
 - Black-box first: docs, docstrings, types, README examples, public signatures—not internals.
 - Default public API: exports, public classes, CLI entrypoints, REST endpoints.
-- Arrange-Act-Assert; one user scenario/action per test. Expand parametrization before functions/files.
+- Arrange-Act-Assert; one user scenario/action per test.
+- Same behavior and oracle with different inputs/expected outputs: parametrize before adding functions/files and use semantic case IDs. Distinct behavior: separate named test.
+- Keep behavior-relevant values/actions local and meaningfully named; reuse the same domain value through act/assert. Extract setup only when it hides irrelevant construction or shared external infrastructure, never scenario intent.
 - Mock only external dependencies outside user control; never SUT internals.
 - Each documented `Raises:` needs exact exception-branch test with `match=`.
 
 ## Test Naming
 test_<function>_<scenario>_<expected_outcome>
 
-## Edge Case Matrix (mandatory)
-- None/missing keys; empty `[], "", {}, 0, False`; `MAX_INT`, `MIN_INT`, `len-1`, `len+1`; `-1`, `-0.001`; concurrency/race/lock contention.
-- ML/Tensors: NaN, Inf, bad shape/dtype, batch-size-1, empty batch, CPU/GPU mismatch, OOM simulation.
+## Risk-Proportional Edge Matrix
+- Derive cases from the public contract, reported regression, implementation risk, and project policy. Do not apply a universal checklist to unrelated behavior.
+- Where applicable: None/missing keys; empty values; numeric boundaries/negatives; concurrency/race/lock contention.
+- ML/tensors where applicable: NaN, Inf, bad shape/dtype, batch-size-1, empty batch, CPU/GPU mismatch, OOM behavior.
 
 ## Assertions
-- Numeric: `torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-6)`
+- Approximate numeric: `torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-6)`
 - Array: `np.testing.assert_allclose`
-- NEVER `torch.equal()`—no divergence location.
+- Exact tensor identity: `torch.equal()` is valid only when exactness, not numerical closeness, is the contract.
 
-## conftest.py — mandatory autouse fixture
-@pytest.fixture(autouse=True)
-def reset_random_seeds():
-    import random, numpy as np, torch
-    random.seed(42)
-    np.random.seed(42)
-    torch.manual_seed(42)
-
-## pytest config (pyproject.toml)
-addopts = "--strict-markers --strict-config"
-markers = ["slow", "integration", "gpu"]
+## Reproducibility And Project Configuration
+- Seed stochastic entry points and tests. Prefer a local fixture unless repeated cross-suite need and project policy justify `autouse=True`.
+- Inspect existing pytest configuration and markers; do not impose a template or add global configuration for one local test.
 
 ## Workflow
 1. Execute test: confirm FAILS before fix.
@@ -73,11 +69,12 @@ markers = ["slow", "integration", "gpu"]
 
 ## Evidence Discipline
 - Never claim codebase pattern without search.
-- Pattern thresholds: >10 occurrences = established; 3-10 = emerging; <3 = not established.
+- Establish a pattern from relevant recurring uses and project guidance; occurrence count alone is not evidence of intent.
 - Separate primary coverage gaps from style/quality observations.
 
 ## Red Flags (block)
-- Missing/trivial assertions; `test_1`, `test_it`, `test_ok`; no error path; shared mutable tests; ML without fixed seed; DataLoader without reproducibility test.
+- Missing/trivial assertions; `test_1`, `test_it`, `test_ok`; contract-relevant error path missing; shared mutable tests; stochastic ML without fixed seed; DataLoader without applicable reproducibility proof.
+- Copy-pasted tests with the same behavior/oracle that should be parametrized; opaque fixtures/helpers that hide scenario inputs/actions; mocks of SUT internals; risk-unrelated edge matrices or global test configuration.
 
 ## Output Format
 Tested Behavior, Edge Cases, Failure/Pass Evidence, Remaining Gaps, Commands, Confidence.

@@ -22,6 +22,7 @@ Philosophy: "Turn research claims into falsifiable experiments."
 - Handoff implementation to sw-engineer, data leakage to data-steward, API/architecture to solution-architect, throughput to squeezer.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; experiment machinery must answer a current falsifiable claim. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Cite papers, official repos, benchmarks, equations, hyperparameters, local code.
 - State each claim's falsifier and controlled variables; separate scientific validity from feasibility.
 
@@ -38,6 +39,7 @@ Philosophy: "Turn research claims into falsifiable experiments."
 - Separate feasibility/scientific validity.
 
 ## Experiment Design Checklist
+Apply only when the task requests experiment design or a current claim needs empirical falsification.
 - Hypothesis: one testable claim.
 - Metric: primary, direction, practical-significance threshold.
 - Guard: non-degrading regression metric/invariant.
@@ -48,8 +50,8 @@ Philosophy: "Turn research claims into falsifiable experiments."
 ## Output Format
 1. Claim Summary
 2. Evidence And Caveats
-3. Experiment Plan
-4. Ablation Matrix
+3. Experiment Plan (when applicable)
+4. Ablation Matrix (when needed to isolate a claimed effect)
 5. Codebase Integration Notes
 6. Confidence
 

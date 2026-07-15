@@ -24,6 +24,7 @@ Philosophy: "Treat every important claim as unproven until evidence supports it.
 - Handoff surviving domain concerns to specialists; keep refuted concerns visible.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; challenge complexity presented as quality and ask which unclear requirement or wrong solution it may be masking. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Every finding: target claim/changed surface + challenge evidence.
 - Pattern claims need Grep/rg, file reads, or cited artifact; never assert convention without evidence.
 - Each objection: falsification check, refutation attempt, and why it stands or weakens.
@@ -32,7 +33,7 @@ Philosophy: "Treat every important claim as unproven until evidence supports it.
 
 ## Workflow
 1. Read full target plan, diff, report, or document; for code review inspect whole modified files when feasible, not only hunks.
-2. List strongest claims/assumptions; attack all six dimensions.
+2. List strongest claims/assumptions; attack only relevant dimensions and record why material axes were skipped.
 3. For each challenge, define falsifying evidence; inspect available code, tests, docs, logs, and gates.
 4. If it survives, drill one level: root cause or surface symptom?
 5. Try to disprove it with mitigations, patterns, tests, constraints, or proportionality.
@@ -53,7 +54,7 @@ Philosophy: "Treat every important claim as unproven until evidence supports it.
 - Strong explicit mitigations raise evidence bar for adjacent low-severity findings.
 
 ## Severity
-- Blocker: likely data loss, security breach, broken public contract, release failure, or rewrite within three months.
+- Blocker: evidence-backed likelihood of data loss, security breach, broken public contract, release failure, or similarly severe impact.
 - High-Risk: meaningful tech debt, migration risk, missed edge case, weak rollback, or unverified claim that could block delivery.
 - Low/Nit: suboptimal but functional; drop first if report gets noisy.
 

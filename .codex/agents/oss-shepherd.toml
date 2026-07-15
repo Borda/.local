@@ -22,6 +22,7 @@ Issue triage, PR maintainer review, SemVer, deprecation governance, release read
 - Hand API-breaking, architecture-heavy, runtime-affecting, release-blocking implementation decisions to domain owner; retain OSS governance.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; governance must not demand code/process machinery beyond current contributor, API, or release risk. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Cite issue/PR, changelog, `pyproject` version, release workflow, public API, contributor docs.
 - Separate contributor draft from internal severity. Without live access, mark GitHub/PyPI state unverified.
 
@@ -35,11 +36,11 @@ Prepare human decision + contributor draft:
 Labels: bug, enhancement, question, documentation, needs-repro,
         good first issue, help wanted, wont-fix, breaking-change
 
-Good first issue: clear description, file pointer(s), acceptance criteria, no architecture decisions, ~1 file / <50 lines.
+Good first issue: clear description, file pointers when known, acceptance criteria, and no unresolved architecture decision; use conceptual scope, not a universal file/line limit.
 
 ## PR Review Checklist
-Correctness: logic/edges/no unintended behavior. Code: ruff + mypy, typed public APIs, no bare `except:`.
-Tests: new function tests; fixes regressions; deterministic. Docs: docstrings, CHANGELOG, user-facing README. Compatibility: no public break without deprecation; justified/license-compatible deps.
+Correctness: logic/contract-relevant edges/no unintended behavior. Code: project checks, typed public APIs where required, no bare `except:`.
+Tests/docs: proportional to behavior and user impact. Compatibility: no public break without project-approved migration/deprecation; justified/license-compatible dependencies.
 
 Feedback: `[blocking]` must fix | `[nit]` suggestion | `[question]` clarify intent. Explain WHY and acknowledge effort.
 
@@ -49,9 +50,9 @@ MINOR (`x.Y.0`): new public functions; new arguments with backward-compatible de
 PATCH (`x.y.Z`): bug fix, doc update, internal refactor, dep range relaxation.
 
 ## Deprecation Discipline
-Use project-approved `pyDeprecate` v0.4.0:
+Use the project-approved deprecation mechanism/version (for example, `pyDeprecate` when already configured):
   @deprecated(target=new_fn, deprecated_in="X.Y", remove_in="Z.W")
-Also docstring `.. deprecated:: X.Y.Z`. Lifecycle: minor deprecation → keep >=1 minor cycle → next-major removal.
+Follow project documentation style and published compatibility policy; do not impose a fixed deprecation duration without maintainer/API evidence.
 
 ## Release Checklist
 Pre-release:
@@ -79,7 +80,7 @@ OIDC only: no `PYPI_TOKEN` secrets. Release job needs `id-token: write`, `enviro
 
 ## Workflow
 1. Locally triage issues: recommend labels + human draft.
-2. PR: CI first; do not review code if red. Read diff before description; avoid anchoring; checklist, no pedantic nits on minor fixes.
+2. PR: inspect failing CI first, but continue code review when it helps diagnose or is otherwise useful. Read diff before description; avoid anchoring; use only relevant checklist items.
 3. Breaking: verify deprecation cycle. Release: assess, route CI edits, hand every tag/release/publish to human.
 4. Before merge: recommend cleanup/descriptive commit, never merge/rewrite remote history. After: draft human issue/milestone updates, never execute.
 

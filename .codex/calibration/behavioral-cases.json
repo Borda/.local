@@ -87,6 +87,27 @@
     },
     {
       "expected_findings": [
+        "unnecessary-registry",
+        "speculative-extensibility",
+        "maintenance-burden-increased",
+        "parametrization-missing"
+      ],
+      "id": "code-review-maintainable-simplicity",
+      "prompt": "Review a diff for exactly two statically known optional backends. It adds a registry, protocol, configuration layer, new dependency, and four files even though dispatch happens once and an explicit conditional lazy import meets the contract. Its tests copy the same arrange/action/assert shape across inputs instead of parametrizing the shared behavior.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
+        "unsafe-simplification",
+        "trust-boundary-validation-removed",
+        "data-loss-handling-removed"
+      ],
+      "id": "code-review-unsafe-code-golf",
+      "prompt": "Review a diff that claims Ponytail simplicity and reduces a parser to one line by removing trust-boundary validation and the error path that prevents partial data from being written.",
+      "target": "code-review"
+    },
+    {
+      "expected_findings": [
         "none-input",
         "nan-tensor",
         "wrong-shape"
@@ -120,6 +141,27 @@
       ],
       "id": "qa-state-isolation",
       "prompt": "Assess tests for a cache-backed helper where tests share state and only assert output values.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "parametrization-missing",
+        "duplicated-test-setup",
+        "scenario-intent-obscured"
+      ],
+      "id": "qa-maintainable-parametrization",
+      "prompt": "Assess five copy-pasted tests that exercise the same public behavior and assertion oracle with different inputs. Each rebuilds the same domain value instead of naming and reusing it from arrange through assert, while an opaque shared fixture hides the behavior-defining action.",
+      "target": "qa-specialist"
+    },
+    {
+      "expected_findings": [
+        "risk-unrelated-edge-matrix",
+        "sut-internal-mock",
+        "project-policy-not-checked",
+        "global-fixture-unjustified"
+      ],
+      "id": "qa-proportional-coverage",
+      "prompt": "Assess a plan for a pure deterministic formatter that mandates concurrency, OOM, NaN, GPU, and DataLoader cases; mocks formatter internals; and adds a repository-wide autouse seed fixture plus pytest configuration without inspecting the public contract or project policy.",
       "target": "qa-specialist"
     },
     {
@@ -558,6 +600,17 @@
     },
     {
       "expected_findings": [
+        "speculative-registry",
+        "conditional-import-sufficient",
+        "extension-demand-unproven",
+        "blast-radius-not-minimal"
+      ],
+      "id": "sw-engineer-speculative-registry",
+      "prompt": "Assess an implementation plan for two fixed optional backends where dispatch occurs once. The plan adds a registry, factory, protocol, configuration layer, and several files for hypothetical future plugins instead of using a local conditional lazy import, and provides no current discovery or extension requirement.",
+      "target": "sw-engineer"
+    },
+    {
+      "expected_findings": [
         "baseline-missing",
         "after-metric-missing",
         "correctness-gate-missing"
@@ -903,6 +956,50 @@
       "id": "manage-verbose-report-and-handover",
       "prompt": "Assess a Codex configuration change that permits verbose report, handover, or context-pack prose; removes exact command, evidence, failure, risk, owner/action, or confidence details during compression; treats a prose summary as a replacement for JSON, logs, patches, or required tables; or applies Ultra where security, irreversible, or ordered instructions become ambiguous.",
       "target": "manage"
+    },
+    {
+      "expected_findings": [
+        "complexity-expansion-evidence-missing",
+        "simpler-alternative-not-refuted",
+        "unavoidability-not-proven",
+        "maintenance-owner-rollback-missing"
+      ],
+      "id": "solution-architect-unavoidable-complexity",
+      "prompt": "Assess an architecture proposal for one local deterministic transformation. It adds a service boundary, dependency-injection container, plugin registry, configuration schema, and ADR because more layers are claimed to be more robust. It provides no current extension requirement, evidence that direct code fails, maintenance owner, or rollback/removal path.",
+      "target": "solution-architect"
+    },
+    {
+      "expected_findings": [
+        "data-machinery-contract-missing",
+        "project-pattern-not-reused",
+        "risk-unrelated-reproducibility-stack",
+        "unavoidability-not-proven"
+      ],
+      "id": "data-steward-template-overreach",
+      "prompt": "Assess a deterministic single-worker dataset transform whose plan adds a new augmentation library, worker-seeding framework, sampler, focal loss, global finiteness checks, and null thresholds without a leakage, stochasticity, imbalance, or data-contract finding and without checking the project's existing transform path.",
+      "target": "data-steward"
+    },
+    {
+      "expected_findings": [
+        "one-off-workflow-abstraction",
+        "ci-complexity-evidence-missing",
+        "project-policy-not-checked",
+        "simpler-direct-job-not-refuted"
+      ],
+      "id": "cicd-steward-speculative-reuse",
+      "prompt": "Assess a CI proposal for one direct lint job that introduces a reusable workflow, custom matrix generator, new marker taxonomy, and cache abstraction for hypothetical future jobs without inspecting current project policy or showing why the existing direct job cannot satisfy the contract.",
+      "target": "cicd-steward"
+    },
+    {
+      "expected_findings": [
+        "complexity-treated-as-quality",
+        "unclear-problem-masked",
+        "simpler-alternatives-not-challenged",
+        "complexity-evidence-gate-missed"
+      ],
+      "id": "challenger-complexity-as-quality",
+      "prompt": "Stress-test a review that accepts factories, registries, dependency injection, configuration layers, and multiple new files as inherently senior and robust, without identifying the current problem each layer solves or challenging a direct alternative.",
+      "target": "challenger"
     }
   ],
   "thresholds": {
@@ -912,5 +1009,5 @@
     "min_precision": 0.75,
     "min_recall": 0.75
   },
-  "version": "1.10"
+  "version": "1.11"
 }

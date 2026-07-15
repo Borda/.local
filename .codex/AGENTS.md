@@ -51,17 +51,22 @@ ______________________________________________________________________
 
 Coding principles = canonical standard for implementation + review:
 
-01. Simplicity, readability, reproducibility first. Clear structure beats long docstrings/comments.
-02. Code blocks short. Split long/dense logic into functions/classes with clear purpose, stable names, reusable boundaries.
-03. Avoid low-value tiny helpers. Penalize functions/classes that only remap arguments, wrap one call with no semantic name, or rarely used. Prefer direct code, local helper scoped to caller, or `functools.partial` when only binding arguments.
-04. Main path shallow. Prefer guard clauses, early `return`, `yield`, `continue`, narrow helper functions over deep loop, `if`/`else`, `try`/`except` nesting.
-05. Documentation concise, useful. Every new or material-changed function/method needs purpose docstring; docstrings explain intent + contract, no compensating for hard-to-read code.
-06. Resolve docstring style from project before writing: project config + contributor docs first, nearby established code style second, 6-point Google/Napoleon fallback only when no project style discoverable.
-07. Inline comments for non-trivial implementation blocks: why block exists, what invariant/edge case it protects, how it works. No comments on obvious assignments or control flow.
-08. No explanatory comments immediately before function/class definition. Purpose, behavior, constraints, usage belong in that definition docstring.
-09. Type annotations on all new public APIs, Python 3.10 syntax: `list[T]`, `dict[K, V]`, `X | Y`.
-10. Prefer doctest-driven or executable acceptance checks: define interface + failing check before implementation when behavior changes.
-11. Python project hygiene: `ruff`, `pre-commit run --all-files` before commits, PEP 8 naming, `src/` layout for libraries, explicit `__all__`, `@dataclass(frozen=True, slots=True)` for value objects, Protocols over ABCs for structural typing, `pyDeprecate` for deprecations not raw `warnings.warn`.
+01. Simplicity, readability, reproducibility first. Complexity is maintenance cost, never evidence of quality; unexplained layers often mask an unclear problem or wrong solution. Clear structure beats long docstrings/comments.
+02. Understand before minimizing. Read the touched flow and callers; solve the coherent root cause once. A smaller symptom patch that leaves sibling paths broken is not simple.
+03. Stop at the first solution that satisfies the contract: no change → existing project code/pattern → standard library/native platform → installed dependency → direct local code → new abstraction or dependency.
+04. Every complexity expansion must be justified as unavoidable now. Record the required current behavior and evidence, simpler alternatives considered and why each fails, the maintenance owner/cost, and the rollback or removal path. Missing evidence or a viable simpler option rejects the expansion. New registry, factory, plugin layer, protocol/base class, configuration surface, or dependency needs current demand such as runtime discovery, third-party extension, repeated dispatch, multiple concrete variants, or substantial complexity hidden behind a small stable boundary. Hypothetical reuse fails this gate.
+05. For a small closed choice, prefer explicit condition/mapping and conditional or lazy import over a registry. Catch only the expected missing optional dependency; nested/transitive import failures must surface. Use a registry when discovery or extension is an actual requirement.
+06. Minimize owned concepts: files, layers, public APIs, mutable state, dependencies, dispatch points, and configuration. Prefer deletion, local convention, boring technology, and reversible changes. State what maintenance burden new machinery removes and who owns what remains.
+07. Do not force DRY. A little visible duplication is cheaper than premature coupling; extract only a stable concept, repeated behavior, or substantial complexity. An abstraction with one caller is valid when it creates a genuinely deep boundary.
+08. Avoid low-value helpers and wrappers. Penalize functions/classes that only remap arguments, forward one call without semantic value, or serve one trivial consumer. Prefer direct code, a caller-local helper, or `functools.partial` for argument binding.
+09. Keep code blocks short and the main path shallow. Split long/dense logic at meaningful boundaries; prefer guard clauses and early `return`, `yield`, or `continue` over nested control flow.
+10. Documentation concise, useful. Every new or material-changed function/method needs purpose docstring; docstrings explain intent + contract, no compensating for hard-to-read code.
+11. Resolve docstring style from project before writing: project config + contributor docs first, nearby established code style second, 6-point Google/Napoleon fallback only when no project style discoverable.
+12. Inline comments for non-trivial implementation blocks: why block exists, what invariant/edge case it protects, how it works. No comments on obvious assignments or control flow.
+13. No explanatory comments immediately before function/class definition. Purpose, behavior, constraints, usage belong in that definition docstring.
+14. Type annotations on all new public APIs, Python 3.10 syntax: `list[T]`, `dict[K, V]`, `X | Y`.
+15. Prefer doctest-driven or executable acceptance checks: define interface + failing check before implementation when behavior changes.
+16. Python project hygiene: use the project's configured `ruff`, pre-commit, packaging, export, value-object, structural-typing, and deprecation conventions. Introduce `src/`, `__all__`, dataclasses, Protocols, or `pyDeprecate` only when the project or current design requires them.
 
 ### Testing
 
@@ -72,15 +77,20 @@ Every test must pass The Suspicious Check:
 3. What edge cases remain?
 4. Assertions specific enough for subtle errors?
 
-Mandatory coverage: `None`, empty inputs, boundaries, negatives, ML tensors (NaN/Inf/wrong dtype/shape). Numeric: `torch.testing.assert_close(rtol=1e-4, atol=1e-6)` — never `torch.equal()`. Always confirm: test FAILS before fix, test PASSES after fix.
+- Coverage follows the public contract, regression risk, and blast radius. Cover applicable `None`, empty, boundary, negative, and ML tensor NaN/Inf/dtype/shape cases; do not manufacture unrelated matrices.
+- Parametrize cases when only inputs/expected outputs vary and arrange/action/assert use the same behavioral oracle. Give semantic IDs; keep distinct behaviors in named tests.
+- Keep behavior-defining data and actions visible. Reuse meaningful local values from arrange through assert; extract fixtures/helpers only when they hide irrelevant construction or genuinely shared infrastructure, never scenario intent.
+- Test public behavior. Mock only true external boundaries outside the test's control, not system-under-test internals.
+- Use the smallest test surface that proves the behavior; do not add a framework, global fixture, or configuration for one local case.
+- Approximate numeric behavior: `torch.testing.assert_close(rtol=1e-4, atol=1e-6)`. Exact tensor identity may use `torch.equal()` when exactness is the contract. Always confirm: test FAILS before fix, test PASSES after fix.
 
 ### ML/AI Specifics
 
-- Fixed random seeds in every entry point + test fixture
-- Assert tensor shapes + dtypes at pipeline boundaries
-- `torch.amp.autocast("cuda")` and `torch.amp.GradScaler("cuda")` — NOT `torch.cuda.amp` (deprecated 2.4)
-- Profile before optimize: `py-spy` → flame graphs; `scalene` for memory+GPU
-- Never `.item()` or `.cpu()` inside training loops (forces GPU sync)
+- Fix random seeds in stochastic entry points and tests; do not add seed machinery to deterministic paths.
+- Assert tensor shapes/dtypes at external, unstable, or contract-critical pipeline boundaries; avoid repeating proven checks in trusted inner layers.
+- When CUDA AMP is applicable and supported by the project version, use `torch.amp.autocast("cuda")` and `torch.amp.GradScaler("cuda")`, not deprecated `torch.cuda.amp`.
+- Profile before optimizing; choose the profiler from the suspected resource and available project tools rather than a fixed tool order.
+- Avoid `.item()` or `.cpu()` in measured hot training loops because they force synchronization; bounded logging/metrics may use them when the cost is accepted or measured.
 
 ### AI Constraints
 

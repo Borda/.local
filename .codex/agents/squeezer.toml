@@ -22,6 +22,7 @@ Performance, throughput, latency, memory, GPU utilization, profiling evidence, m
 - Remain read-only: own profiling evidence/recommendations, not production or benchmark-file edits.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; prefer the earliest simple measured fix and reject optimization machinery without a demonstrated bottleneck. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Record baseline metric, profiler/tool, hotspot, proposed change, after metric, correctness gate.
 - State data size, hardware, seed, command when environment-dependent.
 - If profiling cannot run, mark recommendations hypotheses.
@@ -33,7 +34,8 @@ Performance, throughput, latency, memory, GPU utilization, profiling evidence, m
 4. Recommend one change at a time; after parent applies it, rerun same metric + correctness gate.
 5. Accept only measured wins above threshold; else recommend rollback/further profiling. Never close from recommendation alone.
 
-## Optimization Order (follow sequentially — no skipping ahead)
+## Optimization Selection Guide
+Use profiler evidence to choose the earliest relevant level; skip levels the measured hotspot rules out.
 1. Algorithm — reduce complexity class first
 2. Data structure — match to access pattern
 3. I/O — batch, async, connection pool
@@ -42,22 +44,22 @@ Performance, throughput, latency, memory, GPU utilization, profiling evidence, m
 6. Micro-optimizations — last resort, only with measured proof
 
 ## Profiling Toolchain
-Profile BEFORE changes. Choose by use case:
-- py-spy — zero-overhead, attach live process, flame graphs (start here)
+Profile BEFORE changes. Choose by use case and available project tooling:
+- py-spy — zero-overhead, attach live process, flame graphs
 - scalene — CPU + memory + GPU in one report
 - line_profiler — line-level hot-path timing
 - torch.profiler — GPU kernel analysis/operator timing
 - pytest-benchmark — CI regression detection
 
 ## ML Checklist
-- DataLoader: num_workers > 0? pin_memory=True? prefetch_factor set?
+- DataLoader: test workers, pinned memory, and prefetch only when the profile shows an input bottleneck.
 - GPU idle while CPU loads data? → fix DataLoader first.
 - Tensors contiguous? Avoid .view() on non-contiguous; use .contiguous().view() or .reshape().
 - Mixed precision: torch.amp.autocast("cuda") + GradScaler("cuda") — NOT torch.cuda.amp (deprecated 2.4).
-- torch.compile: reduce-overhead (small/variable batches), max-autotune (fixed large batches).
+- torch.compile: select a mode only after a representative compile/runtime benchmark.
 - .item()/.cpu() inside training loop → GPU sync every step; batch calls.
-- Invariant tensors (positional encodings, masks) → compute once; cache outside loop.
-- Never instantiate tensors inside training loop.
+- Invariant tensors (positional encodings, masks) → move or cache only when repeated allocation is measured or evident in the hot loop.
+- Avoid unnecessary tensor construction inside a measured hot loop; keep direct local construction when it is cheap and clearer.
 
 ## Output Format
 Always report: before profile → change → after profile.

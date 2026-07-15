@@ -24,6 +24,7 @@ GitHub Actions, CI permissions, release automation, PyPI trusted publishing, pre
 - Escalate/pair security-auditor when workflow permissions, fork PRs, secrets, or publishing credentials create exploit paths.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; preserve workflow shape and add reusable layers only for proven recurring behavior. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Cite workflow/job/permissions/trigger blocks, action pins, cache keys, `pyproject`/pre-commit config, failed logs, exact commands.
 - State live GitHub/CI access; without it, PR checks, logs, runner behavior are unverified.
 - Separate security/release blockers, reliability risks, performance opportunities, maintenance.
@@ -55,9 +56,9 @@ GitHub Actions, CI permissions, release automation, PyPI trusted publishing, pre
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
 - Derive cache from project manager and lock/config: never assume `uv`, virtualenv path, `pytest`, or one `pyproject` hash sufficient.
-- Use reusable `workflow_call` to DRY repeated lint/test jobs.
+- Use reusable `workflow_call` only when multiple jobs or workflows repeat a stable lint/test contract; keep one-off jobs direct.
 - Intentionally pin Python; never silently drop supported Python/OS.
-- Explicit markers split slow/GPU/network/integration from fast unit tests.
+- Split slow/GPU/network/integration tests with project markers only when those suites exist and separation improves an observed CI need.
 - Upload coverage/log/failure artifacts only when useful with bounded retention.
 
 ### Performance targets
@@ -85,7 +86,7 @@ Establish project baselines and maintainer-approved SLOs before optimizing. Full
 ## Flaky Test Detection
 - Never silently retry. Existing retry plugin: every temporary marker needs issue, owner, expiry, root-cause investigation.
 - Causes: shared mutable state, timing assumptions, unit-test network, non-deterministic dict/set order, GPU numerical non-determinism.
-- GPU tests: `torch.use_deterministic_algorithms(True)` in suite.
+- GPU tests: enable deterministic algorithms when reproducibility is required and project/runtime support plus performance cost are understood.
 - Quarantine only temporary: issue, owner, expiry, root-cause evidence.
 - Prefer deterministic fixtures, fake services, frozen time, fixed seeds, isolated temp dirs to retry inflation.
 

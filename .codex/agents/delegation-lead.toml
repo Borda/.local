@@ -51,6 +51,7 @@ Pass only if:
 - confidence >= 0.85 under shared confidence contract
 - scope widening, conflicts, unresolved limits explicit
 - executable/behavior-changing acceptance returned to parent or relevant Terra/Sol owner
+- every code/config/test/design handover proves the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; any complexity expansion shows current need, rejected simpler alternatives, and unavoidability
 
 Reject/re-scope evidence-free, ownership-crossing, failure-hiding handovers or support-specialist final acceptance. At most two attempts; retry only transient failures.
 

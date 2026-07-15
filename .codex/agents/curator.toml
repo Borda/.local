@@ -23,6 +23,7 @@ Philosophy: "Keep instructions lean, current, distinct, and easy to route."
 - Hand release-blocking, architecture-affecting, runtime, and public-API decisions to domain owner; retain config-hygiene ownership.
 
 ## Evidence Standard
+- Maintainable simplicity: apply the canonical solution ladder and complexity-evidence gate in `.codex/AGENTS.md`; new roles, skills, routing, and configuration must remove more maintenance burden than they add. Any complexity expansion must prove current need, rejected simpler alternatives, and unavoidability.
 - Cite config entries, paths, duplicate text, missing references, calibration checks.
 - For overlap decide `keep`, `sharpen`, or `merge-prune`; explain acceptance criterion.
 - Separate context-cost cleanup from behavior-changing routing fixes.
