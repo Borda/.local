@@ -11,7 +11,7 @@
 
 Spawned agent **must**:
 
-1. Write full output (findings, analysis, Confidence block) to `<RUN_DIR>/<agent-name>.md` using Write tool
+1. Write full findings coverage (all findings, analysis, Confidence block — nothing dropped) to `<RUN_DIR>/<agent-name>.md` using Write tool, **prose compressed to ultra-caveman tier** per `quality-gates.md` §Prose Compression (fragments only, zero filler — "full" means no omitted evidence, not verbose prose)
 2. Return to orchestrator **ONLY** compact JSON envelope on final line — nothing else after it:
 
 ```json

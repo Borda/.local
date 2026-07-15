@@ -720,8 +720,34 @@ process.stdin.on("end", () => {
         );
       } catch (_) {}
     }
-  } catch (_) {
-    // Silently swallow all errors — hook must never crash or block Claude
+  } catch (err) {
+    // Hook must never crash or block Claude — but a fully silent catch here means a
+    // thrown exception (e.g. an unexpected payload shape for a teammate-originated
+    // event, which carries an extra agent_id field per Agent Teams hook docs) leaves
+    // zero trace: no agents/ write, no lock file, statusline silently reads "none"
+    // forever with no way to diagnose why. Best-effort diagnostic breadcrumb instead.
+    try {
+      const errDir = path.join(process.cwd(), ".claude", "state");
+      fs.mkdirSync(errDir, { recursive: true });
+      const line =
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: (() => {
+            try {
+              return JSON.parse(raw).hook_event_name;
+            } catch (_) {
+              return null;
+            }
+          })(),
+          error: err && err.message,
+          stack: err && err.stack,
+        }) + "\n";
+      const errFile = path.join(errDir, "hook-errors.jsonl");
+      fs.appendFileSync(errFile, line);
+      // Cap growth — keep last 200 lines, best-effort.
+      const existing = fs.readFileSync(errFile, "utf8").split("\n").filter(Boolean);
+      if (existing.length > 200) fs.writeFileSync(errFile, existing.slice(-200).join("\n") + "\n");
+    } catch (_) {}
   }
   process.exit(0);
 });

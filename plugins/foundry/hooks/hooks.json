@@ -17,6 +17,14 @@
             "type": "command"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/artifact-guard.js\"",
+            "type": "command"
+          }
+        ]
       }
     ],
     "PostToolUseFailure": [

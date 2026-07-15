@@ -753,6 +753,7 @@ plugins/foundry/
     ├── statusline.js            status bar agent counts
     ├── teammate-quality.js      TaskCompleted/TeammateIdle teammate output quality gate
     ├── lint-on-save.js          runs pre-commit after every Write/Edit; async + cross-session lock; 15s timeout; skips .temp/
+    ├── artifact-guard.js        PostToolUse Write/Edit on .reports/**/*.md, .temp/**/*.md; soft 10K-token cap + .temp/ ultra-caveman article-density heuristic; feedback only, never blocks
     ├── rtk-rewrite.js           transparently rewrites CLI calls for token compression
     ├── agent-router.js          PreToolUse Agent hook; 3-tier routing fallback (worktree → cache → local)
     ├── commit-guard.js          PreToolUse Bash guard; git commit is prompt-discipline only, not hook-gated; git push --force blocked unconditionally on any branch, regular push gated by a sentinel requiring AskUserQuestion each time (no auto-arm)

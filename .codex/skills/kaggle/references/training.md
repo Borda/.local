@@ -23,7 +23,7 @@ For tabular/non-neural pipelines:
 - Use a seeded split appropriate to target and group structure.
 - Keep preprocessing fitted on training data only.
 
-Add a lens cell that creates the pipeline, reads one batch/sample, prints shapes and dtypes, and visualizes a representative batch through the selected modality helper when meaningful.
+Add a lens cell that creates the pipeline, asserts a non-empty batch/sample, prints shapes and dtypes, and visualizes a representative batch through the selected modality helper when meaningful. Do not conditionally skip this required check.
 
 ## Section 5: Model
 

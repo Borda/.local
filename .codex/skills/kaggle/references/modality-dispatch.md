@@ -21,6 +21,7 @@ Setup: no extra installs needed.
 # %%
 # show_images: grid of N samples with label overlay
 def show_images(df, n=9, img_dir=PATH_DATASET):
+    assert len(df) >= n, f"Need at least {n} images for the sample grid; found {len(df)}"
     n_cols = 3
     n_rows = (n + n_cols - 1) // n_cols
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(16, 4 * n_rows))
@@ -161,12 +162,12 @@ print(df_train.isnull().sum().sort_values(ascending=False).head(20))
 import seaborn as sns
 
 num_cols = df_train.select_dtypes("number").columns.tolist()
-if len(num_cols) <= 20:
-    fig, ax = plt.subplots(figsize=(len(num_cols), len(num_cols)))
-    sns.heatmap(df_train[num_cols].corr(), annot=True, fmt=".2f", ax=ax)
-    ax.set_title("Feature correlation")
-    plt.tight_layout()
-    plt.show()
+assert 0 < len(num_cols) <= 20, "Feature-correlation chart requires 1–20 numeric columns"
+fig, ax = plt.subplots(figsize=(len(num_cols), len(num_cols)))
+sns.heatmap(df_train[num_cols].corr(), annot=True, fmt=".2f", ax=ax)
+ax.set_title("Feature correlation")
+plt.tight_layout()
+plt.show()
 ```
 
 ```python
@@ -203,6 +204,8 @@ def show_pcd(path, n_points=50_000):
     plt.show()
 
 
-sample_path = sorted(Path(PATH_DATASET).glob("**/*.pcd"))[0]
+point_paths = sorted(Path(PATH_DATASET).glob("**/*.pcd"))
+assert point_paths, "No point-cloud files found for the required sample display"
+sample_path = point_paths[0]
 show_pcd(sample_path)
 ```

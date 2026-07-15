@@ -23,7 +23,7 @@ TARGET_COL = "<grounded-target-column>"
 - Load the grounded training table or file index.
 - Display shape, head, dtypes, missing values, and appropriate descriptive statistics.
 - Confirm referenced files exist on a representative sample.
-- Treat empty datasets, absent columns, duplicate identifiers, and unreadable samples explicitly.
+- Assert non-empty data, required columns, sample availability, and readable representative files immediately before using them. Do not wrap overview, sample, or chart cells in `try`/`except` or conditional skips.
 
 ### Target distribution
 

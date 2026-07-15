@@ -119,7 +119,7 @@ Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write ac
 
 - **Long output** (multi-item analysis, 5+ findings — including lists of 5+ items: module names, issues, files —, or prose >~10 lines) → two mandatory steps in order:
 
-1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full content** — **execute the Write tool call; do not narrate intent and proceed without calling it** — this Write step never skipped; pipeline/background mode only exempts AskUserQuestion gate (step 2.iv), not this Write step. This is a **distinct, additional Write call** — writing to any other path (e.g. run-directory response file, report file) does not satisfy this step. Two writes expected: one to `.temp/output-*.md` (this step) and any other file writes for task.
+1. Call **Write tool** to create `.temp/output-<slug>-<branch>-<YYYY-MM-DD>.md` where `<branch>` is `$(git branch --show-current 2>/dev/null | tr '/' '-' || echo 'main')` (new file — never overwrite; append counter suffix if slug exists, e.g. `-2.md`); file gets **full evidence coverage, ultra-caveman compressed** (see §Prose Compression — "full" means no dropped findings, not verbose prose) — **execute the Write tool call; do not narrate intent and proceed without calling it** — this Write step never skipped; pipeline/background mode only exempts AskUserQuestion gate (step 2.iv), not this Write step. This is a **distinct, additional Write call** — writing to any other path (e.g. run-directory response file, report file) does not satisfy this step. Two writes expected: one to `.temp/output-*.md` (this step) and any other file writes for task.
 2. Print to terminal in this order:
    1. **YAML header block** — print `---` metadata block verbatim from top of report file (see **Report File Format** below); if skill has no YAML block in file, fall back to plain ASCII verdict line using `·` as separator: `verdict: NEEDS_WORK · findings: 8 · ...`
    2. **Report path** — `→ <filepath>`
@@ -137,14 +137,16 @@ Before dispatching `codex:codex-rescue` with `--write` (Codex gets full write ac
 
 ## Prose Compression — Output Files
 
-Applies to all agents. Compression tier by destination:
+Applies to all agents. Compression tier by destination.
 
-Estimate file size: `$(( $(wc -c < file) / 4 ))` tokens. Over budget → drop LOW/Nitpick first; preserve CRITICAL and HIGH intact.
+**Cap is soft, not a truncation trigger.** 10K tokens is a compression target, not a hard ceiling — never drop evidence, findings, or CRITICAL/HIGH content to force a file under cap. Compress prose (articles, filler, hedging, verbose framing) first; if the file still exceeds cap after full compression, let it run over rather than lose substance. Structurally large artifacts (multi-agent aggregates, batch reports) legitimately exceed 10K — that's a signal the content warrants its size, not a violation to fix by cutting evidence. Only LOW/Nitpick-severity items are droppable for space; CRITICAL and HIGH always survive intact.
 
-| Destination | Tier | Size limit | Rule |
+Estimate file size: `$(( $(wc -c < file) / 4 ))` tokens.
+
+| Destination | Tier | Size target | Rule |
 | --- | --- | --- | --- |
-| `.reports/` (human review) | normal caveman | ≤10K tokens (~500 lines) | Drop articles/filler/hedging; full sentences where clarity demands; fragments OK for terse findings |
-| `.temp/` (consolidator handover) | ultra caveman | ≤10K tokens (~500 lines) | Fragments only; zero filler; shortest synonyms; ~30–40% token reduction; per file-handoff-protocol.md §Synthesis budget |
+| `.reports/` (human review) | normal caveman | ~10K tokens (~500 lines) | Drop articles/filler/hedging; full sentences where clarity demands; fragments OK for terse findings |
+| `.temp/` (consolidator handover) | ultra caveman | ~10K tokens (~500 lines) | Fragments only; zero filler; shortest synonyms; ~30–40% token reduction vs normal caveman; full evidence coverage still required — compress prose, not substance; per file-handoff-protocol.md §Synthesis budget |
 
 ## Report File Format
 

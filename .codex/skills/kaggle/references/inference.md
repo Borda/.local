@@ -40,7 +40,7 @@ Build a label-free test Dataset/DataLoader or grounded modality equivalent:
 - set `shuffle=False`;
 - assert batch shape and dtype;
 - print sample and batch counts;
-- handle empty test data explicitly.
+- assert non-empty test data before constructing or iterating the loader; do not use a conditional empty-data branch.
 
 Detection may use single-image iteration when required by the verified predictor API. Volumetric pipelines must preserve original shape metadata for output restoration.
 
@@ -69,4 +69,4 @@ Keep parameters in a just-in-time config cell. Define helpers immediately before
 
 ## Inference lens
 
-Show a small prediction sample, print prediction/ID counts and shapes, check NaN/Inf and range constraints, and compare the attached in-memory versus reloaded path when both exist.
+Assert the prediction sample is available, then show it; print prediction/ID counts and shapes, check NaN/Inf and range constraints, and compare the attached in-memory versus reloaded path when both exist. Do not make the required lens conditional.

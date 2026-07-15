@@ -179,6 +179,9 @@ def show_pcd(path, n_points=50_000):
     ax.scatter(pts[:, 0], pts[:, 1], pts[:, 2], s=0.1, alpha=0.5)
     ax.set_title(str(path)); plt.tight_layout(); plt.show()
 
-sample_path = sorted(Path(PATH_DATASET).glob("**/*.pcd"))[0]
+matches = sorted(Path(PATH_DATASET).glob("**/*.pcd"))
+if not matches:
+    raise FileNotFoundError(f"No .pcd files under {PATH_DATASET}")
+sample_path = matches[0]
 show_pcd(sample_path)
 ```

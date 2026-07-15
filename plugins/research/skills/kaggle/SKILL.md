@@ -47,6 +47,7 @@ Output: `.experiments/kaggle/<competition-name>.py`
 OUTPUT_DIR:    .experiments/kaggle/
 CELL_MARK:     "# %%"
 MD_CELL_MARK:  "# %% [markdown]"
+# NOTE: documentation-only — not referenced as shell vars across separate Bash() calls (state doesn't persist); keep values in sync with literal use sites (Steps 1, 3, 4).
 ```
 
 </constants>
@@ -104,6 +105,8 @@ fi
 rm -f .claude/state/skill-contract.md  # timeout: 5000
 echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/kaggle-keep-items"  # persist for Step 3 contract write
 ```
+
+**Flag mutual-exclusion check** — if `EDA_ONLY` and `INFERENCE_ONLY` are both `true` (both `--eda-only` and `--inference-only` passed): print `` ! Conflicting flags: `--eda-only` and `--inference-only` are mutually exclusive (`--eda-only` is always-online with no training; `--inference-only` is always-offline/frozen-package with no EDA — see `foundation.md`). Pick one. `` then invoke `AskUserQuestion` — (a) **Abort** · (b) **Continue ignoring both** (falls back to full mode: neither eda-only nor inference-only applied). On Abort: stop.
 
 **Unsupported flag check** — scan `$ARGUMENTS` for remaining `--<token>` tokens after supported flags extracted (`--eda-only`, `--inference-only`, `--offline-setup`, `--type`, `--resume`, `--keep`). Found: print `` ! Unknown flag(s): `--<token>`. Supported: `--eda-only`, `--inference-only`, `--offline-setup`, `--type <type>`, `--resume <path>`, `--keep "<items>"`. `` then invoke `AskUserQuestion` — (a) **Abort** · (b) **Continue ignoring**. On Abort: stop.
 

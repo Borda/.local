@@ -28,7 +28,7 @@ Follow with one setup cell:
 Use one `# %%` cell containing imports and global paths only:
 
 - Standard library first (`glob`, `os`, `Path` as needed), then NumPy/pandas/plotting, then torch/model packages, then sklearn/XGBoost.
-- Use `from tqdm.auto import tqdm`.
+- Import `tqdm` with `from tqdm.auto import tqdm` and use it for every visible notebook progress bar (data scans, training-adjacent loops, and inference). Never use Rich progress bars.
 - Always import `torch` for neural inference/training notebooks.
 - Suppress only a specific noisy warning category; do not blanket-ignore exceptions.
 - Define grounded `PATH_DATASET`, `PATH_OUTPUT`, and when needed `PATH_MODELS`/`PATH_CHECKPOINT` as ALL_CAPS.

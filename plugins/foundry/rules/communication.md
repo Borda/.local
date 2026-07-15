@@ -101,26 +101,22 @@ Compliant example — only valid form:
 
 ### Confidence Bars
 
-Before every `AskUserQuestion` multiple-choice call, emit a green-bar confidence legend in the response body — quick visual of where the model leans. Legend is a visual aid, **not** a prose question; exempt from the no-prose-before-question constraint above.
+For every `AskUserQuestion` multiple-choice call with a genuine model leaning: embed the confidence bar **inside each option's own `description` field** — never as a separate legend before the tool call. A standalone legend needs a label scheme (A/B/C or 1/2/3) mapped back to option order; that mapping silently breaks whenever the legend's item count or order drifts from the actual options (observed failure — legend keyed 3 letters against a 5-option call, no shared referent). Bar-in-description has no mapping step: reader sees the bar on the exact option it scores.
 
-Format — one line per option, 5-cell bar, each cell = 20%:
+Format — 5-cell bar prefixed to `description`, each cell = 20%:
 
 ```
-Confidence:
-
-A  🟩🟩⬜⬜⬜  40%
-B  🟩🟩🟩🟩⬜  75%  ←
-C  🟩⬜⬜⬜⬜  15%
+description: "🟩🟩🟩🟩⬜ 75% ← recommended — <rest of trade-off explanation>"
 ```
 
 Rules:
 
 - 🟩 filled, ⬜ empty — **Unicode emoji only, never ANSI** (consistent with Reply Visibility no-ANSI rule)
 - Cells = `round(pct / 20)` filled; label exact `pct%` after bar
-- Percentages = model's own estimate that each option is the right choice; span options, need not sum to exactly 100
-- Mark highest-confidence option with trailing `←` (aligns with second-slot recommended option per placement rule above)
-- Legend precedes the `AskUserQuestion` tool call; option letters (A/B/…) map to option order in the call
-- **Genuine-recommendation gate**: show bars when model has a real leaning (a correct/better answer exists). Pure user-taste questions with no right answer (theme, naming preference) → flatten bars to near-even or skip legend — never fake a recommendation
+- Percentages = model's own estimate that this option is the right choice; span options, need not sum to exactly 100
+- Mark highest-confidence option's bar with trailing `←` (aligns with second-slot recommended option per placement rule above)
+- Bar goes in `description` (always rendered), **not** `preview` (only shown when focused / side-by-side layout) — `description` is the only field guaranteed visible
+- **Genuine-recommendation gate**: show bars when model has a real leaning (a correct/better answer exists). Pure user-taste questions with no right answer (theme, naming preference) → flatten bars to near-even or omit them — never fake a recommendation
 - Applies globally — all skills, agents, model-generated questions
 
 ## Output Routing

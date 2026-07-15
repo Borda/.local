@@ -121,6 +121,7 @@ Follow `../_shared/helper-cli-contract.md` and inspect helper `--help` before in
 6. Generated output missing required sections, containing forbidden sections, or failing cell-marker checks => fail.
 7. Claimed runtime success without executed evidence => fail review.
 8. Missing `profile.md`, gate evidence, or validated result artifact => fail.
+9. A required main-path notebook action (data load, sample display, chart, lens, training, inference, or submission validation) guarded by `try`/`except`, `if`/`else`, or a silent skip => fail. Assert its preconditions immediately before the action and let unexpected errors stop the notebook.
 
 ## Quality Gates
 
