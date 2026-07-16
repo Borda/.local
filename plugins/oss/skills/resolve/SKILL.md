@@ -78,9 +78,12 @@ Preserve at boundary 2: final report path, PR#.
 _OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
 _OSS_RESOLVE=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/resolve 2>/dev/null)  # timeout: 5000
 [ -z "$_OSS_RESOLVE" ] && _OSS_RESOLVE="plugins/oss/skills/resolve"
+echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/resolve-oss-shared"  # persist for later blocks (Check 41)
+echo "$_OSS_RESOLVE" > "${TMPDIR:-/tmp}/resolve-oss-resolve"  # persist for later blocks (Check 41)
+cat "$_OSS_SHARED/agent-resolution.md"  # timeout: 5000
 ```
 
-Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, `foundry:challenger`.
+Contains: foundry check + fallback table. foundry not installed → use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:doc-scribe`, `foundry:challenger`.
 
 <!-- Inline fallback (if agent-resolution.md unreadable): foundry:sw-engineer → general-purpose, foundry:qa-specialist → general-purpose, foundry:linting-expert → general-purpose, foundry:challenger → general-purpose. -->
 
@@ -136,9 +139,11 @@ python "$_DETECT_CODEMAP" --prefix resolve $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && { echo "! BLOCKED — codemap strict mode requested but codemap not installed or index missing"; exit 1; }
 CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/resolve-codemap-enabled" 2>/dev/null || echo "false")
 CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/resolve-codemap-currency" 2>/dev/null || echo "off")
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared" 2>/dev/null || echo "")  # reload (Check 41)
+[ "$CODEMAP_FORCE_OFF" = "false" ] && cat "$_OSS_SHARED/codemap-gates.md"  # timeout: 5000
 ```
 
-**Codemap gates** — when `CODEMAP_FORCE_OFF=false`, read `$_OSS_SHARED/codemap-gates.md` and run: **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, after `codemap:scan-codebase` set `CODEMAP_ENABLED=true`. Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
+**Codemap gates** — when `CODEMAP_FORCE_OFF=false`, run (from `codemap-gates.md`, loaded above): **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, after `codemap:scan-codebase` set `CODEMAP_ENABLED=true`. Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
 
 Codex missing: set `CODEX_AVAILABLE=false` — Steps 3–7 work without it. Step 8 degradation:
 1. Simple, single-file items → `foundry:sw-engineer`
@@ -222,12 +227,22 @@ TaskUpdate(task_id=TASK_GATHER, status="in_progress")
 ## Step 3a: Report intelligence (report mode only)
 <!-- loads: report-intelligence.md -->
 
-Read and execute `$_OSS_RESOLVE/modes/report-intelligence.md`.
+```bash
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/modes/report-intelligence.md"  # timeout: 5000
+```
+
+Execute its steps (loaded above).
 
 ## Step 3b: PR intelligence
 <!-- loads: pr-intelligence.md -->
 
-Read and execute `$_OSS_RESOLVE/modes/pr-intelligence.md`.
+```bash
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/modes/pr-intelligence.md"  # timeout: 5000
+```
+
+Execute its steps (loaded above).
 
 ## Step 3c: Merge report findings (pr + report mode only)
 
@@ -461,7 +476,12 @@ TaskUpdate(task_id=TASK_CHECKOUT, status="completed")
 TaskUpdate(task_id=TASK_CONFLICT, status="in_progress")
 ```
 
-Read and execute `$_OSS_RESOLVE/modes/conflict-resolution.md`.
+```bash
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/modes/conflict-resolution.md"  # timeout: 5000
+```
+
+Execute its steps (loaded above).
 
 ```text
 TaskUpdate(task_id=TASK_CONFLICT, status="completed")
@@ -535,7 +555,12 @@ echo "${CODEMAP_CACHE_DIR}" > "${TMPDIR:-/tmp}/resolve-codemap-cache-dir"  # tim
 
 <!-- Step 8 defined in action-item-dispatch.md -->
 
-Read `$_OSS_RESOLVE/modes/action-item-dispatch.md`; execute its prelude (IMPL_AGENT routing, IMPL_DIR init, blast-radius scan), then run its per-item loop directly in the orchestrator: per item, `TaskUpdate(in_progress)` → challenge → impl → commit → `TaskUpdate(completed)`. Orchestrator-owned so each task flips **live** as work starts and finishes — never delegate the loop to a subagent (a subagent cannot drive the parent's task list, which would freeze every per-item task until return).
+```bash
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/modes/action-item-dispatch.md"  # timeout: 5000
+```
+
+`action-item-dispatch.md` (loaded above) — execute its prelude (IMPL_AGENT routing, IMPL_DIR init, blast-radius scan), then run its per-item loop directly in the orchestrator: per item, `TaskUpdate(in_progress)` → challenge → impl → commit → `TaskUpdate(completed)`. Orchestrator-owned so each task flips **live** as work starts and finishes — never delegate the loop to a subagent (a subagent cannot drive the parent's task list, which would freeze every per-item task until return).
 
 `action-item-dispatch.md` caps a single pass at 20 items and gates >20 behind `AskUserQuestion` (split into ≤20 batches · `[req]` only · proceed with all). On "proceed with all", run the same orchestrator loop over every item — slower and context-heavy at that size, but no separate code path.
 
@@ -565,7 +590,12 @@ mkdir -p .claude/state  # timeout: 5000
 TaskUpdate(task_id=TASK_LINT, status="in_progress")
 ```
 
-Read and execute `$_OSS_RESOLVE/modes/lint-qa-gate.md`.
+```bash
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/modes/lint-qa-gate.md"  # timeout: 5000
+```
+
+Execute its steps (loaded above).
 
 ```text
 TaskUpdate(task_id=TASK_LINT, status="completed")
@@ -649,9 +679,11 @@ _PRESERVE="pr=${_PR_NUMBER}, final-report=pending-write"
     echo "- preserve: ${_PRESERVE}"
     echo "- next: write final report → post-PR action gate"
 } > .claude/state/skill-contract.md  # timeout: 5000
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/templates/resolve-report.md"  # timeout: 5000
 ```
 
-Read report template from `$_OSS_RESOLVE/templates/resolve-report.md` for section structure.
+Report template (loaded above) — use for section structure.
 
 **Action Items table** — one row per selected item, columns: `#` | `Type` | `Change` | `Status` | `Resolution` | `Commit`:
 
@@ -686,7 +718,12 @@ rm -f .claude/state/skill-contract.md  # clear contract — skill complete (comp
 
 ## Step 12: Comment dispatch + Codex review loop
 
-Read and execute `$_OSS_RESOLVE/modes/comment-dispatch.md`.
+```bash
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/modes/comment-dispatch.md"  # timeout: 5000
+```
+
+Execute its steps (loaded above).
 
 ```bash
 rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000

@@ -1,4 +1,4 @@
-<!-- oss:release Mode: prepare — executed via: Read $SKILL_DIR/modes/prepare.md; execute -->
+<!-- oss:release Mode: prepare — executed via: cat "$SKILL_DIR/modes/prepare.md"; execute -->
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $GATHER_FILE -->
 
 **Trigger**: `/release prepare <version>` (e.g., `prepare v1.3.0` or `prepare 1.3.0`)
@@ -8,10 +8,12 @@
 ```bash
 # fresh shell loses vars; Mode Detection persists REST to tmpdir
 REST=$(cat "${TMPDIR:-/tmp}/release-rest" 2>/dev/null || echo "")
+LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup/LAST_TAG" 2>/dev/null || echo "")
 VERSION="${REST%% *}"
 [[ "$VERSION" != v* ]] && VERSION="v$VERSION"
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
-# BRANCH, DATE, LAST_TAG, REPO_ROOT, SKILL_DIR from Shared setup above
+echo "$VERSION" > "${TMPDIR:-/tmp}/release-prepare-version"  # persist for later blocks (Check 41)
+# BRANCH, DATE, REPO_ROOT, SKILL_DIR from Shared setup above
 ```
 
 ### Phase 1: Readiness audit
@@ -33,6 +35,7 @@ Run all checks from **Mode: audit** with `$VERSION` as target. `| Check | Status
 Set up release directory, back up existing artifacts:
 
 ```bash
+VERSION=$(cat "${TMPDIR:-/tmp}/release-prepare-version" 2>/dev/null || echo "")  # reload (Check 41)
 RELEASE_DIR="releases/$VERSION"
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/setup_release_dir.py" "$RELEASE_DIR" "$CHANGELOG_FILE"  # timeout: 5000
 ```
@@ -46,11 +49,14 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/setup_release_dir.py" "$RELEASE_D
 **a. Demo notebook** — reuse `$GATHER_FILE` and `releases/$VERSION/HIGHLIGHTS.md` from Phase 3. Apply demo generation logic from **Mode: demo**, Phase 2 (Generate demo script). Output path:
 
 ```bash
+VERSION=$(cat "${TMPDIR:-/tmp}/release-prepare-version" 2>/dev/null || echo "")  # reload (Check 41)
 DEMO_OUT="releases/$VERSION/demo.py"
+echo "$DEMO_OUT" > "${TMPDIR:-/tmp}/release-prepare-demo-out"  # persist for next block (Check 41)
 ```
 
 Write generated script to `$DEMO_OUT` using Write tool. **Execution gate** — run:
 ```bash
+DEMO_OUT=$(cat "${TMPDIR:-/tmp}/release-prepare-demo-out" 2>/dev/null || echo "")  # reload (Check 41)
 python "$DEMO_OUT"  # timeout: 600000
 ```
 Fix and re-run until exits 0 with expected output. Don't proceed to 4b until gate passes.

@@ -51,12 +51,13 @@ From paper content, extract:
 - **Claims table**: each claim = `{id, section, claim_text, type}` where type is one of: `formula`, `hyperparameter`, `eval`, `architecture`, `result`
 - Focus on: equations with concrete terms, specific hyperparameter values, evaluation protocols (metric names, split names, preprocessing steps), architectural specifics, reported numeric results
 
+**Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--scope`, `--program`, `--strict`, `--dim`, `--codemap`, `--no-codemap`.
 ```bash
+# loads: unsupported-flag-protocol.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed"; exit 1; }
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
 ```
-
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--scope`, `--program`, `--strict`, `--dim`, `--codemap`, `--no-codemap`.
 
 **Codemap auto-detection** — structural context (blast-radius, importers, coverage) for the audited codebase; on by default when codemap installed + index found. `--no-codemap` opts out; `--codemap` is strict (fail if unavailable). Note: `--codemap` is independent of `--strict` (audit strictness).
 
@@ -75,7 +76,12 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/research-verify-codemap-enabled
 
 > loads: codemap-gates.md
 
-When `CODEMAP_RAW` ≠ `off`: read `$_RESEARCH_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+When `CODEMAP_RAW` ≠ `off`:
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 **Pre-compute run directory** — persist `RUN_DIR` and `OUT` to temp files so V3/V4/V5 (separate Bash shells) can reload them (ADV-H20):
 
@@ -146,7 +152,12 @@ fi
 
 Spawn `research:scientist` via `Agent(subagent_type="research:scientist", prompt="...")`. Single agent handles all five dimensions — cross-dimension context requires holistic paper understanding.
 
-**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-verify-codemap-enabled`): read `$_RESEARCH_SHARED/codemap-context.md`, execute its block (leave `TARGET_MODULE`/`TARGET_FN` empty for `central` baseline, or set `TARGET_MODULE` to key module from `scope_files`). Prepend output to scientist prompt under `## Structural Context (codemap)` heading so architecture (N) and eval (E) dimensions reference real import/coverage structure instead of re-reading every file.
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-verify-codemap-enabled`):
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/codemap-context.md"
+```
+Execute its block (leave `TARGET_MODULE`/`TARGET_FN` empty for `central` baseline, or set `TARGET_MODULE` to key module from `scope_files`). Prepend output to scientist prompt under `## Structural Context (codemap)` heading so architecture (N) and eval (E) dimensions reference real import/coverage structure instead of re-reading every file.
 
 <!-- Agent call is synchronous — no Bash file-activity poll available during Agent(...) execution. HARD_CUTOFF (900s) is declared as a reference constant but is NOT enforceable within the skill — Agent() has no timeout parameter. After Agent() returns, apply the single timeout policy declared in `<constants>`: check `$RUN_DIR/audit-raw.md`; if absent or empty, set `fidelity = null`, `status = TIMED_OUT`, mark ⏱ in report; if present, parse normally. Same limitation as research:topic. -->
 

@@ -21,7 +21,7 @@ Use `ADVERSARIAL_BATCH_SIZE` (default 2) for grouping — smaller batches than S
 
 For each file in scope, spawn **foundry:curator** with no scope constraint:
 
-> "Audit this file. Read `$AUDIT_TPL/curator-prompt.md` as your baseline checklist — apply all those checks. Then go beyond: report ANY additional issue you observe that falls outside the explicit checklist. Look especially for: execution continuing after a confirmed failure path with no `exit 1`; incomplete specifications that would leave an agent uncertain at a branch point; undocumented implicit dependencies (env vars, files, network) not declared in inputs; workflow logic that is self-consistent but would silently produce wrong results on a valid non-happy-path input. No scope constraint — senior-engineer judgment applies."
+> "Audit this file. Run `cat "$AUDIT_TPL/curator-prompt.md"` via the Bash tool and use it as your baseline checklist — apply all those checks. Then go beyond: report ANY additional issue you observe that falls outside the explicit checklist. Look especially for: execution continuing after a confirmed failure path with no `exit 1`; incomplete specifications that would leave an agent uncertain at a branch point; undocumented implicit dependencies (env vars, files, network) not declared in inputs; workflow logic that is self-consistent but would silently produce wrong results on a valid non-happy-path input. No scope constraint — senior-engineer judgment applies."
 > Write full findings to `<RUN_DIR>/deep-curator-<file-slug>.md` using same `<file-slug>` convention as Phase A. Return ONLY: `{"status":"done","file":"<path>","findings":N,"severity":{"security":N,"critical":N,"high":N,"medium":N,"low":N},"confidence":0.N}`
 
 Use `ADVERSARIAL_BATCH_SIZE` grouping. Phase C deduplicates Phase A-prime findings against `summary.jsonl` from Steps 3–6 in SAME RUN_DIR only — not against prior runs. In adversarial-only mode (no same-run standard audit), all Phase A-prime findings carried forward.
@@ -32,9 +32,10 @@ Use `ADVERSARIAL_BATCH_SIZE` grouping. Phase C deduplicates Phase A-prime findin
 CODEX_AVAILABLE=$(command -v codex 2>/dev/null || find ~/.claude/plugins/cache -name "codex*" -type d 2>/dev/null | head -1)  # timeout: 5000
 _SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
+[ -n "$CODEX_AVAILABLE" ] && cat "$_SHARED/codex-prepass.md"
 ```
 
-If `[ -n "$CODEX_AVAILABLE" ]`: read `$_SHARED/codex-prepass.md`, run Codex pass on all in-scope files. Focus Codex on: cross-file inconsistencies, circular dispatch chains, agent description ambiguities causing routing failures, workflow steps assuming capabilities declared tools don't provide. Else: `echo "⚠ codex plugin not available — skipping codex adversarial pass"`.
+If `$CODEX_AVAILABLE` non-empty: apply the codex-prepass.md instructions above, run Codex pass on all in-scope files. Focus Codex on: cross-file inconsistencies, circular dispatch chains, agent description ambiguities causing routing failures, workflow steps assuming capabilities declared tools don't provide. Else: `echo "⚠ codex plugin not available — skipping codex adversarial pass"`.
 
 Codex writes per-file findings to `<RUN_DIR>/codex-adversarial-<file-basename>.md`. Return compact JSON envelope per file.
 

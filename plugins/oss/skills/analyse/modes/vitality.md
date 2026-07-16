@@ -9,6 +9,9 @@
 **Task tracking**: mark "Step 1 Data Fetch" in_progress before spawning.
 
 ```bash
+# Reload $GH_OWNER, $GH_REPO — fresh shell loses vars set in analyse/SKILL.md (Check 41)
+GH_OWNER=$(cat "${TMPDIR:-/tmp}/analyse-gh-owner" 2>/dev/null || echo "")
+GH_REPO=$(cat "${TMPDIR:-/tmp}/analyse-gh-repo" 2>/dev/null || echo "")
 mkdir -p .reports/analyse/vitality  # timeout: 5000
 TODAY=$(TZ=UTC date +%Y-%m-%d)  # timeout: 5000
 RUN_TS=$(TZ=UTC date +%Y-%m-%dT%H-%M-%SZ)  # timeout: 5000
@@ -17,6 +20,15 @@ PARTIAL_A=".reports/analyse/vitality/partial-A-${GH_OWNER}-${GH_REPO}-${RUN_TS}.
 PARTIAL_B=".reports/analyse/vitality/partial-B-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
 PARTIAL_C=".reports/analyse/vitality/partial-C-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
 SCORES_FILE=".reports/analyse/vitality/scores-${GH_OWNER}-${GH_REPO}-${RUN_TS}.json"
+# Persist for later blocks in this file (Check 41)
+echo "$GH_OWNER" > "${TMPDIR:-/tmp}/vitality-gh-owner"
+echo "$GH_REPO" > "${TMPDIR:-/tmp}/vitality-gh-repo"
+echo "$DATA_FILE" > "${TMPDIR:-/tmp}/vitality-data-file"
+echo "$PARTIAL_A" > "${TMPDIR:-/tmp}/vitality-partial-a"
+echo "$PARTIAL_B" > "${TMPDIR:-/tmp}/vitality-partial-b"
+echo "$PARTIAL_C" > "${TMPDIR:-/tmp}/vitality-partial-c"
+echo "$SCORES_FILE" > "${TMPDIR:-/tmp}/vitality-scores-file"
+echo "$RUN_TS" > "${TMPDIR:-/tmp}/vitality-run-ts"
 ```
 
 **Spawn**:
@@ -38,6 +50,10 @@ Spawn all 3 `oss:repo-warden` agents simultaneously in single response:
 **Health monitoring** (CLAUDE.md §6): before spawning, create checkpoint:
 
 ```bash
+# Reload vars — fresh shell (Check 41)
+GH_OWNER=$(cat "${TMPDIR:-/tmp}/vitality-gh-owner" 2>/dev/null || echo "")
+GH_REPO=$(cat "${TMPDIR:-/tmp}/vitality-gh-repo" 2>/dev/null || echo "")
+RUN_TS=$(cat "${TMPDIR:-/tmp}/vitality-run-ts" 2>/dev/null || echo "")
 SCORE_CHECKPOINT_FILE="/tmp/vitality-score-check-${GH_OWNER}-${GH_REPO}-${RUN_TS}"
 touch "$SCORE_CHECKPOINT_FILE"  # timeout: 5000
 ```
@@ -58,9 +74,16 @@ Read all 3 partial files using Read tool. Merge into unified `$SCORES_FILE`:
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 SCORING_FILE="$_OSS_SHARED/vitality-scoring.md"
+echo "$SCORING_FILE" > "${TMPDIR:-/tmp}/vitality-scoring-file"  # persist (Check 41)
 ```
 
 ```bash
+# Reload vars — fresh shell (Check 41)
+PARTIAL_A=$(cat "${TMPDIR:-/tmp}/vitality-partial-a" 2>/dev/null || echo "")
+PARTIAL_B=$(cat "${TMPDIR:-/tmp}/vitality-partial-b" 2>/dev/null || echo "")
+PARTIAL_C=$(cat "${TMPDIR:-/tmp}/vitality-partial-c" 2>/dev/null || echo "")
+SCORING_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scoring-file" 2>/dev/null || echo "")
+SCORES_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scores-file" 2>/dev/null || echo "")
 python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/assemble_vitality_scores.py" \
     "$PARTIAL_A" "$PARTIAL_B" "$PARTIAL_C" "$SCORING_FILE" "$SCORES_FILE"  # timeout: 15000
 ```
@@ -68,6 +91,8 @@ python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/assemble_vitality_scores.py" \
 Extract variables from `$SCORES_FILE` for use in Steps 4–7:
 
 ```bash
+# Reload $SCORES_FILE — fresh shell (Check 41)
+SCORES_FILE=$(cat "${TMPDIR:-/tmp}/vitality-scores-file" 2>/dev/null || echo "")
 eval "$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/extract_vitality_vars.py" "$SCORES_FILE")"  # timeout: 5000
 echo "[vitality] scorer complete: health=${HEALTH_SCORE_PCT}% conf=${OVERALL_CONFIDENCE} passes=${TOTAL_PASSES}"
 ```
@@ -119,13 +144,20 @@ REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
 ```bash
 _OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
 [ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/oss/skills/analyse"
+cat "$_OSS_ANALYSE/modes/codemap-signals.md"  # timeout: 5000
 ```
 
-> loads: codemap-signals.md
+Run its **Detect** block (loaded above), then **Signal B** (open-PR conflict/duplicate candidates) and **Signal C** (Structural Constraints). Signal B fetches changed-file lists for open PRs (bounded by `PR_FILES_CAP`), does pairwise file overlap, and — when `CM_ENABLED=true` — adds `coupled`-based hidden-conflict pairs; surface `PRSET_CANDIDATES` pairs in report. Signal C uses parsed `central[]` / `collision_count` / `degraded` / `stale` to fill template's `### Structural Constraints` bullets. `CM_ENABLED=false`: Signal B still runs direct file-overlap layer (no codemap needed); Signal C fills Structural Constraints block with single "structural index unavailable" bullet — never leave empty, never block.
 
-Read `$_OSS_ANALYSE/modes/codemap-signals.md` and run its **Detect** block, then **Signal B** (open-PR conflict/duplicate candidates) and **Signal C** (Structural Constraints). Signal B fetches changed-file lists for open PRs (bounded by `PR_FILES_CAP`), does pairwise file overlap, and — when `CM_ENABLED=true` — adds `coupled`-based hidden-conflict pairs; surface `PRSET_CANDIDATES` pairs in report. Signal C uses parsed `central[]` / `collision_count` / `degraded` / `stale` to fill template's `### Structural Constraints` bullets. `CM_ENABLED=false`: Signal B still runs direct file-overlap layer (no codemap needed); Signal C fills Structural Constraints block with single "structural index unavailable" bullet — never leave empty, never block.
-
-Run `mkdir -p .reports/analyse/vitality` then **Read `$REPORT_TPL`** to get full report structure. Write `$REPORT_FILE` using that structure as scaffold — substitute all `{VARIABLE}` placeholders with bash variables set above (`REPORT_TIMESTAMP`, `GH_OWNER`, `GH_REPO`, `SKILL_VERSION`, `REPORT_COMMIT`, `TOTAL_PASSES`, `CONFIDENCE_HISTORY`, `REPORT_AGENTS_YAML`, etc.). Do not print full analysis to terminal.
+```bash
+mkdir -p .reports/analyse/vitality  # timeout: 5000
+# Reload _OSS_ANALYSE/REPORT_TPL (Check 41: fresh shell)
+_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+[ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/oss/skills/analyse"
+REPORT_TPL="$_OSS_ANALYSE/templates/vitality-report.md"
+cat "$REPORT_TPL"  # timeout: 5000
+```
+Full report structure (loaded above). Write `$REPORT_FILE` using that structure as scaffold — substitute all `{VARIABLE}` placeholders with bash variables set above (`REPORT_TIMESTAMP`, `GH_OWNER`, `GH_REPO`, `SKILL_VERSION`, `REPORT_COMMIT`, `TOTAL_PASSES`, `CONFIDENCE_HISTORY`, `REPORT_AGENTS_YAML`, etc.). Do not print full analysis to terminal.
 
 ## Step 5 — Codex Independent Repo Review · Step 6 — Adversarial Rework Loop
 
@@ -135,14 +167,35 @@ QUICK_MODE=$(cat "${TMPDIR:-/tmp}/analyse-quick-mode" 2>/dev/null || echo false)
 
 **When `$QUICK_MODE` = `true`**: skip both steps entirely — do NOT read either mode file below. Set the report's Independent Codex Review section to "skipped (--quick)" and replace the `## Adversarial Review` placeholder with "skipped (--quick) — single-pass scorecard, un-reviewed; rerun without --quick for a reviewed assessment". Proceed directly to Step 7.
 
-**Otherwise**: read and execute `$_OSS_ANALYSE/modes/vitality-codex-review.md` (Step 5), then `$_OSS_ANALYSE/modes/vitality-adversarial-rework.md` (Step 6) — each returns here to the next in sequence.
+**Otherwise**:
+
+```bash
+_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+[ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/oss/skills/analyse"
+cat "$_OSS_ANALYSE/modes/vitality-codex-review.md"  # timeout: 5000
+```
+
+Execute its steps (Step 5), then:
+
+```bash
+_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+[ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/oss/skills/analyse"
+cat "$_OSS_ANALYSE/modes/vitality-adversarial-rework.md"  # timeout: 5000
+```
+
+Execute its steps (Step 6) — each returns here to the next in sequence.
 
 > loads: vitality-codex-review.md
 > loads: vitality-adversarial-rework.md
 
 ## Step 7 — Terminal Summary Output
 
-Read `$FOUNDRY_SHARED/terminal-summaries.md` for compact block format. File absent → warn "run /foundry:setup — printing plain terminal output instead."
+```bash
+# Reload FOUNDRY_SHARED (Check 41: fresh shell; set by parent analyse/SKILL.md)
+FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-foundry-shared" 2>/dev/null || echo "")
+[ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
+```
+Compact block format (loaded above). File absent → warn "run /foundry:setup — printing plain terminal output instead."
 
 Print compact block to terminal. Three sections: header, exec summary, simplified scorecard. Axis rows must appear in numeric order 1–9; never reorder by score, weight, or status:
 

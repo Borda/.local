@@ -1,4 +1,4 @@
-<!-- oss:release Mode: demo — executed via: Read $SKILL_DIR/modes/demo.md; execute -->
+<!-- oss:release Mode: demo — executed via: cat "$SKILL_DIR/modes/demo.md"; execute -->
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT, $GATHER_FILE -->
 
 **Trigger**: `/release demo [range]`
@@ -6,10 +6,12 @@
 **Purpose**: Story-telling release notebook — self-contained Python script in jupytext percent (`# %%`) format. Highlights 2–3 most significant contributions with narrative prose, runnable code cells. Suitable for Colab, local Jupyter, or blog embeds.
 
 ```bash
-# LAST_TAG, REPO_ROOT, SKILL_DIR from Shared setup above
+# Reload vars from Shared setup — fresh shell (Check 41)
+REST=$(cat "${TMPDIR:-/tmp}/release-rest" 2>/dev/null || echo "")
+LAST_TAG=$(cat "${TMPDIR:-/tmp}/release-setup/LAST_TAG" 2>/dev/null || echo "")
 RANGE="${REST:+${REST/->/../}}"
 RANGE="${RANGE:-$LAST_TAG..HEAD}"
-# BRANCH, DATE from Shared setup above
+echo "$RANGE" > "${TMPDIR:-/tmp}/release-demo-range"  # persist for later blocks (Check 41)
 ```
 
 ### Phase 1: Gather and pick headline features
@@ -17,6 +19,7 @@ RANGE="${RANGE:-$LAST_TAG..HEAD}"
 Run gather/explore/validate inline for `$RANGE` (no delegation — demo single-pass like `notes` mode). Use same commands as **Gather changes** section above (git log, gh pr list). For diff stat, prefer three-dot range:
 
 ```bash
+RANGE=$(cat "${TMPDIR:-/tmp}/release-demo-range" 2>/dev/null || echo "")  # reload (Check 41)
 git diff --stat "$(echo "$RANGE" | sed 's/\.\./.../')"  # three-dot range preferred; timeout: 3000
 ```
 
@@ -84,12 +87,15 @@ Content rules:
 ### Phase 3: Write output
 
 ```bash
-# BRANCH, DATE from Shared setup above
+# Reload vars from Shared setup — fresh shell (Check 41)
+BRANCH=$(cat "${TMPDIR:-/tmp}/release-setup/BRANCH" 2>/dev/null || echo "")
+DATE=$(cat "${TMPDIR:-/tmp}/release-setup/DATE" 2>/dev/null || echo "")
 # LAST_TAG = previous release (range lower bound) — not release being drafted
 # always .temp/; prepare mode uses releases/$VERSION/
 DEMO_OUT=".temp/release-demo-$BRANCH-$DATE.py"
 mkdir -p .temp  # timeout: 5000
 ```
+
 
 Write generated script to `$DEMO_OUT` using Write tool.
 

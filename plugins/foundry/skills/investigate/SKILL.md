@@ -38,13 +38,13 @@ Terminal path: end of Step 6 (report + follow-up gate complete).
 
 <workflow>
 
-**Task hygiene**:
+**Task hygiene**: load and follow the protocol below.
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+cat "$_FS/task-hygiene.md"
 ```
-Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 **Task tracking**: TaskCreate tasks for Gather, Hypothesise, Probe, Report; mark in_progress/completed as you go.
 

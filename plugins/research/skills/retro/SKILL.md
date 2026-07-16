@@ -19,12 +19,12 @@ NOT for: running experiments (use `/research:run`); designing experiments (use `
 
 ## Agent Resolution
 
+**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:retro from project root."; exit 1; }
+cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
-
-Read `$_RESEARCH_SHARED/agent-resolution.md` (use path printed by bash block above — substitute resolved value, don't pass literal `$_RESEARCH_SHARED` string to Read tool). Contains: foundry check + fallback table. `research:scientist` in same plugin — no fallback needed if research plugin installed.
 
 ## Retro Mode (Steps T1–T7)
 
@@ -32,7 +32,12 @@ Triggered by `retro`, `retro <run-id>`, or `retro <run-id> --compare <run-id-2>`
 
 **Defaults**: `--threshold 0.001`, `--alpha 0.05`.
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--compare`, `--threshold`, `--alpha`.
+**Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--compare`, `--threshold`, `--alpha`.
+```bash
+# loads: unsupported-flag-protocol.md
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
+```
 
 **Task tracking**: create tasks for T1–T7 at start — before any tool calls.
 

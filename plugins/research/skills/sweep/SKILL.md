@@ -31,13 +31,14 @@ Clear at S1 start (stale prior run) and after S5 pipeline completes.
 
 <!-- Agent resolution: see _RESEARCH_SHARED/agent-resolution.md -->
 
+**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table.
+
 ```bash
 # loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
-
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table.
 
 Sweep delegates to plan (S2), judge (S3), run (S5) — see each skill's Agent Resolution for fallback handling.
 
@@ -112,7 +113,12 @@ rm -f .claude/state/skill-contract.md  # timeout: 5000
 echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/sweep-keep-items"  # persist for S2/S3 contract writes
 ```
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--skip-validation`, `--out`, `--keep`.
+**Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--skip-validation`, `--out`, `--keep`.
+```bash
+# loads: unsupported-flag-protocol.md
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
+```
 
 If `<goal>` missing or empty, stop:
 
@@ -125,7 +131,14 @@ If extracted `<goal>` starts with `--`, treat as flag misparse — stop with `! 
 
 ### Step S2: Non-interactive plan
 
-First, `Read $_RESEARCH_SKILLS/plan/SKILL.md` to load plan mode step definitions, then execute steps **P-P1, P-P2, P-P2b and P-P3** from `$_RESEARCH_SKILLS/plan/SKILL.md` (`$_RESEARCH_SKILLS` resolved above S1) (P-P0 skipped — `<goal>` always text string) with overrides:
+First, load plan mode step definitions below, then execute steps **P-P1, P-P2, P-P2b and P-P3** from the same file (P-P0 skipped — `<goal>` always text string) with overrides:
+
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+_RESEARCH_SKILLS="${_RESEARCH_SHARED%/_shared}"
+[ -z "$_RESEARCH_SKILLS" ] && _RESEARCH_SKILLS="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills"
+cat "$_RESEARCH_SKILLS/plan/SKILL.md"
+```
 
 > Include P-P2b analysis in S2 synthesis — P-P2b findings are scoped hypotheses needing consolidation into program.md written by P-P3; skipping P-P2b drops hypothesis context from generated program.
 

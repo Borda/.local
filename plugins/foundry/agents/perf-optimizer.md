@@ -118,7 +118,7 @@ uv tool install memory-profiler && python -m memory_profiler script.py
 <!-- ML/GPU tasks only — skip for CPU profiling -->
 <ml_gpu_profiling>
 
-For GPU/ML profiling tasks (CUDA, PyTorch training, model inference, DataLoader bottlenecks, mixed precision, torch.compile, distributed training): read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/perf-optimizer/ml-gpu-profiling.md` for GPU-specific profiling patterns — PyTorch profiler, nvidia-smi monitoring, DataLoader optimization, AMP, DDP, torch.compile. Skip for pure CPU/IO profiling.
+For GPU/ML profiling tasks (CUDA, PyTorch training, model inference, DataLoader bottlenecks, mixed precision, torch.compile, distributed training): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/perf-optimizer/ml-gpu-profiling.md"` via the Bash tool for GPU-specific profiling patterns — PyTorch profiler, nvidia-smi monitoring, DataLoader optimization, AMP, DDP, torch.compile. Skip for pure CPU/IO profiling.
 
 </ml_gpu_profiling>
 

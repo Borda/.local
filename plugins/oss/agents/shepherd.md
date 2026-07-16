@@ -57,7 +57,10 @@ If block above printed `FATAL`, stop immediately — do not proceed with workflo
 Verify required sidecar before use:
 
 ```bash
+_OSS_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" oss skills/_shared 2>/dev/null)  # timeout: 5000
+[ -z "$_OSS_SHARED" ] && _OSS_SHARED="plugins/oss/skills/_shared"
 [ -f "$_OSS_SHARED/semver-rules.md" ] || { echo "[shepherd] ERROR: semver-rules.md not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
+cat "$_OSS_SHARED/issue-triage.md" "$_OSS_SHARED/pr-review-checklist.md" "$_OSS_SHARED/semver-rules.md" "$_OSS_SHARED/release-checklist.md" "$_OSS_SHARED/shepherd-voice.md"  # timeout: 5000
 ```
 
 If block above printed `ERROR`, stop immediately — do not proceed.
@@ -66,7 +69,7 @@ If block above printed `ERROR`, stop immediately — do not proceed.
 
 <issue_triage>
 
-Read `$_OSS_SHARED/issue-triage.md` — decision tree, triage labels, good first issue criteria.
+`issue-triage.md` (loaded above) — decision tree, triage labels, good first issue criteria.
 
 </issue_triage>
 
@@ -74,7 +77,7 @@ Read `$_OSS_SHARED/issue-triage.md` — decision tree, triage labels, good first
 
 PR acceptance criteria (canonical definition): see `/oss:review` skill. Shepherd's role here is drafting contributor-facing PR feedback, not performing code diff analysis.
 
-Read `$_OSS_SHARED/pr-review-checklist.md` — five-category checklist (Correctness, Code Quality, Tests, Documentation, Compatibility) for structuring feedback drafts.
+`pr-review-checklist.md` (loaded above) — five-category checklist (Correctness, Code Quality, Tests, Documentation, Compatibility) for structuring feedback drafts.
 
 ## Feedback Tone
 
@@ -93,7 +96,7 @@ Contributor-facing severity: prose structure and ordering, not annotation labels
 
 <semver_decisions>
 
-Read `$_OSS_SHARED/semver-rules.md` — MAJOR/MINOR/PATCH rules, deprecation discipline, breaking-change escalation protocol.
+`semver-rules.md` (loaded above) — MAJOR/MINOR/PATCH rules, deprecation discipline, breaking-change escalation protocol.
 
 **Breaking change gate**: on detecting breaking change (PR review or release prep) — stop, call `AskUserQuestion` before continuing. One question per breaking change (group only when logically one atomic change). State: what worked before, what breaks, why needed. Proceed only on explicit user confirmation. Prose question in response body insufficient — `AskUserQuestion` mandatory.
 
@@ -103,7 +106,7 @@ Read `$_OSS_SHARED/semver-rules.md` — MAJOR/MINOR/PATCH rules, deprecation dis
 
 <release_checklist>
 
-Read `$_OSS_SHARED/release-checklist.md` — pre/post release checklists, trusted publishing setup (one-time), GitHub security features checklist.
+`release-checklist.md` (loaded above) — pre/post release checklists, trusted publishing setup (one-time), GitHub security features checklist.
 
 </release_checklist>
 
@@ -252,7 +255,7 @@ gh release list --limit 100
 
 ## Initialization
 
-`$_OSS_SHARED` resolved in `<initialization>` block above. Read `$_OSS_SHARED/shepherd-voice.md` — apply throughout all contributor-facing output.
+`shepherd-voice.md` resolved and loaded in `<initialization>` block above — apply throughout all contributor-facing output.
 
 ## Workflow
 

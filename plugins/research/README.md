@@ -839,7 +839,7 @@ Plugin part of Borda-AI-Rig project. Skills + agents in `plugins/research/` in r
 
 Skill files (`plugins/research/skills/*/SKILL.md`) and agent files (`plugins/research/agents/*.md`) = canonical source of truth — README must stay in sync. Any skill behavior change (flags, NOT-for scope, trigger conditions) requires update here.
 
-Version bumps per project policy: new capability → minor bump; fixes, wording, refactors → patch bump. Current version: `0.10.5`.
+Version bumps per project policy: new capability → minor bump; fixes, wording, refactors → patch bump. Current version: `0.10.6`.
 
 **Mode-dispatch layout**: large conditional sections externalised under `skills/<skill>/modes/*.md`, loaded on demand. Run's hypothesis pipeline, team, report modes under `skills/run/modes/`. ML-concepts reference for `research:scientist` under `agents/scientist/ml-concepts.md` — loaded only for ML-domain tasks.
 

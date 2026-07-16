@@ -82,9 +82,10 @@ case "$AXIS_GROUP" in
   C) _GROUP_FILE="vitality-scoring-group-c.md" ;;
 esac
 [ -f "$_OSS_SHARED/$_GROUP_FILE" ] || { echo "[repo-warden] ERROR: $_GROUP_FILE not found at $_OSS_SHARED — verify oss plugin installation"; exit 1; }  # timeout: 5000
+cat "$_OSS_SHARED/$_GROUP_FILE"  # timeout: 5000
 ```
 
-Read `$_OSS_SHARED/$_GROUP_FILE` fully — contains only assigned group's axis rubrics (not full 13-axis file). Score each axis in assigned group per rubric. Use raw data from Step 2.
+Contains only assigned group's axis rubrics (not full 13-axis file). Score each axis in assigned group per rubric. Use raw data from Step 2.
 Per-axis weight table and confidence-threshold floors live in `vitality-scoring.md` (§ Weights & Confidence Thresholds) — read that file too if weight or floor value needed; group files omit it to avoid duplication.
 
 **Group A** — any order (all independent; no cross-axis dependency; no internal parallelism needed):

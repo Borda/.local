@@ -28,13 +28,13 @@ Clear at J1 start (stale prior run) and at end of J6 after terminal summary prin
 
 ## Agent Resolution
 
+**Agent resolution**: load and follow the protocol below. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
 ```bash
 # loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
-
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents: `foundry:solution-architect`, `research:scientist`.
 
 | Agent | Fallback if absent |
 | --- | --- |
@@ -69,7 +69,12 @@ rm -f .claude/state/skill-contract.md  # timeout: 5000
 echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/judge-keep-items"  # persist for J3 contract write
 ```
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--skip-validation`, `--keep`.
+**Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--skip-validation`, `--keep`.
+```bash
+# loads: unsupported-flag-protocol.md
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
+```
 
 **Input resolution** (priority order):
 
@@ -174,7 +179,12 @@ When `SPAWN_ARCHITECT=false`: skip architect spawn; J5b precedence step 0 sets `
 
 When `SPAWN_ARCHITECT=true`: spawn `foundry:solution-architect` via `Agent(subagent_type="foundry:solution-architect", prompt=$J3_ARCH_PROMPT)` (uses `opus`). Full prompt template (expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing):
 
-> `$J3_ARCH_PROMPT` template externalized: `Read $_RESEARCH_SHARED/judge-j3-prompts.md` § J3_ARCH_PROMPT (one Read supplies both J3 templates).
+> `$J3_ARCH_PROMPT` template externalized — load and follow protocol below § J3_ARCH_PROMPT (one load supplies both J3 templates).
+
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/judge-j3-prompts.md"
+```
 
 > **Substitution requirement**: every `${RUN_DIR}` and `${PROGRAM_PATH}` token in template above MUST be replaced with concrete bash-expanded value (e.g. `.experiments/judge-2026-05-13T10-00-00Z`) before string passed to `Agent(...)`. Passing literal `${RUN_DIR}` to agent causes agent to write to directory named `${RUN_DIR}`. Applies equally to any historical `<RUN_DIR>` angle-bracket notation in older copies — both forms are text-substitution placeholders, not bash interpolation the Agent runtime expands.
 
@@ -190,7 +200,7 @@ Use `methodology_rating` from returned envelope for verdict computation in J6:
 
 Also spawn `research:scientist` in parallel (dispatch both at start of J3) to review scientific rigor. Expand `${PROGRAM_PATH}` and `${RUN_DIR}` before passing — construct `$J3_SCI_PROMPT` analogously to `$J3_ARCH_PROMPT` above (same variable substitution pattern). Spawn: `Agent(subagent_type="research:scientist", prompt=$J3_SCI_PROMPT)`.
 
-> `$J3_SCI_PROMPT` template: `$_RESEARCH_SHARED/judge-j3-prompts.md` § J3_SCI_PROMPT (already loaded by J3_ARCH Read above).
+> `$J3_SCI_PROMPT` template: `judge-j3-prompts.md` § J3_SCI_PROMPT (already loaded by J3_ARCH `cat` above).
 
 Use `scientific_rating` as **advisory** in J6 report under **Scientific Rigor** — informs but doesn't override verdict. Exception: `scientific_rating == "fundamentally-flawed"` (exact match) elevates verdict to BLOCKED.
 

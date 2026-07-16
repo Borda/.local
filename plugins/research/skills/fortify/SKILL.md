@@ -58,13 +58,13 @@ Clear at F1 start (stale prior run) and at start of F8 terminal summary.
 
 ## Agent Resolution
 
+**Agent resolution**: load and follow the protocol below. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agent this skill dispatches: `research:scientist` (same plugin — no fallback if research plugin installed).
 ```bash
 # loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:fortify from project root."; exit 1; }
+cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
-
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agent this skill dispatches: `research:scientist` (same plugin — no fallback if research plugin installed).
 
 | Agent | Fallback if absent |
 | --- | --- |
@@ -95,8 +95,12 @@ rm -f .claude/state/skill-contract.md  # timeout: 5000
 echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/fortify-keep-items"  # persist for F2/F4 contract writes
 ```
 
-<!-- loads: unsupported-flag-protocol.md -->
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--venue`, `--max-ablations`, `--skip-run`, `--keep`.
+**Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--venue`, `--max-ablations`, `--skip-run`, `--keep`.
+```bash
+# loads: unsupported-flag-protocol.md
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
+```
 
 **Input resolution** (priority order):
 

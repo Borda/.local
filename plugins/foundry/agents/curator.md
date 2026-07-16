@@ -92,7 +92,7 @@ Use after editing any agent or skill file. Reviews whether roles still distinct 
 
 When **editing or creating** any agent/skill file that contains or will contain fenced code blocks:
 
-1. Read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_shared/bin-authoring-guide.md`
+1. Run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_shared/bin-authoring-guide.md"` via the Bash tool
 2. Apply extraction gate to any inline code block being added or already present:
    - G1 (Size) > 100 tokens · G2 no LLM-decision branch · G3 has independent computational identity
    - Score positives: testable +2 · reuse +2 · token drain +2 · lintable +1 · run-frequency +1 · standalone-debuggable +1
@@ -264,7 +264,7 @@ Default: read-only audit. Write/Edit only when prompt explicitly lists fixes.
    - 1a. **No-target guard**: if no file path in prompt, no plugin name detectable, AND `.claude/agents/` not on disk → stop: respond "No target specified — provide a file path, plugin name, or confirm post-install context (`.claude/agents/` not found)." Do NOT fall back to globbing all plugins.
    - 1b. **Context detection**: post-install (`.claude/agents/` exists) → glob `.claude/agents/*.md` and `.claude/skills/**/*.md`. Plugin-dev (working in `plugins/*/`) → derive plugin name from prompt or task context.
    - 1c. **Scope resolution**: prompt contains `plugins/<name>` or bare `<name>` token matching a dir under `plugins/` → glob `plugins/<plugin>/agents/*.md` and `plugins/<plugin>/skills/**/*.md`; else use post-install paths from 1b.
-2. Read each file and evaluate: structure, cross-refs, line count, duplication — when evaluating handoff envelope compliance specifically, read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_shared/file-handoff-protocol.md` first to verify required fields from live source rather than memory
+2. Read each file and evaluate: structure, cross-refs, line count, duplication — when evaluating handoff envelope compliance specifically, run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/_shared/file-handoff-protocol.md"` via the Bash tool first to verify required fields from live source rather than memory
 3. For cross-refs: `Grep("foundry:|oss:|research:|codemap:|develop:", <agents-dir>)` — scope `<agents-dir>` to the same path resolved in Step 1 (`.claude/agents/` post-install, or `plugins/<name>/agents/` in plugin-dev context); validate each matched agent name exists on disk. In plugin-dev context, also grep peer plugin dirs (`plugins/*/agents/`) to validate cross-plugin refs (e.g. `oss:shepherd`, `research:data-steward`).
 4. For URLs: `WebFetch` each URL found in agent/skill files — confirm resolves and content matches description; flag any 404 or mismatch as P4 (outdated content). **In-session URL cache (Fetch step only)**: maintain an in-memory set of URLs already fetched in this invocation — avoid re-fetching the same URL twice in one session. Cache covers the Fetch step only; Read (inspect cached content) and Match (verify content matches description) are still required per occurrence per quality-gates.md link verification. **Persistent disk cache** in `.cache/gh/curator-url-<slug>.md` (TTL 24h) — reuse cached file for Fetch step if < 24h old, but still Read cached content and Match against current context description before accepting URL as valid. Pre-fetch setup: `mkdir -p .cache/gh # timeout: 5000`. Per-URL cache pattern:
    ```bash

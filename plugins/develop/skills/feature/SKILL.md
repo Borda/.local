@@ -40,15 +40,23 @@ _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.p
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 # loads: compaction-contract.md
+cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
+Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:challenger`.
 
-Read `$_DEV_SHARED/task-hygiene.md`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/task-hygiene.md"
+```
 
 ## Project Detection
 
-Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/runner-detection.md"
+```
+Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Language preflight gate**: after runner-detection.md, check project type:
 
@@ -80,7 +88,11 @@ If `MULTI_LANG=true`: invoke `AskUserQuestion` — "Monorepo detected (Python + 
 
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+Execute --plan path extraction; sets `$PLAN_FILE`.
 
 **Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — if found, offer to resume from last completed step.
 
@@ -149,11 +161,19 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-codemap-enabled
 
 > loads: codemap-gates.md
 
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 **Semble preflight** — if `SEMBLE_ENABLED=true`:
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight if flag set.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+Execute semble preflight if flag set.
 
 <!-- Only active when --team flag passed (~10% of invocations) -->
 ## Team Mode Branch
@@ -166,7 +186,11 @@ Guard: `[ -f "${HOME}/.claude/TEAM_PROTOCOL.md" ] || echo "TEAM_PROTOCOL_ABSENT"
 
 Run Step 1 scope analysis inline (same analysis as solo Step 1) — teammates need orientation context. After Step 1 completes, broadcast to teammates: `{feature: <desc>, scope: <modules>, API: <proposed signature>}`.
 
-Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template to get spawn prompt template. Replace `[ROLE_PHRASE]` with feature description, `[FILE_SLUG]` with `feature`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+§Team Spawn Template to get spawn prompt template. Replace `[ROLE_PHRASE]` with feature description, `[FILE_SLUG]` with `feature`.
 
 Compute run directory:
 
@@ -300,7 +324,13 @@ if [ "$CODEMAP_ENABLED" = "true" ] && [ -n "$TARGET_MODULE" ] && command -v scan
 fi
 ```
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`** (codemap normalized by `bin/codemap-resolve`; semble verified by `preflight-helpers.md` §Semble preflight): read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`** (codemap normalized by `bin/codemap-resolve`; semble verified by `preflight-helpers.md` §Semble preflight):
+
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-context.md"
+```
+Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 
@@ -314,11 +344,19 @@ Spawn **foundry:sw-engineer** agent to analyse codebase and produce:
 
 **Complexity classification**: classify as `small` (≤3 files, single concern), `medium` (4–7 files, or 1 new module), or `large` (8+ files, 2+ new modules, or public API change).
 
-Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **feature** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/plan-inline.md"
+```
+§Inline Plan Generation Protocol. Apply using **feature** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 Present analysis summary before proceeding.
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **feature** context from Skill contexts table.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/premise-grounding.md"
+```
+§Premise Grounding Gate. Apply using **feature** context from Skill contexts table.
 
 ### Source Verification (optional — when using external APIs or version-sensitive libraries)
 
@@ -636,14 +674,23 @@ $PYTEST_CMD --doctest-modules <target_module> -v 2>&1 | tail -20
 GATE_EXIT=${PIPESTATUS[0]}
 ```
 
-Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
+```bash
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
+[ -f "$_FOUNDRY_SHARED/quality-stack.md" ] && cat "$_FOUNDRY_SHARED/quality-stack.md" || echo "foundry quality-stack not found at installed path — stack skipped"
+```
+If file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
 
 **Branch Safety Guard — no test suite**: if no test suite found (pytest collects 0 tests or `$TEST_CMD` not set), log `⚠ No test suite detected — Branch Safety Guard weakened` and require explicit user confirmation before proceeding past guard.
 
 ## Final Report
 
-<!-- loads: report-templates.md -->
-Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/report-templates.md` §Standard Final Report and use as output structure.
+```bash
+# loads: report-templates.md
+_TPL="${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/report-templates.md"
+cat "$_TPL"
+```
+
+§Standard Final Report — use as output structure.
 
 ```bash
 rm -f .claude/state/skill-contract.md  # clear contract — skill complete (compaction-contract.md §Lifecycle)  # timeout: 5000

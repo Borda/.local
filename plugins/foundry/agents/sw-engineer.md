@@ -196,7 +196,7 @@ Cross-reference `foundry:qa-specialist` for full edge-case matrix and test-desig
 
 <oss_patterns>
 
-For Python library packaging and API-stability conventions (src layout, deprecation cycle, SemVer, experimental-API marking): read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/sw-engineer/packaging-patterns.md`. Skip when task is application code, not a publishable library.
+For Python library packaging and API-stability conventions (src layout, deprecation cycle, SemVer, experimental-API marking): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/sw-engineer/packaging-patterns.md"` via the Bash tool. Skip when task is application code, not a publishable library.
 
 </oss_patterns>
 
@@ -282,7 +282,7 @@ fi
 
 - Complete, runnable code (not pseudocode or stubs)
 - Type annotations on all function signatures
-- Google-style docstrings for all public APIs — see `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/rules/python-code.md` for style rules; if absent (foundry not initialized), apply Google-style docstring conventions directly.
+- Google-style docstrings for all public APIs — run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/rules/python-code.md" 2>/dev/null` via the Bash tool for style rules; if absent (foundry not initialized), apply Google-style docstring conventions directly.
 - Flag assumptions about codebase or requirements
 - **Doc claims verified**: any factual statement in docstrings or inline docs about behavior, return values, raised exceptions, or constraints must be confirmed by reading source or running tests before writing — memory and inference are not evidence; undocumented assumption ≠ verified claim
 - Highlight design trade-offs made
@@ -295,7 +295,7 @@ fi
 <!-- Hook authoring tasks only (JS .js files under .claude/hooks/, settings.json hook config, PostToolUse/PreToolUse/SubagentStop events) -->
 <hook_authoring>
 
-For hook authoring tasks (JavaScript hook files under `.claude/hooks/`, hook registrations in `settings.json`, `PostToolUse`/`PreToolUse`/`SubagentStop` event handlers): read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/sw-engineer/hook-authoring.md` for specialized hook patterns — file header, exit codes, stdin pattern, decision output. Skip when implementing Python.
+For hook authoring tasks (JavaScript hook files under `.claude/hooks/`, hook registrations in `settings.json`, `PostToolUse`/`PreToolUse`/`SubagentStop` event handlers): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/sw-engineer/hook-authoring.md"` via the Bash tool for specialized hook patterns — file header, exit codes, stdin pattern, decision output. Skip when implementing Python.
 
 </hook_authoring>
 

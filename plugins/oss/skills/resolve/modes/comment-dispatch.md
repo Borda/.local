@@ -85,9 +85,12 @@ if REVIEW_PASS == 5 and ISSUES_FOUND > 0:
 
 If code changed, ensure `$CHANGE_SCOPE` set (default `targeted` if unset), then delegate to gate:
 
-```text
-Read and execute $_OSS_RESOLVE/modes/lint-qa-gate.md
+```bash
+_OSS_RESOLVE=$(cat "${TMPDIR:-/tmp}/resolve-oss-resolve" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_RESOLVE/modes/lint-qa-gate.md"  # timeout: 5000
 ```
+
+Execute its steps (loaded above).
 
 Commit authorization revoked automatically by `trap 'rm -f "$SENTINEL"' EXIT INT TERM` registered in Step 12a — `$SENTINEL` stays in scope for entire dispatch + review + gate sequence. Do **not** issue separate `rm -f /tmp/claude-commit-authorized` here; that path no longer used (sentinel now scoped per repo + branch per `git-commit.md`).
 

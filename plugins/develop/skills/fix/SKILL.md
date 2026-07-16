@@ -40,15 +40,23 @@ _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.p
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 # loads: compaction-contract.md
+cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
+Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist` (conditional — outcome C only), `foundry:challenger`.
 
-Read `$_DEV_SHARED/task-hygiene.md`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/task-hygiene.md"
+```
 
 ## Project Detection
 
-Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/runner-detection.md"
+```
+Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Language preflight gate**: after runner-detection.md, check project type:
 
@@ -63,7 +71,11 @@ If `NON_PY` non-empty: invoke `AskUserQuestion` — "Non-Python project detected
 
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to populate Step 1 analysis instead of cold codebase exploration. Skip agent feasibility re-check (already done in `/develop:plan`). Store plan path as `PLAN_FILE`.
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+Execute --plan path extraction; sets `$PLAN_FILE`.
 
 **Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
@@ -121,13 +133,21 @@ echo "$CODEMAP_ENABLED"   > ${TMPDIR:-/tmp}/dev-codemap-enabled
 
 > loads: codemap-gates.md
 
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--plan\`, \`--team\`, \`--diagnosis\`, \`--no-challenge\`, \`--challenge\`, \`--codemap\`, \`--no-codemap\`, \`--accept-no-plan\`, \`--semble\`, \`--repo\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+Execute codemap + semble preflight if respective flags set.
 
 <!-- Only active when --team flag passed (~10% of invocations) -->
 ## Team Mode Branch
@@ -139,7 +159,7 @@ Root cause unclear after initial triage, OR bug spans 3+ modules and user accept
 **Coordination:**
 
 1. Lead broadcasts current evidence: `{bug: <description>, traceback: <key lines>}`
-2. Spawn **foundry:sw-engineer x 2 (model=opus)** — each investigates a distinct root-cause hypothesis (A, B) independently. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`. If user wants a third independent investigation, re-invoke with a narrower hypothesis spec rather than auto-scaling here.
+2. Spawn **foundry:sw-engineer x 2 (model=opus)** — each investigates a distinct root-cause hypothesis (A, B) independently. `_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null); cat "$_DEV_SHARED/preflight-helpers.md"` §Team Spawn Template — replace `[ROLE_PHRASE]` with `[bug description]`, `[FILE_SLUG]` with `fix-hypothesis`. If user wants a third independent investigation, re-invoke with a narrower hypothesis spec rather than auto-scaling here.
 3. Each teammate investigates independently — claims hypothesis; returns full output to file (file-based handoff protocol).
 4. Lead facilitates cross-challenge between competing analyses.
 5. Lead synthesizes consensus root cause, then proceeds with Steps 2-4 (regression test, fix, review loop) alone.
@@ -233,7 +253,13 @@ fi
 export TARGET_MODULE TARGET_FN
 ```
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**:
+
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-context.md"
+```
+Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip entirely if both flags false.
 
 Spawn **foundry:sw-engineer** agent to analyze failing code path and identify:
 
@@ -278,11 +304,19 @@ If root cause not definitively established after analysis, surface assumptions b
 > 1. [assumption about root cause]
 > 2. [assumption about affected scope] -> Correct me now or I'll proceed with these.
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **fix** context from Skill contexts table.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/premise-grounding.md"
+```
+§Premise Grounding Gate. Apply using **fix** context from Skill contexts table.
 
 **Scope gate**: if root cause spans 3+ modules, flag complexity smell. Use `AskUserQuestion` to present scope concern before proceeding, with options: "Narrow scope (Recommended)" / "Proceed anyway".
 
-Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **fix** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/plan-inline.md"
+```
+§Inline Plan Generation Protocol. Apply using **fix** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 ## Challenger gate
 
@@ -433,10 +467,10 @@ mkdir -p .claude/state  # timeout: 5000
 ```bash
 _OSS_SHARED=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/_shared 2>/dev/null | sort -V | tail -1)
 [ -z "$_OSS_SHARED" ] && _OSS_SHARED=$(ls -d plugins/oss/skills/_shared 2>/dev/null | head -1)
-[ -z "$_OSS_SHARED" ] && _OSS_SHARED=""  # oss absent — semver-rules.md unavailable
+[ -n "$_OSS_SHARED" ] && cat "$_OSS_SHARED/semver-rules.md" || echo "oss plugin absent — semver-rules.md unavailable, use standard SemVer rules"
 ```
 
-If `oss` plugin available (i.e., `$_OSS_SHARED` non-empty), read `$_OSS_SHARED/semver-rules.md` for semver classification guidance; otherwise use standard SemVer rules (BREAKING = major bump, new feature = minor, fix = patch). Breaking change definition: worked before → fails/behaves differently now → no prior warning/shim. If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
+If `oss` plugin available (i.e., `$_OSS_SHARED` non-empty), use `semver-rules.md` above for semver classification guidance; otherwise use standard SemVer rules (BREAKING = major bump, new feature = minor, fix = patch). Breaking change definition: worked before → fails/behaves differently now → no prior warning/shim. If yes — stop, call `AskUserQuestion` before any edit. State: what worked before, what will break, why this fix approach needed. Proceed only on explicit user confirmation. One question per breaking change; group only when logically one atomic change. Prose question does NOT count — `AskUserQuestion` mandatory.
 
 Make minimal change to fix root cause:
 
@@ -544,7 +578,11 @@ Use scan to prioritize which criteria below get deepest scrutiny.
 
 **After 3 cycles**: if substantive issues remain, stop — surface to user before proceeding.
 
-Read `$_FOUNDRY_SHARED/quality-stack.md` (if file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
+```bash
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
+[ -f "$_FOUNDRY_SHARED/quality-stack.md" ] && cat "$_FOUNDRY_SHARED/quality-stack.md" || echo "foundry quality-stack not found at installed path — stack skipped"
+```
+If file not found → skip quality stack entirely, note "foundry quality-stack not found at installed path — stack skipped" in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
 
 ## Final Report
 

@@ -43,7 +43,14 @@ Every check ends with a printed finding and explicit design implication. Do not 
 
 ### Modality display
 
-Read `modality-dispatch.md`, select only the grounded branch, and define its visualization helper immediately before first use. Adapt every placeholder column and path from the fact table. Show representative samples and, where applicable, width/height, volume-shape, sequence-length, or point-count distributions.
+Load `modality-dispatch.md`:
+
+```bash
+_KAGGLE_MODES="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/kaggle/modes"
+cat "$_KAGGLE_MODES/modality-dispatch.md"  # timeout: 5000
+```
+
+Select only the grounded branch, and define its visualization helper immediately before first use. Adapt every placeholder column and path from the fact table. Show representative samples and, where applicable, width/height, volume-shape, sequence-length, or point-count distributions.
 
 ### EDA lens
 

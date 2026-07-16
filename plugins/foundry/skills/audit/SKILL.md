@@ -66,12 +66,12 @@ Preserve at boundary 2: RUN_DIR, aggregate.md path, summary.jsonl path, finding 
 
 <workflow>
 
-**Task hygiene**:
+**Task hygiene**: load and follow the protocol below.
 ```bash
 # loads: compaction-contract.md
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+cat "$_FS/task-hygiene.md"
 ```
-Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 **Orchestration contract**: orchestrator is thin coordinator — issues Glob/Grep for inventory, spawns agents, reads JSON envelopes, aggregates findings. Must NOT read agent/skill/rule file bodies directly. Inline read of non-template file = protocol violation; causes context overflow at scale.
 
@@ -280,11 +280,12 @@ RUN_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/make_run_dir.py" .r
 [ -z "$RUN_DIR" ] && { printf "! BREAKING: make_run_dir.py returned empty path — check Python availability and write permission on .reports/\n"; exit 1; }
 echo "Run dir: $RUN_DIR"
 echo "$RUN_DIR" > "${TMPDIR:-/tmp}/audit-state/run-dir"
+cat "$AUDIT_TPL/curator-prompt.md"
 ```
 
 Spawn **foundry:curator** agents in batches of up to `BATCH_SIZE` (grouping algorithm above) — or one batch if scope ≤ `BATCH_SIZE`. Each spawn prompt must:
 
-1. Include the content from `$AUDIT_TPL/curator-prompt.md`
+1. Include the curator-prompt.md content loaded above
 2. Include the disk inventory from Step 2 (agent/skill list for cross-reference validation)
 3. End with:
 
@@ -302,13 +303,14 @@ After spawns complete: short summaries in context; use to identify files with fi
 
 ## Steps 4–5b: System-wide checks, aggregate, low-confidence remediation
 
-Read and execute `$AUDIT_MODES/steps-4-5-7.md` §Step 4–5b — system-wide checks (scope-dispatched), aggregate + classify findings, low-confidence remediation (conditional, skipped when no file scored <0.80). State on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`. Returns here to Step 6.
-
 ```bash
 AUDIT_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit modes $( [ "$LOCAL_MODE" = true ] && echo "--local" )) || { printf "! BREAKING: audit/modes not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
+cat "$AUDIT_MODES/steps-4-5-7.md"
 ```
 
-> loads: modes/steps-4-5-7.md (§Step 4–5b)
+> loads: modes/steps-4-5-7.md (§Step 4–5b and §Step 7)
+
+Execute §Step 4–5b loaded above — system-wide checks (scope-dispatched), aggregate + classify findings, low-confidence remediation (conditional, skipped when no file scored <0.80). State on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`. Returns here to Step 6.
 
 ## Step 6: Cross-validate critical findings
 
@@ -316,33 +318,38 @@ AUDIT_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_s
 _SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 SKIP_CROSS_VAL=false
 [ -f "$_SHARED/cross-validation-protocol.md" ] || { printf "⚠ WARNING: cross-validation-protocol.md not found at $_SHARED — skipping cross-validation\n"; SKIP_CROSS_VAL=true; }
+[ "$SKIP_CROSS_VAL" = false ] && cat "$_SHARED/cross-validation-protocol.md"
 ```
 
-If `$SKIP_CROSS_VAL` = false: Read and follow cross-validation protocol from `$_SHARED/cross-validation-protocol.md`.
+If `$SKIP_CROSS_VAL` = false: follow the cross-validation protocol loaded above.
 
 **Skill-specific**: the verifier agent is always **foundry:curator**.
 
 ## Step 7: Report findings
 
-Read and execute `$AUDIT_MODES/steps-4-5-7.md` §Step 7 — emits report, fires follow-up gate; on fix pick continues to Steps 8–10 (`modes/fix.md`); otherwise skip to Step 11.
-
-> loads: modes/steps-4-5-7.md (§Step 7)
+Execute §Step 7 of `steps-4-5-7.md` (loaded above in Steps 4–5b) — emits report, fires follow-up gate; on fix pick continues to Steps 8–10 (`modes/fix.md`); otherwise skip to Step 11.
 
 ## Steps 8–10: Fix dispatch, codex cross-file check, re-audit (mode: fix)
 
-Runs **only** when the user picked a fix option (a–c) from the Step 7 follow-up gate. Resolve the modes dir, then read and execute `fix.md` — it carries Step 8 (delegate fixes to subagents), Step 9 (codex cross-file check), and Step 10 (re-audit + convergence loop), then returns here to Step 11:
+Runs **only** when the user picked a fix option (a–c) from the Step 7 follow-up gate. Resolve the modes dir, load `fix.md`, then execute it inline — it carries Step 8 (delegate fixes to subagents), Step 9 (codex cross-file check), and Step 10 (re-audit + convergence loop), then returns here to Step 11:
 
 ```bash
 AUDIT_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit modes $( [ "$LOCAL_MODE" = true ] && echo "--local" )) || { printf "! BREAKING: audit/modes not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
+cat "$AUDIT_MODES/fix.md"
 ```
 
 > loads: modes/fix.md
-Read `$AUDIT_MODES/fix.md` and execute Steps 8–10 inline (state on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`). On convergence (clean or 5-pass limit), continue to Step 11 below. If no fix option was picked, skip directly to Step 11.
+Execute Steps 8–10 loaded above inline (state on disk in `summary.jsonl`, `$RUN_DIR`, `$AUDIT_TPL`). On convergence (clean or 5-pass limit), continue to Step 11 below. If no fix option was picked, skip directly to Step 11.
 
 ## Step 11: Final report
 
 <!-- loads: report-template.md -->
-Read `$AUDIT_TPL/report-template.md` and emit the complete audit report following its template and instructions.
+```bash
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+cat "$AUDIT_TPL/report-template.md"
+```
+
+Emit the complete audit report following the template and instructions loaded above.
 
 **Terminal output** — per quality-gates.md universal rule: read the `---` header block from the top of the report file (all fields from opening `---` up to and including closing `---`) and print verbatim as the FIRST content of the reply. Then print `→ <report path>`. Then executive summary. Omit the `╔═╗` Re:Anchor box (communication.md exempts quality-gates `---` report headers).
 
@@ -356,19 +363,34 @@ rm -f .claude/state/skill-contract.md  # clear contract — skill complete (comp
 
 **Trigger**: `/audit --upgrade`
 
-Read and execute `$AUDIT_TPL/../modes/upgrade.md`.
+```bash
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+cat "$AUDIT_TPL/../modes/upgrade.md"
+```
+
+Execute the mode loaded above.
 
 ## Mode: adversarial (alias: --challenge)
 
 **Trigger**: `/audit [<scope>...] --adversarial`
 
-Read and execute `$AUDIT_TPL/../modes/adversarial.md`.
+```bash
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+cat "$AUDIT_TPL/../modes/adversarial.md"
+```
+
+Execute the mode loaded above.
 
 ## Mode: efficiency
 
 **Trigger**: `/audit [<scope>...] --efficiency`
 
-Read and execute `$AUDIT_TPL/../modes/efficiency.md`.
+```bash
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+cat "$AUDIT_TPL/../modes/efficiency.md"
+```
+
+Execute the mode loaded above.
 
 ## Combined-run output isolation
 

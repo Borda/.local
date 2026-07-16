@@ -1,4 +1,4 @@
-<!-- oss:resolve Step 9 — executed via: Read $_OSS_RESOLVE/modes/lint-qa-gate.md; execute -->
+<!-- oss:resolve Step 9 — executed via: cat $_OSS_RESOLVE/modes/lint-qa-gate.md; execute -->
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
 <!-- Input: $BASE_REF_MERGE, current working tree after Step 8; $RUN_DIR optional (created here if unset) -->
 <!-- $CHANGE_SCOPE: lint-only | targeted | full (default=targeted; set in SKILL.md Step 8 effort classification) -->

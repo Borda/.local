@@ -1,4 +1,4 @@
-<!-- oss:resolve Step 8 — executed via: Read $_OSS_RESOLVE/modes/action-item-dispatch.md; execute -->
+<!-- oss:resolve Step 8 — executed via: cat $_OSS_RESOLVE/modes/action-item-dispatch.md; execute -->
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md -->
 <!-- Input: SELECTED_ITEMS (from Step 3e), COMMIT_MODE (from Step 3d), CODEX_AVAILABLE (from Step 1), $_OSS_RESOLVE, ARGUMENTS -->
 <!-- Output: items implemented/staged/committed; CHALLENGE_LOG populated; CHANGE_SCOPE set for Step 9 -->

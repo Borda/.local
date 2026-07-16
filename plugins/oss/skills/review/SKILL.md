@@ -70,11 +70,18 @@ if [ ! -d "$_OSS_SHARED" ]; then
         echo "⚠ _OSS_SHARED resolved to '$_OSS_SHARED' but dir absent — continuing with degraded functionality (oss skill-specific shared helpers unavailable; --reply mode will not work in this run)"
     fi
 fi
+echo "$_OSS_SHARED" > "${TMPDIR:-/tmp}/review-oss-shared"  # persist for later blocks (Check 41)
+[ -d "$_OSS_SHARED" ] && cat "$_OSS_SHARED/agent-resolution.md"  # timeout: 5000
+
+REVIEW_SKILL_DIR="${CLAUDE_PLUGIN_ROOT:-}/skills/review"
+[ -d "$REVIEW_SKILL_DIR" ] || REVIEW_SKILL_DIR=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/review 2>/dev/null | head -1)
+[ -z "$REVIEW_SKILL_DIR" ] && REVIEW_SKILL_DIR="plugins/oss/skills/review"
+echo "$REVIEW_SKILL_DIR" > "${TMPDIR:-/tmp}/review-skill-dir"  # persist for later blocks (Check 41)
 ```
 
-Read `$_OSS_SHARED/agent-resolution.md`. Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`, `oss:cicd-steward`. <!-- Inline fallback (if unreadable): all → general-purpose. -->
+Agents: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`, `oss:cicd-steward`. <!-- Inline fallback (if unreadable): all → general-purpose. -->
 
-**Resolve `REVIEW_SKILL_DIR`**: run `find ~/.claude/plugins -path "*/oss/skills/review" -type d 2>/dev/null`; non-empty → use as literal value, else fall back to `plugins/oss/skills/review`. This resolved literal is `REVIEW_SKILL_DIR` — substitute into every Agent spawn prompt and every `Read $REVIEW_SKILL_DIR/...` call below.
+**`REVIEW_SKILL_DIR`** (resolved above) — substitute into every Agent spawn prompt and every `cat "$REVIEW_SKILL_DIR/..."` call below.
 
 **Task hygiene**: Call `TaskList` first. Each found task: `completed` if work done · `deleted` if orphaned · `in_progress` if genuinely continuing. TaskCreate each major phase; mark in_progress/completed throughout.
 
@@ -201,9 +208,11 @@ python "$_DETECT_CODEMAP" --prefix review $_DETECT_FLAGS 2>&1  # timeout: 5000
 [ $? -ne 0 ] && { echo "! BLOCKED — codemap strict mode requested but codemap not installed or index missing"; exit 1; }
 CODEMAP_ENABLED=$(cat "${TMPDIR:-/tmp}/review-codemap-enabled" 2>/dev/null || echo "false")
 CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/review-codemap-currency" 2>/dev/null || echo "off")
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/review-oss-shared" 2>/dev/null || echo "")  # reload (Check 41)
+[ "$CODEMAP_FORCE_OFF" = "false" ] && cat "$_OSS_SHARED/codemap-gates.md"  # timeout: 5000
 ```
 
-**Codemap gates** — when `CODEMAP_FORCE_OFF=false`, read `$_OSS_SHARED/codemap-gates.md` and run: **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, after `codemap:scan-codebase` set `CODEMAP_ENABLED=true`. Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
+**Codemap gates** — when `CODEMAP_FORCE_OFF=false`, run (from `codemap-gates.md`, loaded above): **Gate A** if `CODEMAP_ENABLED=false` (missing index → offer to build); **Gate B** if `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. On a build choice, after `codemap:scan-codebase` set `CODEMAP_ENABLED=true`. Skip both gates when `CODEMAP_FORCE_OFF=true` (`--no-codemap`).
 
 If `SEMBLE_ENABLED=true`: proceed — semble MCP tool availability verified at first use. If `mcp__semble__search` is unavailable when called, it fails with a clear error; do not preemptively exit here.
 
@@ -215,6 +224,7 @@ if [ -z "$FOUNDRY_SHARED" ]; then
     FOUNDRY_SHARED="plugins/foundry/skills/_shared"
     echo "⚠ Could not resolve FOUNDRY_SHARED via cache lookup — using bare fallback path '$FOUNDRY_SHARED'; foundry plugin may be absent — Steps 5/7/consolidator will degrade (per-file guards still fire)"
 fi
+echo "$FOUNDRY_SHARED" > "${TMPDIR:-/tmp}/review-foundry-shared"  # persist for later blocks (Check 41)
 ```
 
 ```bash
@@ -236,7 +246,12 @@ fi
 ### File scope detection
 
 <!-- loads: modes/scope-detection.md -->
-Read `$REVIEW_SKILL_DIR/modes/scope-detection.md` and execute its bash blocks inside the `DIRECT_PATH_MODE = "false"` guard. Sets `PY_FILES`, `DOC_FILES`, `CICD_FILES`, `CICD_ONLY_MODE`, `DOCS_ONLY_MODE`, `DOCS_CICD_MODE`; persists flags to `${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}` for reload in Step 2.
+```bash
+# Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
+REVIEW_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/review-skill-dir" 2>/dev/null || echo "")
+cat "$REVIEW_SKILL_DIR/modes/scope-detection.md"  # timeout: 5000
+```
+Follow above and execute its bash blocks inside the `DIRECT_PATH_MODE = "false"` guard. Sets `PY_FILES`, `DOC_FILES`, `CICD_FILES`, `CICD_ONLY_MODE`, `DOCS_ONLY_MODE`, `DOCS_CICD_MODE`; persists flags to `${TMPDIR:-/tmp}/oss-review-mode-flags-${CLEAN_ARGS}` for reload in Step 2.
 
 ### Scope pre-check
 
@@ -298,7 +313,13 @@ Skip optional agents by classification:
 <!-- loads: modes/codemap-context.md -->
 > loads: modes/codemap-context.md
 
-`CODEMAP_ENABLED=true`: read `$REVIEW_SKILL_DIR/modes/codemap-context.md` and execute its contents — stages `codemap_available` and `$CODEMAP_CONTEXT_STAGE` to TMPDIR (Step 2 copies into `$RUN_DIR/codemap-context.md`) and defines the Step-2 spawn-prompt substitution rules + semble companion. `CODEMAP_ENABLED=false`: skip; agents fall back to file reads.
+`CODEMAP_ENABLED=true`:
+```bash
+# Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
+REVIEW_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/review-skill-dir" 2>/dev/null || echo "")
+cat "$REVIEW_SKILL_DIR/modes/codemap-context.md"  # timeout: 5000
+```
+Follow above and execute its contents — stages `codemap_available` and `$CODEMAP_CONTEXT_STAGE` to TMPDIR (Step 2 copies into `$RUN_DIR/codemap-context.md`) and defines the Step-2 spawn-prompt substitution rules + semble companion. `CODEMAP_ENABLED=false`: skip; agents fall back to file reads.
 
 ### Linked issue analysis (PR mode only)
 
@@ -331,7 +352,13 @@ mkdir -p "$REPORT_DIR" # timeout: 5000
 echo "$REPORT_DIR" > "${TMPDIR:-/tmp}/oss-review-report-dir"  # persist for contract-write
 ```
 
-**File-based handoff**: read `$FOUNDRY_SHARED/file-handoff-protocol.md`. File absent → warn and continue without it.
+**File-based handoff**:
+```bash
+# Reload FOUNDRY_SHARED (Check 41: fresh shell)
+FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/review-foundry-shared" 2>/dev/null || echo "")
+[ -f "$FOUNDRY_SHARED/file-handoff-protocol.md" ] && cat "$FOUNDRY_SHARED/file-handoff-protocol.md"  # timeout: 5000
+```
+Follow above. File absent → warn and continue without it.
 
 **IMPORTANT**: Replace `$REPORT_DIR`, `$REVIEW_SKILL_DIR`, `$BRANCH`, and `$DATE` with actual literal computed values in every Agent spawn prompt. Do NOT pass as shell variables — agents receive text, not shell context. **Exception — `$RUN_DIR`**: never hand-substitute it; agents self-resolve via `cat "${TMPDIR:-/tmp}/oss-review-run-dir"` per the run-dir preamble in `agent-prompts.md` (eliminates leading-dot transcription slips).
 
@@ -342,7 +369,12 @@ claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE
 ```
 
 <!-- loads: agent-prompts.md -->
-Read `$REVIEW_SKILL_DIR/templates/agent-prompts.md`. Substitute `<REVIEW_SKILL_DIR>` → `$REVIEW_SKILL_DIR` before using content in spawn prompts. Leave `$RUN_DIR` literal in the prompt text — agents resolve it themselves via the run-dir preamble (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`); the orchestrator must NOT retype the run-dir path.
+```bash
+# Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
+REVIEW_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/review-skill-dir" 2>/dev/null || echo "")
+cat "$REVIEW_SKILL_DIR/templates/agent-prompts.md"  # timeout: 5000
+```
+Template (loaded above). Substitute `<REVIEW_SKILL_DIR>` → `$REVIEW_SKILL_DIR` before using content in spawn prompts. Leave `$RUN_DIR` literal in the prompt text — agents resolve it themselves via the run-dir preamble (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`); the orchestrator must NOT retype the run-dir path.
 
 **Codemap context propagation**: rehydrate `codemap_available` from Step 1 persist file, copy staged context into `$RUN_DIR/codemap-context.md`, substitute into every dimension-agent spawn prompt per the rules in the Structural-context block above. Block omitted when `codemap_available=false`.
 
@@ -473,7 +505,12 @@ cat "$OSS_SIGNALS" 2>/dev/null
 
 ## Step 4: Cross-validate critical/blocking findings
 
-Read `$FOUNDRY_SHARED/cross-validation-protocol.md`. File absent → warn: "cross-validation protocol not found — verify foundry plugin installed (`claude plugin list`); skipping Step 4." Then skip Step 4.
+```bash
+# Reload FOUNDRY_SHARED (Check 41: fresh shell)
+FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/review-foundry-shared" 2>/dev/null || echo "")
+[ -f "$FOUNDRY_SHARED/cross-validation-protocol.md" ] && cat "$FOUNDRY_SHARED/cross-validation-protocol.md"  # timeout: 5000
+```
+Follow above. File absent → warn: "cross-validation protocol not found — verify foundry plugin installed (`claude plugin list`); skipping Step 4." Then skip Step 4.
 
 **Independence requirement**: cross-validation must run as separate spawned agent — same type as finding's origin. Do NOT validate in orchestrator context.
 
@@ -505,7 +542,12 @@ esac
 Spawn `$CONSOLIDATOR_AGENT` consolidator agent with prompt:
 
 <!-- loads: consolidator-prompt.md -->
-Read `$REVIEW_SKILL_DIR/templates/consolidator-prompt.md`. Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values; leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
+```bash
+# Reload REVIEW_SKILL_DIR (Check 41: fresh shell)
+REVIEW_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/review-skill-dir" 2>/dev/null || echo "")
+cat "$REVIEW_SKILL_DIR/templates/consolidator-prompt.md"  # timeout: 5000
+```
+Template (loaded above). Prepend the run-dir resolution preamble from `agent-prompts.md` so the consolidator self-resolves `$RUN_DIR` (`cat "${TMPDIR:-/tmp}/oss-review-run-dir"`). Substitute `<REPORT_DIR>`, `<REVIEW_SKILL_DIR>`, `<_OSS_SHARED>`, `<DATE>`, `<CHANGED_FILES>`, `<SCOPE>`, `<CI_FAILING_CHECKS>` with literal expanded values; leave `$RUN_DIR` literal (agent self-resolves). Spawn: `Agent(subagent_type="$CONSOLIDATOR_AGENT", prompt=<substituted consolidator-prompt.md content>)`
 
 Main context receives only the one-liner verdict. **Consolidator unavailable fallback** — `Agent` tool deferred/not loaded:
 Print: `⛔ BLOCKED — Agent tool not loaded; consolidator cannot run. Re-invoke /oss:review to retry. If persistent, run /foundry:setup (requires foundry plugin) to verify session config.`
@@ -537,7 +579,12 @@ Identify tasks Codex can implement — meaningful code/doc work grounded in actu
 
 **Delegate**: public functions with no docstrings (read impl first, describe so Codex writes real 6-section docstring) · missing test coverage for concrete well-defined behavior · consistent rename across files. **Do not delegate**: architectural issues, logic errors, security vulns, or any task requiring human judgment.
 
-Read `$FOUNDRY_SHARED/codex-delegation.md`. File absent → warn: "codex-delegation criteria not found — verify foundry plugin installed (`claude plugin list`); skipping Step 6 delegation." Then skip Step 6.
+```bash
+# Reload FOUNDRY_SHARED (Check 41: fresh shell)
+FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/review-foundry-shared" 2>/dev/null || echo "")
+[ -f "$FOUNDRY_SHARED/codex-delegation.md" ] && cat "$FOUNDRY_SHARED/codex-delegation.md"  # timeout: 5000
+```
+Follow above. File absent → warn: "codex-delegation criteria not found — verify foundry plugin installed (`claude plugin list`); skipping Step 6 delegation." Then skip Step 6.
 
 Print `### Codex Delegation` only when tasks delegated — omit otherwise. Don't rewrite output file.
 
@@ -575,7 +622,12 @@ rm -f .claude/state/skill-contract.md  # clear contract — skill complete (comp
 
 `REPLY_MODE` not set → skip.
 
-Read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
+```bash
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/review-oss-shared" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_SHARED/shepherd-reply-protocol.md"  # timeout: 5000
+```
+
+`shepherd-reply-protocol.md` (loaded above) — apply invocation pattern and terminal summary format.
 
 Spawn with:
 - Report path: review output file from Step 5

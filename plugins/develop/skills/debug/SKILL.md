@@ -34,15 +34,23 @@ Refresh also after any Step 3 probe that rules out a hypothesis — so post-comp
 ```bash
 _DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
 # loads: compaction-contract.md
+cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:challenger`.
+Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:challenger`.
 
-Read `$_DEV_SHARED/task-hygiene.md`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/task-hygiene.md"
+```
 
 ## Project Detection
 
-Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/runner-detection.md"
+```
+Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Language preflight gate**: detect project language; adjust test runner accordingly.
 
@@ -101,11 +109,19 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-debug-codemap-enabled
 
 > loads: codemap-gates.md
 
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 Downstream blocks read back: `CHALLENGE_ENABLED=$(cat ${TMPDIR:-/tmp}/dev-challenge-enabled 2>/dev/null || echo true)`, `CHALLENGE_FORCED=$(cat ${TMPDIR:-/tmp}/dev-challenge-forced 2>/dev/null || echo false)`, `TEAM_MODE=$(cat ${TMPDIR:-/tmp}/dev-team-mode 2>/dev/null || echo false)`, `CI_RUN_ID=$(cat ${TMPDIR:-/tmp}/dev-ci-run-id 2>/dev/null || echo "")`.
 
-Read `$_DEV_SHARED/ci-log-extract.md`. Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/ci-log-extract.md"
+```
+Follow §URL Normalization to set `CI_RUN_ID`. If `CI_RUN_ID` set, follow §Log Fetching and §Log Parsing to set `CI_LOG_EVIDENCE`; use it as evidence source in Step 1 instead of local pytest.
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for remaining `--<token>` tokens. If any found: print `! Unknown flag(s): \`--<token>\`. Supported: \`--no-challenge\`, \`--challenge\`, \`--team\`, \`--ci-run\`, \`--issue\`, \`--repo\`, \`--codemap\`, \`--no-codemap\`, \`--keep\`.` then invoke `AskUserQuestion` — (a) **Abort** (stop, re-invoke with correct flags) · (b) **Continue ignoring** (skip unknown flags, proceed). On Abort: stop.
 
@@ -129,8 +145,8 @@ Subsequent steps branch by `DEBUG_MODE`:
 
 **If `TEAM_MODE=true`** — execute team investigation now in place of standard Steps 1-2. After team synthesis completes, run Steps 3-4 inline (hypothesis gate + handoff to fix) on winning hypothesis — do not return to standard Steps 1-2. Authoritative reading: team mode **replaces** Steps 1-2 (parallel hypothesis investigation supplants serial evidence gathering); Steps 3-4 still execute (inline within this block, not by looping back to standard workflow):
 
-1. Read `$_DEV_SHARED/preflight-helpers.md` §Team Spawn Template. Confirm `[ROLE_PHRASE]` = symptom text (from `$ARGUMENTS` stripped of flags), `[FILE_SLUG]` = `debug-hypothesis`.
-2. Run project detection (read `$_DEV_SHARED/runner-detection.md`) to set `$TEST_CMD` and `$PYTEST_CMD`.
+1. `_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null); cat "$_DEV_SHARED/preflight-helpers.md"` §Team Spawn Template. Confirm `[ROLE_PHRASE]` = symptom text (from `$ARGUMENTS` stripped of flags), `[FILE_SLUG]` = `debug-hypothesis`.
+2. Run project detection (`_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null); cat "$_DEV_SHARED/runner-detection.md"`) to set `$TEST_CMD` and `$PYTEST_CMD`.
 3. Compute `TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)` and `mkdir -p ".temp/develop/$TS"`. Spawn 2-3 `foundry:sw-engineer` agents (model=opus) in parallel — each investigating one independent root-cause hypothesis. Use Team Spawn Template from preflight-helpers: replace `[ROLE_PHRASE]` with symptom, `[FILE_SLUG]` with `debug-hypothesis`, assign each agent a distinct hypothesis number N. Each agent writes full output to `.temp/develop/$TS/debug-hypothesis-N.md` and returns compact JSON `{"status":"done","file":"<path>","findings":N,"confidence":0.N,"summary":"<one-line description of hypothesis>"}`.
 4. **Coordination**: lead broadcasts `{symptom: <description>, traceback: <key lines>}` to teammates before spawning. After all return, facilitate cross-challenge between competing analyses. Convergence rule: select hypothesis with most direct evidence (observable in code or logs); if truly tied, invoke `AskUserQuestion` presenting top 2 competing hypotheses.
 5. **Synthesis trace agent**: spawn one `foundry:sw-engineer` synthesis agent after individual teammate reports — read all teammate findings from `.temp/develop/$TS/debug-hypothesis-*.md`, produce unified cross-cutting trace map (entry point, modules crossed, state mutations, invariant violations across hypotheses). Write to `.temp/develop/$TS/debug-trace-synthesis.md`.
@@ -365,7 +381,11 @@ Evidence against: [anything that contradicts or remains unexplained]
 Confidence: high / medium / low
 ```
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **debug** context from Skill contexts table. Run before presenting hypothesis — any ungrounded premise in hypothesis produces a fix that addresses wrong mechanism.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/premise-grounding.md"
+```
+§Premise Grounding Gate. Apply using **debug** context from Skill contexts table. Run before presenting hypothesis — any ungrounded premise in hypothesis produces a fix that addresses wrong mechanism.
 
 **Gate**: present hypothesis to user, wait for confirmation or challenge before proceeding to Step 4. Wrong hypothesis produces fix that passes tests but doesn't resolve underlying problem.
 

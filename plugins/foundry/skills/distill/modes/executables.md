@@ -99,7 +99,8 @@ For each selected cluster, resolve `$_FS` path and spawn **foundry:sw-engineer**
 ```text
 Agent(subagent_type="foundry:sw-engineer", prompt="
 _FS=$(python \"\${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py\" foundry skills/_shared 2>/dev/null || echo \"plugins/foundry/skills/_shared\")
-Read $_FS/bin-authoring-guide.md for bin/ script conventions.
+cat \"$_FS/bin-authoring-guide.md\"
+Follow bin/ script conventions from the file loaded above.
 Task: extract cluster <cluster-id> to bin/.
 Cluster: purpose=<purpose>, language=<lang>, param slots=<differs-by values>.
 Source files: <list of source .md files>.

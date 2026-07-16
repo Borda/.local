@@ -70,8 +70,9 @@ if [ -z "$_OSS_SHARED" ]; then
     fi
 fi
 FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/oss}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null)  # timeout: 5000 — loads: terminal-summaries.md (from foundry plugin _shared/); consumed by modes/thread.md, modes/vitality.md, modes/ecosystem.md
-# Persist $_OSS_SHARED — fresh shell loses vars (Check 41)
+# Persist $_OSS_SHARED, $FOUNDRY_SHARED — fresh shell loses vars (Check 41)
 echo "${_OSS_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-oss-shared"
+echo "${FOUNDRY_SHARED:-}" > "${TMPDIR:-/tmp}/analyse-foundry-shared"
 ```
 > loads: oss-shared-resolver.md
 
@@ -194,8 +195,10 @@ if [[ "$CLEAN_ARGS" == vitality* ]]; then
     GH_REPO=$(echo "$VITALITY_REPO" | cut -d'/' -f2)  # timeout: 5000
     CLEAN_ARGS="vitality"  # normalise for mode dispatch
 fi
-# Persist $CLEAN_ARGS — fresh shell loses vars (Check 41)
+# Persist $CLEAN_ARGS, $GH_OWNER, $GH_REPO — fresh shell loses vars (Check 41); vitality.md reloads these
 echo "${CLEAN_ARGS:-}" > "${TMPDIR:-/tmp}/analyse-clean-args"
+echo "${GH_OWNER:-}" > "${TMPDIR:-/tmp}/analyse-gh-owner"
+echo "${GH_REPO:-}" > "${TMPDIR:-/tmp}/analyse-gh-repo"
 ```
 
 **Unsupported flag check** — after all supported flags extracted, scan `$ARGUMENTS` for any remaining `--<token>` tokens. If found: invoke `AskUserQuestion` with:
@@ -456,9 +459,10 @@ Report at `$REPORT_FILE` guaranteed to exist — either reused via fast-path (St
 ```bash
 # Reload _OSS_SHARED — fresh shell (Check 41)
 _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared" 2>/dev/null || echo "")
+cat "$_OSS_SHARED/shepherd-reply-protocol.md"  # timeout: 5000
 ```
 
-Read `$_OSS_SHARED/shepherd-reply-protocol.md` — apply invocation pattern and terminal summary format.
+`shepherd-reply-protocol.md` (loaded above) — apply invocation pattern and terminal summary format.
 
 ```text
 Agent(

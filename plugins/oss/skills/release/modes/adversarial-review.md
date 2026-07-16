@@ -1,4 +1,4 @@
-<!-- oss:release adversarial review — executed via: Read $SKILL_DIR/modes/adversarial-review.md; execute -->
+<!-- oss:release adversarial review — executed via: cat "$SKILL_DIR/modes/adversarial-review.md"; execute -->
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $BRANCH, $RANGE, $GATHER_FILE, assembled draft content -->
 
 Challenge every factual claim in assembled draft against codebase, project docs. Runs before voice/tone polish — facts correct before prose refined.

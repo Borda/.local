@@ -504,7 +504,7 @@ HARD_CUTOFF=${HARD_CUTOFF:-900}
 
 When `foundry:manage create skill <name>` scaffolds a new SKILL.md, include this instruction:
 
-> Before writing any fenced code block, read `$_FOUNDRY_SHARED/bin-authoring-guide.md` and apply the extraction gate. Write bin/ script directly if verdict is MEDIUM or HIGH. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
+> Before writing any fenced code block, run `cat "$_FOUNDRY_SHARED/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate. Write bin/ script directly if verdict is MEDIUM or HIGH. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
 
 ---
 

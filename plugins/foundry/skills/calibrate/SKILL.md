@@ -92,13 +92,13 @@ Terminal paths: end of Step 5 (no-apply path) and end of Step 6 (apply path).
 
 <workflow>
 
-**Task hygiene**:
+**Task hygiene**: load and follow the protocol below.
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication — duplicated; plugin cannot self-locate
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+cat "$_FS/task-hygiene.md"
 ```
-Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 **Task tracking**: create tasks at start of execution (Step 1) for each phase that will run:
 
@@ -252,9 +252,9 @@ fi
 - **`agents` pipeline**: exclude `oss:cicd-steward` and `oss:shepherd` (requires `oss` plugin) if `$OSS_AVAILABLE` empty; exclude `research:data-steward` and `research:scientist` (requires `research` plugin) if `$RESEARCH_AVAILABLE` empty. Log: "oss/research plugin not installed — skipping <agent> calibration"
 - **`skills` pipeline**: exclude `/oss:review` (requires `oss` plugin) always (requires live GitHub PR — not calibratable with synthetic input; see `modes/skills.md`); exclude `/codemap:*` skills (requires `codemap` plugin) if `$CODEMAP_AVAILABLE` empty; exclude `/research:plan`, `/research:judge`, `/research:verify` (requires `research` plugin) if `$RESEARCH_AVAILABLE` empty; exclude `/develop:review` (requires `develop` plugin) if `$DEVELOP_AVAILABLE` empty. Log skip message per excluded skill.
 
-Fallback role descriptions for cross-plugin agents (if ever substituted with `general-purpose`) — see `$_FS/agent-resolution.md` (where `$_FS` is resolved via the cache-resolution block at the start of Step 2; if `$_FS` is empty, skip — role descriptions unavailable).
+Fallback role descriptions for cross-plugin agents (if ever substituted with `general-purpose`) — run `cat "$_FS/agent-resolution.md"` (where `$_FS` is resolved via the cache-resolution block at the start of Step 2; if `$_FS` is empty, skip — role descriptions unavailable) and apply the matching fallback description.
 
-Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instructions for pipeline subagent. Pipeline template lives at `$CALIB_MODES_DIR/../templates/pipeline-prompt.md`. **N override**: `communication` caps at fast=3 / full=5 (not global FULL_N=10) to prevent pipeline context overflow — read `$CALIB_MODES_DIR/communication.md` for details. **`rules` mode** spawns one `general-purpose` subagent per rule file (not standard pipeline template) — read `$CALIB_MODES_DIR/rules.md` for direct-spawn approach.
+Each mode file defines `<TARGET>`, `<DOMAIN>`, any N overrides, and extra instructions for pipeline subagent. Pipeline template lives at `$CALIB_MODES_DIR/../templates/pipeline-prompt.md`. **N override**: `communication` caps at fast=3 / full=5 (not global FULL_N=10) to prevent pipeline context overflow — run `cat "$CALIB_MODES_DIR/communication.md"` for details. **`rules` mode** spawns one `general-purpose` subagent per rule file (not standard pipeline template) — run `cat "$CALIB_MODES_DIR/rules.md"` for direct-spawn approach.
 
 ```bash
 _TIMESTAMP=$(cat "${TMPDIR:-/tmp}/calibrate-state/timestamp" 2>/dev/null || echo "")
@@ -315,7 +315,12 @@ Print combined benchmark report:
 *ΔRecall/ΔSevAcc/ΔFmt: specialist − general (positive = specialist better). ΔTokens: token_ratio − 1.0 (negative = more focused). AB Verdict covers ΔRecall and ΔF1 only; use ΔSevAcc and ΔFmt as supplementary evidence for agents where ΔRecall ≈ 0.*
 ```
 
-**If target is `routing`**: read `modes/routing.md` "Report format" section and use that table instead. Mark "Calibrate routing" completed.
+**If target is `routing`**:
+```bash
+CALIB_MODES_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local))  # timeout: 5000
+cat "$CALIB_MODES_DIR/routing.md"
+```
+Use the "Report format" section loaded above instead of the table above. Mark "Calibrate routing" completed.
 
 Flag targets where recall < 0.70 or |bias| > 0.15 with ⚠.
 

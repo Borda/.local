@@ -64,6 +64,16 @@ Every file added to `plugins/*/skills/*/modes/`, `plugins/*/skills/*/templates/`
 
 **At authoring time**: before writing file, identify consumer SKILL.md, add `# loads:` comment there first, then create file. Consumer in different plugin → add `<!-- file: ... -->` header to file itself.
 
+## Loading Shared Docs — `cat`, not the Read tool
+
+Load `_shared/*.md` (+ `modes/`, `templates/`) via `cat "$VAR/foo.md"` in bash. Never Read tool.
+
+**Why**: Read tool path-matched vs permission globs; resolved cache path version-pinned (`~/.claude/plugins/cache/borda-ai-rig/<plugin>/<ver>/skills/_shared/...`) — plugin update kills user's "always allow", re-prompts. `Bash(cat:*)` command-matched: version-proof, prompts once ever.
+
+- `$VAR` resolve + `cat` same bash block — bash state don't persist cross-call
+- Keep surrounding "follow/execute protocol" prose — only load mechanism changes
+- **Don't revert to `` Read `$VAR/foo.md` `` — intentional.** Audit/curator seeing `cat` here: leave as-is.
+
 ## Installability
 
 - Every file installable via `claude plugin install <name>@borda-ai-rig`

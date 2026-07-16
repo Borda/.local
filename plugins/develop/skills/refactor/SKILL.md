@@ -49,11 +49,15 @@ _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 [ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 # loads: compaction-contract.md
+cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
+Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:linting-expert`, `foundry:challenger`.
 
-Read `$_DEV_SHARED/task-hygiene.md`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/task-hygiene.md"
+```
 
 <!-- Reference only — execution-dead at runtime; included for agent behavioral context -->
 ## Anti-Rationalizations
@@ -68,11 +72,19 @@ Read `$_DEV_SHARED/task-hygiene.md`.
 
 ## Project Detection
 
-Read `$_DEV_SHARED/runner-detection.md` — sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/runner-detection.md"
+```
+Sets `$TEST_CMD` (full suite) and `$PYTEST_CMD` (pytest flags). Run at skill start.
 
 **Optional `--plan <path>`**: if `$ARGUMENTS` contains `--plan <path>` (at any position), read plan file first. Extract `Affected files`, `Risks`, `Suggested approach` — use to inform Step 1 scope analysis. Skip redundant codebase exploration for already-classified files. Store plan path as `PLAN_FILE`.
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute --plan path extraction; sets `$PLAN_FILE`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+Execute --plan path extraction; sets `$PLAN_FILE`.
 
 **Checkpoint init**: run `DEV_DIR=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_run_dir.py" 2>/dev/null)  # timeout: 5000` to create `.developments/<TS>/` and capture path. Write `checkpoint.md` inside `$DEV_DIR`. After each major step (1, 2, 3, 4, 5), append `step: N — completed` to `$DEV_DIR/checkpoint.md`. On skill start, check for existing `.developments/*/checkpoint.md` — offer resume from last completed step if found.
 
@@ -136,11 +148,19 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-refactor-codemap-enabled
 
 > loads: codemap-gates.md
 
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 **Preflight** — if `CODEMAP_ENABLED=true`:
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute codemap + semble preflight if respective flags set.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+Execute codemap + semble preflight if respective flags set.
 
 ## Step 1: Scope and understand
 
@@ -152,7 +172,13 @@ If `<target>` is directory: use Glob tool (pattern `**/*.py`, path `<target>`) t
 find <target> -name '*.py' -exec wc -l {} + 2>/dev/null | tail -1
 ```
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**:
+
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-context.md"
+```
+Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both false.
 
 **Multi-file / API-change scope — extended codemap scan** (only when `CODEMAP_ENABLED=true`): if target is directory, spans multiple files, or goal mentions renaming/restructuring public API (i.e., refactoring NOT limited to internals of single function or class with unchanged public interface):
 
@@ -179,13 +205,21 @@ Spawn **foundry:sw-engineer** agent to analyze code and identify:
 - Dependencies and coupling between modules
 - **Complexity smell**: directory or cross-module scope — flag it; consider team mode
 
-Read `$_DEV_SHARED/premise-grounding.md` §Premise Grounding Gate. Apply using **refactor** context from Skill contexts table.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/premise-grounding.md"
+```
+§Premise Grounding Gate. Apply using **refactor** context from Skill contexts table.
 
 **Goal classification gate**: after sw-engineer analysis completes, scan goal text for mixed signals — if goal contains both refactor keywords (rename, extract, restructure, decouple, consolidate) AND feature keywords (add, implement, new, support), invoke `AskUserQuestion`: "Goal mixes refactoring and feature work — split into two runs." · (a) Abort — run refactor first, then feature · (b) Continue as refactor-only — treat feature additions as out of scope.
 
 **Scope gate**: if target spans 3+ modules OR 5+ files OR goal mentions any public-API rename — flag complexity smell. Use `AskUserQuestion`: "Narrow scope (Recommended)" / "Proceed anyway".
 
-Read `$_DEV_SHARED/plan-inline.md` §Inline Plan Generation Protocol. Apply using **refactor** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/plan-inline.md"
+```
+§Inline Plan Generation Protocol. Apply using **refactor** context from Skill contexts table. On proceed: set `PLAN_FILE=<path>`; continue to Step 2. On small complexity or `ACCEPT_NO_PLAN=true`: skip and continue to Step 2.
 
 ## Challenger gate
 
@@ -460,7 +494,12 @@ _FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_
 [ ! -d "$_FOUNDRY_SHARED" ] || [ ! -f "$_FOUNDRY_SHARED/quality-stack.md" ] && echo "⚠ foundry plugin not installed — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review Loop, Codex Mechanical Delegation)"
 ```
 
-Read `$_FOUNDRY_SHARED/quality-stack.md` (if not found → skip quality stack entirely, note "foundry plugin absent — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review, Codex Mechanical Delegation)" in Final Report) and execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
+```bash
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+[ -f "$_FOUNDRY_SHARED/quality-stack.md" ] && cat "$_FOUNDRY_SHARED/quality-stack.md" || echo "foundry plugin absent — quality stack skipped (Branch Safety Guard, Codex Pre-pass, Progressive Review, Codex Mechanical Delegation)"
+```
+If not found → skip quality stack entirely, note the message above in Final Report. Otherwise execute Branch Safety Guard, Quality Stack, Codex Pre-pass, Progressive Review Loop, and Codex Mechanical Delegation steps.
 
 ## Final Report
 

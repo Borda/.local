@@ -27,7 +27,7 @@ Flag rules:
 - Caught=Yes + Action=`pass` or bare `except` → **MEDIUM** (swallowed error)
 - Cap 15 rows. New/changed paths only.
 
-Read `<REVIEW_SKILL_DIR>/checklist.md` — apply CRITICAL/HIGH patterns as severity anchors. Respect suppressions.
+Load `<REVIEW_SKILL_DIR>/checklist.md` via `cat` (not the Read tool — version-pinned cache path) — apply CRITICAL/HIGH patterns as severity anchors. Respect suppressions.
 
 `ISSUE_NUMS` non-empty: read `$RUN_DIR/issue-*.md`. Evaluate whether changes address root cause, not just symptom. PR addresses symptom only → `[blocking] HIGH — root cause misalignment`. PR description diverges from issue problem → `HIGH — PR/issue scope divergence`.
 

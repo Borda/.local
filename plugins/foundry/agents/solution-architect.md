@@ -152,7 +152,7 @@ Reviewing code with no inline comments:
 <!-- research:run pipeline invocations only — skip for standalone design tasks -->
 <architectural_feasibility>
 
-For `research:scientist` hypothesis architectural-feasibility assessment (invoked by `/research:run --architect` — requires `research` plugin): read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/solution-architect/architectural-feasibility.md` for the hypothesis annotation protocol — codebase mapping, feasibility verdict, blocker labelling, JSONL output schema. Skip for standalone ADR / API-design / migration-plan tasks.
+For `research:scientist` hypothesis architectural-feasibility assessment (invoked by `/research:run --architect` — requires `research` plugin): run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/solution-architect/architectural-feasibility.md"` via the Bash tool for the hypothesis annotation protocol — codebase mapping, feasibility verdict, blocker labelling, JSONL output schema. Skip for standalone ADR / API-design / migration-plan tasks.
 
 </architectural_feasibility>
 

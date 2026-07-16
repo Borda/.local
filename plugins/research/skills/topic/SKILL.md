@@ -39,13 +39,14 @@ Clear at Step 1 start (stale prior run) and at follow-up gate (terminal action).
 
 ## Agent Resolution
 
+**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`.
+
 ```bash
 # loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
-
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`.
 
 **Task hygiene**: Before creating tasks, call `TaskList`. For each found task:
 
@@ -65,7 +66,12 @@ Read current project before searching, extract constraints:
 
 **Case-insensitive flag/mode normalization** — normalize before parsing so `--PLAN`, `--Team`, `Plan`, etc. accepted. Each Bash tool call runs fresh shell, so lowercased copy does NOT persist across blocks — re-derive inline from `$ARGUMENTS` (harness-substituted every block) wherever dispatch check needs it, e.g. `echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | …`. Preserve original `$ARGUMENTS` only where literal substitution into prompts required (e.g. topic string).
 
-**Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`, `--keep`.
+**Unsupported flag check** (runs BEFORE any mode dispatch to catch unknown flags in all modes): load and follow the protocol below. Supported flags for this skill: `--team`, `--keep`.
+```bash
+# loads: unsupported-flag-protocol.md
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
+```
 
 ```bash
 # Extract --keep quoted value (compaction-contract.md §keep semantics)
@@ -243,15 +249,11 @@ End response with `## Confidence` block per CLAUDE.md output standards.
 ```bash
 _TEAM_MODE="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"
 [ -f "$_TEAM_MODE" ] || { echo "! MISSING — modes/team.md not found at $_TEAM_MODE. Plugin may not be fully installed. Falling back to single-agent mode."; exit 1; }
-```
-
-Also verify `~/.claude/TEAM_PROTOCOL.md` exists (each teammate spawn prompt requires it):
-
-```bash
 [ -f "$HOME/.claude/TEAM_PROTOCOL.md" ] || { echo "! MISSING — ~/.claude/TEAM_PROTOCOL.md not found. Run /foundry:setup (requires foundry plugin) to install. Falling back to single-agent mode."; exit 1; }
+cat "$_TEAM_MODE"  # timeout: 5000
 ```
 
-Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"` and execute its workflow.
+Follow `modes/team.md` (loaded above) and execute its workflow.
 
 **Mandatory termination gate**: after `modes/team.md` returns (consolidation complete, report written), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for team mode; reaching end of team workflow without invoking it is protocol violation.
 
@@ -263,9 +265,10 @@ Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/team.md"` and 
 ```bash
 _PLAN_MODE="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"
 [ -f "$_PLAN_MODE" ] || { echo "! MISSING — modes/plan.md not found at $_PLAN_MODE. Plugin may not be fully installed."; exit 1; }
+cat "$_PLAN_MODE"  # timeout: 5000
 ```
 
-Read `"${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/topic/modes/plan.md"` and execute its workflow.
+Follow `modes/plan.md` (loaded above) and execute its workflow.
 
 **Mandatory termination gate**: after `modes/plan.md` returns (phased plan emitted, report written), continue to `## Follow-up gate` section below — do NOT exit early. `AskUserQuestion` call in `## Follow-up gate` is only authorized terminal action for plan mode; reaching end of plan workflow without invoking it is protocol violation.
 

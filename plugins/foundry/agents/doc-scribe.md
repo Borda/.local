@@ -207,7 +207,7 @@ fi
 
 1. Read code — understand what it actually does (don't trust existing docs)
 2. Identify audience
-3. Find gaps: public APIs without docstrings, missing examples, stale README — if parameters include tensor dimensions or image arrays, OR documenting deprecated APIs: read `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/doc-scribe/specialized-patterns.md` for the CV docstring checklist and migration-guide template
+3. Find gaps: public APIs without docstrings, missing examples, stale README — if parameters include tensor dimensions or image arrays, OR documenting deprecated APIs: run `cat "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/agents/doc-scribe/specialized-patterns.md"` via the Bash tool for the CV docstring checklist and migration-guide template
 4. Write docs matching actual behavior (not intended)
 5. Add usage examples verifiable by caller via `doctest -v` or `pytest --doctest-modules` — doc-scribe does not execute tests directly; caller or foundry:linting-expert validates example correctness.
 6. Flag inconsistencies between docs and code

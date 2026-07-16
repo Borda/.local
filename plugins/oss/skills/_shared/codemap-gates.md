@@ -5,12 +5,12 @@
 ```bash
 _CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/_shared 2>/dev/null | head -1)"
 [ -z "$_CM_SHARED" ] && _CM_SHARED="plugins/codemap/skills/_shared"
-[ -f "$_CM_SHARED/codemap-gates.md" ] && echo "$_CM_SHARED/codemap-gates.md" || echo "codemap gates contract absent — use fallback below"
+[ -f "$_CM_SHARED/codemap-gates.md" ] && cat "$_CM_SHARED/codemap-gates.md" || echo "codemap gates contract absent — use fallback below"
 ```
 
 `CODEMAP_CURRENCY` is set by the calling skill (`oss:review`, `oss:resolve`) before reading this file.
 
-Read `$_CM_SHARED/codemap-gates.md` (contract `v2`) and follow both gates with oss's skip flag:
+Contract `v2` (loaded above, when present) — follow both gates with oss's skip flag:
 - **Gate A — missing index**: fire when `CODEMAP_ENABLED=false` and `CODEMAP_FORCE_OFF=false`.
 - **Gate B — stale index**: fire when `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`.
 

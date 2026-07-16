@@ -221,7 +221,14 @@ _FOUNDRY_AVAILABLE=$(find ${_FOUNDRY_BASE:+"$_FOUNDRY_BASE"} "${HOME}/.claude/pl
 
 ## Mode: acquisition
 
-Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then Read `${_RESEARCH_AGENT_DIR}/storage-patterns.md` — storage and loading patterns for this mode. If Read fails or file not found: emit `⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only.` and continue.
+Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then load `storage-patterns.md` — storage and loading patterns for this mode:
+
+```bash
+_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/data-steward"
+[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)
+[ -d "$_RESEARCH_AGENT_DIR" ] || { echo "! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)"; exit 1; }
+cat "$_RESEARCH_AGENT_DIR/storage-patterns.md" 2>/dev/null || echo "⚠ storage-patterns.md unavailable — degraded mode; extended storage/loading patterns not loaded; proceeding with core_principles checklist only."
+```
 
 1. **Identify sources** — review data requirements: note which sources have known URLs (handle directly) vs unknown URLs or HTML pages (delegate to `foundry:web-explorer`); document expected volume and completeness signal (pagination mechanism, `total_count` field)
 
@@ -237,7 +244,14 @@ Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DI
 
 ## Mode: pipeline-audit
 
-Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then Read `${_RESEARCH_AGENT_DIR}/ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode. If Read fails or file not found: emit `⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only.` and continue.
+Apply the shared **Resolve agent dir** preamble above (sets `$_RESEARCH_AGENT_DIR`; stops on resolution failure). Then load `ml-pipeline-patterns.md` — split strategies, class imbalance, and DataLoader patterns for this mode:
+
+```bash
+_RESEARCH_AGENT_DIR="${CLAUDE_PLUGIN_ROOT:-plugins/research}/agents/data-steward"
+[ ! -d "$_RESEARCH_AGENT_DIR" ] && _RESEARCH_AGENT_DIR=$(find "${HOME}/.claude/plugins/cache" -path "*/research/*/agents/data-steward" -type d 2>/dev/null | head -1)
+[ -d "$_RESEARCH_AGENT_DIR" ] || { echo "! BLOCKED — research:data-steward sidecar not found; ensure research plugin is installed (claude plugin install research@borda-ai-rig)"; exit 1; }
+cat "$_RESEARCH_AGENT_DIR/ml-pipeline-patterns.md" 2>/dev/null || echo "⚠ ml-pipeline-patterns.md unavailable — degraded mode; extended split/DataLoader patterns not loaded; proceeding with Leakage Detection Checklist in core_principles only."
+```
 
 1. **Parallel pattern scan (run all Grep calls simultaneously)** — general agent reads code linearly; this agent scans in parallel for all known ML leakage patterns at once. Launch six Grep calls together — independent:
 

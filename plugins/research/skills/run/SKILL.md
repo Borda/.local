@@ -103,10 +103,13 @@ Clear at R1 start (stale prior run) and after R6/R7 campaign completion.
 
 ## Agent Resolution
 
+**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:linting-expert`, `foundry:perf-optimizer`, `foundry:solution-architect`, `research:scientist`.
+
 ```bash
 # loads: compaction-contract.md
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke from project root."; exit 1; }
+cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
 
 **`CLAUDE_SKILL_DIR` resolution** — constants block provides default `plugins/research/skills/run` (source-tree path). Resolve to installed path before use:
@@ -114,9 +117,8 @@ _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_s
 ```bash
 CLAUDE_SKILL_DIR=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/run 2>/dev/null | head -1)
 [ -z "$CLAUDE_SKILL_DIR" ] && CLAUDE_SKILL_DIR="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/run"
+echo "$CLAUDE_SKILL_DIR" > "${TMPDIR:-/tmp}/research-run-skill-dir"
 ```
-
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:linting-expert`, `foundry:perf-optimizer`, `foundry:solution-architect`, `research:scientist`.
 
 ## Default Mode (Steps R1–R7)
 
@@ -130,7 +132,12 @@ If no `--researcher`/`--architect`, skip to R1.
 
 **Flag combination guard**: if `--researcher` set but `--architect` NOT set, print `⚠ --researcher without --architect: hypotheses will NOT be validated for architectural feasibility before execution — infeasible hypotheses may waste iterations. Add --architect for feasibility filtering.` then continue (advisory, not blocking). If only `--architect` set without `--researcher`, feasibility filter applies to oracle-generated hypotheses — valid combination.
 
-Read `${CLAUDE_SKILL_DIR}/modes/hypothesis-pipeline.md`
+Follow `modes/hypothesis-pipeline.md`:
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+cat "$CLAUDE_SKILL_DIR/modes/hypothesis-pipeline.md"  # timeout: 5000
+```
 
 **Per-iteration hypothesis selection** (when `--researcher`/`--architect` set, inside R5 loop): pop next from `RESEARCH_QUEUE`. Append to Phase 2 prompt: "Focus this iteration on testing this hypothesis: `<hypothesis text>`."
 
@@ -174,7 +181,12 @@ rm -f .claude/state/skill-contract.md  # timeout: 5000
 echo "${KEEP_ITEMS:-}" > "${TMPDIR:-/tmp}/research-run-keep-items"  # persist for Phase 8 contract write
 ```
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`, `--keep`.
+**Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--resume`, `--team`, `--compute`, `--colab`, `--codex`, `--researcher`, `--architect`, `--journal`, `--hypothesis`, `--scientist`, `--codemap`, `--no-codemap`, `--keep`.
+```bash
+# loads: unsupported-flag-protocol.md
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
+```
 
 **Codemap auto-detection** — structural blast-radius context for modules the experiment edits; on by default when codemap installed + index found. `--no-codemap` opts out; `--codemap` is strict (fail if unavailable).
 
@@ -193,7 +205,12 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/research-run-codemap-enabled
 
 > loads: codemap-gates.md
 
-When `CODEMAP_RAW` ≠ `off`: read `$_RESEARCH_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+When `CODEMAP_RAW` ≠ `off`:
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 **If argument is a `.md` file** — read and parse with these rules:
 
@@ -271,11 +288,11 @@ Run all checks before touching code. Fail fast with clear message:
 9. **`--colab` + `--codex` compatibility note** (non-blocking): if both flags active, print `ℹ --colab + --codex active: Codex Phase 2c will receive colab_hw context so generated code can target the right GPU (H100/T4 bf16 vs fp16). Phase 5 metric verification runs through Colab MCP as usual.` and continue. Pass `colab_hw` to Codex spawn prompt (Phase 2c — see `modes/codex-copilot.md`).
 10. **`--journal` prerequisite**: verify `--researcher`/`--architect` also set. If neither: print `⚠ --journal requires --researcher or --architect — omit --journal or add a hypothesis pipeline flag.` and **stop**.
 
-**`--codex-delegation` warning** (non-blocking): check whether `.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:setup` (requires `foundry` plugin) from foundry plugin to `.claude/skills/_shared/`). If not found:
+**`--codex-delegation` warning** (non-blocking): check whether `$HOME/.claude/skills/_shared/codex-delegation.md` exists (deployed by `/foundry:setup` (requires `foundry` plugin) from foundry plugin to `$HOME/.claude/skills/_shared/`). If not found:
 
 ```bash
 # codex-delegation.md is deployed by /foundry:setup to .claude/skills/_shared/ (requires foundry plugin — if absent, R7 Codex delegation is skipped automatically)
-[ -f ".claude/skills/_shared/codex-delegation.md" ] || echo "⚠ .claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:setup (requires foundry plugin) to install it."
+[ -f "$HOME/.claude/skills/_shared/codex-delegation.md" ] || echo "⚠ $HOME/.claude/skills/_shared/codex-delegation.md not found. R7 Codex delegation will be skipped. Run /foundry:setup (requires foundry plugin) to install it."
 ```
 
 Set `CODEX_DELEGATION_AVAILABLE=true` if found, `false` otherwise. Continue regardless.
@@ -357,7 +374,12 @@ touch "$COMMIT_SENTINEL"  # timeout: 3000
 
 **Sentinel liveness**: touch `$COMMIT_SENTINEL` after each Phase 8 result write to extend monitoring window — do NOT rely solely on sentinel touched at loop start; slow iterations exceed 15-min TTL. Re-derive slug per SENTINEL_SLUG_FORMULA from `<constants>` (bash state lost between calls).
 
-**`--team` mode**: If `--team` active, Read `${CLAUDE_SKILL_DIR}/modes/team.md` and execute Phases A–D in place of standard iteration loop below.
+**`--team` mode**: If `--team` active, follow `modes/team.md` and execute Phases A–D in place of standard iteration loop below.
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+cat "$CLAUDE_SKILL_DIR/modes/team.md"  # timeout: 5000
+```
 
 **`--team` + `--hypothesis` combination**: combinable. Team mode uses provided hypothesis path and skips oracle/hypothesis-generation phase — `hypothesis_override = true` applies inside team.md Phase A same as solo mode.
 
@@ -417,7 +439,12 @@ else
 fi
 ```
 
-**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled`): read `$_RESEARCH_SHARED/codemap-context.md` and execute its block. Leave `TARGET_MODULE`/`TARGET_FN` empty for the global `central` blast-radius baseline, or set `TARGET_MODULE` to the module the experiment edits (from `## Config`) for importer/coverage queries. Append output to `context-${I}.md` under a `## Structural Context (codemap)` heading so the Phase 2 ideation agent sees blast-radius before proposing edits.
+**Codemap structural context** (only if `CODEMAP_ENABLED=true` — re-read from `${TMPDIR:-/tmp}/research-run-codemap-enabled`):
+```bash
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/codemap-context.md"
+```
+Execute its block. Leave `TARGET_MODULE`/`TARGET_FN` empty for the global `central` blast-radius baseline, or set `TARGET_MODULE` to the module the experiment edits (from `## Config`) for importer/coverage queries. Append output to `context-${I}.md` under a `## Structural Context (codemap)` heading so the Phase 2 ideation agent sees blast-radius before proposing edits.
 
 Prepend header block to `context-<i>.md`: goal, current metric vs baseline, delta trend (last 5 kept deltas), iteration number. Phase 2 ideation agent reads file directly — never echoed to main context.
 
@@ -454,7 +481,12 @@ If Agent tool unavailable (nested subagent context), implement change inline, co
 #### Phase 2a — Sandbox validate (`sandbox_mode = "docker"` only)
 
 > loads: compute-docker.md
-> Read `${CLAUDE_SKILL_DIR}/modes/compute-docker.md` — full Phase 2a and 2b logic for docker sandbox. Skip entire file if `sandbox_mode = "local"`.
+> Follow `modes/compute-docker.md` — full Phase 2a and 2b logic for docker sandbox. Skip entire file if `sandbox_mode = "local"`.
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+cat "$CLAUDE_SKILL_DIR/modes/compute-docker.md"  # timeout: 5000
+```
 
 #### Phase 2b — Apply change (`sandbox_mode = "docker"` only)
 
@@ -462,7 +494,12 @@ Skip if `sandbox_mode = "local"` — handled in compute-docker.md above.
 
 #### Phase 2c — Codex co-pilot (`--codex` only)
 
-Read `${CLAUDE_SKILL_DIR}/modes/codex-copilot.md` — contains full Phase 2c logic, cost-bounded gate, Codex dispatch prompt, outcome handling, and stuck escalation.
+Follow `modes/codex-copilot.md` — contains full Phase 2c logic, cost-bounded gate, Codex dispatch prompt, outcome handling, and stuck escalation.
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+cat "$CLAUDE_SKILL_DIR/modes/codex-copilot.md"  # timeout: 5000
+```
 
 #### Phase 3 — Verify files changed
 
@@ -493,7 +530,12 @@ If pre-commit hooks fail:
 #### Phase 5 — Verify metric
 
 > loads: phase5-metric.md  # also loads: codex-copilot.md, colab-setup.md, compute-docker.md, hypothesis-pipeline.md, report.md, resume.md, team.md
-> Read `${CLAUDE_SKILL_DIR}/modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
+> Follow `modes/phase5-metric.md` — metric verification logic for docker, local, and colab sandbox modes.
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+cat "$CLAUDE_SKILL_DIR/modes/phase5-metric.md"  # timeout: 5000
+```
 
 #### Phase 6 — Run guard
 
@@ -645,14 +687,25 @@ mkdir -p .reports/research  # timeout: 3000
 
 Write full report to `.reports/research/run-$BRANCH-$(date +%Y-%m-%d).md` via Write tool. Do not print to terminal. Anti-overwrite: if file exists, append counter suffix (e.g. `-2.md`): `OUT=".reports/research/run-$BRANCH-$(date +%Y-%m-%d).md"; BASE="$OUT"; COUNT=2; while [ -f "$OUT" ]; do OUT="${BASE%.md}-${COUNT}.md"; COUNT=$((COUNT+1)); done`
 
-Read `${CLAUDE_SKILL_DIR}/modes/report.md`
+Follow `modes/report.md`:
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+cat "$CLAUDE_SKILL_DIR/modes/report.md"  # timeout: 5000
+```
 `state.json`: `status = completed`.
 
 ### Step R7: Codex delegation (optional)
 
 Skip R7 if `CODEX_DELEGATION_AVAILABLE=false` (warning already printed at R2 — no further action needed).
 
-Inspect applied changes (`git diff <baseline_commit>...<best_commit> --stat`), identify tasks Codex can complete (comments on non-obvious changes, docstrings for modified functions, test coverage). Read `.claude/skills/_shared/codex-delegation.md` and apply criteria.
+Inspect applied changes (`git diff <baseline_commit>...<best_commit> --stat`), identify tasks Codex can complete (comments on non-obvious changes, docstrings for modified functions, test coverage).
+
+```bash
+cat "$HOME/.claude/skills/_shared/codex-delegation.md"  # timeout: 5000
+```
+
+Apply criteria loaded above.
 
 Call `AskUserQuestion` tool after R7 output — do NOT write options as plain text. Map options into tool call:
 - question: "What next?"
@@ -667,12 +720,22 @@ rm -f .claude/state/skill-contract.md  # clear contract — campaign complete (c
 ## Resume Mode
 
 > loads: resume.md
-> Read and execute `${CLAUDE_SKILL_DIR}/modes/resume.md`.
+> Follow and execute `modes/resume.md`.
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "")
+cat "$CLAUDE_SKILL_DIR/modes/resume.md"  # timeout: 5000
+```
 
 ## Mode: colab
 
 > loads: colab-setup.md
-> Execute only when `--colab` flag active. Read and execute `${CLAUDE_SKILL_DIR:-plugins/research/skills/run}/modes/colab-setup.md`.
+> Execute only when `--colab` flag active. Follow and execute `modes/colab-setup.md`.
+
+```bash
+CLAUDE_SKILL_DIR=$(cat "${TMPDIR:-/tmp}/research-run-skill-dir" 2>/dev/null || echo "plugins/research/skills/run")
+cat "$CLAUDE_SKILL_DIR/modes/colab-setup.md"  # timeout: 5000
+```
 
 </workflow>
 
@@ -689,6 +752,6 @@ rm -f .claude/state/skill-contract.md  # clear contract — campaign complete (c
 - **State persistence enables resume** — if loop crashes/times out, `resume` picks up exactly where it stopped.
 - **Safety break**: hard cap = 50 iterations (values above 50 in program.md clamped to 50 with a warning); default 20 when max_iterations unset in program.md; skill never exceeds MAX_ITERATIONS.
 - **Explicit flags = hard requirements**: all flags (`--colab`, `--compute=docker`, `--codex`, `--researcher`, `--architect`) must be available at R2. If unavailable, stop — never silently degrade.
-- R7 Codex delegation requires `/foundry:setup` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `.claude/skills/_shared/`; R7 is silently skipped if absent.
+- R7 Codex delegation requires `/foundry:setup` (requires `foundry` plugin) to have been run once — deploys `codex-delegation.md` to `$HOME/.claude/skills/_shared/`; R7 is silently skipped if absent.
 
 </notes>

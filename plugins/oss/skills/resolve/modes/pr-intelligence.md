@@ -1,4 +1,4 @@
-<!-- oss:resolve Step 3b — executed inline: Read $_OSS_RESOLVE/modes/pr-intelligence.md; execute -->
+<!-- oss:resolve Step 3b — executed inline: cat $_OSS_RESOLVE/modes/pr-intelligence.md; execute -->
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md orchestrator -->
 <!-- consumer: plugins/oss/skills/resolve/SKILL.md (Step 3b) -->
 

@@ -27,13 +27,17 @@ NOT for: code/tests (use develop mode); `.claude/` config (use `/foundry:manage`
 _PATHS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null)  # timeout: 5000
 _DEV_SHARED=$(echo "$_PATHS" | head -1)
 _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
+cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:challenger`.
+Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:challenger`.
 
 **Checkpoint**: plan single-pass — `.plans/active/<slug>` file existence = implicit resume signal. No `.developments/` checkpoint needed; if interrupted, re-run `/develop:plan` to regenerate (no code changes made).
 
-Read `$_DEV_SHARED/task-hygiene.md`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/task-hygiene.md"
+```
 
 ## Flag parsing
 
@@ -77,11 +81,19 @@ echo "$CODEMAP_ENABLED" > "$PLAN_NS/codemap-enabled"
 
 > loads: codemap-gates.md
 
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 **Preflight** — if `SEMBLE_ENABLED=true`:
 
-Read `$_DEV_SHARED/preflight-helpers.md` — execute semble preflight. Codemap validation handled by auto-detect block above.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/preflight-helpers.md"
+```
+Execute semble preflight. Codemap validation handled by auto-detect block above.
 
 ## Step 1: Classify and scope
 
@@ -108,7 +120,13 @@ echo "$TARGET_MODULE" > "$PLAN_NS/target-module"   # persist — bash state lost
 echo "$TARGET_FN"     > "$PLAN_NS/target-fn"
 ```
 
-**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**: read `$_DEV_SHARED/codemap-context.md` and follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both flags false.
+**If `CODEMAP_ENABLED=true` or `SEMBLE_ENABLED=true`**:
+
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+cat "$_DEV_SHARED/codemap-context.md"
+```
+Follow enabled sections (codemap block if `CODEMAP_ENABLED`, semble companion if `SEMBLE_ENABLED`). Skip if both flags false.
 
 **Effort sizing (codemap)** — when `CODEMAP_ENABLED=true`, derive blast-radius tier table from reverse dependencies so complexity estimate structural, not guessed. Degrade silently when codemap absent — plan works unchanged, sizing falls back to agent's file-count heuristic. Run Extended scan (`--source=diff` when partial diff exists, e.g. re-planning after abandoned work; otherwise per-target `rdeps` when `TARGET_MODULE` known):
 

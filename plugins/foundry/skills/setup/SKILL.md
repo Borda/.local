@@ -168,7 +168,7 @@ Write `${TMPDIR:-/tmp}/foundry_setup_tmp.json` back to `~/.claude/settings.json`
 
 ## Step 5: Merge permissions.allow and permissions.deny
 
-Read `$PLUGIN_ROOT/.claude-plugin/permissions-allow.json` using Read tool. Merge into `~/.claude/settings.json` — add only entries not already present (exact string match):
+Merge `$PLUGIN_ROOT/.claude-plugin/permissions-allow.json` into `~/.claude/settings.json` via jq below — add only entries not already present (exact string match):
 
 Writes merged `permissions.allow` array:
 
@@ -181,7 +181,7 @@ _jq_result=$(jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow
 
 Write back with Write tool. Report: "Added N new permissions.allow entries (M already present)."
 
-Check whether `$PLUGIN_ROOT/.claude-plugin/permissions-deny.json` exists. If so, read with Read tool and merge — add only entries not already present:
+Check whether `$PLUGIN_ROOT/.claude-plugin/permissions-deny.json` exists. If so, merge via jq below — add only entries not already present:
 
 Writes merged `permissions.deny` array:
 

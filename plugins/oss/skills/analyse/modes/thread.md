@@ -8,9 +8,14 @@ All three = GitHub conversation threads — same analysis structure, different A
 
 ## Agent Resolution
 
-<!-- `_OSS_SHARED` and `FOUNDRY_SHARED` set by parent analyse/SKILL.md — available in this context -->
+<!-- `_OSS_SHARED` and `FOUNDRY_SHARED` set by parent analyse/SKILL.md — reload from TMPDIR (fresh shell) -->
 
-Read `$_OSS_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`.
+```bash
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-oss-shared" 2>/dev/null || echo "")
+cat "$_OSS_SHARED/agent-resolution.md"  # timeout: 5000
+```
+
+Contains: foundry check + fallback table. If foundry not installed: use table to substitute each `foundry:X` with `general-purpose`. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`.
 
 **Cache check first**: if `$CACHE_FILE` exists — set by parent `analyse/SKILL.md` Cache layer; see that file for keying convention — read `item` and `comments` from it — skip primary fetch. Still run wide-net searches (never cached). For PRs: `gh pr checks` and `gh pr diff` never cached — always live.
 
@@ -156,7 +161,13 @@ Skip for PRs (their diffs already name live files). Optional structural signal �
 
 > loads: codemap-signals.md
 
-Read `$_OSS_ANALYSE/modes/codemap-signals.md` and run its **Detect** block, then **Signal A**. `$_OSS_ANALYSE` set by parent `analyse/SKILL.md`; if empty, Detect block re-resolves it. From thread body + comments, extract candidate identifiers (dotted modules + backtick/import/traceback symbols, project-internal only, cap 8), write them one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates.txt` before running Signal A's batch fence. Run existence-check, set `STALE_ISSUE`. When `STALE_ISSUE=true`: list missing identifiers + suggested renames under `### Analysis`, add `stale-symbols` to `### Suggested Labels`. When `CM_ENABLED=false`: emit one-line inline flag from codemap-signals.md into report (don't block).
+```bash
+_OSS_ANALYSE=$(ls -d ~/.claude/plugins/cache/borda-ai-rig/oss/*/skills/analyse 2>/dev/null | sort -V | tail -1)  # timeout: 5000
+[ -z "$_OSS_ANALYSE" ] && _OSS_ANALYSE="plugins/oss/skills/analyse"
+cat "$_OSS_ANALYSE/modes/codemap-signals.md"  # timeout: 5000
+```
+
+Run its **Detect** block, then **Signal A** (loaded above). From thread body + comments, extract candidate identifiers (dotted modules + backtick/import/traceback symbols, project-internal only, cap 8), write them one-per-line to `${TMPDIR:-/tmp}/analyse-triage-candidates.txt` before running Signal A's batch fence. Run existence-check, set `STALE_ISSUE`. When `STALE_ISSUE=true`: list missing identifiers + suggested renames under `### Analysis`, add `stale-symbols` to `### Suggested Labels`. When `CM_ENABLED=false`: emit one-line inline flag from codemap-signals.md into report (don't block).
 
 Status mapping: `reproduced` → ✅ · `not_reproduced` → ❌ · `partial` → ⚠ · `missing_context` → ⚠ (add missing detail) · `HAS_REPRO=false` → 🔍 No Example · PR → ⏭ Skipped
 
@@ -265,7 +276,12 @@ _Legend: ✅ present · ⚠️ partial · ❌ missing · 🔵 N/A_
 
 Run `mkdir -p .reports/analyse/thread` then write full report to `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md` using Write tool — **do not print full analysis to terminal**.
 
-Read compact terminal summary template from `$FOUNDRY_SHARED/terminal-summaries.md`. File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed
+```bash
+# Reload FOUNDRY_SHARED (Check 41: fresh shell)
+FOUNDRY_SHARED=$(cat "${TMPDIR:-/tmp}/analyse-foundry-shared" 2>/dev/null || echo "")
+[ -f "$FOUNDRY_SHARED/terminal-summaries.md" ] && cat "$FOUNDRY_SHARED/terminal-summaries.md"  # timeout: 5000
+```
+Compact terminal summary template (loaded above). File absent → warn: "run /foundry:setup — printing plain terminal output instead." Use **Issue Summary** template. Replace `[skill-specific path]` with `.reports/analyse/thread/output-analyse-thread-$NUMBER-$(date +%Y-%m-%d).md`, ensure block opens with `---` on own line, entity line follows next line, `→ saved to <path>` line present at end, block closes with `---` on own line after it. Print terminal block: read '---' header from top of report file (lines 1–7 up to and including closing '---'), append '→ saved to <path>', print to terminal. Report file already contains block — no separate prepend step needed
 
 **⛔ DO NOT STOP — `REPLY_MODE=true`**: Skip Confidence block here — emitted in SKILL.md Step 6 after reply, or as last step of SKILL.md if not in reply mode. Proceed **immediately** to "Draft contributor reply" section in SKILL.md (Step 7). Response not complete until shepherd spawned and reply file written.
 

@@ -1,7 +1,10 @@
 # Agent Spawn Protocol — Health Monitoring (CLAUDE.md §6)
 
-Reference from any skill that spawns agents:
-`Read $_FOUNDRY_SHARED/agent-spawn-protocol.md — apply monitoring for <skill-name> run`
+Reference from any skill that spawns agents — resolve `$_FOUNDRY_SHARED` and load in the same bash block:
+```bash
+cat "$_FOUNDRY_SHARED/agent-spawn-protocol.md"
+```
+Apply monitoring for `<skill-name>` run.
 
 Claude Code harness runs one Bash call at a time (max ~10 min per call, foreground `sleep` blocked). Skill therefore **cannot** sit in a `while true; do sleep … done` poll loop waiting on a background agent — that loop never runs. Monitoring is event-driven and post-hoc, not a busy-wait.
 

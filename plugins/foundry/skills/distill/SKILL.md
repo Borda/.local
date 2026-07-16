@@ -37,13 +37,13 @@ Terminal paths: end of Step 5 report (default mode); end of Memory Pruning mode 
 
 <workflow>
 
-**Task hygiene**:
+**Task hygiene**: load and follow the protocol below.
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+cat "$_FS/task-hygiene.md"
 ```
-Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 ```bash
 KEEP_ITEMS=""
@@ -395,15 +395,30 @@ rm -f .claude/state/skill-contract.md  # clear contract — skill complete (comp
 
 ## Mode: Memory Distillation — only when first token is `memory`
 
-Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/memory.md`.
+```bash
+DISTILL_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" distill modes 2>/dev/null || echo "plugins/foundry/skills/distill/modes")  # timeout: 5000
+cat "$DISTILL_MODES/memory.md"
+```
+
+Execute the mode loaded above.
 
 ## Mode: External Distillation — only when `$ARGUMENTS` begins with `external`
 
-Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/external.md`.
+```bash
+DISTILL_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" distill modes 2>/dev/null || echo "plugins/foundry/skills/distill/modes")  # timeout: 5000
+cat "$DISTILL_MODES/external.md"
+```
+
+Execute the mode loaded above.
 
 ## Mode: Executables Extraction — only when `$ARGUMENTS` begins with `executables`
 
-Read and execute `${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/skills/distill/modes/executables.md`.
+```bash
+DISTILL_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" distill modes 2>/dev/null || echo "plugins/foundry/skills/distill/modes")  # timeout: 5000
+cat "$DISTILL_MODES/executables.md"
+```
+
+Execute the mode loaded above.
 
 </workflow>
 

@@ -193,9 +193,32 @@ OUTPUT_SUFFIX=""
 OUTFILE=".experiments/kaggle/${COMPETITION_NAME}${OUTPUT_SUFFIX}.py"
 echo "$MODE" > "${TMPDIR:-/tmp}/kaggle-mode"
 echo "Mode: $MODE · Output: $OUTFILE"
+cat "$COMPOSITION_FILE"  # timeout: 5000
 ```
 
-Read `$COMPOSITION_FILE` and select the exact `$MODE` row. Then read each named contract once, from left to right, and read `style-rules.md` once. Read `modality-dispatch.md` only when a selected section requests a modality branch. Do not load unselected section contracts. Pass the selected row and resolved contract contents to `foundry:sw-engineer` after the problem profile block below.
+Select the exact `$MODE` row from `composition.md` (loaded above) and cat each named contract once, from left to right, plus `style-rules.md` once:
+
+```bash
+_KAGGLE_MODES="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/kaggle/modes"
+case "$MODE" in
+  full) _CONTRACTS="foundation.md eda.md training.md inference.md submission.md" ;;
+  eda-only) _CONTRACTS="foundation.md eda.md" ;;
+  inference-only) _CONTRACTS="foundation.md inference.md submission.md" ;;
+esac
+for _c in $_CONTRACTS style-rules.md; do
+    echo "=== $_c ==="
+    cat "$_KAGGLE_MODES/$_c"
+done
+```
+
+Load `modality-dispatch.md` only when a selected section requests a modality branch:
+
+```bash
+_KAGGLE_MODES="${CLAUDE_PLUGIN_ROOT:-plugins/research}/skills/kaggle/modes"
+cat "$_KAGGLE_MODES/modality-dispatch.md"  # timeout: 5000
+```
+
+Do not load unselected section contracts. Pass the selected row and resolved contract contents to `foundry:sw-engineer` after the problem profile block below.
 
 Spawn **foundry:sw-engineer** with this prompt preamble (inline, then continue with the resolved composition contracts):
 

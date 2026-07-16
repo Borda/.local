@@ -86,11 +86,16 @@ _FOUNDRY_SHARED=$(echo "$_PATHS" | tail -1)
 [ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
 [ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
 # loads: compaction-contract.md
+cat "$_DEV_SHARED/agent-resolution.md"
 ```
 
-Read `$_DEV_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
+Contains: foundry check + fallback table. If foundry not installed: substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:sw-engineer`, `foundry:qa-specialist`, `foundry:perf-optimizer`, `foundry:doc-scribe`, `foundry:linting-expert`, `foundry:solution-architect`, `foundry:challenger`.
 
-Read `$_DEV_SHARED/task-hygiene.md`.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
+cat "$_DEV_SHARED/task-hygiene.md"
+```
 
 After Step 1 completes (scope and `TARGET` known), create these tasks **before any agent spawns** (in order, all at once):
 
@@ -145,7 +150,12 @@ echo "$CODEMAP_ENABLED" > ${TMPDIR:-/tmp}/dev-review-codemap-enabled
 
 > loads: codemap-gates.md
 
-Read `$_DEV_SHARED/codemap-gates.md` — follow Gate A and Gate B.
+```bash
+_DEV_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" 2>/dev/null)  # timeout: 5000
+[ -z "$_DEV_SHARED" ] && _DEV_SHARED="plugins/develop/skills/_shared"
+cat "$_DEV_SHARED/codemap-gates.md"
+```
+Follow Gate A and Gate B.
 
 If `SEMBLE_ENABLED=true`: verify `mcp__semble__search` in available tools. DMI skill — stop enforced via bash exit when semble not configured:
 
@@ -334,7 +344,14 @@ Pass notice through to consolidator (Step 5) so it appears in final report heade
 
 ## Step 3: Spawn sub-agents in parallel
 
-**File-based handoff**: read `$_FOUNDRY_SHARED/file-handoff-protocol.md`. Run directory created in Step 2 (`$RUN_DIR`).
+**File-based handoff**:
+
+```bash
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)   # re-derive — bash state lost between Bash() calls
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+cat "$_FOUNDRY_SHARED/file-handoff-protocol.md"
+```
+Run directory created in Step 2 (`$RUN_DIR`).
 
 <!-- $REPORT_DIR pre-expanded into $REPORT_DIR_LITERAL — substitute literal vars in Agent spawn prompt strings. Run-dir is the exception: agents self-resolve it (see run-dir preamble below), never hand-substituted. -->
 
@@ -470,10 +487,12 @@ if [ ! -f "$_FOUNDRY_SHARED/cross-validation-protocol.md" ]; then
     echo "⚠ cross-validation-protocol.md not found at $_FOUNDRY_SHARED — Step 4 skipped; critical findings are unverified. Install foundry plugin or verify _FOUNDRY_SHARED path."
     echo "## Cross-Validation: SKIPPED" >> "$RUN_DIR/cross-validation.md"
     echo "**Reason**: _FOUNDRY_SHARED unavailable — cross-validation protocol not executed." >> "$RUN_DIR/cross-validation.md"
+else
+    cat "$_FOUNDRY_SHARED/cross-validation-protocol.md"
 fi
 ```
 
-If file present: read and follow cross-validation protocol from `$_FOUNDRY_SHARED/cross-validation-protocol.md`. File absent → skip Step 4 (warning printed above).
+If file present: follow cross-validation protocol printed above. File absent → skip Step 4 (warning printed above).
 
 **Skill-specific**: use **same agent type** that raised finding as verifier (e.g., foundry:sw-engineer verifies foundry:sw-engineer's critical finding).
 
@@ -483,8 +502,13 @@ Extract branch and date before constructing output path: `BRANCH=$(git branch --
 
 Spawn consolidator agent (general-purpose — synthesis only, no engineering specialization needed):
 
-<!-- loads: consolidator-prompt.md -->
-Read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md` for full consolidator instructions. Prepend the [run-dir preamble (canonical)](#run-dir-preamble-canonical) so consolidator self-resolves `$RUN_DIR`. Summary: read all finding files in `$RUN_DIR/`, apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical); leave `$RUN_DIR` literal (agent self-resolves). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
+```bash
+# loads: consolidator-prompt.md
+_TPL="${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates/consolidator-prompt.md"
+cat "$_TPL"
+```
+
+Use as full consolidator instructions. Prepend the [run-dir preamble (canonical)](#run-dir-preamble-canonical) so consolidator self-resolves `$RUN_DIR`. Summary: read all finding files in `$RUN_DIR/`, apply consolidation rules, write report to `$REPORT_DIR_LITERAL/review-report.md`. Substitute `$REPORT_DIR_LITERAL`, `$DATE`, and `$REVIEW_CHECKLIST` with literal resolved values before inserting into spawn prompt — see [$VAR_LITERAL pre-expansion rule (canonical)](#var_literal-pre-expansion-rule-canonical); leave `$RUN_DIR` literal (agent self-resolves). Return ONLY compact JSON envelope: `{"status":"done","findings":N,"severity":{"critical":N,"high":N,"medium":N,"low":N},"file":"$REPORT_DIR_LITERAL/review-report.md","confidence":0.N,"summary":"<one-line verdict>"}`
 
 Main context receives only one-liner verdict.
 
@@ -495,9 +519,10 @@ Report format — resolve template path first:
 ```bash
 _REVIEW_TEMPLATE=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/develop/*/skills/review/templates 2>/dev/null | head -1); [ -z "$_REVIEW_TEMPLATE" ] && _REVIEW_TEMPLATE="${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/review/templates"
 _REVIEW_TEMPLATE="$_REVIEW_TEMPLATE/review-report.md"
+cat "$_REVIEW_TEMPLATE"
 ```
 
-Pass `$_REVIEW_TEMPLATE` (pre-expanded literal) into consolidator spawn prompt: "Read `<resolved-template-path>` and use it as output structure."
+Embed the cat'd content (not the path) into consolidator spawn prompt as output structure.
 
 After parsing confidence scores: any agent scored < 0.7 → prepend **⚠ LOW CONFIDENCE** to that agent's findings section, state gap explicitly. Never silently drop uncertain findings.
 
@@ -533,7 +558,12 @@ After consolidating, identify tasks Codex can implement directly — not style v
 - Architectural issues, logic errors, security vulnerabilities, behavioural changes
 - Any task where accurate description requires guessing
 
-Read `$_FOUNDRY_SHARED/codex-delegation.md`, apply delegation criteria defined there.
+```bash
+_FOUNDRY_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/bin/dev_shared_resolve.py" --foundry 2>/dev/null | tail -1)
+[ -z "$_FOUNDRY_SHARED" ] && _FOUNDRY_SHARED="plugins/foundry/skills/_shared"
+[ -f "$_FOUNDRY_SHARED/codex-delegation.md" ] && cat "$_FOUNDRY_SHARED/codex-delegation.md" || echo "foundry codex-delegation.md not found — skip Step 6 entirely"
+```
+Apply delegation criteria defined there (when found).
 
 Print `### Codex Delegation` section to terminal only when tasks actually delegated — omit entirely if nothing delegated.
 

@@ -223,7 +223,7 @@ MANAGE_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_su
 > Before passing schema file path to sw-engineer: verify file exists on disk using Read tool (limit=1). If schema file path from JSON envelope does not exist, proceed with default frontmatter fields (name, description, model, color) — note omission in Step 10 report.
 
 ```markdown
-Read the agent scaffold template at `<MANAGE_TPL>/agent-scaffold.md` (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
+Run `cat "<MANAGE_TPL>/agent-scaffold.md"` via the Bash tool (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields (skip if schema file not found — use default frontmatter fields: name, description, model, color).
 Scaffold `.claude/agents/<name>.md` with:
 - Frontmatter: name=<name>, description=<description>, model=<model>, color=<color>; add any broadly-useful new fields from the schema
@@ -268,9 +268,9 @@ Spawn **foundry:sw-engineer** subagent to create directory and scaffold the skil
 
 ```markdown
 Run: `mkdir -p .claude/skills/<name>` using the Bash tool.
-Read the skill scaffold template at `<MANAGE_TPL>/skill-scaffold.md` (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
+Run `cat "<MANAGE_TPL>/skill-scaffold.md"` via the Bash tool (substitute resolved path from bash block above — do not pass literal `$MANAGE_TPL` to the agent).
 Also read the schema file at the path returned in the step 1 JSON to incorporate any new frontmatter fields.
-Read `<_FOUNDRY_SHARED>/bin-authoring-guide.md` (substitute resolved `$_FOUNDRY_SHARED` value from bash block above — echoed as `"Shared dir: <path>"`) — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; skill checks exit code only; never `eval` stdout.
+Run `cat "<_FOUNDRY_SHARED>/bin-authoring-guide.md"` via the Bash tool (substitute resolved `$_FOUNDRY_SHARED` value from bash block above — echoed as `"Shared dir: <path>"`) and follow it — before writing any fenced code block in the new SKILL.md, apply the extraction gate. Write a bin/ script directly if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each value to `${TMPDIR:-/tmp}/<skill>-<name>` file; skill checks exit code only; never `eval` stdout.
 Scaffold `.claude/skills/<name>/SKILL.md` with:
 - Frontmatter: name=<name>, description=<description>; add other fields per schema and scaffold guidance
 - Body: rich workflow scaffold derived from the description, following all content rules in the scaffold template
@@ -366,7 +366,7 @@ Rules:
 - Preserve frontmatter fields (name, description, tools, model, color) unless the change explicitly targets them
 - Preserve XML tags (<role>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the agent's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
+- If the change adds any fenced code block: run `cat "<_FS_VAL>/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
 - After editing: verify XML tag balance, step numbering, cross-ref validity
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/agents/<name>.md","edits":N,"description_changed":true|false,"confidence":0.N}
@@ -393,7 +393,7 @@ Rules:
 - Preserve frontmatter fields (name, description, argument-hint, disable-model-invocation, allowed-tools)
 - Preserve XML tags (<objective>, <inputs>, <workflow>, <notes>) — targeted edits only; do not rewrite unchanged sections
 - If the change modifies the skill's purpose: update the description: frontmatter field
-- If the change adds any fenced code block: read `<_FS_VAL>/bin-authoring-guide.md` and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
+- If the change adds any fenced code block: run `cat "<_FS_VAL>/bin-authoring-guide.md"` via the Bash tool and apply the extraction gate — write a bin/ script instead if verdict is MEDIUM or HIGH. Also apply the Prose over Code check (bin-authoring-guide.md §Prose over Code): if tokens(block) > tokens(equivalent prose/table/schema) at identical precision — write prose/table instead of the code block. Exempt: examples, templates, exact-syntax blocks. For any bin/ script returning 2+ values: apply §Script Output Routing — write each to `${TMPDIR:-/tmp}/<skill>-<name>` file; never `eval` stdout.
 - After editing: verify XML tag balance, step numbering, workflow gate completeness
 Write all changes using the Edit tool.
 Return ONLY: {"status":"done","file":".claude/skills/<name>/SKILL.md","edits":N,"description_changed":true|false,"confidence":0.N}

@@ -25,12 +25,12 @@ NOT for: running experiments (use `/research:run`); methodology validation (use 
 
 **bin/ scripts this skill depends on** (deployed inside `${CLAUDE_PLUGIN_ROOT}/bin/`): `resolve_shared.py`, `make_run_dir.py`. Each call below followed by explicit empty-result guard — silent failure surfaces as fail-fast error, never empty-string path.
 
+**Agent resolution**: load and follow the protocol below. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`.
 ```bash
 _RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
 [ -z "$_RESEARCH_SHARED" ] && { echo "! Plugin path resolution failed — ensure research plugin installed and CLAUDE_PLUGIN_ROOT set, or invoke /research:plan from project root."; exit 1; }
+cat "$_RESEARCH_SHARED/agent-resolution.md"
 ```
-
-Read `$_RESEARCH_SHARED/agent-resolution.md`. Contains: foundry check + fallback table. Foundry not installed → substitute each `foundry:X` with `general-purpose` per table. Agents this skill uses: `foundry:solution-architect`, `foundry:perf-optimizer`.
 
 ## Plan Mode (Steps P-P0–P-P4)
 
@@ -40,7 +40,12 @@ Triggered by `plan <goal|file>`. Wizard configures run.
 
 **Task tracking**: create tasks for P-P0, P-P1, P-P2, P-P2b, P-P3 at start; add P-P4 only if `--team` detected in arguments.
 
-**Unsupported flag check**: follow `$_RESEARCH_SHARED/unsupported-flag-protocol.md`. Supported flags for this skill: `--team`.
+**Unsupported flag check**: load and follow the protocol below. Supported flags for this skill: `--team`.
+```bash
+# loads: unsupported-flag-protocol.md
+_RESEARCH_SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/research}/bin/resolve_shared.py" 2>/dev/null)  # timeout: 5000
+cat "$_RESEARCH_SHARED/unsupported-flag-protocol.md"
+```
 
 ### Step P-P0: Detect input type
 
@@ -262,9 +267,8 @@ Next steps:
    _RESEARCH_RUN_MODES=$(ls -td ~/.claude/plugins/cache/borda-ai-rig/research/*/skills/run/modes 2>/dev/null | head -1)
    [ -d "$_RESEARCH_RUN_MODES" ] || _RESEARCH_RUN_MODES="$(git rev-parse --show-toplevel 2>/dev/null)/plugins/research/skills/run/modes"
    [ -f "$_RESEARCH_RUN_MODES/team.md" ] || { echo "⚠ team.md not found at $_RESEARCH_RUN_MODES"; }
+   cat "$_RESEARCH_RUN_MODES/team.md"
    ```
-
-   Read `$_RESEARCH_RUN_MODES/team.md`.
 
 </workflow>
 

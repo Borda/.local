@@ -45,7 +45,12 @@ For each finding: emit one flag line with location (`§<section-name>`, item tex
 
 ### Polish and write to disk
 
-Read `$SKILL_DIR/guidelines/writing-rules.md` and follow. If absent, proceed without style guidelines.
+```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+[ -f "$SKILL_DIR/guidelines/writing-rules.md" ] && cat "$SKILL_DIR/guidelines/writing-rules.md"  # timeout: 5000
+```
+Follow above (if present). If absent, proceed without style guidelines.
 
 Dispatch shepherd for public-facing voice/tone review before writing to disk. Check availability first:
 
@@ -82,6 +87,11 @@ Shepherd review policy (applies when `$SHEPHERD_AVAILABLE == true`):
 - **`--summary`** (if set): no shepherd (internal) → Draft executive summary saved to `.temp/output-release-summary-$BRANCH-$DATE.md` — confirm written. Notify: `→ saved to .temp/output-release-summary-<branch>-<date>.md`
 - **`--migration`** (if set): shepherd review (public-facing) → save to `.temp/output-release-migration-$BRANCH-$DATE.md`. Notify: `→ saved to .temp/output-release-migration-<branch>-<date>.md`
 
-**Human gate** — stop, hand off after writing files. GitHub release must be created with project-level tooling (`gh release create`). See `$_OSS_SHARED/release-checklist.md` for exact release steps.
+**Human gate** — stop, hand off after writing files. GitHub release must be created with project-level tooling (`gh release create`). Exact release steps:
+
+```bash
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/release-oss-shared" 2>/dev/null || echo "")
+cat "$_OSS_SHARED/release-checklist.md"  # timeout: 5000
+```
 
 > Confidence block — notes mode: end response here with `## Confidence` block per CLAUDE.md output standards.

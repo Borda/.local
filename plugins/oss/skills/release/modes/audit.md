@@ -1,4 +1,4 @@
-<!-- oss:release Mode: audit — executed via: Read $SKILL_DIR/modes/audit.md; execute -->
+<!-- oss:release Mode: audit — executed via: cat "$SKILL_DIR/modes/audit.md"; execute -->
 <!-- Variables available: $SKILL_DIR, $_OSS_SHARED, $LAST_TAG, $BRANCH, $DATE, $RANGE, $VERSION, $REPO_ROOT -->
 
 **Trigger**: `/release audit [version]`
@@ -63,7 +63,11 @@ git -C "$REPO_ROOT" grep -n "^def <symbol>\|^class <symbol>\|    def <symbol>\| 
 
 ### Phase B: Readiness checks
 
-Read and execute all checks from `$SKILL_DIR/templates/audit-checks.md`. Checks cover: version consistency across manifests, docs/CHANGELOG alignment, open blocking issues, dependency CVE scan, unreleased commits since last tag.
+Execute all checks from `templates/audit-checks.md`. Checks cover: version consistency across manifests, docs/CHANGELOG alignment, open blocking issues, dependency CVE scan, unreleased commits since last tag.
+
+```bash
+cat "$SKILL_DIR/templates/audit-checks.md"  # timeout: 5000
+```
 
 After readiness table, if issues found, append **Findings summary** table:
 

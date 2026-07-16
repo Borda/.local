@@ -39,13 +39,13 @@ Terminal path: Step 6 option (a) approval — suggest breakdown and stop.
 
 <workflow>
 
-**Task hygiene**:
+**Task hygiene**: load and follow the protocol below.
 ```bash
 # loads: compaction-contract.md
 # audit-skip: resilience-replication
 _FS=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
+cat "$_FS/task-hygiene.md"
 ```
-Read `$_FS/task-hygiene.md` — follow task hygiene protocol.
 
 **Task tracking**: Before Step 1, create TaskCreate entries for all 6 steps (context scan, clarifying questions, build tree, save tree, tree review, present + gate). Then print session plan to user:
 
@@ -406,10 +406,11 @@ Resolve the modes dir, then read and execute `breakdown.md` — it carries disti
 
 ```bash
 BRAINSTORM_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" brainstorm modes) || { printf "! BREAKING: brainstorm/modes not found — run /foundry:setup first\n"; exit 1; }  # timeout: 5000
+cat "$BRAINSTORM_MODES/breakdown.md"
 ```
 
 > loads: modes/breakdown.md
-Read `$BRAINSTORM_MODES/breakdown.md` and execute the mode matching the file's `**Status**:` field (`tree` → distillation; `draft` → action plan).
+Execute the mode loaded above matching the file's `**Status**:` field (`tree` → distillation; `draft` → action plan).
 
 </workflow>
 

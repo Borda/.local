@@ -73,8 +73,11 @@ In `prepare` and `audit` modes, delegate gather/explore/validate to subagent via
 2. Assert variables before spawning:
    ```bash
    [ -n "$GATHER_FILE" ] && [ -n "$REPO_ROOT" ] && [ -n "$RANGE" ] || { echo "Error: GATHER_FILE, REPO_ROOT, or RANGE is empty — verify Shared setup and Gather changes completed"; exit 1; }  # timeout: 5000
+   # Reload SKILL_DIR (Check 41: fresh shell)
+   SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+   cat "$SKILL_DIR/templates/gather-prompt.md"  # timeout: 5000
    ```
-   Read `$SKILL_DIR/templates/gather-prompt.md`. Substitute `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>` with literal values. Spawn:
+   Template (loaded above). Substitute `<REPO_ROOT>`, `<RANGE>`, `<GATHER_FILE>` with literal values. Spawn:
    > loads: gather-prompt.md
    `Agent(subagent_type="foundry:sw-engineer", prompt=<substituted gather-prompt.md content>)`
 3. Validate envelope; every "abort" is a hard `exit 1`:
@@ -119,10 +122,13 @@ CONTRIBUTORS_FILE=".temp/release-contributors-$BRANCH-$DATE.md"
 mkdir -p .temp  # timeout: 5000
 echo "${CHANGELOG_AUDIT_FILE:-}" > "${TMPDIR:-/tmp}/release-changelog-audit"
 echo "${CONTRIBUTORS_FILE:-}" > "${TMPDIR:-/tmp}/release-contributors"
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+cat "$SKILL_DIR/modes/changelog-audit-prompt.md"  # timeout: 5000
 ```
 
 <!-- loads: modes/changelog-audit-prompt.md -->
-Read `$SKILL_DIR/modes/changelog-audit-prompt.md` and execute (spawn Agent A + Agent B per instructions in that file).
+Prompt (loaded above) — execute (spawn Agent A + Agent B per instructions in that file).
 
 Validate both envelopes:
 ```bash
@@ -279,17 +285,32 @@ Report: `- [UNDERTREATED] <feature> in <doc-file> — weight N vs peers M1/M2 (r
 ## Classify each change
 
 <!-- loads: modes/classify-truth-check.md -->
-Read `$SKILL_DIR/modes/classify-truth-check.md` and execute. Contains: category table, PR accumulation rules, dedup rules, OMIT-INTERNAL body-signal override, cherry-pick annotation.
+```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
+```
+Follow above and execute. Contains: category table, PR accumulation rules, dedup rules, OMIT-INTERNAL body-signal override, cherry-pick annotation.
 
 ## Truth check
 
 <!-- loads: modes/classify-truth-check.md -->
-Read `$SKILL_DIR/modes/classify-truth-check.md` (Truth check section) and execute. Gate: runs after Classify, before Audit changelog. Verifies 🚀 Added / ⚠️ Breaking Changes / 🌱 Changed symbols exist in HEAD via codemap or grep fallback. Max 3 loop iterations.
+```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
+```
+Follow above (Truth check section) and execute. Gate: runs after Classify, before Audit changelog. Verifies 🚀 Added / ⚠️ Breaking Changes / 🌱 Changed symbols exist in HEAD via codemap or grep fallback. Max 3 loop iterations.
 
 ## Breaking-change classification
 
 <!-- loads: modes/classify-truth-check.md -->
-Read `$SKILL_DIR/modes/classify-truth-check.md` (Breaking-change classification section) and execute. Codemap-gated (skips without a v3 index). For each diff-derived public symbol, `fn-rdeps --exclude-tests` labels it Breaking (caller outside its own package) or internal; Breaking symbols move to ⚠️ Breaking Changes with caller evidence, and `migration_lines` feed the Draft migration guide as `breaking_callers` findings.
+```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+cat "$SKILL_DIR/modes/classify-truth-check.md"  # timeout: 5000
+```
+Follow above (Breaking-change classification section) and execute. Codemap-gated (skips without a v3 index). For each diff-derived public symbol, `fn-rdeps --exclude-tests` labels it Breaking (caller outside its own package) or internal; Breaking symbols move to ⚠️ Breaking Changes with caller evidence, and `migration_lines` feed the Draft migration guide as `breaking_callers` findings.
 
 ## Validate migration docs
 
@@ -459,20 +480,33 @@ Existing releases deviate from templates → match tone and prose style only. **
 Fetch origin URL for full changelog link:
 ```bash
 ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")  # timeout: 3000
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+cat "$SKILL_DIR/templates/release-draft.md"  # timeout: 5000
 ```
 
 **DRAFT.md format guard**: must NOT start with `# Changelog`, must NOT use CHANGELOG section structure. CHANGELOG-format classification = internal working doc only — derive sections from it, don't copy verbatim.
 
-Read template from `$SKILL_DIR/templates/release-draft.md`. Replace `[org]/[repo]` with actual values from `$ORIGIN_URL`. Omit empty sections.
+Template (loaded above). Replace `[org]/[repo]` with actual values from `$ORIGIN_URL`. Omit empty sections.
 
 Key difference from `prepare`: phases run inline (no subagent delegation); output to `DRAFT.md` and root `CHANGELOG.md`.
 
 ### Adversarial review
 
-Read `$SKILL_DIR/modes/adversarial-review.md` and execute.
+```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+cat "$SKILL_DIR/modes/adversarial-review.md"  # timeout: 5000
+```
+Follow above and execute.
 
 <!-- loads: modes/release-draft-template.md -->
-Read `$SKILL_DIR/modes/release-draft-template.md` and execute (format templates, semantic consistency review, polish, shepherd spawn, write to disk).
+```bash
+# Reload SKILL_DIR (Check 41: fresh shell)
+SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
+cat "$SKILL_DIR/modes/release-draft-template.md"  # timeout: 5000
+```
+Follow above and execute (format templates, semantic consistency review, polish, shepherd spawn, write to disk).
 
 ## Mode: prepare
 
@@ -480,8 +514,9 @@ Read `$SKILL_DIR/modes/release-draft-template.md` and execute (format templates,
 # Reload SKILL_DIR (Check 41: fresh shell)
 SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/prepare.md" ] || { echo "Error: modes/prepare.md not found at $SKILL_DIR/modes/prepare.md — verify oss plugin installation"; exit 1; }
+cat "$SKILL_DIR/modes/prepare.md"  # timeout: 5000
 ```
-Read `$SKILL_DIR/modes/prepare.md` and execute.
+Follow above and execute.
 > Confidence block — prepare mode: end response with `## Confidence` block per CLAUDE.md output standards after prepare.md completes.
 
 ## Mode: audit
@@ -499,8 +534,9 @@ if [ -n "$_AUDIT_VERSION" ]; then
         exit 1
     fi
 fi
+cat "$SKILL_DIR/modes/audit.md"  # timeout: 5000
 ```
-Read `$SKILL_DIR/modes/audit.md` and execute.
+Follow above and execute.
 > Confidence block — audit mode: end response with `## Confidence` block per CLAUDE.md output standards after audit.md completes.
 
 ## Mode: demo
@@ -509,8 +545,9 @@ Read `$SKILL_DIR/modes/audit.md` and execute.
 # Reload SKILL_DIR (Check 41: fresh shell)
 SKILL_DIR=$(cat "${TMPDIR:-/tmp}/release-setup/SKILL_DIR" 2>/dev/null || echo "")
 [ -f "$SKILL_DIR/modes/demo.md" ] || { echo "Error: modes/demo.md not found at $SKILL_DIR/modes/demo.md — verify oss plugin installation"; exit 1; }
+cat "$SKILL_DIR/modes/demo.md"  # timeout: 5000
 ```
-Read `$SKILL_DIR/modes/demo.md` and execute.
+Follow above and execute.
 > Confidence block — demo mode: end response with `## Confidence` block per CLAUDE.md output standards after demo.md completes.
 
 </workflow>
@@ -523,7 +560,11 @@ Read `$SKILL_DIR/modes/demo.md` and execute.
 - Filter noise (CI config, dep bumps, typos) unless user-impacting
 - **Public-facing content policy**: user-visible changes only. Never include: internal staff names, internal maintenance, CI/tooling, internal dep bumps, housekeeping with no user impact.
 - **Contributor email privacy**: `.temp/` must be in `.gitignore` — emails from `git log --format="%aN <%aE>"` must not leak into repo.
-- Public-facing output co-authored with `oss:shepherd` (requires `oss` plugin) — follow `$_OSS_SHARED/shepherd-voice.md`
+- Public-facing output co-authored with `oss:shepherd` (requires `oss` plugin) — follow shepherd voice protocol:
+  ```bash
+  _OSS_SHARED=$(cat "${TMPDIR:-/tmp}/release-oss-shared" 2>/dev/null || echo "")
+  cat "$_OSS_SHARED/shepherd-voice.md"  # timeout: 5000
+  ```
 - **Demo mode output**: jupytext percent format — convert with `jupytext --to notebook <file>.py`; replace placeholder URLs before publishing; Colab badge URL must point to actual notebook after upload
 <!-- branch: demo-synthetic-fallback — only when real data unavailable; isolated deep in demo path -->
 - **Demo real-world-only policy**: use actual project data/fixtures/API — synthetic requires explicit user approval; fallback: (1) document each failed attempt in `## Demo attempts`, (2) ask Codex if available, (3) ask user via `AskUserQuestion`, (4) synthetic only on explicit approval

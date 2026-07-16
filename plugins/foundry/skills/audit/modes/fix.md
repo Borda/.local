@@ -70,7 +70,7 @@ Fix agent by file type:
 
 Spawn one agent per affected file, batch all findings per file into single prompt. Issue **all spawns in a single response** for parallelism.
 
-Each subagent prompt: read from `$AUDIT_TPL/fix-prompt.md`, fill `<file path>` and findings list.
+Each subagent prompt: instruct the agent to run `cat "$AUDIT_TPL/fix-prompt.md"` via the Bash tool, then fill `<file path>` and findings list.
 
 **Preferred orchestration pattern — audit-fix sub-agent**
 
@@ -82,7 +82,12 @@ After gate fires (Step 7): finding count > 10 or user picked option (a) "Fix aut
 
 **Gate failure fallback**: if sub-agent returns `blocked_findings: []` with `fixed > 0` and `failed == 0` but no `gate-<file>.md` files appear in `<RUN_DIR>`, surface: `⚠ GATE-SKIPPED — sub-agent did not perform adversarial gate; review fixes manually before merging.`
 
-Spawn dedicated **audit-fix** sub-agent — read full prompt from `$AUDIT_TPL/audit-fix-prompt.md` and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false`, `failed > 0`, or `residual_criticals > 0`.
+```bash
+AUDIT_TPL=$(cat "${TMPDIR:-/tmp}/audit-state/audit-tpl" 2>/dev/null || python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" audit templates $( [ "$LOCAL_MODE" = true ] && echo "--local" ))
+cat "$AUDIT_TPL/audit-fix-prompt.md"
+```
+
+Spawn dedicated **audit-fix** sub-agent — use the full prompt loaded above and pass `<RUN_DIR>` and `$AUDIT_TPL` as context values substituted into prompt. Orchestrator reads only compact JSON envelope returned; does NOT read `fix-summary.md` unless `re_audit_clean: false`, `failed > 0`, or `residual_criticals > 0`.
 
 Finding count ≤ 10 and user picked option (b) "Fix SECURITY + CRITICAL + HIGH" → inline batched pattern (one fix-agent per file, all parallel) acceptable; no dedicated sub-agent.
 
@@ -117,9 +122,10 @@ After Step 8 fix agents complete, before foundry:curator re-audit:
 claude plugin list 2>/dev/null | grep -q 'codex@openai-codex' && CODEX_AVAILABLE=true || CODEX_AVAILABLE=""  # timeout: 15000
 _SHARED=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_shared_path.py" foundry skills/_shared 2>/dev/null || echo "plugins/foundry/skills/_shared")  # timeout: 5000
 [ -f "$_SHARED/codex-prepass.md" ] || { printf "⚠ WARNING: codex-prepass.md not found at $_SHARED — skipping codex pre-pass\n"; CODEX_AVAILABLE=""; }
+[ -n "$CODEX_AVAILABLE" ] && cat "$_SHARED/codex-prepass.md"
 ```
 
-If `$CODEX_AVAILABLE` non-empty: read `$_SHARED/codex-prepass.md`, follow Codex pre-pass instructions applied to combined diff of Step 8 fixes. Otherwise: `echo "⚠ codex plugin not available — skipping codex pass"`
+If `$CODEX_AVAILABLE` non-empty: follow the codex-prepass.md instructions above, applied to combined diff of Step 8 fixes. Otherwise: `echo "⚠ codex plugin not available — skipping codex pass"`
 
 Treat findings as additional issues entering Step 10 re-audit scope. Skip if Step 8 touched only 1 file.
 

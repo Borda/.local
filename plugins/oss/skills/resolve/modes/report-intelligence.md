@@ -1,4 +1,4 @@
-<!-- oss:resolve Step 3a — executed inline: Read $_OSS_RESOLVE/modes/report-intelligence.md; execute -->
+<!-- oss:resolve Step 3a — executed inline: cat $_OSS_RESOLVE/modes/report-intelligence.md; execute -->
 <!-- fragment — no <workflow> wrapper; executed inline by SKILL.md orchestrator -->
 <!-- consumer: plugins/oss/skills/resolve/SKILL.md (Step 3a) -->
 
@@ -24,7 +24,12 @@ Building action items…
 ```
 
 <!-- loads: review-section-taxonomy.md -->
-Read `$_OSS_SHARED/review-section-taxonomy.md` — use **Grep pattern** row for header matching (contains-match; headers may carry `⚠ LOW CONFIDENCE — ` prefix), **Severity → Resolve Type** table for `type` assignment, **LOW Grouping Rule** for composite rows, and **Owner agent** column for `author` field. Skip sections where Grep key is `— skip`.
+```bash
+_OSS_SHARED=$(cat "${TMPDIR:-/tmp}/resolve-oss-shared" 2>/dev/null || echo "")  # reload (Check 41)
+cat "$_OSS_SHARED/review-section-taxonomy.md"  # timeout: 5000
+```
+
+Taxonomy (loaded above) — use **Grep pattern** row for header matching (contains-match; headers may carry `⚠ LOW CONFIDENCE — ` prefix), **Severity → Resolve Type** table for `type` assignment, **LOW Grouping Rule** for composite rows, and **Owner agent** column for `author` field. Skip sections where Grep key is `— skip`.
 
 - `author`: Owner agent column from taxonomy
 - `file`/`line`: extract from `file:line` notation; blank if absent or grouped composite

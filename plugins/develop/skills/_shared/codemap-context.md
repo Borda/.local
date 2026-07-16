@@ -7,10 +7,10 @@
 ```bash
 _CM_SHARED="$(ls -td ~/.claude/plugins/cache/borda-ai-rig/codemap/*/skills/_shared 2>/dev/null | head -1)"
 [ -z "$_CM_SHARED" ] && _CM_SHARED="plugins/codemap/skills/_shared"
-[ -f "$_CM_SHARED/codemap-context.md" ] && echo "$_CM_SHARED/codemap-context.md" || echo "codemap contract absent — use fallback below"
+[ -f "$_CM_SHARED/codemap-context.md" ] && cat "$_CM_SHARED/codemap-context.md" || echo "codemap contract absent — use fallback below"
 ```
 
-Read `$_CM_SHARED/codemap-context.md` (contract `v2`) — follow §Batch pre-flight pattern (run with `TARGET_MODULE`/`TARGET_FN`), §Evidence-line contract, §Coverage metadata, §Targeted-edit pattern, §Effort-tier guidance.
+Contract (`v2`) — follow §Batch pre-flight pattern (run with `TARGET_MODULE`/`TARGET_FN`), §Evidence-line contract, §Coverage metadata, §Targeted-edit pattern, §Effort-tier guidance.
 
 **Fallback when codemap plugin absent** (`$_CM_SHARED/codemap-context.md` missing): run only baseline `scan-query --timeout 5 central --top 5 2>/dev/null` plus, when target known, `scan-query --timeout 5 fn-rdeps "${TARGET_MODULE}::${TARGET_FN}" --exclude-tests 2>/dev/null`; treat any non-empty output as usable, skip evidence-line/completeness logic, proceed with file reads for rest. Never break load.
 

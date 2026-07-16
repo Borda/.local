@@ -14,6 +14,10 @@
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 
+# Per-machine permission overrides (auto-appended by "always allow" clicks,
+# contains installer's own absolute home paths — never portable, never shared)
+.claude/settings.local.json
+
 # Skill run artifacts and temp outputs (ephemeral, TTL-managed)
 .cache/
 .notes/
