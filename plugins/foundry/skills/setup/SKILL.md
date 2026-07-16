@@ -114,10 +114,9 @@ Confirm `$PLUGIN_ROOT/hooks/statusline.js` exists. If not, stop and report.
 
 ## Step 2: Back up settings.json
 
-If `~/.claude/settings.json` does not exist, create it using the Write tool with content `{}`.
-
 ```bash
 SETUP_BAK_TS=$(date -u +%Y%m%dT%H%M%SZ)
+[ -f ~/.claude/settings.json ] || printf '{}\n' > ~/.claude/settings.json  # create empty in-bash if absent — no Write-tool permission prompt (headless-safe)
 cp ~/.claude/settings.json "$HOME/.claude/settings.json.bak-${SETUP_BAK_TS}"  # timeout: 5000
 echo "$SETUP_BAK_TS" > "${TMPDIR:-/tmp}/foundry-setup-bak-ts"  # persist for restore in Step 9
 ```
@@ -139,7 +138,14 @@ Otherwise, use `AskUserQuestion`:
 (a) Remove stale `hooks` block now ★ recommended (backup in place from Step 2)
 (b) Skip — I'll handle manually
 
-On **(a)**: use jq to strip `hooks` key, write back with Write tool, continue. On **(b)**: warn "Double-firing risk: existing hooks block will fire alongside plugin-registered hooks." Continue.
+On **(a)**: strip `hooks` key in-bash (no Write tool), continue:
+
+```bash
+_jq_result=$(jq 'del(.hooks)' ~/.claude/settings.json)  # timeout: 5000
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed stripping hooks — settings.json unchanged\n"; exit 1; }
+```
+
+On **(b)**: warn "Double-firing risk: existing hooks block will fire alongside plugin-registered hooks." Continue.
 
 ## Step 4: Merge statusLine
 
@@ -161,10 +167,10 @@ Writes `statusLine` key to `~/.claude/settings.json`:
 _jq_result=$(jq --arg cmd "node \"$PLUGIN_ROOT/hooks/statusline.js\"" \
     '.statusLine = {"async":true,"command":$cmd,"type":"command"}' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed updating statusLine — settings.json unchanged\n"; exit 1; }
 ```
 
-Write `${TMPDIR:-/tmp}/foundry_setup_tmp.json` back to `~/.claude/settings.json` using Write tool.
+Writeback happens in-bash above (`mv` — no Write-tool permission prompt, headless-safe). Report: `  statusLine: set to current plugin version`.
 
 ## Step 5: Merge permissions.allow and permissions.deny
 
@@ -176,10 +182,10 @@ Writes merged `permissions.allow` array:
 _jq_result=$(jq --slurpfile perms "$PLUGIN_ROOT/.claude-plugin/permissions-allow.json" \
     '.permissions.allow = ((.permissions.allow // []) + $perms[0] | unique)' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed merging permissions.allow — settings.json unchanged\n"; exit 1; }
 ```
 
-Write back with Write tool. Report: "Added N new permissions.allow entries (M already present)."
+Writeback happens in-bash above (`mv`). Report: "Added N new permissions.allow entries (M already present)."
 
 Check whether `$PLUGIN_ROOT/.claude-plugin/permissions-deny.json` exists. If so, merge via jq below — add only entries not already present:
 
@@ -189,10 +195,10 @@ Writes merged `permissions.deny` array:
 _jq_result=$(jq --slurpfile deny "$PLUGIN_ROOT/.claude-plugin/permissions-deny.json" \
     '.permissions.deny = ((.permissions.deny // []) + $deny[0] | unique)' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed merging permissions.deny — settings.json unchanged\n"; exit 1; }
 ```
 
-Write back with Write tool. Report: "Added N new permissions.deny entries (M already present)."
+Writeback happens in-bash above (`mv`). Report: "Added N new permissions.deny entries (M already present)."
 
 ## Step 6: Copy permissions-guide.md
 
@@ -227,10 +233,10 @@ Writes `enabledPlugins["codex@openai-codex"]` key:
 ```bash
 _jq_result=$(jq '.enabledPlugins["codex@openai-codex"] = true' \
     ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed updating enabledPlugins — settings.json unchanged\n"; exit 1; }
 ```
 
-Write back with Write tool.
+Writeback happens in-bash above (`mv`).
 
 ## Step 8: Merge advisorModel (from project settings)
 
@@ -255,10 +261,10 @@ Otherwise:
 
 ```bash
 _jq_result=$(jq --arg m "$ADV" '.advisorModel = $m' ~/.claude/settings.json)  # timeout: 5000
-[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > ${TMPDIR:-/tmp}/foundry_setup_tmp.json || { printf "! jq failed updating advisorModel — settings.json unchanged\n"; exit 1; }
+[ $? -eq 0 ] && [ -n "$_jq_result" ] && printf '%s\n' "$_jq_result" > "${TMPDIR:-/tmp}/foundry_setup_tmp.json" && mv "${TMPDIR:-/tmp}/foundry_setup_tmp.json" ~/.claude/settings.json || { printf "! jq failed updating advisorModel — settings.json unchanged\n"; exit 1; }
 ```
 
-Write `${TMPDIR:-/tmp}/foundry_setup_tmp.json` back to `~/.claude/settings.json` using Write tool. Report `  advisorModel: set to <value>`.
+Writeback happens in-bash above (`mv` — no Write-tool permission prompt). Report `  advisorModel: set to <value>`.
 
 ## Step 9: Validate
 
