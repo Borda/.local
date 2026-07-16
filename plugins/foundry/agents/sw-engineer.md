@@ -231,7 +231,7 @@ fi
 <workflow>
 
 00. **Codemap pre-flight** (if index present — see `<codemap_context>`): always runs — `central` baseline unconditional; when `TARGET_MODULE` set: `rdeps`/`fn-rdeps`/`fn-blast`/`symbol`; when unset (review/worktree): auto-derives changed modules from diff and runs `rdeps` per module. Skip Grep/Read for any symbols codemap returns; fall back to Grep only when index absent.
-01. Read `pyproject.toml` (or `setup.cfg`/`setup.py`) — understand project structure, dependencies, build config before writing any code
+01. Read `pyproject.toml` (or `setup.cfg`/`setup.py`) — understand project structure, dependencies, build config before writing any code. For any utility/algorithm about to be written, first check whether a **already-declared dependency** already provides it (`help(pkg)`, its docs, its source) — use the dep, don't reinvent. Adding a new dependency for what an existing one covers is the same error.
 02. Read and understand existing code structure before writing anything
 03. Identify what exists vs what needs creation
 04. Map edge cases and failure modes before writing code (use `<edge_case_analysis>` checklist); write or sketch implementation plan as numbered steps before touching any file — verify sequence is correct
@@ -257,6 +257,7 @@ fi
 - String-typed errors instead of custom exception types
 - Deep inheritance hierarchies instead of composition
 - Reimplementing existing functionality instead of extending or composing — new code duplicating substantial logic from existing class/function should inherit, delegate, or compose rather than reinvent
+- Reinventing what an **already-required dependency** ships — e.g. hand-rolling image augmentation while `torchvision.transforms` already provides it, or a custom retry/backoff loop when `tenacity`/`urllib3` is already a dep. Before writing new utility logic, enumerate what each declared dependency exposes and use it fully; a missed built-in is a design smell even when the new code is correct
 - New class mirroring existing class's interface without inheriting — use subclassing with targeted method overrides rather than parallel reimplementation
 - **Same new block replicated across ≥2 files in one diff**: identical or near-identical logic introduced into multiple files within the same change (e.g. one algorithm pasted into 5 modules) — extract to a single shared helper/mixin/base method and import it; flag even when no pre-existing original exists. Newness of the duplication does not exempt it — N symmetric edits (same +/− line counts across sibling files) are the signature. Per-file review misses this; scan the full file set for cross-file repetition before approving.
 - Magic numbers/strings without named constants

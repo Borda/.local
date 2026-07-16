@@ -111,14 +111,14 @@ old_obj = deprecated_instance(new_obj, deprecated_in="X.Y", remove_in="Z.W")
 
 ## Library API Awareness
 
-Claude training data has fixed cutoff — any library released or substantially updated after that point may have APIs Claude doesn't know.
+Applies to **every code-touching agent**, not `foundry:sw-engineer` alone. Training data has fixed cutoff — training memory of what a package exposes is never evidence, regardless of version. Silent-drift APIs (renamed params, moved symbols, changed defaults) look plausible and pass a glance.
 
-**Before using any third-party library feature**:
+**Before using any third-party library feature — always, not only when version looks new**:
 
 1. Check installed version: `python -c "import <pkg>; print(<pkg>.__version__)"` or `pip show <pkg>`
-2. Compare against Claude training: Claude's training cutoff noted in system context; any library with active development after that date may have new or changed APIs
-3. If installed version newer than Claude's training snapshot: read library's CHANGELOG or online docs first; `python -c "import <pkg>; help(<pkg>)"` fallback for offline inspection
-4. Use API matching **installed** version — don't assume Claude's training knowledge current
+2. **Fetch the actual top-level public API** — `python -c "import <pkg>; print([n for n in dir(<pkg>) if not n.startswith('_')])"`, then `help(<pkg>.<thing>)` / read source / read versioned docs for the specific symbols used. Do this even when confident from memory — confirm the symbol, its signature, and its defaults against the installed package before writing the call
+3. Use API matching the **installed** version — don't assume training knowledge current
+4. Never fabricate a symbol/kwarg from memory; unverified against installed pkg = don't write it
 
 **Never suggest upgrading library** solely because Claude doesn't recognise newer API. Project has version pinned for a reason — learn that version's API from docs; don't force updates on stable/stale projects.
 
