@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Sync local plugin changes to ~/.claude/ and/or ~/.codex/
+# Sync plugin changes to ~/.claude/ and/or ~/.codex/
+# Claude plugins install from the GitHub remote (versioned cache) — commit + push before running.
 # Run from the project root: bash sync.sh [claude] [codex] [--no-clean]
 #
 # Arguments (order-independent):
@@ -37,6 +38,7 @@ KNOWN_MARKETPLACES="$HOME/.claude/plugins/known_marketplaces.json"
 INSTALLED_PLUGINS="$HOME/.claude/plugins/installed_plugins.json"
 CACHE_DIR="$HOME/.claude/plugins/cache"
 PROJECT_DIR="$(pwd)"
+MARKETPLACE_REMOTE=$(git -C "$PROJECT_DIR" remote get-url origin 2>/dev/null | sed 's/\.git$//')  # GitHub source for cache install
 
 if $SYNC_CLAUDE; then
 
@@ -108,8 +110,25 @@ for p in "${EXTERNAL_PLUGINS[@]}"; do
     claude plugin install "$p" && echo "  ✓ $p" || echo "  ✗ $p install failed"
 done
 
-echo "Registering marketplace..."
-claude plugin marketplace add ./
+echo "Registering marketplace (GitHub source → versioned cache install)..."
+# GitHub source installs the pushed commit into ~/.claude/plugins/cache/<mkt>/<plugin>/<ver>/,
+# so CLAUDE_PLUGIN_ROOT resolves under ~/.claude/ (not this live working tree). A local
+# directory source (`add ./`) always live-links and never caches — see plugin-marketplaces docs.
+# GitHub source installs the REMOTE commit — warn loudly if it differs from local HEAD
+LOCAL_SHA=$(git -C "$PROJECT_DIR" rev-parse HEAD 2>/dev/null)
+REMOTE_SHA=$(git ls-remote "$MARKETPLACE_REMOTE" HEAD 2>/dev/null | awk '{print $1}')
+if [ -z "$REMOTE_SHA" ]; then
+    echo "  ⚠ cannot reach $MARKETPLACE_REMOTE — skipping SHA check (offline or auth?)"
+elif [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+    echo "  ┌──────────────────────────────────────────────────────────────"
+    echo "  │ ⚠ LOCAL ≠ REMOTE — cache will install the REMOTE commit, not your local work"
+    echo "  │   local  HEAD: $LOCAL_SHA"
+    echo "  │   remote HEAD: $REMOTE_SHA"
+    echo "  │   → commit + push first, or these plugins install a stale/different version"
+    echo "  └──────────────────────────────────────────────────────────────"
+fi
+claude plugin marketplace remove "$MARKETPLACE" 2>/dev/null || true  # drop any stale directory-source registration
+claude plugin marketplace add "$MARKETPLACE_REMOTE"
 
 echo "Installing plugins..."
 for p in "${PLUGINS[@]}"; do
