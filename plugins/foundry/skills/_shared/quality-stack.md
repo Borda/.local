@@ -1,6 +1,6 @@
 # Shared Quality Stack
 
-Used by develop mode skills (feature, fix, refactor). Invoked via `Read(".claude/skills/_shared/quality-stack.md")`.
+Used by develop mode skills (feature, fix, refactor). Loaded via `cat "$_FOUNDRY_SHARED/quality-stack.md"` (not the Read tool — `Bash(cat:*)` grant is version-proof).
 
 Skip branch safety guard in `plan` mode — plan makes no code changes.
 
@@ -107,7 +107,11 @@ Document option used in Final Report under "Recovery" subsection.
 
 Mandatory after quality stack. Degrades gracefully if Codex unavailable.
 
-Read `.claude/skills/_shared/codex-prepass.md` and run Codex pre-pass on changes.
+Load `codex-prepass.md` via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof) and run Codex pre-pass on changes.
+
+```bash
+[ -f "$_FOUNDRY_SHARED/codex-prepass.md" ] && cat "$_FOUNDRY_SHARED/codex-prepass.md" || echo "foundry codex-prepass.md not found — skip Codex pre-pass"  # timeout: 5000
+```
 
 ### Codex pre-pass: additional inline steps (step 1 is in the shared file)
 
@@ -169,7 +173,11 @@ Replace bare agent names in spawn prompts with `foundry:` prefixed equivalents: 
 
 ## Codex Mechanical Delegation
 
-Read `.claude/skills/_shared/codex-delegation.md` and apply delegation criteria. Delegate mechanical follow-up tasks to Codex when accurate specific brief writable.
+Load `codex-delegation.md` via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof) and apply delegation criteria. Delegate mechanical follow-up tasks to Codex when accurate specific brief writable.
+
+```bash
+[ -f "$_FOUNDRY_SHARED/codex-delegation.md" ] && cat "$_FOUNDRY_SHARED/codex-delegation.md" || echo "foundry codex-delegation.md not found — skip mechanical delegation"  # timeout: 5000
+```
 
 Distinct from Codex pre-pass — pre-pass checks implementation diff for correctness; mechanical delegation outsources low-level follow-up work (scaffolding, boilerplate, migration scripts) after review loop closes.
 

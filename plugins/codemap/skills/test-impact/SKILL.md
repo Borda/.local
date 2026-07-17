@@ -52,7 +52,7 @@ Auto-build opt-out via `SCAN_NO_AUTOBUILD=1` (index used exactly as-is — no re
 
 If `$INDEX` not found:
 - `SCAN_NO_AUTOBUILD=1` set → print `! codemap index missing and SCAN_NO_AUTOBUILD=1 — refusing to auto-build. Build it manually first: /codemap:scan-codebase` and exit 1.
-- otherwise → `Skill(skill="codemap:scan-codebase")` then continue.
+- otherwise → run `scan-index` in the foreground (wait until it finishes) then continue. (Not the `codemap:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; build via the `scan-index` binary.)
 
 If index already exists:
 

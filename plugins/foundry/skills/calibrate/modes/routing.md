@@ -11,7 +11,14 @@ Thresholds (from SKILL.md constants): `ROUTING_ACCURACY_THRESHOLD=0.90`, `ROUTIN
 
 ### Step 2: Spawn routing pipeline subagent
 
-Mark "Calibrate routing" in_progress. Read `.claude/skills/calibrate/templates/routing-pipeline-prompt.md`. Substitute `<N>` (5 fast, 10 full), `<TIMESTAMP>`, `<MODE>`. Spawn **single** `general-purpose` pipeline subagent with substituted template — handles all phases internally. Proceed to Step 3 after spawn.
+Mark "Calibrate routing" in_progress. Load the routing pipeline template via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof):
+
+```bash
+CALIB_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate templates 2>/dev/null || echo "plugins/foundry/skills/calibrate/templates")  # timeout: 5000
+cat "$CALIB_TPL/routing-pipeline-prompt.md"  # timeout: 5000
+```
+
+Substitute `<N>` (5 fast, 10 full), `<TIMESTAMP>`, `<MODE>`. Spawn **single** `general-purpose` pipeline subagent with substituted template — handles all phases internally. Proceed to Step 3 after spawn.
 
 Run dir: `.reports/calibrate/<TIMESTAMP>/routing/`
 

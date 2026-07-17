@@ -60,7 +60,7 @@ if [ "${SCAN_NO_AUTOBUILD:-0}" = "1" ]; then
 fi
 ```
 
-If not refused → `Skill(skill="codemap:scan-codebase")`, then re-read INDEX from tmpfile.
+If not refused → run `scan-index` in the foreground (wait until it finishes), then re-read INDEX from tmpfile. (Not the `codemap:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; build via the `scan-index` binary.)
 
 - `unresolved` → surface error, stop
 

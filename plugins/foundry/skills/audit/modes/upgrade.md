@@ -59,7 +59,14 @@ Mark "Apply config proposals" completed.
 
 Mark "A/B test capability proposals" in_progress. Each **capability** proposal (max 3), in sequence:
 
-**Step a — Baseline calibration**: Read `.claude/skills/calibrate/templates/pipeline-prompt.md`. Spawn `general-purpose` subagent with that template, target agent name, domain, N=3, MODE=fast, AB_MODE=false. Capture `recall_before` and `f1_before` from returned JSON.
+**Step a — Baseline calibration**: Load the calibrate pipeline template via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof):
+
+```bash
+CALIB_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate templates 2>/dev/null || echo "plugins/foundry/skills/calibrate/templates")  # timeout: 5000
+cat "$CALIB_TPL/pipeline-prompt.md"  # timeout: 5000
+```
+
+Spawn `general-purpose` subagent with that template, target agent name, domain, N=3, MODE=fast, AB_MODE=false. Capture `recall_before` and `f1_before` from returned JSON.
 
 **Step b — Apply change**: Edit target agent file per proposal spec.
 

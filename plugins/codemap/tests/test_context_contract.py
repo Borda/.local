@@ -105,12 +105,16 @@ class TestGatesContract:
             pytest.param("Rebuild now", id="b-rebuild"),
             pytest.param("Continue with stale data", id="b-stale"),
             pytest.param("Skip codemap", id="b-skip"),
-            pytest.param('Skill(skill="codemap:scan-codebase")', id="build-skill"),
+            pytest.param("run `scan-index` in the foreground", id="build-scan-index"),
         ],
     )
     def test_carries_gate_machinery(self, marker: str):
         """Both gates and every option/action survive in the generic gates contract."""
         assert marker in _GATES_CONTRACT.read_text(encoding="utf-8")
+
+    def test_build_action_never_model_invokes_disabled_skill(self):
+        """Build/rebuild action must not Skill()-call scan-codebase — it is disable-model-invocation:true."""
+        assert 'Skill(skill="codemap:scan-codebase")' not in _GATES_CONTRACT.read_text(encoding="utf-8")
 
 
 @pytest.mark.skipif(not _DEVELOP_CONTEXT.is_file(), reason="develop plugin sibling tree absent")

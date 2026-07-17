@@ -222,7 +222,13 @@ Spawn teammates in **two serialized waves** — qa-specialist and doc-scribe can
 - **Wave 2 — foundry:qa-specialist + foundry:doc-scribe in parallel**: after Wave 1 returns, spawn Teammates 2 and 3 together. Both receive actual implementation file path from Wave 1's output as input context (resolved via `.temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md`).
 
 <!-- loads: team-spawn-prompts.md -->
-Spawn prompts: read `${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/team-spawn-prompts.md` for full prompt text per teammate. Summary below:
+Spawn prompts: load full prompt text per teammate via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof):
+
+```bash
+cat "${CLAUDE_PLUGIN_ROOT:-plugins/develop}/skills/feature/templates/team-spawn-prompts.md"  # timeout: 5000
+```
+
+Summary below:
 
 - **Teammate 1 — foundry:sw-engineer (model=opus)**: implement feature (Steps 2-3: demo test, TDD loop); edit source only, not `tests/`; write to `.temp/develop/$_SPAWN_TS/feature-sw-engineer-$_SPAWN_TS.md`; return compact JSON.
 - **Teammate 2 — foundry:qa-specialist (model=sonnet)**: add edge-case/regression/security tests; edit `tests/` only, not source; write to `.temp/develop/$_SPAWN_TS/feature-qa-specialist-$_SPAWN_TS.md`; return compact JSON.

@@ -190,13 +190,13 @@ b) Build now ★ — scans all .py files via ast.parse (Python only), <60s on mo
 
 **a** (Skip or unavailable): note "Proceeding without index — recommendations based on skill purpose only, not module count."
 
-**b** (or auto-approved): verify binary exists first, then run scanner:
+**b** (or auto-approved): verify binary exists first, then run the scanner in the foreground:
 
-```text
-# Delegate to codemap:scan-codebase skill — runs scan-index with correct timeout handling,
-# binary validation, --root/--incremental handling, and stats reporting. Reimplementing
-# the invocation here drifts from scan-codebase's contract; call the skill instead.
-Skill(skill="codemap:scan-codebase")
+```bash
+# scan-index binary directly — the codemap:scan-codebase skill is disable-model-invocation:true
+# (user-slash-only), so the model cannot Skill()-call it; this is the same binary the skill wraps
+# and the same mechanism codemap's inject-preamble.js hook uses to build on demand.
+command -v scan-index >/dev/null 2>&1 && scan-index || echo "! scan-index not on PATH — codemap plugin bin dir missing"  # timeout: 600000
 ```
 
 Report result (module count, degraded count).

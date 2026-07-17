@@ -25,7 +25,12 @@ done
 
 ## Check 22 — Calibration coverage gap
 
-**Step 1 — Read calibrate domain table**: Read `.claude/skills/calibrate/modes/skills.md`, extract registered target list under `### Domain table`. Build registered-targets set.
+**Step 1 — Read calibrate domain table**: Load calibrate `skills.md` via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof), extract registered target list under `### Domain table`. Build registered-targets set.
+
+```bash
+CALIB_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local) 2>/dev/null || echo "plugins/foundry/skills/calibrate/modes")  # timeout: 5000
+cat "$CALIB_MODES/skills.md"  # timeout: 5000
+```
 
 **Step 2 — Scan all skill modes on disk**: Use Glob (`skills/*/SKILL.md`, path `.claude/`) and Glob (`skills/*/modes/*.md`, path `.claude/`) to enumerate every skill and mode file. Extract mode names from `argument-hint:` frontmatter and `## Mode:` / `### Mode:` headings.
 
@@ -41,7 +46,12 @@ Mode is calibratable when ALL three signals present:
 
 → Unregistered mode matching all three: **low** (add to `calibrate/modes/skills.md` domain table)
 
-**Step 5 — Read agents domain table**: Read `.claude/skills/calibrate/modes/agents.md`, extract all agent names from `### Domain table`. Build registered-agent-names set.
+**Step 5 — Read agents domain table**: Load calibrate `agents.md` via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof), extract all agent names from `### Domain table`. Build registered-agent-names set.
+
+```bash
+CALIB_MODES=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate modes $([ "$LOCAL_MODE" = "true" ] && echo --local) 2>/dev/null || echo "plugins/foundry/skills/calibrate/modes")  # timeout: 5000
+cat "$CALIB_MODES/agents.md"  # timeout: 5000
+```
 
 **Step 6 — Scan all agent files on disk**: (When `LOCAL_MODE=false`, skip `plugins/*/agents/*.md` — scan `.claude/agents/` only.) Use Glob (`plugins/*/agents/*.md`, path project root) for plugin agent files; Glob (`agents/*.md`, path `.claude/`) for directly installed agents. Derive qualified name per file: `plugins/<plugin>/agents/<name>.md` → `<plugin>:<name>`; `.claude/agents/<name>.md` → `<name>`. Build full discovered-agent set.
 

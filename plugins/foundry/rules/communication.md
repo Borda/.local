@@ -99,24 +99,25 @@ Compliant example — only valid form:
 - Max 4 questions per call; group related sub-questions into one option set rather than asking sequentially
 - **Recommended option placement**: place recommended option **second** in options list, not first and not last. First slot = most natural/neutral default; second = recommended; last = skip/abort.
 
-### Confidence Bars
+### Confidence Display
 
-For every `AskUserQuestion` multiple-choice call with a genuine model leaning: embed the confidence bar **inside each option's own `description` field** — never as a separate legend before the tool call. A standalone legend needs a label scheme (A/B/C or 1/2/3) mapped back to option order; that mapping silently breaks whenever the legend's item count or order drifts from the actual options (observed failure — legend keyed 3 letters against a 5-option call, no shared referent). Bar-in-description has no mapping step: reader sees the bar on the exact option it scores.
+For every `AskUserQuestion` multiple-choice call with a genuine model leaning: embed plain-text markers **inside each option's own `description` field** — never as a separate legend before the tool call. A standalone legend needs a label scheme (A/B/C or 1/2/3) mapped back to option order; that mapping silently breaks whenever the legend's item count or order drifts from the actual options (observed failure — legend keyed 3 letters against a 5-option call, no shared referent). Marker-in-description has no mapping step: reader sees the scores on the exact option they score.
 
-Format — 5-cell bar prefixed to `description`, each cell = 20%:
+Format — two axes prefixed to `description`, `·` separator; `←` marks the recommended (highest-`fit`) option:
 
 ```
-description: "🟩🟩🟩🟩⬜ 75% ← recommended — <rest of trade-off explanation>"
+description: "fit: 55% · conf: 65% ← recommended — <rest of trade-off explanation>"
 ```
 
 Rules:
 
-- 🟩 filled, ⬜ empty — **Unicode emoji only, never ANSI** (consistent with Reply Visibility no-ANSI rule)
-- Cells = `round(pct / 20)` filled; label exact `pct%` after bar
-- Percentages = model's own estimate that this option is the right choice; span options, need not sum to exactly 100
-- Mark highest-confidence option's bar with trailing `←` (aligns with second-slot recommended option per placement rule above)
-- Bar goes in `description` (always rendered), **not** `preview` (only shown when focused / side-by-side layout) — `description` is the only field guaranteed visible
-- **Genuine-recommendation gate**: show bars when model has a real leaning (a correct/better answer exists). Pure user-taste questions with no right answer (theme, naming preference) → flatten bars to near-even or omit them — never fake a recommendation
+- **Plain text only** — `fit: N%` · `conf: N%`, exact integers, `·` separator. No emoji bar, no ANSI. (Emoji bars were dropped: hand-drawn glyphs malformed — stray digits like `🟩⬜⬜⬜⬜⬜2⬜`, coarse 20% buckets, width misalign per terminal. Plain numbers precise + unbreakable.)
+- **Two distinct axes — never conflate**:
+  - `fit: N%` = how well this option **addresses the problem** — comparative across options, spans them (need not sum to 100). Highest `fit` = the pick.
+  - `conf: N%` = model's **self-confidence that its `fit` read is reliable** — epistemic, per-option, absolute (not comparative). Independent of fit: a high-`fit` pick may carry low `conf` when evidence is thin.
+- Mark highest-`fit` option with trailing `←` (aligns with second-slot recommended option per placement rule above). Near-tie on `fit` → higher `conf` breaks it.
+- Marker goes in `description` (always rendered), **not** `preview` (only shown when focused / side-by-side layout) — `description` is the only field guaranteed visible
+- **Genuine-recommendation gate**: show markers only when the choice is a real, open decision **and** the model has a real leaning (a correct/better answer exists). Omit markers entirely when: (a) pure user-taste, no right answer (theme, naming preference); (b) the crossroad is fixed/given/forced — one viable path, outcome predetermined, or the option only confirms a decision already made. A marker on a non-decision is noise — never fake a recommendation or a spread. (If the choice is fully forced, prefer not asking at all — see AskUserQuestion "genuinely the user's to make".)
 - Applies globally — all skills, agents, model-generated questions
 
 ## Output Routing

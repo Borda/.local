@@ -644,18 +644,18 @@ ______________________________________________________________________
 
 > **Stub + on-demand split (token diet):** `git-commit.md`, `debugging.md`, `external-data.md`, `artifact-lifecycle.md` = thin always-loaded stubs with hard constraints only; full procedural bodies live in `rules/_full/` (resolved from plugin cache, NOT symlinked or injected), Read on demand at trigger point named in each stub — drafting commit, multi-file fix, multi-page fetch, defining new output dirs. Cuts ~6K tokens per-session injection, zero constraint loss.
 
-| Rule file               | Applies to                      | Governs                                                                                                                 |
-| ----------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `communication.md`      | all                             | Re: anchor format, progress narration, tone, output routing, breaking-findings format, terminal colors, confidence bars |
-| `quality-gates.md`      | all                             | Confidence block format, Internal Quality Loop, link verification, output routing (long output to file)                 |
-| `git-commit.md`         | all                             | Commit message format, diff-gathering before writing, co-author trailers, branch + push safety                          |
-| `claude-config.md`      | all                             | Bash timeouts (3x P90), directory navigation rules, no hardcoded absolute paths                                         |
-| `artifact-lifecycle.md` | all                             | Canonical artifact layout (`.plans/`, `.reports/`, `.temp/`), run directory naming, TTL policy                          |
-| `external-data.md`      | all                             | Pagination rules: GitHub CLI, REST APIs, GraphQL, Cloud APIs — never work on partial result set                         |
-| `foundry-config.md`     | `.claude/**`                    | Plan-mode gate before any `.claude/` edit, post-edit checklist, XML tag conventions, distribution rules                 |
-| `python-code.md`        | `**/*.py`                       | Google-style docstrings (no exceptions), deprecation version check before generating deprecation code                   |
-| `testing.md`            | `tests/**/*.py`, `**/test_*.py` | pytest design: TDD process, fixture conventions, parametrization, what to test in priority order                        |
-| `public-github.md`      | all                             | Read-only policy on public GitHub — permitted reads vs permanently forbidden write operations                           |
+| Rule file               | Applies to                      | Governs                                                                                                                    |
+| ----------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `communication.md`      | all                             | Re: anchor format, progress narration, tone, output routing, breaking-findings format, terminal colors, confidence display |
+| `quality-gates.md`      | all                             | Confidence block format, Internal Quality Loop, link verification, output routing (long output to file)                    |
+| `git-commit.md`         | all                             | Commit message format, diff-gathering before writing, co-author trailers, branch + push safety                             |
+| `claude-config.md`      | all                             | Bash timeouts (3x P90), directory navigation rules, no hardcoded absolute paths                                            |
+| `artifact-lifecycle.md` | all                             | Canonical artifact layout (`.plans/`, `.reports/`, `.temp/`), run directory naming, TTL policy                             |
+| `external-data.md`      | all                             | Pagination rules: GitHub CLI, REST APIs, GraphQL, Cloud APIs — never work on partial result set                            |
+| `foundry-config.md`     | `.claude/**`                    | Plan-mode gate before any `.claude/` edit, post-edit checklist, XML tag conventions, distribution rules                    |
+| `python-code.md`        | `**/*.py`                       | Google-style docstrings (no exceptions), deprecation version check before generating deprecation code                      |
+| `testing.md`            | `tests/**/*.py`, `**/test_*.py` | pytest design: TDD process, fixture conventions, parametrization, what to test in priority order                           |
+| `public-github.md`      | all                             | Read-only policy on public GitHub — permitted reads vs permanently forbidden write operations                              |
 
 ______________________________________________________________________
 

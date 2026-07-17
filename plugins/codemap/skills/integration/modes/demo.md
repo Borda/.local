@@ -135,7 +135,8 @@ On (b): `DEMO_MODE=synthetic`. Continue. On (c): stop.
 If `smoke_ok=false` or index missing:
 
 ```bash
-Skill(skill="codemap:scan-codebase")
+# scan-index binary — codemap:scan-codebase skill is disable-model-invocation:true (user-slash-only)
+scan-index  # timeout: 600000
 ```
 
 Re-run C3 to verify. Record `module_count`, `degraded_count` from C3 JSON. Still failing after build → warn, continue (A/B degrades gracefully — arms fall back to grep).

@@ -47,7 +47,14 @@ ls .claude/rules/*.md 2>/dev/null | sort
 awk '/^---$/{c++; if(c==2)exit} c==1 && /^paths:/{found=1} END{print found+0}' <rule-file>
 ```
 
-Read `.claude/skills/calibrate/templates/rules-pipeline-prompt.md`. For each rule file, substitute `<RULE_BASENAME>`, `<RULE_CONTENT>`, `<TIMESTAMP>`, `<MODE>`, `<N>`, `<IS_PATH_SCOPED>` and spawn **single** `general-purpose` pipeline subagent.
+Load the rules pipeline template via `cat` (not the Read tool — `Bash(cat:*)` grant is version-proof):
+
+```bash
+CALIB_TPL=$(python "${CLAUDE_PLUGIN_ROOT:-plugins/foundry}/bin/resolve_skill_subdir.py" calibrate templates 2>/dev/null || echo "plugins/foundry/skills/calibrate/templates")  # timeout: 5000
+cat "$CALIB_TPL/rules-pipeline-prompt.md"  # timeout: 5000
+```
+
+For each rule file, substitute `<RULE_BASENAME>`, `<RULE_CONTENT>`, `<TIMESTAMP>`, `<MODE>`, `<N>`, `<IS_PATH_SCOPED>` and spawn **single** `general-purpose` pipeline subagent.
 
 **Spawn in batches of `$PIPELINE_BATCH_SIZE` (default 5)**: issue up to 5 rule pipeline spawns per response, wait for all in batch to return their compact JSON results, then spawn next batch. Rule files within a batch run concurrently; batches sequential.
 

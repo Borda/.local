@@ -11,19 +11,19 @@ Read currency first: `CODEMAP_CURRENCY=$(cat "${TMPDIR:-/tmp}/dev-codemap-curren
 Fires when `CODEMAP_ENABLED=false` and the consumer's skip flag is **not** set to off. Invoke `AskUserQuestion`:
 - Question: "No codemap index for this project — structural dependency context unavailable. How to proceed?"
 - (a) Continue without codemap — proceed with file-read context only
-- (b) Build index now — `Skill(skill="codemap:scan-codebase")` then set `CODEMAP_ENABLED=true` and continue
+- (b) Build index now — run `scan-index` in the foreground (wait until it finishes), then set `CODEMAP_ENABLED=true` and continue
 - (c) Abort — stop; build index manually then re-invoke this skill
 
-On (b): invoke `Skill(skill="codemap:scan-codebase")`; set `CODEMAP_ENABLED=true`; continue.
+On (b): run `scan-index` in the foreground (wait until it finishes); set `CODEMAP_ENABLED=true`; continue. (Never model-invoke the `codemap:scan-codebase` skill — it is `disable-model-invocation:true`, user-slash-only; the model builds via the `scan-index` binary, exactly as codemap's own `inject-preamble.js` hook does.)
 On (c): stop.
 
 ## Gate B — stale index
 
 Fires when `CODEMAP_ENABLED=true` and `CODEMAP_CURRENCY=stale`. Invoke `AskUserQuestion`:
 - Question: "Codemap index is stale — source files changed since last scan; context may miss recent changes. How to proceed?"
-- (a) Rebuild now — `Skill(skill="codemap:scan-codebase")` then continue with fresh index (note: the ambient hook may have already started a background refresh; `scan-codebase` will be blocked by the scan lockfile until it completes — up to 10 min)
+- (a) Rebuild now — run `scan-index` in the foreground (wait until it finishes), then continue with fresh index (note: the ambient hook may have already started a background refresh; `scan-index` will be blocked by the scan lockfile until it completes — up to 10 min)
 - (b) Continue with stale data — proceed; results may miss recent changes
 - (c) Skip codemap — set `CODEMAP_ENABLED=false`; proceed without structural context
 
-On (a): invoke `Skill(skill="codemap:scan-codebase")`; continue.
+On (a): run `scan-index` in the foreground (wait until it finishes); continue.
 On (c): set `CODEMAP_ENABLED=false`.
